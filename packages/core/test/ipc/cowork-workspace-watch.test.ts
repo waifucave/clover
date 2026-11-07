@@ -210,8 +210,13 @@ test("W6: authority refusal never retries even if a malformed response claims re
   };
   const originalTimer = globalThis.setTimeout, delays: number[] = [];
   globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
-    if ([20_000, 1000, 2000].includes(args[1] ?? 0)) { delays.push(args[1]!); return originalTimer(args[0], 5, ...args.slice(2)); }
-    return originalTimer(...args);
+    // The in-process daemon owns 20 s timers of its own (lease maintenance, usage ingest), so record only the timers the
+    // watch client files in its renewal map. The microtask runs right after the caller stores the timer, well before
+    // the shortened timer can fire and clear it.
+    if (![20_000, 1000, 2000].includes(args[1] ?? 0)) return originalTimer(...args);
+    const delay = args[1]!, timer = originalTimer(args[0], 5, ...args.slice(2));
+    queueMicrotask(() => { if ([...(observer.client as any).watchRenewals.values()].includes(timer)) delays.push(delay); });
+    return timer;
   }) as typeof setTimeout;
   try {
     const lease = await observer.client.watchWorkspaces(f.ids); await until(() => attempts === 1); await Bun.sleep(30);

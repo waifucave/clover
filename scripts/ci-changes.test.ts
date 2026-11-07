@@ -81,10 +81,13 @@ describe("ci-changes", () => {
 
   test("the tree job (Linux and Windows) runs for the tree's and the computers' code and tests, and their conformance suites", () => {
     for (const f of ["packages/core/src/tree/index.ts", "packages/core/src/computers/registry.ts", "packages/core/test/tree/x.test.ts",
-      "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"]) {
+      "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts",
+      "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts",
+      "plugins/clover/plugins/agent-cursor/clover.json", "plugins/clover/plugins/agent-gemini/clover.json"]) {
       expect(on([f]), f).toContain("tree");
     }
     expect(on(["packages/core/src/daemon.ts"])).not.toContain("tree");
+    expect(on(["plugins/clover/plugins/agent-cursor/quirks.json"])).not.toContain("tree");
     expect(on(["packages/core/src/contracts/tests/secret-store.test.ts"])).not.toContain("tree");
   });
 

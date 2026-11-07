@@ -29,12 +29,12 @@ const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packa
 export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // every workspace package's own tests, on all four machines
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
-  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
+  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/verify-sealed-core.ts", "scripts/clover-core.entitlements"],
   // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
   app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
   // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon and the
   // link sidecar they carry (the job installs the deb and runs its `clover`)
-  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/", "native/link/"],
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", ...CORE, "packages/cli/", "native/link/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],
@@ -59,7 +59,11 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // the tree and the computers on Linux and Windows (macOS runs them in the core suite): their code, their tests and
   // lane B's conformance suites for them
   tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
-    "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"],
+    "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts",
+    // an agent backend's bare command on PATH (its .exe or .cmd on Windows)
+    "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts",
+    // the bundled agent plugins' manifests, whose bare commands that check is about
+    "plugins/clover/plugins/agent-*/clover.json"],
   // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and
   // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",

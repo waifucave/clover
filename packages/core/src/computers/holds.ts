@@ -5,16 +5,20 @@
 //
 // A dropped link lets go of every hold the other computer took here: its sessions can't act here any more.
 import { z } from "zod";
-import { HoldTarget, SessionId, type HoldView } from "@waifucave/clover-protocol";
+import { FencingToken, HoldTarget, SessionId, type HoldView } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { HoldRequest } from "../contracts/computer-registry";
 import type { LinkTransport } from "../contracts/link-transport";
+import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
 import { offlineAs } from "../tree/remote";
 import type { CoreComputerRegistry } from "./registry";
 
-const TakeParams = z.object({ target: HoldTarget, pluginId: z.string().min(1).max(256), session: SessionId.optional() });
-const ReleaseParams = z.object({ id: z.string().min(1).max(128) });
-const SessionParams = z.object({ session: SessionId });
+/** The calling computer's fencing token, on every hold call (`fencing.ts`). */
+const Fence = { fence: FencingToken.optional() };
+const TakeParams = z.object({ target: HoldTarget, pluginId: z.string().min(1).max(256), session: SessionId.optional(), ...Fence });
+const ReleaseParams = z.object({ id: z.string().min(1).max(128), ...Fence });
+const SessionParams = z.object({ session: SessionId, ...Fence });
+const HoldsParams = z.object({ ...Fence });
 
 /** Who asks to release a hold: the plugin, and the session the router says made the call. */
 export interface HoldOwner {
@@ -30,7 +34,7 @@ export function mayRelease(h: { session?: string | undefined; pluginId: string }
 }
 
 /** This computer's side: holds that other computers take on its screen. */
-export function serveHolds(o: { transport: LinkTransport; registry: CoreComputerRegistry; mayCall: (device: string) => boolean }): Unsubscribe {
+export function serveHolds(o: { transport: LinkTransport; registry: CoreComputerRegistry; mayCall: (device: string) => boolean; fence?: ActFence }): Unsubscribe {
   const t = o.transport;
   /** Which device took each hold here. */
   const takenBy = new Map<string, string>();
@@ -42,6 +46,7 @@ export function serveHolds(o: { transport: LinkTransport; registry: CoreComputer
     guard(from);
     const p = TakeParams.safeParse(raw);
     if (!p.success) throw new ContractError("invalid", `computer.takeHold: ${p.error.issues[0]?.message ?? "bad params"}`);
+    checkActFence(o.fence, p.data.fence, "computer.takeHold");
     const hold = o.registry.takeHold({ computer: o.registry.self().name, target: p.data.target, pluginId: p.data.pluginId, ...(p.data.session ? { session: p.data.session } : {}) });
     takenBy.set(hold.id, from);
     return { hold };
@@ -50,6 +55,7 @@ export function serveHolds(o: { transport: LinkTransport; registry: CoreComputer
     guard(from);
     const p = ReleaseParams.safeParse(raw);
     if (!p.success) throw new ContractError("invalid", "computer.releaseHold takes an id");
+    checkActFence(o.fence, p.data.fence, "computer.releaseHold");
     if (takenBy.get(p.data.id) !== from) return { ok: true };
     takenBy.delete(p.data.id);
     o.registry.releaseHold(p.data.id);
@@ -59,6 +65,7 @@ export function serveHolds(o: { transport: LinkTransport; registry: CoreComputer
     guard(from);
     const p = SessionParams.safeParse(raw);
     if (!p.success) throw new ContractError("invalid", "computer.releaseSession takes a session");
+    checkActFence(o.fence, p.data.fence, "computer.releaseSession");
     let n = 0;
     for (const h of o.registry.holds(o.registry.self().name)) {
       if (h.session !== p.data.session || takenBy.get(h.id) !== from) continue;
@@ -68,8 +75,11 @@ export function serveHolds(o: { transport: LinkTransport; registry: CoreComputer
     }
     return { released: n };
   }));
-  offs.push(t.handle("computer.holds", (_raw, from) => {
+  offs.push(t.handle("computer.holds", (raw, from) => {
     guard(from);
+    const p = HoldsParams.safeParse(raw ?? {});
+    if (!p.success) throw new ContractError("invalid", "computer.holds takes no params but `fence`");
+    checkActFence(o.fence, p.data.fence, "computer.holds");
     const self = o.registry.self().name;
     return { holds: o.registry.holds(self), userWorking: o.registry.userWorking(self).length > 0 };
   }));
@@ -91,7 +101,10 @@ export class HoldRouter {
   /** Holds taken on other computers: id → computer, device and session. */
   readonly #remote = new Map<string, { computer: string; device: string; session?: string; pluginId: string }>();
 
-  constructor(o: { registry: CoreComputerRegistry; transport: LinkTransport }) {
+  readonly #fence: ActFence | undefined;
+
+  constructor(o: { registry: CoreComputerRegistry; transport: LinkTransport; fence?: ActFence }) {
+    this.#fence = o.fence;
     this.#registry = o.registry;
     this.#transport = o.transport;
   }
@@ -149,7 +162,7 @@ export class HoldRouter {
   async #request<R>(computer: string, device: string, method: string, params: unknown): Promise<R> {
     try {
       const link = await this.#transport.connect(device);
-      return await link.request<R>(method, params);
+      return await link.request<R>(method, { ...(params as object), ...fenceParam(this.#fence) });
     } catch (e) {
       throw offlineAs(computer, e);
     }

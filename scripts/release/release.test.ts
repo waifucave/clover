@@ -2,7 +2,7 @@
 // the release build's and the owner's publish step's plans, and the release workflow's limits (no secrets, nothing
 // published). Nothing here signs, builds or publishes.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
@@ -13,7 +13,7 @@ import {
 } from "./lib";
 import { generateFeedKey, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
-import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, signFeeds } from "./publish";
+import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, proveShippedMacCore, sealProofCommand, sealProofProblem, signFeeds, type ShippedOpeners } from "./publish";
 
 /** A Keychain of the test's own: the real one is never touched. */
 function memoryStore(): KeyStore & { items: Map<string, string> } {
@@ -306,5 +306,82 @@ describe("the update feed's key (scripts/release/feed-key.ts)", () => {
       expect(src, f).not.toMatch(/writeFileSync\([^)]*privateKey/);
       expect(src, f).not.toMatch(/console\.\w+\([^)]*privateKey/);
     }
+  });
+});
+
+describe("no draft without the sealed core's proof, on the bytes that ship (#243 checks 4 and 5)", () => {
+  const V = "1.2.3";
+  const CORE = ["Clover.app", "Contents", "Resources", "daemon", "clover-core"];
+  /** A `Clover.app` whose daemon/clover-core holds `core`, under `dir`. */
+  const app = (dir: string, core: string) => {
+    mkdirSync(join(dir, ...CORE.slice(0, -1)), { recursive: true });
+    writeFileSync(join(dir, ...CORE), core);
+  };
+  /** A build folder: the unpacked app, the dmg and the zip (stand-ins: their contents are what the openers yield). */
+  function build(o: { app?: string; zip?: string; dmg?: string; apps?: number } = {}) {
+    const dist = mkdtempSync(join(tmpdir(), "clover-publish-proof-"));
+    for (let i = 0; i < (o.apps ?? 1); i++) app(join(dist, i === 0 ? "mac-arm64" : `mac-x${i}`), o.app ?? "core-A");
+    writeFileSync(join(dist, `Clover-${V}.dmg`), "dmg");
+    writeFileSync(join(dist, `Clover-${V}-mac.zip`), "zip");
+    const mounted: string[] = [];
+    const openers: ShippedOpeners = {
+      extractZip: (_zip, dest) => { app(dest, o.zip ?? o.app ?? "core-A"); return true; },
+      mountDmg: (_dmg, mountpoint) => { app(mountpoint, o.dmg ?? o.app ?? "core-A"); mounted.push(mountpoint); return () => { mounted.splice(mounted.indexOf(mountpoint), 1); }; },
+    };
+    return { dist, openers, mounted, unpacked: join(dist, "mac-arm64", ...CORE), dmg: { dir: dist, name: `Clover-${V}.dmg` } };
+  }
+
+  test("the proof runs with --signed --require-proof on the zip's own copy in a private folder, never the build folder's file", () => {
+    const b = build();
+    expect(sealProofCommand("/x/clover-core", "/repo").slice(1)).toEqual(["/repo/scripts/verify-sealed-core.ts", "--binary", "/x/clover-core", "--signed", "--require-proof"]);
+    const asked: string[] = [];
+    expect(sealProofProblem(b.dmg, V, (c) => { asked.push(c); expect(readFileSync(c, "utf8")).toBe("core-A"); return true; }, b.openers)).toBeUndefined();
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.startsWith(b.dist)).toBe(false);
+    expect(asked[0]!.endsWith(join("zip", ...CORE))).toBe(true);
+    expect(existsSync(asked[0]!)).toBe(false); // the private folder is gone afterwards
+    expect(b.mounted).toEqual([]); // the dmg was detached
+    // Not proven (SIP off, an UNPROVABLE door, anything failing): refused.
+    expect(sealProofProblem(b.dmg, V, () => false, b.openers)).toContain("no draft without the seal's proof");
+    // A release with no macOS build has nothing to prove here.
+    expect(sealProofProblem(undefined, V, () => false, b.openers)).toBeUndefined();
+  });
+
+  test("the build folder's core swapped after the hashing changes nothing: the proof is on the private copy", () => {
+    const b = build();
+    const proven: string[] = [];
+    const result = sealProofProblem(b.dmg, V, (c) => {
+      writeFileSync(b.unpacked, "a swapped core"); // the swap the build folder allows
+      proven.push(readFileSync(c, "utf8"));
+      return true;
+    }, b.openers);
+    expect(result).toBeUndefined();
+    expect(proven).toEqual(["core-A"]);
+    // The private copy itself changing during its proof is refused.
+    const c = build();
+    expect(sealProofProblem(c.dmg, V, (core) => { writeFileSync(core, "changed"); return true; }, c.openers)).toContain("changed during its proof");
+  });
+
+  test("a stale mac* folder in another --from folder is never what gets proven; none or two apps are refused", () => {
+    const stale = mkdtempSync(join(tmpdir(), "clover-publish-stale-"));
+    app(join(stale, "mac-arm64"), "an old core");
+    const b = build();
+    const proven: string[] = [];
+    expect(sealProofProblem(b.dmg, V, (c) => { proven.push(readFileSync(c, "utf8")); return true; }, b.openers)).toBeUndefined();
+    expect(proven).toEqual(["core-A"]);
+    expect(sealProofProblem({ dir: join(stale, "nothing"), name: `Clover-${V}.dmg` }, V, () => true, b.openers)).toContain("can't be proven");
+    const two = build({ apps: 2 });
+    expect(proveShippedMacCore(two.dist, V, () => true, two.openers)).toContain("exactly one mac*/Clover.app");
+  });
+
+  test("a zip or a dmg whose clover-core differs is refused before any proof; a dmg that won't mount too", () => {
+    const never = () => { throw new Error("proved a core that doesn't match"); };
+    const zip = build({ zip: "another core" });
+    expect(proveShippedMacCore(zip.dist, V, never, zip.openers)).toContain(`the clover-core in ${join(zip.dist, `Clover-${V}-mac.zip`)} is not the one`);
+    const dmg = build({ dmg: "another core" });
+    expect(proveShippedMacCore(dmg.dist, V, never, dmg.openers)).toContain(`the clover-core in ${join(dmg.dist, `Clover-${V}.dmg`)} is not the one`);
+    expect(dmg.mounted).toEqual([]); // detached even when refused
+    const b = build();
+    expect(proveShippedMacCore(b.dist, V, never, { ...b.openers, mountDmg: () => undefined })).toContain("could not be mounted");
   });
 });
