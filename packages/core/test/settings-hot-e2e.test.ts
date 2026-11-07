@@ -162,6 +162,17 @@ describe("hot-settings P8b: the Clover-leg keys reach the live holder with no re
     }
   }
 
+  /** Polls the live holder until `ok` holds, WITHOUT writing again: for the catch-up test, whose point is that one
+   *  write made before the watch armed is still picked up. Bounded at SETTLE_MS, failing loudly. */
+  async function untilSettings(d: RunningDaemon, what: string, ok: (s: ReturnType<RunningDaemon["settings"]>) => boolean): Promise<void> {
+    const deadline = Date.now() + SETTLE_MS;
+    for (;;) {
+      if (ok(d.settings())) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}; live settings.runtimes = ${JSON.stringify(d.settings()?.runtimes)}`);
+      await sleep(25);
+    }
+  }
+
   test("an edit written the moment the daemon has started is picked up without a second write (the watch's catch-up)", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-hot-e2e-catchup-"));
     writeSettingsFile(home, { runtimes: undefined });
