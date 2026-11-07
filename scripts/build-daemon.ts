@@ -61,6 +61,10 @@ export function daemonOutput(target: DaemonTarget): string {
 }
 
 const COMPILE = "bun build --compile";
+/** A release's TLS trusts the OS's certificate store (Bun's bundled roots plus what the OS trusts: a corporate CA its
+ *  IT installs there), never a CA from the environment (`build-kind.ts`'s refusal). Adding to the OS store takes the
+ *  user's authentication on macOS and root on Linux. Baked into the binary's execArgv, so nothing at run time sets it. */
+export const DIST_EXEC_ARGV = "--compile-exec-argv=--use-system-ca";
 const COMPILE_CORE_OUTFILE = "--outfile ../../dist/clover-core";
 
 /**
@@ -73,7 +77,7 @@ export function daemonCompileCommand(compileCoreScript: string, target: DaemonTa
   if (compileCoreScript.split(COMPILE).length !== 2) throw new Error(`compile:core no longer has exactly one \`${COMPILE}\` — update scripts/build-daemon.ts`);
   if (compileCoreScript.split(COMPILE_CORE_OUTFILE).length !== 2) throw new Error(`compile:core no longer writes ${COMPILE_CORE_OUTFILE} — update scripts/build-daemon.ts`);
   return compileCoreScript
-    .replace(COMPILE, `${COMPILE} --target=${DAEMON_TARGETS[target]}`)
+    .replace(COMPILE, `${COMPILE} --target=${DAEMON_TARGETS[target]} ${DIST_EXEC_ARGV}`)
     .replace(COMPILE_CORE_OUTFILE, `--outfile ../../${daemonOutput(target)}`)
     .replaceAll("bun build ", `bun build --define ${DIST_BUILD_DEFINE} `);
 }

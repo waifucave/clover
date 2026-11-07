@@ -19,6 +19,9 @@
 // seal is `DYLD_*` names, which dyld removes only from a hardened process). DYLD_INSERT_LIBRARIES is tried too.
 // Windows: the binary must NOT be sealed (seal-bun-doors.ts says why); Bun's own variables are open there by design
 // and are not tried, the rest (the ladder, TLS, the working folder, argv, the key) is.
+// TLS trust: a self-signed certificate is refused (main thread and Worker); the OS store is trusted (`--use-system-ca`,
+// baked in by build-daemon): on macOS through a CA only the OS holds (Apple's root, gdmf.apple.com), on Linux runners
+// through a throwaway CA added to the OS store with sudo and removed afterwards.
 //
 //   bun run verify:sealed-core                      build this machine's target (scripts/build-daemon.ts), then check
 //   bun run verify:sealed-core --binary <path>      check an existing binary (signed already: add --signed)
@@ -53,6 +56,9 @@ export interface Door {
   stayItself?: boolean;
   /** Bun's own variables, open on Windows by design (not sealed there). */
   bunEnv?: boolean;
+  /** Run without HOME (the user's own, from the password database): macOS reads the OS trust store only with a real
+   *  home (measured: a temp HOME left Bun with no system CA at all). */
+  noHome?: boolean;
   os?: NodeJS.Platform[];
 }
 
@@ -176,6 +182,82 @@ export function envNamesIn(bytes: Uint8Array): string[] {
   return [...names].sort();
 }
 
+/** openssl, or undefined when this machine has none (some Windows runners). */
+function openssl(args: string[], cwd: string): boolean {
+  const r = spawnSync("openssl", args, { cwd, encoding: "utf8" });
+  return r.status === 0;
+}
+
+/** A local HTTPS server with `cert`/`key`, for one check. */
+async function httpsServer(cert: string, key: string): Promise<{ url: string; close(): void }> {
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", tls: { cert, key }, fetch: () => new Response("ok") });
+  return { url: `https://localhost:${server.port}/sealed-core`, close: () => server.stop(true) };
+}
+
+/**
+ * The TLS trust checks. On every OS: a self-signed certificate is refused (main thread and Worker). macOS: a CA only
+ * the OS trusts (Apple's own root, behind gdmf.apple.com, which Bun's bundled roots don't hold) is trusted, which shows
+ * `--use-system-ca` took. Linux with password-less sudo (CI's runners): a throwaway CA added to the OS store and
+ * removed again afterwards is trusted for a local server it signed.
+ */
+async function trustChecks(work: string, run: (args: string[]) => Promise<Run>): Promise<string[]> {
+  const problems: string[] = [];
+  const say = (ok: boolean, what: string) => console.log(`verify:sealed-core: ${ok ? "ok    " : "WRONG "} ${what}`);
+  const dir = join(work, "tls");
+  mkdirSync(dir, { recursive: true });
+  const nonce = "sk-tls-probe";
+  const outcome = (r: Run) => (/^fetch-probe: (.*)$/m.exec(r.stdout)?.[1] ?? `no answer (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 120)})`);
+  if (openssl(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost", "-keyout", "self.key", "-out", "self.pem"], dir)) {
+    const server = await httpsServer(readFileSync(join(dir, "self.pem"), "utf8"), readFileSync(join(dir, "self.key"), "utf8"));
+    try {
+      for (const worker of [false, true]) {
+        const got = outcome(await run(["__fetch-probe", server.url, nonce, ...(worker ? ["--worker"] : [])]));
+        const ok = got.startsWith("failed (") && !got.includes("ECONNREFUSED");
+        if (!ok) problems.push(`a self-signed certificate must be refused${worker ? " (from a Worker)" : ""}: ${got}`);
+        say(ok, `a self-signed certificate is refused${worker ? " from a Worker" : ""} (${got})`);
+      }
+    } finally {
+      server.close();
+    }
+  } else if (process.platform !== "win32") {
+    problems.push("openssl is missing: the TLS trust checks can't run");
+  }
+  if (process.platform === "darwin") {
+    for (const worker of [false, true]) {
+      const got = outcome(await run(["__fetch-probe", "https://gdmf.apple.com/v2/pmv", nonce, ...(worker ? ["--worker"] : [])]));
+      const ok = /^\d+$/.test(got);
+      if (!ok) problems.push(`a CA only the OS store holds (Apple's root, gdmf.apple.com) must be trusted${worker ? " from a Worker" : ""} (--use-system-ca): ${got}`);
+      say(ok, `the OS store's CA is trusted${worker ? " from a Worker" : ""} (gdmf.apple.com: ${got})`);
+    }
+  }
+  if (process.platform === "linux" && spawnSync("sudo", ["-n", "true"]).status === 0 && existsSync("/usr/local/share/ca-certificates")) {
+    const made = openssl(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=Clover sealed-core gate CA", "-keyout", "ca.key", "-out", "ca.pem"], dir)
+      && openssl(["req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost", "-keyout", "leaf.key", "-out", "leaf.csr"], dir)
+      && (writeFileSync(join(dir, "leaf.ext"), "subjectAltName=DNS:localhost\n"), openssl(["x509", "-req", "-in", "leaf.csr", "-CA", "ca.pem", "-CAkey", "ca.key", "-CAcreateserial", "-days", "2", "-extfile", "leaf.ext", "-out", "leaf.pem"], dir));
+    if (!made) problems.push("openssl could not make the throwaway CA");
+    else {
+      const installed = "/usr/local/share/ca-certificates/clover-sealed-core-gate.crt";
+      const server = await httpsServer(readFileSync(join(dir, "leaf.pem"), "utf8"), readFileSync(join(dir, "leaf.key"), "utf8"));
+      try {
+        const before = outcome(await run(["__fetch-probe", server.url, nonce]));
+        spawnSync("sudo", ["-n", "cp", join(dir, "ca.pem"), installed]);
+        spawnSync("sudo", ["-n", "update-ca-certificates"]);
+        for (const worker of [false, true]) {
+          const got = outcome(await run(["__fetch-probe", server.url, nonce, ...(worker ? ["--worker"] : [])]));
+          const ok = got === "200" && before !== "200";
+          if (!ok) problems.push(`a CA added to the OS store must be trusted${worker ? " from a Worker" : ""} (before it: ${before}; after: ${got})`);
+          say(ok, `a CA in the OS store is trusted${worker ? " from a Worker" : ""} (before it was added: ${before}; after: ${got})`);
+        }
+      } finally {
+        server.close();
+        spawnSync("sudo", ["-n", "rm", "-f", installed]);
+        spawnSync("sudo", ["-n", "update-ca-certificates", "--fresh"]);
+      }
+    }
+  }
+  return problems;
+}
+
 export async function verifySealedCore(binary: string, opts: { signed: boolean; sweep: boolean }): Promise<string[]> {
   const problems: string[] = [];
   const bytes = new Uint8Array(readFileSync(binary));
@@ -260,6 +342,7 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
         else writeFileSync(join(cwd, rel), content);
       }
       const env = baseEnv(dir, mark);
+      if (door.noHome) delete env.HOME;
       for (const [k, v] of Object.entries(door.env ?? {})) env[k] = fill(v);
       if (door.raw !== undefined) {
         const entries = [...Object.entries(env).map(([k, v]) => `${k}=${v}`), ...door.raw.map(fill)];
@@ -313,6 +396,10 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
       if (!ok) problems.push(`${door.name}: the request's key showed in the output, or the core did not stay itself`);
       console.log(`verify:sealed-core: ${ok ? "closed" : "OPEN  "} key in the output with ${door.name}`);
     }
+
+    // Whom TLS trusts (main thread and a Worker, as an embedded session's requests are): the OS store, baked in with
+    // `--use-system-ca` (build-daemon.ts) — never a self-signed certificate.
+    problems.push(...(await trustChecks(work, async (args) => runDoor({ name: "tls", noHome: true }, args))));
 
     // The debugger: BUN_INSPECT with wait must neither block nor open its port; CONNECT_TO must not connect out.
     if (sealed) {
