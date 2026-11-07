@@ -7,7 +7,8 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, LAUNCHD_LABEL, autostartArgs } from "../packaging/installer-hooks";
-import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, packageArchNames, parseBuildPackagesArgs, parseListing } from "./build-packages";
+import { linkBinaryName } from "../packages/core/src/links/sidecar-binary";
+import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, LINK_BUILD, LINK_OUTPUT, packageArchNames, parseBuildPackagesArgs, parseListing, REQUIRED_FILES } from "./build-packages";
 import { caskFrom } from "./release-lib";
 import { renderWinget, wingetInstallerUrl } from "./winget";
 
@@ -145,8 +146,12 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     expect(profile).toContain("  userns,");
   });
 
-  test("the daemon goes in every package's resources, from where build-packages.ts stages it", () => {
-    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe"] }]);
+  test("the daemon and its link sidecar go in every package's resources, side by side, from where build-packages.ts stages them", () => {
+    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe", "clover-link", "clover-link.exe"] }]);
+    // Beside the daemon, where the core looks for it (packages/core/src/links/sidecar-binary.ts).
+    expect(REQUIRED_FILES as readonly string[]).toContain(`/opt/Clover/resources/daemon/${linkBinaryName("linux")}`);
+    expect(LINK_OUTPUT.endsWith(`/${linkBinaryName("linux")}`)).toBe(true);
+    expect(LINK_BUILD.join(" ")).toBe("cargo build --release --locked --manifest-path native/link/Cargo.toml");
   });
 
   test("the deb's and the rpm's launcher entry carries Quit, which runs the app with --quit (no tray on stock GNOME)", () => {
@@ -208,24 +213,30 @@ describe("the Homebrew cask", () => {
 
 describe("build-packages.ts", () => {
   test("arguments: the host's architecture by default, every format, and nothing unknown", () => {
-    expect(parseBuildPackagesArgs([], "x64")).toEqual({ arches: ["x64"], formats: ["deb", "rpm", "AppImage"], check: false, dryRun: false });
-    expect(parseBuildPackagesArgs(["--arch", "x64,arm64", "--formats=deb", "--check"], "x64")).toEqual({ arches: ["x64", "arm64"], formats: ["deb"], check: true, dryRun: false });
+    expect(parseBuildPackagesArgs([], "x64")).toEqual({ arches: ["x64"], formats: ["deb", "rpm", "AppImage"], channel: "latest", check: false, dryRun: false });
+    expect(parseBuildPackagesArgs(["--arch", "arm64", "--formats=deb", "--channel", "beta", "--check"], "arm64")).toEqual({ arches: ["arm64"], formats: ["deb"], channel: "beta", check: true, dryRun: false });
+    expect(() => parseBuildPackagesArgs(["--channel", "nightly"], "x64")).toThrow(/latest or beta/);
+    // One machine builds its own architecture (clover-link builds natively); a dry run may print any.
+    expect(() => parseBuildPackagesArgs(["--arch", "x64,arm64"], "x64")).toThrow(/build arm64 on a machine of that architecture/);
+    expect(parseBuildPackagesArgs(["--arch", "x64,arm64", "--dry-run"], "x64").arches).toEqual(["x64", "arm64"]);
     expect(() => parseBuildPackagesArgs([], "ia32")).toThrow(/--arch/);
     expect(() => parseBuildPackagesArgs(["--formats", "snap"], "x64")).toThrow(/not snap/);
     expect(() => parseBuildPackagesArgs(["--sign"], "x64")).toThrow(/unknown argument/);
   });
 
   test("electron-builder packages one architecture at a time and never publishes", () => {
-    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never"]);
+    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
+    expect(electronBuilderArgs("x64", ["AppImage"], "beta")).toEqual(["electron-builder", "--linux", "AppImage", "--x64", "--publish", "never", "-c.publish.channel=beta"]);
     expect(packageArchNames("x64")).toEqual({ deb: "amd64", rpm: "x86_64", appImage: "x86_64" });
     expect(packageArchNames("arm64")).toEqual({ deb: "arm64", rpm: "aarch64", appImage: "arm64" });
   });
 
-  test("a package is checked for the daemon, the AppArmor profile and packaging/linux's after-install", () => {
+  test("a package is checked for the daemon, the link sidecar, the AppArmor profile and packaging/linux's after-install", () => {
     const debListing = [
       "drwxr-xr-x root/root 0 2026-11-05 12:00 ./opt/Clover/",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-link",
       "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/chrome-sandbox",
       "lrwxrwxrwx root/root 0 2026-11-05 12:00 ./opt/Clover/libvk.so -> libvulkan.so.1",
@@ -236,18 +247,19 @@ describe("build-packages.ts", () => {
       "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
       "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
     ].join("\n");
-    expect(checkPackage("rpm", rpmListing, scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing"]);
+    expect(checkPackage("rpm", rpmListing, scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing", "rpm: /opt/Clover/resources/daemon/clover-link is missing"]);
     expect(checkPackage("deb", debListing, "ln -sf /opt/Clover/clover /usr/bin/clover")).toEqual([
       `deb: its after-install script is not packaging/linux/after-install.sh (no ${AFTER_INSTALL_MARK})`,
       "deb: its scripts never load the AppArmor profile",
     ]);
   });
 
-  test("and for its file modes: the app and the daemon 0755 and root's, nothing world-writable, nothing set-user-ID", () => {
+  test("and for its file modes: the app, the daemon and the sidecar 0755 and root's, nothing world-writable, nothing set-user-ID", () => {
     const base = [
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
       "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-link",
     ];
     const scripts = `CLI='${AFTER_INSTALL_MARK}'\napparmor_parser --replace x`;
     const swap = (i: number, line: string) => base.map((l, j) => (j === i ? line : l)).join("\n");
@@ -255,6 +267,8 @@ describe("build-packages.ts", () => {
       .toEqual(["deb: /opt/Clover/resources/daemon/clover-core is -rwxrwxr-x root/root, not -rwxr-xr-x root/root"]);
     expect(checkPackage("deb", swap(0, "-rwxr-xr-x builder/builder 100 2026-11-05 12:00 ./opt/Clover/clover"), scripts))
       .toEqual(["deb: /opt/Clover/clover is -rwxr-xr-x builder/builder, not -rwxr-xr-x root/root"]);
+    expect(checkPackage("deb", swap(3, "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-link"), scripts))
+      .toEqual(["deb: /opt/Clover/resources/daemon/clover-link is -rw-r--r-- root/root, not -rwxr-xr-x root/root"]);
     expect(checkPackage("deb", [...base, "-rw-rw-rw- root/root 1 2026-11-05 12:00 ./opt/Clover/resources/app.asar"].join("\n"), scripts))
       .toEqual(["deb: /opt/Clover/resources/app.asar is world-writable (-rw-rw-rw-)"]);
     expect(checkPackage("deb", [...base, "-rwsr-xr-x root/root 1 2026-11-05 12:00 ./opt/Clover/chrome-sandbox"].join("\n"), scripts))
@@ -263,11 +277,12 @@ describe("build-packages.ts", () => {
     const rpm = [
       "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
       "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-core",
+      "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-link",
       "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
       "lrwxrwxrwx    1 root     root           14 Nov  5 12:00 /opt/Clover/libvk.so -> libvulkan.so.1",
       "-rwxr-sr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/helper",
     ].join("\n");
-    expect(parseListing("rpm", rpm).map((e) => e.path)).toEqual(["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/libvk.so", "/opt/Clover/helper"]);
+    expect(parseListing("rpm", rpm).map((e) => e.path)).toEqual(["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/libvk.so", "/opt/Clover/helper"]);
     expect(checkPackage("rpm", rpm, scripts)).toEqual(["rpm: /opt/Clover/helper is set-user-ID or set-group-ID (-rwxr-sr-x)"]);
   });
 

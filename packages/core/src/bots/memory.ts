@@ -1,6 +1,7 @@
 // A bot's persistent memory on this computer (spec §6.5): `MEMORY.md`, the index the bot keeps, and the memory files
-// it links to, in `<home>/bots/<bot>/memory/`. There is no memory tool: bots read and write these with `Bash` and the
-// file tools. The core seeds a bot's starter memories once (§5.9 `memory`), and lists and reads the folder for
+// it links to, stored in `<home>/bots/<bot>/memory/` and named `home/memory/` in the bot's folder tree (lane J maps it,
+// lane H syncs it across the user's computers). There is no memory tool: the bot's own sessions read and write these
+// with Read, Write and Edit, and no other session reaches them (the per-caller fence). The core seeds a bot's starter memories once (§5.9 `memory`), and lists and reads the folder for
 // `memory.list` and `memory.read` (`memory.read` capability). Syncing it, and merging after a takeover, are lane H's
 // (§6.5, §8.5). Owner: lane D.
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeSync } from "node:fs";
@@ -55,6 +56,12 @@ export function seedMemory(
     }
   }
   const realTo = realpathSync(to);
+  let realFrom: string;
+  try {
+    realFrom = realpathSync(from);
+  } catch {
+    return 0;
+  }
   let files = 0;
   let bytes = 0;
   const walk = (src: string, dest: string): boolean => {
@@ -78,11 +85,20 @@ export function seedMemory(
         return false;
       }
       let data: Buffer;
-      const inFd = openSync(s, constants.O_RDONLY | NO_FOLLOW);
+      // Without waiting: a pipe swapped in after the check opens at once and is refused below (review B1).
+      const inFd = openSync(s, constants.O_RDONLY | NO_FOLLOW | (constants.O_NONBLOCK ?? 0));
       try {
         const opened = fstatSync(inFd);
         if (!opened.isFile() || opened.nlink > 1) {
           warn(`the starter memory ${s} wasn't copied: it isn't a file of its own`);
+          continue;
+        }
+        // Read where it was asked for, not through a folder swapped for a link on the way (the fence review).
+        let realSrc = "";
+        try { realSrc = realpathSync(s); } catch { /* gone */ }
+        const srcThere = realSrc === "" ? undefined : statSync(realSrc, { throwIfNoEntry: false });
+        if (realSrc !== join(realFrom, relative(from, s)) || srcThere === undefined || srcThere.ino !== opened.ino || srcThere.dev !== opened.dev) {
+          warn(`the starter memory ${s} wasn't copied: it is under a link`);
           continue;
         }
         data = readFileSync(inFd);

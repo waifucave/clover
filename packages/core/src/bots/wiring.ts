@@ -8,6 +8,7 @@
 // `AgentManager.sessionHooks()`) feed `ListAgents`' agent rows, `session.setModel` for agents and coding sessions,
 // and the reattaching of a restart's dormant sessions; `close` ends their processes when the daemon shuts down.
 import type { Level, SessionView } from "@waifucave/clover-protocol";
+import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeliveredInput } from "../contracts/session-host";
@@ -19,6 +20,13 @@ import { soleComputer, type MainComputer } from "./main-computer";
 import { sessionsMethods, type MethodHandler, type SessionsMethodsDeps } from "./rpc";
 import { BotService, type BotRelay, type BotServiceOptions, type DriverFactory } from "./service";
 import { botToolDefs, SendLimiter, type AgentRows, type CoreToolDef } from "./tools";
+import { turnMayStart, type UpdateGateLike } from "./update-gate";
+import { RoutineEngine, type RoutineEngineOptions } from "../routines/engine";
+import { routineMethods } from "../routines/rpc";
+import { routineToolDef, type RoutineToolDeps } from "../routines/tool";
+import { WebhookIngress, type WebhookIngressOptions } from "../routines/webhooks";
+import { voicesMethods } from "../voices/rpc";
+import { VoiceService, type VoiceServiceOptions } from "../voices/service";
 
 /** Lane K's side of the bot side's hooks (`AgentManager.sessionHooks()`). */
 export interface AgentHooks {
@@ -51,10 +59,25 @@ export interface BotSideOptions {
   /** Lane K's agents over this side's host (the daemon passes `(d) => createAgents({ ...its options, host: d.host,
    *  levelOf: d.levelOf })` with its `manager.sessionHooks()`). Their hooks win over `reattach`. */
   agents?: (deps: { host: DurableSessionHost; levelOf: (computer: string) => Level | undefined }) => AgentsHandle;
-  /** Each computer's approval level (lane J's computer registry), for lane K's agents. */
+  /** Each computer's approval level (lane J's computer registry), for lane K's agents and the routines. */
   levelOf?: (computer: string) => Level | undefined;
+  /** This computer's routines (§7): the engine runs when given. */
+  routines?: Pick<RoutineEngineOptions, "userTimeZone" | "secrets" | "webhookBase" | "pluginTriggers" | "watchFiles"> & Partial<Pick<RoutineToolDeps, "computers" | "writeRemote">> & {
+    /** The `webhook.ingress` entries and the plugin host that runs them (lane I's forwarder): webhooks.ts. */
+    ingress?: Pick<WebhookIngressOptions, "registry" | "host"> & { poll?: boolean };
+    /** The plugin registry's `triggers` entries: which plugin may fire which trigger type (`RoutineEngine.fire`). */
+    triggers?: Pick<PluginRegistry, "entries">;
+  };
+  /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
+  onSessionEnded?: (id: string) => void;
+  /** Lane M's update gate (`RunningDaemon.updateGate`, #198): its turns are a busy source, and none starts while an
+   *  update closes it (update-gate.ts). */
+  updateGate?: UpdateGateLike;
+  /** Bots' voices on this device (§6.6): the `voices` entries, the plugin host that streams them, and `voice.play`
+   *  to the app. Each bot's voice is its effective one (its user layer's, else its plugin's). */
+  voices?: Pick<VoiceServiceOptions, "registry" | "host" | "play" | "listenIdleMs">;
   userHome?: string;
-  approvals?: DurableSessionHostOptions["approvals"];
+  approvals?: DurableSessionHostOptions["approvals"] & Partial<Pick<ApprovalBroker, "request">>;
   /** The compaction numbers for a session (the model's cache life and the settings); the spec's defaults otherwise. */
   compaction?: (view: SessionView) => CompactionPolicy | undefined;
   defaultModel: BotServiceOptions["defaultModel"];
@@ -70,6 +93,12 @@ export interface BotSide {
   bots: BotService;
   /** Lane K's agents, when the daemon gave them. */
   agents?: AgentsHandle;
+  /** This computer's routine engine, when routines were given. */
+  routines?: RoutineEngine;
+  /** Its webhooks' way in, when an ingress was given. */
+  ingress?: WebhookIngress;
+  /** Bots' voices here, when voices were given. */
+  voices?: VoiceService;
   /** `SendMessage` and `ListAgents` for one bot's session (or an agent's, through the bridge), with K's agent rows. */
   tools(sessionId: string): CoreToolDef[];
   /** Lane D's sessions methods, with K's `setAgentModel`. */
@@ -80,12 +109,22 @@ export interface BotSide {
   close(): Promise<void>;
 }
 
+/** The plugins with an active `triggers` entry of a type (an entry is keyed by its `type`). */
+export function triggerOwnersFrom(registry: Pick<PluginRegistry, "entries">): (type: string) => string[] {
+  return (type) => registry.entries("triggers")
+    .filter((c) => c.state === "active" && (c.entryId === type || (c.value as { type?: unknown }).type === type))
+    .map((c) => c.pluginId);
+}
+
 export function createBotSide(o: BotSideOptions): BotSide {
   const main = o.main ?? soleComputer(o.computer);
   const gate = new BotGate({ home: o.home, main, ...(o.warn === undefined ? {} : { warn: o.warn }) });
   const relay = o.relay;
-  const host = new DurableSessionHost({
-    home: o.home, clock: o.clock, computer: o.computer, epoch: () => main.epoch(), mayStart: (view) => gate.mayStart(view),
+  const updates = o.updateGate;
+  const host: DurableSessionHost = new DurableSessionHost({
+    home: o.home, clock: o.clock, computer: o.computer, epoch: () => main.epoch(),
+    // An update's restart holds every turn (lane M's gate); what waits starts on its reopen, below.
+    mayStart: (view) => gate.mayStart(view) && turnMayStart(updates),
     // A bot's conversation lives on the runner: what arrives here for it goes there (review S1).
     runsHere: () => main.runsHere(),
     ...(relay === undefined ? {} : {
@@ -114,16 +153,80 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(o.assetUrl === undefined ? {} : { assetUrl: o.assetUrl }),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
+  const computerLevel = (): Level => levelOf(o.computer) ?? "ask-risky";
+  let ingress: WebhookIngress | undefined;
+  const routines: RoutineEngine | undefined = o.routines === undefined ? undefined : new RoutineEngine({
+    home: o.home, computer: o.computer, clock: o.clock, bots, computerLevel,
+    ...(o.approvals?.request === undefined ? {} : { approvals: { request: o.approvals.request.bind(o.approvals) } }),
+    ...(o.routines.userTimeZone === undefined ? {} : { userTimeZone: o.routines.userTimeZone }),
+    ...(o.routines.secrets === undefined ? {} : { secrets: o.routines.secrets }),
+    ...(o.routines.webhookBase === undefined ? {} : { webhookBase: o.routines.webhookBase }),
+    ...(o.routines.pluginTriggers === undefined ? {} : { pluginTriggers: o.routines.pluginTriggers }),
+    ...(o.routines.triggers === undefined ? {} : { triggerOwners: triggerOwnersFrom(o.routines.triggers) }),
+    ...(o.routines.watchFiles === undefined ? {} : { watchFiles: o.routines.watchFiles }),
+    ...(o.routines.ingress === undefined ? {} : { registerWebhook: (id: string, key: string, name?: string): Promise<string> => ingress!.register(id, key, name) }),
+    ...(o.warn === undefined ? {} : { warn: o.warn }),
+  });
+  ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({
+    registry: o.routines.ingress.registry, host: o.routines.ingress.host, engine: routines, clock: o.clock, ...(o.warn === undefined ? {} : { warn: o.warn }),
+  });
+  const voices = o.voices === undefined ? undefined : new VoiceService({
+    ...o.voices,
+    voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
+    ...(o.warn === undefined ? {} : { warn: o.warn }),
+  });
+  // Held by an update's restart: started again as the gate reopens.
+  const offReopen = updates?.onReopen(() => host.resume());
+  // The turns running here keep an update waiting (lane M's busy registry).
+  const offBusy = updates?.register({ name: "bot-turns", count: () => host.list().filter((v) => host.turnOrigin(v.id) !== undefined).length });
+  const routineTool = routines === undefined || o.routines === undefined ? undefined : {
+    home: o.home, computer: o.computer, routines,
+    computers: o.routines.computers ?? (() => [{ name: o.computer, level: computerLevel() }]),
+    ...(o.routines.writeRemote === undefined ? {} : { writeRemote: o.routines.writeRemote }),
+  };
+  // Lane J's terminals close with their session.
+  const ended = new Set<string>();
+  const offEnded = o.onSessionEnded === undefined ? undefined : host.watch((view) => {
+    if ((view.status !== "stopped" && view.status !== "failed") || ended.has(view.id)) return;
+    ended.add(view.id);
+    try {
+      o.onSessionEnded!(view.id);
+    } catch (err) {
+      o.warn?.(`closing ${view.id}'s terminals failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
   return {
     gate, host, compaction, bots,
     ...(agents === undefined ? {} : { agents }),
-    tools: (sessionId) => botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId),
-    methods: (deps) => sessionsMethods({
-      home: o.home, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
-      ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
+    ...(routines === undefined ? {} : { routines }),
+    ...(ingress === undefined ? {} : { ingress }),
+    ...(voices === undefined ? {} : { voices }),
+    tools: (sessionId) => {
+      const defs = botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId);
+      const bot = host.callerOf(sessionId).bot;
+      if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
+      return defs;
+    },
+    methods: (deps) => ({
+      ...sessionsMethods({
+        home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
+        ...(updates === undefined ? {} : { updateGate: updates }),
+        ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
+      }),
+      ...(routines === undefined ? {} : routineMethods({ routines })),
+      ...(voices === undefined ? {} : voicesMethods({ voices })),
     }),
-    start: () => bots.start(),
+    start: async () => {
+      await bots.start();
+      await routines?.start();
+      if (o.routines?.ingress?.poll !== false) ingress?.start();
+    },
     close: async () => {
+      offBusy?.();
+      offReopen?.();
+      ingress?.stop();
+      routines?.stop();
+      offEnded?.();
       await bots.stop();
       // The agents' processes end before the host lets go of their sessions, which stay for the next daemon.
       if (agents !== undefined) {

@@ -30,6 +30,8 @@ const CORE_SERVICES = "/System/Library/Frameworks/CoreServices.framework/CoreSer
 export const ERR_SEC_ITEM_NOT_FOUND = -25300;
 /** `errSecDuplicateItem`. */
 export const ERR_SEC_DUPLICATE_ITEM = -25299;
+/** `errSecNoSuchKeychain`. */
+export const ERR_SEC_NO_SUCH_KEYCHAIN = -25294;
 const K_CF_STRING_ENCODING_UTF8 = 0x08000100;
 
 export class KeychainFfiError extends Error {
@@ -77,6 +79,8 @@ function loadLibs() {
     SecKeychainSearchCreateFromAttributes: { args: [REF, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
     SecKeychainSearchCopyNext: { args: [REF, FFIType.ptr], returns: FFIType.i32 },
     SecKeychainItemCopyContent: { args: [REF, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    SecKeychainAddGenericPassword: { args: [REF, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
+    SecKeychainItemModifyAttributesAndData: { args: [REF, FFIType.ptr, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
   });
   const ls = dlopen(CORE_SERVICES, {
     LSCopyApplicationURLsForBundleIdentifier: { args: [REF, REF], returns: REF },
@@ -115,8 +119,11 @@ function release(ref: Ref | undefined): void {
 
 /**
  * Where to look. `null` = the user's default search list (and, for a create, the default keychain) —
- * exactly where `Bun.secrets` reads and writes. A `KeychainFile` is a temporary keychain a TEST created
- * (`security create-keychain`); nothing in production opens one.
+ * exactly where `Bun.secrets` reads and writes, and so NOT used for Clover's own items in production: a same-user
+ * process can put a keychain of its own ahead of the login keychain in that list (or make it the default), and a
+ * look-alike item there would be read first. Production passes the login keychain itself (`login-keychain.ts`,
+ * opened by real path from the password database's home, never HOME). A `KeychainFile` is that, or a temporary
+ * keychain a TEST created (`security create-keychain`).
  */
 export type KeychainTarget = null | KeychainFile;
 
@@ -138,6 +145,37 @@ export function openKeychainFile(path: string, password: string): KeychainFile {
     release(ref);
     throw new KeychainFfiError("unlock", unlocked);
   }
+  return { ref, close: () => release(ref) };
+}
+
+/** Opens a keychain file by path WITHOUT unlocking it (the login keychain, which the login session unlocked).
+ *  Throws `ERR_SEC_NO_SUCH_KEYCHAIN` when there is no keychain there. */
+export function openKeychainPath(path: string): KeychainFile {
+  const { sec } = L();
+  const out = outPtr();
+  const cpath = cstr(path);
+  const opened = sec.SecKeychainOpen(cpath, ptr(out));
+  void cpath.length;
+  if (opened !== 0) throw new KeychainFfiError("open", opened);
+  const ref = out[0]!;
+  // `SecKeychainOpen` answers a reference for any path; the status says whether a keychain is there.
+  const state = new Uint32Array(1);
+  const status = sec.SecKeychainGetStatus(ref, ptr(state));
+  if (status !== 0) {
+    release(ref);
+    throw new KeychainFfiError("open", status);
+  }
+  return { ref, close: () => release(ref) };
+}
+
+/** Several keychains searched in this order, as a search list searches them (`SecKeychainFind*` takes a keychain
+ *  or an array). Tests only: the look-alike-first case, without touching any real search list. The files must
+ *  outlive it (the array does not retain them). */
+export function keychainSearchOrder(files: readonly KeychainFile[]): KeychainFile {
+  const values = new BigUint64Array(files.map((f) => f.ref));
+  const ref = BigInt(L().cf.CFArrayCreate(0n, ptr(values), files.length, 0n));
+  void values.length;
+  if (ref === 0n) throw new KeychainFfiError("search order", -1);
   return { ref, close: () => release(ref) };
 }
 
@@ -339,6 +377,37 @@ export function addGenericPassword(target: KeychainTarget, item: { service: stri
   // it has returned, so no collection can move or free them mid-call.
   void [svc, acct, attrs, list, data].length;
   if (status !== 0) throw new KeychainFfiError("create", status, item.account);
+  release(itemOut[0]!);
+}
+
+/**
+ * Writes the item's value: an existing item's data is replaced in place (its access list kept, as
+ * `Bun.secrets.set` keeps it), a missing one is created with the default access (this process's own
+ * executable) and the same attributes `Bun.secrets.set` gives it (service, account, label = service). An empty
+ * value is the caller's to turn into a delete (`Bun.secrets.set`'s rule).
+ */
+export function setGenericPassword(target: KeychainTarget, service: string, account: string, value: string): void {
+  if (value === "") throw new KeychainFfiError("write (an empty value)", -50 /* errSecParam */, account);
+  const { sec } = L();
+  const data = Buffer.from(value, "utf8");
+  const found = find(target, service, account, false);
+  if (found.status === 0) {
+    try {
+      const status = sec.SecKeychainItemModifyAttributesAndData(found.item!, null, data.length, ptr(data));
+      void data.length;
+      if (status !== 0) throw new KeychainFfiError("update", status, account);
+    } finally {
+      release(found.item);
+    }
+    return;
+  }
+  if (found.status !== ERR_SEC_ITEM_NOT_FOUND) throw new KeychainFfiError("find", found.status, account);
+  const svc = Buffer.from(service, "utf8");
+  const acct = Buffer.from(account, "utf8");
+  const itemOut = outPtr();
+  const status = sec.SecKeychainAddGenericPassword(kcRef(target), svc.length, ptr(svc), acct.length, ptr(acct), data.length, ptr(data), ptr(itemOut));
+  void [svc, acct, data].length;
+  if (status !== 0) throw new KeychainFfiError("create", status, account);
   release(itemOut[0]!);
 }
 

@@ -45,7 +45,8 @@ const governed = (p: WorkspacePackage): boolean => expectedPackageName(p.dir) !=
  *  once it does, the manifest is checked like any other, and the entry can go. */
 export const MANIFEST_AWAITS: Readonly<Record<string, string>> = {};
 
-/** The one folder under services/ that is not a Worker: the source the Workers share (each Worker's tsconfig includes it). */
+/** The one folder under services/ that is not a Worker: the source the Workers share, a package others import by name
+ *  (each Worker's tsconfig includes it). */
 const SERVICES_SHARED = "shared";
 
 describe("the repo layout (docs/clover-layout.md)", () => {
@@ -120,12 +121,27 @@ describe("the repo layout (docs/clover-layout.md)", () => {
     expect(dirsIn("plugins")).toContain("clover");
   });
 
-  test("services: each one is a Worker with its wrangler config; services/shared is their shared source, not a package", () => {
+  test("services: each one is a Worker with its wrangler config; services/shared is their shared source, a package and not a Worker", () => {
+    const wrangler = (s: string): boolean => ["wrangler.jsonc", "wrangler.json", "wrangler.toml"].some((f) => existsSync(join(ROOT, "services", s, f)));
     const workers = dirsIn("services").filter((s) => s !== SERVICES_SHARED);
-    const missing = workers.filter((s) => !["wrangler.jsonc", "wrangler.json", "wrangler.toml"].some((f) => existsSync(join(ROOT, "services", s, f))));
-    expect(missing).toEqual([]);
-    expect(existsSync(join(ROOT, "services", SERVICES_SHARED, "package.json"))).toBe(false);
+    expect(workers.filter((s) => !wrangler(s))).toEqual([]);
     expect(workers).toContain("hello");
+    expect(wrangler(SERVICES_SHARED)).toBe(false);
+    // Imported by name: every file it exports exists, and nothing outside services/ reaches into it by relative path.
+    const shared = JSON.parse(read(`services/${SERVICES_SHARED}/package.json`)) as { name: string; exports?: Record<string, string> };
+    expect(shared.name).toBe(expectedPackageName(`services/${SERVICES_SHARED}`)!);
+    const exported = Object.values(shared.exports ?? {});
+    expect(exported.length).toBeGreaterThan(0);
+    expect(exported.filter((f) => !existsSync(join(ROOT, "services", SERVICES_SHARED, f)))).toEqual([]);
+    // A Worker's tsconfig that takes in the shared source leaves out its Bun tests (no bun:test types in a Worker).
+    for (const w of workers) {
+      const file = `services/${w}/tsconfig.json`;
+      if (!existsSync(join(ROOT, file))) continue;
+      const config = Bun.JSONC.parse(read(file)) as { include?: string[]; exclude?: string[] };
+      if ((config.include ?? []).includes(`../${SERVICES_SHARED}`)) expect(config.exclude ?? [], `${file} excludes ../${SERVICES_SHARED}/test`).toContain(`../${SERVICES_SHARED}/test`);
+    }
+    const reaching = Bun.spawnSync(["git", "grep", "-lE", "from \"(\\.\\./)+(services/shared|test-harness/src)/", "--", "packages", "apps", "plugins", "scripts"], { cwd: ROOT }).stdout.toString().trim();
+    expect(reaching).toBe("");
   });
 
   test("native: each area has its README, and native/README.md lists it", () => {

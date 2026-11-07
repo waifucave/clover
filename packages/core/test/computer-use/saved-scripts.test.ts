@@ -10,8 +10,8 @@ import { computerV2Description, COMPUTER_V2_INPUT_SCHEMA } from "../../src/compu
 import { ComputerV2Service, normaliseScriptError } from "../../src/computer-use/service";
 import type { ComputerPolicy } from "../../src/computer-use/policy";
 import type { HelperClient } from "../../src/computer-use/helper-client";
-import { sandboxAvailable } from "../../src/workflows/sandbox";
 import { InProcessWorker, savedScriptsWorld, sleepMs, textOf } from "./saved-scripts-harness";
+import { darwinTest } from "../helpers/darwin-only";
 
 const services: ComputerV2Service[] = [];
 afterEach(() => { for (const s of services.splice(0)) s.stop(); });
@@ -517,7 +517,7 @@ describe("saved scripts in the service", () => {
 });
 
 describe("through the REAL sandboxed worker (the bridge's own lines)", () => {
-  const macOnly = sandboxAvailable() ? test : test.skip;
+  const macOnly = darwinTest;
   macOnly("saved, reset, and still there: the install crosses the process boundary", async () => {
     const helper = { connected: false, generation: 0, tell: () => {} } as unknown as HelperClient;
     const policy = { clearSession: () => {}, persistentlyAllowed: () => false, authorize: async () => {} } as unknown as ComputerPolicy;
@@ -534,7 +534,7 @@ describe("through the REAL sandboxed worker (the bridge's own lines)", () => {
 });
 
 describe("through the REAL sandboxed worker: a replaced toString can't plant code that runs at every fresh worker", () => {
-  const macOnly = sandboxAvailable() ? test : test.skip;
+  const macOnly = darwinTest;
   macOnly("a toString that returns a stalling expression: the saved function is the real one, and resets keep working", async () => {
     const helper = { connected: false, generation: 0, tell: () => {} } as unknown as HelperClient;
     const policy = { clearSession: () => {}, persistentlyAllowed: () => false, authorize: async () => {} } as unknown as ComputerPolicy;

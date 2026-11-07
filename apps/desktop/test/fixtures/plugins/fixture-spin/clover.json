@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "id": "fixture-spin",
+  "name": "Fixture spin",
+  "description": "A third-party surface for the app's tests that hangs its layer on a click: the app stops that layer's process and never restarts into safe mode.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "app.surface", "id": "spin", "component": "Spin", "window": { "type": "window" } }]
+  }
+}

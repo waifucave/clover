@@ -1,7 +1,8 @@
 // FakeLeaseAuthority: the waifucave handshake's lease, in memory, on a shared fake clock. Each device gets a Lease
 // over it, with its own clock offset (`lease(device, { offsetMs })`), so a device's wall clock can be wrong; `cutOff`
 // makes the handshake unreachable from one device, as a main that loses the internet would see. Without an account
-// (`account: false`) there is no handshake to ask, and only the user's own takeover (`byUser`) acquires.
+// (`account: false`) the lease is the account-less devices' group's record at the handshake (item 85), which acts the
+// same; `byUser` marks the user's own takeover.
 import type { LeaseView } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
@@ -68,7 +69,6 @@ export class FakeLeaseAuthority {
 
   /** @internal */
   acquire(device: string, byUser = false): void {
-    if (!this.#account && !byUser) throw new ContractError("refused", "with no account, taking over is the user's own action");
     if (this.#cutOff.has(device)) throw new ContractError("offline", "the handshake can't be reached");
     const now = this.#clock.now();
     const live = this.#holder !== null && this.#expiresAt !== null && now < this.#expiresAt;

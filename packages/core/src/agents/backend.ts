@@ -7,19 +7,32 @@
 //   a requirement naming the publisher's team, where the quirks name one.
 // * `start` launches one contained process per delegation in the root folder (process/launch.ts), hands it the
 //   bridge as its one stdio MCP server, and opens the ACP session (acp/session.ts). At read-only, an agent that acts
-//   without asking starts in its read-only mode (`readOnlyMode`), or `start` refuses it.
-// * Its own sandbox comes in K-M2 (plan §4 K): `detect` reports `sandboxed: false` until then, and the agent manager
-//   refuses to start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK.
+//   without asking starts in its read-only mode (`readOnlyMode`), or `start` refuses it; the manager switches a
+//   running one at its next turn.
+// * Its own sandbox (sandbox/admission.ts): `detect` reports `sandboxed: true` only where the backend's sandbox is
+//   admitted for this OS and version, and `start` then writes the fenced set in the backend's own format into the
+//   session's setup folder. Every other agent, and one outside its tested versions, starts only after the user's OK
+//   (sandbox/oks.ts, asked by the manager).
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Os } from "@waifucave/clover-protocol";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { UserSelections } from "./acp/selections";
 import { AcpAgentSession, type WireTap } from "./acp/session";
-import type { StdioMcpServer } from "./acp/types";
-import { buildAgentEnv, launchContained } from "./process/launch";
+import { ADMISSIONS, admissionFor, type SandboxAdmission } from "./sandbox/admission";
+import type { PluginParts } from "./placement";
+import type { StdioMcpServer } from "@waifucave/clover-agent-sdk/acp";
+import { AgentJob } from "../platform/win-job";
+import { programHash } from "./sandbox/oks";
+import { buildAgentEnv, launchContained, spawnPlan, type AgentJobLike } from "./process/launch";
+import { versionSatisfies } from "./version";
+
+export { versionSatisfies } from "./version";
 import type { ProcessTableReader } from "./process/table";
 
 /** How a backend's program is run: `program` resolved on PATH, `prefixArgs` before both the version arguments and
@@ -33,6 +46,10 @@ export interface BackendCommand {
 export interface AcpBackendOptions {
   id: string;
   pluginId: string;
+  /** Clover's own bundled `clover/agent-<id>` entry (what the core grants by id applies). */
+  bundled?: boolean;
+  /** Its `agentBackends` entry's name, for Settings. */
+  name?: string;
   quirks: AgentQuirks;
   clock: Clock;
   /** Overrides the quirks' command (an `agentBackends` entry's `command` and `args`). */
@@ -46,10 +63,19 @@ export interface AcpBackendOptions {
   table?: ProcessTableReader;
   versionTimeoutMs?: number;
   startTimeoutMs?: number;
+  /** Which sandboxes hold the fence (S8); the built-in table by default. */
+  admissions?: Parameters<typeof admissionFor>[0];
+  /** Where a session's sandbox files go: a folder inside the fenced run folder (`<home>/run/agents/<session>`). */
+  setupDir?: (sessionId: string) => string;
+  /** Places plugins' skills, agent definitions and hooks where this backend reads its own (Claude Code), returning the
+   *  `_meta` that points the agent at them. */
+  place?: (parts: PluginParts, ctx: { dir: string }) => { meta: Record<string, unknown> };
   /** The record of the user's own selections where the agent saves a session's choice as theirs (review 10); one per
    *  backend instance in memory by default. */
   selections?: UserSelections;
-  /** The agent's read-only mode, for an agent that acts without asking (`READ_ONLY_MODES`). */
+  /** Makes the Windows job object for one agent; lane C's `AgentJob.create` by default. */
+  makeJob?: () => AgentJobLike | null;
+  /** The agent's read-only mode, for an agent that acts without asking (its quirks file's `readOnlyMode`). */
   readOnlyMode?: { option: string; values: readonly string[] };
 }
 
@@ -57,6 +83,11 @@ export interface AcpBackendOptions {
 export interface AcpStartSpec extends AgentStartSpec {
   /** The session runs at read-only: an agent that acts without asking must start in its read-only mode. */
   readOnly?: boolean;
+  /** The program the manager admitted (and the user OK'd, with its file's hash): `start` refuses another. */
+  admitted?: { path: string; version?: string; sha256?: string };
+  /** For a backend that runs inside the daemon (`inProcess`): the session's bridge as an in-process MCP server, which it
+   *  serves in place of the stdio `bridge` (there is no process to bind a token to). */
+  inProcessBridge?: McpSdkServerConfigWithInstance;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -64,7 +95,14 @@ export interface AcpStartSpec extends AgentStartSpec {
 export interface AgentWire {
   tap?: WireTap;
   stderr?: (chunk: Uint8Array) => void;
-  launched?: (pid: number) => void;
+  /** `contains`: on Windows, the agent's job, which the bridge's caller check reads instead of the process tree. */
+  launched?: (pid: number, contains?: (pid: number) => boolean) => void;
+  /** The agent's process exited, for whatever reason (its pid). */
+  exited?: (pid: number) => void;
+  /** Where its sandbox files go: inside the fenced run folder, so no bot or agent can rewrite them. */
+  setupDir?: string;
+  /** The plugins' skills, agent definitions and hooks in this session's scope. */
+  parts?: PluginParts;
 }
 
 export function currentOs(): Os {
@@ -74,6 +112,8 @@ export function currentOs(): Os {
 export class AcpAgentBackend implements AgentBackend {
   readonly id: string;
   readonly pluginId: string;
+  readonly bundled: boolean;
+  readonly name: string | undefined;
   readonly quirks: AgentQuirks;
   readonly #opts: AcpBackendOptions;
   readonly #selections: UserSelections;
@@ -81,6 +121,8 @@ export class AcpAgentBackend implements AgentBackend {
   constructor(opts: AcpBackendOptions) {
     this.id = opts.id;
     this.pluginId = opts.pluginId;
+    this.bundled = opts.bundled === true;
+    this.name = opts.name;
     this.quirks = opts.quirks;
     this.#opts = opts;
     this.#selections = opts.selections ?? new UserSelections();
@@ -118,30 +160,72 @@ export class AcpAgentBackend implements AgentBackend {
       }
     }
     const versionOk = version !== undefined && versionSatisfies(version, this.quirks.launch.versions);
+    const sandbox = this.admission(version);
     return {
       installed: true, path, ...(version === undefined ? {} : { version }), identityOk, versionOk,
-      sandboxed: false,
-      reason: reason ?? (versionOk ? "its own sandbox is checked from K-M2" : `version ${version ?? "unknown"} is outside the tested range ${this.quirks.launch.versions}`),
+      sandboxed: sandbox.status === "protected",
+      reason: reason ?? (!versionOk ? `version ${version ?? "unknown"} is outside the tested range ${this.quirks.launch.versions}` : sandbox.status === "protected" ? sandbox.evidence : `no sandbox: ${sandbox.reason}`),
     };
+  }
+
+  /** This backend's sandbox on this OS at this version (S8). */
+  admission(version: string | undefined): SandboxAdmission {
+    return admissionFor(this.#opts.admissions ?? ADMISSIONS, this.id, this.#opts.os ?? currentOs(), version);
   }
 
   async start(spec: AcpStartSpec): Promise<AcpAgentSession> {
     const d = await this.detect();
     if (!d.installed || !d.path) throw new ContractError("not_installed", d.reason ?? `${this.id} isn't installed on this computer`);
     if (!d.identityOk) throw new ContractError("refused", d.reason ?? `${d.path} isn't ${this.id}'s program`);
+    // The program Clover admitted, not another one that took its place since (K-M2 review 5).
+    if (spec.admitted) {
+      const a = spec.admitted;
+      if (d.path !== a.path || d.version !== a.version || (a.sha256 !== undefined && (await programHash(d.path)) !== a.sha256)) {
+        throw new ContractError("refused", `${this.id} wasn't started: its program changed after it was checked`);
+      }
+    }
     if (!this.quirks.mcp.transports.includes("stdio")) throw new ContractError("refused", `${this.id} takes no stdio MCP server, so the bridge can't reach it`);
     const readOnly = spec.readOnly === true && this.quirks.marks.includes("unasked-actions");
     if (readOnly && !this.#opts.readOnlyMode) throw new ContractError("refused", `${this.id} acts without asking and has no read-only mode, so it can't start at read-only`);
     const cmd = this.command()!;
     const wire = this.#opts.wire?.(spec.sessionId) ?? {};
+    // The fenced set, in the backend's own format, where its sandbox is admitted.
+    const sandbox = this.admission(d.version);
+    let setup: ReturnType<Extract<SandboxAdmission, { status: "protected" }>["writer"]> = {};
+    if (sandbox.status === "protected") {
+      const dir = wire.setupDir ?? this.#opts.setupDir?.(spec.sessionId);
+      if (!dir) throw new ContractError("refused", `${this.id}'s sandbox needs a setup folder`);
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      setup = sandbox.writer(spec.fence, { root: spec.root, dir });
+      for (const f of setup.files ?? []) writeFileSync(join(dir, f.name), f.content, { mode: 0o600 });
+    }
+    // The plugins' skills, agents and hooks, where this backend reads its own.
+    const parts = wire.parts;
+    let placedMeta: Record<string, unknown> | undefined;
+    if (this.#opts.place && parts && (parts.skills.length + parts.agents.length + parts.hooks.length) > 0) {
+      const dir = wire.setupDir ?? this.#opts.setupDir?.(spec.sessionId);
+      if (dir) {
+        mkdirSync(dir, { recursive: true, mode: 0o700 });
+        placedMeta = this.#opts.place(parts, { dir }).meta;
+      }
+    }
+    const meta = setup.meta || placedMeta ? mergeObjects(setup.meta ?? {}, placedMeta ?? {}) : undefined;
+    // Windows: every agent runs in its own job object (lane C's), or not at all.
+    let job: AgentJobLike | undefined;
+    if ((this.#opts.os ?? currentOs()) === "windows") {
+      job = (this.#opts.makeJob ?? (() => AgentJob.create()))() ?? undefined;
+      if (!job) throw new ContractError("refused", `${this.id} wasn't started: Windows wouldn't make a job object to hold it`);
+    }
     const proc = launchContained({
       command: d.path,
-      args: [...(cmd.prefixArgs ?? []), ...cmd.acpArgs],
+      args: [...(cmd.prefixArgs ?? []), ...cmd.acpArgs, ...(setup.args ?? [])],
       cwd: spec.root,
-      env: this.#env(),
+      env: { ...this.#env(), ...(setup.env ?? {}) },
       ...(wire.stderr ? { onStderr: wire.stderr } : {}),
-    }, this.#opts.table ? { table: this.#opts.table } : {});
-    if (proc.pid) wire.launched?.(proc.pid);
+    }, { ...(this.#opts.table ? { table: this.#opts.table } : {}), ...(job ? { job } : {}) });
+    if (!proc.contained) throw new ContractError("refused", `${this.id} wasn't started: it couldn't be put in its job object`);
+    if (proc.pid) wire.launched?.(proc.pid, proc.contains);
+    void proc.exited.then(() => wire.exited?.(proc.pid));
     return AcpAgentSession.open({
       quirks: this.quirks,
       clock: this.#opts.clock,
@@ -149,16 +233,27 @@ export class AcpAgentBackend implements AgentBackend {
       cwd: spec.root,
       mcpServers: [stdioServerOf(spec.bridge)],
       ...(spec.instructions === undefined ? {} : { instructions: spec.instructions }),
+      ...(meta ? { meta } : {}),
       ...(spec.reattach === undefined ? {} : { reattach: spec.reattach }),
       ...(spec.model === undefined ? {} : { model: spec.model }),
       ...(spec.effort === undefined ? {} : { effort: spec.effort }),
       ...(wire.tap ? { tap: wire.tap } : {}),
       ...(this.#opts.clientInfo ? { clientInfo: this.#opts.clientInfo } : {}),
       selections: { keeper: this.#selections, backend: this.id },
-      ...(readOnly ? { readOnly: this.#opts.readOnlyMode! } : {}),
+      ...(this.#opts.readOnlyMode ? { readOnlyMode: this.#opts.readOnlyMode } : {}),
+      ...(readOnly ? { readOnly: true } : {}),
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }
+}
+
+function mergeObjects(a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) {
+    const cur = out[k];
+    out[k] = v && cur && typeof v === "object" && typeof cur === "object" && !Array.isArray(v) && !Array.isArray(cur) ? mergeObjects(cur as Record<string, unknown>, v as Record<string, unknown>) : v;
+  }
+  return out;
 }
 
 /** The bridge as `session/new` takes it: its token only in `env` (S5 edit 4). */
@@ -179,7 +274,14 @@ export function resolveProgram(program: string, pathVar: string | undefined): st
 
 function runCapture(cmd: string, args: string[], env: Record<string, string>, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    let plan: ReturnType<typeof spawnPlan>;
+    try {
+      plan = spawnPlan(cmd, args);
+    } catch (e) {
+      reject(e);
+      return;
+    }
+    const child = spawn(plan.file, plan.args, { env, stdio: ["ignore", "pipe", "ignore"], windowsHide: true, windowsVerbatimArguments: plan.verbatim });
     let out = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (c: string) => {
@@ -209,31 +311,4 @@ async function signedByTeam(path: string, team: string): Promise<boolean> {
     c.on("close", (code) => resolve(code === 0));
     c.on("error", () => resolve(false));
   });
-}
-
-/** Dotted numeric versions: `2026.10.22-27dcf5f` reads as 2026.10.22. */
-function parts(v: string): number[] {
-  return (/^\d+(?:\.\d+)*/.exec(v.trim())?.[0] ?? "").split(".").filter((x) => x !== "").map(Number);
-}
-
-function cmp(a: number[], b: number[]): number {
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const d = (a[i] ?? 0) - (b[i] ?? 0);
-    if (d !== 0) return d < 0 ? -1 : 1;
-  }
-  return 0;
-}
-
-/** A range of space-separated comparisons (`>=1.4.12 <1.5.0`). */
-export function versionSatisfies(version: string, range: string): boolean {
-  const v = parts(version);
-  if (v.length === 0) return false;
-  for (const term of range.trim().split(/\s+/).filter(Boolean)) {
-    const m = /^(>=|<=|>|<|=)?(.+)$/.exec(term);
-    if (!m) return false;
-    const c = cmp(v, parts(m[2]!));
-    const ok = { ">=": c >= 0, "<=": c <= 0, ">": c > 0, "<": c < 0, "=": c === 0 }[m[1] ?? "="];
-    if (!ok) return false;
-  }
-  return true;
 }

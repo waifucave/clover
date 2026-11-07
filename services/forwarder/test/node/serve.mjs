@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 
 import { createTestHarness } from "wrangler";
 
+import { workerReady } from "../../../shared/testing/worker-ready.mjs";
+
 const config = JSON.parse(process.env.FORWARDER_E2E ?? "{}");
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -34,7 +36,8 @@ let { url } = await server.listen();
 // The Worker builds webhook and socket URLs from HOOKS_ORIGIN, so give it the address it is reachable at.
 await server.update({ root, workers: [worker(url.origin)] });
 ({ url } = await server.listen());
-process.stdout.write(`${JSON.stringify({ url: url.origin })}\n`);
+const origin = await workerReady(url, { label: "forwarder", limitMs: 90_000 });
+process.stdout.write(`${JSON.stringify({ url: origin })}\n`);
 
 const lines = createInterface({ input: process.stdin });
 for await (const line of lines) {

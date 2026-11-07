@@ -8,8 +8,9 @@ import { ConfinedGitReadParser, gitReadParserProfile, type GitReadParserConfigur
 import { DEFAULT_GIT_READ_LIMITS } from "../../../src/cowork/git/read-types";
 
 import { buildGitReadParserFixture, parserFixtureCommand } from "./read-parser-fixture";
+import { onDarwin } from "../../helpers/darwin-only";
 const command = (args: string[], cwd?: string) => parserFixtureCommand(root, args, cwd);
-const enabled = process.platform === "darwin" && !!process.env.CLOVER_GIT_READ_NODE_FIXTURE;
+const enabled = onDarwin && !!process.env.CLOVER_GIT_READ_NODE_FIXTURE;
 let root: string, config: GitReadParserConfiguration, parser: ConfinedGitReadParser;
 const fixture = test.skipIf(!enabled);
 const pkt = (text: string) => Buffer.from((Buffer.byteLength(text) + 4).toString(16).padStart(4, "0") + text);

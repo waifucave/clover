@@ -4,37 +4,36 @@
 // is, judged at the stricter of this computer's level and the call's.
 //
 // Methods served (`peer` role). Those marked * are lane J's additions, requested of lane B for the protocol:
-//   tree.stat, tree.read, tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
+//   tree.stat (+ `noFollow`*, echoed), tree.read (+ `noFollow`*, echoed), tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
 //   tree.grep (+ `ignoreCase`*), tree.mkdir*, tree.readlink*, tree.symlink*, tree.watch*, tree.unwatch*,
-//   tool.run, tool.cancel (+ `session`*)
+//   tool.run, tool.cancel (+ `session`*); every one with the calling computer's fencing token (`fence`, `fencing.ts`)
 // Notifications sent: `tree.changed`* (a watch's changes), `tool_output` (a running call's output, + `session`*).
 //
-// Bulk calls (reads, writes, glob, grep) run at most `BULK_PER_DEVICE` at once per calling computer, with a short
-// queue behind them, so one computer's burst can't fill this one's memory (review minor 5); one write carries at most
-// `TREE_IO_MAX`. A running call is known by its device, session and call id (minor 7).
-import { createHash } from "node:crypto";
+// Bulk calls (reads, writes, glob, grep, and the direct path's transfers) run at most `BULK_PER_DEVICE` at once per
+// calling computer, with a short queue behind them, so one computer's burst can't fill this one's memory or disk
+// (review minor 5, check 2's N3); one write carries at most `TREE_IO_MAX`. A running call is known by its device, session and call id (minor 7).
 import { z } from "zod";
 import {
-  COMPUTERS_METHODS, DEFAULT_LEVEL, Level, SessionId, SignedCardAnswer, TreePath,
+  COMPUTERS_METHODS, FencingToken, Level, SessionId, SignedCardAnswer, TreePath,
   type Caller, type FileStat,
 } from "@waifucave/clover-protocol";
-import {
-  levelDecision, strictestLevel, verifySignedAnswer,
-  type AnswerDevices, type AnswerLedger, type CallCardRenderer,
-} from "../contracts/approval-broker";
+import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import { TREE_IO_MAX, type HolderCall, type LocalHolder } from "./holder";
 import type { TreeChangedNotice } from "./remote";
+import { judgePeer, type PeerReviewer } from "./judge";
+import { checkActFence, type ActFence } from "./fencing";
 
 const M = COMPUTERS_METHODS;
-const Via = { session: SessionId.optional(), level: Level.optional(), answer: SignedCardAnswer.optional() };
+const Via = { session: SessionId.optional(), level: Level.optional(), answer: SignedCardAnswer.optional(), fence: FencingToken.optional() };
+const Fence = { fence: FencingToken.optional() };
 
 /** What each served method takes: lane B's params, with lane J's additions marked in the header. */
 export const TREE_PEER_PARAMS = {
-  "tree.stat": M.treeStat.params,
-  "tree.read": M.treeRead.params,
+  "tree.stat": M.treeStat.params.extend({ noFollow: z.boolean().optional() }),
+  "tree.read": M.treeRead.params.extend({ noFollow: z.boolean().optional() }),
   "tree.write": M.treeWrite.params.extend({ executable: z.boolean().optional() }),
   "tree.list": M.treeList.params,
   "tree.remove": M.treeRemove.params,
@@ -45,9 +44,9 @@ export const TREE_PEER_PARAMS = {
   "tree.readlink": z.object({ ...Via, path: TreePath }),
   "tree.symlink": z.object({ ...Via, path: TreePath, target: z.string().min(1).max(4096) }),
   "tree.watch": z.object({ ...Via, path: TreePath }),
-  "tree.unwatch": z.object({ watchId: z.string().min(1).max(128) }),
-  "tool.run": M.toolRun.params,
-  "tool.cancel": M.toolCancel.params.extend({ session: SessionId.optional() }),
+  "tree.unwatch": z.object({ watchId: z.string().min(1).max(128), ...Fence }),
+  "tool.run": M.toolRun.params.extend(Fence),
+  "tool.cancel": M.toolCancel.params.extend({ session: SessionId.optional(), ...Fence }),
 } as const;
 
 /** Bulk calls one computer runs here at once, and how many more may wait. */
@@ -85,11 +84,10 @@ export const BashInput = z.object({
   timeoutMs: z.number().int().positive().max(24 * 3600 * 1000).optional(),
 }).passthrough();
 
-const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
-const NO_DEVICES: AnswerDevices = { get: () => undefined, verifyAnswer: async () => false };
-const NEVER: AnswerLedger = { claim: () => false };
 
 export interface TreeServiceOptions {
+  /** This computer's guard for the fencing token on every call asked of it (`fencing.ts`). */
+  fence?: ActFence;
   transport: LinkTransport;
   holder: LocalHolder;
   clock: Pick<Clock, "now">;
@@ -99,6 +97,12 @@ export interface TreeServiceOptions {
   level?: () => Level;
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   tools?: ToolExecutor;
+  /** The per-computer bulk slots, shared with the direct path's transfers (`transfer.ts`). */
+  bulk?: BulkSlots;
+  /** Another computer's MCP call on this computer's host (`tool.run` with an `mcp__` tool; `McpRouter.serveHere`). */
+  mcp?: (call: { tool: string; input: unknown; as: Caller; session: string; callId: string; signal: AbortSignal }) => Promise<{ output: unknown; isError: boolean }>;
+  /** This computer's reviewer for a peer's command at `ask-risky` (R1). */
+  reviewer?: PeerReviewer;
 }
 
 interface Running {
@@ -142,19 +146,22 @@ export class TreeService {
   readonly #o: TreeServiceOptions;
   readonly #off: Unsubscribe[] = [];
   readonly #running = new Map<string, Running>();
-  readonly #bulk = new BulkSlots();
+  readonly #bulk: BulkSlots;
   /** Watches served, by id, with the device that holds each. */
   readonly #watches = new Map<string, { device: string; stop: Unsubscribe }>();
   #watchSeq = 0;
 
   constructor(opts: TreeServiceOptions) {
     this.#o = opts;
+    this.#bulk = opts.bulk ?? new BulkSlots();
     const t = opts.transport;
     const serve = <K extends keyof typeof TREE_PEER_PARAMS>(method: K, fn: (p: z.infer<(typeof TREE_PEER_PARAMS)[K]>, call: HolderCall, from: string) => unknown) => {
       this.#off.push(t.handle(method, async (raw, from) => {
         if (!opts.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
         const parsed = TREE_PEER_PARAMS[method].safeParse(raw);
         if (!parsed.success) throw new ContractError("invalid", `${method}: ${parsed.error.issues[0]?.message ?? "bad params"}`);
+        // The calling computer's fencing token, against this computer's own lease (`fencing.ts`).
+        checkActFence(opts.fence, (parsed.data as { fence?: unknown }).fence, method);
         const p = parsed.data as { session?: string; level?: Level; answer?: z.infer<typeof SignedCardAnswer> };
         // The receiver stamps who the call is for (review N2): a peer, for the session it names, never the user.
         const as: Caller = { kind: "peer", device: from, ...(p.session === undefined ? {} : { sessionId: p.session }) };
@@ -164,10 +171,16 @@ export class TreeService {
       }));
     };
     const h = opts.holder;
-    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, call) }));
-    serve("tree.read", (p, call) => h.read(p.path, {
-      ...call, ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
-      ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),
+    // A `noFollow` answer says so (`noFollow: true`): the calling computer refuses one that doesn't, from a computer
+    // whose build dropped the flag and followed links (#225's review).
+    const echo = (p: { noFollow?: boolean | undefined }) => (p.noFollow ? { noFollow: true as const } : {});
+    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, { ...call, ...(p.noFollow ? { noFollow: true } : {}) }), ...echo(p) }));
+    serve("tree.read", async (p, call) => ({
+      ...(await h.read(p.path, {
+        ...call, ...(p.noFollow ? { noFollow: true } : {}), ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
+        ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),
+      })),
+      ...echo(p),
     }));
     serve("tree.write", async (p, call) => {
       if (p.data.encoding === "base64" ? p.data.data.length > WRITE_BASE64_MAX : p.data.text.length > TREE_IO_MAX) {
@@ -250,6 +263,7 @@ export class TreeService {
   }
 
   async #run(p: z.infer<(typeof TREE_PEER_PARAMS)["tool.run"]>, call: HolderCall, from: string): Promise<{ output: unknown; isError: boolean }> {
+    if (p.tool.startsWith("mcp__")) return this.#runMcp(p, call, from);
     const tools = this.#o.tools;
     if (!tools) throw new ContractError("refused", "this computer runs no tool calls for others");
     if (p.tool !== "Bash") throw new ContractError("not_installed", `${p.tool} doesn't run on another computer yet`);
@@ -279,19 +293,32 @@ export class TreeService {
     }
   }
 
-  /** A peer's tool call, at the stricter of this computer's level and the call's: allowed, refused, or let through by
-   *  the user's signed answer bound to exactly this call (`tool.run` with its tool and input). */
+  /** An MCP call from another computer: judged as a command (R1), then run on this computer's host. */
+  async #runMcp(p: z.infer<(typeof TREE_PEER_PARAMS)["tool.run"]>, call: HolderCall, from: string): Promise<{ output: unknown; isError: boolean }> {
+    const mcp = this.#o.mcp;
+    if (!mcp) throw new ContractError("not_installed", `${this.#o.holder.name} runs no MCP tools for others`);
+    await this.#judge(p, call);
+    const key = runKey(from, p.session, p.callId);
+    if (this.#running.has(key)) throw new ContractError("conflict", `the call ${p.callId} is already running`);
+    const abort = new AbortController();
+    this.#running.set(key, { device: from, session: p.session, callId: p.callId, abort });
+    try {
+      return await mcp({ tool: p.tool, input: p.input, as: call.as, session: p.session, callId: p.callId, signal: abort.signal });
+    } finally {
+      this.#running.delete(key);
+    }
+  }
+
+  /** A peer's tool call, at the stricter of this computer's level and the call's (`judge.ts`, R1): the reviewer
+   *  passes what isn't risky at `ask-risky`; the rest needs the user's answer bound to `tool.run` with its tool and
+   *  input. */
   async #judge(p: z.infer<(typeof TREE_PEER_PARAMS)["tool.run"]>, call: HolderCall): Promise<void> {
-    const level = strictestLevel([this.#o.level?.() ?? DEFAULT_LEVEL, p.level])!;
-    const d = levelDecision(level, "execute");
-    if (d === "allow") return;
-    if (d === "deny") throw new ContractError("refused", `${this.#o.holder.name} runs no commands for another computer at its level`);
-    if (!call.answer) throw new ContractError("refused", "this command needs the user's answer, signed and bound to it");
-    const a = this.#o.answers ?? { devices: NO_DEVICES, ledger: NEVER, render: () => undefined };
-    const verdict = await verifySignedAnswer(call.answer, {
-      self: this.#o.holder.name, method: "tool.run", params: toolCallBinding(p.tool, p.input), now: this.#o.clock.now(), sha256, ...a,
+    await judgePeer({
+      computer: this.#o.holder.name, ownLevel: this.#o.level?.(), callLevel: p.level, effect: "execute",
+      method: "tool.run", params: toolCallBinding(p.tool, p.input), as: call.as, now: this.#o.clock.now(),
+      ...(call.answer ? { answer: call.answer } : {}), ...(this.#o.reviewer ? { reviewer: this.#o.reviewer } : {}),
+      ...(this.#o.answers ? { answers: this.#o.answers } : {}),
     });
-    if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this command (${verdict})`);
   }
 }
 

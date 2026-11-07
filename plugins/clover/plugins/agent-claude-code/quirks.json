@@ -1,0 +1,86 @@
+{
+  "notes": "Claude Code, through `@agentclientprotocol/claude-agent-acp` 0.100.0 (the Claude Agent SDK underneath). Its fence  goes in `_meta.claudeCode.options` (`settings`, `sandbox`, `disallowedTools`), written once its gates pass. Unmeasured (from docs, `--help` and code, S5 §3): where a row isn't known it takes the cautious value (a reattach by `load` with its replay dropped, MCP names unread, calls a cancel leaves open closed by Clover), it is held as acting without asking (`unasked-actions`) since it loads the user's own approval settings, and no sandbox is admitted, so it asks for the user's OK. The agent suite's live gates measure each row.",
+  "source": "docs and code (S5 §3)",
+  "readOnlyMode": {
+    "option": "mode",
+    "values": [
+      "plan"
+    ]
+  },
+  "quirks": {
+    "capabilities": {
+      "snakeCaseDuplicates": false,
+      "httpMcpUnadvertised": false
+    },
+    "turns": {
+      "refusal": "unknown",
+      "cancelLeavesToolCallsOpen": true,
+      "reportsUsage": true,
+      "quotaErrorsAsText": false
+    },
+    "progress": {
+      "countsChildProcesses": true
+    },
+    "placement": "local",
+    "marks": [
+      "unasked-actions"
+    ],
+    "launch": {
+      "identity": {
+        "versionArgs": [
+          "--version"
+        ],
+        "versionPattern": "^(?:claude-agent-acp\\s+)?v?(\\d+\\.\\d+\\.\\d+)\\s*$"
+      },
+      "envAllow": [],
+      "envSet": {},
+      "versions": ">=0.100.0 <0.200.0"
+    },
+    "mcp": {
+      "transports": [
+        "stdio",
+        "http",
+        "sse"
+      ],
+      "storesPlainText": false,
+      "passesEnvironment": false,
+      "instructionsReachPrompt": "unknown",
+      "systemPromptChannel": "_meta.systemPrompt",
+      "tellsConversationId": false
+    },
+    "sessions": {
+      "load": {
+        "supported": true,
+        "replays": true
+      },
+      "resume": {
+        "supported": true,
+        "replays": true
+      },
+      "replayKeepsToolCallIds": true,
+      "listFiltersHonestly": false,
+      "close": true
+    },
+    "permissions": {
+      "optionKinds": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "neverAsks": [],
+      "mcpNames": null
+    },
+    "config": {
+      "modelOption": "model",
+      "effortOption": null,
+      "effortInModel": false,
+      "choicePersists": false
+    },
+    "auth": {
+      "methods": [],
+      "requiredError": {
+        "code": -32000
+      }
+    }
+  }
+}
