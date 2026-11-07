@@ -236,10 +236,19 @@ export class Companion {
     });
     const router = new SignalRouter();
     let ended = false;
+    // The dial waits for the computer to be on its socket too: what is sent to a member whose socket isn't open waits
+    // in its inbox, which keeps only the newest 16, so an offer followed by many ICE candidates (a restarted computer
+    // still coming up) could lose the offer. Once the computer is online, every signal reaches it live, in order.
+    let online: () => void = () => undefined;
+    const computerOnline = new Promise<void>((resolve) => (online = resolve));
     const opened = new Promise<void>((resolve, reject) => {
       channel.listen((event) => {
         router.feed(event);
-        if (event.type === "open") resolve();
+        if (event.type === "open") {
+          if (event.peerOnline) online();
+          resolve();
+        }
+        if (event.type === "presence" && event.online) online();
         if (event.type === "closed" && event.final) {
           ended = true;
           reject(new PairingError("refused", "this browser's pairing has ended"));
@@ -252,9 +261,18 @@ export class Companion {
     const timeoutMs = options.timeoutMs ?? 20_000;
     try {
       // The handshake may be unreachable: the socket keeps retrying, but this attempt gives up in time.
+      let reached = false;
       await Promise.race([
-        opened,
-        new Promise<never>((_, reject) => setTimeout(() => reject(new LinkError("offline", "the handshake can't be reached")), timeoutMs)),
+        opened.then(() => {
+          reached = true;
+          return computerOnline;
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new LinkError("offline", reached ? `${record.computerName} isn't online` : "the handshake can't be reached")),
+            timeoutMs,
+          ),
+        ),
       ]);
       const link = await dial({ channel, router, rtc: this.options.rtc, peer: record.computerKey, timeoutMs });
       return {
