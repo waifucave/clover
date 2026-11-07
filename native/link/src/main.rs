@@ -346,6 +346,9 @@ impl Sidecar {
             "bound": self.ep.bound_sockets().iter().map(|a| a.to_string()).collect::<Vec<_>>(),
             "congestion": self.congestion,
             "window": self.window,
+            // Per-stream windows (the `open` op's `window`, the `window` op, init's `incomingWindow`): a core that
+            // doesn't see this sends none of them.
+            "streamWindows": true,
         })
     }
 

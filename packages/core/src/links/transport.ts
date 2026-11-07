@@ -996,10 +996,9 @@ class Session {
             kind = "stream";
             stream = this.#acceptStream(ws, msg[1], msg[2] as LinkPriority, msg[3]);
             if (!stream) return;
-            // The window the opener chose, or this side's own for the stream's priority, whichever is smaller; the
-            // wire's full window for a stream that names none (an incoming stream starts small).
-            const asked = typeof msg[4] === "number" && Number.isFinite(msg[4]) ? msg[4] : STREAM_WINDOW;
-            ws.setWindow?.(Math.min(asked, streamWindowFor(msg[2] as LinkPriority) ?? STREAM_WINDOW));
+            // A live stream's window (the opener's, never more than this side's own); every other stream the wire's,
+            // whatever its header says (an incoming stream starts small).
+            ws.setWindow?.(receiveWindowFor(msg[2] as LinkPriority, msg[4]));
             continue;
           }
           this.close(CLOSE_PROTOCOL, "a stream of an unknown kind");
@@ -1116,6 +1115,15 @@ function spliceLast(headArray: Uint8Array, element: Uint8Array): Uint8Array {
  *  writes wait on the link (L-M3); the others keep the wire's. */
 export function streamWindowFor(priority: LinkPriority): number | undefined {
   return priority === "screenshots" ? LIVE_STREAM_WINDOW : undefined;
+}
+
+/** The window an incoming stream gets once its header is read: a header's window counts only on a live stream (the
+ *  `screenshots` priority), and never above this side's own for it; any other stream gets the wire's, whatever its
+ *  header names. */
+export function receiveWindowFor(priority: LinkPriority, asked: unknown): number {
+  const live = streamWindowFor(priority);
+  if (live === undefined) return STREAM_WINDOW;
+  return typeof asked === "number" && Number.isFinite(asked) && asked > 0 ? Math.min(asked, live) : live;
 }
 
 /** A LinkStream on a wire stream: a header frame, then one frame per chunk. */

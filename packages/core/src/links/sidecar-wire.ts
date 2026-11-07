@@ -161,6 +161,7 @@ export class SidecarWire implements WireEndpoint {
   readonly #acceptors = new Map<string, (conn: WireConn) => void>();
   readonly #conns = new Map<number, SidecarConn>();
   readonly #streams = new Map<number, SidecarStream>();
+  #streamWindows = false;
   readonly #dials = new Map<number, { key: string; alpn: string; resolve(c: WireConn): void; reject(e: Error): void }>();
   readonly #asks = new Map<number, { resolve(m: Record<string, unknown>): void; reject(e: Error): void }>();
   readonly #restarted = new Listeners<void>();
@@ -311,6 +312,11 @@ export class SidecarWire implements WireEndpoint {
   // ---- for the conns and streams ----
 
   /** @internal Which process objects made now belong to. */
+  /** Whether this sidecar keeps a window per stream (its `ready` says so). */
+  get streamWindows(): boolean {
+    return this.#streamWindows;
+  }
+
   get gen(): number {
     return this.#gen;
   }
@@ -351,7 +357,7 @@ export class SidecarWire implements WireEndpoint {
   newStream(conn: SidecarConn, priority: number, window = STREAM_WINDOW): SidecarStream {
     const id = this.#nextStream;
     this.#nextStream += 2;
-    const w = clampWindow(window);
+    const w = this.#streamWindows ? clampWindow(window) : STREAM_WINDOW;
     const s = new SidecarStream(this, id, priority, conn, conn.gen, w);
     this.#streams.set(id, s);
     conn.streams.add(s);
@@ -386,6 +392,9 @@ export class SidecarWire implements WireEndpoint {
                 const m = JSON.parse(fromUtf8(f.subarray(1))) as Record<string, unknown>;
                 if (m.ev === "ready") {
                   started = true;
+                  // A sidecar from before per-stream windows doesn't say it has them: then every stream keeps the
+                  // wire's window, and no `window` op is sent (it would answer each with "unknown op").
+                  this.#streamWindows = m.streamWindows === true;
                   resolve(m as { publicKey: string; relay?: string | null });
                 } else if (m.ev === "error") reject(new ContractError("failed", `the link sidecar didn't start: ${String(m.message)}`));
               }
@@ -573,7 +582,7 @@ export class SidecarWire implements WireEndpoint {
           this.#send({ op: "reset", stream: m.stream, code: RESET_CONN_LOST });
           return;
         }
-        const s = new SidecarStream(this, m.stream as number, 0, conn, conn.gen, INCOMING_STREAM_WINDOW);
+        const s = new SidecarStream(this, m.stream as number, 0, conn, conn.gen, this.#streamWindows ? INCOMING_STREAM_WINDOW : STREAM_WINDOW);
         this.#streams.set(s.num, s);
         conn.streams.add(s);
         conn.incoming(s);
@@ -779,6 +788,8 @@ class SidecarStream implements WireStream {
   }
 
   setWindow(bytes: number): void {
+    // A sidecar without per-stream windows keeps the wire's for every stream.
+    if (!this.#wire.streamWindows) return;
     const w = clampWindow(bytes);
     if (w === this.#window || this.#resetCode !== undefined) return;
     this.#window = w;
