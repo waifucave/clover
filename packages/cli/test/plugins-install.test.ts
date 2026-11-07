@@ -188,6 +188,21 @@ describe("the start: local copies first, a back-off, one lock", () => {
     expect(r.gh.asked).toEqual([]);
   });
 
+  test("while an update is watched, the folder .new replaces is kept as .old (the rollback's); an existing .old stays", () => {
+    const s = server([]);
+    write(s.dir, OLD_TREE);
+    write(`${s.dir}.new`, TREE);
+    expect(recoverServerPlugins({ dir: s.dir, manifestSha256: coreManifestSha(TREE), watching: true, log: () => {} })).toEqual({ kind: "recovered", from: ".new" });
+    expect(treeManifestSha256(`${s.dir}.old`)).toBe(coreManifestSha(OLD_TREE));
+    expect(existsSync(`${s.dir}.bad`)).toBe(false);
+    const t = server([]);
+    write(t.dir, OLD_TREE);
+    write(`${t.dir}.new`, TREE);
+    write(`${t.dir}.old`, OLD_TREE.map((f) => ({ ...f, bytes: enc("older") })));
+    recoverServerPlugins({ dir: t.dir, manifestSha256: coreManifestSha(TREE), watching: true, log: () => {} });
+    expect(readFileSync(join(`${t.dir}.old`, "clover", "clover.json"), "utf8")).toBe("older");
+  });
+
   test("while an update is watched, .old (the rollback's copy) is never taken or removed; nothing matching: nothing done", () => {
     const s = server([]);
     write(s.dir, OLD_TREE);

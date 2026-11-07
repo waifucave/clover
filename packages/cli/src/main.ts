@@ -1,4 +1,4 @@
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater, updateWatched } from "./self-update";
+import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, healFromOld, oldBinary, SelfUpdater, superviseTarget, updateWatched } from "./self-update";
 import { daemonBunVersion, ensurePluginBun, serverPluginBun } from "./plugin-bun-install";
 import { ensureServerPlugins, PluginsLock, recoverServerPlugins, serverPluginsDir, stageServerPlugins } from "./plugins-install";
 import { migrateEarlierLayout, parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
@@ -1628,7 +1628,9 @@ async function runDaemonStart(): Promise<void> {
 
 /** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
 async function runSupervise(): Promise<void> {
-  const bin = process.execPath;
+  // The logon task's fallback (a server on Windows) may have started this as `<bin>.old.exe`: each start of the daemon
+  // takes `<bin>` once that is back (self-update.ts's healFromOld), so `bin` is asked again at every start.
+  const binNow = () => superviseTarget(process.execPath);
   let alive = true;
   let stopChild: (() => void) | null = null;
   let wake: (() => void) | null = null;
@@ -1658,14 +1660,14 @@ async function runSupervise(): Promise<void> {
     spawnDaemon(): DaemonRun {
       // macOS: the daemon starts with responsibility disclaimed, so it is its own responsible process and a
       // double fork of anything it starts still names it (the caller check, review B1).
-      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([bin, "daemon", "run"]) : null;
+      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([binNow(), "daemon", "run"]) : null;
       if (disclaimed) {
         childExited = disclaimed.exited;
         const stopIt = () => { try { process.kill(disclaimed.pid, "SIGTERM"); } catch { /* already gone */ } };
         stopChild = stopIt;
         return { exited: disclaimed.exited, stop: stopIt };
       }
-      const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      const child = Bun.spawn([binNow(), "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
       childExited = child.exited;
       const kill = () => { try { child.kill(); } catch { /* already gone */ } };
       stopChild = kill;
@@ -2023,13 +2025,23 @@ if (import.meta.main) {
         reRegister: async (bin) => {
           const base = currentLoginSpec();
           const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
-          return (await loginEnable({ ...base, bin, fallbackBin: `${bin}.old`, ...(winUser ? { winUser } : {}) }, liveLoginOsDeps())).registered;
+          return (await loginEnable({ ...base, bin, fallbackBin: oldBinary(bin), ...(winUser ? { winUser } : {}) }, liveLoginOsDeps())).registered;
         },
       });
       if (migrated.kind === "restart") process.exit(UPDATE_RESTART_EXIT_CODE);
       if (migrated.kind === "failed") console.error(`server: leaving the earlier layout failed, so this daemon doesn't update itself: ${migrated.why}`);
     }
     const sameFile = (a: string, b: string) => { try { return realpathSync(a) === realpathSync(b); } catch { return false; } };
+    // Started as the rollback copy because the binary is missing (Windows: a cut between a swap's two renames, which
+    // the logon task's fallback answered): the binary is put back first, then a restart starts it.
+    if (isServer) {
+      const healed = healFromOld(bootHome, serverBinary(bootHome, bootOs), process.execPath);
+      if (healed.kind === "failed") console.error(`update: putting the binary back failed: ${healed.why}`);
+      if (healed.kind === "finished the swap" || healed.kind === "restored") {
+        console.error(`update: ${serverBinary(bootHome, bootOs)} was missing: ${healed.kind === "restored" ? "restored from this copy" : "the interrupted swap is finished"}; restarting into it`);
+        process.exit(UPDATE_RESTART_EXIT_CODE);
+      }
+    }
     const serverBin = isServer && sameFile(process.execPath, serverBinary(bootHome, bootOs)) ? serverBinary(bootHome, bootOs) : undefined;
     if (beginUpdatedBoot(bootHome, serverBin ?? process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
     // The bundled plugins' local recovery, before anything reads the folder: a folder that isn't this core's

@@ -179,6 +179,13 @@ jobs:
         if: env.WORKSPACES == 'true' && runner.os == 'Linux'
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
+      # A server's install and self-update on Windows (#244): the cli's suite runs on macOS in its own job, so the
+      # durable flushes (FlushFileBuffers needs write access), the swaps, the recovery and the install run here too.
+      - name: CLI · a server's install and update (Windows)
+        if: ${{ !cancelled() && env.DAEMON == 'true' && runner.os == 'Windows' }}
+        working-directory: packages/cli
+        run: bun test test/durable.test.ts test/self-update.test.ts test/plugins-install.test.ts test/server-install.test.ts test/plugin-bun-install.test.ts
+
       - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
         id: daemon-build
         if: ${{ !cancelled() && env.DAEMON == 'true' }}

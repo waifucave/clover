@@ -177,9 +177,10 @@ export async function stageServerPlugins(d: PluginsDeps, staged = `${d.dir}.new`
  * `from` (a staged, flushed folder) takes `dir`'s place; the folder there goes to `aside` first (an earlier `aside`
  * is removed). Each rename is atomic and the parent folder is flushed after them, so a power cut leaves a whole tree
  * at `dir`, or at `aside` and `from`, which the next start's recovery takes back. A failed rename puts `dir` back and
- * throws. `.old` is the aside a self-update keeps for a rollback (`swapPluginsIn(dir, true)`).
+ * throws. `.old` is the aside a self-update keeps for a rollback (`swapPluginsIn(dir, true)`). Once `from` is in place,
+ * a failure to flush the parent folder doesn't undo it: it is returned (swapped, flush failed), else undefined.
  */
-export function swapPluginsIn(dir: string, keepOld: boolean, ops: DurableOps = realOps, from = `${dir}.new`, aside = keepOld ? `${dir}.old` : `${dir}.bad`): void {
+export function swapPluginsIn(dir: string, keepOld: boolean, ops: DurableOps = realOps, from = `${dir}.new`, aside = keepOld ? `${dir}.old` : `${dir}.bad`): string | undefined {
   ops.rm(aside);
   const had = existsSync(dir);
   if (had) ops.rename(dir, aside);
@@ -189,8 +190,14 @@ export function swapPluginsIn(dir: string, keepOld: boolean, ops: DurableOps = r
     if (had) ops.rename(aside, dir);
     throw err;
   }
-  ops.syncDir(dirname(dir));
+  let flushed: string | undefined;
+  try {
+    ops.syncDir(dirname(dir));
+  } catch (err) {
+    flushed = err instanceof Error ? err.message : String(err);
+  }
   if (!keepOld) ops.rm(aside);
+  return flushed;
 }
 
 export interface RecoverDeps {
@@ -215,8 +222,11 @@ export function recoverServerPlugins(d: RecoverDeps): PluginsResult | undefined 
     for (const suffix of d.watching ? ([".new"] as const) : ([".new", ".old"] as const)) {
       const candidate = `${d.dir}${suffix}`;
       if (treeManifestSha256(candidate) !== d.manifestSha256) continue;
-      swapPluginsIn(d.dir, false, d.ops ?? realOps, candidate, `${d.dir}.bad`);
-      d.log(`bundled plugins: ${candidate} measures to this core's manifest and took ${d.dir}'s place`);
+      // While an update is watched, the folder replaced is the old version's: it is kept as `.old` (the rollback's),
+      // unless a `.old` is there already, which stays, and it goes to `.bad`.
+      const keep = d.watching && !existsSync(`${d.dir}.old`);
+      const flushed = swapPluginsIn(d.dir, keep, d.ops ?? realOps, candidate, keep ? `${d.dir}.old` : `${d.dir}.bad`);
+      d.log(`bundled plugins: ${candidate} measures to this core's manifest and took ${d.dir}'s place${flushed === undefined ? "" : ` (but flushing the folder failed: ${flushed})`}`);
       return { kind: "recovered", from: suffix };
     }
     return undefined;
@@ -286,7 +296,8 @@ export async function ensureServerPlugins(d: EnsureDeps): Promise<PluginsResult>
     return { kind: "refused", why: "an update's restart is under way; the folder is left to it" };
   }
   try {
-    swapPluginsIn(d.dir, false, d.ops ?? realOps, staging, `${d.dir}.bad`);
+    const flushed = swapPluginsIn(d.dir, false, d.ops ?? realOps, staging, `${d.dir}.bad`);
+    if (flushed !== undefined) d.log(`bundled plugins: swapped in, but flushing the folder failed: ${flushed}`);
   } catch (err) {
     rmSync(staging, { recursive: true, force: true });
     return failed(`the swap failed: ${err instanceof Error ? err.message : String(err)}`);

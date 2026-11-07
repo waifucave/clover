@@ -29,7 +29,7 @@
 // the third start (two crashes) puts the old binary (and the old plugins) back and restarts into it; that version is
 // then never taken again. On Windows a running binary can't be deleted, so a `.old` that is still in use stays until a later good boot.
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { realOps, syncDir, syncFile, type DurableOps } from "./durable";
 import { PluginsLock, swapPluginsIn, treeManifestSha256 } from "./plugins-install";
@@ -95,6 +95,8 @@ export function updateDir(home: string): string {
 interface BootRecord {
   version: string;
   boots: number;
+  /** The swapped-in binary's SHA-512 (base64), for `healFromOld`. */
+  sha512?: string;
 }
 
 function readJson<T>(path: string): T | undefined {
@@ -144,11 +146,11 @@ export function beginUpdatedBoot(home: string, bin: string, log: (line: string) 
     if (record === undefined || typeof record.version !== "string" || typeof record.boots !== "number") return "normal";
     const boots = record.boots + 1;
     if (boots < ROLLBACK_AT_BOOT) {
-      writeJson(bootFile(home), { version: record.version, boots });
+      writeJson(bootFile(home), { ...record, boots });
       log(`update: start ${boots} of ${record.version}`);
       return "watching";
     }
-    const old = `${bin}.old`;
+    const old = oldBinary(bin);
     if (!existsSync(old)) {
       log(`update: ${record.version} crashed ${boots - 1} times and there is no old binary to go back to`);
       rmSync(bootFile(home), { force: true });
@@ -156,7 +158,8 @@ export function beginUpdatedBoot(home: string, bin: string, log: (line: string) 
     }
     // The version is never taken again: recorded first, so a cut anywhere below still keeps it out.
     writeJson(rolledBackFile(home), [...new Set([...rolledBack(home), record.version])]);
-    replaceBinary(bin, old, `${bin}.bad`, ops);
+    const flushed = replaceBinary(bin, old, badBinary(bin), ops);
+    if (flushed !== undefined) log(`update: the old binary is back, but flushing its folder failed: ${flushed}`);
     // The bundled plugins the old version shipped come back with it (a cut between the two renames leaves
     // `plugins.old`, which the next start's recovery takes, as it measures to the old core's manifest).
     const plugins = pluginsDirOf(bin);
@@ -179,10 +182,12 @@ export function beginUpdatedBoot(home: string, bin: string, log: (line: string) 
  * `from` (a checked, flushed binary) takes `bin`'s place, the binary there kept as `aside`, so that a power cut at any
  * step leaves a whole binary at `bin`. macOS and Linux: `bin` is hard-linked as `aside`, then `from` is renamed over
  * `bin` in one atomic step, and the folder is flushed. Windows can't replace a file a process runs from, so there it
- * is two renames (`bin` to `aside`, `from` to `bin`); a cut between them leaves no `bin`, and the logon task falls
- * back to `<bin>.old` (core's login render: `fallbackBin`). Throws, with `bin` as it was, if the swap fails.
+ * is two renames (`bin` to `aside`, `from` to `bin`); a cut between them leaves no `bin`: the logon task then starts
+ * `oldBinary(bin)` (core's login render, `fallbackBin`), and that start finishes or undoes the swap
+ * (`healFromOld`). Throws, with `bin` as it was, if the swap fails. Once `from` is in place, a failure to flush the
+ * folder doesn't undo it: it is returned (swapped, flush failed), undefined when all is on disk.
  */
-export function replaceBinary(bin: string, from: string, aside: string, ops: DurableOps = realOps): void {
+export function replaceBinary(bin: string, from: string, aside: string, ops: DurableOps = realOps): string | undefined {
   ops.rm(aside);
   if (process.platform === "win32") {
     ops.rename(bin, aside);
@@ -192,7 +197,7 @@ export function replaceBinary(bin: string, from: string, aside: string, ops: Dur
       ops.rename(aside, bin);
       throw err;
     }
-    return;
+    return undefined;
   }
   ops.link(bin, aside);
   ops.syncDir(dirname(bin));
@@ -202,7 +207,65 @@ export function replaceBinary(bin: string, from: string, aside: string, ops: Dur
     ops.rm(aside);
     throw err;
   }
-  ops.syncDir(dirname(bin));
+  try {
+    ops.syncDir(dirname(bin));
+    return undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+export type HealResult = { kind: "not needed" } | { kind: "finished the swap" } | { kind: "restored"; from: string } | { kind: "failed"; why: string };
+
+/**
+ * A server's daemon started as `oldBinary(bin)` while `bin` is missing (Windows: a cut between a swap's two renames,
+ * which the logon task's fallback answered) puts `bin` back before anything else: from `<bin>.new` when it still
+ * hashes to the SHA-512 the swap recorded in `boot.json` (the swap is finished; its starts are watched as usual),
+ * else a durable copy of itself (the swap is undone, and its boot record dropped). The caller then exits with the
+ * restart code; `supervise` starts `bin` (`superviseTarget`). Never throws.
+ */
+export function healFromOld(home: string, bin: string, execPath: string, ops: DurableOps = realOps): HealResult {
+  try {
+    const same = (a: string, b: string) => { try { return realpathSync(a) === realpathSync(b); } catch { return false; } };
+    if (existsSync(bin) || !same(execPath, oldBinary(bin))) return { kind: "not needed" };
+    const record = readJson<BootRecord>(bootFile(home));
+    const staged = `${bin}.new`;
+    if (record?.sha512 !== undefined && existsSync(staged) && createHash("sha512").update(readFileSync(staged)).digest("base64") === record.sha512) {
+      ops.rename(staged, bin);
+      ops.syncDir(dirname(bin));
+      return { kind: "finished the swap" };
+    }
+    const tmp = `${bin}.heal`;
+    rmSync(tmp, { force: true });
+    writeFileSync(tmp, readFileSync(execPath), { mode: 0o755 });
+    ops.syncFile(tmp);
+    ops.rename(tmp, bin);
+    ops.syncDir(dirname(bin));
+    rmSync(bootFile(home), { force: true });
+    return { kind: "restored", from: execPath };
+  } catch (err) {
+    return { kind: "failed", why: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** The binary `supervise` starts the daemon from: its own, unless it is a server's `oldBinary(bin)` (the logon task's
+ *  fallback) and `bin` is back beside it, which it then prefers. */
+export function superviseTarget(execPath: string, exists: (p: string) => boolean = existsSync): string {
+  const m = /^(.*)\.old\.exe$/i.exec(execPath) ?? /^(.*)\.old$/.exec(execPath);
+  if (m === null) return execPath;
+  const bin = execPath.toLowerCase().endsWith(".old.exe") ? `${m[1]}.exe` : m[1]!;
+  return basename(dirname(bin)) === "daemon" && /^clover-core(\.exe)?$/i.test(basename(bin)) && exists(bin) ? bin : execPath;
+}
+
+/** The binary a swap sets aside for a rollback: `<bin>.old`, or on Windows (`.exe`) `<name>.old.exe`, which cmd.exe
+ *  and the logon task's fallback can start (a file ending `.old` it would hand to a file association instead). */
+export function oldBinary(bin: string): string {
+  return bin.endsWith(".exe") ? `${bin.slice(0, -4)}.old.exe` : `${bin}.old`;
+}
+
+/** The binary a rollback sets aside: `<bin>.bad`, or `<name>.bad.exe` on Windows. */
+export function badBinary(bin: string): string {
+  return bin.endsWith(".exe") ? `${bin.slice(0, -4)}.bad.exe` : `${bin}.bad`;
 }
 
 /** A server's bundled plugins folder for its binary `bin` (`<home>/bin/daemon/clover-core` → `<home>/bin/plugins`), or
@@ -238,20 +301,20 @@ export function bootWasGood(home: string, bin: string): void {
 
 /** `.old`, `.bad` and the `.old-<time>` copies moved aside, beside `bin`. */
 function retiredBinaries(bin: string): string[] {
-  const dir = dirname(bin), base = basename(bin);
+  const dir = dirname(bin), old = basename(oldBinary(bin)), bad = basename(badBinary(bin));
   let names: string[] = [];
   try {
     names = readdirSync(dir);
   } catch {
     return [];
   }
-  return names.filter((n) => n === `${base}.old` || n === `${base}.bad` || n.startsWith(`${base}.old-`)).map((n) => join(dir, n));
+  return names.filter((n) => n === old || n === bad || n.startsWith(`${old}-`)).map((n) => join(dir, n));
 }
 
 /** Clears the way for `.old`: removed, or (Windows, where a running supervisor holds it) moved aside to be removed at
  *  a later good boot. False when neither works. */
 function retireOld(bin: string): boolean {
-  const old = `${bin}.old`;
+  const old = oldBinary(bin);
   try {
     rmSync(old, { force: true });
     return true;
@@ -592,7 +655,7 @@ export class SelfUpdater {
 
   async #swap(): Promise<void> {
     const feed = this.#found;
-    const bin = this.d.bin, staged = `${bin}.new`, old = `${bin}.old`;
+    const bin = this.d.bin, staged = `${bin}.new`, old = oldBinary(bin);
     try {
       if (!this.#ready || feed === undefined || !existsSync(staged)) throw new Error("no checked update to install");
       // `.new` waited, maybe for hours: it is the checked binary only if it still hashes to the signed SHA-512.
@@ -610,15 +673,17 @@ export class SelfUpdater {
       if (!retireOld(bin)) throw new Error(`${old} is still in use and can't be moved aside`);
       // The boot count first: a kill between here and the restart still has the new version's starts watched (and a
       // stray count with no `.old` behind it clears itself at the next start).
-      writeJson(bootFile(this.d.home), { version: feed.version, boots: 0 });
+      writeJson(bootFile(this.d.home), { version: feed.version, boots: 0, sha512: feed.sha512 });
       const ops = this.d.ops ?? realOps;
       // A power cut at any step leaves a whole binary at `bin` (replaceBinary).
-      replaceBinary(bin, staged, old, ops);
+      const flushed = replaceBinary(bin, staged, old, ops);
+      if (flushed !== undefined) this.d.log(`update: ${feed.version} is swapped in, but flushing its folder failed: ${flushed}`);
       if (plugins !== undefined) {
         try {
           // The old folder stays as `.old` until a good boot (a rollback puts it back). A cut between its two renames
           // leaves `plugins.new`, which the next start's recovery takes, as it measures to the new core's manifest.
-          swapPluginsIn(plugins.dir, true, ops);
+          const pluginsFlushed = swapPluginsIn(plugins.dir, true, ops);
+          if (pluginsFlushed !== undefined) this.d.log(`update: the bundled plugins are swapped in, but flushing their folder failed: ${pluginsFlushed}`);
         } catch (err) {
           // The binary goes back too: a version never runs beside another's plugins.
           replaceBinary(bin, old, staged, ops);

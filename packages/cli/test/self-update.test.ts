@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
 import { UpdateGate, UPDATE_RESTART_EXIT_CODE } from "@waifucave/clover-core";
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, isNewer, MAX_FEED_BYTES, pluginsDirOf, readCapped, rolledBack, runBundledManifest, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
+import { badBinary, beginUpdatedBoot, replaceBinary, bootWasGood, coreTargetOf, healFromOld, isNewer, MAX_FEED_BYTES, oldBinary, pluginsDirOf, superviseTarget, readCapped, rolledBack, runBundledManifest, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
 import { recoverServerPlugins, treeManifestSha256 } from "../src/plugins-install";
 import { realOps, type DurableOps } from "../src/durable";
 
@@ -496,5 +496,75 @@ describe("a server's daemon updating itself", () => {
     expect(s.did).toContain("drained");
     expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
     expect(s.lines.at(-1)).toContain("the bundled plugins were fetched again");
+  });
+
+  test("Windows names: the rollback copies end in .exe, so cmd.exe and the logon task can start them", () => {
+    expect(oldBinary("C:\\h\\bin\\daemon\\clover-core.exe")).toBe("C:\\h\\bin\\daemon\\clover-core.old.exe");
+    expect(badBinary("C:\\h\\bin\\daemon\\clover-core.exe")).toBe("C:\\h\\bin\\daemon\\clover-core.bad.exe");
+    expect(oldBinary("/h/bin/daemon/clover-core")).toBe("/h/bin/daemon/clover-core.old");
+  });
+
+  test("supervise started as the .old copy takes the binary once it is back, and only a server's", () => {
+    const have = (set: string[]) => (p: string) => set.includes(p);
+    expect(superviseTarget("/h/bin/daemon/clover-core.old", have(["/h/bin/daemon/clover-core"]))).toBe("/h/bin/daemon/clover-core");
+    expect(superviseTarget("/h/bin/daemon/clover-core.old", have([]))).toBe("/h/bin/daemon/clover-core.old");
+    expect(superviseTarget("C:/h/bin/daemon/clover-core.old.exe", have(["C:/h/bin/daemon/clover-core.exe"]))).toBe("C:/h/bin/daemon/clover-core.exe");
+    expect(superviseTarget("/h/bin/daemon/clover-core", have([]))).toBe("/h/bin/daemon/clover-core");
+    expect(superviseTarget("/elsewhere/x.old", have(["/elsewhere/x"]))).toBe("/elsewhere/x.old");
+  });
+
+  posix("a daemon started as .old with the binary missing finishes the swap from .new when it hashes to the recorded SHA-512", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    await s.updater.check();
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    // A cut between Windows' two renames: the binary is gone, the new one still `.new`.
+    const { renameSync } = await import("node:fs");
+    renameSync(s.bin, `${s.bin}.new`);
+    expect(healFromOld(s.home, s.bin, oldBinary(s.bin))).toEqual({ kind: "finished the swap" });
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.3.0"));
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+  });
+
+  posix("... and else copies itself back durably and drops the boot record; with the binary there, nothing to do", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    await s.updater.check();
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    expect(healFromOld(s.home, s.bin, oldBinary(s.bin))).toEqual({ kind: "not needed" });
+    rmSync(s.bin);
+    writeFileSync(`${s.bin}.new`, "not the checked binary");
+    expect(healFromOld(s.home, s.bin, oldBinary(s.bin))).toEqual({ kind: "restored", from: oldBinary(s.bin) });
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("normal");
+    // A daemon that isn't the .old copy never heals anything.
+    rmSync(s.bin);
+    expect(healFromOld(s.home, s.bin, join(s.home, "elsewhere"))).toEqual({ kind: "not needed" });
+  });
+
+  posix("a folder flush that fails after the rename is reported as swapped, never undone", async () => {
+    let syncs = 0;
+    const flaky: DurableOps = { ...realOps, syncDir: (p) => { syncs++; if (syncs === 2) throw new Error("injected: flush failed"); realOps.syncDir(p); } };
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], ops: flaky });
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.3.0"));
+    expect(s.lines.some((l) => l.includes("is swapped in, but flushing its folder failed: injected: flush failed"))).toBe(true);
+  });
+
+  test("replaceBinary on this OS (links on macOS and Linux, renames on Windows): the new one in place, the old one aside, a failure undone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-replace-"));
+    const bin = join(dir, process.platform === "win32" ? "clover-core.exe" : "clover-core");
+    writeFileSync(bin, "old");
+    writeFileSync(`${bin}.new`, "new");
+    expect(replaceBinary(bin, `${bin}.new`, oldBinary(bin))).toBeUndefined();
+    expect(readFileSync(bin, "utf8")).toBe("new");
+    expect(readFileSync(oldBinary(bin), "utf8")).toBe("old");
+    expect(existsSync(`${bin}.new`)).toBe(false);
+    const refusing: DurableOps = { ...realOps, rename: (a, b) => { if (a.endsWith(".missing")) throw new Error("injected"); realOps.rename(a, b); } };
+    expect(() => replaceBinary(bin, `${bin}.missing`, oldBinary(bin), refusing)).toThrow("injected");
+    expect(readFileSync(bin, "utf8")).toBe("new");
   });
 });

@@ -170,7 +170,7 @@ describe("clover-core server install and uninstall", () => {
     const s = setup("win32");
     expect(await serverInstall(s.deps, "latest")).toBe(0);
     const bin = serverBinary(s.home, "win32");
-    expect(s.enabled.map((e) => e.fallbackBin)).toEqual([`${bin}.old`]);
+    expect(s.enabled.map((e) => e.fallbackBin)).toEqual([bin.replace(/\.exe$/, ".old.exe")]);
     const posix = setup("linux");
     await serverInstall(posix.deps, "latest");
     expect(posix.enabled[0]!.fallbackBin).toBeUndefined();
@@ -224,5 +224,16 @@ describe("one step from the earlier layout", () => {
     writeFileSync(elsewhere, "x");
     expect(await migrateEarlierLayout({ home: e.home, os: "linux", execPath: elsewhere, reRegister: async () => true, log: () => {} })).toEqual({ kind: "not needed" });
     expect(existsSync(serverBinary(e.home, "linux"))).toBe(false);
+  });
+
+  test("Windows: a folder the logon task can't name safely is refused before anything is copied or marked", async () => {
+    const s = setup("win32");
+    const spec = { ...s.deps.spec, home: join(s.home, "odd%PATH%"), homedir: join(s.home, "profile") };
+    const deps = { ...s.deps, spec };
+    expect(await serverInstall(deps, "latest")).toBe(1);
+    expect(s.lines.at(-1)).toContain("holds a %");
+    expect(existsSync(serverBinary(spec.home, "win32"))).toBe(false);
+    expect(readInstallMarker(spec.home)).toBeUndefined();
+    expect(s.plugin).toEqual([]);
   });
 });

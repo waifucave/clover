@@ -16,9 +16,11 @@
 // and plugin Bun beside it) has those removed at install and uninstall. On Windows the binary running the uninstall can't delete itself, and says so.
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import type { InstallChannel, InstallMarker, LoginOsDeps, LoginSpec, Runner } from "@waifucave/clover-core";
+import { schtasksFallbackProblem, type InstallChannel, type InstallMarker, type LoginOsDeps, type LoginSpec, type Runner } from "@waifucave/clover-core";
+import { homedir } from "node:os";
 import { syncDir, syncFile } from "./durable";
 import { serverPluginBun, type PluginBunResult } from "./plugin-bun-install";
+import { badBinary, oldBinary } from "./self-update";
 import { serverPluginsDir, type PluginsResult } from "./plugins-install";
 
 export const SERVER_USAGE = "usage: clover-core server install [--channel latest|beta] | server uninstall";
@@ -94,6 +96,14 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
     return 1;
   }
   const bin = serverBinary(spec.home, spec.os);
+  // Windows: the logon task's fallback must be writable for this path, decided before anything is copied or marked.
+  if (spec.os === "win32") {
+    const problem = schtasksFallbackProblem(bin, oldBinary(bin), spec.homedir ?? homedir());
+    if (problem !== undefined) {
+      d.log(`server install: the logon task can't be written: ${problem}; nothing was installed`);
+      return 1;
+    }
+  }
   const earlier = earlierLayoutFiles(spec.home, spec.os);
   if (!same(spec.bin, bin)) {
     mkdirSync(dirname(bin), { recursive: true });
@@ -105,7 +115,7 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
   }
   // Windows: the logon task falls back to `.old` when the binary is missing or won't start (self-update.ts's
   // replaceBinary: two renames there).
-  const served: LoginSpec = { ...spec, bin, ...(spec.os === "win32" ? { fallbackBin: `${bin}.old` } : {}) };
+  const served: LoginSpec = { ...spec, bin, ...(spec.os === "win32" ? { fallbackBin: oldBinary(bin) } : {}) };
   // Plain Bun for plugins beside it (`pluginBun()` fails closed without it): from the release, checked as the daemon's
   // own update is. A server that can't have it isn't installed.
   const bun = await d.pluginBun(serverPluginBun(spec.home, spec.os), channel);
@@ -162,7 +172,7 @@ export async function serverUninstall(d: ServerDeps): Promise<number> {
   let kept: string | undefined;
   const bun = serverPluginBun(spec.home, spec.os);
   const plugins = serverPluginsDir(spec.home);
-  for (const f of [`${bin}.new`, `${bin}.old`, `${bin}.bad`, bin, `${bun}.new`, `${bun}.old`, `${bun}.swap`, bun, ...earlierLayoutFiles(spec.home, spec.os)]) {
+  for (const f of [`${bin}.new`, oldBinary(bin), badBinary(bin), `${bin}.heal`, bin, `${bun}.new`, `${bun}.old`, `${bun}.swap`, bun, ...earlierLayoutFiles(spec.home, spec.os)]) {
     try {
       rmSync(f, { force: true });
     } catch {

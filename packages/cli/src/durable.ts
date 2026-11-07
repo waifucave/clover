@@ -12,33 +12,59 @@ import { closeSync, fsyncSync, linkSync, openSync, renameSync, rmSync, constants
 /** F_FULLFSYNC (<sys/fcntl.h>). */
 const F_FULLFSYNC = 51;
 
-let fullFsync: ((fd: number) => number) | null | undefined;
+/** The errno values for which F_FULLFSYNC is "not supported here" (<sys/errno.h> on macOS): only these fall back to
+ *  a plain fsync; any other failure (EIO, a dying disk) throws. */
+export const FULLFSYNC_UNSUPPORTED = new Set([45 /* ENOTSUP */, 25 /* ENOTTY */, 22 /* EINVAL */]);
 
-/** macOS's fcntl(fd, F_FULLFSYNC), or null where it can't be had (another OS, or no bun:ffi). */
-function fullFsyncFn(): ((fd: number) => number) | null {
+/** fcntl(fd, F_FULLFSYNC), and the errno it left (`__error()`). */
+type FullFsync = (fd: number) => { result: number; errno: number };
+
+let fullFsync: FullFsync | null | undefined;
+
+/** macOS's fcntl(fd, F_FULLFSYNC), or null where it can't be had (another OS; on macOS, a bun:ffi that won't load,
+ *  which is said once). */
+function fullFsyncFn(log: (line: string) => void = (l) => console.error(l)): FullFsync | null {
   if (fullFsync !== undefined) return fullFsync;
   fullFsync = null;
   if (process.platform !== "darwin") return null;
   try {
     // fcntl is variadic, but F_FULLFSYNC takes no third argument: the two fixed ones go in registers either way.
-    const { dlopen, FFIType } = require("bun:ffi") as typeof import("bun:ffi");
-    const lib = dlopen("/usr/lib/libSystem.B.dylib", { fcntl: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 } });
-    fullFsync = (fd) => lib.symbols.fcntl(fd, F_FULLFSYNC) as number;
-  } catch {
+    const { dlopen, FFIType, read } = require("bun:ffi") as typeof import("bun:ffi");
+    const lib = dlopen("/usr/lib/libSystem.B.dylib", {
+      fcntl: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+      __error: { args: [], returns: FFIType.ptr },
+    });
+    fullFsync = (fd) => {
+      const result = lib.symbols.fcntl(fd, F_FULLFSYNC) as number;
+      const at = lib.symbols.__error();
+      return { result, errno: result === 0 || at === null ? 0 : read.i32(at, 0) };
+    };
+  } catch (err) {
+    log(`durable: F_FULLFSYNC can't be had (bun:ffi: ${err instanceof Error ? err.message : String(err)}); flushing with fsync, which reaches the drive but not past its cache`);
     fullFsync = null;
   }
   return fullFsync;
 }
 
-function flush(fd: number): void {
-  const full = fullFsyncFn();
-  // F_FULLFSYNC can be refused (some file systems); a plain fsync is the floor.
-  if (full === null || full(fd) !== 0) fsyncSync(fd);
+/** Flushes `fd`: F_FULLFSYNC on macOS, falling back to fsync only where it isn't supported; fsync elsewhere. */
+export function flush(fd: number, full: FullFsync | null = fullFsyncFn()): void {
+  if (full === null) {
+    fsyncSync(fd);
+    return;
+  }
+  const r = full(fd);
+  if (r.result === 0) return;
+  if (FULLFSYNC_UNSUPPORTED.has(r.errno)) {
+    fsyncSync(fd);
+    return;
+  }
+  throw new Error(`F_FULLFSYNC failed (errno ${r.errno})`);
 }
 
-/** Flushes the file at `path` to the disk. */
+/** Flushes the file at `path` to the disk. Windows' FlushFileBuffers needs write access, so it is opened for writing
+ *  there (never truncated). */
 export function syncFile(path: string): void {
-  const fd = openSync(path, constants.O_RDONLY);
+  const fd = openSync(path, process.platform === "win32" ? "r+" : constants.O_RDONLY);
   try {
     flush(fd);
   } finally {

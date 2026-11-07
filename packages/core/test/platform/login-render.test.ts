@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, renderAppSystemdUnit, renderAppSchtasksXml,
   renderXdgAutostart, loginLabel, loginUnitPath, parkedPlistPath, appUnitPath, xdgAutostartPath,
-  systemdUnitName, schtasksTaskName, appTaskName, appUnitName, systemdArg, schtasksFallback, type LoginSpec,
+  systemdUnitName, schtasksTaskName, appTaskName, appUnitName, systemdArg, schtasksFallback, schtasksFallbackProblem, type LoginSpec,
 } from "../../src/platform/login/render";
 
 const base = (over: Partial<LoginSpec> = {}): LoginSpec => ({
@@ -138,13 +138,23 @@ describe("login-start paths with control characters (review M4)", () => {
   });
 });
 
-test("a server's logon task (Windows) falls back to <bin>.old through cmd.exe when the binary is missing or won't start", () => {
-  const bin = "C:\\Users\\a\\.clover\\bin\\daemon\\clover-core.exe";
-  const xml = renderSchtasksXml({ os: "win32", bin, home: "C:\\Users\\a\\.clover", logsDir: "C:\\Users\\a\\.clover\\logs", profile: "dist", winUser: "S-1-5-21-1", fallbackBin: `${bin}.old` });
+test("a server's logon task (Windows) starts the binary if it is there, else its .old.exe copy, by existence alone", () => {
+  const user = "C:\\Users\\R&D ^50% !team";
+  const bin = `${user}\\.clover\\bin\\daemon\\clover-core.exe`;
+  const old = `${user}\\.clover\\bin\\daemon\\clover-core.old.exe`;
+  const xml = renderSchtasksXml({ os: "win32", bin, home: `${user}\\.clover`, logsDir: `${user}\\.clover\\logs`, profile: "dist", homedir: user, winUser: "S-1-5-21-1", fallbackBin: old });
   expect(xml).toContain("<Command>%SystemRoot%\\System32\\cmd.exe</Command>");
-  expect(xml).toContain(`<Arguments>/d /s /c &quot;&quot;${bin}&quot; supervise || if exist &quot;${bin}.old&quot; &quot;${bin}.old&quot; supervise&quot;</Arguments>`);
+  // Only fixed file names reach cmd.exe (with /v:off); a crash or exit 78 of the binary never runs the old one.
+  expect(xml).toContain("<Arguments>/d /v:off /s /c &quot;if exist .\\clover-core.exe (.\\clover-core.exe supervise) else if exist .\\clover-core.old.exe (.\\clover-core.old.exe supervise)&quot;</Arguments>");
+  // The folder goes in the task's working directory, under %USERPROFILE%: a user name with & ^ % ! is never parsed.
+  expect(xml).toContain("<WorkingDirectory>%USERPROFILE%\\.clover\\bin\\daemon</WorkingDirectory>");
+  expect(xml).not.toContain("R&amp;D");
   // Without a fallback (the app's daemon, which the app updates), the binary itself, as before.
-  expect(renderSchtasksXml({ os: "win32", bin, home: "h", logsDir: "l", profile: "dist" })).toContain(`<Command>${bin}</Command>`);
-  expect(() => schtasksFallback('C:\\a"b\\clover-core.exe', "x")).toThrow("can't quote");
-  expect(() => schtasksFallback("C:\\%TEMP%\\clover-core.exe", "x")).toThrow("can't quote");
+  expect(renderSchtasksXml({ os: "win32", bin, home: "h", logsDir: "l", profile: "dist" })).toContain(`<Command>${bin.replace(/&/g, "&amp;")}</Command>`);
+  // Outside the profile, a folder with a % can't be written safely: refused, with why.
+  expect(schtasksFallbackProblem("D:\\srv%x%\\daemon\\clover-core.exe", "D:\\srv%x%\\daemon\\clover-core.old.exe", user)).toContain("holds a %");
+  expect(() => schtasksFallback("D:\\srv%x%\\daemon\\clover-core.exe", "D:\\srv%x%\\daemon\\clover-core.old.exe", user)).toThrow("holds a %");
+  expect(schtasksFallbackProblem("D:\\srv & co\\daemon\\clover-core.exe", "D:\\srv & co\\daemon\\clover-core.old.exe", user)).toBeUndefined();
+  expect(schtasksFallback("D:\\srv & co\\daemon\\clover-core.exe", "D:\\srv & co\\daemon\\clover-core.old.exe", user).workingDir).toBe("D:\\srv & co\\daemon");
+  expect(schtasksFallbackProblem(bin, "C:\\elsewhere\\clover-core.old.exe", user)).toContain("isn't beside");
 });
