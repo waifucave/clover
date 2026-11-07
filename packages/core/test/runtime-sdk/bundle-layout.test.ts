@@ -89,6 +89,22 @@ describe("bundle-layout (P8d-1; WS-23 split the record)", () => {
 
 // Winter Phase 10a (P10a-4/L4): resolveAntExecutable's ladder. `ant` is OPTIONAL — a total miss is
 // `undefined`, never a typed refusal (unlike resolveWinterExecutable).
+describe("resolveAntExecutable in a dist build (lane M's door audit)", () => {
+  const b = { execPath: "/bundle/Contents/Resources/clover-core" };
+  test("CLOVER_ANT_EXECUTABLE is ignored, once, and the ladder goes on to the bundle", () => {
+    const noted: string[] = [];
+    const r = resolveAntExecutable({ ...b, env: { CLOVER_ANT_EXECUTABLE: "/e/ant" }, distBuild: true, noteIgnored: (n) => noted.push(n), isExecutableFile: () => true, isCompiled: () => true });
+    expect(r?.source).toBe("bundle");
+    expect(noted).toEqual(["CLOVER_ANT_EXECUTABLE"]);
+  });
+  test("with no bundled ant a compiled dist build finds none, never the env's", () => {
+    expect(resolveAntExecutable({ ...b, env: { CLOVER_ANT_EXECUTABLE: "/e/ant" }, distBuild: true, noteIgnored: () => {}, isExecutableFile: () => false, isCompiled: () => true, which: () => "/usr/local/bin/ant" })).toBeUndefined();
+  });
+  test("a dev build keeps the override", () => {
+    expect(resolveAntExecutable({ ...b, env: { CLOVER_ANT_EXECUTABLE: "/e/ant" }, distBuild: false, isExecutableFile: () => true })).toEqual({ path: "/e/ant", source: "env" });
+  });
+});
+
 describe("resolveAntExecutable (P10a-4 ladder)", () => {
   const base = { env: {}, execPath: "/bundle/Contents/MacOS/clover-core" };
   const BUNDLE_ANT = antExecutablePath(base.execPath);

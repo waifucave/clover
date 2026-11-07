@@ -16,7 +16,11 @@
 // the update feed's key from the login Keychain (an Ed25519 `.sig` beside it, packages/update-feed; the key is read
 // into memory, checked against the one the app carries, and never written), and creates the release as a draft (a
 // pre-release on beta) tagged v<version>; the owner reads it and publishes it on GitHub, which is the moment it
-// reaches anyone.
+// reaches anyone. Before any of that, a release with a macOS build must prove the sealed core on this Mac: the one
+// Clover.app beside the dmg, whose `clover-core` must be byte for byte the one inside the shipped zip and the shipped
+// dmg (mounted read-only, never shown); the zip's own copy, in a private temp folder, passes `verify:sealed-core
+// --signed --require-proof` (the seal's premise, SIP on, proven here, never assumed) and is unchanged after it, or no
+// draft is made.
 //
 // `--promote` turns a published beta into the latest release: it checks the beta update files' signatures (the app's
 // and the daemon's), adds
@@ -26,7 +30,8 @@
 // (electron-updater's latest channel ignores pre-releases); running it again replaces what it had uploaded
 // (`--clobber`) and finishes.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -186,6 +191,83 @@ const BETA_FEED = /^beta(-mac|-linux|-linux-arm64|-core-(darwin-arm64|linux-x64|
 /** A release's beta update files: the app's four and the daemon's four. */
 const BETA_FEEDS = 8;
 
+const CORE_IN_APP = ["Clover.app", "Contents", "Resources", "daemon", "clover-core"] as const;
+
+/** How the shipped copies are opened: the update zip with `ditto -x -k`, the dmg read-only with `hdiutil attach
+ *  -nobrowse -noautoopen` (mounted, never shown in the Finder or opened) at a temp mount point, detached after. */
+export interface ShippedOpeners {
+  extractZip(zip: string, dest: string): boolean;
+  /** Mounts the dmg at `mountpoint`; answers how to detach it, or undefined when it couldn't mount. */
+  mountDmg(dmg: string, mountpoint: string): (() => void) | undefined;
+}
+
+export const REAL_SHIPPED_OPENERS: ShippedOpeners = {
+  extractZip: (zip, dest) => (spawnSync("ditto", ["-x", "-k", zip, dest]).status ?? 1) === 0,
+  mountDmg: (dmg, mountpoint) => {
+    const r = spawnSync("hdiutil", ["attach", "-nobrowse", "-noautoopen", "-readonly", "-mountpoint", mountpoint, dmg], { encoding: "utf8" });
+    if (r.status !== 0) return undefined;
+    return () => { if ((spawnSync("hdiutil", ["detach", mountpoint]).status ?? 1) !== 0) spawnSync("hdiutil", ["detach", "-force", mountpoint]); };
+  },
+};
+
+function sha256Of(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+/**
+ * Proves the macOS core the release ships, or says why it can't. Only the dmg's own folder counts (a stale `mac*`
+ * folder elsewhere among `--from` never does), and it must hold exactly one `Clover.app`. That app's core, the one
+ * inside the shipped update zip and the one inside the shipped dmg must be the same bytes. The proof then runs on the
+ * zip's copy, extracted into this run's own temp folder (0700, the payload's own bytes with their signature), not on
+ * the build folder's file, which anything that can write there could swap after the hashing; that copy's SHA-256 is
+ * checked again after the proof, and the folder removed only then. Undefined when it is proven.
+ */
+export function proveShippedMacCore(dmgDir: string, version: string, prove: (core: string) => boolean, openers: ShippedOpeners = REAL_SHIPPED_OPENERS, list: (dir: string) => string[] = (d) => { try { return readdirSync(d); } catch { return []; } }): string | undefined {
+  const apps = list(dmgDir).filter((n) => n === "mac" || n.startsWith("mac-")).filter((sub) => existsSync(join(dmgDir, sub, "Clover.app")));
+  if (apps.length !== 1) return `${dmgDir} must hold exactly one mac*/Clover.app beside the dmg, not ${apps.length}`;
+  const unpacked = join(dmgDir, apps[0]!, ...CORE_IN_APP);
+  if (!existsSync(unpacked)) return `${join(dmgDir, apps[0]!, "Clover.app")} has no Contents/Resources/daemon/clover-core`;
+  const want = sha256Of(unpacked);
+  const work = mkdtempSync(join(tmpdir(), "clover-shipped-core-"));
+  try {
+    const zip = join(dmgDir, `Clover-${version}-mac.zip`);
+    if (!existsSync(zip)) return `no ${zip}: the update zip's core can't be compared`;
+    const zipped = join(work, "zip");
+    mkdirSync(zipped);
+    const copy = join(zipped, ...CORE_IN_APP);
+    if (!openers.extractZip(zip, zipped) || !existsSync(copy)) return `${zip} holds no Clover.app/Contents/Resources/daemon/clover-core`;
+    if (sha256Of(copy) !== want) return `the clover-core in ${zip} is not the one in ${join(dmgDir, apps[0]!)}`;
+    const dmg = join(dmgDir, `Clover-${version}.dmg`);
+    const mount = join(work, "dmg");
+    mkdirSync(mount);
+    const detach = openers.mountDmg(dmg, mount);
+    if (detach === undefined) return `${dmg} could not be mounted read-only`;
+    try {
+      if (!existsSync(join(mount, ...CORE_IN_APP))) return `${dmg} holds no Clover.app/Contents/Resources/daemon/clover-core`;
+      if (sha256Of(join(mount, ...CORE_IN_APP)) !== want) return `the clover-core in ${dmg} is not the one in ${join(dmgDir, apps[0]!)}`;
+    } finally {
+      detach();
+    }
+    if (!prove(copy)) return `verify:sealed-core --require-proof failed on the shipped clover-core (${zip}'s copy): no draft without the seal's proof (it needs a Mac with SIP on)`;
+    if (sha256Of(copy) !== want) return `the proven copy of clover-core changed during its proof: no draft`;
+    return undefined;
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/** The proof command: the sealed-core gate on the signed core, failing on anything it can't prove. */
+export function sealProofCommand(core: string, root: string): string[] {
+  return [process.execPath, join(root, "scripts", "verify-sealed-core.ts"), "--binary", core, "--signed", "--require-proof"];
+}
+
+/** Why no draft may be made without the sealed core's proof, or undefined when the core that ships is proven. */
+export function sealProofProblem(dmg: { dir: string; name: string } | undefined, version: string, prove: (core: string) => boolean, openers: ShippedOpeners = REAL_SHIPPED_OPENERS): string | undefined {
+  if (dmg === undefined) return undefined;
+  const problem = proveShippedMacCore(dmg.dir, version, prove, openers);
+  return problem === undefined ? undefined : problem.includes("no draft") ? problem : `${problem}: the sealed core that ships can't be proven`;
+}
+
 function gh(args: readonly string[]): { status: number; out: string } {
   const r = spawnSync("gh", args.slice(1) as string[], { encoding: "utf8" });
   return { status: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
@@ -200,7 +282,7 @@ function macSignedAndStapled(dmg: string): string[] {
   return problems;
 }
 
-export async function main(argv: readonly string[], root: string): Promise<number> {
+export async function main(argv: readonly string[], root: string, deps: { proveSeal?: (core: string) => boolean; openers?: ShippedOpeners } = {}): Promise<number> {
   let a: PublishArgs;
   try {
     a = parsePublishArgs(argv);
@@ -264,6 +346,15 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   console.log(`release/publish: v${version} on ${a.channel}, at ${plan.commit}, ${plan.assets.length} files, and a signature for each of ${plan.feeds.join(", ")}:`);
   for (const x of plan.assets) console.log(`  ${x.name}  (${x.dir})`);
   if (!a.create) { console.log("release/publish: nothing signed or uploaded (add --create-draft)"); return 0; }
+  {
+    const prove = deps.proveSeal ?? ((core: string) => {
+      const [cmd, ...args] = sealProofCommand(core, root);
+      console.log(`release/publish: proving the sealed core: ${[cmd, ...args].join(" ")}`);
+      return (spawnSync(cmd!, args, { cwd: root, stdio: "inherit" }).status ?? 1) === 0;
+    });
+    const problem = sealProofProblem(dmg, version, prove, deps.openers);
+    if (problem !== undefined) { console.error(`release/publish: ${problem}`); return 1; }
+  }
   if (gh(["gh", "release", "view", `v${version}`, "--repo", REPO]).status === 0) { console.error(`release/publish: v${version} already exists`); return 1; }
   const sigDir = mkdtempSync(join(tmpdir(), "clover-feed-sigs-"));
   try {

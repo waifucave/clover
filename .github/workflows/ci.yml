@@ -130,8 +130,9 @@ jobs:
   #    a private D-Bus session with a gnome-keyring of their own, so the harness's throwaway Secret Service store never
   #    meets a real keyring.
   #  - the daemon binary, `clover-core`, built for the machine's own target (`scripts/build-daemon.ts`: packages/cli's
-  #    compile:core with the target set), then run once with `--version` on a temp home: it prints and exits, so no
-  #    daemon starts. Unsigned on every OS; signing is M2's.
+  #    compile:core with the target set, the dist define and the seal), then run once with `--version` on a temp home:
+  #    it prints and exits, so no daemon starts. Then verify:sealed-core runs it with every door to foreign code set.
+  #    Unsigned on every OS but for the gate's own ad hoc hardened-runtime copy on macOS; signing is the release's.
   #  - the app (apps/desktop), built and packaged unsigned and unpacked by electron-builder (`bun run build:app`), then
   #    the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
   #    Linux runs it under xvfb, with unprivileged user namespaces allowed again for Chromium's sandbox (Ubuntu 24.04's
@@ -181,8 +182,18 @@ jobs:
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
       - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
+        id: daemon-build
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
         run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
+
+      # The compiled core runs only its own code (scripts/verify-sealed-core.ts): the binary just built, sealed by
+      # build-daemon (scripts/seal-bun-doors.ts), is run with every door Bun has — BUN_BE_BUN, BUN_OPTIONS' preloads,
+      # BUN_INSPECT and its connect-out, NODE_PATH and a planted node_modules on the runtime ladder, the working
+      # folder's bunfig/.env/tsconfig/package.json, argv — and no payload may run and no debugger may open. On macOS
+      # it is signed first as a release signs it (hardened runtime, ad hoc here) and DYLD_INSERT_LIBRARIES is tried.
+      - name: Daemon · verify:sealed-core
+        if: ${{ !cancelled() && steps.daemon-build.outcome == 'success' }}
+        run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/clover-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
 
       # The built daemon and app are kept only from a push to main or a manual run: nothing in a pull request or a
       # merge group downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).

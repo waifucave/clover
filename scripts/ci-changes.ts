@@ -29,15 +29,15 @@ const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packa
 export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // every workspace package's own tests, on all four machines
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
-  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
+  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/verify-sealed-core.ts", "scripts/clover-core.entitlements"],
   // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
   app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
   // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon and the
   // link sidecar they carry (the job installs the deb and runs its `clover`)
-  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/release/", ...CORE, "packages/cli/", "native/link/"],
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/release/", ...CORE, "packages/cli/", "native/link/"],
   // the macOS and Windows installers (the unsigned release build: dmg, zip, NSIS), on macOS and Windows machines: only
   // what makes them, so a code change alone doesn't spend a macOS job on them (the app and daemon jobs build those)
-  installers: ["apps/desktop/electron-builder.yml", "apps/desktop/package.json", "packaging/", "scripts/release/", "scripts/build-daemon.ts",
+  installers: ["apps/desktop/electron-builder.yml", "apps/desktop/package.json", "packaging/", "scripts/release/", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts",
     "scripts/build-packages.ts", "packages/update-feed/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
