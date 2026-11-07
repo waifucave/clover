@@ -94,6 +94,12 @@ export interface BotSessionContext {
   /** Resolves once `mayAct` says yes: a turn the pause switch holds waits here at its next tool call, and goes on
    *  when the user resumes (the owner's decision of November 6). Rejects when `signal` aborts. */
   whenMayAct(signal?: AbortSignal): Promise<void>;
+  /** Whether a turn may start now (the durable host's `mayStart`): no while paused, and for a bot's conversation while
+   *  this computer isn't the runner or is handing its bots back. A driver asks it of a turn its runtime starts on its
+   *  own (a background task's notification), which no host turn covers; without it, `mayAct` stands in. */
+  mayStart?(): boolean;
+  /** Resolves once `mayStart` says yes; rejects when `signal` aborts. */
+  whenMayStart?(signal?: AbortSignal): Promise<void>;
   /** Whether the cached prompt has expired: the turn starting now rebuilds the harness blocks (the MCP block, the
    *  devices block, the `computer` lists) without compacting (§6.1). */
   cacheCold(): boolean;
@@ -666,6 +672,8 @@ export class BotService {
       memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer }),
       mayAct: () => gate.mayAct({ kind }),
       whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),
+      mayStart: () => gate.mayStart({ kind }),
+      whenMayStart: (signal) => gate.whenMayStart({ kind }, signal),
       cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,
     };
   }

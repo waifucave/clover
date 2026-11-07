@@ -264,6 +264,57 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("a hand-back holds a turn the runtime starts on its own (mayStart), though the running turn may still act", async () => {
+    const home = tempHome();
+    let start = true;
+    let started: () => void = () => {};
+    const ctx = context(home, "winter-test/calls", {
+      // Handing back: a running turn may act, nothing new starts here.
+      mayAct: () => true,
+      mayStart: () => start,
+      whenMayStart: (signal) => new Promise<void>((r, j) => {
+        started = () => { start = true; r(); };
+        signal?.addEventListener("abort", () => j(new Error("aborted")), { once: true });
+      }),
+    });
+    const { frames, query } = tappedQuery();
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query }));
+    try {
+      const end = await driver.turn(user('CALL Bash {"command":"sleep 2; echo finished","run_in_background":true,"description":"wait"}'), control());
+      expect(end.reason).toBe("end_turn");
+      start = false;
+      const from = Date.now();
+      await Bun.sleep(5_000);
+      expect(frames.some((f) => f.at > from && (f.msg.type === "result" || f.msg.type === "assistant"))).toBe(false);
+      const at = Date.now();
+      started();
+      for (let i = 0; i < 150 && !frames.some((f) => f.at > at && f.msg.type === "result"); i++) await Bun.sleep(100);
+      expect(frames.some((f) => f.at > at && f.msg.type === "result")).toBe(true);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("a tool call the pause holds past the limit is refused, telling the model why", async () => {
+    const home = tempHome();
+    let asked = 0;
+    const ctx = context(home, "winter-test/calls", {
+      // The turn starts; the pause comes on before its call.
+      mayAct: () => asked++ === 0,
+      whenMayAct: (signal) => new Promise<void>((_r, j) => signal?.addEventListener("abort", () => j(new Error("aborted")), { once: true })),
+    });
+    const ran: string[] = [];
+    const core: CoreToolDef[] = [{ name: "ListAgents", description: "List agents.", inputSchema: { type: "object", properties: {} }, run: async () => { ran.push("x"); return { text: "none", isError: false }; } }];
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { coreTools: () => core, toolHoldMs: 1_000 }));
+    try {
+      const end = await driver.turn(user("CALL ListAgents {}"), control());
+      expect(results(end)[0]!.content).toContain("the pause outlasted how long a call can wait");
+      expect(ran).toEqual([]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("the pause stops the bot's background shells as the host; the resume doesn't restart them, and the model hears of it then", async () => {
     const home = tempHome();
     let may = true;

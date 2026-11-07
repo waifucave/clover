@@ -254,14 +254,24 @@ describe("the pause switch (§9.2)", () => {
     await flush();
     expect(again.drivers.for("b_alpha").turns).toHaveLength(0);
     let resumed = false;
-    void again.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx.whenMayAct().then(() => {
+    let mayStartAgain = false;
+    const ctx2 = again.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx;
+    void ctx2.whenMayAct().then(() => {
       resumed = true;
+    });
+    // A turn the runtime starts on its own asks `mayStart`, as the host's turns do (lane A's driver).
+    expect(ctx2.mayStart!()).toBe(false);
+    void ctx2.whenMayStart!().then(() => {
+      mayStartAgain = true;
     });
     await flush();
     expect(resumed).toBe(false);
+    expect(mayStartAgain).toBe(false);
     await again.bots.setPaused(false, theUser);
     await flush();
     expect(resumed).toBe(true);
+    expect(mayStartAgain).toBe(true);
+    expect(ctx2.mayStart!()).toBe(true);
     expect(again.drivers.for("b_alpha").turns.map((t) => (t.input.from === "user" ? t.input.text : ""))).toEqual(["hello?"]);
     expect(again.bots.get("alpha")!.state).toBe("thinking");
     await again.shutdown();

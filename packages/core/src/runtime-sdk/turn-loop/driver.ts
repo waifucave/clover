@@ -111,6 +111,8 @@ export interface BotDriverDeps {
   stopGraceMs?: number;
   /** How often a session with background tasks looks at the pause (`PAUSE_POLL_MS`); a test's seam. */
   pausePollMs?: number;
+  /** How long a tool call waits for the pause to lift before it's refused (`TOOL_HOLD_MS`); a test's seam. */
+  toolHoldMs?: number;
   log?(line: string): void;
 }
 
@@ -151,6 +153,11 @@ interface Incarnation {
   /** Looks at the pause while `tasks` isn't empty. */
   taskWatch?: ReturnType<typeof setInterval>;
 }
+
+/** How long the tool hook may run (seconds): a call the pause holds waits inside it (`TOOL_HOLD_MS`). */
+const TOOL_HOOK_TIMEOUT_S = 3600;
+/** How long a tool call waits for the pause to lift before it's refused, saying why (a minute inside the hook's hour). */
+const TOOL_HOLD_MS = (TOOL_HOOK_TIMEOUT_S - 60) * 1000;
 
 /** How often a session with background tasks looks at the pause switch (it has no event for it). */
 const PAUSE_POLL_MS = 1_000;
@@ -308,10 +315,18 @@ export class BotSessionDriver implements SessionDriver {
    *  switch holds it; otherwise why the call is refused (the lease went elsewhere, or the turn ended). */
   async #gate(signal: AbortSignal): Promise<string | undefined> {
     if (!this.#ctx.mayAct()) {
+      // Held at most `TOOL_HOLD_MS`, inside the tool hook's own hour: past it the call is refused, saying why.
+      const limit = new AbortController();
+      const timer = setTimeout(() => limit.abort(), this.#d.toolHoldMs ?? TOOL_HOLD_MS);
       try {
-        await this.#ctx.whenMayAct(AbortSignal.any([signal, ...(this.#turn ? [this.#turn.ctl.signal] : [])]));
+        await this.#ctx.whenMayAct(AbortSignal.any([signal, limit.signal, ...(this.#turn ? [this.#turn.ctl.signal] : [])]));
       } catch {
+        if (limit.signal.aborted && !signal.aborted) {
+          return "Not run: the user paused the bots and the pause outlasted how long a call can wait (an hour). Nothing was done; try the call again once the bots are resumed.";
+        }
         return "Stopped: this computer may not act for the bot now (the user paused bots, or another computer runs them).";
+      } finally {
+        clearTimeout(timer);
       }
     }
     return this.#ctx.mayAct() ? undefined : "Stopped: this computer no longer runs the bot.";
@@ -357,17 +372,25 @@ export class BotSessionDriver implements SessionDriver {
     return {
       timeout: PROMPT_HOLD_TIMEOUT_S,
       hooks: [async (raw, _id, { signal }) => {
-        if (this.#ctx.mayAct()) return {};
+        // A turn no host turn covers (the runtime's own) asks what a host turn asked before it started: `mayStart`,
+        // no while paused, or while this computer isn't the runner or hands its bots back. One the host started, and
+        // an input folding into it, ask `mayAct`: a hand-back lets the running turn finish.
+        const own = this.#turn === undefined || this.#turn.ended;
+        const ctx = this.#ctx;
+        const may = own && ctx.mayStart !== undefined && ctx.whenMayStart !== undefined
+          ? { now: () => ctx.mayStart!(), when: (sig: AbortSignal) => ctx.whenMayStart!(sig) }
+          : { now: () => ctx.mayAct(), when: (sig: AbortSignal) => ctx.whenMayAct(sig) };
+        if (may.now()) return {};
         const hold: { release: AbortController; why?: "interrupt" | "closing" } = { release: new AbortController() };
         this.#promptHolds.add(hold);
         try {
-          await this.#ctx.whenMayAct(AbortSignal.any([signal, hold.release.signal]));
+          await may.when(AbortSignal.any([signal, hold.release.signal]));
         } catch {
           // let go, timed out, or the lease went elsewhere: decided below
         } finally {
           this.#promptHolds.delete(hold);
         }
-        if (hold.why === undefined && !signal.aborted && !this.#stopped && this.#ctx.mayAct()) return {};
+        if (hold.why === undefined && !signal.aborted && !this.#stopped && may.now()) return {};
         const t = this.#turn;
         const prompt = (raw as { prompt?: unknown }).prompt;
         const reason = hold.why === "interrupt" ? "Interrupted while the bots were paused."
@@ -387,7 +410,7 @@ export class BotSessionDriver implements SessionDriver {
     const pre: HookCallbackMatcher = {
       // A hook that breaks must never wave the call through.
       failClosed: true,
-      timeout: 3600,
+      timeout: TOOL_HOOK_TIMEOUT_S,
       hooks: [async (raw, toolUseId, { signal }) => {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
@@ -550,6 +573,9 @@ export class BotSessionDriver implements SessionDriver {
   #emit(event: { type: string; [k: string]: unknown }): void {
     if (HOST_OWNED.has(event.type)) return;
     const t = this.#turn;
+    // TODO(lane D): a turn the runtime runs on its own (a background task's notification) has no host turn, so its
+    // records (the reply, its tool calls) and its usage are dropped here. Lane D adds a driver contract for
+    // runtime-started turns (or folds them into the next host turn); this driver reports them through it then.
     if (t === undefined || t.ended) return;
     // While a `message.out` hook is on, the bot's text shows only after it ran (§5.3): no streaming deltas, and each
     // record waits its turn behind the reply before it, so the log keeps the runtime's order.
