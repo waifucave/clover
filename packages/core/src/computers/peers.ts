@@ -7,7 +7,8 @@
 // that runs clover-core); a hello from a device that isn't on it is ignored, and a revoked device leaves the tree at
 // once. `computer.hello` is lane J's addition to the protocol (requested of lane B).
 import { z } from "zod";
-import { ComputerName, isComputerOs, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
+import { ComputerName, FencingToken, isComputerOs, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
+import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
 import { utf16 } from "@waifucave/clover-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { CallCardRenderer } from "../contracts/approval-broker";
@@ -38,10 +39,12 @@ export const ComputerHello = z.object({
 });
 export type ComputerHello = z.infer<typeof ComputerHello>;
 
-const SetLevelParams = z.object({ level: Level, answer: SignedCardAnswer.optional() });
+const SetLevelParams = z.object({ level: Level, answer: SignedCardAnswer.optional(), fence: FencingToken.optional() });
 
 export interface ComputerPeersOptions {
   registry: CoreComputerRegistry;
+  /** This computer's fencing token on the level changes it asks, and its guard for the ones asked of it. */
+  fence?: ActFence;
   transport: LinkTransport;
   /** This computer's part of the tree. */
   roots: () => TreeRoots;
@@ -84,6 +87,7 @@ export class ComputerPeers {
       if (!(devices.get(from)?.runsCore && devices.get(from)?.revokedAt === undefined)) throw new ContractError("refused", "this computer isn't paired with yours");
       const p = SetLevelParams.safeParse(raw);
       if (!p.success) throw new ContractError("invalid", "computer.setLevel takes a level");
+      checkActFence(opts.fence, p.data.fence, "computer.setLevel");
       const self = registry.self();
       if (levelAbove(p.data.level, self.level) && !p.data.answer) {
         throw needsAnswer(self.name, "computer.setLevel", { name: self.name, level: p.data.level }, opts.render, `raising ${self.name}'s level takes the user's answer`);
@@ -97,7 +101,7 @@ export class ComputerPeers {
       return withAnswer(answer ? undefined : opts.ask, async (a) => {
         try {
           const link = await transport.connect(c.device);
-          await link.request("computer.setLevel", { level, ...((a ?? answer) ? { answer: a ?? answer } : {}) });
+          await link.request("computer.setLevel", { level, ...fenceParam(opts.fence), ...((a ?? answer) ? { answer: a ?? answer } : {}) });
         } catch (e) {
           throw offlineAs(c.name, e);
         }

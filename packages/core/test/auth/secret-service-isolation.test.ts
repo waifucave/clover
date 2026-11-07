@@ -1,4 +1,4 @@
-// The Keychain service a process's default secret store uses (`auth/secret-store.ts`'s DEFAULT_SECRET_SERVICE),
+// The Keychain service a process's default secret store uses (`auth/secret-store.ts`'s defaultSecretService()),
 // resolved in a FRESH process per environment — names only: nothing here reads or writes the Keychain.
 //
 // The isolation fix (2026-10-09): a process run on an explicit, non-default CLOVER_HOME honours
@@ -13,7 +13,7 @@ const MODULE = join(import.meta.dir, "..", "..", "src", "auth", "secret-store.ts
 function serviceUnder(env: Record<string, string | undefined>): string {
   const clean: Record<string, string> = { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? homedir() };
   for (const [k, v] of Object.entries(env)) if (v !== undefined) clean[k] = v;
-  const r = Bun.spawnSync(["bun", "-e", `const m = await import(${JSON.stringify(MODULE)}); console.log("SERVICE=" + m.DEFAULT_SECRET_SERVICE);`], { env: clean, stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync(["bun", "-e", `const m = await import(${JSON.stringify(MODULE)}); console.log("SERVICE=" + m.defaultSecretService());`], { env: clean, stdout: "pipe", stderr: "pipe" });
   const line = r.stdout.toString().split("\n").find((l) => l.startsWith("SERVICE="));
   if (line === undefined) throw new Error(`no answer: ${r.stderr.toString()}`);
   return line.slice("SERVICE=".length);

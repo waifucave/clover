@@ -21,7 +21,8 @@ import { createHash } from "node:crypto";
 import { ERR_UNAUTHORIZED, isRefusal, type CloverTokens } from "../auth/clover-tokens";
 import { proveDaemon } from "../platform/pair/run-files";
 import { gateCloverRequest, resolveCloverCaller, type SessionProcesses } from "../auth/clover-caller";
-import { probePeer, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
+import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platform/caller-probe";
+import { peerHandle, type PeerHandle } from "../platform/peer-handle";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
 import type { DaemonPlatform } from "../platform/transport";
 
@@ -40,6 +41,9 @@ export interface CloverConn {
   /** A plugin-host connection's verified process (review S1): handlers take the call's process from here, never
    *  from a plugin id a plugin could share. */
   readonly hostProcess?: { readonly hostProcess: "clover" | "shared" | "own"; readonly pluginId?: string };
+  /** A bridge connection's number from K's `accept` (`BridgeVerdict.connection`), for K's handlers to check
+   *  `isLive(session, connection)` on every request. */
+  readonly bridgeConnection?: number;
   /** Areas this connection subscribed to (`events.subscribe`). */
   readonly areas: Set<string>;
   /** Send the client a request from the daemon (`app.quit`, `app.show`, `pluginHost.invoke`…); its id. */
@@ -78,7 +82,7 @@ export interface BridgeGate {
   onRevoke?(fn: (e: { sessionId: string; connection?: number }) => void): () => void;
 }
 
-/** K's handlers for the bridge's methods, by session (`agents/bridge/endpoint.ts`, `BridgeHandlers`). */
+/** K's handlers for the bridge's methods, by session (`agents/bridge/handlers.ts`, `BridgeHandlers`). */
 export interface BridgeMethods {
   tools(sessionId: string): Promise<{ tools: unknown[]; instructions: string }>;
   call(sessionId: string, call: { callId: string; tool: string; input: unknown }): Promise<{ content: unknown[]; isError: boolean }>;
@@ -129,6 +133,9 @@ export interface CloverServerDeps {
   readonly appToken?: string;
   /** Other lanes' Clover methods, by wire name. */
   readonly handlers?: Readonly<Record<string, CloverHandler>>;
+  /** M-M2: whether the app may leave for an update now (`pair.exiting{update}`): the update gate closed and idle, and
+   *  then committed to the restart. */
+  acceptUpdateExit?(): boolean;
   readonly features?: readonly string[];
   readonly os?: DaemonPlatform;
   /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
@@ -140,8 +147,9 @@ export interface CloverServerDeps {
   readonly bridge?: { readonly gate: BridgeGate; sessionInfo?(sessionId: string): { bot?: string } | undefined };
   /** The app's heartbeat (ruling R9): `app.ping` every `intervalMs`, ended after `timeoutMs` unanswered. */
   readonly heartbeat?: { readonly intervalMs?: number; readonly timeoutMs?: number; now?(): number };
-  /** End a hung app's process (default SIGKILL; TerminateProcess on Windows). */
-  killApp?(pid: number): void;
+  /** End a hung app's process: by default through the connection's handle (review S5: its audit token's start time,
+   *  its pidfd, its process handle), so a pid reused since never is; SIGKILL by pid only where the OS gave none. */
+  killApp?(pid: number, handle?: PeerHandle): void;
   log?(line: string): void;
 }
 
@@ -195,11 +203,14 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
   const beatTimeout = deps.heartbeat?.timeoutMs ?? 15_000;
   const now = deps.heartbeat?.now ?? Date.now;
-  const beats = new Map<number, { timer: ReturnType<typeof setInterval>; heard: number; pid: number | null; pending: Set<string> }>();
-  const killApp = deps.killApp ?? ((pid: number) => { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } });
+  const beats = new Map<number, { timer: ReturnType<typeof setInterval>; heard: number; pid: number | null; handle?: PeerHandle; pending: Set<string> }>();
+  const killApp = deps.killApp ?? ((pid: number, handle?: PeerHandle) => {
+    if (handle) { if (!handle.kill()) deps.log?.(`[clover] the app's process ${pid} had already gone`); return; }
+    try { process.kill(pid, "SIGKILL"); } catch { /* gone */ }
+  });
   const stopBeat = (connId: number) => { const b = beats.get(connId); if (b) { clearInterval(b.timer); beats.delete(connId); } };
-  const startBeat = (conn: CloverConn, pid: number | null) => {
-    const beat = { heard: now(), pid, pending: new Set<string>(), timer: setInterval(() => {
+  const startBeat = (conn: CloverConn, pid: number | null, handle?: PeerHandle) => {
+    const beat = { heard: now(), pid, ...(handle ? { handle } : {}), pending: new Set<string>(), timer: setInterval(() => {
       if (now() - beat.heard > beatTimeout) {
         stopBeat(conn.connId);
         deps.log?.(`[clover] the app (connection ${conn.connId}) didn't answer app.ping for ${beatTimeout} ms`);
@@ -207,7 +218,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
         // connection closing counts as the crash instead.
         if (beat.pid === null) { deps.log?.("[clover] its process is unknown: waiting for its connection to close"); return; }
         deps.pair?.appHung(String(conn.connId));
-        killApp(beat.pid);
+        killApp(beat.pid, beat.handle);
         return;
       }
       beat.pending.add(conn.send("app.ping", {}));
@@ -216,10 +227,20 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     beats.set(conn.connId, beat);
   };
 
+  // Each connection's process, held from its first look until it closes (review S5). On Windows it's opened as the
+  // connection opens, while the client that just connected still holds its end.
+  const handles = new WeakMap<object, PeerHandle | null>();
+  const handleOf = (socket: object): PeerHandle | null => {
+    if (handles.has(socket)) return handles.get(socket)!;
+    const h = gone.has(socket) ? null : pipePeers ? peerHandle(null, "win32", pipePeers.pidOf(socket)) : peerHandle(socketFd(socket), os);
+    handles.set(socket, h);
+    return h;
+  };
   const peerOf = (socket: object): PeerFacts => {
     if (deps.probe) return deps.probe(socket);
-    if (pipePeers) return probePeer(null, "win32", pipePeers.pidOf(socket));
-    return probePeer(socket, os);
+    const handle = handleOf(socket);
+    if (pipePeers) return probePeer(null, "win32", pipePeers.pidOf(socket), handle);
+    return probePeer(socket, os, undefined, handle);
   };
 
   // Sockets the listener has closed: a hello still waiting on a check (the bridge's waits for its agent's
@@ -292,7 +313,12 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       return { ok: true };
     },
     "pair.exiting": (conn, p) => {
-      deps.pair?.appExiting(String(conn.connId), (p as { reason: "quit" | "update" | "restart" }).reason);
+      const reason = (p as { reason: "quit" | "update" | "restart" }).reason;
+      // M-M2: an update's exit only once `update.apply` closed the gate and nothing runs; the app then keeps running.
+      if (reason === "update" && deps.acceptUpdateExit?.() === false) {
+        throw new CloverRpcError(ERR.RETRY, "not idle for the update: ask update.apply again", { code: "update_not_ready" });
+      }
+      deps.pair?.appExiting(String(conn.connId), reason);
       return { ok: true };
     },
     // A token for one plugin's UI layer, which the app's main process opens a `layer` connection with.
@@ -310,7 +336,13 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   };
 
   return {
-    opened(socket) { pipePeers?.opened(socket); return pipePeers?.isEarly(socket) ?? false; },
+    // The connection's process is held as the connection opens, on every OS (#205's S2): no pid read later can be
+    // another process's.
+    opened(socket) {
+      if (!pipePeers) { if (!deps.probe) handleOf(socket); return false; }
+      if (pipePeers.opened(socket) !== null && !deps.probe) handleOf(socket);
+      return pipePeers.isEarly(socket);
+    },
 
     lockedDown() { pipePeers?.lockedDown(); },
 
@@ -361,13 +393,13 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       }
       if (bridge) bridged.set(connId, { ...bridge, ...(end ? { end } : {}) });
       const conn: CloverConn = {
-        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}),
+        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}),
         send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
         notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
         follows: new Map(),
       };
       conns.set(connId, conn);
-      if (h.role === "app") { deps.pair?.appConnected(String(connId), conn.features); startBeat(conn, peer.pid); }
+      if (h.role === "app") { deps.pair?.appConnected(String(connId), conn.features); startBeat(conn, peer.pid, peer.handle); }
       deps.log?.(`[clover] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
       return {
         conn,
@@ -402,6 +434,8 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     closed(conn, socket) {
       gone.add(socket);
       pipePeers?.closed(socket);
+      handles.get(socket)?.close();
+      handles.set(socket, null);
       if (conn === null) return;
       stopBeat(conn.connId);
       conns.delete(conn.connId);

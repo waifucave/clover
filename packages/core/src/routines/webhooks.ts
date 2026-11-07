@@ -90,12 +90,20 @@ export class WebhookIngress {
     });
   }
 
-  /** Registers the webhook routines here that aren't yet, and lets go of the ones that have gone. */
+  /** Registers the webhook routines here that aren't yet, or whose file now names another ingress, and lets go of the
+   *  ones that have gone. */
   async sync(): Promise<void> {
     const now = this.#o.clock.now();
-    const here = new Set(this.#o.engine.webhookRoutines());
-    for (const id of here) {
-      if (this.#chosen.has(id)) continue;
+    const routines = this.#o.engine.webhookRoutines();
+    const here = new Set(routines.map((r) => r.id));
+    for (const { id, ingress } of routines) {
+      const chosen = this.#chosen.get(id);
+      if (chosen !== undefined) {
+        // Still where its file says? A changed `ingress:` (or a named one installed since) registers it again there.
+        let wanted: string | undefined;
+        try { wanted = this.#pick(ingress).pluginId; } catch { wanted = undefined; }
+        if (wanted === undefined || wanted === chosen) continue;
+      }
       const failedAt = this.#failed.get(id);
       if (failedAt !== undefined && now - failedAt < REGISTER_RETRY_MS) continue;
       // `webhook` mints the key the first time and calls `register` with the routine's named ingress.

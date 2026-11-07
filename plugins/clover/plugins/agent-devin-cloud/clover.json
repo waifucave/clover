@@ -1,0 +1,23 @@
+{
+  "manifest": 1,
+  "name": "Devin (cloud)",
+  "description": "Devin's cloud (`devin acp --cloud`) as an agent bots can delegate to. Listed, not started yet.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "devin-cloud",
+        "name": "Devin (cloud)",
+        "protocol": "acp",
+        "command": "devin",
+        "args": [
+          "acp",
+          "--cloud"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

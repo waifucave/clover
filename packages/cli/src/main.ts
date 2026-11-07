@@ -1,7 +1,9 @@
+import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater } from "./self-update";
+import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, dyldRefusal, testKeychainRefusal } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1681,6 +1683,58 @@ async function runSupervise(): Promise<void> {
 }
 
 if (import.meta.main) {
+  // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs, read from
+  // the raw environment too, so a duplicate entry can't hide one) and, on macOS, no keychains from a HOME that isn't the
+  // account's, before anything else runs — every subcommand, every self-spawned worker. build-kind.ts and
+  // startup-guard.ts say why.
+  {
+    const raw = DIST_BUILD ? rawEnvironment() ?? [] : [];
+    const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? homeRefusal() ?? dyldRefusal(raw) ?? testKeychainRefusal(process.env, raw);
+    if (refusal !== undefined) {
+      process.stderr.write(`${refusal}\n`);
+      process.exit(TLS_ENV_REFUSAL_EXIT);
+    }
+  }
+  // verify:sealed-core's probe: one request carrying a dummy key in `Authorization` and `x-api-key` to the URL given,
+  // then `fetch-probe: <status>` or `fetch-probe: failed (<code>)`; with `--worker`, made from a Worker, as an embedded
+  // session's are. The gate checks the key never shows in this process's output, whatever environment it ran with
+  // (BUN_CONFIG_VERBOSE_FETCH printed request headers, keys included), and which certificate authorities a request
+  // trusts (the OS store, `--use-system-ca`; never a self-signed certificate). It never prints the key itself, and it
+  // fetches only loopback or the one Apple URL, with a 32-hex nonce key (fetch-probe.ts), else exits 2.
+  if (process.argv[2] === "__fetch-probe") {
+    const [url, key] = [process.argv[3] ?? "", process.argv[4] ?? ""];
+    const { fetchProbeRefusal } = await import("./fetch-probe");
+    const refused = fetchProbeRefusal(url, key);
+    if (refused !== undefined) {
+      process.stderr.write(`fetch-probe: refused (${refused})\n`);
+      process.exit(2);
+    }
+    // Self-contained (it is also sent to the Worker as source): fetch only.
+    const probe = async (u: string, k: string): Promise<string> => {
+      try {
+        // Never follows a redirect: a 3xx comes back as its status, so the key goes to no second host.
+        const r = await fetch(u, { redirect: "manual", headers: { authorization: `Bearer ${k}`, "x-api-key": k } });
+        return `fetch-probe: ${r.status}`;
+      } catch (err) {
+        const e = err as { code?: string; name?: string };
+        return `fetch-probe: failed (${e.code ?? e.name ?? "error"})`;
+      }
+    };
+    let line: string;
+    if (process.argv.includes("--worker")) {
+      const worker = new Worker(URL.createObjectURL(new Blob([`const probe = ${probe.toString()};\nonmessage = async (e) => postMessage(await probe(e.data.url, e.data.key));`])));
+      line = await new Promise<string>((resolve) => {
+        worker.onmessage = (e) => resolve(String(e.data));
+        worker.onerror = (e) => resolve(`fetch-probe: failed (worker: ${e.message})`);
+        worker.postMessage({ url, key });
+      });
+      worker.terminate();
+    } else {
+      line = await probe(url, key);
+    }
+    process.stdout.write(`${line}\n`);
+    process.exit(0);
+  }
   // WS-23: the RUNTIME's workflow worker (COMPILED path) — an embedded chat/dispatch session's Workflow
   // tool spawns `<clover-core> __runtime-workflow-worker --bridge` under the seatbelt
   // (`runtime-sdk/embedded.ts`'s `runtimeWorkflowWorkerCommand`). POSITIONAL, like the probes below
@@ -1886,6 +1940,35 @@ if (import.meta.main) {
     process.exit(process.exitCode ?? 0);
     break;
   }
+  case "server": {
+    // M-M2: the daemon alone, with no app (a server), started by the OS and updating itself (server-install.ts).
+    let parsed: ReturnType<typeof parseServerArgs>;
+    try {
+      parsed = parseServerArgs(process.argv.slice(3));
+    } catch {
+      console.error(SERVER_USAGE);
+      process.exit(2);
+    }
+    if (/[\\/]bun(\.exe)?$/.test(process.execPath)) {
+      console.error("server install needs the compiled clover-core binary (a release's clover-core-<version>-<target>)");
+      process.exit(1);
+    }
+    const base = currentLoginSpec();
+    if (!isDefaultCloverHome(base.home, base.profile)) {
+      console.error(`a server install serves the ${base.profile} profile's default home; CLOVER_HOME is ${base.home}`);
+      process.exit(1);
+    }
+    const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+    mkdirSync(base.logsDir, { recursive: true });
+    const deps = {
+      spec: winUser ? { ...base, winUser } : base,
+      os: liveLoginOsDeps(), run: bunRunner, loginEnable, loginRemove, stopDaemon: stopRunningDaemon,
+      readMarker: (home: string) => readInstallMarker(home), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
+      user: process.env.USER ?? process.env.LOGNAME, log: (line: string) => console.log(line),
+    };
+    process.exit(parsed.action === "install" ? await serverInstall(deps, parsed.channel) : await serverUninstall(deps));
+    break;
+  }
   case "supervise": {
     // The restart loop the login unit runs: starts the daemon and restarts it after a crash; a
     // clean stop (a Quit) ends the loop so the crash-only OS unit does not bring it back.
@@ -1894,6 +1977,10 @@ if (import.meta.main) {
     break;
   }
   case "daemon run": {
+    // LANE C — M-M2's boot-count hook (self-update.ts), first, before anything else the daemon does (the log file
+    // included), so a crash anywhere in the start counts: after a server's daemon swapped in its update, this counts
+    // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.
+    if (beginUpdatedBoot(resolveCloverHome(), process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
     // Whole-branch review: register the shutdown handlers HERE, not (only) in daemon.ts. daemon.ts's
     // SIGTERM/SIGINT handlers live under `if (import.meta.main)`, which is FALSE for the compiled
     // binary and this CLI entry (main.ts is `import.meta.main`, daemon.ts is not) — so without this
@@ -1932,7 +2019,25 @@ if (import.meta.main) {
     // AWAITED (P8a Task 12): `stop()` is synchronous up to the runtime-state drain, and the tail it
     // hands back is what releases the lock (→ unlinks the socket). `process.exit(0)` on the same
     // line would kill the process mid-drain and leave the stale socket this handler exists to avoid.
-    const shutdown = async () => { await daemon.stop(); process.exit(0); };
+    // M-M2: a start that ran GOOD_BOOT_MS, or stopped cleanly, is a good one (self-update.ts's `bootWasGood`).
+    const home = resolveCloverHome();
+    const goodBoot = setTimeout(() => bootWasGood(home, process.execPath), GOOD_BOOT_MS);
+    goodBoot.unref?.();
+    const shutdown = async () => { await daemon.stop(); bootWasGood(home, process.execPath); process.exit(0); };
+    // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
+    const target = coreTargetOf(process.platform, process.arch);
+    const marker = readInstallMarker(home, process.execPath);
+    if (updatesItself(marker) && target !== undefined && process.execPath === serverBinary(home, currentDaemonPlatform())) {
+      const self = new SelfUpdater({
+        home, bin: process.execPath, version: CORE_VERSION, target, channel: marker?.channel ?? "latest",
+        gate: daemon.updateGate, restartCode: UPDATE_RESTART_EXIT_CODE,
+        drain: async () => { clearTimeout(goodBoot); await daemon.stop(); },
+        exit: (code) => process.exit(code),
+        log: (line) => console.error(line),
+      });
+      daemon.setSelfUpdate(self);
+      self.start();
+    }
     // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
     // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app
     // `app.quit` first, with no wait of the daemon's own.
@@ -2019,6 +2124,14 @@ if (import.meta.main) {
       // rather than take down every OTHER section this command prints (the findings loop above
       // already ran and printed by the time this executes). Mirrors this function's own settings
       // guard just above — a diagnostic that can crash the diagnostic tool defeats its own purpose.
+      // C-M2: the secret store's status, and a warning when its key sits unsealed (never a silent default).
+      try {
+        const { openCloverSecretStore, secretStoreWarning, keychainService, resolveCloverProfile: profileOf } = await import("@waifucave/clover-core");
+        const st = (await openCloverSecretStore({ home, service: keychainService(profileOf(), home) })).status();
+        console.log(`${AQUA}secrets${RESET} ${DIM}${st.backend}${"keySource" in st && st.keySource ? ` (${st.keySource}${"tpm" in st && st.tpm ? ", TPM" : ""})` : ""}${RESET}`);
+        const warning = secretStoreWarning(st);
+        if (warning) console.log(`  \x1b[33mwarning:\x1b[0m ${warning}`);
+      } catch (err) { console.log(`${AQUA}secrets${RESET} ${DIM}unavailable (${err instanceof Error ? err.message : "unknown error"})${RESET}`); }
       console.log(`${AQUA}runtimes${RESET}`);
       let report: Awaited<ReturnType<typeof diagnoseRuntimes>>;
       try {

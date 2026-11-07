@@ -19,9 +19,10 @@
 //   stricter of that computer's level and the call's (R1), its answer bound to the tool and its input.
 // * Mirror installs a local server on the other computers, each copy running on its own computer: `mcp.mirror` to
 //   each, which installs only with the user's answer for that computer's own card.
+import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
 import { extname } from "node:path";
 import { z } from "zod";
-import { Level, SessionId, SignedCardAnswer, type Caller } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import { isTreePath } from "../tree/tools";
@@ -155,6 +156,8 @@ export interface McpRouterOptions {
   /** A session's scratch folder, a tree folder on this computer (§6.4; lane D). */
   scratch: (session: string) => string;
   /** Shows the user another computer's card where its level needs their answer (R1). */
+  /** This computer's fencing token, on every call it asks of another (`fencing.ts`). */
+  fence?: ActFence;
   ask?: AnswerAsker;
 }
 
@@ -224,7 +227,7 @@ export class McpRouter {
     try {
       const link = await this.#o.transport.connect(device);
       const r = await withAnswer(ctx.answer ? undefined : this.#o.ask, (answer) => link.request<{ output: McpResult; isError: boolean }>("tool.run", {
-        session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: mcpToolName(server, tool), input: carried, level,
+        session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: mcpToolName(server, tool), input: carried, level, ...fenceParam(this.#o.fence),
         ...((answer ?? ctx.answer) ? { answer: answer ?? ctx.answer } : {}),
       }, { priority: "control" }));
       return { result: r.output, computer: c.name };
@@ -255,15 +258,16 @@ export class McpRouter {
  *  plugin's server). */
 export type McpInstaller = (server: string, config: unknown) => Promise<void>;
 
-const MirrorParams = z.object({ server: z.string().min(1).max(256), config: z.unknown(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() });
+const MirrorParams = z.object({ server: z.string().min(1).max(256), config: z.unknown(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional(), fence: FencingToken.optional() });
 
 /** Mirror: another computer asks this one to install a server. It always takes the user's answer for this computer's
  *  own card, bound to the server and its config, whatever the levels: a server runs commands. */
-export function serveMirror(o: { transport: LinkTransport; self: () => string; mayCall: (device: string) => boolean; install?: McpInstaller; answers?: Answers; clock: { now(): number } }): Unsubscribe {
+export function serveMirror(o: { transport: LinkTransport; self: () => string; mayCall: (device: string) => boolean; install?: McpInstaller; answers?: Answers; clock: { now(): number }; fence?: ActFence }): Unsubscribe {
   return o.transport.handle("mcp.mirror", async (raw, from) => {
     if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
     const p = MirrorParams.safeParse(raw);
     if (!p.success) throw new ContractError("invalid", `mcp.mirror: ${p.error.issues[0]?.message ?? "bad params"}`);
+    checkActFence(o.fence, p.data.fence, "mcp.mirror");
     if (!o.install) throw new ContractError("not_installed", `${o.self()} can't install MCP servers yet`);
     const as: Caller = { kind: "peer", device: from, ...(p.data.session ? { sessionId: p.data.session } : {}) };
     await judgePeer({
@@ -287,6 +291,8 @@ export async function mirror(o: {
   computers: readonly string[];
   session?: string;
   ask?: AnswerAsker;
+  /** This computer's fencing token, on each computer's `mcp.mirror`. */
+  fence?: ActFence;
 }): Promise<{ installed: string[]; failed: { computer: string; code: string; message: string }[] }> {
   const installed: string[] = [];
   const failed: { computer: string; code: string; message: string }[] = [];
@@ -299,7 +305,7 @@ export async function mirror(o: {
       if (!device) throw new ContractError("computer_offline", `${c.name} can't be reached`, { computer: c.name });
       const link = await o.transport.connect(device).catch((e) => { throw offlineAs(c.name, e); });
       await withAnswer(o.ask, (answer) => link.request("mcp.mirror", {
-        server: o.server, config: o.config, level: c.level,
+        server: o.server, config: o.config, level: c.level, ...fenceParam(o.fence),
         ...(o.session ? { session: o.session } : {}), ...(answer ? { answer } : {}),
       })).catch((e) => { throw offlineAs(c.name, e); });
       installed.push(c.name);

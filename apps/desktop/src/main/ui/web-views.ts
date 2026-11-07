@@ -127,7 +127,19 @@ export class WebViews {
       v = { view, windowId, window, address };
       this.views.set(mount, v);
       window.contentView.addChildView(view);
-      void view.webContents.loadURL(address).catch((err: unknown) => this.log(`web: ${plugin.id}'s page didn't load: ${err instanceof Error ? err.message : String(err)}`));
+      const wc = view.webContents;
+      // A page that fails to load is said so and asked for once more (a first load can fail while the session's network
+      // service is still settling); a page whose renderer went is said so too. An aborted load (-3) is a newer one's.
+      let retried = false;
+      wc.on("did-fail-load", (_e, code, description, _url, isMainFrame) => {
+        if (!isMainFrame || code === -3 || wc.isDestroyed()) return;
+        this.log(`web: ${plugin.id}'s page failed to load (${description}, ${code})${retried ? "" : "; asking once more"}`);
+        if (retried) return;
+        retried = true;
+        void wc.loadURL(address).catch(() => undefined);
+      });
+      wc.on("render-process-gone", (_e, details) => this.log(`web: ${plugin.id}'s page's process went (${details.reason})`));
+      void wc.loadURL(address).catch((err: unknown) => this.log(`web: ${plugin.id}'s page didn't load: ${err instanceof Error ? err.message : String(err)}`));
     }
     if (bounds === undefined) {
       v.view.setVisible(false);

@@ -14,6 +14,7 @@
 import { readFileSync, readlinkSync } from "node:fs";
 import { callerFloorVerdict, type FloorVerdict, type SandboxProbe } from "./sandbox-floor";
 import { inDaemonJob } from "./win-job";
+import type { PeerHandle } from "./peer-handle";
 import type { DaemonPlatform } from "./transport";
 
 import { ffiLib as open, ffiPtr as ptr, type FfiLib as Lib } from "./ffi";
@@ -223,6 +224,8 @@ export interface PeerFacts {
    *  to it, `PR_SET_CHILD_SUBREAPER`), macOS names the daemon its responsible process, or on Windows it runs in the
    *  daemon's job. Such a process is never the user or the app (review B1). */
   readonly spawnedByDaemon?: boolean;
+  /** The process itself, held for the connection's life (review S5): the kill goes through it, never the pid. */
+  readonly handle?: PeerHandle;
 }
 
 /** Whether `pid` (with its parents) was started by this daemon (see `PeerFacts.spawnedByDaemon`). The daemon
@@ -242,14 +245,19 @@ export function spawnedByDaemon(pid: number, ancestors: readonly number[], os: D
 }
 
 /** Probe the peer of a connected Bun socket (or a descriptor). On Windows pass the pid
- *  `WindowsPipePeers` found, since the socket carries no handle there. */
-export function probePeer(socketOrFd: unknown, os: DaemonPlatform = currentOs(), knownPid?: number | null): PeerFacts {
+ *  `WindowsPipePeers` found, since the socket carries no handle there. With the connection's `handle`
+ *  (`peerHandle`), the pid is its, the floor is read through it where the OS allows, and a process that is no
+ *  longer the one connected (its pid reused) is fenced (review S5). */
+export function probePeer(socketOrFd: unknown, os: DaemonPlatform = currentOs(), knownPid?: number | null, handle?: PeerHandle | null): PeerFacts {
   const fd = typeof socketOrFd === "number" ? socketOrFd : socketFd(socketOrFd);
-  const pid = knownPid !== undefined ? knownPid : fd === null ? null : peerPid(fd, os);
+  const pid = handle ? handle.pid : knownPid !== undefined ? knownPid : fd === null ? null : peerPid(fd, os);
   if (pid === null) return { pid: null, ancestors: [], probe: {}, floor: "fenced" };
-  const probe = sandboxProbe(pid, os);
+  const probe = handle?.probe() ?? sandboxProbe(pid, os);
   const ancestors = ancestry(pid, os);
-  return { pid, ancestors, probe, floor: callerFloorVerdict(os, probe), spawnedByDaemon: spawnedByDaemon(pid, ancestors, os) };
+  const spawned = spawnedByDaemon(pid, ancestors, os);
+  // Read last: every fact above is about the connected process only if it is still there.
+  if (handle && !handle.alive()) return { pid, ancestors, probe, floor: "fenced", spawnedByDaemon: spawned, handle };
+  return { pid, ancestors, probe, floor: callerFloorVerdict(os, probe), spawnedByDaemon: spawned, ...(handle ? { handle } : {}) };
 }
 
 /** One of the daemon's own handles, from NtQueryInformationProcess(ProcessHandleInformation). */

@@ -532,7 +532,7 @@ describe("guest tabs (the review's spoofing fix)", () => {
       "Needs you\uFE0F", // a variation selector
     ];
     for (const title of spoofs) expect([title, isReservedTab({ id: "x", title })]).toEqual([title, true]);
-    expect(isReservedTab({ id: "needs\u2011you", title: "Mail" })).toBe(false); // a hyphen is a different character
+    expect(isReservedTab({ id: "needs\u2011you", title: "Mail" })).toBe(true); // punctuation folds away (B's foldTitle)
     expect(isReservedTab({ id: "NEEDS-Y\u043EU", title: "Mail" })).toBe(true);
     for (const title of ["Needs", "Needs you now", "Devices", "Usage", "Feeds you"]) expect([title, isReservedTab({ id: "x", title })]).toEqual([title, false]);
   });

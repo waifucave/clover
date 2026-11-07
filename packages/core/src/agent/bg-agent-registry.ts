@@ -159,6 +159,8 @@ export interface AgentRegistry {
   stop(agentId: string): boolean;
   get(idOrName: string, sessionId?: string): AgentEntry | undefined;
   list(sessionId: string): AgentEntry[];
+  /** M-M2's update gate: background agents still running in any session this process knows of. */
+  runningCount?(): number;
   takeForNotification(agentId: string): AgentEntry | undefined;
   /**
    * Claim the completion notice WITHOUT reading the entry back.
@@ -313,6 +315,10 @@ export class BackgroundAgentRegistry implements AgentRegistry {
   /** All entries (running + terminal) for a session, in registration order. */
   list(sessionId: string): AgentEntry[] {
     return [...this.agents.values()].filter((e) => e.sessionId === sessionId);
+  }
+
+  runningCount(): number {
+    return [...this.agents.values()].filter((e) => e.status === "running").length;
   }
 
   /** Claims a terminal, not-yet-notified entry for completion-notice persistence: marks it
@@ -686,6 +692,14 @@ export function createPersistedChildren(deps: PersistedChildrenDeps): AgentRegis
 
     list(sessionId): AgentEntry[] {
       return tryOr("children.list", () => deps.store.list(sessionId), []).map(toEntry);
+    },
+
+    // Every session a child was registered or looked up under in this process (`parentOf`), whether or not it
+    // has a live driver: a child outlives its parent's turn, and its parent's driver may have been reaped.
+    runningCount(): number {
+      let n = 0;
+      for (const sid of new Set(parentOf.values())) n += registry.list(sid).filter((a) => a.status === "running").length;
+      return n;
     },
 
     takeForNotification(agentId): AgentEntry | undefined {

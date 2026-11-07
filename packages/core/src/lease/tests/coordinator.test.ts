@@ -367,6 +367,31 @@ describe("the main computer", () => {
     expect(two).toBe(0);
   }, 30_000);
 
+  test("L11: as L10, but the main's requests to the service hang instead of failing: the claim unanswered stops it (H-M3)", async () => {
+    const names = ["Studio", "Laptop", "Server"];
+    let hang = false;
+    const never = new Promise<never>(() => undefined);
+    const w = await computers(names, (name, scope) => name !== "Studio" ? scope : {
+      ...scope,
+      op: (op, epoch, ttl) => (hang ? never : scope.op(op, epoch, ttl)),
+      read: () => (hang ? never : scope.read()),
+    }, [["Studio", "Laptop"], ["Laptop", "Server"]]);
+    await w.n("Studio").mc.coordinator.chooseSelf();
+    await waitFor(() => w.holder() === "Studio" && w.n("Studio").mc.lease.canAct());
+    const n0 = w.service.log.length;
+    await waitFor(() => w.service.log.length > n0 && w.service.log.at(-1) === `${w.id("Studio")} renew`, 3_000);
+    hang = true;
+    const t0 = performance.now();
+    await w.n("Server").mc.coordinator.chooseSelf();
+    let two = 0;
+    while (performance.now() - t0 < 1_500) {
+      await Bun.sleep(25);
+      if (names.filter((n) => w.n(n).mc.lease.canAct()).length > 1) two++;
+    }
+    expect(w.holder()).toBe("Server");
+    expect(two).toBe(0);
+  }, 30_000);
+
   test("only a computer that votes starts a new tenure: a non-voter never takes over a lapse, nor is handed the lease, and a not_voter refusal stops its tries (check 3)", async () => {
     let refused = 0;
     const w = await computers(["Studio", "Laptop", "Server"], (name, scope) => {

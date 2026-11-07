@@ -241,6 +241,32 @@ describe("the live view", () => {
     expect(frame().textContent).toBe("");
   });
 
+  test("lane F's host says this panel was used last: it takes the live view back (R8); used last again while live, nothing is sent", async () => {
+    const api = fakeBrowser([A]);
+    const view = render(tree(api, { app: "browser", bot: "alpha", usedLast: true }));
+    await flush();
+    await resize(400, 300);
+    await flush();
+    const shows = api.of("show").length;
+    // Another panel (in another tab) was used and took the live view.
+    view.rerender(tree(api, { app: "browser", bot: "alpha", usedLast: false }));
+    await act(async () => api.emit({ ...api.all.find((t) => t.id === "a")!, place: "headless" }));
+    await flush();
+    expect(screen.getByRole("status").textContent).toContain("Paused");
+    expect(api.of("show").length).toBe(shows);
+    // The person comes back to this panel.
+    view.rerender(tree(api, { app: "browser", bot: "alpha", usedLast: true }));
+    await flush();
+    expect(api.of("show").length).toBe(shows + 1);
+    expect(api.of("show").at(-1)).toEqual(["a", "browser", { width: 400, height: 300 }]);
+    expect(screen.queryByRole("status")).toBeNull();
+    // Used last again (a click inside it), while it already has the live view: no second show.
+    view.rerender(tree(api, { app: "browser", bot: "alpha", usedLast: false }));
+    view.rerender(tree(api, { app: "browser", bot: "alpha", usedLast: true }));
+    await flush();
+    expect(api.of("show").length).toBe(shows + 1);
+  });
+
   test("a tab that was never live here is not paused: the frame says what goes there", async () => {
     const api = fakeBrowser([A], { shows: false });
     await mount(api);
@@ -293,6 +319,33 @@ describe("the live view", () => {
   });
 });
 
+describe("lane F's panel host", () => {
+  test("the tab row goes in the host's header row, where the host's title steps aside; without one the panel draws its own", async () => {
+    const head = document.createElement("div");
+    head.className = "cl-panel__head-main";
+    document.body.appendChild(head);
+    try {
+      const api = fakeBrowser([A, B]);
+      const view = await mount(api, { app: "browser", bot: "alpha", header: head });
+      const own = head.querySelector(":scope > .cl-panel__head-own");
+      expect(own).not.toBeNull();
+      expect(own!.querySelector('[role="tablist"]')).not.toBeNull();
+      expect([...own!.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(["Docs preview", "Plugin index"]);
+      expect(view.container.querySelector(".cl-browser-panel__head")).toBeNull();
+      // The row still drives the panel from up there.
+      await act(async () => fireEvent.click(tab("Plugin index")));
+      expect(tab("Plugin index").getAttribute("aria-selected")).toBe("true");
+      // The host's row goes (another layout): the panel draws the row itself again.
+      view.rerender(tree(api, { app: "browser", bot: "alpha", header: null }));
+      await flush();
+      expect(head.querySelector(".cl-panel__head-own")).toBeNull();
+      expect(view.container.querySelector(".cl-browser-panel__head [role=\"tablist\"]")).not.toBeNull();
+    } finally {
+      head.remove();
+    }
+  });
+});
+
 describe("tabs", () => {
   test("a new tab opens for the owner, in the view, and takes over", async () => {
     const api = fakeBrowser([A]);
@@ -301,7 +354,7 @@ describe("tabs", () => {
     await flush();
     await act(async () => fireEvent.click(button("New tab")));
     await flush();
-    expect(api.of("open")).toEqual([[{ owner: { kind: "bot", bot: "alpha" }, show: true }]]);
+    expect(api.of("open")).toEqual([[{ owner: { kind: "bot", bot: "alpha" }, show: { view: "browser", viewport: { width: 400, height: 300 } } }]]);
     expect(screen.getAllByRole("tab")).toHaveLength(2);
     expect(tab("New tab").getAttribute("aria-selected")).toBe("true");
     expect(api.of("hide")).toEqual([["a"]]);
@@ -313,7 +366,8 @@ describe("tabs", () => {
     await mount(api, { app: "browser", session: "s1" });
     await act(async () => fireEvent.click(button("New tab")));
     await flush();
-    expect(api.of("open")).toEqual([[{ owner: { kind: "session", session: "s1" }, show: true }]]);
+    // No frame size yet: opened headless, and the live view shows it once the frame has one.
+    expect(api.of("open")).toEqual([[{ owner: { kind: "session", session: "s1" } }]]);
   });
 
   test("closing the tab shown hands the view to its neighbour; closing the last says there is none", async () => {

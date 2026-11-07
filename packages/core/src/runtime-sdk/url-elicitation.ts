@@ -59,6 +59,8 @@ interface PendingEntry extends ElicitationPendingMeta {
  *  `ApprovalBroker`; a second answer reports `alreadyResolved`. */
 export class ElicitationBroker {
   private pending = new Map<string, PendingEntry>();
+  /** M-M2's update gate: URL elicitations still waiting. */
+  pendingCount(): number { return this.pending.size; }
 
   private key(sessionId: string, elicitationId: string): string { return `${sessionId}:${elicitationId}`; }
 

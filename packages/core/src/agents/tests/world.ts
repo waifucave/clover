@@ -72,9 +72,12 @@ export interface WorldOptions {
   /** The bridge tokens' life, on the world's clock. */
   tokenTtlMs?: number;
   /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
-  extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>) => AgentBackend[];
+  extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
   /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
   bridgeServerName?: string;
+  /** This computer's name ("Studio" by default), and the other computers' homes its tree knows (agents placed there). */
+  computer?: string;
+  otherComputers?: Record<string, string>;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -111,8 +114,10 @@ export class World {
   readonly backend: AcpAgentBackend;
   readonly agent: FakeAgentRun;
   level: Level;
+  readonly computer: string;
 
   constructor(o: WorldOptions = {}) {
+    this.computer = o.computer ?? "Studio";
     this.root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-")));
     this.userHome = join(this.root, "home");
     this.cloverHome = join(this.userHome, ".clover");
@@ -121,7 +126,8 @@ export class World {
     mkdirSync(this.cloverHome, { recursive: true });
     this.level = o.level ?? "automatic";
     this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome });
-    this.tree = new FakeTree({ clock: this.clock, computers: { Studio: { home: this.userHome } }, botComputer: () => "Studio" });
+    const others = Object.fromEntries(Object.entries(o.otherComputers ?? {}).map(([name, home]) => [name, { home }]));
+    this.tree = new FakeTree({ clock: this.clock, computers: { ...others, [this.computer]: { home: this.userHome } }, botComputer: () => "Studio" });
     this.approvals = new FakeApprovalBroker({ clock: this.clock, levels: () => this.level, fence: () => this.fence });
     this.host = new FakeSessionHost({ clock: this.clock, approvals: this.approvals });
     this.host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, this.parentDriver);
@@ -142,9 +148,9 @@ export class World {
       ...(o.place ? { place: o.place } : {}),
       ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
-    const extra = o.extraBackends?.((id) => manager.wire(id)) ?? [];
+    const extra = o.extraBackends?.((id) => manager.wire(id), this) ?? [];
     manager = new AgentManager({
-      home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
+      home: this.cloverHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),

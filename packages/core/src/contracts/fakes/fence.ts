@@ -1,6 +1,7 @@
 // FakeFence: the fenced set laid out under a Clover home, POSIX paths, prefix semantics. The layout is the fake's;
 // lane C owns the real one, and a test can override any item.
 import type { Caller, Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
   CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
@@ -154,12 +155,14 @@ export class FakeFence implements Fence {
     const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: [...set.map((i) => i.path), patterns[0]!],
+      // The whole bots folder is write-denied (agents and the rest of a bot's folder are read-only); the
+      // runner's own memory comes back below as `ownMemory`.
+      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`],
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
-      ...(ctx?.memoryOf !== undefined ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
+      ...(ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
     };
   }
 

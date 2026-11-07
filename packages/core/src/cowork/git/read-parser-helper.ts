@@ -100,6 +100,9 @@ export class ConfinedGitReadParser implements GitReadParser {
     this.active++;
     await new Promise<void>((resolve, reject) => {
       let child: ChildProcessWithoutNullStreams;
+      // HOME is the working folder here. Harmless today (the launcher runs a separate `node`, not clover-core), but a
+      // macOS release clover-core refuses to start with a HOME that isn't the account's own (startup-guard.ts): if
+      // this ever runs the dist core, drop HOME from this environment rather than pointing it elsewhere.
       try { child = (this.fixture?.spawn ?? spawn)("/usr/bin/sandbox-exec", ["-p", profile, this.config.launcher, this.config.node, this.config.payload], { cwd: this.config.cwd, detached: true, env: { PATH: "/usr/bin:/bin", HOME: this.config.cwd, LC_ALL: "C" }, stdio: ["pipe", "pipe", "pipe"] }) as typeof child; }
       catch { this.active--; reject(new GitReadError("integration_unavailable")); return; }
       let output = Buffer.alloc(0), stderrBytes = 0, sent = false, exited = false, settled = false, failure: GitReadError | undefined;

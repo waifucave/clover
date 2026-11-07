@@ -180,6 +180,34 @@ describe("spawnShellRunner", () => {
   });
 });
 
+// A job holding the pipe open (C-M2, from the flake sweep #200): the runner answers from the shell's output and
+// exit, never from the pipe's end. Each hold is 30 s against bounds of 15 s, so only a wait for the pipe fails.
+describe("spawnShellRunner with the pipe held open", () => {
+  const HOLD = "sleep 30 & ";
+  const marked = `'${LOGIN_SHELL_PATH_START}/opt/x/bin:/usr/bin${LOGIN_SHELL_PATH_END}'`;
+  const run = async (body: string) => {
+    const started = Date.now();
+    const r = await spawnShellRunner("/bin/sh", ["-c", body], 25_000, { PATH: "/usr/bin:/bin" });
+    return { r, ms: Date.now() - started };
+  };
+  test("the marker split across writes, the second one late, is answered as it arrives", async () => {
+    const { r, ms } = await run(`${HOLD}printf '%s' '${LOGIN_SHELL_PATH_START}/opt/x'; sleep 1; printf '%s' '/bin:/usr/bin${LOGIN_SHELL_PATH_END}'; sleep 30`);
+    expect(r.kind).toBe("ok");
+    expect(parseMarkedPath((r as { stdout: string }).stdout)).toBe("/opt/x/bin:/usr/bin");
+    expect(ms).toBeLessThan(15_000);
+  }, 30_000);
+  test("a shell that exits with no marker is answered by its exit, not by the pipe's end", async () => {
+    const { r, ms } = await run(`${HOLD}echo noise; exit 3`);
+    expect(r).toEqual({ kind: "error", reason: "exit 3" });
+    expect(ms).toBeLessThan(15_000);
+  }, 30_000);
+  test("a non-zero exit after the marker still carries the PATH", async () => {
+    const { r, ms } = await run(`${HOLD}printf '%s' ${marked}; exit 1`);
+    expect(r.kind).toBe("ok");
+    expect(ms).toBeLessThan(15_000);
+  }, 30_000);
+});
+
 describe("describeLoginShellPath — the one boot log line", () => {
   test("names the source and what was added; carries no other environment value", async () => {
     const env: Record<string, string | undefined> = { PATH: "/usr/bin", SHELL: "/bin/zsh", OPENAI_API_KEY: "sk-secret-value" };

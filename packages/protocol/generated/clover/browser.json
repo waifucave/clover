@@ -1387,10 +1387,10 @@
       "owner": "L",
       "direction": "to-daemon",
       "roles": [
-        "app",
         "remote",
         "peer"
       ],
+      "capability": "browser",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1407,6 +1407,19 @@
             "type": "integer",
             "minimum": 50,
             "maximum": 50000
+          },
+          "codecs": {
+            "minItems": 1,
+            "maxItems": 3,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "h264",
+                "vp8",
+                "jpeg"
+              ]
+            }
           }
         },
         "required": [
