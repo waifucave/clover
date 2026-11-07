@@ -131,6 +131,16 @@ describe("code, engines and platforms", () => {
     }
   });
 
+  test("a built plugin (`built: true`, the release build's) names JavaScript modules only", () => {
+    const code = { ...min(), engines: { clover: "^1.0.0" }, built: true };
+    expect(codes(validateManifest({ ...code, host: { entry: "host/index.js" }, client: { entry: "client/index.js", css: ["client/index.css"] } }))).toEqual([]);
+    const ts = validateManifest({ ...code, host: { entry: "host/index.ts" }, client: { entry: "client/index.tsx" } });
+    expect(ts.issues.filter((i) => i.code === "built_entry").map((i) => `${i.refuses}:${i.path}`)).toEqual(["plugin:/host/entry", "plugin:/client/entry"]);
+    expect(ts.ok).toBe(false);
+    expect(has(validateManifest({ ...code, built: false }), "schema", "plugin")).toBe(true);
+    expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" } }).ok).toBe(true);
+  });
+
   test("handlers need host code, components need a client module", () => {
     const r = validateManifest({ ...min(), contributes: { commands: [{ name: "draw", description: "Draw a card", handler: "draw" }] } });
     expect(r.ok).toBe(true);
