@@ -1299,15 +1299,17 @@ async function smoke(): Promise<void> {
                 const want = ${JSON.stringify(token)};
                 const baseWant = ${JSON.stringify(base)};
                 const frames = [...document.querySelectorAll('iframe')];
+                const all = frames.map((f) => ({ src: f.src.slice(0, 80), x: Math.round(f.getBoundingClientRect().x), y: Math.round(f.getBoundingClientRect().y) }));
                 let el = frames.find((f) => f.src.includes(want));
                 if (!el && baseWant !== "") el = frames.find((f) => f.src.includes(baseWant));
-                if (!el) return null;
+                if (!el) return { found: null, all };
                 const r = el.getBoundingClientRect();
-                return { x: r.x, y: r.y };
+                return { found: { x: r.x, y: r.y }, all };
               })()`;
-              const rectRaw = await parent.executeJavaScript(probe, true).catch(() => null) as { x: number; y: number } | null;
-              if (rectRaw === null || typeof rectRaw !== "object" || typeof (rectRaw as { x?: unknown }).x !== "number" || typeof (rectRaw as { y?: unknown }).y !== "number") { chainOk = false; break; }
-              const rect = rectRaw as { x: number; y: number };
+              const rectRaw = await parent.executeJavaScript(probe, true).catch(() => null) as { found: { x: number; y: number } | null; all?: unknown } | null;
+              if (rectRaw !== null && typeof rectRaw === "object" && Array.isArray((rectRaw as { all?: unknown }).all)) log(`sealed-click: iframes in parent: ${JSON.stringify((rectRaw as { all?: unknown }).all).slice(0, 500)}`);
+              if (rectRaw === null || typeof rectRaw !== "object" || (rectRaw as { found?: unknown }).found === null || typeof (rectRaw as { found?: { x?: unknown } | null }).found !== "object" || typeof ((rectRaw as { found: { x?: unknown } }).found as { x?: unknown }).x !== "number") { chainOk = false; break; }
+              const rect = (rectRaw as { found: { x: number; y: number } }).found;
               offsetX += rect.x;
               offsetY += rect.y;
             }
