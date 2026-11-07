@@ -689,13 +689,14 @@ describe("the exclusive pool lease (ruling 3)", () => {
           files.set(p, c);
           return true;
         },
-        writeText: (p: string, c: string) => { files.set(p, c); },
         remove: (p: string) => { files.delete(p); },
-        replaceAtomic: (tmp: string, fin: string) => {
-          const c = files.get(tmp);
-          if (c === undefined) throw new Error(`missing temp lease ${tmp}`);
-          files.set(fin, c);
-          files.delete(tmp);
+        renameToGrave: (cur: string, grave: string) => {
+          const c = files.get(cur);
+          if (c === undefined) return false; // ENOENT: another racer moved it first
+          if (files.has(grave)) throw new Error(`grave collision ${grave}`);
+          files.delete(cur);
+          files.set(grave, c);
+          return true;
         },
       },
     };
@@ -750,8 +751,8 @@ describe("the exclusive pool lease (ruling 3)", () => {
     files.set(principalLeasePath("L:", "clover-sb-a-1"), JSON.stringify({ holderPid: 99, holderStart: null, nonce: "dead", lastUseAt: null, lastResetAt: null }));
     const isAlive = (pid: number) => pid !== 99;
     const startTimeOf = () => null;
-    // Both contenders race concurrently; the synchronous read/create/rename/re-read
-    // sequence admits no interleave, so the loser's re-read sees the winner's nonce.
+    // Both contenders race concurrently; the synchronous read/rename/create
+    // sequence admits no interleave, so the loser gets ENOENT on the grave-rename.
     const [a, b] = await Promise.all([
       acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 11, timeoutMs: 500, pollMs: 10, isAlive, startTimeOf, nonce: "racer-1" }),
       acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 500, pollMs: 10, isAlive, startTimeOf, nonce: "racer-2" }),
@@ -765,6 +766,38 @@ describe("the exclusive pool lease (ruling 3)", () => {
     const raw = store.readText(principalLeasePath("L:", "clover-sb-a-1"))!;
     const survivor = (JSON.parse(raw) as { nonce: string }).nonce;
     expect(["racer-1", "racer-2"]).toContain(survivor);
+  });
+
+  test("grave-rename loser restarts from the read and never overwrites a live lease", async () => {
+    const inner = memStore();
+    const path = principalLeasePath("L:", "clover-sb-a-1");
+    inner.files.set(path, JSON.stringify({ holderPid: 99, holderStart: null, nonce: "dead", lastUseAt: null, lastResetAt: null }));
+    // The interleaving the rename-over protocol got wrong, replayed against the
+    // grave protocol: B judges the holder dead from its read; A moves the stale
+    // file aside and installs a live lease; B's grave-rename then finds nothing
+    // to move (ENOENT) and must start again from the read — where it now sees
+    // A's live holder and backs off instead of renaming over it.
+    let raced = false;
+    const store = {
+      ...inner.store,
+      renameToGrave: (cur: string, grave: string) => {
+        if (!raced) {
+          raced = true;
+          // Racer A wins the rename first, outside B's call.
+          const moved = inner.store.renameToGrave(cur, `${cur}.dead-a`);
+          expect(moved).toBe(true);
+          const installed = inner.store.createNew(cur, JSON.stringify({ holderPid: 11, holderStart: null, nonce: "a", lastUseAt: null, lastResetAt: null }));
+          expect(installed).toBe(true);
+          return false; // B's rename: the stale file A moved is already gone.
+        }
+        return inner.store.renameToGrave(cur, grave);
+      },
+    };
+    const r = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 50, pollMs: 10, isAlive: (pid) => pid !== 99, startTimeOf: () => null, nonce: "b" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain("busy");
+    // B never touched A's live lease: the survivor still names A.
+    expect((JSON.parse(inner.store.readText(path)!) as { nonce: string }).nonce).toBe("a");
   });
 
   test("processStartTimeMs returns the current process's start (or null when unknown)", () => {

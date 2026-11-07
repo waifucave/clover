@@ -486,27 +486,33 @@ export interface LeaseStore {
   readText(path: string): string | null;
   /** Atomically create `path` with `content`; `false` when it already exists. */
   createNew(path: string, content: string): boolean;
-  writeText(path: string, content: string): void;
   remove(path: string): void;
-  /** Atomically move `tmpPath` over `finalPath` (same directory). The production
-   *  filesystem implementation is `fs.renameSync`, which is atomic on one directory
-   *  on both NTFS and POSIX; the in-memory test store swaps one `Map` entry. The
-   *  takeover below writes the new lease to a nonce-unique temp file first and only
-   *  then renames it over the lease, so readers of the lease path never see a
-   *  half-written file — and the winner is confirmed by re-reading the lease and
-   *  checking the nonce (see `acquirePoolLease`).
+  /** Atomically move `currentPath` to `gravePath` (same directory, grave name unique
+   *  to the caller). Returns `false` when `currentPath` is already gone (ENOENT):
+   *  another racer moved it first, so the caller must start again from the read —
+   *  never rename over, or create over, a file it has not just moved aside itself.
+   *  The production filesystem implementation is `fs.renameSync`, atomic on one
+   *  directory on both NTFS and POSIX; the in-memory test store swaps `Map` entries.
    *
    *  Why not an OS-held lock (`CreateFileW` with `dwShareMode = 0` / `LockFileEx`
    *  via `bun:ffi`, auto-released when the holder dies)? That would need a
    *  Windows-only handle held open in the daemon for the whole session lifetime,
    *  plus native PID/start-time plumbing, and it cannot run in core's
-   *  cross-platform unit tests (macOS). The temp-file + atomic-rename + nonce
-   *  re-read gives the same single-winner property for the actual contenders
-   *  (separate `acquirePoolLease` calls interleave only at `await sleep`, never
-   *  between the synchronous read/create/rename/re-read sequence), without native
-   *  code. When the daemon wires the lease into the Windows Bash spawn, its
-   *  filesystem store implements this with `renameSync`. */
-  replaceAtomic(tmpPath: string, finalPath: string): void;
+   *  cross-platform unit tests (macOS). Grave-rename + exclusive-create gives the
+   *  single winner the same way: only one racer can move a given lease file
+   *  aside (the others get ENOENT and retry), and only one can exclusively
+   *  create its replacement. A rename to a unique new name never replaces
+   *  anything, so a live lease is never overwritten — the flaw of renaming a
+   *  temp file OVER the lease and re-reading the nonce (a late racer renames
+   *  over the winner's live lease and its re-read still shows itself, so both
+   *  win). Contenders run in one daemon process and each attempt's
+   *  read/rename/create/remove sequence is synchronous (interleaving only at
+   *  `await sleep`), without native code. When the daemon wires the lease into
+   *  the Windows Bash spawn, its filesystem store implements this with
+   *  `renameSync`. Grave files (`<principal>.json.dead-<nonce>`) left by a
+   *  crashed holder are inert — the lease path is the only source of truth —
+   *  and the winner removes its own grave; a startup sweep may remove the rest. */
+  renameToGrave(currentPath: string, gravePath: string): boolean;
 }
 
 /** A live lease record on disk. */
@@ -546,21 +552,21 @@ export function processStartTimeMs(pid: number): number | null {
   }
 }
 
-/** Acquire one pool principal exclusively (controller ruling 3). Tries members in order; a missing or
- *  corrupt lease file is free. A live holder blocks; a dead PID — or a start time that differs from
- *  the recorded one — is stale and taken over through an atomic step: the new lease is written to a
- *  nonce-unique temp file, renamed over the lease (`replaceAtomic`, atomic on one directory), then
- *  re-read — only the contender whose nonce survived the rename wins. A torn file can never be
- *  observed (the temp is fully written before the rename), and two racers for a dead holder cannot
- *  both win: the loser's re-read shows the winner's nonce. When every member is leased by a live
- *  holder, waits until `timeoutMs` and then refuses instead of sharing a principal. `nonce`
- *  identifies the holder for a safe release.
+/** Acquire one pool principal exclusively (controller ruling 3). Tries members in order; a missing
+ *  lease file is free (exclusive-create wins it). A live holder blocks; a dead PID — or a start
+ *  time that differs from the recorded one — or a corrupt file is stale and taken over by
+ *  grave-rename: move the lease aside to `<principal>.json.dead-<yourNonce>` (only one racer
+ *  can move a given file; the rest get ENOENT and start again from the read), then
+ *  exclusively create a fresh lease with your nonce, then remove your grave. A rename to a
+ *  unique new name never replaces anything, so a live lease is never overwritten. When every
+ *  member is leased by a live holder, waits until `timeoutMs` and then refuses instead of
+ *  sharing a principal. `nonce` identifies the holder for a safe release.
  *
  *  Daemon wiring: no Windows Bash spawn exists in the daemon yet (`execArgs` / `sessionGrantArgs`
  *  are built and unit-tested here but no production caller passes them to a child process), so no
  *  production `LeaseStore` exists either. The first daemon caller — the lane that introduces the
  *  Windows Bash tool spawn — implements `LeaseStore` on the filesystem (`readText`/`createNew` via
- *  `O_CREAT|O_EXCL`, `replaceAtomic` via `renameSync`) with `sandboxLeasesDir(cloverHome)` as the
+ *  `O_CREAT|O_EXCL`, `renameToGrave` via `renameSync`) with `sandboxLeasesDir(cloverHome)` as the
  *  leases dir, `process.pid` as `holderPid`, and the defaults for `isAlive`/`startTimeOf`. Until
  *  then the lease is measured by unit tests plus a filesystem-backed race on the VM. */
 export async function acquirePoolLease(o: {
@@ -590,56 +596,50 @@ export async function acquirePoolLease(o: {
     for (const member of o.pool) {
       const path = principalLeasePath(o.leasesDir, member.principal);
       const raw = o.store.readText(path);
-      let cur: PoolLeaseFile | null = null;
-      if (raw !== null) {
+      if (raw === null) {
+        // Free: exclusive-create wins it; a parallel creator means retry.
+        const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: null, lastResetAt: null };
         try {
-          const v = JSON.parse(raw) as Record<string, unknown>;
-          if (typeof v.holderPid === "number" && typeof v.nonce === "string" &&
-            (v.holderStart === null || typeof v.holderStart === "number") &&
-            (v.lastUseAt === null || typeof v.lastUseAt === "number") &&
-            (v.lastResetAt === null || typeof v.lastResetAt === "string")) {
-            cur = v as unknown as PoolLeaseFile;
-          }
-        } catch { /* corrupt: take over below */ }
-        if (cur !== null) {
-          const alive = isAlive(cur.holderPid);
-          const recordedStart = cur.holderStart ?? null;
-          const liveStart = startTimeOf(cur.holderPid);
-          const startDiffers = recordedStart !== null && liveStart !== null && liveStart !== recordedStart;
-          if (alive && !startDiffers) continue; // live holder: try the next member
-        }
-        // Stale (dead holder, changed start time) or corrupt: atomic takeover below,
-        // preserving the reset/use history when the record parsed.
-      }
-      // Free, stale or corrupt: claim atomically. The temp holds the complete lease
-      // before the rename, so no reader ever sees a partial write.
-      const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: cur?.lastUseAt ?? null, lastResetAt: cur?.lastResetAt ?? null };
-      const tmp = `${path}.${nonce}.tmp`;
-      let created = false;
-      try {
-        created = o.store.createNew(tmp, JSON.stringify(lease));
-        if (!created) {
-          // Our own leftover from a failed attempt (same nonce, retried poll):
-          // clear it once and retry the create.
-          try { o.store.remove(tmp); } catch { /* ignore */ }
-          try { created = o.store.createNew(tmp, JSON.stringify(lease)); } catch { created = false; }
-          if (!created) continue;
-        }
-      } catch { continue; }
-      try {
-        o.store.replaceAtomic(tmp, path);
-      } catch {
-        try { o.store.remove(tmp); } catch { /* ignore */ }
+          if (o.store.createNew(path, JSON.stringify(lease))) return { ok: true, principal: member.principal };
+        } catch { /* retry below */ }
         continue;
       }
-      // Only the contender whose rename survived wins: re-read and compare nonces.
-      let won = false;
+      let cur: PoolLeaseFile | null = null;
       try {
-        const reread = o.store.readText(path);
-        if (reread !== null) won = (JSON.parse(reread) as { nonce?: unknown }).nonce === nonce;
-      } catch { won = false; }
-      if (won) return { ok: true, principal: member.principal };
-      // Lost the race to another contender: try the next member.
+        const v = JSON.parse(raw) as Record<string, unknown>;
+        if (typeof v.holderPid === "number" && typeof v.nonce === "string" &&
+          (v.holderStart === null || typeof v.holderStart === "number") &&
+          (v.lastUseAt === null || typeof v.lastUseAt === "number") &&
+          (v.lastResetAt === null || typeof v.lastResetAt === "string")) {
+          cur = v as unknown as PoolLeaseFile;
+        }
+      } catch { /* corrupt: take over below */ }
+      if (cur !== null) {
+        const alive = isAlive(cur.holderPid);
+        const recordedStart = cur.holderStart ?? null;
+        const liveStart = startTimeOf(cur.holderPid);
+        const startDiffers = recordedStart !== null && liveStart !== null && liveStart !== recordedStart;
+        if (alive && !startDiffers) continue; // live holder: try the next member
+      }
+      // Stale (dead holder, changed start time) or corrupt: grave-rename the lease
+      // aside, preserving the reset/use history when the record parsed. Only the
+      // racer that moves the file wins the rename; the rest retry from the read.
+      const grave = `${path}.dead-${nonce}`;
+      let moved = false;
+      try {
+        moved = o.store.renameToGrave(path, grave);
+      } catch { moved = false; }
+      if (!moved) continue;
+      const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: cur?.lastUseAt ?? null, lastResetAt: cur?.lastResetAt ?? null };
+      let created = false;
+      try {
+        created = o.store.createNew(path, JSON.stringify(lease));
+      } catch { created = false; }
+      try {
+        o.store.remove(grave);
+      } catch { /* grave is inert; a startup sweep may remove leftovers */ }
+      if (created) return { ok: true, principal: member.principal };
+      // Someone else created the replacement first: start again from the read.
     }
     if (now() >= deadline) {
       return { ok: false, reason: "the sandbox pool is busy; all 4 principals are leased" };
