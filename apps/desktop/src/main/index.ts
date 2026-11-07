@@ -571,10 +571,11 @@ async function requestQuit(source: string): Promise<void> {
   const q = quitQuestion(status);
   let choice: QuitChoice = "quit";
   if (q.ask) {
-    if (headless) {
+    // Test-only (like the sealed paths): a packaged run never takes the test's choice, whatever env it started with.
+    if (!app.isPackaged && headless) {
       const env = process.env.CLOVER_TEST_QUIT_CHOICE;
       choice = env === "handover" || env === "cancel" ? env : "quit";
-    } else {
+    } else if (!headless) {
       const r = await dialog.showMessageBox({ type: "question", message: q.message, detail: q.detail, buttons: q.buttons.map((b) => b.label), defaultId: 0, cancelId: q.buttons.length - 1, noLink: true });
       choice = q.buttons[r.response]?.id ?? "cancel";
     }
@@ -867,7 +868,10 @@ async function terminalInput(windowId: number, frameId: string, pluginId: string
 
 /** Asks before a paste of more than one line goes to a terminal (a headless run answers with CLOVER_TEST_PASTE_OK). */
 async function okToPaste(windowId: number, lines: number): Promise<boolean> {
-  if (headless) return process.env.CLOVER_TEST_PASTE_OK === "1";
+  // Test-only (like the sealed paths): a packaged run never takes the test's answer. Headless and packaged fails
+  // closed, as an absent answer does.
+  if (!app.isPackaged && headless) return process.env.CLOVER_TEST_PASTE_OK === "1";
+  if (headless) return false;
   const t = (key: string, params?: Record<string, string | number>) => translate(runtime.coreStrings(), `clover.core.${key}`, params);
   const win = BrowserWindow.fromId(windowId);
   const options = { type: "question" as const, message: t("terminal.paste-title", { count: lines }), detail: t("terminal.paste-detail"), buttons: [t("terminal.paste"), t("terminal.cancel")], defaultId: 1, cancelId: 1, noLink: true };
@@ -1057,7 +1061,9 @@ async function popupMenu(windowId: number, items: MenuItem[], point: { x: number
   try {
     if (headless || !win.isVisible()) {
       log(`menu: ${items.length} item(s) at ${point.x},${point.y} (not shown: headless)`);
-      return process.env.CLOVER_TEST_MENU_PICK ?? null;
+      // Test-only (like the sealed paths): a packaged run never takes the test's pick.
+      if (!app.isPackaged && headless) return process.env.CLOVER_TEST_MENU_PICK ?? null;
+      return null;
     }
     return await nativeMenu(win, items, point);
   } finally {
@@ -1190,7 +1196,8 @@ async function smoke(): Promise<void> {
   let hung = false;
   // The UI test's user on the core's own pages (unpackaged runs only): a page to open once everything has drawn, and
   // steps in the root, one a turn, each once its element is there (a click, a tick, text typed into a field).
-  const smokePage = process.env.CLOVER_SMOKE_PAGE;
+  // Test-only like the sealed paths: a packaged run never takes the test's page.
+  const smokePage = !app.isPackaged ? process.env.CLOVER_SMOKE_PAGE : undefined;
   let pageOpened = false;
   type Step = { click?: string; check?: string; fill?: string; value?: string };
   const steps: Step[] = !app.isPackaged ? (JSON.parse(process.env.CLOVER_SMOKE_ROOT_STEPS ?? "[]") as Step[]) : [];
@@ -1486,8 +1493,8 @@ async function smoke(): Promise<void> {
       }
     }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
-    // press in each window, which the menu gate counts as the user's input.
-    if (drawn && process.env.CLOVER_SMOKE_INPUT === "1") {
+    // press in each window, which the menu gate counts as the user's input. Test-only like the sealed paths.
+    if (drawn && !app.isPackaged && process.env.CLOVER_SMOKE_INPUT === "1") {
       for (const w of [win, ...[...surfaces.values()].map((x) => x.win)]) {
         if (w.isDestroyed()) continue;
         w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });

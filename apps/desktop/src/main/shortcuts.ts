@@ -12,16 +12,9 @@ export function sealedInputAllowed(input: { packaged: boolean; headless: boolean
   return input.packaged !== true && input.headless === true;
 }
 
-/** The app's own reserved keys, ahead of every layer: the shortcuts above, in the manifest's `mod+…` chord grammar
- *  (lane F's palette checks user bindings against this list, F-M3). */
-export const APP_KEYS = ["mod+q", "mod+w", "mod+,"] as const;
-
-/** Electron's Edit-menu keys (the `editMenu` role's own accelerators, both platforms' redo): reserved with the app's
- *  own, so a layer or a plugin command never takes them silently. */
-export const EDIT_MENU_KEYS = ["mod+z", "mod+shift+z", "mod+y", "mod+x", "mod+c", "mod+v", "mod+a"] as const;
-
-/** Every key the app keeps: its own plus the Edit menu's. */
-export const RESERVED_KEYS: readonly string[] = [...APP_KEYS, ...EDIT_MENU_KEYS];
+/** The app's own reserved keys, ahead of every layer: lane E keeps the single list in the plugin SDK (F-M3's palette
+ *  checks user bindings against it), and the desktop re-exports it for its own tests. */
+export { APP_KEYS, EDIT_MENU_KEYS, RESERVED_KEYS } from "@waifucave/clover-plugin-sdk";
 
 export interface KeyInput {
   type: string;

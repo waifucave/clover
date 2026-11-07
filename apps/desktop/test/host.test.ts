@@ -40,6 +40,23 @@ describe("documents and headers (S9, decision 94)", () => {
     expect(CORE_CSP).toContain("connect-src 'none'");
     expect(CORE_CSP).toContain("frame-ancestors 'none'");
   });
+
+  test("a layer's workers run only from its own pages and in-bundle blobs; its scripts never remote or eval", () => {
+    // B's review of #271: worker-src is exactly 'self' blob: (in-bundle blobs cover the live2d decoder), and every
+    // script-src source is 'self' or a hash/nonce — never a remote origin or 'unsafe-eval'. Stated positively, so an
+    // import-map rehash can't trip it on a substring.
+    for (const csp of [layerCsp(), layerCsp(["https://api.example.com"])]) {
+      const worker = csp.split(";").map((d) => d.trim()).find((d) => d.startsWith("worker-src"))!;
+      expect(worker).toBe("worker-src 'self' blob:");
+      const scripts = csp.split(";").map((d) => d.trim()).filter((d) => d.startsWith("script-src"));
+      expect(scripts.length).toBeGreaterThan(0);
+      for (const s of scripts) {
+        for (const src of s.replace(/^script-src\s+/, "").split(/\s+/)) {
+          expect(src === "'self'" || src.startsWith("'sha256-") || src.startsWith("'nonce-")).toBe(true);
+        }
+      }
+    }
+  });
 });
 
 describe("a plugin's own files", () => {
@@ -153,6 +170,17 @@ describe("the app's shortcuts", () => {
     expect(sealedInputAllowed({ packaged: false, headless: true })).toBe(true);
   });
 
+  // Every other test switch asks the same gate in apps/desktop/src/main/index.ts (the call sites run only in the
+  // app, so the tests pin the predicate each consults; refused, each falls to its safe default: quit stays quit,
+  // a paste is denied, a menu pick is null, no page opens, no input is sent).
+  for (const name of ["CLOVER_SMOKE_INPUT", "CLOVER_SMOKE_PAGE", "CLOVER_TEST_PASTE_OK", "CLOVER_TEST_MENU_PICK", "CLOVER_TEST_QUIT_CHOICE"] as const) {
+    test(`${name} is ignored packaged`, () => {
+      expect(sealedInputAllowed({ packaged: true, headless: true }), name).toBe(false);
+      expect(sealedInputAllowed({ packaged: true, headless: false }), name).toBe(false);
+      expect(sealedInputAllowed({ packaged: false, headless: true }), name).toBe(true);
+    });
+  }
+
   test("the reserved keys: the app's own chords each take their shortcut, and the Edit menu's ride with them", () => {
     // Each app chord drives its shortcut on macOS (Mod is ⌘) and elsewhere (Mod is Ctrl).
     const mod = (platform: NodeJS.Platform) => (platform === "darwin" ? { meta: true } : { control: true });
@@ -175,6 +203,11 @@ describe("the app's shortcuts", () => {
     expect(new Set(RESERVED_KEYS).size).toBe(RESERVED_KEYS.length);
     expect(EDIT_MENU_KEYS).toContain("mod+z");
     expect(EDIT_MENU_KEYS).toContain("mod+v");
+    // The menu keys the app holds but handles through the menu itself (hide, hide-others, minimize): reserved for
+    // the palette, with no before-input-event of their own.
+    expect(APP_KEYS).toContain("mod+h");
+    expect(APP_KEYS).toContain("mod+alt+h");
+    expect(APP_KEYS).toContain("mod+m");
   });
 });
 

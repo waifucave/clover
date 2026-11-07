@@ -151,4 +151,16 @@ describe("the answer key's registration, retried", () => {
     await reg.onConnected(client, "dev_real");
     expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set"]);
   });
+
+  test("a reconnect restarts the backoff: the next failure waits 2 s again", async () => {
+    const { client, calls, queue, reg } = setup(() => true);
+    await reg.onConnected(client, "dev_real");
+    await queue[0]!.fn();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(queue.map((q) => q.ms)).toEqual([4000]);
+    await reg.onConnected(client, "dev_real");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set", "device.answerKey.set"]);
+    expect(queue.map((q) => q.ms)).toEqual([2000]);
+  });
 });

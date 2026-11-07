@@ -157,10 +157,12 @@ export class AnswerKeyRegistration {
   ) {}
 
   /** Connected (or reconnected): this connection's device id, registered at once. A new connection means unknown
-   *  core state (a restarted daemon kept nothing), so an earlier acceptance never carries over. */
+   *  core state (a restarted daemon kept nothing), so an earlier acceptance never carries over — and the backoff
+   *  starts over, with any earlier timer cancelled. */
   async onConnected(client: AnswerKeyClient, deviceId: string): Promise<void> {
     this.device = deviceId;
     this.accepted = undefined;
+    this.failures = 0;
     await this.attempt(client);
   }
 
@@ -171,6 +173,7 @@ export class AnswerKeyRegistration {
       this.device = device.id;
       this.accepted = undefined;
     }
+    this.failures = 0;
     await this.attempt(client);
   }
 
