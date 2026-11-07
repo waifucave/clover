@@ -23,6 +23,7 @@
 // The protocol layer (`acp/`) imports nothing from the daemon but the spine's contract types, so it can move into
 // clover-sdk's ACP package (plan §4 K) once that package exists; K-M3 adds the agent side there for the inherited
 // coding agent.
+import { realpathSync } from "node:fs";
 import { join } from "node:path";
 import type { Level } from "@waifucave/clover-protocol";
 import type { AgentBackend } from "../contracts/agent-backend";
@@ -47,6 +48,7 @@ import { ADMISSIONS } from "./sandbox/admission";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 import { StallWatchdog } from "./watchdog";
+import { inProcessAgentBackend, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
 
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
 export { RpcPeer, RpcError } from "@waifucave/clover-agent-sdk/acp";
@@ -99,7 +101,33 @@ export interface AgentsOptions {
   /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
    *  (`embeddedSessionOptions`, `fillProvider`) and the user's default model. Without it the backend isn't offered. */
   cloverCode?: Pick<CloverCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "query">;
+  /** Lane A's in-process subagents (`clover`, A-M3) on the embedded runtime: its embedded-session seam and the user's
+   *  default model. The pause and the folders it may never reach are the core's (`inProcessBackend`). Without it the
+   *  backend isn't offered. */
+  inProcess?: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">;
   log?: (line: string) => void;
+}
+
+/** A gate that never holds, for a delegation no pause switch covers. */
+export const OPEN_PAUSE_GATE: AgentPauseGate = { mayAct: () => true };
+
+/** The Clover home as written and as it really is: the folders no agent may read or write (#208's default-deny). */
+export function homeFoldersOf(home: string): string[] {
+  let real = home;
+  try {
+    real = realpathSync(home);
+  } catch {
+    // Not made yet: the written path is all there is.
+  }
+  return real === home ? [home] : [home, real];
+}
+
+/** Lane A's in-process backend as the core registers it: every delegation gets the pause gate (an open one when there
+ *  is no switch, so the required form of lane A's seam is met), and the whole Clover home is a private folder, which
+ *  the backend denies to its file tools by rule and to its Bash sandbox, on top of the manager's fence. */
+export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">, o: { home: string; pause?: AgentPauseGate }): AgentBackend {
+  const gate = o.pause ?? OPEN_PAUSE_GATE;
+  return inProcessAgentBackend({ ...deps, pauseGateFor: () => gate, privateFoldersFor: () => homeFoldersOf(o.home) });
 }
 
 /** Wires the Agent tool for one daemon: the tokens, the bridge's parts for lane C's Clover server (`clover`: pass
@@ -137,8 +165,11 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(c.file.readOnlyMode ? { readOnlyMode: c.file.readOnlyMode } : {}),
   });
   const cache = new ContributedBackendCache(build);
-  // Core backends: Clover's own coding agent (and, with A-M3, the in-process subagents).
-  const core: AgentBackend[] = o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })] : [];
+  // Core backends: Clover's own coding agent and lane A's in-process subagents.
+  const core: AgentBackend[] = [
+    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })] : []),
+    ...(o.inProcess ? [inProcessBackend({ ...(o.log ? { log: o.log } : {}), ...o.inProcess }, { home: o.home, ...(o.pause ? { pause: o.pause } : {}) })] : []),
+  ];
   if (o.backends) {
     const fixed = o.backends(wire);
     backends = () => fixed;
