@@ -551,20 +551,29 @@ describe("an agent on another computer", () => {
     expect(p.b.report("started")).toHaveLength(started);
   });
 
-  test("a re-open from the same computer while a turn runs there ends that turn: nothing more of it lands", async () => {
-    const p = make({ b: { script: [[{ say: "Working." }, { wait: true }, { say: "AFTER-REOPEN" }, { tool: { kind: "execute", title: "npm test", rawInput: { command: "npm test" } } }]] } });
-    const r = await delegate(p);
-    await waitFor(() => blockedOn(p.b, "wait"), "the agent at work");
-    const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
-    const studio = await p.net.endpoint(STUDIO).connect(LAPTOP);
-    await studio.request("agent.open", { id: r.sessionId, backend: "fake", root: "home/Laptop/project1", bot: "alpha", parent: "s_alpha", paused: false, epoch: p.peersA.epochFor(LAPTOP), fence: p.fenceA.token() });
-    const before = readFileSync(join(dir, "acp.ndjson"), "utf8").length;
-    proceed(p.b);
-    await Bun.sleep(600);
-    expect(blockedOn(p.b, "permission")).toBe(false);
-    expect(readFileSync(join(dir, "acp.ndjson"), "utf8").length).toBe(before);
-    expect(JSON.stringify(p.a.host.history(r.sessionId))).not.toContain("AFTER-REOPEN");
-  });
+  // The agent may go on before the open's cancel reaches it (the cancel crosses its stdio; the wake is a signal), so
+  // both orders are run: whichever comes first, nothing more of the turn lands, and a call it still makes is never
+  // allowed.
+  for (const wakeFirst of [false, true]) {
+    test(`a re-open from the same computer while a turn runs there ends that turn: nothing more of it lands (${wakeFirst ? "the agent goes on before the cancel" : "the cancel first"})`, async () => {
+      const p = make({ b: { script: [[{ say: "Working." }, { wait: true }, { say: "AFTER-REOPEN" }, { tool: { kind: "execute", title: "npm test", rawInput: { command: "npm test" } } }]] } });
+      const r = await delegate(p);
+      await waitFor(() => blockedOn(p.b, "wait"), "the agent at work");
+      const dir = join(p.a.cloverHome, "bots", "alpha", "agents", r.sessionId);
+      const studio = await p.net.endpoint(STUDIO).connect(LAPTOP);
+      const before = readFileSync(join(dir, "acp.ndjson"), "utf8").length;
+      if (wakeFirst) proceed(p.b);
+      await studio.request("agent.open", { id: r.sessionId, backend: "fake", root: "home/Laptop/project1", bot: "alpha", parent: "s_alpha", paused: false, epoch: p.peersA.epochFor(LAPTOP), fence: p.fenceA.token() });
+      if (!wakeFirst) proceed(p.b);
+      await Bun.sleep(600);
+      // A call it made anyway is answered cancelled, never allowed.
+      if (blockedOn(p.b, "permission")) await waitFor(() => p.b.report("answer").length > 0, "the call's answer");
+      expect(p.b.report("answer").map((a) => (a["answer"] as { outcome: string }).outcome).filter((o) => o !== "cancelled")).toEqual([]);
+      expect(readFileSync(join(dir, "acp.ndjson"), "utf8").length).toBe(before);
+      expect(JSON.stringify(p.a.host.history(r.sessionId))).not.toContain("AFTER-REOPEN");
+      expect(JSON.stringify(p.a.host.history(r.sessionId))).not.toContain("npm test");
+    });
+  }
 
   test("a computer whose view of the lease is behind can't place or drive an agent", async () => {
     const p = make({ b: { script: [[{ say: "Done." }]] } });
