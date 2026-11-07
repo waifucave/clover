@@ -11,8 +11,9 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.69";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.69 (2026-11-06, A-M3's follow-up): `Query.stopTask(id, { by })` stops one of the session's own
- *  background tasks, which the pause uses for a paused bot's shells and monitors (0.0.68 between: the ACP package).
+/** Bumped to 0.0.69 (2026-11-06, K-M3 and A-M3's follow-up): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
+ *  runs the coding agent as an ACP agent over `query()` (clover-code, 0.0.68).
+ *  A-M3's follow-up uses `Query.stopTask(id, { by })` to stop a paused bot's background shells and monitors.
  *  Earlier: bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name
  *  (`shadowBuiltins`: the core's `SendMessage`, `ListAgents`, `TaskStop`, `Agent`), and `Options.hostToolSearch`
  *  keeps deferral on for `Glossary`, which loads tools through `ToolSearch`'s `select:` path.

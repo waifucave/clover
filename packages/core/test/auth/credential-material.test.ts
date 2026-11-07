@@ -210,12 +210,9 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // 0.0.54 → 0.0.55 (free-text questions, case-variant write roots): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.55 → 0.0.63 (A-M1: the packages are @waifucave/clover-*): keychain-store.ts diff is its three import
     // specifiers only (`git diff v0.0.55 HEAD -- packages/runtime/src/provider/keychain-store.ts`); the mirror stands.
-    // 0.0.65 → 0.0.66 (A-M3: plain plugin errors): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.64 → 0.0.65 (A-M2's review): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.63 → 0.0.64 (A-M2: every provider a model plugin): keychain-store.ts diff EMPTY; the mirror stands.
-    // 0.0.66 → 0.0.67 (A-M3: shadowBuiltins, hostToolSearch): keychain-store.ts diff EMPTY; the mirror stands.
-    // 0.0.67 → 0.0.69 (A-M3's follow-up: Query.stopTask; 0.0.68 the ACP package): keychain-store.ts diff EMPTY
-    // (`git diff v0.0.67 v0.0.69 -- packages/runtime/src/provider/keychain-store.ts`); the mirror stands.
+    // 0.0.65 → 0.0.69 (A-M3's 0.0.66 and 0.0.67, K-M3's ACP package and stopTask): keychain-store.ts diff EMPTY; the mirror stands.
     expect(pkg.version).toBe("0.0.69");
   });
 

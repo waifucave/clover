@@ -35,6 +35,10 @@ describe("ci-changes", () => {
     expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
   });
 
+  test("the merge queue's sweep (its own workflow): the scripts' tests, which run its step against stand-ins", () => {
+    expect(on([".github/workflows/queue-sweep.yml"])).toEqual(["scripts"]);
+  });
+
   test("a service's change: its tests and the typecheck", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
