@@ -183,9 +183,10 @@ export interface CloverServer {
   hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   /** A paired phone's or browser's hello on its link (lane H's `mountRemoteClients`, through `linkClientServer`): no
    *  local process to probe, since the link proved the device. The token must be the one the core minted for that
-   *  device and role, and that token is spent by the check (one hello per mint). The caller is the user on that
+   *  device and role, and that token is spent by the check (one hello per mint). `stillLinked` is asked again after
+   *  the check, so a device revoked meanwhile isn't registered. The caller is the user on that
    *  device. `end` closes the link's stream (`endConnections`). Never reachable from the socket. */
-  linkHello(connId: number, params: unknown, link: { device: string; role: "remote" | "web" }, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
+  linkHello(connId: number, params: unknown, link: { device: string; role: "remote" | "web"; stillLinked?: () => boolean }, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
   /** A response from the client to one of the daemon's requests (the heartbeat's). */
@@ -424,17 +425,22 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     async linkHello(connId, params, link, write, end) {
-      const h = parseHello(params);
+      let h: CloverHelloParams;
       let binding: Awaited<ReturnType<CloverTokens["verify"]>>;
       try {
+        h = parseHello(params);
         if (h.role !== link.role || h.device !== link.device) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "a link's hello is its device's, in its role");
         binding = await deps.tokens.verify(h);
       } finally {
-        // One hello per minted token: spent by the check whatever it found, so the table never grows per connection.
-        deps.tokens.revoke(h.token);
+        // One hello per minted token: spent by the check whatever it found, a hello that doesn't even parse included,
+        // so the table never grows per connection.
+        const token = (params as { token?: unknown } | null | undefined)?.token;
+        if (typeof token === "string") deps.tokens.revoke(token);
       }
       if (isRefusal(binding)) throw new CloverRpcError(binding.code, binding.message);
       if (binding.role !== link.role || !("device" in binding) || binding.device !== link.device) throw new CloverRpcError(ERR_UNAUTHORIZED, "the token is for another device or role");
+      // The device may have been revoked while the token was checked: asked again just before it's registered.
+      if (link.stillLinked !== undefined && !link.stillLinked()) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "the device is no longer paired");
       const caller: Caller = { kind: "user", client: link.role === "remote" ? "ios" : "web", device: link.device };
       const r = register(connId, h, caller, write, {});
       if (end) ends.set(connId, end);

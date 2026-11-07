@@ -35,7 +35,7 @@ export function linkClientServer(server: LinkServer, registry: Devices): RemoteR
       const device = (socket as { device?: unknown; link?: unknown }).link === true ? (socket as { device?: unknown }).device : undefined;
       const role = typeof device === "string" ? linkRoleOf(registry.get(device)) : undefined;
       if (typeof device !== "string" || role === undefined) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "not a client's link");
-      return server.linkHello(connId, params, { device, role }, write, end);
+      return server.linkHello(connId, params, { device, role, stillLinked: () => linkRoleOf(registry.get(device)) === role }, write, end);
     },
     handle: (conn, method, params) => server.handle(conn as CloverConn, method, params),
     closed: (conn, socket) => server.closed(conn as CloverConn | null, socket),
