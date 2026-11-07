@@ -2,10 +2,11 @@
 // nothing a release leaves out; a plugin's runtime dependencies must ship with it; and the exact import check on a
 // built tree.
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builtPluginImportProblems, bundledPluginsProblems, LAYER_PROVIDED_PACKAGES, leftOut, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, type PluginsSource } from "./bundled-plugins";
+import { builtPluginImportProblems, bundledPluginsProblems, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
+import { measureBundledTree, parseBundledManifest, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
 
 const ROOT = join(import.meta.dir, "..", "..");
 
@@ -18,6 +19,7 @@ function repo(files: Record<string, string>): string {
   };
   git("init", "-q");
   for (const [f, body] of Object.entries(files)) { mkdirSync(join(dir, f, ".."), { recursive: true }); writeFileSync(join(dir, f), body); }
+  for (const f of Object.keys(files).filter((f) => f.endsWith(".sh"))) chmodSync(join(dir, f), 0o755);
   git("add", "-A");
   git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "plugins");
   return dir;
@@ -32,6 +34,14 @@ describe("staging: only committed files", () => {
     expect(stageBundledPlugins(dir, dest).sort()).toEqual(["alpha/clover.json", "clover/clover.json", "clover/host.js"]);
     expect(readFileSync(join(dest, "clover", "clover.json"), "utf8")).toBe(`{"id":"clover"}`);
     expect(existsSync(join(dest, "alpha", "tab", "tsconfig.json"))).toBe(false);
+  });
+
+  test.skipIf(process.platform === "win32")("a 100755 file stays executable (0755), a 100644 one doesn't (0644)", () => {
+    const dir = repo({ ...committed, "plugins/clover/bin/run.sh": "#!/bin/sh\n" });
+    const dest = join(dir, "out", "plugins");
+    stageBundledPlugins(dir, dest);
+    expect(statSync(join(dest, "clover", "bin", "run.sh")).mode & 0o777).toBe(0o755);
+    expect(statSync(join(dest, "clover", "host.js")).mode & 0o777).toBe(0o644);
   });
 
   test("a committed file swapped locally for a symlink to an outside file never ships: the build is refused", () => {
@@ -71,7 +81,42 @@ describe("staging: only committed files", () => {
     expect(staged).toContain("clover/clover.json");
     expect(staged).toContain("alpha/clover.json");
     expect(staged.filter((f) => leftOut(f) !== undefined)).toEqual([]);
-    expect(bundledPluginsProblems(join(dest, ".."), existsSync, walkTree)).toEqual([]);
+    // The manifest built from HEAD's stage is the one the core embeds, and the packaged check holds the tree to it.
+    const file = join(dest, "..", "clover-bundled-plugins.manifest");
+    const manifest = writeStagedManifest(dest, file);
+    expect(parseBundledManifest(readFileSync(file, "utf8"))).toEqual(manifest);
+    expect(Object.keys(manifest.files).sort()).toEqual([...staged].sort());
+    expect(bundledPluginsProblems(join(dest, ".."), manifest, existsSync, walkTree)).toEqual([]);
+  });
+});
+
+describe("what ships is exactly the manifest's tree", () => {
+  const build = () => {
+    const res = mkdtempSync(join(tmpdir(), "lane-m-res-manifest-"));
+    for (const f of ["clover/clover.json", "alpha/clover.json", "alpha/host.js"]) { mkdirSync(join(res, "plugins", f, ".."), { recursive: true }); writeFileSync(join(res, "plugins", f), `${f}\n`); }
+    return { res, manifest: measureBundledTree(join(res, "plugins")) };
+  };
+
+  test("a swapped file, a size change, an extra file and a missing one are each a problem", () => {
+    const swapped = build();
+    writeFileSync(join(swapped.res, "plugins", "alpha", "host.js"), "alpha/host.jZ\n");
+    expect(bundledPluginsProblems(swapped.res, swapped.manifest, existsSync, walkTree)[0]).toContain("alpha/host.js isn't the bytes");
+    const grown = build();
+    writeFileSync(join(grown.res, "plugins", "alpha", "host.js"), "alpha/host.js\n// more\n");
+    expect(bundledPluginsProblems(grown.res, grown.manifest, existsSync, walkTree)[0]).toContain("alpha/host.js isn't the bytes");
+    const extra = build();
+    writeFileSync(join(extra.res, "plugins", "alpha", "extra.js"), "x");
+    expect(bundledPluginsProblems(extra.res, extra.manifest, existsSync, walkTree)[0]).toContain("alpha/extra.js isn't in the core's manifest");
+    const missing = build();
+    rmSync(join(missing.res, "plugins", "alpha", "host.js"));
+    expect(bundledPluginsProblems(missing.res, missing.manifest, existsSync, walkTree)[0]).toContain("alpha/host.js is missing");
+  });
+
+  test("manifestDifferences compares path, hash and size", () => {
+    const a: BundledManifest = { files: { "x/a": { sha256: "0".repeat(64), size: 1 }, "x/b": { sha256: "1".repeat(64), size: 2 } } };
+    expect(manifestDifferences(a, a)).toEqual([]);
+    expect(manifestDifferences(a, { files: { "x/a": { sha256: "0".repeat(64), size: 3 }, "x/c": { sha256: "2".repeat(64), size: 1 } } }))
+      .toEqual(["x/a isn't the bytes the core's manifest names", "x/b is missing", "x/c isn't in the core's manifest"]);
   });
 });
 
@@ -80,11 +125,12 @@ describe("the packaged app's bundled plugins", () => {
     const res = mkdtempSync(join(tmpdir(), "lane-m-res-"));
     const dir = join(res, "plugins");
     for (const f of ["clover/clover.json", "alpha/clover.json", "alpha/tab/theme.css"]) { mkdirSync(join(dir, f, ".."), { recursive: true }); writeFileSync(join(dir, f), "{}"); }
-    expect(bundledPluginsProblems(res, existsSync, walkTree)).toEqual([]);
+    const manifest = measureBundledTree(dir);
+    expect(bundledPluginsProblems(res, manifest, existsSync, walkTree)).toEqual([]);
     // A symlink loop: walked with lstat, reported, never followed.
     symlinkSync(dir, join(dir, "alpha", "loop"));
     symlinkSync("/etc", join(dir, "clover", "outside"));
-    const problems = bundledPluginsProblems(res, existsSync, walkTree);
+    const problems = bundledPluginsProblems(res, manifest, existsSync, walkTree);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("holds symlinks");
     expect(problems[0]).toContain("alpha/loop");
@@ -94,9 +140,11 @@ describe("the packaged app's bundled plugins", () => {
   test("a missing manifest, and each kind of file a release leaves out, is a problem", () => {
     const ok = [{ rel: "clover/clover.json", link: false }, { rel: "alpha/clover.json", link: false }];
     const files = new Set(["/r/plugins/clover/clover.json", "/r/plugins/alpha/clover.json"]);
-    expect(bundledPluginsProblems("/r", (p) => p !== "/r/plugins/alpha/clover.json", () => ok)).toEqual(["/r/plugins/alpha/clover.json is missing: the alpha plugin isn't bundled"]);
+    const manifest: BundledManifest = { files: {} };
+    const measure = (): BundledManifest => manifest;
+    expect(bundledPluginsProblems("/r", manifest, (p) => p !== "/r/plugins/alpha/clover.json", () => ok, measure)).toEqual(["/r/plugins/alpha/clover.json is missing: the alpha plugin isn't bundled"]);
     for (const stray of ["alpha/tab/test/x.ts", "clover/x/tests/a.ts", "clover/node_modules/x/index.js", "alpha/tsconfig.json", "clover/a.test.tsx", "alpha/.env", "alpha/.env.local", "clover/.DS_Store"]) {
-      expect(bundledPluginsProblems("/r", (p) => files.has(p), () => [...ok, { rel: stray, link: false }])[0]).toContain(stray);
+      expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: stray, link: false }], measure)[0]).toContain(stray);
     }
   });
 });

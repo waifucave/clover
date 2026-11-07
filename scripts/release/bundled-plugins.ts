@@ -3,16 +3,20 @@
 // files ship: `stageBundledPlugins` writes HEAD's blobs under plugins/ (less what a release leaves out) into a staging
 // folder that electron-builder.yml packs, and refuses a build whose plugins/ has any uncommitted change, so nothing a
 // working tree happens to hold (an edit, a build output, a `.env`, a key, a file swapped for a symlink) can come
-// along, and no symlink is ever copied or followed. The core finds the folder beside its own,
-// and only there (packages/core/src/bundled-plugins-dir.ts). The checks here run on what was built:
-//   - `bundledPluginsProblems`: each top-level manifest is there, nothing the filter leaves out is, no symlink;
+// along, and no symlink is ever copied or followed. The staged tree is then measured (`measureBundledTree`: every
+// file's SHA-256 and size) and that manifest compiled into clover-core (scripts/build-daemon.ts --plugins-manifest):
+// the core trusts a bundled file only when its bytes are the manifest's (packages/core/src/bundled-plugins-dir.ts).
+// The checks here run on what was built:
+//   - `bundledPluginsProblems`: what shipped is exactly the manifest's tree, each top-level plugin's manifest is
+//     there, nothing the filter leaves out is, no symlink;
 //   - `unshippedPluginDependencies`: what a plugin's package.json needs that nothing ships beside it;
 //   - `builtPluginImportProblems`: the exact check on a release-time-built tree (wired with that build).
 import { spawnSync } from "node:child_process";
-import { lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, join, posix } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/manifest/schema";
+import { formatBundledManifest, measureBundledTree, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
 
 /** The bundled plugins' folder in the app's resources (electron-builder.yml), beside `daemon/`. */
 export const BUNDLED_PLUGINS_DIR = "plugins";
@@ -99,7 +103,7 @@ export function stageBundledPlugins(root: string, dest: string, source: PluginsS
   rmSync(dest, { recursive: true, force: true });
   const dirty = source.status().split("\0").filter((e) => e !== "");
   if (dirty.length > 0) throw new Error(`${BUNDLED_PLUGINS_DIR}/ has uncommitted changes, which a release never ships: ${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? ", …" : ""}`);
-  const entries: Array<{ rel: string; object: string }> = [];
+  const entries: Array<{ rel: string; object: string; exec: boolean }> = [];
   for (const entry of source.tree().split("\0").filter((e) => e !== "")) {
     // `<mode> <type> <object>\t<path>`
     const tab = entry.indexOf("\t");
@@ -110,13 +114,15 @@ export function stageBundledPlugins(root: string, dest: string, source: PluginsS
     if (mode === "160000") throw new Error(`${path} is a submodule: bundled plugins ship committed files only`);
     if (mode !== "100644" && mode !== "100755") throw new Error(`${path} has mode ${mode}: bundled plugins ship regular files only`);
     if (leftOut(rel) !== undefined) continue;
-    entries.push({ rel, object: object! });
+    entries.push({ rel, object: object!, exec: mode === "100755" });
   }
   try {
     const blobs = source.blobs(entries.map((e) => e.object));
     for (const e of entries) {
       mkdirSync(dirname(join(dest, e.rel)), { recursive: true });
       writeFileSync(join(dest, e.rel), blobs.get(e.object)!, { flag: "wx" });
+      // git's two file modes, whatever the umask: 100755 stays executable.
+      chmodSync(join(dest, e.rel), e.exec ? 0o755 : 0o644);
     }
   } catch (err) {
     rmSync(dest, { recursive: true, force: true });
@@ -125,9 +131,31 @@ export function stageBundledPlugins(root: string, dest: string, source: PluginsS
   return entries.map((e) => e.rel);
 }
 
-/** What's wrong with a packaged app's bundled plugins under `resources`: each top-level plugin's manifest is there,
- *  nothing a release leaves out came along, and nothing is a symlink. `walk` lists the tree without following links. */
-export function bundledPluginsProblems(resources: string, exists: (path: string) => boolean, walk: (dir: string) => TreeEntry[]): string[] {
+/** Measures the staged tree and writes its manifest (the text the core embeds) to `file`; answers the manifest. */
+export function writeStagedManifest(staged: string, file: string): BundledManifest {
+  const manifest = measureBundledTree(staged);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, formatBundledManifest(manifest));
+  return manifest;
+}
+
+/** How the shipped tree differs from the manifest the core carries: a file missing, one that isn't the manifest's
+ *  bytes, or one the manifest doesn't name. */
+export function manifestDifferences(expected: BundledManifest, shipped: BundledManifest): string[] {
+  const out: string[] = [];
+  for (const [rel, e] of Object.entries(expected.files)) {
+    const s = shipped.files[rel];
+    if (s === undefined) out.push(`${rel} is missing`);
+    else if (s.sha256 !== e.sha256 || s.size !== e.size) out.push(`${rel} isn't the bytes the core's manifest names`);
+  }
+  for (const rel of Object.keys(shipped.files)) if (!Object.hasOwn(expected.files, rel)) out.push(`${rel} isn't in the core's manifest`);
+  return out.sort();
+}
+
+/** What's wrong with a packaged app's bundled plugins under `resources`: the tree is exactly `manifest` (the one
+ *  compiled into its core), each top-level plugin's manifest is there, nothing a release leaves out came along, and
+ *  nothing is a symlink. `walk` lists the tree without following links. */
+export function bundledPluginsProblems(resources: string, manifest: BundledManifest, exists: (path: string) => boolean, walk: (dir: string) => TreeEntry[], measure: (dir: string) => BundledManifest = measureBundledTree): string[] {
   const dir = join(resources, BUNDLED_PLUGINS_DIR);
   const problems = BUNDLED_PLUGIN_IDS.filter((id) => !exists(join(dir, id, "clover.json"))).map((id) => `${join(dir, id, "clover.json")} is missing: the ${id} plugin isn't bundled`);
   const entries = walk(dir);
@@ -135,6 +163,12 @@ export function bundledPluginsProblems(resources: string, exists: (path: string)
   if (links.length > 0) problems.push(`${dir} holds symlinks, which a release never ships: ${links.slice(0, 5).join(", ")}${links.length > 5 ? ", …" : ""}`);
   const stray = entries.filter((e) => !e.link && leftOut(e.rel) !== undefined).map((e) => e.rel);
   if (stray.length > 0) problems.push(`${dir} holds files a release leaves out: ${stray.slice(0, 5).join(", ")}${stray.length > 5 ? ", …" : ""}`);
+  if (links.length === 0) {
+    let shipped: BundledManifest | undefined;
+    try { shipped = measure(dir); } catch (err) { problems.push(`${dir} can't be measured: ${(err as Error).message}`); }
+    const diff = shipped === undefined ? [] : manifestDifferences(manifest, shipped);
+    if (diff.length > 0) problems.push(`${dir} isn't the tree the core's manifest names: ${diff.slice(0, 5).join("; ")}${diff.length > 5 ? "; …" : ""}`);
+  }
   return problems;
 }
 

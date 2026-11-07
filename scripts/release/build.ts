@@ -5,17 +5,20 @@
 //   bun scripts/release/build.ts [--channel latest|beta] [--sign] [--dry-run]
 //
 // It runs on the OS it builds for (macOS on Apple silicon, Windows x64):
-//   1. builds the app (apps/desktop's `build`), the daemon (scripts/build-daemon.ts) and clover-link (cargo)
+//   1. builds the app (apps/desktop's `build`); stages the bundled plugins (the committed files under plugins/) in
+//      apps/desktop/out/plugins and measures them; builds the daemon (scripts/build-daemon.ts) with that manifest
+//      compiled in, and clover-link (cargo)
 //   2. stages the daemon and the sidecar in apps/desktop/out/daemon/, where electron-builder.yml's extraResources
 //      picks them up
 //   3. with --sign on macOS, signs the two staged binaries with the Developer ID (hardened runtime, timestamp, each
 //      its own identifier and entitlements: lib.ts's RESOURCE_BINARIES)
 //   4. runs electron-builder for the OS's targets (`--publish never`, always) with the channel; with --sign, the
 //      identity and notarization on macOS, and forced signing and the update publisher on Windows; then checks the
-//      bundled plugins (the committed files under plugins/, staged in apps/desktop/out/plugins) are in the app's
-//      resources/plugins, with nothing left out and no symlink (bundled-plugins.ts)
+//      app's resources/plugins is exactly the tree the core's manifest names, with nothing left out and no symlink
+//      (bundled-plugins.ts)
 //   5. with --sign on macOS: signs, notarizes and staples the dmg, measures the update file's dmg entry again,
-//      and checks every signature (the app, the daemon, the sidecar, the dmg), Gatekeeper's verdict and the staples
+//      and checks every signature (the app against Clover's requirement: its identifier and team, the daemon, the
+//      sidecar, the dmg), Gatekeeper's verdict and the staples
 //   6. on latest, copies the update files to the beta names (lib.ts's `writeServedCopies`), and checks the installers and update files are all there, each update file against the files it names, and
 //      writes SHA256SUMS-<os>.txt beside them
 //
@@ -23,7 +26,7 @@
 // holds, and electron-builder is told not to look for an identity. With --sign every input must be there, or it
 // stops before building:
 //   macOS     CLOVER_MAC_IDENTITY     the identity's full name, "Developer ID Application: <name> (<TEAMID>)", in the
-//                                     login keychain
+//                                     login keychain; its team must be Clover's (CLOVER_TEAM_ID)
 //             APPLE_KEYCHAIN_PROFILE  notarytool's stored profile (`xcrun notarytool store-credentials`)
 //   Windows   WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD   the Authenticode certificate, as electron-builder takes it
 //             CLOVER_WIN_PUBLISHER    its subject's common name, which electron-updater checks each update against
@@ -34,8 +37,10 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSy
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
+import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
+import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
-import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree } from "./bundled-plugins";
+import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree, writeStagedManifest } from "./bundled-plugins";
 import {
   channelArgs, checkUpdateInfo, codesignArgs, codesignDmgArgs, expectedArtifacts, feedFile, formatUpdateInfo, identityTeam,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems,
@@ -43,6 +48,11 @@ import {
 } from "./lib";
 
 export type BuildOs = "mac" | "win";
+
+/** The app's bundle identifier (apps/desktop/electron-builder.yml's appId). */
+export const CLOVER_APP_IDENTIFIER = "com.waifucave.clover";
+/** The code requirement the signed Clover.app must satisfy: its identifier, Apple's Developer ID chain, Clover's team. */
+export const CLOVER_APP_REQUIREMENT = `identifier "${CLOVER_APP_IDENTIFIER}" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`;
 
 export interface ReleaseBuildArgs {
   os: BuildOs;
@@ -90,7 +100,8 @@ export function signingInputs(os: BuildOs, env: Record<string, string | undefine
   const problems: string[] = [];
   if (os === "mac" && env.CLOVER_MAC_IDENTITY) {
     try {
-      identityTeam(env.CLOVER_MAC_IDENTITY);
+      const team = identityTeam(env.CLOVER_MAC_IDENTITY);
+      if (team !== CLOVER_TEAM_ID) problems.push(`CLOVER_MAC_IDENTITY is team ${team}'s, not Clover's (${CLOVER_TEAM_ID})`);
     } catch (err) {
       problems.push((err as Error).message);
     }
@@ -138,8 +149,8 @@ function verifyMac(outDir: string, version: string, teamId: string): string[] {
   const display = (path: string) => parseCodesignDisplay(run(["codesign", "-dvvv", path], outDir).out);
   problems.push(...signatureProblems("Clover.app", display(app), teamId));
   for (const b of RESOURCE_BINARIES) problems.push(...signatureProblems(b.file, display(join(app, "Contents", "Resources", "daemon", b.file)), teamId, b.identifier));
-  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", app], outDir);
-  if (deep.status !== 0) problems.push(`codesign --verify --deep --strict refuses Clover.app: ${deep.out.trim().slice(0, 400)}`);
+  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${CLOVER_APP_REQUIREMENT}`, app], outDir);
+  if (deep.status !== 0) problems.push(`codesign --verify --deep --strict against Clover's requirement refuses Clover.app: ${deep.out.trim().slice(0, 400)}`);
   const gate = run(["spctl", "--assess", "--type", "execute", "--verbose=2", app], outDir);
   if (gate.status !== 0 || !/source=Notarized Developer ID/.test(gate.out)) problems.push(`Gatekeeper doesn't accept Clover.app as notarized: ${gate.out.trim().slice(0, 400)}`);
   for (const path of [app, dmg]) if (run(["xcrun", "stapler", "validate", path], outDir).status !== 0) problems.push(`${path.split("/").pop()} has no notarization staple`);
@@ -172,7 +183,8 @@ export function main(argv: readonly string[], root: string): number {
     const shown = builder.map((c) => (c.startsWith("-c.mac.identity=") ? "-c.mac.identity=<CLOVER_MAC_IDENTITY>" : c.startsWith("-c.win.signtoolOptions.publisherName=") ? "-c.win.signtoolOptions.publisherName=<CLOVER_WIN_PUBLISHER>" : c));
     console.log(`release/build: ${a.os} ${version} on ${a.channel}, ${a.sign ? "signed" : "unsigned"}`);
     console.log(`release/build: the app: (in apps/desktop) bun run build`);
-    console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target}`);
+    console.log(`release/build: the bundled plugins: plugins/ at HEAD staged in apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
+    console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
@@ -185,12 +197,18 @@ export function main(argv: readonly string[], root: string): number {
     const staged = join(desktop, "out", "daemon");
     rmSync(outDir, { recursive: true, force: true });
     must("the app", ["bun", "run", "build"], desktop);
-    if (runScriptLine(`bun scripts/build-daemon.ts --target ${target}`, root) !== 0) throw new Error("the daemon's build failed");
-    must("the link sidecar", LINK_BUILD, root);
-    // The daemon's stage and the bundled plugins' (the committed files only), where electron-builder.yml packs them;
-    // both are removed however the build ends (a stale stage would go into a later plain `bun run dist`).
+    // The bundled plugins' stage (the committed files only), its manifest, and the daemon's stage, where
+    // electron-builder.yml packs them; all removed however the build ends (a stale stage would go into a later plain
+    // `bun run dist`). The daemon is built after the plugins are staged: it carries their manifest.
     const stagedPlugins = join(desktop, STAGED_PLUGINS);
+    const manifestFile = join(desktop, "out", BUNDLED_MANIFEST_FILE);
+    let manifest: BundledManifest;
     try {
+      stageBundledPlugins(root, stagedPlugins);
+      manifest = writeStagedManifest(stagedPlugins, manifestFile);
+      console.log(`release/build: the bundled plugins: ${Object.keys(manifest.files).length} files staged and measured`);
+      if (runScriptLine(`bun scripts/build-daemon.ts --target ${target} --plugins-manifest ${JSON.stringify(manifestFile)}`, root) !== 0) throw new Error("the daemon's build failed");
+      must("the link sidecar", LINK_BUILD, root);
       rmSync(staged, { recursive: true, force: true });
       mkdirSync(staged, { recursive: true });
       copyFileSync(join(root, ...daemonOutput(target).split("/")), join(staged, `clover-core${exe}`));
@@ -201,16 +219,16 @@ export function main(argv: readonly string[], root: string): number {
           must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
         }
       }
-      stageBundledPlugins(root, stagedPlugins);
       must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, builderEnv(a, process.env));
     } finally {
       rmSync(staged, { recursive: true, force: true });
       rmSync(stagedPlugins, { recursive: true, force: true });
+      rmSync(manifestFile, { force: true });
     }
     {
       // The bundled plugins, where the core looks for them (resources/plugins beside resources/daemon).
       const resources = a.os === "mac" ? join(outDir, "mac-arm64", "Clover.app", "Contents", "Resources") : join(outDir, "win-unpacked", "resources");
-      const plugins = bundledPluginsProblems(resources, existsSync, walkTree);
+      const plugins = bundledPluginsProblems(resources, manifest, existsSync, walkTree);
       for (const p of plugins) console.error(`release/build: ${p}`);
       if (plugins.length > 0) return 1;
     }
