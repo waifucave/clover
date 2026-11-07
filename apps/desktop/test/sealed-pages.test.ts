@@ -103,6 +103,22 @@ describe("the app's own fallback card page", () => {
     expect(p).toContain("b.answer(b2.dataset.option)");
   });
 
+  test("the fallback stands on its own tokens: its fixed colours follow the OS live, no reload", () => {
+    const p = ownCardPage({
+      cardId: "card_own",
+      token: TOKEN,
+      origin: "user",
+      issuedAt: 0,
+      expiresAt: null,
+      fields: { title: { type: "text", text: "Run a command?" } },
+      options: [
+        { id: "allow_once", kind: "approve", label: "Allow" },
+        { id: "deny", kind: "deny", label: "Deny" },
+      ],
+    });
+    expect(p).toContain("@media (prefers-color-scheme: dark)");
+  });
+
   test("the page's inline script parses: plain script alone, never the author's types (a `as` or `: string` in it kills the page's own listeners at parse)", () => {
     const pages = [
       buttonPage({ cardId: "card_x", token: TOKEN, option: "allow_once", label: "Allow", kind: "approve" }),

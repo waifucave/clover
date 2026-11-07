@@ -612,6 +612,16 @@ function exitApp(): void {
 function syncAppearance(): void {
   const raw = process.platform === "darwin" || process.platform === "win32" ? systemPreferences.getAccentColor() : "";
   runtime?.setAppearance(nativeTheme.shouldUseDarkColors ? "dark" : "light", raw === "" ? undefined : systemAccentFromOs(raw));
+  // The fallback card stands open under its creation-time colours otherwise: its window follows the OS too (its page
+  // follows through the color scheme, no reload).
+  const solid = nativeTheme.shouldUseDarkColors ? "#202020" : "#FFFFFF";
+  for (const own of fallbacks.values()) {
+    if (own.win !== undefined && !own.win.isDestroyed()) {
+      try {
+        own.win.setBackgroundColor(solid);
+      } catch { /* gone */ }
+    }
+  }
 }
 
 /** macOS: a Dock icon only while a window shows (never in a headless run). */

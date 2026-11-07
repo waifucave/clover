@@ -16,7 +16,7 @@ import { spotInfo } from "@waifucave/clover-plugin-sdk";
 import { SAFE_MODE_PLUGINS, type UiEntry, type UiPlugin } from "./model";
 import { NO_CHOICES, SpotTree, entryRef, resolveCell, type CellContext, type Candidate, type Os, type UiChoices } from "./spots";
 import { DRAG_GRANT_TTL_MS, checkDragOffer, mayClaim, type DragOffer } from "./brokers";
-import { botTheme, defaultFrameMetrics, partSelector, partTokens, stackThemes, ThemeStore, type FrameMetrics, type ThemeChoices } from "./theme";
+import { botTheme, defaultFrameMetrics, partSelector, partTokens, stackThemes, ThemeStore, type FrameMetrics, type TextSize, type ThemeChoices } from "./theme";
 import { cleanCss } from "./css";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
@@ -134,6 +134,8 @@ export class UiRuntime {
   private readonly windows = new Map<number, WindowInfo>();
   private appearance: Appearance = "light";
   private systemAccent: string | undefined;
+  /** The user's text size: the default until F-M3's UiSettings carries the choice. */
+  private textSize: TextSize = "default";
   private safeModeValue: boolean;
   private nextId = 1;
   private readonly grants = new Map<string, { offer: DragOffer; windowId: number; at: number }>();
@@ -197,6 +199,13 @@ export class UiRuntime {
     if (appearance === this.appearance && systemAccent === this.systemAccent) return;
     this.appearance = appearance;
     this.systemAccent = systemAccent;
+    this.changed(false);
+  }
+
+  /** The user's text size: re-themes every document with its scale, like an appearance change. */
+  setTextSize(textSize: TextSize): void {
+    if (textSize === this.textSize) return;
+    this.textSize = textSize;
     this.changed(false);
   }
 
@@ -266,7 +275,7 @@ export class UiRuntime {
     const inDoc = [...this.mounts.values()].filter((m) => this.docOf(m)?.id === doc.id);
     const out: ThemeSheet[] = [];
     const whole = { root: partSelector(doc.id) };
-    const theme = stackThemes(this.themes, { plugins: this.plugins, choices: this.choices, styles: [], appearance: this.appearance, frame: defaultFrameMetrics("darwin") });
+    const theme = stackThemes(this.themes, { plugins: this.plugins, choices: this.choices, styles: [], appearance: this.appearance, frame: defaultFrameMetrics("darwin"), textSize: this.textSize });
     for (const t of theme) {
       const css = this.themes.themeSheet(t.plugin, t.theme, whole);
       if (css !== "") out.push({ id: `${t.kind}:${t.plugin.id}`, css });
@@ -360,6 +369,7 @@ export class UiRuntime {
       appearance: this.appearance,
       ...(this.systemAccent !== undefined ? { systemAccent: this.systemAccent } : {}),
       frame: w?.frame ?? defaultFrameMetrics(this.opts.platform ?? "darwin"),
+      textSize: this.textSize,
     });
     m.tokensKey = JSON.stringify(m.tokens);
   }
