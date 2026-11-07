@@ -5,7 +5,7 @@
 
 import { readStreamMeta, STREAM_LINK_LABEL, type StreamCodec } from "../protocol/browser-stream";
 import type { LinkStream } from "../protocol/rtc-link";
-import { decodableCodecs, type TabPicture, type TabStreamDecoders, TabStreamView } from "./tab-stream";
+import { acker, decodableCodecs, type TabPicture, type TabStreamDecoders, TabStreamView } from "./tab-stream";
 
 /** What the tabs need of the link (RtcLink has it; tests fake it). */
 export interface BrowserLink {
@@ -174,6 +174,7 @@ export type WatchState =
 interface Held {
   stream: LinkStream;
   id: string;
+  acks: boolean;
   bytes: Uint8Array[];
   ended: { error?: Error } | undefined;
   off: () => void;
@@ -208,10 +209,10 @@ export class TabStreamInbox {
       if (meta === null) return stream.abort("not a stream this reads");
       const w = this.#watches.get(meta.tab);
       if (w === undefined || w.view.closed || w.claimed) return stream.abort("not wanted");
-      if (w.stream === undefined) return this.#hold(w, stream, meta.stream);
+      if (w.stream === undefined) return this.#hold(w, stream, meta.stream, meta.acks);
       if (w.stream !== meta.stream) return stream.abort("not wanted");
       w.claimed = true;
-      attach(stream, w.view);
+      attach(stream, w.view, meta.acks);
     });
   }
 
@@ -234,9 +235,11 @@ export class TabStreamInbox {
             continue;
           }
           entry.claimed = true;
-          for (const b of h.bytes) view.push(b);
+          // What was held is taken now, and acked now (in order, before anything newer).
+          const ack = acker(h.stream, h.acks && h.ended === undefined);
+          for (const b of h.bytes) ack(view.push(b));
           if (h.ended !== undefined) view.lose(h.ended.error);
-          else attach(h.stream, view);
+          else attach(h.stream, view, h.acks, ack);
         }
       },
       release: () => {
@@ -253,8 +256,8 @@ export class TabStreamInbox {
     this.#watches.clear();
   }
 
-  #hold(w: Expected, stream: LinkStream, id: string): void {
-    const h: Held = { stream, id, bytes: [], ended: undefined, off: () => {} };
+  #hold(w: Expected, stream: LinkStream, id: string, acks: boolean): void {
+    const h: Held = { stream, id, acks, bytes: [], ended: undefined, off: () => {} };
     const offData = stream.onData((b) => h.bytes.push(b.slice()));
     const offEnd = stream.onEnd((error) => (h.ended = error !== undefined ? { error } : {}));
     h.off = () => {
@@ -275,9 +278,9 @@ function dropHeld(w: Expected): void {
 
 /** The stream's bytes go to the view until either side ends: this side giving up aborts it; the computer's `ended`
  *  frame needs nothing more; the stream finishing or breaking first is said by the view. */
-function attach(stream: LinkStream, view: TabStreamView): void {
+function attach(stream: LinkStream, view: TabStreamView, acks: boolean, ack = acker(stream, acks)): void {
   const offData = stream.onData((bytes) => {
-    view.push(bytes);
+    ack(view.push(bytes));
     if (view.closed) {
       offData();
       if (!view.ended) stream.abort("can't show it");

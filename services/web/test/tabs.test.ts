@@ -25,7 +25,23 @@ function frame(kind: 1 | 2 | 3, payload: Uint8Array, key = false): Uint8Array {
 const json = (o: unknown) => new TextEncoder().encode(JSON.stringify(o));
 const config = (codec = "jpeg") => frame(1, json({ codec, width: 1280, height: 800, codecString: codec }));
 /** A JPEG's start with its frame header (640x400), and `n` last for the fake decoder to report. */
-const picture = (n: number) => frame(2, new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 1, 144, 2, 128, 1, 1, 0x11, 0, n]), true);
+const jpegOf = (n: number) => new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 1, 144, 2, 128, 1, 1, 0x11, 0, n]);
+const picture = (n: number) => frame(2, jpegOf(n), true);
+/** A picture stamped `ts` microseconds. */
+const stamped = (n: number, ts: number, key = true) => {
+  const f = frame(2, jpegOf(n), key);
+  new DataView(f.buffer).setBigInt64(4, BigInt(ts));
+  return f;
+};
+/** What an ack for `ts` must be: version 1, kind 4, flags 0, the timestamp, length 0. */
+const ackBytes = (ts: number) => {
+  const a = new Uint8Array(16);
+  const v = new DataView(a.buffer);
+  v.setUint8(0, 1);
+  v.setUint8(1, 4);
+  v.setBigInt64(4, BigInt(ts));
+  return a;
+};
 const ended = (reason: string) => frame(3, json({ reason }));
 
 /** A link that answers by method, and lets the test send notifications and open streams. */
@@ -57,14 +73,15 @@ function fakeLink(answers: Record<string, (params: Record<string, unknown>) => u
     let data: ((b: Uint8Array) => void) | undefined;
     let end: ((e?: Error) => void) | undefined;
     const aborted: string[] = [];
+    const written: Uint8Array[] = [];
     const stream = {
-      id: "s", label: "browser.stream", priority: "screenshots", write: async () => {}, end: () => {},
+      id: "s", label: "browser.stream", priority: "screenshots", write: async (b: Uint8Array) => void written.push(b), end: () => {},
       abort: (r?: string) => aborted.push(r ?? ""),
       onData: (fn: (b: Uint8Array) => void) => ((data = fn), () => (data = undefined)),
       onEnd: (fn: (e?: Error) => void) => ((end = fn), () => (end = undefined)),
     } as unknown as LinkStream;
     streamHandler!(stream, meta);
-    return { aborted, send: (b: Uint8Array) => data?.(b), finish: (e?: Error) => end?.(e) };
+    return { aborted, written, send: (b: Uint8Array) => data?.(b), finish: (e?: Error) => end?.(e) };
   };
   const notify = (method: string, p: unknown) => notes.get(method)?.forEach((fn) => fn(p));
   return { link, calls, open, notify, listeners: () => notes.get("core.event")?.size ?? 0 };
@@ -322,5 +339,47 @@ describe("watching a tab", () => {
     const none = watcher(f, inbox);
     await none.w.start();
     expect(none.w.state).toEqual({ kind: "failed", message: "the computer didn't start a stream" });
+  });
+
+  test("when the meta asks for acks, every frame taken (decoded or dropped) is acked in order; config and ended never", async () => {
+    const f = fakeLink({ "browser.stream": () => ({ stream: "st" }) });
+    const inbox = new TabStreamInbox(f.link);
+    const w = watcher(f, inbox);
+    await w.w.start();
+    const s = f.open({ v: 1, stream: "st", tab: "t1", computer: "Studio", acks: true });
+    // A frame before any config (dropped), then a config, two pictures, and the end.
+    s.send(stamped(1, 5));
+    s.send(new Uint8Array([...config(), ...stamped(2, 1_762_500_000_123_456), ...stamped(3, 33_333)]));
+    s.send(ended("stopped"));
+    await tick();
+    expect(s.written).toEqual([ackBytes(5), ackBytes(1_762_500_000_123_456), ackBytes(33_333)]);
+
+    // Without `acks` in the meta, nothing is written back.
+    const g = fakeLink({ "browser.stream": () => ({ stream: "st" }) });
+    const quiet = watcher(g, new TabStreamInbox(g.link));
+    await quiet.w.start();
+    const q = g.open({ v: 1, stream: "st", tab: "t1", computer: "Studio" });
+    q.send(new Uint8Array([...config(), ...stamped(4, 7)]));
+    await tick();
+    expect(q.written).toEqual([]);
+  });
+
+  test("frames held before the answer are acked once the answer names their stream, before newer ones", async () => {
+    let gate!: () => void;
+    const answered = new Promise<void>((r) => (gate = r));
+    const f = fakeLink({ "browser.stream": async (p) => (p.on === true ? (await answered, { stream: "st" }) : {}) });
+    const w = watcher(f, new TabStreamInbox(f.link));
+    const starting = w.w.start();
+    await tick();
+    const s = f.open({ v: 1, stream: "st", tab: "t1", computer: "Studio", acks: true });
+    s.send(new Uint8Array([...config(), ...stamped(1, 10)]));
+    s.send(stamped(2, 20));
+    await tick();
+    expect(s.written).toEqual([]);
+    gate();
+    await starting;
+    s.send(stamped(3, 30));
+    await tick();
+    expect(s.written).toEqual([ackBytes(10), ackBytes(20), ackBytes(30)]);
   });
 });
