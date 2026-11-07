@@ -50,7 +50,7 @@ const TRAPS_X64: readonly TrapSpec[] = [
   { nr: 265, dirfd: 0, paths: [1, 3], kind: "mutate" }, // linkat
   { nr: 86, dirfd: -1, paths: [0, 1], kind: "mutate" }, // link
   { nr: 266, dirfd: 1, paths: [2], kind: "mutate" }, // symlinkat (target, newdirfd, linkpath)
-  { nr: 88, dirfd: -1, paths: [0, 1], kind: "mutate" }, // symlink (target, linkpath)
+  { nr: 88, dirfd: -1, paths: [1], kind: "mutate" }, // symlink (target, linkpath): only the linkpath is walked
 ];
 
 /** The same on arm64 (`asm-generic/unistd.h`): only the `*at` forms and openat2 exist there — no legacy

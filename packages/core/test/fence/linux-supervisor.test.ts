@@ -124,9 +124,9 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
         expect(matchSupervised(w2.parentFd, w2.name, [join(root, "nope", "f.txt")])).toBe(false);
         try { closeSync(w.parentFd); } catch { /* pinned */ }
         try { closeSync(w2.parentFd); } catch { /* pinned */ }
-        // Through a link: refused with ELOOP, never followed.
+        // Through a link: refused, never followed (O_DIRECTORY|O_NOFOLLOW on a link reports ENOTDIR).
         const wl = walkToParent(l, freshBase(), ["slink", "b", "c"]);
-        expect(wl).toEqual({ errno: 40 });
+        expect(wl).toEqual({ errno: 20 });
         // Dot-dot stays under the base's root (the walk pins it, as the kernel does).
         const wd = walkToParent(l, freshBase(), ["a", "..", "a", "x"]);
         if (!("parentFd" in wd)) throw new Error("walk failed");
