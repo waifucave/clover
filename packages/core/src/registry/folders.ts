@@ -129,6 +129,33 @@ interface Source {
   bundled?: boolean;
 }
 
+/** What each agent backend the plugin contributes takes from the user's environment and sets in its own (lane K's
+ *  #233 lists them on the agent's OK card; the plugin's own OK shows them too, so the user sees them when approving the
+ *  plugin, not only when delegating). Read from each backend's quirks file as main has it today
+ *  (`{ quirks: { launch: { envAllow, envSet } } }`). K: keep this reader's shape aligned with #233's entries. */
+export function agentEnvLines(folder: string, tree: TreeReport): string[] {
+  const lines: string[] = [];
+  const reports = [{ dir: "", report: tree.top }, ...tree.children.map((c) => ({ dir: `plugins/${c.folder}/`, report: c.report }))];
+  for (const { dir, report } of reports) {
+    for (const backend of report.manifest?.contributes?.agentBackends ?? []) {
+      if (backend.quirks === undefined) continue;
+      let launch: { envAllow?: unknown; envSet?: unknown } | undefined;
+      try {
+        const doc = JSON.parse(readFileSync(join(folder, dir, backend.quirks), "utf8")) as { quirks?: { launch?: unknown }; launch?: unknown };
+        launch = (doc.quirks?.launch ?? doc.launch) as typeof launch;
+      } catch {
+        launch = undefined;
+      }
+      const name = typeof backend.name === "string" ? backend.name : backend.id;
+      const allow = Array.isArray(launch?.envAllow) ? launch.envAllow.filter((n): n is string => typeof n === "string") : [];
+      const set = launch?.envSet !== null && typeof launch?.envSet === "object" ? Object.keys(launch.envSet as object) : [];
+      if (allow.length > 0) lines.push(`Its agent backend ${name} gets from your environment: ${allow.join(", ")}.`);
+      if (set.length > 0) lines.push(`Its agent backend ${name} sets in its environment: ${set.join(", ")}.`);
+    }
+  }
+  return lines;
+}
+
 export class PluginFolders {
   readonly #o: PluginFoldersOptions;
   readonly #now: () => number;
@@ -140,7 +167,7 @@ export class PluginFolders {
   readonly #watchers = new Map<string, FSWatcher>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
-  readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance }>();
+  readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance; folder: string }>();
 
   constructor(opts: PluginFoldersOptions) {
     this.#o = opts;
@@ -215,7 +242,7 @@ export class PluginFolders {
     const name = r.tree.top.manifest?.name;
     return {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
-      lines: describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards }),
+      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards }), ...agentEnvLines(r.folder, r.tree)],
       source: PROVENANCE_TEXT[r.provenance.by],
     };
   }
@@ -329,7 +356,7 @@ export class PluginFolders {
       if (change !== undefined) input.change = change;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
-    if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance });
+    if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });
     return r;
   }
 

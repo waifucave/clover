@@ -129,6 +129,19 @@ describe("PluginFolders", () => {
     expect(w.core.get("own")?.state).not.toBe("invalid");
   });
 
+  test("the plugin's OK lists what each agent backend gets from the user's environment and sets in its own (lane K's #233)", async () => {
+    const w = world();
+    const codex = join(w.pluginsDir, "codex");
+    w.write(codex, {
+      "clover.json": manifest("codex", { contributes: { agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "codex-acp", args: [], quirks: "quirks.json" }, { id: "plain", name: "Plain", protocol: "acp", command: "plain-acp", args: [] }] } }),
+      "quirks.json": JSON.stringify({ quirks: { placement: "local", launch: { envAllow: ["CODEX_PATH", "CODEX_HOME"], envSet: { NO_BROWSER: "1" } } } }),
+    });
+    await w.folders.scan();
+    const lines = w.folders.okText("codex", "macos").lines;
+    expect(lines).toEqual(expect.arrayContaining(["Its agent backend Codex gets from your environment: CODEX_PATH, CODEX_HOME.", "Its agent backend Codex sets in its environment: NO_BROWSER."]));
+    expect(lines.filter((l) => l.includes("Plain"))).toEqual([]);
+  });
+
   test("an agent backend's quirks.json is code: a change to it alone waits for a new OK (lane K's #233 layout)", async () => {
     const w = world();
     const codex = join(w.pluginsDir, "codex");
