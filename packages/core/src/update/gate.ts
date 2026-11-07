@@ -4,8 +4,12 @@
 //   turns       a turn in flight in any session (the Clover drivers)
 //   agents      a background agent still running
 //   approvals   a card waiting for an answer
+//   questions, elicitations, workflows   pending questions and URL elicitations, workflow runs
 //   …           K's runners, routines, live Bash runners and the bots register theirs (`register`, on the
 //               daemon's gate: `RunningDaemon.updateGate`)
+//   TODO(lane D): the bots' DurableSessionHost runs turns of its own, outside the Clover drivers. When it is wired
+//               into the daemon it must register its running turns here and refuse a new turn while `closed`
+//               (in `#accept`), as the drivers' pre-turn gate does.
 // The app asks over the socket (`update.status`'s `idle` and `busy`), and so does the daemon's own self-update
 // (server installs). The gate never stops work: it only says when stopping would cut nothing.
 //
@@ -13,13 +17,37 @@
 // CLOSES for it (`close`), and while it is closed no new turn starts (the session drivers' pre-turn gate asks `closed`
 // and refuses with a retry: "Clover is restarting for an update"). Whoever closes it checks idle again after the
 // steps before the restart, and reopens it if work started meanwhile; a close that no restart follows reopens by
-// itself after `reopenAfterMs`, so a lost app never leaves turns refused.
+// itself after `reopenAfterMs`, so a lost app never leaves turns refused. Once the restart is under way (the app's
+// `pair.exiting{update}` accepted, a server's binaries swapped) the gate COMMITS: closed for the rest of the process,
+// however long the drain takes.
 //
 // A restart for an update does NOT hand the bots' lease over (it is not Hand over and quit, which releases it): it is
 // a short restart, and the lease's own grace covers it. Just before the restart the gate runs its `beforeRestart`
 // hooks, where the lease renews (lane H registers it), so another computer could take over only after a full TTL
 // with this one down: under H's timings (a 30 s lease, its holder stopping 5 s early) a 10-20 s restart leaves the
 // lease held here, and the new daemon renews it under the same epoch (test/update/gate.test.ts checks both).
+
+/** The message a turn refused while the gate closes is given (the drivers' and the bots' alike). */
+export const UPDATE_RESTARTING_MESSAGE = "Clover is restarting for an update; send it again in a moment";
+
+/** A turn refused while the gate closes for a restart: typed like the drivers' (`daemon_shutting_down`, reason
+ *  `update-restarting`), and a retry — nothing was appended, and the same request works once the gate reopens or the
+ *  daemon is back. */
+export class UpdateRestartingRefusal extends Error {
+  readonly code = "daemon_shutting_down" as const;
+  readonly reason = "update-restarting" as const;
+  readonly retry = true as const;
+  constructor() {
+    super(UPDATE_RESTARTING_MESSAGE);
+    this.name = "UpdateRestartingRefusal";
+  }
+}
+
+/** Whether `err` is a turn refused for an update's restart (an `UpdateRestartingRefusal`, or a driver's refusal
+ *  carrying its reason). */
+export function isUpdateRestarting(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { reason?: unknown }).reason === "update-restarting";
+}
 
 /** One kind of work the gate waits for: how many of it run now. */
 export interface BusySource {
@@ -36,11 +64,25 @@ export interface GateVerdict {
 export class UpdateGate {
   private readonly sources = new Map<string, BusySource>();
   #closed = false;
+  #committed = false;
+  readonly #reopenListeners = new Set<() => void>();
   #reopenTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Whether the gate is closing for a restart: no new turn may start. */
   get closed(): boolean {
     return this.#closed;
+  }
+
+  /** The one pre-turn check (the session drivers', the bots' host): throws `UpdateRestartingRefusal` while closed. */
+  beforeTurn(): void {
+    if (this.#closed) throw new UpdateRestartingRefusal();
+  }
+
+  /** Called each time the gate opens again after a close (work started, the steps failed, or no restart came), so
+   *  held turns and routines can go on without polling; returns its removal. Never after `commit`. */
+  onReopen(cb: () => void): () => void {
+    this.#reopenListeners.add(cb);
+    return () => void this.#reopenListeners.delete(cb);
   }
 
   /** Closes the gate for a restart; it reopens by itself after `reopenAfterMs` unless the process is gone by then. */
@@ -51,11 +93,33 @@ export class UpdateGate {
     this.#reopenTimer.unref?.();
   }
 
-  /** Opens the gate again: the restart isn't happening (work started, or no one followed up). */
+  /** The restart is under way: the gate stays closed for the rest of the process (no reopen timer, no reopen). */
+  commit(): void {
+    this.#closed = true;
+    this.#committed = true;
+    if (this.#reopenTimer) clearTimeout(this.#reopenTimer);
+    this.#reopenTimer = undefined;
+  }
+
+  get committed(): boolean {
+    return this.#committed;
+  }
+
+  /** Opens the gate again: the restart isn't happening (work started, or no one followed up). Not after `commit`. */
   reopen(): void {
+    if (this.#committed) return;
+    const was = this.#closed;
     this.#closed = false;
     if (this.#reopenTimer) clearTimeout(this.#reopenTimer);
     this.#reopenTimer = undefined;
+    if (!was) return;
+    for (const cb of [...this.#reopenListeners]) {
+      try {
+        cb();
+      } catch {
+        // a listener's own failure is its own
+      }
+    }
   }
 
   /**

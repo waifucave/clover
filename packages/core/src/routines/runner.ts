@@ -1,6 +1,7 @@
 import type { SessionStore } from "../sessions/store";
 import type { SessionHub } from "../sessions/hub";
 import type { RoutineRunner } from "./scheduler";
+import { isUpdateRestarting } from "../update/gate";
 
 // Every rate-limit ProviderEvent carries `code: "rate_limit"` and a message starting with this
 // exact prefix. Phase 5 routines T3 threads that `code` through as an additive optional field on
@@ -52,12 +53,19 @@ export interface CloverTurnRunner {
   runTurn(sessionId: string, text: string, clientName: string): Promise<void>;
 }
 
+/** M-M2: a routine fire refused while the update gate is closing is tried again this often, for at most this long
+ *  (the gate reopens by itself within a minute when no restart follows). */
+export const UPDATE_RETRY_MS = 5_000;
+export const UPDATE_RETRY_MAX_MS = 120_000;
+
 export function makeDaemonRoutineRunner(deps: {
   store: SessionStore;
   hub: SessionHub;
   /** The driver table. `undefined` (a daemon whose Clover handle never constructed has one anyway;
    *  this is a harness without one) ⇒ every fire fails cleanly, as "agent disabled" always did. */
   clover?: CloverTurnRunner;
+  /** Test seam: the wait between tries while the update gate is closing. */
+  sleep?: (ms: number) => Promise<void>;
 }): RoutineRunner {
   return {
     async runHeadless(opts): Promise<{ ok: boolean; quotaLimited?: boolean; resultText?: string; error?: string }> {
@@ -67,8 +75,18 @@ export function makeDaemonRoutineRunner(deps: {
       deps.hub.append(sessionId, { type: "session_titled", sessionId, threadId: "main", title: opts.origin });
 
       try {
-        // The driver appends the `user_message` itself (P8b-39: the log is its queue).
-        await deps.clover.runTurn(sessionId, opts.prompt, "routine");
+        // The driver appends the `user_message` itself (P8b-39: the log is its queue). A fire refused because the
+        // daemon's update gate is closing for a restart (M-M2: nothing was appended) is tried again once it reopens;
+        // a restart that goes ahead ends this process, and the fire with it.
+        for (let waited = 0; ; waited += UPDATE_RETRY_MS) {
+          try {
+            await deps.clover.runTurn(sessionId, opts.prompt, "routine");
+            break;
+          } catch (err) {
+            if (!isUpdateRestarting(err) || waited >= UPDATE_RETRY_MAX_MS) throw err;
+            await (deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(UPDATE_RETRY_MS);
+          }
+        }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }

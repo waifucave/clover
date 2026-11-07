@@ -174,9 +174,15 @@ describe("writes: a server's self-update files (<home>/bin, <home>/update, <home
     for (const f of [`${H}/bin/clover-core`, `${H}/bin/clover-core.new`, `${H}/update/boot.json`, `${H}/install.json`]) {
       expect(controlPlaneTargetForCall("Write", { file_path: f }, "/", homeFenceFor(H)), f).not.toBeNull();
     }
+    // <home>/bin holds the code the next start runs: refused on ANY mention, like `runtimes` — a write through an
+    // interpreter has no shape the floor could see.
+    for (const cmd of [
+      `python3 -c "open('${H}/bin/clover-core','wb').write(b'x')"`, `bun -e "Bun.write('${H}/bin/clover-core', 'x')"`,
+      `ls ${H}/bin`, `cat ${H}/bin/clover-core`,
+    ]) expect(escapeFloorHit(cmd, H), cmd).toBeDefined();
+    // The self-update's records stay write-only there (alone, they could only freeze updates); reads are free.
     expect(escapeFloorHit(`cat ${H}/install.json`, H)).toBeUndefined();
-    expect(escapeFloorHit(`ls ${H}/bin`, H)).toBeUndefined();
-    expect(escapeFloorHit(`echo hi > ${H}/binder.txt`, H)).toBeUndefined();
+    expect(escapeFloorHit(`cat ${H}/update/boot.json`, H)).toBeUndefined();
   });
 });
 

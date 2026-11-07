@@ -59,10 +59,18 @@ export function updateHandlers(d: UpdateServiceDeps): Record<string, CloverHandl
   };
 }
 
-/** `pair.exiting{update}` goes ahead only with the gate closed for the restart and nothing busy. */
-export function updateExitAllowed(gate: UpdateGate): boolean {
-  return gate.closed && gate.verdict().idle;
+/**
+ * `pair.exiting{update}`: it goes ahead only with the gate closed for the restart and nothing busy, and then the gate
+ * commits (closed until the process ends, however long the drain). Refused while busy, the gate reopens at once, so
+ * the user's sends aren't refused for nothing.
+ */
+export function acceptUpdateExit(gate: UpdateGate): boolean {
+  if (!gate.closed) return false;
+  if (!gate.verdict().idle) {
+    gate.reopen();
+    return false;
+  }
+  gate.commit();
+  return true;
 }
 
-/** The session drivers' pre-turn check: while the gate is closing for a restart, a new turn is refused (a retry). */
-export const UPDATE_RESTARTING_MESSAGE = "Clover is restarting for an update; send it again in a moment";

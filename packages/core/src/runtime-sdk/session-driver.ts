@@ -30,6 +30,7 @@ import { registerHostStoragePolicyConsumer } from "./host-storage-fence";
 // record write that fails after the row exists is rolled back by the caller (the row is deleted —
 // it was never announced to any client). Every refusal is a `CloverLegRefusal` whose `code` the IPC
 // layer forwards as the JSON-RPC error's `data.code`.
+import { UPDATE_RESTARTING_MESSAGE } from "../update/gate";
 import type { ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
@@ -1400,9 +1401,8 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
      */
     const beforeTurn = async (): Promise<void> => {
       // M-M2: the daemon is about to restart for an update; nothing is appended, and sending again after it works.
-      if (deps.updateClosing?.() === true) {
-        throw new CloverLegRefusal("daemon_shutting_down", "Clover is restarting for an update; send it again in a moment", "update-restarting");
-      }
+      // The gate's own check (`UpdateGate.beforeTurn`, which the bots' host shares), as the driver's typed refusal.
+      if (deps.updateClosing?.() === true) throw new CloverLegRefusal("daemon_shutting_down", UPDATE_RESTARTING_MESSAGE, "update-restarting");
       const live = deps.store.meta(sessionId);
       const settings = deps.settings();
       const model = mode === "dispatch" ? (live.model ?? pinsFor(settings).dispatch) : (live.model ?? settings?.provider?.model);
@@ -1449,6 +1449,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       sessionId, backendSessionId, mode, runtime,
       options: optionsFor,
       beforeTurn,
+      ...(deps.updateClosing ? { updateClosing: deps.updateClosing } : {}),
       spawnRefusal: () => (shuttingDown ? shutdownRefusal() : undefined),
       endedWhileOpeningRefusal: () => new CloverLegRefusal(SESSION_REPLACED, "this session's runtime was replaced while it was starting; send again"),
       projector: projectorFor,

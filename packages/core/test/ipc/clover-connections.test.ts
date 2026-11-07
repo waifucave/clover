@@ -92,7 +92,7 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; updateExitAllowed?: () => boolean } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean } = {}) {
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -139,7 +139,7 @@ describe("Clover connections (C-M1)", () => {
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken,
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
-      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.updateExitAllowed ? { updateExitAllowed: opts.updateExitAllowed } : {}), killApp: (pid) => { killed.push(pid); } });
+      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid) => { killed.push(pid); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
     return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, calls, unfollowed, clover, setPeer: (p: PeerFacts) => { peer = p; } };
@@ -298,7 +298,7 @@ describe("Clover connections (C-M1)", () => {
 
   test("M-M2: an update's exit only once the update gate is closed and idle; a refused one leaves the pair as it was", async () => {
     let allowed = false;
-    const b = await boot({ updateExitAllowed: () => allowed });
+    const b = await boot({ acceptUpdateExit: () => allowed });
     const app = await Client.connect(b.socketPath);
     await app.hello("app", b.appToken);
     const refused = await app.request("pair.exiting", { reason: "update" });

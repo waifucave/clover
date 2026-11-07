@@ -286,6 +286,7 @@ export interface SelfUpdaterDeps {
     whenIdle(everyMs?: number, signal?: AbortSignal): Promise<void>;
     closeForRestart(opts?: { reopenAfterMs?: number; timeoutMs?: number; log?: (line: string) => void }): Promise<boolean>;
     reopen(): void;
+    commit(): void;
   };
   /** Stops the daemon (`RunningDaemon.stop`), before the binaries change places. */
   drain(): Promise<void>;
@@ -294,6 +295,8 @@ export interface SelfUpdaterDeps {
   restartCode: number;
   log(line: string): void;
   idlePollMs?: number;
+  /** How long a close the swap doesn't follow stays closed (the gate's own default is a minute). */
+  reopenAfterMs?: number;
   now?(): number;
 }
 
@@ -328,7 +331,7 @@ export class SelfUpdater {
       // Idle, then closed for the restart and idle still; work that started meanwhile sends it back to waiting.
       for (;;) {
         await this.d.gate.whenIdle(this.d.idlePollMs ?? 60_000, this.#stop.signal);
-        if (await this.d.gate.closeForRestart({ timeoutMs: 5_000, log: this.d.log })) break;
+        if (await this.d.gate.closeForRestart({ timeoutMs: 5_000, log: this.d.log, ...(this.d.reopenAfterMs !== undefined ? { reopenAfterMs: this.d.reopenAfterMs } : {}) })) break;
       }
       await this.swap();
     };
@@ -438,8 +441,8 @@ export class SelfUpdater {
   async swap(): Promise<void> {
     const feed = this.#found;
     const bin = this.d.bin, staged = `${bin}.new`, old = `${bin}.old`;
-    if (!this.#ready || feed === undefined || !existsSync(staged)) throw new Error("no checked update to install");
     try {
+      if (!this.#ready || feed === undefined || !existsSync(staged)) throw new Error("no checked update to install");
       // `.new` waited, maybe for hours: it is the checked binary only if it still hashes to the signed SHA-512.
       const bytes = readFileSync(staged);
       if (bytes.length !== feed.size || createHash("sha512").update(bytes).digest("base64") !== feed.sha512) {
@@ -447,6 +450,9 @@ export class SelfUpdater {
         throw new Error(`${staged} is no longer the checked ${feed.version}; it was removed`);
       }
       if (!retireOld(bin)) throw new Error(`${old} is still in use and can't be moved aside`);
+      // The boot count first: a kill between here and the restart still has the new version's starts watched (and a
+      // stray count with no `.old` behind it clears itself at the next start).
+      writeJson(bootFile(this.d.home), { version: feed.version, boots: 0 });
       renameSync(bin, old);
       try {
         renameSync(staged, bin);
@@ -455,10 +461,11 @@ export class SelfUpdater {
         throw err;
       }
     } catch (err) {
-      this.#swapFailed(feed.version, err);
+      this.#swapFailed(feed?.version, err);
       return;
     }
-    writeJson(bootFile(this.d.home), { version: feed.version, boots: 0 });
+    // Committed: the gate stays closed however long the drain takes.
+    this.d.gate.commit();
     this.d.log(`update: ${feed.version} is in place (from ${this.d.version}); restarting`);
     try {
       await this.d.drain();
@@ -468,17 +475,19 @@ export class SelfUpdater {
     }
   }
 
-  #swapFailed(version: string, err: unknown): void {
-    const prev = this.#failed.get(version);
+  #swapFailed(version: string | undefined, err: unknown): void {
+    const prev = version === undefined ? undefined : this.#failed.get(version);
     const wait = Math.min(24 * 60 * 60 * 1000, prev === undefined ? SWAP_BACKOFF_MS : prev.wait * 2);
-    this.#failed.set(version, { until: (this.d.now ?? Date.now)() + wait, wait });
+    if (version !== undefined) this.#failed.set(version, { until: (this.d.now ?? Date.now)() + wait, wait });
     this.#ready = false;
     this.d.gate.reopen();
-    try {
-      rmSync(`${this.d.bin}.new`, { force: true });
-    } catch {
-      // it goes with the next check's (`check` writes `.new` afresh)
+    for (const f of [bootFile(this.d.home), `${this.d.bin}.new`]) {
+      try {
+        rmSync(f, { force: true });
+      } catch {
+        // `.new` goes with the next check's (it writes `.new` afresh); a count with no `.old` clears itself at a start
+      }
     }
-    this.d.log(`update: installing ${version} failed, the daemon keeps running on ${this.d.version} and tries again in ${Math.round(wait / 60_000)} min: ${err instanceof Error ? err.message : String(err)}`);
+    this.d.log(`update: installing ${version ?? "the update"} failed, the daemon keeps running on ${this.d.version} and tries again in ${Math.round(wait / 60_000)} min: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

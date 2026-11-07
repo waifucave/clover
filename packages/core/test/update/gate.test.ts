@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { isContractError } from "../../src/contracts/common";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { FAKE_LEASE_MARGIN_MS, FAKE_LEASE_TTL_MS, FakeLeaseAuthority } from "../../src/contracts/fakes/lease";
-import { UpdateGate } from "../../src/update/gate";
+import { isUpdateRestarting, UPDATE_RESTARTING_MESSAGE, UpdateGate, UpdateRestartingRefusal } from "../../src/update/gate";
 
 describe("the update's idle gate", () => {
   test("idle with nothing registered; busy while any source counts work, named with its count", () => {
@@ -83,6 +83,58 @@ describe("the update's idle gate", () => {
     const off = gate.beforeRestart(() => { expect(gate.closed).toBe(true); turns = 1; });
     expect(await gate.closeForRestart()).toBe(false);
     expect(gate.closed).toBe(false);
+    off();
+  });
+
+  test("committed to the restart: closed for good, however long the drain runs past the reopen time", async () => {
+    const gate = new UpdateGate();
+    gate.close(20);
+    gate.commit();
+    expect(gate.committed).toBe(true);
+    await Bun.sleep(60);
+    expect(gate.closed).toBe(true);
+    gate.reopen();
+    expect(gate.closed).toBe(true);
+  });
+
+  test("beforeTurn: the one pre-turn check, a typed retry while closed and nothing while open", () => {
+    const gate = new UpdateGate();
+    expect(() => gate.beforeTurn()).not.toThrow();
+    gate.close();
+    let caught: unknown;
+    try { gate.beforeTurn(); } catch (err) { caught = err; }
+    expect(caught).toBeInstanceOf(UpdateRestartingRefusal);
+    expect(caught).toMatchObject({ code: "daemon_shutting_down", reason: "update-restarting", retry: true, message: UPDATE_RESTARTING_MESSAGE });
+    expect(isUpdateRestarting(caught)).toBe(true);
+    expect(isUpdateRestarting(new Error("other"))).toBe(false);
+    gate.reopen();
+    expect(() => gate.beforeTurn()).not.toThrow();
+  });
+
+  test("onReopen: called once per reopen after a close (by hand, a busy verdict or the timer), never after commit", async () => {
+    const gate = new UpdateGate();
+    let turns = 0;
+    gate.register({ name: "turns", count: () => turns });
+    const heard: string[] = [];
+    const off = gate.onReopen(() => heard.push("reopened"));
+    gate.reopen(); // open already: nothing
+    expect(heard).toEqual([]);
+    gate.close();
+    gate.reopen();
+    expect(heard).toEqual(["reopened"]);
+    // Work that started during the steps before the restart.
+    const offStep = gate.beforeRestart(() => { turns = 1; });
+    expect(await gate.closeForRestart()).toBe(false);
+    expect(heard).toEqual(["reopened", "reopened"]);
+    offStep();
+    turns = 0;
+    gate.close(15);
+    await Bun.sleep(50);
+    expect(heard).toHaveLength(3);
+    gate.close();
+    gate.commit();
+    gate.reopen();
+    expect(heard).toHaveLength(3);
     off();
   });
 

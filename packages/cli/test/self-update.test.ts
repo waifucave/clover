@@ -58,7 +58,7 @@ function github(key: { privateKey: string }, releases: Release[]) {
   return { fetch, asked, files };
 }
 
-function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void }) {
+function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number }) {
   const home = mkdtempSync(join(tmpdir(), "clover-self-update-"));
   mkdirSync(join(home, "bin"));
   const bin = join(home, "bin", "clover-core");
@@ -75,7 +75,14 @@ function server(opts: { version?: string; channel?: "latest" | "beta"; releases:
   const updater = new SelfUpdater({
     home, bin, version: opts.version ?? "1.2.3", target: TARGET, channel: opts.channel ?? "latest", publicKey: key.publicKey,
     fetch: gh.fetch, gate, restartCode: UPDATE_RESTART_EXIT_CODE, idlePollMs: 1, now: () => now,
-    drain: async () => { did.push("drained"); },
+    drain: async () => {
+      did.push("drained");
+      if (opts.drainMs !== undefined) {
+        await Bun.sleep(opts.drainMs);
+        did.push(`still closed after the drain: ${gate.closed}`);
+      }
+    },
+    ...(opts.reopenAfterMs !== undefined ? { reopenAfterMs: opts.reopenAfterMs } : {}),
     exit: (code) => { exited.push(code); },
     log: (l) => lines.push(l),
   });
@@ -253,6 +260,8 @@ describe("a server's daemon updating itself", () => {
     expect(s.did).toEqual([]);
     expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
     expect(s.lines.some((l) => l.includes("installing 1.3.0 failed, the daemon keeps running"))).toBe(true);
+    // The boot count written before the renames went with the failure.
+    expect(existsSync(join(s.home, "update", "boot.json"))).toBe(false);
   });
 
   posix("a turn that starts during the steps before the restart sends the swap back to waiting", async () => {
@@ -280,5 +289,24 @@ describe("a server's daemon updating itself", () => {
     expect(existsSync(bin)).toBe(true);
     expect(existsSync(`${bin}.new`)).toBe(true);
     for (const f of [`${bin}.old`, `${bin}.bad`, `${bin}.old-1700000000000`]) expect(existsSync(f)).toBe(false);
+  });
+
+  posix("committed once the binaries are swapped: a drain longer than the gate's reopen time still lets no turn start", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], drainMs: 80, reopenAfterMs: 10 });
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 100 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.did).toEqual(["lease renewed", "drained", "still closed after the drain: true"]);
+    expect(s.gate.committed).toBe(true);
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+  });
+
+  test("a swap with nothing checked fails like any other: gate reopened, no exit", async () => {
+    const s = server({ releases: [] });
+    s.gate.close();
+    await s.updater.swap();
+    expect(s.exited).toEqual([]);
+    expect(s.gate.closed).toBe(false);
+    expect(s.lines.some((l) => l.includes("installing the update failed") && l.includes("no checked update"))).toBe(true);
   });
 });

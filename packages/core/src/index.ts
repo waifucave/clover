@@ -21,7 +21,7 @@ export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } f
 export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "./auth/clover-tokens";
 export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
 export { cloverCall } from "./ipc/clover-client";
-export { UpdateGate, type BusySource, type GateVerdict } from "./update/gate";
+export { UpdateGate, UpdateRestartingRefusal, isUpdateRestarting, UPDATE_RESTARTING_MESSAGE, type BusySource, type GateVerdict } from "./update/gate";
 export { type SelfUpdate } from "./update/service";
 export { INSTALL_MARKER, parseInstallMarker, readInstallMarker, removeInstallMarker, updatesItself, writeInstallMarker, type InstallChannel, type InstallKind, type InstallMarker } from "./update/install-marker";
 export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";

@@ -4,7 +4,11 @@ import { describe, expect, test } from "bun:test";
 import { CLOVER_METHODS } from "@waifucave/clover-protocol";
 import type { CloverConn } from "../../src/ipc/clover";
 import { UpdateGate } from "../../src/update/gate";
-import { updateExitAllowed, updateHandlers, type SelfUpdate } from "../../src/update/service";
+import { acceptUpdateExit, updateHandlers, type SelfUpdate } from "../../src/update/service";
+import { ERR } from "@waifucave/clover-protocol";
+import { rpcFromCloverRefusal } from "../../src/ipc/server";
+import { CloverLegRefusal } from "../../src/runtime-sdk/session-driver";
+import { UPDATE_RESTARTING_MESSAGE } from "../../src/update/gate";
 
 const conn = {} as CloverConn;
 const parse = (method: string, result: unknown) => CLOVER_METHODS.get(method)!.result.parse(result);
@@ -46,17 +50,27 @@ describe("update.status and update.apply", () => {
     let turns = 0;
     gate.register({ name: "turns", count: () => turns });
     const h = updateHandlers({ gate, current: "1.2.3", channel: () => "latest" });
-    expect(updateExitAllowed(gate)).toBe(false); // not closed yet
+    expect(acceptUpdateExit(gate)).toBe(false); // not closed yet
     expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "now" });
     expect(gate.closed).toBe(true);
-    expect(updateExitAllowed(gate)).toBe(true);
+    // Closed but busy: the app's exit is refused, and the gate reopens at once.
     turns = 1;
-    expect(updateExitAllowed(gate)).toBe(false); // closed but busy: the app's exit is refused
-    gate.reopen();
-    turns = 0;
-    gate.beforeRestart(() => { turns = 1; });
-    expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "when-idle" });
+    expect(acceptUpdateExit(gate)).toBe(false);
     expect(gate.closed).toBe(false);
+    turns = 0;
+    expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "now" });
+    // Accepted: committed, closed however long the restart takes.
+    expect(acceptUpdateExit(gate)).toBe(true);
+    expect(gate.committed).toBe(true);
+    gate.reopen();
+    expect(gate.closed).toBe(true);
+    const fresh = new UpdateGate();
+    fresh.register({ name: "turns", count: () => turns });
+    const h2 = updateHandlers({ gate: fresh, current: "1.2.3", channel: () => "latest" });
+    turns = 0;
+    fresh.beforeRestart(() => { turns = 1; });
+    expect(parse("update.apply", await h2["update.apply"]!(conn, {}))).toEqual({ at: "when-idle" });
+    expect(fresh.closed).toBe(false);
   });
 
   test("on a server, apply starts the daemon's own update: now when idle, when-idle otherwise", async () => {
@@ -70,5 +84,11 @@ describe("update.status and update.apply", () => {
     busy = 0;
     expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "now" });
     expect(applied).toBe(2);
+  });
+
+  test("a turn refused for the update's restart reaches a client as a RETRY, never INTERNAL", () => {
+    let mapped: unknown;
+    try { rpcFromCloverRefusal(new CloverLegRefusal("daemon_shutting_down", UPDATE_RESTARTING_MESSAGE, "update-restarting")); } catch (err) { mapped = err; }
+    expect(mapped).toMatchObject({ code: ERR.RETRY, data: { code: "daemon_shutting_down", reason: "update-restarting", retryable: true } });
   });
 });

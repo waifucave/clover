@@ -67,7 +67,7 @@ import { sdkGlobalConfigPath, sdkHomeFor, sdkSettingsPath, trustRecordFile } fro
 import { forgetSdkFile, liveSdkGlobalConfig, liveSdkSettings, readSdkGlobalConfigDetailed, readSdkSettingsDetailed } from "./sdk-files";
 import { ApprovalBroker } from "./agent/approvals";
 import { UpdateGate } from "./update/gate";
-import { updateExitAllowed, updateHandlers, type SelfUpdate } from "./update/service";
+import { acceptUpdateExit, updateHandlers, type SelfUpdate } from "./update/service";
 import { readInstallMarker } from "./update/install-marker";
 import { ElicitationBroker } from "./runtime-sdk/url-elicitation";
 import { QuestionBroker } from "./agent/questions";
@@ -3155,7 +3155,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
-    updateExitAllowed: () => updateExitAllowed(updateGate),
+    acceptUpdateExit: () => acceptUpdateExit(updateGate),
     handlers: updateHandlers({
       gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
       channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",

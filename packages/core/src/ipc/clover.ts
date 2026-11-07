@@ -127,8 +127,9 @@ export interface CloverServerDeps {
   readonly appToken?: string;
   /** Other lanes' Clover methods, by wire name. */
   readonly handlers?: Readonly<Record<string, CloverHandler>>;
-  /** M-M2: whether the app may leave for an update now (`pair.exiting{update}`): the update gate closed and idle. */
-  updateExitAllowed?(): boolean;
+  /** M-M2: whether the app may leave for an update now (`pair.exiting{update}`): the update gate closed and idle, and
+   *  then committed to the restart. */
+  acceptUpdateExit?(): boolean;
   readonly features?: readonly string[];
   readonly os?: DaemonPlatform;
   /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
@@ -294,7 +295,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     "pair.exiting": (conn, p) => {
       const reason = (p as { reason: "quit" | "update" | "restart" }).reason;
       // M-M2: an update's exit only once `update.apply` closed the gate and nothing runs; the app then keeps running.
-      if (reason === "update" && deps.updateExitAllowed?.() === false) {
+      if (reason === "update" && deps.acceptUpdateExit?.() === false) {
         throw new CloverRpcError(ERR.RETRY, "not idle for the update: ask update.apply again", { code: "update_not_ready" });
       }
       deps.pair?.appExiting(String(conn.connId), reason);
