@@ -197,7 +197,7 @@ describe("the computer field, across computers", () => {
     expect(await code(here.open({ kind: "agent", session: "sess_code" }, { owner: { kind: "user" }, computer: "Laptop" }))).toBe("needs_ok");
     // Only sessions reach other computers' tabs.
     expect(await code(here.open(person, { owner: alpha, computer: "Laptop" }))).toBe("not_yours");
-    expect(await code(here.open({ kind: "plugin", pluginId: "acme/tool" }, { owner: { kind: "plugin", pluginId: "acme/tool" }, computer: "Laptop" }))).toBe("not_yours");
+    expect(await code(here.open({ kind: "plugin", pluginId: "acme/tool" }, { owner: { kind: "plugin", plugin: "acme/tool" }, computer: "Laptop" }))).toBe("not_yours");
   });
 
   test("DevTools events from another computer's tab reach the caller's listener; unsubscribing stops them", async () => {

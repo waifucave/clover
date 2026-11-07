@@ -22,7 +22,7 @@ export type { TabPlace, Viewport } from "@waifucave/clover-protocol";
 export type TabOwner =
   | { kind: "bot"; bot: string }
   | { kind: "session"; session: string }
-  | { kind: "plugin"; pluginId: string }
+  | { kind: "plugin"; plugin: string }
   | { kind: "user" };
 
 /** B's `TabView`, with the owner above. */

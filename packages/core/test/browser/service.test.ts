@@ -42,8 +42,8 @@ describe("partitions", () => {
     expect(partitionFor(alpha)).toBe("persist:bot-alpha");
     expect(partitionFor({ kind: "bot", bot: "pack/luna" })).toBe("persist:bot-pack--luna");
     expect(partitionFor(user)).toBe("persist:user");
-    expect(partitionFor({ kind: "plugin", pluginId: "clover/browser-view" })).toBe("persist:plugin-clover--browser-view");
-    expect(() => partitionFor({ kind: "plugin", pluginId: "../x" })).toThrow(BrowserError);
+    expect(partitionFor({ kind: "plugin", plugin: "clover/browser-view" })).toBe("persist:plugin-clover--browser-view");
+    expect(() => partitionFor({ kind: "plugin", plugin: "../x" })).toThrow(BrowserError);
     // A session without a bot: its own, named by a hash of its id (no id ever spells a folder name).
     const own = partitionFor({ kind: "session", session: "sess_1" });
     expect(own).toMatch(/^persist:session-[0-9a-f]{32}$/);
@@ -131,10 +131,10 @@ describe("opening and owning tabs", () => {
     const { service } = setup();
     const plugin = { kind: "plugin", pluginId: "acme/tool" } as const;
     const botTab = await service.open(asAlpha, { owner: alpha });
-    for (const owner of [alpha, user, { kind: "session", session: "s1" }, { kind: "plugin", pluginId: "other" }] as const) {
+    for (const owner of [alpha, user, { kind: "session", session: "s1" }, { kind: "plugin", plugin: "other" }] as const) {
       expect(await code(service.open(plugin, { owner }))).toBe("not_yours");
     }
-    const own = await service.open(plugin, { owner: { kind: "plugin", pluginId: "acme/tool" } });
+    const own = await service.open(plugin, { owner: { kind: "plugin", plugin: "acme/tool" } });
     expect(own.partition).toBe("persist:plugin-acme--tool");
     expect(service.tabs(plugin).map((t) => t.id)).toEqual([own.id]);
     expect(await code(service.navigate(plugin, botTab.id, "https://a.example/"))).toBe("no_tab");

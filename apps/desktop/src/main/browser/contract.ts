@@ -13,7 +13,7 @@ import type { BrowserProxySetting } from "./proxy";
 export type TabOwner =
   | { kind: "bot"; bot: string }
   | { kind: "session"; session: string }
-  | { kind: "plugin"; pluginId: string }
+  | { kind: "plugin"; plugin: string }
   | { kind: "user" };
 
 /** Where a tab is: `headless` (drawing for a bot at 1280×800), `shown` (in a browser view at the view's size) or
@@ -168,10 +168,10 @@ export function partitionFor(owner: TabOwner): string {
     return `persist:session-${createHash("sha256").update(owner.session).digest("hex").slice(0, 32)}`;
   }
   if (owner.kind === "plugin") {
-    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.pluginId) || owner.pluginId.length > 81) {
-      throw new Error(`"${owner.pluginId}" is not a plugin's id`);
+    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.plugin) || owner.plugin.length > 81) {
+      throw new Error(`"${owner.plugin}" is not a plugin's id`);
     }
-    return `persist:plugin-${owner.pluginId.replace("/", "--")}`;
+    return `persist:plugin-${owner.plugin.replace("/", "--")}`;
   }
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/.test(owner.bot) || owner.bot.length > 81) {
     throw new Error(`"${owner.bot}" is not a bot's id`);

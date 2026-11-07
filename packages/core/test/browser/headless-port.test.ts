@@ -172,7 +172,7 @@ describe("profiles and flags", () => {
     expect(profileName(alpha)).toBe("bot-alpha");
     expect(profileName(luna)).toBe("bot-pack--luna");
     expect(profileName({ kind: "user" })).toBe("user");
-    expect(profileName({ kind: "plugin", pluginId: "clover/browser-view" })).toBe("plugin-clover--browser-view");
+    expect(profileName({ kind: "plugin", plugin: "clover/browser-view" })).toBe("plugin-clover--browser-view");
     expect(profileName({ kind: "session", session: "sess_1" })).toBe(partitionFor({ kind: "session", session: "sess_1" }).slice("persist:".length));
     expect(profileName({ kind: "session", session: "sess_1" })).toMatch(/^session-[0-9a-f]{32}$/);
     expect(() => profileName({ kind: "bot", bot: "../x" })).toThrow(BrowserError);

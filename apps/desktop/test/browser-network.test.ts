@@ -27,7 +27,7 @@ describe("addresses", () => {
     expect(policyFor({ kind: "bot", bot: "alpha" })).toEqual(BOT_POLICY);
     expect(policyFor({ kind: "session", session: "s1" })).toEqual(SESSION_POLICY);
     expect(policyFor({ kind: "user" })).toEqual(PERSON_POLICY);
-    expect(policyFor({ kind: "plugin", pluginId: "acme/tool" })).toEqual(BOT_POLICY);
+    expect(policyFor({ kind: "plugin", plugin: "acme/tool" })).toEqual(BOT_POLICY);
     // A bot whose LAN setting is on (and only that bot); never a session's or a plugin's.
     expect(policyFor({ kind: "bot", bot: "alpha" }, ["alpha"])).toEqual(BOT_LAN_POLICY);
     expect(policyFor({ kind: "bot", bot: "alpha" }, new Set(["alpha"]))).toEqual(BOT_LAN_POLICY);

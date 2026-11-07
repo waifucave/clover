@@ -500,7 +500,7 @@ export class BrowserService {
    *  yes to (R10). A plugin acting as itself: only its own partition's (B-M1's contract review S1). The person (a layer
    *  acting for them) and the core: any. */
   private mayTouch(caller: BrowserCaller, owner: TabOwner): boolean {
-    if (caller.kind === "plugin") return owner.kind === "plugin" && owner.pluginId === caller.pluginId;
+    if (caller.kind === "plugin") return owner.kind === "plugin" && owner.plugin === caller.pluginId;
     if (caller.kind !== "agent") return true;
     if (owner.kind === "user") return caller.session !== undefined && this.opts.grants?.has(caller.session) === true;
     if (owner.kind === "plugin") return false;
@@ -509,7 +509,7 @@ export class BrowserService {
   }
 
   private notYours(caller: BrowserCaller): BrowserError {
-    if (caller.kind === "plugin") return new BrowserError("not_yours", `a plugin acting as itself opens tabs only in its own partition: owner { kind: "plugin", pluginId: "${caller.pluginId}" }`);
+    if (caller.kind === "plugin") return new BrowserError("not_yours", `a plugin acting as itself opens tabs only in its own partition: owner { kind: "plugin", plugin: "${caller.pluginId}" }`);
     const whose = caller.kind === "agent" && caller.bot !== undefined ? `${caller.bot}'s` : "its own";
     return new BrowserError("not_yours", `a session opens tabs only as ${whose}`);
   }

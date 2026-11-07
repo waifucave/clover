@@ -97,5 +97,5 @@ export function actingFor(caller: Caller | undefined): Acting | { refused: strin
 }
 
 export function ownerLabel(owner: TabOwner): string {
-  return owner.kind === "bot" ? `${owner.bot}'s` : owner.kind === "session" ? "this session's" : owner.kind === "plugin" ? `${owner.pluginId}'s` : "the person's";
+  return owner.kind === "bot" ? `${owner.bot}'s` : owner.kind === "session" ? "this session's" : owner.kind === "plugin" ? `${owner.plugin}'s` : "the person's";
 }
