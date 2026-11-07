@@ -65,6 +65,7 @@ import {
   sandboxLeasesDir,
   acquirePoolLease,
   releasePoolLease,
+  processStartTimeMs,
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
@@ -149,8 +150,7 @@ describe("the status verdict", () => {
     expect(s.reason).toContain("isn't installed");
   });
 
-  test("numeric marker/setup versions (as srt-win reports them) match, and a pinned launcher is ready", () => {
-    // srt-win status reports marker_version/setup_version as JSON numbers; the parser must accept them.
+  test("numeric marker/setup versions (as srt-win reports them) match, and a pinned launcher is ready", () => {    // srt-win status reports marker_version/setup_version as JSON numbers; the parser must accept them.
     // Build a minimal valid PE32+ with no certificate table (same shape as the cert-fixture helper below).
     const buf = new ArrayBuffer(0x200);
     const view = new DataView(buf);
@@ -171,18 +171,22 @@ describe("the status verdict", () => {
       user: u,
       wfp: { state: "installed", filters: 4, allow_loopback: false },
     }), { launcher: file, pins });
-    const ready = parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok" });
+    const ready = parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok", owner_sid: "S-1-5-21-1" });
     expect(ready.ready).toBe(true);
     expect(ready.exit).toBe(SANDBOX_EXIT.OK);
     // A marker from another build is still refused, numeric or string.
-    expect(parse({ exists: true, marker_version: "2", setup_version: "3", seclogon: "ok" }).ready).toBe(false);
-    expect(parse({ exists: true, marker_version: "3", setup_version: "3", seclogon: "ok" }).ready).toBe(true);
+    expect(parse({ exists: true, marker_version: "2", setup_version: "3", seclogon: "ok", owner_sid: "S-1-5-21-1" }).ready).toBe(false);
+    expect(parse({ exists: true, marker_version: "3", setup_version: "3", seclogon: "ok", owner_sid: "S-1-5-21-1" }).ready).toBe(true);
+    // An existing principal with no recorded owner is refused, never adopted.
+    expect(parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok" }).ready).toBe(false);
+    expect(parse({ exists: true, marker_version: 3, setup_version: 3, seclogon: "ok", owner_sid: null }).ready).toBe(false);
     // The real srt-win shape nests the account under user.user; the install state stays on top.
     const nested = parse({
       cred_present: true,
       marker_version: 3,
       setup_version: 3,
       seclogon: "ok",
+      owner_sid: "S-1-5-21-1",
       user: { exists: true, sid: "S-1-5-21-1", hidden_from_logon: true, in_builtin_users: true, in_sandbox_group: true },
     });
     expect(nested.ready).toBe(true);
@@ -687,6 +691,12 @@ describe("the exclusive pool lease (ruling 3)", () => {
         },
         writeText: (p: string, c: string) => { files.set(p, c); },
         remove: (p: string) => { files.delete(p); },
+        replaceAtomic: (tmp: string, fin: string) => {
+          const c = files.get(tmp);
+          if (c === undefined) throw new Error(`missing temp lease ${tmp}`);
+          files.set(fin, c);
+          files.delete(tmp);
+        },
       },
     };
   };
@@ -732,5 +742,39 @@ describe("the exclusive pool lease (ruling 3)", () => {
     expect(again).toEqual({ ok: true, principal: "clover-sb-a-1" });
     expect(releasePoolLease(store, "L:", "clover-sb-a-1", "n2")).toBe(true);
     expect(releasePoolLease(store, "L:", "clover-sb-a-1", "n2")).toBe(true); // idempotent
+  });
+
+  test("two racers for a dead holder's lease: exactly one wins", async () => {
+    const { store, files } = memStore();
+    // A stale lease from a dead holder occupies the only slot.
+    files.set(principalLeasePath("L:", "clover-sb-a-1"), JSON.stringify({ holderPid: 99, holderStart: null, nonce: "dead", lastUseAt: null, lastResetAt: null }));
+    const isAlive = (pid: number) => pid !== 99;
+    const startTimeOf = () => null;
+    // Both contenders race concurrently; the synchronous read/create/rename/re-read
+    // sequence admits no interleave, so the loser's re-read sees the winner's nonce.
+    const [a, b] = await Promise.all([
+      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 11, timeoutMs: 500, pollMs: 10, isAlive, startTimeOf, nonce: "racer-1" }),
+      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 500, pollMs: 10, isAlive, startTimeOf, nonce: "racer-2" }),
+    ]);
+    const wins = [a, b].filter((r) => r.ok);
+    expect(wins).toHaveLength(1);
+    expect(wins[0]).toEqual({ ok: true, principal: "clover-sb-a-1" });
+    const loser = [a, b].find((r) => !r.ok)!;
+    if (!loser.ok) expect(loser.reason).toContain("busy");
+    // The surviving lease names the winner's nonce — no torn write, no double hold.
+    const raw = store.readText(principalLeasePath("L:", "clover-sb-a-1"))!;
+    const survivor = (JSON.parse(raw) as { nonce: string }).nonce;
+    expect(["racer-1", "racer-2"]).toContain(survivor);
+  });
+
+  test("processStartTimeMs returns the current process's start (or null when unknown)", () => {
+    const t = processStartTimeMs(process.pid);
+    // Fail-closed: null is allowed (unknown), but never NaN or a future time.
+    if (t !== null) {
+      expect(Number.isFinite(t)).toBe(true);
+      expect(t).toBeLessThanOrEqual(Date.now());
+    }
+    expect(processStartTimeMs(-1)).toBeNull();
+    expect(processStartTimeMs(0)).toBeNull();
   });
 });
