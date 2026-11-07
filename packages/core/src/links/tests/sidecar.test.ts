@@ -43,6 +43,16 @@ async function device(name: string, extra: Partial<SidecarWireOptions> = {}) {
 }
 type Dev = Awaited<ReturnType<typeof device>>;
 
+/** Each lets the other's link connections through, and has taken that in before anyone dials. `allow` is a message to
+ *  the sidecar, and a dial that beats it there is closed at the door as unpaired: the dialer's first write then finds
+ *  the connection lost (S6.2's flake on the arm runner). A request answered after it on the same ordered pipe says
+ *  the sidecar has it. */
+async function allowEach(a: Dev, b: Dev): Promise<void> {
+  a.wire.allow([b.key.publicKey]);
+  b.wire.allow([a.key.publicKey]);
+  await Promise.all([a.wire.stats(), b.wire.stats()]);
+}
+
 function transport(d: Dev, peers: Map<string, Dev>) {
   const t = new CloverLinkTransport({
     self: d.key.id, wire: d.wire, registry: d.registry, clock,
@@ -182,8 +192,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
   test("a big transfer to a slow reader keeps what each side holds within the stream window, and the reader can answer after the writer's FIN (S6.2)", async () => {
     const a = await device("Studio");
     const b = await device("Laptop");
-    a.wire.allow([b.key.publicKey]);
-    b.wire.allow([a.key.publicKey]);
+    await allowEach(a, b);
     const W = STREAM_WINDOW;
     const total = 48 * 1024 * 1024;
     const chunk = 256 * 1024;
@@ -224,6 +233,9 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
       }
       s.finish();
     })();
+    // A failed write fails the test at the next sample, with its own error, not as an unhandled one between tests.
+    let writeFailed: unknown;
+    writing.catch((e: unknown) => (writeFailed = e ?? new Error("the write failed")));
 
     // Nothing is read: the writer is held back after QUIC's stream window and a window on each side of each pipe.
     // What is guaranteed is that bound, never how far the writer gets by a given moment (a loaded runner may be slow to
@@ -231,6 +243,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     // a sample.
     const ahead = 1_250_000 + 3 * W + chunk;
     const bound = async () => {
+      if (writeFailed !== undefined) throw writeFailed;
       const [sa, sb] = await Promise.all([a.wire.stats(), b.wire.stats()]);
       expect(written - got).toBeLessThanOrEqual(ahead);
       expect(sa.core.queuedWrites).toBeLessThanOrEqual(chunk);
@@ -268,7 +281,8 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
       }
       return n;
     })();
-    const ws = await finished;
+    // A sample that fails ends the wait for the FIN with its error.
+    const ws = await Promise.race([finished, samples.then(() => finished)]);
     await writing;
     sampling = false;
     expect(await samples).toBeGreaterThan(0);
@@ -291,8 +305,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
   test("a reset gets through while the writer waits on a reader that takes nothing", async () => {
     const a = await device("Studio");
     const b = await device("Laptop");
-    a.wire.allow([b.key.publicKey]);
-    b.wire.allow([a.key.publicKey]);
+    await allowEach(a, b);
     const reset = new Promise<number>((resolve) => {
       b.wire.onIncoming("clover/link/1", (conn) => conn.onStream((ws) => {
         ws.onData(() => new Promise<void>(() => undefined));
