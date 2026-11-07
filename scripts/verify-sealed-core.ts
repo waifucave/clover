@@ -25,7 +25,8 @@
 // set alone and as a duplicate entry, first and last (native code reads the first, JS the last).
 // HOME: every run has none (macOS then takes the account's home from the password database); a planted HOME must be
 // refused on macOS (startup-guard.ts: HOME chooses the keychains and trust settings).
-// `__fetch-probe` refuses any URL but loopback and the one Apple URL, and any key but 32 hex characters.
+// `__fetch-probe` refuses any URL but loopback and the one Apple URL, and any key but 32 hex characters, and never
+// follows a redirect (a local 302 to a second listener must reach nothing).
 // A door that could not run at all (the binary missing, the raw helper's execve failing) is an ERROR, never "closed"
 // or "OPEN", and any ERROR fails the gate.
 //
@@ -464,6 +465,29 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
       const refused = r.code === 2 && r.stderr.includes("fetch-probe: refused") && hits === was && !`${r.stdout}${r.stderr}`.includes(nonce);
       if (!refused) problems.push(`__fetch-probe with ${what}: it must exit 2 without a request (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 160)})`);
       console.log(`verify:sealed-core: ${refused ? "refused" : "OPEN   "} __fetch-probe with ${what}`);
+    }
+
+    // `__fetch-probe` never follows a redirect (main thread and Worker): a local 302 to a second local listener comes
+    // back as 302, and the second listener sees no request (the key would have gone with it).
+    {
+      let second = 0;
+      const target = createHttpServer((_req, res) => { second++; res.writeHead(200); res.end("ok"); });
+      await new Promise<void>((r) => target.listen(0, "127.0.0.1", () => r()));
+      const bounce = createHttpServer((_req, res) => { res.writeHead(302, { location: `http://127.0.0.1:${(target.address() as { port: number }).port}/bounced` }); res.end(); });
+      await new Promise<void>((r) => bounce.listen(0, "127.0.0.1", () => r()));
+      try {
+        for (const worker of [false, true]) {
+          const name = `__fetch-probe with a 302 to another listener${worker ? " (from a Worker)" : ""}`;
+          const r = await runDoor({ name }, ["__fetch-probe", `http://127.0.0.1:${(bounce.address() as { port: number }).port}/sealed-core`, nonce, ...(worker ? ["--worker"] : [])]);
+          if (errored(name, r)) continue;
+          const held = /^fetch-probe: 302$/m.test(r.stdout) && second === 0;
+          if (!held) problems.push(`${name}: the redirect was followed (${second} request(s) reached the second listener; ${(r.stdout + r.stderr).trim().slice(0, 120)})`);
+          console.log(`verify:sealed-core: ${held ? "closed" : "OPEN  "} ${name}`);
+        }
+      } finally {
+        bounce.close();
+        target.close();
+      }
     }
 
     // The key: a request with a dummy key, with the verbose-fetch variables set, never shows it.

@@ -45,6 +45,7 @@ import { isDefaultCloverHome } from "../clover-dir";
 import { APP_TOKEN_SHADOW_SUFFIX } from "./app-token-acl";
 import { isCredentialAccount, putBack, readStoredValue, recoverCredentialShadows, REAL_CREDENTIAL_KEYCHAIN_OPS, sameBytes, writeCredentialAclMarker, type CredentialKeychain } from "./credential-acl";
 import { KeychainFfiError, keychainUnlocked, withKeychainUserInteractionDisabled, type KeychainAccess } from "./keychain-ffi";
+import { loginKeychain } from "./login-keychain";
 
 /** The compiled binary's route for the child side. */
 export const DEV_KEYCHAIN_ADOPT_ARG = "__dev-keychain-adopt";
@@ -282,12 +283,12 @@ export async function runDevKeychainAdopt(env: NodeJS.ProcessEnv = process.env):
     process.exit(2);
   };
   if (refusal !== undefined) fatal(refusal);
-  if (!keychainUnlocked(null)) fatal("the default keychain is locked");
+  if (!keychainUnlocked(loginKeychain())) fatal("the default keychain is locked");
   const lockRefusal = adoptLockRefusal(home, process.ppid);
   if (lockRefusal !== undefined) fatal(lockRefusal);
   // No path stand-in: without a designated requirement the child adopts but writes no marker.
   const requirement = codeSigningFacts(realExecutable(), 2_000).requirement;
-  const kc: CredentialKeychain = { keychain: null, service, log: (line) => process.stderr.write(`${line}\n`) };
+  const kc: CredentialKeychain = { keychain: loginKeychain(), service, log: (line) => process.stderr.write(`${line}\n`) };
   let access: KeychainAccess;
   try {
     access = withKeychainUserInteractionDisabled(() => REAL_CREDENTIAL_KEYCHAIN_OPS.createAccess("Clover credential", [null]));
@@ -381,7 +382,7 @@ export function spawnAdoptChild(command: { file: string; args: string[] }, env: 
 export async function transitionDevKeychain(input: { binary: string; home: string; env: NodeJS.ProcessEnv; log: (line: string) => void }): Promise<DevTransitionOutcome> {
   const refusal = devTransitionRefusal({ profile: resolveCloverProfile(input.env), home: input.home, service: DEV_KEYCHAIN_SERVICE });
   if (refusal !== undefined) throw new Error(refusal);
-  if (!keychainUnlocked(null)) throw new Error("the default keychain is locked — unlock it and run again");
+  if (!keychainUnlocked(loginKeychain())) throw new Error("the default keychain is locked — unlock it and run again");
   const migrationLock = acquireCredentialMigrationLock(input.home);
   if ("heldBy" in migrationLock) throw new Error(`pid ${migrationLock.heldBy} holds the credential migration lock (a dev daemon booting, or another transition) — wait for it and run again`);
   let lock;
@@ -396,7 +397,7 @@ export async function transitionDevKeychain(input: { binary: string; home: strin
   try {
     const child = spawnAdoptChild({ file: input.binary, args: [DEV_KEYCHAIN_ADOPT_ARG] }, input.env);
     try {
-      return await runDevKeychainTransition({ keychain: null, service: DEV_KEYCHAIN_SERVICE, log: input.log }, child.send, input.log);
+      return await runDevKeychainTransition({ keychain: loginKeychain(), service: DEV_KEYCHAIN_SERVICE, log: input.log }, child.send, input.log);
     } finally {
       await child.close();
     }

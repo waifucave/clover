@@ -1709,7 +1709,8 @@ if (import.meta.main) {
     // Self-contained (it is also sent to the Worker as source): fetch only.
     const probe = async (u: string, k: string): Promise<string> => {
       try {
-        const r = await fetch(u, { headers: { authorization: `Bearer ${k}`, "x-api-key": k } });
+        // Never follows a redirect: a 3xx comes back as its status, so the key goes to no second host.
+        const r = await fetch(u, { redirect: "manual", headers: { authorization: `Bearer ${k}`, "x-api-key": k } });
         return `fetch-probe: ${r.status}`;
       } catch (err) {
         const e = err as { code?: string; name?: string };
