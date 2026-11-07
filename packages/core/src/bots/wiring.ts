@@ -20,7 +20,7 @@ import { soleComputer, type MainComputer } from "./main-computer";
 import { sessionsMethods, type MethodHandler, type SessionsMethodsDeps } from "./rpc";
 import { BotService, type BotRelay, type BotServiceOptions, type DriverFactory } from "./service";
 import { botToolDefs, SendLimiter, type AgentRows, type CoreToolDef } from "./tools";
-import { watchReopen, type UpdateGateLike } from "./update-gate";
+import { turnMayStart, type UpdateGateLike } from "./update-gate";
 import { RoutineEngine, type RoutineEngineOptions } from "../routines/engine";
 import { routineMethods } from "../routines/rpc";
 import { routineToolDef, type RoutineToolDeps } from "../routines/tool";
@@ -121,18 +121,10 @@ export function createBotSide(o: BotSideOptions): BotSide {
   const gate = new BotGate({ home: o.home, main, ...(o.warn === undefined ? {} : { warn: o.warn }) });
   const relay = o.relay;
   const updates = o.updateGate;
-  // Held by an update's restart: started again once the gate reopens.
-  const reopen = updates === undefined ? undefined : watchReopen(updates, () => host.resume());
   const host: DurableSessionHost = new DurableSessionHost({
     home: o.home, clock: o.clock, computer: o.computer, epoch: () => main.epoch(),
-    mayStart: (view) => {
-      if (!gate.mayStart(view)) return false;
-      if (updates?.closed) {
-        reopen!.held();
-        return false;
-      }
-      return true;
-    },
+    // An update's restart holds every turn (lane M's gate); what waits starts on its reopen, below.
+    mayStart: (view) => gate.mayStart(view) && turnMayStart(updates),
     // A bot's conversation lives on the runner: what arrives here for it goes there (review S1).
     runsHere: () => main.runsHere(),
     ...(relay === undefined ? {} : {
@@ -183,6 +175,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
     voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
+  // Held by an update's restart: started again as the gate reopens.
+  const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
   const offBusy = updates?.register({ name: "bot-turns", count: () => host.list().filter((v) => host.turnOrigin(v.id) !== undefined).length });
   const routineTool = routines === undefined || o.routines === undefined ? undefined : {
@@ -229,7 +223,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     },
     close: async () => {
       offBusy?.();
-      reopen?.stop();
+      offReopen?.();
       ingress?.stop();
       routines?.stop();
       offEnded?.();

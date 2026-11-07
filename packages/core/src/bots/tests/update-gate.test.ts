@@ -5,14 +5,37 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { ERR, SESSIONS_METHODS as M, type Caller } from "@waifucave/clover-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { MethodError } from "../rpc";
-import { REOPEN_POLL_MS, UPDATE_RESTARTING, type UpdateGateLike } from "../update-gate";
+import type { UpdateGateLike } from "../update-gate";
 import { ALPHA_FOLDER, boot, pluginFromFolder, removeTemps, tempDir } from "./fixtures";
 
 afterEach(() => removeTemps());
 
+/** #198's refusal, as `UpdateGate.beforeTurn` throws it. */
+class UpdateRestartingRefusal extends Error {
+  readonly code = "daemon_shutting_down" as const;
+  readonly reason = "update-restarting" as const;
+  readonly retry = true as const;
+  constructor() {
+    super("Clover is restarting for an update; send it again in a moment");
+  }
+}
+
+/** #198's `UpdateGate` surface: busy sources, `beforeTurn`, `onReopen`. */
 class FakeUpdateGate implements UpdateGateLike {
   closed = false;
+  readonly reopenListeners = new Set<() => void>();
   readonly sources = new Map<string, { name: string; count(): number }>();
+  beforeTurn(): void {
+    if (this.closed) throw new UpdateRestartingRefusal();
+  }
+  onReopen(cb: () => void): () => void {
+    this.reopenListeners.add(cb);
+    return () => void this.reopenListeners.delete(cb);
+  }
+  reopen(): void {
+    this.closed = false;
+    for (const cb of this.reopenListeners) cb();
+  }
   register(source: { name: string; count(): number }): () => void {
     this.sources.set(source.name, source);
     return () => this.sources.delete(source.name);
@@ -49,7 +72,7 @@ describe("the update gate", () => {
     updates.closed = true;
     const refused = await send("again").catch((e: unknown) => e);
     expect(refused instanceof MethodError && refused.code).toBe(ERR.INVALID_REQUEST);
-    expect((refused as MethodError).data).toMatchObject(UPDATE_RESTARTING);
+    expect((refused as MethodError).data).toEqual({ code: "daemon_shutting_down", reason: "update-restarting", retry: true });
 
     // A bot's message and a routine's run arrive meanwhile: recorded and held, no turn starts.
     await b.host.deliver("b_alpha", { from: "bot", bot: "luna", session: "b_luna", text: "ping" });
@@ -62,12 +85,12 @@ describe("the update gate", () => {
     expect(updates.busy()).toBe(0);
 
     // Reopened: both start.
-    updates.closed = false;
-    await new Promise((r) => setTimeout(r, REOPEN_POLL_MS + 200));
+    updates.reopen();
     await flush();
     expect(b.drivers.for("b_alpha").turns).toHaveLength(2);
     expect(b.drivers.for(side.id).turns).toHaveLength(1);
     await b.shutdown();
     expect(updates.sources.size).toBe(0);
+    expect(updates.reopenListeners.size).toBe(0);
   });
 });
