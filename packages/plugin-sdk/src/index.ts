@@ -24,6 +24,7 @@ export * from "./formats/layout";
 export * from "./formats/locale";
 export * from "./formats/index-file";
 export * from "./formats/tree-hash";
+export * from "./formats/upgrade";
 
 export * from "./catalogs/index";
 

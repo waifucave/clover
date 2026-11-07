@@ -39,6 +39,10 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "notify", lets: "Send the user a notification through the notifiers", ok: "sends you notifications", warns: false },
   { name: "audio", lets: "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on", ok: "can hear your microphone", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
+  /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
+   *  only, the dangerous-domain list, a card before a private address, the audit log). Its components get no host from
+   *  it. The bundled `clover` tree only. */
+  { name: "network:public", lets: "Reach any public host through the core's fetch, with its web floors: public addresses only, the dangerous-domain list, a card before a private address, and the audit log; its components reach no host from it", ok: "connects to any public website, through Clover's web safeguards", warns: true, bundledOnly: true },
   { name: "network:<host>", lets: "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host", ok: "connects to {host}", warns: false },
 ];
 
@@ -48,6 +52,12 @@ export function mayHoldCapability(capability: string, plugin: { id: string; sour
   if (!CAPABILITIES.find((c) => c.name === capability)?.bundledOnly) return true;
   const top = plugin.id.includes("/") ? plugin.id.slice(0, plugin.id.indexOf("/")) : plugin.id;
   return plugin.source === "bundled" && top === BUNDLED_ROOT_PLUGIN;
+}
+
+/** Whether a plugin may reach any public host (`network:public`) through the core's fetch, which applies the web floors;
+ *  `networkAllows` stays the allowlist for every other host. */
+export function reachesPublicNetwork(capabilities: readonly string[]): boolean {
+  return capabilities.includes("network:public");
 }
 
 /** The capabilities that take no argument. */
