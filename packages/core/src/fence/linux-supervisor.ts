@@ -148,12 +148,11 @@ export function openParentDir(lib: SupervisorLib, baseFd: number, dir: string): 
   return { parentFd: cur };
 }
 
-/** Dir fds arrive as unsigned 64-bit words: AT_FDCWD (-100) reads as 2^64-100, past Number's exact range.
- *  Convert back to signed, or every relative path misresolves. */
+/** Dir fds arrive as unsigned words: AT_FDCWD (-100) reads as 2^64-100 or, when the caller passes a 32-bit
+ *  int, 2^32-100 (both forms appear on x86-64). Convert back to signed, or every relative path misresolves. */
 function signedArg(v: bigint): number {
-  let d = v;
-  if (d >= (1n << 63n)) d -= (1n << 64n);
-  return Number(d);
+  const low32 = Number(v & 0xffffffffn);
+  return low32 >= 0x80000000 ? low32 - 0x100000000 : low32;
 }
 
 /** Reads `len` bytes at `addr` in the target process, ONCE (process_vm_readv): a thread rewriting the pointer
