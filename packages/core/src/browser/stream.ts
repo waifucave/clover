@@ -110,14 +110,14 @@ export function decodeStreamFrame(bytes: Uint8Array): StreamChunk {
   const kind = view.getUint8(1);
   switch (kind) {
     case KIND.config: {
-      const c = JSON.parse(fromUtf8.decode(payload)) as Record<string, unknown>;
+      const c = jsonObject(payload);
       if (!CODECS.includes(c.codec as StreamCodec) || !isSize(c.width) || !isSize(c.height) || typeof c.codecString !== "string") throw new Error("a bad stream config");
       return { kind: "config", codec: c.codec as StreamCodec, width: c.width, height: c.height, codecString: c.codecString };
     }
     case KIND.frame:
       return { kind: "frame", key: (view.getUint8(2) & 1) === 1, timestamp: Number(view.getBigInt64(4)), data: payload.slice() };
     case KIND.ended: {
-      const e = JSON.parse(fromUtf8.decode(payload)) as Record<string, unknown>;
+      const e = jsonObject(payload);
       const reason = REASONS.includes(e.reason as (typeof REASONS)[number]) ? (e.reason as (typeof REASONS)[number]) : "failed";
       return typeof e.message === "string" ? { kind: "ended", reason, message: e.message } : { kind: "ended", reason };
     }
@@ -148,6 +148,18 @@ export class StreamFrameReader {
     this.buffered = all.slice(at);
     return out;
   }
+}
+
+/** A config's or an ended frame's payload: a JSON object, or a format error (lane I's receivers refuse the same). */
+function jsonObject(payload: Uint8Array): Record<string, unknown> {
+  let v: unknown;
+  try {
+    v = JSON.parse(fromUtf8.decode(payload));
+  } catch {
+    throw new Error("a stream frame's JSON doesn't parse");
+  }
+  if (v === null || typeof v !== "object" || Array.isArray(v)) throw new Error("a stream frame's JSON isn't an object");
+  return v as Record<string, unknown>;
 }
 
 function isSize(v: unknown): v is number {

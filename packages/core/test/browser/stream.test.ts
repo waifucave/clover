@@ -406,3 +406,20 @@ describe("the payload cap (lane I's receivers refuse more than 16 MiB)", () => {
     expect(() => decodeStreamFrame(header)).toThrow(/at most/);
   });
 });
+
+describe("a config's or ended frame's JSON must be an object (as lane I's receivers read it)", () => {
+  test("a number, a string, null or an array is a format error, never an ended frame", () => {
+    for (const kind of [1, 3]) {
+      for (const json of ["3", "\"stopped\"", "null", "[]", "{"]) {
+        const payload = new TextEncoder().encode(json);
+        const frame = new Uint8Array(16 + payload.byteLength);
+        const view = new DataView(frame.buffer);
+        view.setUint8(0, 1);
+        view.setUint8(1, kind);
+        view.setUint32(12, payload.byteLength);
+        frame.set(payload, 16);
+        expect(() => decodeStreamFrame(frame)).toThrow(/JSON/);
+      }
+    }
+  });
+});
