@@ -1,9 +1,15 @@
 // The fencing token on acts between computers (#187's lease contract, H-M2's review, check 2): every act this computer
 // asks of another (a tree call, the direct path's `tree.judge`, `tree.receive`, `tree.send` and `tree.sent`, a tool
-// call, `computer.setLevel`) carries this computer's lease token as `fence`, and every such act it serves is judged
-// against its own lease (`FenceGuard`): a stale token, or none once it has seen one for its scope, is refused, so a
-// main that lost its lease without knowing, asleep or cut off, can't act through the others. Lane H's lease stamps
-// and feeds it; without a lease (tests, a computer with no account group yet) nothing is carried or judged.
+// call, a terminal call, a hold, Mirror's `mcp.mirror`, `computer.setLevel`) carries this computer's view of the
+// group's lease as `fence`: its scope, epoch and holder. Every such act it serves is judged against its own lease
+// (`FenceGuard`, fed only from its own lease's events).
+//
+// What a token proves: that the sender's view of the group's lease (scope, epoch, holder) is the same as the
+// receiver's, so a computer whose view is behind (a main that lost its lease asleep or cut off, or any computer that
+// missed a takeover) can't act through the others. It does not prove the sender is the main: every member of the group
+// carries the same token. A stale token is refused, and when the receiver's own lease has a scope and a holder, so is
+// an act without one, restart or not (the controller's ruling on #237). Lane H's lease feeds it; a node made with
+// `lease: null` (no group yet) carries and judges nothing, and says so once in its log.
 import { type FenceVerdict, type FencingToken } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { FenceGuard, fencingTokenOf, type Lease } from "../contracts/lease";

@@ -72,8 +72,9 @@ export interface ComputerNodeOptions {
   /** The terminal panel's shells here (R4): how a shell starts, and the card for a paste of several lines. */
   terminals?: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> };
   /** This computer's lease (lane H): its fencing token goes on every act this computer asks of another, and every act
-   *  asked of it is judged against it (`fencing.ts`). Left out, nothing is carried or judged (tests, no group yet). */
-  lease?: Pick<Lease, "state" | "watch">;
+   *  asked of it is judged against it (`fencing.ts`). Required: `null` says, explicitly, that there is no group yet,
+   *  and then nothing is carried or judged (logged once at start). */
+  lease: Lease | null;
   log?: (line: string) => void;
 }
 
@@ -130,6 +131,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);
   const fence = o.lease ? leaseFence(o.lease) : undefined;
+  if (!o.lease) o.log?.("computers: no lease yet (no group): acts between computers carry no fencing token, and none is judged");
   const peers = new ComputerPeers({
     ...(fence ? { fence } : {}),
     registry, transport: o.transport, roots: () => ({ home: o.home, botsRoot, os, bots: bots() }), devices: o.devices,
@@ -165,16 +167,16 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     ...(o.reviewer ? { reviewer: o.reviewer } : {}),
     ...(o.mcp ? { mcp: (call: Parameters<McpRouter["serveHere"]>[0]) => mcpRouter!.serveHere(call) } : {}),
   });
-  const offHolds = serveHolds({ transport: o.transport, registry, mayCall });
-  const holds = new HoldRouter({ registry, transport: o.transport });
+  const offHolds = serveHolds({ transport: o.transport, registry, mayCall, ...(fence ? { fence } : {}) });
+  const holds = new HoldRouter({ registry, transport: o.transport, ...(fence ? { fence } : {}) });
   const offMirror = serveMirror({
-    transport: o.transport, self: () => registry.self().name, mayCall, clock: o.clock,
+    transport: o.transport, self: () => registry.self().name, mayCall, clock: o.clock, ...(fence ? { fence } : {}),
     ...(o.mcp?.install ? { install: o.mcp.install } : {}), ...(o.answers ? { answers: o.answers } : {}),
   });
   const localTerminals = new LocalTerminals(o.terminals ?? {});
   const offTerminals = serveTerminals({
     transport: o.transport, holder, terminals: localTerminals, level: () => registry.self().level, clock: o.clock, mayCall,
-    ...(o.answers ? { answers: o.answers } : {}),
+    ...(o.answers ? { answers: o.answers } : {}), ...(fence ? { fence } : {}),
   });
   const remotes = new Map<string, RemoteHolder>();
   const holderFor = (name: string): Holder => {
@@ -232,6 +234,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     : undefined;
   const terminals = new TerminalRouter({
     transport: o.transport,
+    ...(fence ? { fence } : {}),
     self: () => registry.self().name,
     local: { holder, terminals: localTerminals, level: () => registry.self().level },
     computer: (name) => {
@@ -263,7 +266,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     terminalCount: () => localTerminals.count,
     mirror: (server, config, computers, session) => mirror({
       transport: o.transport, directory, deviceOf: (name) => registry.get(name)?.device, server, config, computers,
-      ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
+      ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}),
     }),
     treeRootReady: () => rootReady,
     close: () => {

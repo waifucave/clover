@@ -28,4 +28,18 @@ describe("FenceGuard (H-M2's review, check 2)", () => {
     g.observe(lease(3, "studio")); // a late event never moves it back
     expect(g.check(token)).toBe("stale");
   });
+
+  test("with a scope and a holder of its own, it refuses an act without a token outright: a restart doesn't reopen the door (#237's ruling)", () => {
+    // A receiver that just started: its own lease has a holder, and it has seen no token yet.
+    const restarted = new FenceGuard();
+    restarted.observe(lease(3, "studio"));
+    expect(restarted.check(undefined)).toBe("missing");
+    expect(restarted.check(fencingTokenOf(lease(3, "studio")))).toBe("ok");
+    // No holder yet (a lapsed lease, nobody took it): a tokenless act is judged as before, until a token is seen.
+    const lapsed = new FenceGuard();
+    lapsed.observe(lease(3, null));
+    expect(lapsed.check(undefined)).toBe("ok");
+    // No lease of its own at all: nothing to judge against.
+    expect(new FenceGuard().check(undefined)).toBe("ok");
+  });
 });

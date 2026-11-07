@@ -402,6 +402,21 @@ async function cleanUp(staging: string, made: string): Promise<void> {
 }
 
 /** A move or copy whose two ends are on this disk: two holders here (the conformance harness), or one. */
+/** Which of `holders` holds a tree path (its own `realPathOf` takes it), for `transferEndsHold`; else `fallback`. */
+function heldBy(holders: readonly LocalHolder[], fallback = ""): (path: string) => { computer: string } {
+  return (path) => {
+    for (const h of holders) {
+      try {
+        h.realPathOf(path);
+        return { computer: h.name };
+      } catch {
+        // not this holder's
+      }
+    }
+    return { computer: fallback };
+  };
+}
+
 export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: ReceiveParams, as: Caller): Promise<TransferResult> {
   const dcall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
   const scall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
@@ -410,9 +425,10 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
   const from = await src.realEntry(p.from, scall, p.move ? "delete" : "read");
   if (!from.exists) throw new ContractError("not_found", `${p.from} doesn't exist`);
   if (inside(from.real, to.real)) throw new ContractError("invalid", `${p.to} is inside ${p.from}`);
-  // The whole operation, judged once at each end before anything lands.
-  await judgeEnd(dst, dcall, "destination", p.move, p.from, p.to, src.name, dst.name);
-  if (src !== dst) await judgeEnd(src, scall, "source", p.move, p.from, p.to, src.name, dst.name);
+  // The whole operation, judged once at each end before anything lands; R15's ends by which holder holds each path.
+  const ends = heldBy([src, dst]);
+  await judgeEnd(dst, dcall, "destination", p.move, p.from, p.to, src.name, dst.name, ends);
+  if (src !== dst) await judgeEnd(src, scall, "source", p.move, p.from, p.to, src.name, dst.name, ends);
   const entries = await walk(src, from.real, scall, p.move);
   const kept = await existingAbove(to.real);
   await dst.makeParents(to, p.to);
@@ -457,6 +473,7 @@ export interface TransferOptions {
   bulk: BulkSlots;
 }
 
+const SentParams = z.object({ sendId: z.string().min(1).max(128), fence: FencingToken.optional() });
 const JudgeParams = z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level, fence: FencingToken.optional() });
 
 /** Ends a `tree.send` stream with the error, so the destination answers with its code. */
@@ -569,8 +586,10 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
 
   offs.push(t.handle("tree.sent", async (raw, from) => {
     if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
-    checkActFence(o.fence, (raw as { fence?: unknown } | null)?.fence, "tree.sent");
-    const id = String((raw as { sendId?: unknown } | null)?.sendId ?? "");
+    const p = SentParams.safeParse(raw);
+    if (!p.success) throw new ContractError("invalid", `tree.sent: ${p.error.issues[0]?.message ?? "bad params"}`);
+    checkActFence(o.fence, p.data.fence, "tree.sent");
+    const id = p.data.sendId;
     const s = pending.get(id);
     if (!s || s.device !== from) return { kept: 0 };
     pending.delete(id);
@@ -674,7 +693,7 @@ async function judgeAt(o: { transport: LinkTransport; holder: LocalHolder; sourc
   if (end.device === null) {
     // This computer as the source: it will judge the destination's stream as that computer's peer call.
     const as: Caller = { kind: "peer", device: o.destination.device ?? "", ...(p.session ? { sessionId: p.session } : {}) };
-    await judgeEnd(o.holder, { as, level: p.level }, role, p.move, p.from, p.to, o.source.computer, o.destination.computer);
+    await judgeEnd(o.holder, { as, level: p.level }, role, p.move, p.from, p.to, o.source.computer, o.destination.computer, heldBy([o.holder], o.destination.computer));
     return;
   }
   let link: Link;

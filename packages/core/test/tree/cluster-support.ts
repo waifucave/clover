@@ -177,7 +177,7 @@ export class Cluster {
       ...(reviewer ? { reviewer } : {}),
       ...(terminals ? { terminals } : {}),
       ...(mcp ? { mcp } : {}),
-      ...(lease ? { lease } : {}),
+      lease: lease ?? null,
     });
     const c: TestComputer = { name, device, home, cloverHome, node, bots };
     this.computers.set(name, c);
