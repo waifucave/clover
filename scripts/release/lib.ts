@@ -174,6 +174,69 @@ export function bundledPluginsProblems(resources: string, exists: (path: string)
   return problems;
 }
 
+/** The bare imports each UI layer provides through its import map (the plugin SDK's `CLIENT_BARE_IMPORTS`): a plugin's
+ *  dependency on one of these packages needs nothing shipped. */
+export const LAYER_PROVIDED_PACKAGES = ["react", "react-dom", "@waifucave/clover-plugin-sdk"] as const;
+
+/**
+ * Each bundled plugin's runtime dependency that nothing ships: a `dependencies`, `optionalDependencies` or
+ * `peerDependencies` entry the layers don't provide, of any package.json in the bundled tree, with no
+ * `node_modules/<name>` shipped beside it. `files` is the tree's files, relative to it (as `bundledPluginsProblems`
+ * walks it); `read` reads one. Not wired into the release yet: today 27 plugins declare such dependencies, which a
+ * release-time build has to bundle first.
+ */
+export function unshippedPluginDependencies(files: readonly string[], read: (rel: string) => string): string[] {
+  const shipped = new Set(files);
+  const out: string[] = [];
+  for (const rel of files.filter((f) => f === "package.json" || f.endsWith("/package.json")).filter((f) => !/(^|\/)node_modules\//.test(f)).sort()) {
+    const dir = rel === "package.json" ? "" : rel.slice(0, -"/package.json".length);
+    let pkg: Record<string, Record<string, string> | undefined>;
+    try { pkg = JSON.parse(read(rel)); } catch { out.push(`${rel}: not JSON`); continue; }
+    const wanted = new Set([...Object.keys(pkg.dependencies ?? {}), ...Object.keys(pkg.optionalDependencies ?? {}), ...Object.keys(pkg.peerDependencies ?? {})]
+      .filter((n) => !(LAYER_PROVIDED_PACKAGES as readonly string[]).includes(n)));
+    for (const name of [...wanted].sort()) {
+      const here = `${dir === "" ? "" : `${dir}/`}node_modules/${name}/package.json`;
+      if (!shipped.has(here)) out.push(`${dir === "" ? "." : dir}: ${name}`);
+    }
+  }
+  return out;
+}
+
+/** A module of a built bundled plugin: its path in the shipped tree, which side runs it, and its text. */
+export interface BuiltModule { file: string; kind: "client" | "host"; source: string }
+
+/** Every module specifier a built module imports: static imports and re-exports, side-effect imports, `import()` and
+ *  `require()` with a string. */
+export function importSpecifiers(source: string): string[] {
+  const out = new Set<string>();
+  for (const re of [/\bfrom\s*["']([^"']+)["']/g, /\bimport\s*["']([^"']+)["']/g, /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g, /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g]) {
+    for (const m of source.matchAll(re)) out.add(m[1]!);
+  }
+  return [...out].sort();
+}
+
+/**
+ * The exact check on a built bundled plugin tree (#259; wired into the release with the release-time build): a client
+ * module's only bare imports are the layers' (`clientBare`, the plugin SDK's CLIENT_BARE_IMPORTS); a host module's
+ * bare imports are Node's and Bun's own or resolve inside the shipped tree; every relative import of either resolves.
+ */
+export function builtPluginImportProblems(modules: readonly BuiltModule[], clientBare: readonly string[], resolves: (from: string, specifier: string) => boolean): string[] {
+  const problems: string[] = [];
+  for (const m of modules) {
+    for (const spec of importSpecifiers(m.source)) {
+      const relative = spec.startsWith("./") || spec.startsWith("../") || spec.startsWith("/");
+      if (relative) {
+        if (!resolves(m.file, spec)) problems.push(`${m.file}: imports ${spec}, which isn't in the shipped tree`);
+      } else if (m.kind === "client") {
+        if (!clientBare.includes(spec)) problems.push(`${m.file}: a client module imports ${spec}; only ${clientBare.join(", ")} come from the layer, everything else must be bundled`);
+      } else if (!spec.startsWith("node:") && !spec.startsWith("bun:") && spec !== "bun" && !resolves(m.file, spec)) {
+        problems.push(`${m.file}: host code imports ${spec}, which nothing in the shipped tree provides`);
+      }
+    }
+  }
+  return problems;
+}
+
 export const RESOURCE_BINARIES = [
   { file: "clover-core", identifier: "com.waifucave.clover.core", entitlements: "scripts/clover-core.entitlements" },
   { file: "clover-link", identifier: "com.waifucave.clover.link", entitlements: undefined },

@@ -10,7 +10,8 @@ import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, LAUNCHD_LABEL, autostartArgs } f
 import { linkBinaryName } from "../packages/core/src/links/sidecar-binary";
 import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, LINK_BUILD, LINK_OUTPUT, packageArchNames, parseBuildPackagesArgs, parseListing, REQUIRED_FILES } from "./build-packages";
 import { caskFrom } from "./release-lib";
-import { BUNDLED_PLUGIN_IDS, BUNDLED_PLUGINS_DIR, bundledPluginsProblems } from "./release/lib";
+import { BUNDLED_PLUGIN_IDS, BUNDLED_PLUGINS_DIR, builtPluginImportProblems, bundledPluginsProblems, importSpecifiers, unshippedPluginDependencies } from "./release/lib";
+import { CLIENT_BARE_IMPORTS } from "../packages/plugin-sdk/src/manifest/schema";
 import { renderWinget, wingetInstallerUrl } from "./winget";
 
 const ROOT = join(import.meta.dir, "..");
@@ -162,6 +163,42 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     for (const stray of ["alpha/tab/test/tab.test.ts", "clover/x/tests/a.ts", "clover/node_modules/x/index.js", "alpha/tab/tsconfig.json", "clover/a.test.tsx"]) {
       expect(bundledPluginsProblems("/r", (p) => files.has(p), () => [...ok, stray])[0]).toContain(stray);
     }
+  });
+
+  test("a bundled plugin's runtime dependencies must be shipped with it; the layers' React and UI API need nothing", () => {
+    const pkgs: Record<string, string> = {
+      "alpha/clover.json": "{}",
+      "clover/plugins/ui/package.json": JSON.stringify({ dependencies: { react: "19.3.1", "lucide-react": "1.61.0" }, peerDependencies: { "react-dom": "^19" }, devDependencies: { typescript: "5" } }),
+      "clover/plugins/host/package.json": JSON.stringify({ dependencies: { "@waifucave/clover-provider-runtime": "0.0.71" }, optionalDependencies: { fflate: "0.8.3" }, peerDependencies: { three: "*" } }),
+      "clover/plugins/host/node_modules/fflate/package.json": "{}",
+      "clover/plugins/none/package.json": JSON.stringify({ devDependencies: { typescript: "5" } }),
+    };
+    const files = Object.keys(pkgs);
+    expect(unshippedPluginDependencies(files, (rel) => pkgs[rel]!)).toEqual([
+      "clover/plugins/host: @waifucave/clover-provider-runtime", "clover/plugins/host: three",
+      "clover/plugins/ui: lucide-react",
+    ]);
+    // Shipped beside it: nothing left.
+    const all = [...files, "clover/plugins/host/node_modules/@waifucave/clover-provider-runtime/package.json", "clover/plugins/host/node_modules/three/package.json", "clover/plugins/ui/node_modules/lucide-react/package.json"];
+    expect(unshippedPluginDependencies(all, (rel) => pkgs[rel] ?? "{}")).toEqual([]);
+  });
+
+  test("a built bundled plugin: client modules import only the layer's React and UI API; host imports resolve in the shipped tree", () => {
+    expect(importSpecifiers(`import a from "react"; export { b } from './x.js'; import "./side.css.js"; const c = await import("lucide-react"); require("node:fs");`))
+      .toEqual(["./side.css.js", "./x.js", "lucide-react", "node:fs", "react"]);
+    const shipped = new Set(["ui/chunk.js", "host/node_modules/@waifucave/clover-provider-runtime"]);
+    const resolves = (from: string, spec: string) => shipped.has(spec.startsWith(".") ? `${from.slice(0, from.lastIndexOf("/") + 1)}${spec.replace(/^\.\//, "")}` : `host/node_modules/${spec}`);
+    const ok = [
+      { file: "ui/entry.js", kind: "client" as const, source: `import { jsx } from "react/jsx-runtime"; import { useUi } from "@waifucave/clover-plugin-sdk/ui"; import "./chunk.js";` },
+      { file: "host/index.js", kind: "host" as const, source: `import { run } from "@waifucave/clover-provider-runtime"; import fs from "node:fs"; import { $ } from "bun";` },
+    ];
+    expect(builtPluginImportProblems(ok, CLIENT_BARE_IMPORTS, resolves)).toEqual([]);
+    expect(builtPluginImportProblems([{ file: "ui/entry.js", kind: "client", source: `import { X } from "lucide-react";` }], CLIENT_BARE_IMPORTS, resolves))
+      .toEqual([expect.stringContaining("ui/entry.js: a client module imports lucide-react")]);
+    expect(builtPluginImportProblems([{ file: "host/index.js", kind: "host", source: `import dc from "node-datachannel";` }], CLIENT_BARE_IMPORTS, resolves))
+      .toEqual(["host/index.js: host code imports node-datachannel, which nothing in the shipped tree provides"]);
+    expect(builtPluginImportProblems([{ file: "ui/entry.js", kind: "client", source: `import "./missing.js";` }], CLIENT_BARE_IMPORTS, resolves))
+      .toEqual(["ui/entry.js: imports ./missing.js, which isn't in the shipped tree"]);
   });
 
   test("the AppArmor profile grants user namespaces to the app's executable alone", () => {
