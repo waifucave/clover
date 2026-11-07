@@ -519,7 +519,8 @@ function performMove(lib: SupervisorLib, pid: number, srcDirfd: number, srcPath:
   for (const [fd, name] of [[src.parentFd, src.name], [dst.parentFd, dst.name]] as const) {
     const fin = lstatFinal(lib, fd, name);
     if ("errno" in fin) { if (fin.errno !== 2) return done(verdictErr(fin.errno)); else continue; } // missing: fine
-    if (fin.kind === "dir" && fin.dev !== parentIdentity(fd)?.dev) return done(verdictErr(EBUSY));
+    if (fin.kind === "missing") continue; // nothing there: no mount to protect
+    if (fin.dev !== parentIdentity(fd)?.dev) return done(verdictErr(EBUSY));
   }
   const r = move(src.parentFd, src.name, dst.parentFd, dst.name);
   if (r !== 0) return done(verdictErr(errNo(lib)));
