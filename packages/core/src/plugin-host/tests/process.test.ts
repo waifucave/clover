@@ -88,7 +88,7 @@ describe("a real plugin-host process", () => {
       values.push(n.value);
     }
     expect(values).toEqual([0, 1, 2]);
-    const e = await host.invoke({ pluginId: "tarot", handler: "nope", args: null, caller: USER }).catch((x: ContractError) => x);
+    const e = (await host.invoke({ pluginId: "tarot", handler: "nope", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
     expect(e.code).toBe("not_installed");
   }, 30_000);
 
@@ -109,7 +109,7 @@ describe("a real plugin-host process", () => {
     await Bun.sleep(50);
     expect(logs[0]?.[0]).toBe("tarot");
     expect(logs[0]?.[1]).toContain("hello from the worker");
-    const e = await host.invoke({ pluginId: "tarot", handler: "die", args: null, caller: USER }).catch((x: ContractError) => x);
+    const e = (await host.invoke({ pluginId: "tarot", handler: "die", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
     expect(e.code).toBe("failed");
     expect(host.status("tarot")).toMatchObject({ state: "restarting", crashes: 1 });
     await Bun.sleep(1300);
