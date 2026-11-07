@@ -40,7 +40,7 @@ import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
-import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
+import { lateAgentDoors, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
 import { createHash as createDeviceHash } from "node:crypto";
@@ -285,7 +285,7 @@ export interface RunningDaemon {
   /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
    *  background after the socket is bound. `ready` settles once they are up, or found absent (no sidecar), or failed
    *  (logged); each getter is undefined before then and without one. */
-  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined };
+  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined; agents(): DaemonAgents | undefined };
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
    *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
   updateGate: UpdateGate;
@@ -456,7 +456,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** The daemon integration: this computer's node and bot side, started over the links once they're up. `node: false`
    *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
-  parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string };
+  parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string; agents?: false | Pick<DaemonAgentsInput, "defaultModel" | "backends"> };
   /** TEST ONLY: the contract secret store (a test's store that starts locked). Default: the OS store, or an in-memory
    *  one when `secrets` is given. */
   contractSecrets?: ContractSecretStore;
@@ -3202,6 +3202,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // Lane K's agents start with the bot side, after the server: the server reaches them through these doors.
+  const agentDoors = lateAgentDoors(cloverLaneHandlers);
   // This device's id is its link key's (H-M1): the one the links below load from the same store. A store that is
   // still locked (a keyring locked at the login screen) can't give it yet: the hello carries a stand-in id, stable per
   // home, and the links wait for the store to unlock (below). The boot never waits on it.
@@ -3228,6 +3230,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }));
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
+    codeAgent: agentDoors.codeAgent,
+    bridge: agentDoors.bridge,
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
@@ -3532,6 +3536,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         bots,
         // The bots' running turns keep an update's restart waiting.
         updateGate,
+        // Lane K's agents on the embedded runtime, over the bot side's host.
+        agents: p.agents === false ? false : {
+          socketPath: dirs.socketPath, spawn: (options) => embeddedSessions.spawn(options), doors: agentDoors,
+          defaultModel: p.agents?.defaultModel ?? (() => liveModel?.() ?? ""),
+          ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
+        },
         log: (line) => console.error(line),
       });
       if (partsStopping) return void (await closeStarted());
@@ -3568,7 +3578,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sessions: store,
     buildSessionCapabilities,
     clover: cloverDrivers,
-    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots },
+    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots, agents: () => daemonParts?.agents },
     updateGate,
     setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
