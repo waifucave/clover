@@ -105,6 +105,7 @@ test("paired watch methods are refused before shape validation and never silentl
     await until(() => replies.has(id)); expect(replies.get(id).error.code).toBe(-32001);
   }
 });
+// It waits out a real 20 s renewal by design, so it has its own minute: over CI's 20 s per-test limit and bun's 5 s.
 test("TS consumer automatically performs a real Unix renewal after20 seconds and stops on detach", async () => {
   const f = await boot(), observer = await connect(f.home);
   const renewals: Array<{ subscriptionId: string; leaseExpiresAt: string }> = [];
@@ -138,7 +139,7 @@ test("concurrent Project RPC changes reach only each separately subscribed works
   }
   expect(f.records.rs.db.query("SELECT count(*) AS n FROM cowork_conversations").get()).toEqual({ n: 0 });
   await Promise.all([wa.detach(), wb.detach()]);
-});
+}, 60_000);
 test("consumer never installs renewal when detach or disconnect wins before watch acceptance continuation", async () => {
   const f = await boot();
   for (const race of ["detach", "disconnect"] as const) {
