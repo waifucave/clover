@@ -202,6 +202,21 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
+      # The Clover Browser where no app runs (lane L, plan §4 L M2): the pinned headless shell installed into a temp
+      # folder, then a bot's tab, its pictures, the URL rule, the refused DevTools domains, R13 through the real network
+      # filter, a stream and a page's window (`packages/core/test/browser/headless-real.test.ts`). The headless shell
+      # opens no window. On Linux Chromium's sandbox needs unprivileged user namespaces, as the app's tests do.
+      - name: Daemon · the headless browser's sandbox (Linux)
+        if: ${{ !cancelled() && env.DAEMON == 'true' && runner.os == 'Linux' }}
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Daemon · Headless browser test
+        if: ${{ !cancelled() && env.DAEMON == 'true' }}
+        working-directory: packages/core
+        env:
+          CLOVER_HEADLESS_TESTS: "1"
+        run: bun test test/browser/headless
+
       - name: App · build the unsigned app
         id: app-build
         if: ${{ !cancelled() && env.APP == 'true' }}
@@ -240,6 +255,21 @@ jobs:
         env:
           CLOVER_UI_TESTS: "1"
         run: xvfb-run -a bun test test/browser.test.ts
+
+      # Lane L-M2's streamed view (lane M: fold into your consolidation with the two above).
+      - name: App · Browser stream test
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+        run: bun test test/browser-stream.test.ts
+
+      - name: App · Browser stream test (under xvfb)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+        run: xvfb-run -a bun test test/browser-stream.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}

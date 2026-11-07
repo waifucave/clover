@@ -6,4 +6,8 @@ export const BROWSER_ASSETS = {
   preload: { entry: "src/main/browser/viewport-page/preload.ts", out: "out/main/browser-viewport-preload.cjs" },
   /** Copied as it is. */
   html: { from: "src/main/browser/viewport-page/viewport.html", out: "out/renderer/browser-viewport.html" },
+  /** The streamed view's encoder page (`stream.ts`): its sandboxed preload, bundled like the viewport's… */
+  streamPreload: { entry: "src/main/browser/stream-page/preload.ts", out: "out/main/browser-stream-preload.cjs" },
+  /** …and its page, copied as it is. They go to `createBrowserHost` as `streamAssets`. */
+  streamHtml: { from: "src/main/browser/stream-page/encoder.html", out: "out/renderer/browser-stream.html" },
 } as const;

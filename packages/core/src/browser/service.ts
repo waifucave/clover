@@ -14,11 +14,15 @@
 // * a tab that stopped drawing gives an error, never an old picture.
 import { randomBytes } from "node:crypto";
 import {
-  AGENT_VIEWPORT, isBrowserUrlAllowed, type AppTabCommand, type AppTabEvent, type Screenshot, type ScreenshotFormat,
-  type TabOwner, type TabPlace, type TabView, type Viewport,
+  AGENT_VIEWPORT, isBrowserUrlAllowed, type AppTabCommand, type AppTabEvent, type BrowserNetworkConfig, type Screenshot,
+  type ScreenshotFormat, type TabOwner, type TabPlace, type TabView, type Viewport,
 } from "./contract";
+import { checkProxySetting, DEFAULT_PROXY_SETTING } from "./proxy";
 import type { ApprovalRequest } from "../contracts/approval-broker";
 import { BrowserError, checkCdpMethod, checkPoint, checkViewport, partitionFor, sameOwner } from "./policy";
+import { RemoteBrowsers, type BrowserPeers } from "./peers";
+import { TabStreams, type TabStreamsOptions } from "./stream";
+import type { StreamChunk, StreamCodec } from "./contract";
 
 /** Who is calling. The transport decides it (lane B's caller check): a layer acting for the person is `user`, a
  *  session's call is `agent`, and so is a plugin's call made while it serves a session's tool call (ruling R7: the core
@@ -63,6 +67,8 @@ export interface AppTabPort {
   open(args: { id: string; owner: TabOwner; url?: string; place: TabPlace }): Promise<TabView>;
   command(id: string, command: AppTabCommand): Promise<unknown>;
   list(): Promise<TabView[]>;
+  /** `app.browser.configure`: the proxy setting and the bots allowed their LAN (R13, R14). */
+  configure(config: BrowserNetworkConfig): Promise<void>;
 }
 
 export type BrowserEvent =
@@ -79,12 +85,12 @@ interface Entry {
 }
 
 /** The card that asks the person whether a session may use their own browser (R10), as lane D's `SessionGrants`
- *  takes it: the grant adds the session, its bot and its turn's origin. Its strings are the core's own. */
-export type PersonsBrowserCard = Omit<ApprovalRequest, "session" | "bot" | "origin">;
+ *  takes it (its `GrantCard`): the grant makes it a `confirm` card, which no level or saved rule answers, and adds the
+ *  session, its bot and its turn's origin. Its strings are the core's own. */
+export type PersonsBrowserCard = Omit<ApprovalRequest, "kind" | "session" | "bot" | "origin" | "ruleKey" | "options">;
 
 export function personsBrowserCard(computer: string): PersonsBrowserCard {
   return {
-    kind: "confirm",
     computers: [computer],
     effect: "screen",
     fields: {
@@ -94,21 +100,55 @@ export function personsBrowserCard(computer: string): PersonsBrowserCard {
   };
 }
 
-/** R10's grant, kept by lane D (`SessionGrants` with `USER_BROWSER_PARTITION_GRANT`, #176): whether a session holds
- *  it, and asking the person with the card once per session. The browser never records a grant itself. */
+/** R10's grant, kept by lane D: whether a session holds it, and asking the person with the card once per session.
+ *  The browser never records a grant itself. `personsBrowserGrants` makes one from D's `SessionGrants`. */
 export interface PersonsBrowserGrants {
   has(session: string): boolean;
-  /** True on the person's yes (or a yes they gave this session before). */
+  /** True on the person's yes on the card (or a yes they gave this session before). */
   ensure(session: string, card: PersonsBrowserCard, opts?: { signal?: AbortSignal }): Promise<boolean>;
 }
 
+/** Lane D's grant key for the person's own browser partition (`USER_BROWSER_PARTITION_GRANT` in
+ *  `sessions/grants.ts`, #176). */
+export const USER_BROWSER_PARTITION_GRANT = "browser.partition.user";
+
+/** Lane D's `SessionGrants`, as far as the browser uses it. Its `ensure` grants only on the person's own yes on the
+ *  card (#176's fix for review B1: a broker's yes by level or rule grants nothing). */
+export interface SessionGrantsPort {
+  has(session: string, key: string): boolean;
+  ensure(session: string, key: string, card: PersonsBrowserCard, opts?: { signal?: AbortSignal }): Promise<{ allowed: boolean; by?: string }>;
+}
+
+/** The browser's grants port over lane D's `SessionGrants`. A decision counts only when it is allowed and came from
+ *  the card or a grant the card made before (`by: "card"` or `"grant"`), whatever the grants object says: the
+ *  browser checks again, so a grants object without D's fix still can't open the person's browser without a card. */
+export function personsBrowserGrants(grants: SessionGrantsPort): PersonsBrowserGrants {
+  return {
+    has: (session) => grants.has(session, USER_BROWSER_PARTITION_GRANT),
+    ensure: async (session, card, opts) => {
+      const d = await grants.ensure(session, USER_BROWSER_PARTITION_GRANT, card, opts);
+      return d.allowed === true && (d.by === "card" || d.by === "grant");
+    },
+  };
+}
+
 export interface BrowserServiceOptions {
-  /** This computer's name; tabs on other computers come with M2. */
+  /** This computer's name. */
   computer: string;
+  /** The user's other computers (lane J) and the link to them (lane H): a call that names another computer goes
+   *  there, and that computer's browser answers under its own rules (`peers.ts`). Without them, only this one. */
+  peers?: BrowserPeers;
   /** Lane D's session grants. Without them no session ever drives the person's own browser. */
   grants?: PersonsBrowserGrants;
-  /** The app's port, or undefined while no app runs on this computer. */
+  /** The app's port, or undefined while no app runs on this computer. Where no app runs at all (a server), the
+   *  headless shell's port (`headless/`). */
   app: () => AppTabPort | undefined;
+  /** The streamed view (`browser.stream`, `stream.ts`): its link to each viewer's device. Default: the peers' link;
+   *  without either, nothing streams. `tuning`, `ended` and the rest are `TabStreams`' own options. */
+  streams?: Partial<Omit<TabStreamsOptions, "computer" | "app">>;
+  /** The network settings to start with: the proxy setting (Settings' `browser.proxy`) and the bots whose LAN
+   *  setting is on (lane D's bot settings). `configure` changes them. */
+  network?: BrowserNetworkConfig;
   emit?: (event: BrowserEvent) => void;
   newId?: () => string;
   now?: () => number;
@@ -120,16 +160,89 @@ export class BrowserService {
   private readonly entries = new Map<string, Entry>();
   private readonly now: () => number;
   private readonly newId: () => string;
+  private network: BrowserNetworkConfig;
+  private readonly listeners = new Set<(event: BrowserEvent) => void>();
+  /** Tabs being opened now: the app may report them before `open` answers. */
+  private readonly opening = new Set<string>();
+  private readonly remote: RemoteBrowsers | undefined;
+  private readonly streams: TabStreams | undefined;
 
   constructor(private readonly opts: BrowserServiceOptions) {
     this.now = opts.now ?? Date.now;
     this.newId = opts.newId ?? (() => `tab_${randomBytes(9).toString("base64url")}`);
+    this.network = checkNetwork(opts.network ?? { proxy: DEFAULT_PROXY_SETTING, lanBots: [] });
+    this.remote = opts.peers !== undefined ? new RemoteBrowsers(opts.peers, (e) => this.emit(e)) : undefined;
+    const transport = opts.streams?.transport ?? opts.peers?.transport;
+    this.streams = transport !== undefined ? new TabStreams({ ...opts.streams, transport, computer: opts.computer, app: opts.app }) : undefined;
+  }
+
+  /** `browser.stream`: this computer's tab as video to another device (`device`, the caller's own, from its link), or
+   *  that stream stopped. Streaming only looks at the tab, so a tab the person holds streams too. */
+  async stream(caller: BrowserCaller, id: string, args: { on: boolean; maxKbps?: number; codecs?: StreamCodec[] }, device: string): Promise<{ stream?: string }> {
+    this.entry(caller, id, { lookOnly: true });
+    if (this.streams === undefined) throw new BrowserError("no_computer", "this computer has no link to other devices, so it streams no tab");
+    if (args.maxKbps !== undefined && (!Number.isInteger(args.maxKbps) || args.maxKbps < 50 || args.maxKbps > 50_000)) {
+      throw new BrowserError("bad_viewport", "maxKbps is a whole number from 50 to 50000");
+    }
+    if (!args.on) {
+      await this.streams.stop({ tab: id, device });
+      return {};
+    }
+    return this.streams.start({ tab: id, device, ...(args.maxKbps !== undefined ? { maxKbps: args.maxKbps } : {}), ...(args.codecs !== undefined ? { codecs: args.codecs } : {}) });
+  }
+
+  /** A streamed tab's chunk from the app (lane E's carriage of the app's `streamData`), or from the headless shell. */
+  streamData(stream: string, chunk: StreamChunk): void {
+    this.streams?.data(stream, chunk);
+  }
+
+  /** The app went (its pair dropped, or it is restarting): every stream it was encoding ends. */
+  appGone(): void {
+    this.streams?.appGone();
+  }
+
+  /** Every event the service emits (this computer's tabs, and the other computers' tabs it reached), besides
+   *  `opts.emit`: the holder's side of `peers.ts` listens here. */
+  onEvent(fn: (event: BrowserEvent) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** Stops listening to other computers. */
+  dispose(): void {
+    this.streams?.close();
+    this.remote?.dispose();
+    this.listeners.clear();
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // The settings (R13's per-bot LAN, R14's proxy)
+  // -----------------------------------------------------------------------------------------------
+
+  /** The network settings now. */
+  get networkConfig(): BrowserNetworkConfig {
+    return { proxy: this.network.proxy, lanBots: [...this.network.lanBots] };
+  }
+
+  /** A setting changed (the daemon calls this when Settings' `browser.proxy` or a bot's LAN setting changes): the app
+   *  (or the headless shell) gets the whole set at once. Without an app it is kept, and sent when one connects. */
+  async configure(config: BrowserNetworkConfig): Promise<void> {
+    this.network = checkNetwork(config);
+    const app = this.opts.app();
+    if (app !== undefined) await app.configure(this.networkConfig).catch((e) => { throw appFailed(e); });
   }
 
   // -----------------------------------------------------------------------------------------------
   // The API (`browser.*`)
   // -----------------------------------------------------------------------------------------------
 
+  /** `browser.tabs`: this computer's tabs, or another computer's when `computer` names one. */
+  async list(caller: BrowserCaller, filter: { owner?: TabOwner; computer?: string } = {}): Promise<TabView[]> {
+    if (filter.computer === undefined || filter.computer === this.opts.computer) return this.tabs(caller, filter);
+    return this.peer(filter.computer).list(caller, filter.computer, filter.owner);
+  }
+
+  /** This computer's tabs the caller may use (another computer's: `list`). */
   tabs(caller: BrowserCaller, filter: { owner?: TabOwner; computer?: string } = {}): TabView[] {
     if (filter.computer !== undefined && filter.computer !== this.opts.computer) return [];
     return [...this.entries.values()]
@@ -138,8 +251,18 @@ export class BrowserService {
       .map((v) => ({ ...v }));
   }
 
-  async open(caller: BrowserCaller, args: { owner: TabOwner; url?: string; show?: boolean; computer?: string }): Promise<TabView> {
-    this.checkComputer(args.computer);
+  /** `browser.open`. `show` puts it in that view at once (B-M1's shape; `true`, M1's, means headless). */
+  async open(caller: BrowserCaller, args: { owner: TabOwner; url?: string; show?: boolean | { view: string; viewport: Viewport }; computer?: string }): Promise<TabView> {
+    if (args.computer !== undefined && args.computer !== this.opts.computer) {
+      if (args.url !== undefined) this.checkUrl(args.url);
+      if (typeof args.show === "object") throw new BrowserError("not_yours", `a tab on ${args.computer} is shown only in that computer's app; watch it as a stream`);
+      partitionFor(args.owner);
+      return this.peer(args.computer).open(caller, args.computer, { owner: args.owner, ...(args.url !== undefined ? { url: args.url } : {}) });
+    }
+    if (typeof args.show === "object") {
+      checkViewport(args.show.viewport);
+      checkView(args.show.view);
+    }
     if (!this.mayTouch(caller, args.owner)) {
       if (args.owner.kind !== "user" || caller.kind !== "agent" || caller.session === undefined) throw this.notYours(caller);
       // The person's own browser: their yes for this session, asked on a card the first time (R10, lane D's grants).
@@ -151,38 +274,55 @@ export class BrowserService {
     const app = this.app();
     const id = this.newId();
     // Opened at the agent's size, drawing for a bot; a browser view that wants it calls `show` with its own size.
-    const view = await app.open({ id, owner: args.owner, url: args.url, place: "headless" }).catch((e) => { throw appFailed(e); });
+    // While it opens, the app's own reports about it are the open's to settle, never a stranger's tab to adopt.
+    this.opening.add(id);
+    const view = await app.open({ id, owner: args.owner, url: args.url, place: "headless" }).catch((e) => { throw appFailed(e); }).finally(() => this.opening.delete(id));
     const entry: Entry = { view: { ...view, id, owner: args.owner, partition, computer: this.opts.computer, heldByUser: false }, listeners: new Set() };
     this.entries.set(id, entry);
     this.emit({ type: "tab_changed", tab: { ...entry.view } });
+    if (typeof args.show === "object") return this.show(caller, id, args.show.view, args.show.viewport);
     return { ...entry.view };
   }
 
   async close(caller: BrowserCaller, id: string): Promise<void> {
+    if (this.isRemote(id)) return this.remote!.close(caller, id);
     const entry = this.entry(caller, id, { lookOnly: false });
     await this.command(id, { kind: "close" });
     this.forget(entry.view.id);
   }
 
   async navigate(caller: BrowserCaller, id: string, url: string): Promise<TabView> {
-    this.entry(caller, id, { lookOnly: false });
     this.checkUrl(url);
+    if (this.isRemote(id)) return this.remote!.navigate(caller, id, url);
+    this.entry(caller, id, { lookOnly: false });
     await this.command(id, { kind: "navigate", url });
     return this.view(id);
   }
 
   async show(caller: BrowserCaller, id: string, view: string, viewport: Viewport): Promise<TabView> {
+    if (this.isRemote(id)) throw new BrowserError("not_yours", `a tab on ${this.remote!.computerOf(id)} is shown only in that computer's app; watch it as a stream`);
     this.entry(caller, id, { lookOnly: false });
     checkViewport(viewport);
-    if (view.length === 0 || view.length > 128) throw new BrowserError("bad_viewport", "a view's name is 1–128 characters");
+    checkView(view);
     await this.command(id, { kind: "place", place: "shown", view, viewport });
-    return this.update(id, { place: "shown", viewport: { width: viewport.width, height: viewport.height } });
+    // One tab per view: another tab this view showed went back to drawing for its bot (the app reports it too).
+    for (const other of this.entries.values()) {
+      if (other.view.id !== id && other.view.place === "shown" && other.view.view === view) {
+        const { view: _gone, ...rest } = other.view;
+        other.view = { ...rest, place: "headless", viewport: { ...AGENT_VIEWPORT }, heldByUser: false };
+        this.emit({ type: "tab_changed", tab: { ...other.view } });
+      }
+    }
+    return this.update(id, { place: "shown", viewport: { width: viewport.width, height: viewport.height }, view });
   }
 
   async hide(caller: BrowserCaller, id: string): Promise<TabView> {
+    if (this.isRemote(id)) return this.remote!.hide(caller, id);
     const entry = this.entry(caller, id, { lookOnly: false });
     await this.command(id, { kind: "place", place: "headless", viewport: AGENT_VIEWPORT });
     // Whoever held it in the view lets go when it leaves the view.
+    const { view: _gone, ...rest } = entry.view;
+    entry.view = rest;
     return this.update(entry.view.id, { place: "headless", viewport: { ...AGENT_VIEWPORT }, heldByUser: false });
   }
 
@@ -195,6 +335,7 @@ export class BrowserService {
   }
 
   async screenshot(caller: BrowserCaller, id: string, opts: { format?: ScreenshotFormat; quality?: number } = {}): Promise<Screenshot> {
+    if (this.isRemote(id)) return this.remote!.screenshot(caller, id, opts);
     const entry = this.entry(caller, id, { lookOnly: true });
     if (entry.stalledSince !== undefined) {
       throw new BrowserError("stalled", `the tab stopped drawing ${Math.round((this.now() - entry.stalledSince) / 1000)} s ago, so there's no fresh picture of it`);
@@ -208,8 +349,9 @@ export class BrowserService {
   }
 
   async cdp(caller: BrowserCaller, id: string, method: string, params?: Record<string, unknown>, opts: { viewport?: Viewport } = {}): Promise<unknown> {
-    const entry = this.entry(caller, id, { lookOnly: false });
     checkCdpMethod(method);
+    if (this.isRemote(id)) return this.remote!.cdp(caller, id, method, params, opts.viewport);
+    const entry = this.entry(caller, id, { lookOnly: false });
     checkPoint(method, opts.viewport, entry.view.viewport);
     return this.command(id, { kind: "cdp", method, ...(params !== undefined ? { params } : {}) });
   }
@@ -221,19 +363,28 @@ export class BrowserService {
     return () => entry.listeners.delete(listener);
   }
 
+  /** `onCdpEvent` for a tab on any computer: another computer's tab subscribes there first. */
+  async watchCdp(caller: BrowserCaller, id: string, listener: CdpListener): Promise<() => void> {
+    if (this.isRemote(id)) return this.remote!.onCdpEvent(caller, id, listener);
+    return this.onCdpEvent(caller, id, listener);
+  }
+
   // -----------------------------------------------------------------------------------------------
   // The app's side (`browser.report`, and the app coming back)
   // -----------------------------------------------------------------------------------------------
 
   /** What the app reports about its tabs (`browser.report`). */
   report(events: readonly AppTabEvent[]): void {
+    // A tab closed earlier in the same batch stays closed: a later `changed` for it is stale (the second review).
+    const closedNow = new Set<string>();
     for (const event of events) {
       switch (event.kind) {
         case "changed": {
+          if (closedNow.has(event.tab.id)) break;
           // The core owns who holds a tab and whose it is; the app owns where it is and what it shows.
           const entry = this.entries.get(event.tab.id);
           if (entry === undefined) {
-            this.adopt(event.tab);
+            if (!this.opening.has(event.tab.id)) this.adopt(event.tab);
             break;
           }
           entry.view = { ...event.tab, computer: this.opts.computer, owner: entry.view.owner, partition: entry.view.partition, heldByUser: entry.view.heldByUser };
@@ -242,6 +393,8 @@ export class BrowserService {
           break;
         }
         case "closed":
+          closedNow.add(event.id);
+          this.streams?.tabClosed(event.id);
           this.forget(event.id);
           break;
         case "cdp": {
@@ -275,6 +428,10 @@ export class BrowserService {
    *  is opened again at its last address, which reloads it (§12.1). Returns the ids reopened. */
   async reconnect(): Promise<string[]> {
     const app = this.app();
+    // Streams the old app was encoding are gone with it.
+    this.streams?.appGone();
+    // The settings first, so no tab reopened below connects before its proxy and LAN setting are in place.
+    await app.configure(this.networkConfig);
     const live = await app.list();
     const liveIds = new Set(live.map((t) => t.id));
     this.report(live.map((tab) => ({ kind: "changed" as const, tab })));
@@ -363,10 +520,14 @@ export class BrowserService {
     }
   }
 
-  private checkComputer(computer: string | undefined): void {
-    if (computer !== undefined && computer !== this.opts.computer) {
-      throw new BrowserError("no_app", `tabs on another computer (${computer}) aren't reachable from here yet`);
-    }
+  /** Another computer's tab this computer reached (never one of its own). */
+  private isRemote(id: string): boolean {
+    return !this.entries.has(id) && this.remote?.has(id) === true;
+  }
+
+  private peer(computer: string): RemoteBrowsers {
+    if (this.remote === undefined) throw new BrowserError("no_computer", `tabs on another computer (${computer.slice(0, 128)}) aren't reachable from here: this computer has no link to it`);
+    return this.remote;
   }
 
   private view(id: string): TabView {
@@ -389,12 +550,30 @@ export class BrowserService {
   }
 
   private emit(event: BrowserEvent): void {
-    try {
-      this.opts.emit?.(event);
-    } catch {
-      // Listeners never break the browser.
+    for (const fn of [this.opts.emit, ...this.listeners]) {
+      try {
+        fn?.(event);
+      } catch {
+        // Listeners never break the browser.
+      }
     }
   }
+}
+
+function checkView(view: string): void {
+  if (view.length === 0 || view.length > 128) throw new BrowserError("bad_viewport", "a view's name is 1–128 characters");
+}
+
+function checkNetwork(config: BrowserNetworkConfig): BrowserNetworkConfig {
+  let proxy;
+  try {
+    proxy = checkProxySetting(config.proxy);
+  } catch (e) {
+    throw new BrowserError("bad_setting", e instanceof Error ? e.message : String(e));
+  }
+  if (!Array.isArray(config.lanBots) || config.lanBots.length > 10_000) throw new BrowserError("bad_setting", "lanBots is a list of bots' ids");
+  for (const bot of config.lanBots) partitionFor({ kind: "bot", bot });
+  return { proxy, lanBots: [...new Set(config.lanBots)] };
 }
 
 function needsOk(): BrowserError {
