@@ -258,8 +258,9 @@ function chainIsClean(path: string): boolean {
 
 /** Reverts risky git keys a sandboxed command added or changed (spec item 1116): only the watched keys are
  *  touched, other edits stay, and nothing is written through a planted link or into a planted folder. A file that
- *  appeared with watched keys set has those lines dropped (an empty file left behind sets nothing). Returns the
- *  report line, or null. */
+ *  appeared with watched keys set has those lines dropped (an empty file left behind sets nothing). The fixed
+ *  file is written to a temp file and renamed over, but only when the file hasn't changed since it was read —
+ *  a concurrent writer's bytes are never clobbered. Returns the report line, or null. */
 export function revertPlantedGitKeys(before: Map<string, string | null>): string | null {
   const notes: string[] = [];
   for (const [p, prev] of before) {
@@ -273,14 +274,61 @@ export function revertPlantedGitKeys(before: Map<string, string | null>): string
     }
     try {
       const fixed = revertWatchedGitChanges(cur ?? "", changed);
-      const fd = openSync(p, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
-      try { writeFileSync(fd, fixed, { encoding: "utf8" }); } finally { try { closeSync(fd); } catch { /* written */ } }
+      // Compare-and-swap: re-read, and only replace an unchanged file.
+      if (readIfFile(p) !== cur) {
+        notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): changed under us, not clobbered`);
+        continue;
+      }
+      const dir = dirname(p);
+      const tmp = join(dir, `.clover-revert-${randomBytes(4).toString("hex")}`);
+      let fd = -1;
+      try {
+        fd = openSync(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+        writeFileSync(fd, fixed, { encoding: "utf8" });
+      } finally { if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } } }
+      try {
+        renameSync(tmp, p);
+      } finally { try { unlinkSync(tmp); } catch { /* renamed or never made */ } }
       notes.push(`${p}: reverted risky git keys (${changed.map((c) => c.dotted).join(", ")})`);
     } catch {
       notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): could not revert`);
     }
   }
   return notes.length === 0 ? null : `clover: the run set risky git keys; ${notes.join("; ")}\n`;
+}
+
+/** Every git config a repo root could plant risky keys in: its own config, its per-worktree config, its
+ *  submodules' configs, and — for a linked worktree (a `.git` file naming its gitdir) — the worktree's config
+ *  plus the shared config all its worktrees read. Links are never followed: a planted link resolves null. */
+export function repoConfigFiles(repoRoot: string): string[] {
+  const out: string[] = [];
+  let git: ReturnType<typeof lstatSync> | undefined;
+  try { git = lstatSync(join(repoRoot, ".git")); } catch { return out; }
+  if (git === undefined || git.isSymbolicLink()) return out;
+  if (git.isDirectory()) {
+    const dir = join(repoRoot, ".git");
+    out.push(join(dir, "config"), join(dir, "config.worktree"));
+    try {
+      for (const n of readdirSync(join(dir, "modules"))) {
+        const c = join(dir, "modules", n);
+        let st: ReturnType<typeof lstatSync> | undefined;
+        try { st = lstatSync(c); } catch { continue; }
+        if (st !== undefined && st.isDirectory() && !st.isSymbolicLink()) out.push(join(c, "config"));
+      }
+    } catch { /* no submodules */ }
+    return out;
+  }
+  // A linked worktree: `.git` names its gitdir, `<common>/worktrees/<name>`.
+  try {
+    const line = readFileSync(join(repoRoot, ".git"), "utf8").split("\n")[0] ?? "";
+    const m = /^gitdir:\s*(.+?)\s*$/.exec(line);
+    if (m === null) return out;
+    const g = m[1]!.startsWith("/") ? m[1]! : join(repoRoot, m[1]!);
+    out.push(join(g, "config"));
+    const common = g.replace(/\/worktrees\/[^/]+\/?$/, "");
+    if (common !== g) out.push(join(common, "config"));
+  } catch { /* unreadable: nothing to watch */ }
+  return out;
 }
 
 /** The git configs a sandboxed command could plant risky keys in: the global ones, the session repo's, and any
@@ -294,13 +342,15 @@ function watchedConfigFiles(home: string, cwd: string): string[] {
   const seen = new Set<string>();
   while (at !== null && !seen.has(at) && (at === home || under(at, home))) {
     seen.add(at);
-    out.add(join(at, ".git", "config"));
+    for (const c of repoConfigFiles(at)) out.add(c);
     try {
       for (const n of readdirSync(at)) {
         const c = join(at, n);
         let st: ReturnType<typeof lstatSync> | undefined;
         try { st = lstatSync(c); } catch { continue; }
-        if (st !== undefined && st.isDirectory() && !st.isSymbolicLink()) out.add(join(c, ".git", "config"));
+        if (st !== undefined && st.isDirectory() && !st.isSymbolicLink()) {
+          for (const f of repoConfigFiles(c)) out.add(f);
+        }
       }
     } catch { /* unreadable */ }
     if (at === home) break;

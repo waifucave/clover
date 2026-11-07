@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
-import { fencedSpawner, mkdirNoLinks, ownRepoHooks, revertPlantedGitKeys } from "../../src/fence/fenced-process";
+import { fencedSpawner, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../src/fence/linux-bwrap";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
@@ -346,6 +346,49 @@ describe("the session's own repo", () => {
       writeFileSync(join(root, "f"), "x");
       mkdirNoLinks(join(root, "f", "c")); // a file where folders go: left alone, the read-only bind still covers it
       expect(existsSync(join(root, "f", "c"))).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("repoConfigFiles watches the repo config, its worktree config, submodule configs, and a worktree's shared config", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-repocfg-")));
+    try {
+      const repo = join(root, "repo");
+      mkdirSync(join(repo, ".git", "modules", "sub"), { recursive: true });
+      writeFileSync(join(repo, ".git", "config"), "[core]\n\trepositoryformatversion = 0\n");
+      const files = repoConfigFiles(repo);
+      expect(files).toContain(join(repo, ".git", "config"));
+      expect(files).toContain(join(repo, ".git", "config.worktree"));
+      expect(files).toContain(join(repo, ".git", "modules", "sub", "config"));
+      // A linked worktree: its own config plus the shared one.
+      const wt = join(root, "wt");
+      mkdirSync(wt, { recursive: true });
+      writeFileSync(join(wt, ".git"), "gitdir: /common/.git/worktrees/wt\n");
+      const wfiles = repoConfigFiles(wt);
+      expect(wfiles).toContain(join("/common/.git/worktrees/wt", "config"));
+      expect(wfiles).toContain(join("/common/.git", "config"));
+      // A planted link resolves nothing.
+      const linked = join(root, "linked");
+      mkdirSync(linked, { recursive: true });
+      symlinkSync(join(repo, ".git"), join(linked, ".git"));
+      expect(repoConfigFiles(linked)).toEqual([]);
+      expect(repoConfigFiles(join(root, "missing"))).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("revertPlantedGitKeys renames a temp file over and leaves no strays", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    try {
+      const cfg = join(root, "config");
+      writeFileSync(cfg, "[user]\n\tname = Luna\n");
+      const before = new Map([[cfg, readFileSync(cfg, "utf8")]]);
+      writeFileSync(cfg, "[user]\n\tname = Luna\n[core]\n\thooksPath = /tmp/evil\n");
+      const note = revertPlantedGitKeys(before);
+      expect(note).toMatch(/core\.hookspath/);
+      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Luna\n[core]\n");
+      // No temp strays in the folder.
+      expect(readdirSync(root)).toEqual(["config"]);
+      // An unchanged file is left alone (null note).
+      expect(revertPlantedGitKeys(new Map([[cfg, readFileSync(cfg, "utf8")]]))).toBeNull();
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 

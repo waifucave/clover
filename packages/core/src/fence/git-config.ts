@@ -5,6 +5,14 @@
 // `remote.*.{receivepack,uploadpack}`. After a sandboxed command, watched keys that were added or changed are
 // reverted to their pre-command values (other keys are left alone); a file that appeared with a watched key set
 // is removed. `.git/config` stays writable otherwise: normal git use writes it.
+//
+// Parsing goes through git itself (`git config --file <copy> --list -z --no-includes`), with the built-in parser
+// below as fallback where git is missing or rejects the file. The revert writes a temp file and renames it over,
+// but only when the file hasn't changed since it was read.
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 export interface GitConfigKey {
   /** Dotted display form, lowercased except any subsection. */
   readonly dotted: string;
@@ -99,13 +107,45 @@ export interface WatchedGitChange {
   readonly after: readonly string[];
 }
 
+/** Parses a config file the way git reads it: through `git config --file <copy> --list -z --no-includes`
+ *  (no includes, so a planted `include.path` can't smuggle keys into the parse). Null where git is missing or
+ *  rejects the file — the caller falls back to the built-in parser. */
+export function parseGitConfigWithGit(text: string): Map<string, string[]> | null {
+  let dir = "";
+  try {
+    dir = mkdtempSync(join(tmpdir(), "clover-gitcfg-"));
+    const f = join(dir, "config");
+    writeFileSync(f, text, { mode: 0o600 });
+    const r = spawnSync("git", ["config", "--file", f, "--list", "-z", "--no-includes"], { encoding: "buffer", timeout: 10_000 });
+    if (r.status !== 0 || r.error) return null;
+    const m = new Map<string, string[]>();
+    for (const rec of (r.stdout as Buffer).toString("utf8").split("\0")) {
+      if (rec === "") continue;
+      const nl = rec.indexOf("\n");
+      if (nl < 0) return null; // not git's shape: fall back
+      const key = rec.slice(0, nl);
+      const value = rec.slice(nl + 1);
+      const s = splitDotted(key);
+      if (!watched(s, value)) continue;
+      const dotted = s.sub === null ? `${s.section}.${s.name}` : `${s.section}.${s.sub}.${s.name}`;
+      const arr = m.get(dotted) ?? [];
+      arr.push(value);
+      m.set(dotted, arr);
+    }
+    return m;
+  } catch { return null; }
+  finally { if (dir !== "") { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } } }
+}
+
 /** Which watched keys were added, changed or removed. A removed plain alias doesn't count (removing it only
- *  disarms it); everything else does. */
+ *  disarms it); everything else does. Parsed through git, with the built-in parser as fallback. */
 export function watchedGitChanges(before: string | null, after: string | null): WatchedGitChange[] {
   if (before === after) return [];
   const at = (text: string | null): Map<string, string[]> => {
+    if (text === null) return new Map();
+    const viaGit = parseGitConfigWithGit(text);
+    if (viaGit !== null) return viaGit;
     const m = new Map<string, string[]>();
-    if (text === null) return m;
     for (const k of parseGitConfigWatched(text)) {
       const s = splitDotted(k.dotted);
       if (!watched(s, k.value)) continue;

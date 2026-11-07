@@ -3,7 +3,7 @@ import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, realpathSync, r
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, splitComps, supervisorArch, trapTable, walkToParent, type SupervisorLib } from "../../src/fence/linux-supervisor";
-import { parseGitConfigWatched, revertWatchedGitChanges, watchedGitChanges } from "../../src/fence/git-config";
+import { parseGitConfigWatched, parseGitConfigWithGit, revertWatchedGitChanges, watchedGitChanges } from "../../src/fence/git-config";
 
 describe("the supervisor's filter and decisions", () => {
   test("no supervisor off x86-64 and arm64; the filter traps the path syscalls and allows the rest", () => {
@@ -232,5 +232,16 @@ describe("the git-config guard", () => {
     expect(revertWatchedGitChanges(plain, watchedGitChanges(before, plain))).toBe(plain);
     // Nothing watched: byte-identical.
     expect(revertWatchedGitChanges(before, [])).toBe(before);
+  });
+
+  test("git itself parses the configs: case, quotes and subsections canonicalize the same way", () => {
+    const parsed = parseGitConfigWithGit(["[CORE]", "\tHooksPath = /tmp/evil", '[filter "lfs"]', "\tclean = x"].join("\n"));
+    expect(parsed?.get("core.hookspath")).toEqual(["/tmp/evil"]);
+    expect(parsed?.get("filter.lfs.clean")).toEqual(["x"]);
+    // Malformed files fall back to the built-in parser (null here).
+    expect(parseGitConfigWithGit("[core]\n\tok = 1\n[bad\n")).toBeNull();
+    // Detection through git: an uppercase section and a quoted !-alias both count.
+    const changes = watchedGitChanges("[CORE]\n\tpager = less\n", "[CORE]\n\tpager = less\n[core]\n\thooksPath = /tmp/evil\n[alias]\n\tzap = \"!rm -rf ~\"\n");
+    expect(changes.map((c) => c.dotted).sort()).toEqual(["alias.zap", "core.hookspath"]);
   });
 });
