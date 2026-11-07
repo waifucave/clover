@@ -1334,7 +1334,6 @@ async function smoke(): Promise<void> {
               const centerX = Math.round(offsetX + buttonRect.x + buttonRect.width / 2);
               const centerY = Math.round(offsetY + buttonRect.y + buttonRect.height / 2);
               log(`sealed-click: button rect=${buttonRect.x},${buttonRect.y} ${buttonRect.width}x${buttonRect.height} offset=${offsetX},${offsetY}`);
-              const press = (kind: "Down" | "Up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
               log(`sealed-click: press sent at ${centerX},${centerY}`);
               const hit = await win.webContents.executeJavaScript(
                 `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 5).map((el) => { const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.slice(0, 60) : (el.className !== undefined ? String(el.className).slice(0, 40) : null); const r = el.getBoundingClientRect(); const pe = getComputedStyle(el).pointerEvents; return { tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), pe }; })); })()`, true).catch(() => null) as string | null;
@@ -1350,16 +1349,26 @@ async function smoke(): Promise<void> {
               }
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
-              // Hover first so the input router establishes the target before the press (OOPIF subframes).
-              void win.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
+              // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
+              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted.
+              let cdp = false;
+              try {
+                if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
+                cdp = win.webContents.debugger.isAttached();
+              } catch { /* fall back to sendInputEvent */ }
+              const dispatch = cdp
+                ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+                : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+              log(`sealed-click: input via ${cdp ? "cdp" : "sendInputEvent"}`);
+              await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
-              press("Down");
-              press("Up");
+              await dispatch("mousePressed");
+              await dispatch("mouseReleased");
               if (doubleClick === true) {
                 // A second press while the first answer is still in flight must not land (should-fix 3).
                 await new Promise((r) => setTimeout(r, 300));
-                press("Down");
-                press("Up");
+                await dispatch("mousePressed");
+                await dispatch("mouseReleased");
               }
               sealedClicked = true;
               await new Promise((r) => setTimeout(r, 1000));
@@ -1404,16 +1413,26 @@ async function smoke(): Promise<void> {
           await frame.executeJavaScript(`(() => { window.__fbEvents = []; for (const t of ["pointerover", "pointerdown", "click"]) document.addEventListener(t, (e) => window.__fbEvents.push([t, Math.round(e.clientX), Math.round(e.clientY), e.isTrusted, e.target instanceof Element ? (e.target.closest(".seal-button") !== null ? "button" : e.target.tagName) : "?"]), true); })()`, true).catch(() => null);
           // The fallback's own gates: the pointer must enter after the window shows, and a second after it shows.
           // Move there first so pointerover fires, wait out the 1 s, then press. A second move right before the
-          // press covers a first one lost while the page still loaded.
-          void w.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
+          // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
+          // does not reach the page here.
+          let fbCdp = false;
+          try {
+            if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
+            fbCdp = w.webContents.debugger.isAttached();
+          } catch { /* fall back to sendInputEvent */ }
+          const fbDispatch = fbCdp
+            ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+            : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+          log(`sealed-click: fallback input via ${fbCdp ? "cdp" : "sendInputEvent"}`);
+          await fbDispatch("mouseMoved");
           await new Promise((r) => setTimeout(r, 1300));
           if (w.isDestroyed()) break;
           log(`sealed-click: fallback press sent at ${centerX},${centerY}`);
-          void w.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
+          await fbDispatch("mouseMoved");
           await new Promise((r) => setTimeout(r, 120));
           if (w.isDestroyed()) break;
-          void w.webContents.sendInputEvent({ type: "mouseDown", x: centerX, y: centerY, button: "left" });
-          void w.webContents.sendInputEvent({ type: "mouseUp", x: centerX, y: centerY, button: "left" });
+          await fbDispatch("mousePressed");
+          await fbDispatch("mouseReleased");
           sealedClicked = true;
           await new Promise((r) => setTimeout(r, 1000));
           const fbAfter = await frame.executeJavaScript(
