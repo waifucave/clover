@@ -91,17 +91,17 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     // Minted URLs are `clover-sealed://card/<cardId>/<element>?token=…` (parts and the fallback alike); the token's
     // single use is the real gate.
     if (url.host !== "card") {
-      log(`sealed: refusing ${request.url.slice(0, 80)} (bad host)`);
+      log(`sealed: refusing a sealed load (bad host)`);
       return notFound();
     }
     const token = url.searchParams.get("token");
     if (token === null || token === "" || token.length > 128) {
-      log(`sealed: refusing ${request.url.slice(0, 80)} (bad token)`);
+      log(`sealed: refusing a sealed load (bad token)`);
       return forbidden();
     }
     const serving = runtime.serveSeal(token);
     if (serving === undefined) {
-      log(`sealed: refusing token ${token.slice(0, 16)}… (no channel)`);
+      log(`sealed: refusing a sealed load (no channel)`);
       return forbidden();
     }
     return new Response(serving.html, { headers: serving.headers });

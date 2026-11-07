@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
-import { appShortcut } from "../src/main/shortcuts";
+import { appShortcut, sealedInputAllowed } from "../src/main/shortcuts";
 import { mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
@@ -142,6 +142,15 @@ describe("the app's shortcuts", () => {
     expect(appShortcut(key("w", { meta: true, shift: true }), "darwin")).toBeUndefined();
     expect(appShortcut(key("q", { meta: true, alt: true }), "darwin")).toBeUndefined();
     expect(appShortcut({ ...key("q", { meta: true }), type: "keyUp" }, "darwin")).toBeUndefined();
+  });
+
+  test("the smoke run's real input is test-only: a packaged app ignores the smoke's presses", () => {
+    // Both click paths ask first: packaged, with or without headless, never attaches the debugger.
+    expect(sealedInputAllowed({ packaged: true, headless: true })).toBe(false);
+    expect(sealedInputAllowed({ packaged: true, headless: false })).toBe(false);
+    // Unpackaged alone isn't enough either: the smoke run is always headless.
+    expect(sealedInputAllowed({ packaged: false, headless: false })).toBe(false);
+    expect(sealedInputAllowed({ packaged: false, headless: true })).toBe(true);
   });
 });
 

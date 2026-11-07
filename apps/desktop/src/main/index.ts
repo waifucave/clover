@@ -33,7 +33,7 @@ import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
-import { appShortcut } from "./shortcuts";
+import { appShortcut, sealedInputAllowed } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
@@ -1243,7 +1243,8 @@ async function smoke(): Promise<void> {
             (cardId === undefined || f.url.includes(cardId)) &&
             (element === undefined || f.url.includes(element) || (element !== undefined && f.url.includes(encodeURIComponent(element)))));
           if (frame !== undefined) {
-            log(`sealed-click: frame found ${frame.url.slice(0, 80)}`);
+            // URLs carry single-use tokens (?token=, ?mount=): the logs keep origin and path only, never the token.
+            log(`sealed-click: frame found ${frame.url.split("?")[0]!.slice(0, 80)}`);
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
             if (cover === true) {
               await frame.executeJavaScript(`(() => {
@@ -1297,7 +1298,7 @@ async function smoke(): Promise<void> {
                 const want = ${JSON.stringify(token)};
                 const baseWant = ${JSON.stringify(base)};
                 const frames = [...document.querySelectorAll('iframe')];
-                const all = frames.map((f) => ({ src: f.src.slice(0, 80), x: Math.round(f.getBoundingClientRect().x), y: Math.round(f.getBoundingClientRect().y) }));
+                const all = frames.map((f) => ({ src: f.src.split("?")[0].slice(0, 80), x: Math.round(f.getBoundingClientRect().x), y: Math.round(f.getBoundingClientRect().y) }));
                 let el = frames.find((f) => f.src.includes(want));
                 if (!el && baseWant !== "") el = frames.find((f) => f.src.includes(baseWant));
                 if (!el) return { found: null, all };
@@ -1311,7 +1312,7 @@ async function smoke(): Promise<void> {
               offsetX += rect.x;
               offsetY += rect.y;
             }
-            if (!chainOk) log(`sealed-click: no offset chain for ${frame.url.slice(0, 80)}`);
+            if (!chainOk) log(`sealed-click: no offset chain for ${frame.url.split("?")[0]!.slice(0, 80)}`);
             // Report how the label renders, so the markup case proves text, not HTML (check 3).
             const labelRaw = await frame.executeJavaScript(
               `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null, sealed: typeof window.cloverSealed, btn: typeof document.querySelector('.seal-button') }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
@@ -1325,12 +1326,12 @@ async function smoke(): Promise<void> {
               log(`sealed-click: button rect=${buttonRect.x},${buttonRect.y} ${buttonRect.width}x${buttonRect.height} offset=${offsetX},${offsetY}`);
               log(`sealed-click: press sent at ${centerX},${centerY}`);
               const hit = await win.webContents.executeJavaScript(
-                `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 5).map((el) => { const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.slice(0, 60) : (el.className !== undefined ? String(el.className).slice(0, 40) : null); const r = el.getBoundingClientRect(); const pe = getComputedStyle(el).pointerEvents; return { tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), pe }; })); })()`, true).catch(() => null) as string | null;
+                `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 5).map((el) => { const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.split("?")[0].slice(0, 60) : (el.className !== undefined ? String(el.className).slice(0, 40) : null); const r = el.getBoundingClientRect(); const pe = getComputedStyle(el).pointerEvents; return { tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), pe }; })); })()`, true).catch(() => null) as string | null;
               log(`sealed-click: root hit-test: ${String(hit ?? "failed").slice(0, 600)}`);
               const cloverFrame = win.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("clover-plugin://clover/"));
               if (cloverFrame !== undefined) {
                 const cloverHit = await cloverFrame.executeJavaScript(
-                  `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 4).map((el) => ({ tag: el.tagName, src: el.tagName === "IFRAME" ? el.src.slice(0, 60) : null }))); })()`, true).catch(() => null) as string | null;
+                  `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 4).map((el) => ({ tag: el.tagName, src: el.tagName === "IFRAME" ? el.src.split("?")[0].slice(0, 60) : null }))); })()`, true).catch(() => null) as string | null;
                 log(`sealed-click: clover hit-test: ${String(cloverHit ?? "failed").slice(0, 400)}`);
                 await cloverFrame.executeJavaScript(`(() => { window.__cloverPresses = []; document.addEventListener('pointerdown', (e) => window.__cloverPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
                 const cloverPe = await cloverFrame.executeJavaScript(`(() => { const f = document.querySelector('iframe'); return f ? getComputedStyle(f).pointerEvents : "no-iframe"; })()`, true).catch(() => null) as string | null;
@@ -1339,16 +1340,22 @@ async function smoke(): Promise<void> {
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
-              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted.
+              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. Test-only
+              // on every axis (B1): a packaged app never attaches the debugger, whatever env vars it started with.
+              const inputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
               let cdp = false;
-              try {
-                if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
-                cdp = win.webContents.debugger.isAttached();
-              } catch { /* fall back to sendInputEvent */ }
-              const dispatch = cdp
-                ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
-                : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
-              log(`sealed-click: input via ${cdp ? "cdp" : "sendInputEvent"}`);
+              if (inputAllowed) {
+                try {
+                  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
+                  cdp = win.webContents.debugger.isAttached();
+                } catch { /* fall back to sendInputEvent */ }
+              }
+              const dispatch = !inputAllowed
+                ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
+                : cdp
+                  ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+                  : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+              log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
               await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
               await dispatch("mousePressed");
@@ -1394,7 +1401,7 @@ async function smoke(): Promise<void> {
       for (const w of BrowserWindow.getAllWindows()) {
         if (w === win || w.isDestroyed()) continue;
         if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
-        log(`sealed-click: fallback frame found ${w.webContents.getURL().slice(0, 80)}`);
+        log(`sealed-click: fallback frame found ${w.webContents.getURL().split("?")[0]!.slice(0, 80)}`);
         const frame = w.webContents.mainFrame;
         const fallbackRaw = await frame.executeJavaScript(
           `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
@@ -1408,16 +1415,22 @@ async function smoke(): Promise<void> {
           // The fallback's own gates: the pointer must enter after the window shows, and a second after it shows.
           // Move there first so pointerover fires, wait out the 1 s, then press. A second move right before the
           // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
-          // does not reach the page here.
+          // does not reach the page here. Test-only on every axis (B1): a packaged app never attaches the debugger,
+          // whatever env vars it started with.
+          const fbInputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
           let fbCdp = false;
-          try {
-            if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
-            fbCdp = w.webContents.debugger.isAttached();
-          } catch { /* fall back to sendInputEvent */ }
-          const fbDispatch = fbCdp
-            ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
-            : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
-          log(`sealed-click: fallback input via ${fbCdp ? "cdp" : "sendInputEvent"}`);
+          if (fbInputAllowed) {
+            try {
+              if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
+              fbCdp = w.webContents.debugger.isAttached();
+            } catch { /* fall back to sendInputEvent */ }
+          }
+          const fbDispatch = !fbInputAllowed
+            ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
+            : fbCdp
+              ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+              : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+          log(`sealed-click: fallback input via ${!fbInputAllowed ? "refused" : fbCdp ? "cdp" : "sendInputEvent"}`);
           await fbDispatch("mouseMoved");
           await new Promise((r) => setTimeout(r, 1300));
           if (w.isDestroyed()) break;
