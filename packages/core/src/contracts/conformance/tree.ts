@@ -12,11 +12,12 @@ import {
 } from "@waifucave/clover-protocol";
 import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
+import { MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
-import { splitTreePath, transferBinding, transferChange, treeCallBinding, type TreeWatchEvent } from "../tree";
+import { RESERVED_COMPUTER_NAMES, isReservedComputerName, memoryTreeRest, splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -76,6 +77,8 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       },
       botComputer: () => undefined,
       devices: registry,
+      // Each holder keeps its own ledger of used answers (R15: one answer counts once at each end).
+      ledgers: { Studio: new MemoryAnswerLedger(), Laptop1: new MemoryAnswerLedger() },
       render,
     });
     const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
@@ -94,6 +97,21 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
   }
 
   describe("Tree", () => {
+    test("home/memory/ names the caller's bot's memory, and no computer may be called memory", () => {
+      expect(memoryTreeRest("home/memory/MEMORY.md")).toBe("MEMORY.md");
+      expect(memoryTreeRest("home/memory")).toBe("");
+      expect(memoryTreeRest("home/Studio/memory/x")).toBeUndefined();
+      expect(memoryTreeRest("home/memory/../settings")).toBeUndefined();
+      expect(RESERVED_COMPUTER_NAMES).toContain("memory");
+      expect(memoryTreeRest("home/Memory/MEMORY.md")).toBe("MEMORY.md");
+      expect(memoryTreeRest("home/MEMORY")).toBe("");
+      expect([isReservedComputerName("Memory"), isReservedComputerName("Studio")]).toEqual([true, false]);
+    });
+
+    // Lane J builds home/memory/ (synced, H): it resolves for the caller's bot, and only that bot's main conversation and
+    // side threads read or write it; until then the case runs as todo.
+    test.todo("home/memory/ resolves to the caller's bot's memory, synced, and only its own sessions reach it");
+
     test("home/<Computer>/ is that computer's home; bots/<bot>/ is on the computer running the bot", () => {
       const { tree, moveAlpha } = setup();
       expect(tree.resolve("home/Laptop1/project/run.py")).toEqual({ computer: "Laptop1", path: "/home/me/project/run.py", area: "home" });
@@ -232,7 +250,7 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
     });
 
-    pendingOr("r15")("R15: a peer's move between computers is one call that one card binds at both ends (#179's review, F2)", async () => {
+    pendingOr("r15")("R15: a peer's move between computers is one answer both ends check against `transferBinding`'s card (`bindsComputer`), with their own ledgers; a swapped one moves nothing (`transferEndsHold`)", async () => {
       const { sha256, tree, PEER, answer, code } = await peerSetup();
       await tree.write("home/Laptop1/old.log", utf8("x"), { as: USER });
       // Studio asks for risky actions; each holder checks the one answer against its own card, with its own ledger.
@@ -245,6 +263,13 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect(await tree.stat("home/Studio/old.log", { as: USER })).not.toBeNull();
       await tree.move("home/Studio/old.log", "home/Laptop1/old.log", { as: USER });
       expect(await code(move())).toBe("refused"); // used, at both ends
+      // An answer for a transfer between the computers the other way round moves nothing (#179's review, check 2).
+      const swapped = transferChange(true, "home/Laptop1/old.log", "home/Studio/old.log", "Studio", "Laptop1");
+      expect(transferEndsHold(swapped.params as TreeTransferParams, (p) => tree.resolve(p))).toBe(false);
+      expect(transferEndsHold(t.params as TreeTransferParams, (p) => tree.resolve(p))).toBe(true);
+      one = await answer("Studio", swapped.method, swapped.params, "Move home/Laptop1/old.log to home/Studio/old.log", transferBinding(swapped.params as TreeTransferParams, sha256));
+      expect(await code(move())).toBe("refused");
+      expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
     });
 
     pendingOr("r1")("at ask-risky the holder's own reviewer judges a peer's change: safe runs, risky needs a bound answer (ruling R1)", async () => {

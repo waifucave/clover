@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
 import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
@@ -1631,6 +1631,382 @@ async function runDaemonStart(): Promise<void> {
   process.exitCode = 1;
 }
 
+/** `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+ *  `setup` is idempotent, `remove` exits 0 when nothing is left, `status` never elevates. Exits 0
+ *  on done, 2 when not elevated, 3 on a launcher hash mismatch (both fail closed). */
+async function runSandboxCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  const {
+    SANDBOX_EXIT,
+    srtWinPath,
+    srtWinArch,
+    launcherProblem,
+    setupArgs,
+    removeArgs,
+    statusArgs,
+    userStatusArgs,
+    sandboxPool,
+    parseSrtStatus,
+    setupExitMessage,
+    NET_SESSION_PROBE,
+    currentUserSid,
+    protectedCopyPath,
+    isProtectedCopy,
+    installerTargetSid,
+    warmUpArgs,
+    profileQueryArgs,
+    parseProfileImagePath,
+    startupFolders,
+    mkdirArgs,
+    removeDirArgs,
+    claimDirArgs,
+    icaclsDenyArgs,
+    icaclsRemoveDenyArgs,
+    setDescriptionArgs,
+    getDescriptionArgs,
+    descriptionMatches,
+    profileLaunchCheck,
+    isTemporaryProfile,
+    knownFolderArgs,
+    installMarkerPath,
+    formatInstallMarker,
+    parseInstallMarker,
+    markerAllowsSetup,
+    markerAllowsRemove,
+    minimalChildEnv,
+  } = await import("@waifucave/clover-core");
+  const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
+  if (process.platform !== "win32") {
+    console.error("sandbox setup runs on Windows only");
+    process.exitCode = 1;
+    return;
+  }
+  const fromProtected = await isProtectedCopy();
+  // The installer target: our own protected-copy path names the user we serve (should-fix). The live
+  // token and the environment may name the elevating administrator instead — never use them for identity.
+  const targetSid = installerTargetSid();
+  const arch = srtWinArch();
+  const childEnv = minimalChildEnv();
+  const run = async (argv: readonly string[]): Promise<{ code: number; out: string }> => {
+    try {
+      const proc = Bun.spawn([...argv], { stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true, env: childEnv });
+      const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      return { code: await proc.exited, out: out + err };
+    } catch (e) {
+      return { code: 1, out: (e as Error).message };
+    }
+  };
+  // A known folder without environment variables (should-fix).
+  const knownFolder = async (kind: "System" | "CommonStartup" | "CommonApplicationData"): Promise<string | null> => {
+    const r = await run([...knownFolderArgs(kind)]);
+    const v = r.out.trim();
+    return r.code === 0 && v !== "" ? v : null;
+  };
+  // A pool member's live SID, from `srt-win user status --user`.
+  const memberSid = async (launcherPath: string, principal: string): Promise<{ exists: boolean; sid: string | null }> => {
+    const r = await run([...userStatusArgs(launcherPath, principal)]);
+    if (r.code !== 0) return { exists: false, sid: null };
+    try {
+      const u = (JSON.parse(r.out) as { user?: { exists?: unknown; user?: { exists?: unknown; sid?: unknown }; sid?: unknown } }).user;
+      const inner = u?.user && typeof u.user === "object" ? (u.user as { exists?: unknown; sid?: unknown }) : undefined;
+      const exists = (inner?.exists ?? u?.exists) === true;
+      const sid = typeof inner?.sid === "string" ? inner.sid : (typeof u?.sid === "string" ? u.sid : null);
+      return { exists, sid };
+    } catch {
+      return { exists: false, sid: null };
+    }
+  };
+  // A principal's profile root by SID, or null when it cannot be resolved.
+  const memberProfile = async (principalSid: string): Promise<string | null> => {
+    const reg = await run([...profileQueryArgs(principalSid)]);
+    if (reg.code !== 0) return null;
+    return parseProfileImagePath(reg.out);
+  };
+  switch (sub ?? "status") {
+    case "setup": {
+      const elevated = (await run([...NET_SESSION_PROBE])).code === 0;
+      if (!elevated) {
+        console.error("sandbox setup needs elevation; run it as administrator");
+        process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
+        return;
+      }
+      // setup and remove run from the installer's protected copy (Addendum 8): the per-user install
+      // folder is user-writable, so running from there could launch a swapped binary (TOCTOU).
+      if (!fromProtected || targetSid === null) {
+        console.error("sandbox setup runs from the protected copy %ProgramFiles%\\Clover Sandbox\\<your SID>\\clover-core.exe (lane M's installer puts it there)");
+        process.exitCode = 1;
+        return;
+      }
+      const ownerSid = targetSid;
+      const pool = sandboxPool(ownerSid);
+      const launcher = srtWinPath();
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
+        console.error(`sandbox setup refused: ${problem}`);
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      const programData = await knownFolder("CommonApplicationData");
+      if (programData === null) {
+        console.error("sandbox setup: could not resolve ProgramData");
+        process.exitCode = 1;
+        return;
+      }
+      // Cross-owner force is refused: another user's install is theirs to remove (ruling 3).
+      const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+      const { dirname, join } = await import("node:path");
+      // Claim the markers home for admins (should-fix, like lane M's protected copy): a folder
+      // owned by a non-admin fails setup closed instead of inheriting a squatted DACL.
+      const markersRoot = join(programData, "Clover Sandbox");
+      for (const dir of [markersRoot, join(markersRoot, "markers")]) {
+        const claim = await run([...claimDirArgs(dir)]);
+        if (claim.code !== 0) {
+          const lines = claim.out.split(/\r?\n/).filter((l) => /refusing state dir|Access is denied|denied/i.test(l));
+          const why = (lines.length > 0 ? lines.join(" ") : claim.out.trim()).slice(0, 500);
+          console.error(`sandbox setup refused: cannot secure ${dir}${why ? `\n${why}` : ""}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
+      const markerFile = installMarkerPath(programData, ownerSid);
+      const existing = await readFile(markerFile, "utf8").then((t) => parseInstallMarker(t), () => null);
+      const gate = markerAllowsSetup(existing, ownerSid);
+      if (!gate.ok) {
+        console.error(`sandbox setup refused: ${gate.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      const force = rest.includes("--force");
+      const systemDir = await knownFolder("System");
+      if (systemDir === null) {
+        console.error("sandbox setup: could not resolve the System folder");
+        process.exitCode = 1;
+        return;
+      }
+      const systemRoot = dirname(systemDir);
+      // Profile paths come from ProfileList, never from the environment (should-fix): the elevated
+      // token and its env may name the elevating administrator instead of the installer target.
+      const ownerReg = await run([...profileQueryArgs(ownerSid)]);
+      const realUserProfile = ownerReg.code === 0 ? parseProfileImagePath(ownerReg.out) : null;
+      const commonStartup = await knownFolder("CommonStartup");
+      if (realUserProfile === null || commonStartup === null) {
+        console.error("sandbox setup: could not resolve the user or common Startup folder");
+        process.exitCode = 1;
+        return;
+      }
+      // One install per pool member: each principal gets its own account, WFP filters (per-slot
+      // sublayer), warm-up logon, resolved profile and locked-down Startup folders.
+      const members: { principal: string; principalSid: string; sublayer: string }[] = [];
+      let failed = false;
+      for (const slot of pool) {
+        const { principal, sublayer } = slot;
+        const fail = (msg: string) => { console.error(`sandbox setup: ${principal}: ${msg}`); process.exitCode = 1; failed = true; };
+        const { code, out } = await run([...setupArgs(launcher, sublayer, principal, ownerSid), ...(force ? ["--force"] : [])]);
+        const message = setupExitMessage(code);
+        if (message !== null) { fail(`${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`); break; }
+        // Finish the profile work in the same call (brief item 5): stamp the owner SID, warm up
+        // (first logon creates the profile), resolve by SID, lock down Startup.
+        const stamp = await run([...setDescriptionArgs(principal, ownerSid)]);
+        if (stamp.code !== 0) { fail(`stamping the owner SID failed (exit ${stamp.code})${stamp.out.trim() ? `\n${stamp.out.trim().slice(0, 2000)}` : ""}`); break; }
+        const warm = await run([...warmUpArgs({ launcher, systemRoot })]);
+        if (warm.code !== 0) { fail(`the first logon failed (exit ${warm.code})${warm.out.trim() ? `\n${warm.out.trim().slice(0, 2000)}` : ""}`); break; }
+        const { sid: principalSid } = await memberSid(launcher, principal);
+        if (principalSid === null) { fail("the principal's SID isn't reported; set up again"); break; }
+        const profileRoot = await memberProfile(principalSid);
+        const check = profileLaunchCheck(profileRoot === null ? null : { sid: principalSid, path: profileRoot });
+        if (!check.ok) { fail(`${check.reason}; set up again`); break; }
+        const allStartups = startupFolders({ profileRoot: profileRoot!, realUserProfile, commonStartup });
+        const startups = realUserProfile !== profileRoot ? allStartups : [allStartups[0]!, allStartups[2]!];
+        for (const path of startups) {
+          const made = await run([...mkdirArgs(path)]);
+          if (made.code !== 0) { fail(`creating ${path} failed (exit ${made.code})${made.out.trim() ? `\n${made.out.trim().slice(0, 2000)}` : ""}`); break; }
+        }
+        if (failed) break;
+        for (const path of startups) {
+          const deny = await run([...icaclsDenyArgs(path, principalSid)]);
+          if (deny.code !== 0) { fail(`denying ${path} failed (exit ${deny.code})${deny.out.trim() ? `\n${deny.out.trim().slice(0, 2000)}` : ""}`); break; }
+        }
+        if (failed) break;
+        members.push({ principal, principalSid, sublayer });
+      }
+      if (failed) return;
+      // Record this install for the next setup/remove (ruling 3): owner plus every pool member.
+      await mkdir(dirname(markerFile), { recursive: true });
+      await writeFile(markerFile, formatInstallMarker({ version: 2, ownerSid, members }), "utf8");
+      console.log("Bash is set up under Clover's fence");
+      return;
+    }
+    case "remove": {
+      const elevated = (await run([...NET_SESSION_PROBE])).code === 0;
+      if (!elevated) {
+        console.error("sandbox remove needs elevation; run it as administrator");
+        process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
+        return;
+      }
+      if (!fromProtected || targetSid === null) {
+        console.error("sandbox remove runs from the protected copy %ProgramFiles%\\Clover Sandbox\\<your SID>\\clover-core.exe (lane M's installer puts it there)");
+        process.exitCode = 1;
+        return;
+      }
+      const ownerSid = targetSid;
+      const pool = sandboxPool(ownerSid);
+      const launcher = srtWinPath();
+      // Remove uninstalls each pool member's principal and WFP filters. Deleting the protected-copy
+      // folder itself belongs to the installer, which removes it after `remove` exits 0 (Addendum 8).
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
+        // Refuse only if something is actually installed: probe every pool member.
+        let anyPresent = false;
+        for (const slot of pool) {
+          if ((await run(["net", "user", slot.principal])).code === 0) { anyPresent = true; break; }
+        }
+        if (!anyPresent) {
+          console.log("Bash's fence is removed");
+          return;
+        }
+        console.error(`sandbox remove refused: a principal exists but ${problem}`);
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      {
+        // Ownership first (Addendum 9 + ruling 3): the marker must belong to this user, and each live
+        // principal's description must name this user. A hash collision can never remove another
+        // user's principal.
+        const programData = await knownFolder("CommonApplicationData");
+        if (programData === null) {
+          console.error("sandbox remove: could not resolve ProgramData");
+          process.exitCode = 1;
+          return;
+        }
+        const { readFile, unlink } = await import("node:fs/promises");
+        const markerFile = installMarkerPath(programData, ownerSid);
+        const marker = await readFile(markerFile, "utf8").then((t) => parseInstallMarker(t), () => null);
+        const gate = markerAllowsRemove(marker, ownerSid);
+        if (!gate.ok) {
+          console.error(`sandbox remove refused: ${gate.reason}`);
+          process.exitCode = 1;
+          return;
+        }
+        const ownerReg = await run([...profileQueryArgs(ownerSid)]);
+        const realUserProfile = ownerReg.code === 0 ? parseProfileImagePath(ownerReg.out) : null;
+        const commonStartup = await knownFolder("CommonStartup");
+        let failed = false;
+        const fail = (msg: string) => { console.error(`sandbox remove: ${msg}`); process.exitCode = 1; failed = true; };
+        for (const slot of pool) {
+          const { principal, sublayer } = slot;
+          const { exists: principalExists, sid: liveSid } = await memberSid(launcher, principal);
+          const principalSid = liveSid ?? marker?.members.find((m) => m.principal === principal)?.principalSid ?? null;
+          if (principalExists) {
+            const desc = await run([...getDescriptionArgs(principal)]);
+            if (!(desc.code === 0 && descriptionMatches(desc.out, ownerSid))) {
+              fail(`${principal} belongs to another user`); break;
+            }
+          }
+          // The profile for the reset below, resolved before the uninstall.
+          const profileRoot = principalSid !== null ? await memberProfile(principalSid) : null;
+          // Full remove (principal + filters) for this member.
+          const { code, out } = await run([...removeArgs(launcher, sublayer, principal)]);
+          if (code !== 0) {
+            fail(`${principal}: remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`); break;
+          }
+          // Undo what setup did outside srt-win (best effort: the uninstall already took the account).
+          // A temporary profile is shared and keyless: never delete it or its (absent) key.
+          if (profileRoot !== null && principalSid !== null && !isTemporaryProfile(profileRoot)) {
+            await run(["reg", "unload", `HKU\\${principalSid}`]);
+            await run(["reg", "delete", `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${principalSid}`, "/f"]);
+            await run([...removeDirArgs(profileRoot)]);
+            if (realUserProfile !== null && commonStartup !== null) {
+              const startups = startupFolders({ profileRoot, realUserProfile, commonStartup });
+              for (const path of startups) await run([...icaclsRemoveDenyArgs(path, principalSid)]);
+            }
+          }
+        }
+        if (failed) return;
+        await unlink(markerFile).catch(() => {});
+        console.log("Bash's fence is removed");
+        return;
+      }
+    }
+    case "status": {
+      // status works from either location; the launcher is the protected copy's when we run from there,
+      // else the copy the installer recorded for this user (missing copy reads as missing launcher).
+      const protectedPath = fromProtected ? process.execPath : await protectedCopyPath();
+      const launcher = srtWinPath(fromProtected ? undefined : protectedPath);
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
+        if (rest.includes("--json")) console.log(JSON.stringify({ ready: false, reason: "launcher-missing-or-unpinned" }));
+        else console.log("Bash isn't set up under Clover's fence: the launcher is missing or unpinned");
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      const ownerSid = targetSid ?? currentUserSid();
+      if (ownerSid === null) {
+        console.error("sandbox status: could not read the current user SID");
+        process.exitCode = 1;
+        return;
+      }
+      // Every pool member reports: per-principal user status plus its slot's WFP filters.
+      const pool = sandboxPool(ownerSid);
+      const members: { principal: string; ready: boolean; reason: string | null }[] = [];
+      let firstUser: unknown = null;
+      for (const slot of pool) {
+        const ust = await run([...userStatusArgs(launcher, slot.principal)]);
+        if (ust.code !== 0) {
+          members.push({ principal: slot.principal, ready: false, reason: `user status failed (exit ${ust.code})` });
+          continue;
+        }
+        let user: unknown = null;
+        let wfp: unknown = null;
+        try {
+          user = JSON.parse(ust.out);
+        } catch { /* not ready below */ }
+        const st = await run([...statusArgs(launcher, slot.sublayer)]);
+        if (st.code === 0) {
+          try {
+            wfp = (JSON.parse(st.out) as { wfp?: unknown }).wfp ?? null;
+          } catch { /* not ready below */ }
+        }
+        if (members.length === 0) firstUser = user;
+        const merged = JSON.stringify({ user, wfp });
+        const base = parseSrtStatus(merged, { launcher, arch });
+        // The owner-SID check (Addendum 9): the principal's description must name this user.
+        let owned: boolean | null = null;
+        if (base.user?.exists === true) {
+          const desc = await run([...getDescriptionArgs(slot.principal)]);
+          owned = desc.code === 0 && descriptionMatches(desc.out, ownerSid);
+        }
+        // The profile check (brief item 7): resolve by SID, fail closed on missing or temporary.
+        const principalSid = base.user?.sid ?? null;
+        let profile: { sid: string; path: string } | null = null;
+        if (principalSid !== null) {
+          const root = await memberProfile(principalSid);
+          if (root !== null) profile = { sid: principalSid, path: root };
+        }
+        let verdict = base;
+        if (base.ready) {
+          if (owned === false) {
+            verdict = { ...base, ready: false, reason: `${slot.principal} belongs to another user; set it up again`, exit: SANDBOX_EXIT.FAILED };
+          } else {
+            verdict = parseSrtStatus(merged, { launcher, arch, profile, profileChecked: true });
+          }
+        }
+        members.push({ principal: slot.principal, ready: verdict.ready, reason: verdict.reason });
+      }
+      const ready = members.length === pool.length && members.every((m) => m.ready);
+      const reason = ready ? null : (members.find((m) => !m.ready)?.reason ?? "a pool member isn't set up");
+      process.exitCode = ready ? SANDBOX_EXIT.OK : SANDBOX_EXIT.FAILED;
+      if (rest.includes("--json")) {
+        console.log(JSON.stringify({ ready, reason, user: firstUser, members }));
+        return;
+      }
+      console.log(ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${reason ?? "unknown"}`);
+      return;
+    }
+    default:
+      console.error(usage);
+      process.exitCode = 1;
+  }
+}
+
 /** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
 async function runSupervise(): Promise<void> {
   const bin = process.execPath;
@@ -1893,6 +2269,14 @@ if (import.meta.main) {
     // clean stop (a Quit) ends the loop so the crash-only OS unit does not bring it back.
     await runSupervise();
     process.exit(0);
+    break;
+  }
+  case "sandbox": {
+    // `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+    // Lane M's per-user NSIS installer runs `setup` via runas at install; the app's Set up Bash
+    // action runs the same command. Exit codes: 0 done, 2 not elevated, 3 launcher hash mismatch.
+    await runSandboxCommand(sub, process.argv.slice(4));
+    process.exit(process.exitCode ?? 0);
     break;
   }
   case "daemon run": {
@@ -2481,6 +2865,13 @@ if (import.meta.main) {
         positionals.push(tok);
       }
       return { positionals, scopeRaw };
+    }
+
+    if (sub === "validate") {
+      const { runPluginValidate } = await import("./plugin-validate-cli");
+      const run = await runPluginValidate(rest);
+      (run.code === 2 ? console.error : console.log)(run.output);
+      process.exit(run.code);
     }
 
     if (sub === "marketplace") {
@@ -3496,6 +3887,7 @@ if (import.meta.main) {
   trust <dir> [--list] | trust list | trust remove <path>
   skills                                          list discovered skills for this directory
   mcp                                              list configured MCP servers and their tools
+  plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>

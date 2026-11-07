@@ -265,8 +265,8 @@ export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: Fence
   return item.bot !== undefined && reachesMemoryFolder(item.bot.replace("/", "--"), ctx, os);
 }
 
-/** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). */
-const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
+/** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). Exported for the OS sandboxes, which enforce the same rule when granting `own…` folders. */
+export const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
 
 /** Whether a tool or runner may reach a path inside the Clover home (the home default-deny): only the per-caller
  *  allows, by pattern. A path outside the home is the other rules' to judge. */

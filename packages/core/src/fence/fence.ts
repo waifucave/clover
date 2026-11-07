@@ -42,6 +42,9 @@ export interface CloverFenceOptions {
   agentInstalls?: readonly string[];
   /** The app's userData folder (E's), which holds the Clover Browser's partitions; the OS's usual one by default. */
   userData?: string;
+  /** A headless run's session data folder (lane E passes `app.getPath("sessionData")` here; TODO(lane E): wire it).
+   *  Its `Partitions` folder is fenced like the app's. */
+  sessionData?: string;
   /** Replaces the layout for some items (tests). */
   layout?: Partial<Record<FencedKind, string[]>>;
   /** The Clover Browser's SOCKS5 filter's loopback ports (lane L's `DaemonBrowser.filterPorts()`): unauthenticated, since
@@ -73,6 +76,7 @@ export class CloverFence implements Fence {
   readonly #cloverHome: string;
   readonly #temp: string;
   readonly #userData: string;
+  readonly #sessionData: string | undefined;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #canonical: (path: string) => string;
   readonly #listeners = new Listeners<void>();
@@ -88,6 +92,7 @@ export class CloverFence implements Fence {
     this.#cloverHome = this.#canonical(opts.cloverHome);
     this.#temp = this.#canonical(opts.temp ?? (this.os === "windows" ? win32.join(opts.home, "AppData", "Local", "Temp") : "/tmp"));
     this.#userData = this.#canonical(opts.userData ?? defaultUserData(this.os, opts.home));
+    this.#sessionData = opts.sessionData === undefined ? undefined : this.#canonical(opts.sessionData);
     this.#devFolders = (opts.devFolders ?? []).map((p) => this.#canonical(p));
     this.#agentInstalls = [...(opts.agentInstalls ?? [])].map((p) => this.#canonical(p));
     this.#bots = [...(opts.bots ?? [])];
@@ -120,7 +125,9 @@ export class CloverFence implements Fence {
       }
     }
     // The kinds that need more than the Clover home: the login places (under the user's home), the browser's
-    // partitions (under userData), and the OK'd agent installs.
+    // partitions (always both shipped and dev profiles from the OS app-data folder, so neither app build can read
+    // the other's sign-ins, plus an explicitly passed userData and a headless sessionData when given), and the
+    // OK'd agent installs.
     for (const p of this.#layout["login-start"] ?? loginStartPaths(this.#home, this.#cloverHome, this.os)) add("login-start", p);
     // Python's user site folders (one `site-packages` per `python*` folder read on this disk).
     if (this.#layout["login-start"] === undefined) {
@@ -131,8 +138,18 @@ export class CloverFence implements Fence {
       // The user's configured global hooks folder, if any (ruling 5): a planted hook there runs later too.
       for (const p of globalHooksPathDirs(this.#home)) add("login-start", p);
     }
-    const userData = this.#layout["browser-profiles"] ?? [`${this.#userData}/Partitions`];
-    for (const p of userData) add("browser-profiles", p);
+    const appData = this.os === "macos"
+      ? joinHome(this.#home, this.os, "Library", "Application Support")
+      : this.os === "windows"
+        ? joinHome(this.#home, this.os, "AppData", "Roaming")
+        : joinHome(this.#home, this.os, ".config");
+    const browserProfiles = this.#layout["browser-profiles"] ?? [
+      joinHome(appData, this.os, "Clover", "Partitions"),
+      joinHome(appData, this.os, "Clover Dev", "Partitions"),
+      joinHome(this.#userData, this.os, "Partitions"),
+      ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),
+    ];
+    for (const p of [...new Set(browserProfiles)]) add("browser-profiles", p);
     for (const p of this.#layout["agent-installs"] ?? this.#agentInstalls) add("agent-installs", p);
     // Each bot's memory, `<home>/bots/<bot>/memory/` (deny `caller`: `judge` binds it by pattern to the bot whose id
     // folds equal). The known bots by id, plus the folders on the disk, so an unlisted leftover is still named.

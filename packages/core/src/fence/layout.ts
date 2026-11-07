@@ -28,7 +28,7 @@
 // list names every folder and file a planted write could run later, outside the sandbox (spec item 1116, the
 // controller's ruling): Clover's own login item first, then the shells and their logout scripts, SSH and git config,
 // the folders that come ahead on PATH, and the desktop's autostart, systemd and session-script folders.
-// Waiting on kinds in B's contract, so not yet in `fencedSet()`: `pendingFenced` below.
+// Kinds the fence enforces ahead of B's contract naming them live in `pendingFenced` below.
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
@@ -42,7 +42,9 @@ export type LaidOutKind = Exclude<FencedKind, "dev-folders" | "bot-memory" | "lo
  *  suite writes every OS's paths), so the items come back in the form the home was given. */
 const pathFor = (os: Os, home?: string) => (os === "windows" && !(home?.startsWith("/") && !home.includes("\\")) ? win32 : posix);
 
-/** Each kind's paths under `cloverHome` on `os`. */
+/** Each kind's paths under `cloverHome` on `os`. `login-start`, `browser-profiles`, `agent-installs`
+ *  and `bot-memory` are not here: they need the home, userData, options and bot list, so
+ *  `CloverFence.fencedSet` lays them out. */
 export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, string[]> {
   const p = pathFor(os, cloverHome);
   const h = (...parts: string[]) => p.join(cloverHome, ...parts);

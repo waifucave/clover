@@ -171,7 +171,15 @@ describe("the real fence on a real disk", () => {
       join(root, "home", "Library", "LaunchAgents"), join(root, "home", "Library", "LaunchDaemons"),
       join(root, "home", ".zshrc"), join(root, "home", ".bashrc"), join(root, "home", ".config", "fish"),
     ]));
-    expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions")]);
+    expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions"), join(root, "home", "Library", "Application Support", "Clover Dev", "Partitions")]);
+    // A headless session data dir fences its own Partitions (lane E passes app.getPath("sessionData")).
+    const headless = new CloverFence({ home: join(root, "home"), cloverHome: join(root, "home", ".clover"), sessionData: join(root, "home", "app-data", "default", "session"), canonical: (x) => x });
+    expect(headless.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toContain(join(root, "home", "app-data", "default", "session", "Partitions"));
+    // Both orders: a dev app passing its own userData, and the shipped app passing its own, still fence both profiles.
+    const devApp = new CloverFence({ home: join(root, "home"), cloverHome: join(root, "home", ".clover"), userData: join(root, "home", "Library", "Application Support", "Clover Dev"), canonical: (x) => x });
+    expect(devApp.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions"), join(root, "home", "Library", "Application Support", "Clover Dev", "Partitions")]);
+    const shippedApp = new CloverFence({ home: join(root, "home"), cloverHome: join(root, "home", ".clover"), userData: join(root, "home", "Library", "Application Support", "Clover"), canonical: (x) => x });
+    expect(shippedApp.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions"), join(root, "home", "Library", "Application Support", "Clover Dev", "Partitions")]);
   });
 
   test("login-start kinds partition the list: every path is a made dir, a safe file, an unsafe file, or Clover's own", () => {
