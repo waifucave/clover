@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import type { SurfaceEnvironment, SurfaceHostApi } from "@waifucave/clover-plugin-island";
-import { RESTING_CANVAS, pillInset, pillMode, pillRegions, pillWindow } from "../model/placement";
+import { RESTING_CANVAS, pillInset, pillMode, pillRegions, pillWindow, type PillPieces } from "../model/placement";
 import type { Size } from "../model/metrics";
 import { DispatchPill, type DispatchPillProps } from "./DispatchPill";
 
@@ -20,7 +20,8 @@ export function PillSurface({ environment, host, ...pill }: PillSurfaceProps): R
   const envKey = JSON.stringify(environment);
   const env = useMemo(() => environment, [envKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const spec = useMemo(() => pillWindow(env, canvas), [env, canvas]);
-  const regions = useMemo(() => pillRegions(env, canvas), [env, canvas]);
+  const [pieces, setPieces] = useState<PillPieces | undefined>(undefined);
+  const regions = useMemo(() => pillRegions(env, canvas, pieces), [env, canvas, pieces]);
   const lastSpec = useRef<string | null>(null);
   const lastRegions = useRef<string | null>(null);
 
@@ -47,6 +48,15 @@ export function PillSurface({ environment, host, ...pill }: PillSurfaceProps): R
     [onCanvas],
   );
 
+  const onPieces = pill.onPieces;
+  const drawn = useCallback(
+    (next: PillPieces) => {
+      setPieces((p) => (p && JSON.stringify(p) === JSON.stringify(next) ? p : next));
+      onPieces?.(next);
+    },
+    [onPieces],
+  );
+
   const inset = pillInset(mode);
   return (
     <div
@@ -64,7 +74,7 @@ export function PillSurface({ environment, host, ...pill }: PillSurfaceProps): R
         alignItems: "center",
       }}
     >
-      <DispatchPill {...pill} onCanvas={measured} />
+      <DispatchPill {...pill} onCanvas={measured} onPieces={drawn} />
     </div>
   );
 }

@@ -30,10 +30,52 @@ export const pairStatement = (pair: string, keys: readonly [string, string], t: 
   utf8([`${HANDSHAKE_PREFIX} pair`, pair, keys[0], keys[1], String(t)].join("\n"));
 export const groupStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} group`, group, key, String(t)].join("\n"));
-export const joinStatement = (group: string, key: string, t: number): Bytes =>
-  utf8([`${HANDSHAKE_PREFIX} join`, group, key, String(t)].join("\n"));
+/** A device's statement joining a group; a move from another group binds that group as a fifth line (lane I's
+ *  #195 ruling: an unsigned `from` is refused). */
+export const joinStatement = (group: string, key: string, t: number, from?: string): Bytes =>
+  utf8([`${HANDSHAKE_PREFIX} join`, group, key, String(t), ...(from === undefined ? [] : [from])].join("\n"));
 export const admitStatement = (group: string, key: string, t: number): Bytes =>
   utf8([`${HANDSHAKE_PREFIX} admit`, group, key, String(t)].join("\n"));
+/** A voter's agreement to remove a member other than itself, and to keep the keys its rollback would otherwise drop
+ *  (PROTOCOL.md "Group recovery", as agreed with lane I): the kept keys sorted and joined by ",", the last line, empty
+ *  when nothing is kept. */
+export const removeStatement = (group: string, key: string, t: number, keep: readonly string[] = []): Bytes =>
+  utf8([`${HANDSHAKE_PREFIX} remove`, group, key, String(t), [...keep].sort().join(",")].join("\n"));
+
+// ---- group recovery (PROTOCOL.md "Group recovery", lane I's proposal adopted for H-M2) ----
+
+/** A member votes once it has been in the group this long, or at once if a quorum of voters admitted it (the
+ *  controller's ruling after I-M3's review: 7 days, not 72 hours). */
+export const VOTE_AFTER_MS = 7 * 86_400_000;
+/** How far back a quorum's removal of a member undoes the changes it signed. */
+export const ROLLBACK_MS = 7 * 86_400_000;
+/** The voters a change to another member needs: a majority of the `v` voters other than its target. */
+export const quorumOf = (v: number): number => Math.floor(v / 2) + 1;
+/** How long a statement's `t` stays within the service's window (10 minutes), less a margin for the round trip. */
+export const STATEMENT_FRESH_MS = 9 * 60_000;
+
+/** A member as the group's read shows it. `votesFrom` is when it starts voting (null: never, as for a key whose
+ *  admission is still unsettled); `admittedBy` the members whose admits let it in. */
+export interface GroupMember {
+  key: string;
+  joinedAt: number;
+  votesFrom?: number | null;
+  admittedBy?: string[];
+}
+
+/** A join: the new key's own statement and the admits of members (one is v1's `by`/`bysig`). */
+export interface GroupJoin {
+  key: string;
+  t: number;
+  sig: string;
+  by?: string;
+  bysig?: string;
+  admits?: { by: string; sig: string }[];
+  /** The group this key moves from (a merge or a recovery invite): the service takes it out of that group. A vote
+   *  never carries across groups (the controller's ruling): the key votes here at once only if this group's quorum
+   *  admitted it. */
+  from?: string;
+}
 
 /** What a signed request's `sig` covers (PROTOCOL.md "Signed requests"). */
 export function requestStatement(method: string, pathAndQuery: string, t: number, body: Uint8Array): Bytes {
@@ -220,30 +262,81 @@ export class HandshakeClient {
     return (await this.#send("POST", "/v1/groups", body)).status === 201;
   }
 
-  async joinGroup(group: string, body: { key: string; t: number; sig: string; by: string; bysig: string }): Promise<boolean> {
+  async joinGroup(group: string, body: GroupJoin): Promise<boolean> {
     return (await this.#send("POST", `/v1/groups/${group}/members`, body)).status === 201;
   }
 
-  async removeGroupMember(group: string, signer: Ed25519Key, member: string): Promise<void> {
+  /** Removes a member: itself with its own signature alone, another with the removes of a quorum of voters
+   *  (`quorum`; refused `403 no_quorum` short of one). */
+  async removeGroupMember(group: string, signer: Ed25519Key, member: string, quorum?: { t: number; removes: { by: string; sig: string }[]; keep?: string[] }): Promise<void> {
     try {
-      await this.#signed(`group:${group}`, signer, "DELETE", `/v1/groups/${group}/members/${member}`);
+      await this.#signed(`group:${group}`, signer, "DELETE", `/v1/groups/${group}/members/${member}`, quorum);
     } catch (err) {
       if (err instanceof HandshakeError && (err.status === 410 || err.status === 404)) return;
       throw err;
     }
   }
 
-  async readGroup(group: string, key: Ed25519Key): Promise<{ group: string; members: { key: string; joinedAt: number }[]; lease: LeaseRecord }> {
-    return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}`)).json() as Promise<{ group: string; members: { key: string; joinedAt: number }[]; lease: LeaseRecord }>;
+  /** What a removal of `target` would roll back: the members it removed lately that come back, the keys it let in
+   *  that go (`GET /v1/groups/<g>/rollback/<target>`). Undefined from a service without it. */
+  async rollbackPreview(group: string, key: Ed25519Key, target: string): Promise<{ restores: string[]; drops: string[] } | undefined> {
+    try {
+      return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}/rollback/${target}`)).json() as Promise<{ restores: string[]; drops: string[] }>;
+    } catch (err) {
+      if (err instanceof HandshakeError && err.status === 404 && err.code === "not_found") return undefined;
+      throw err;
+    }
   }
 
-  /** The lease's operations (H-M2 drives them; the client is here so the group's record is ready). */
-  async lease(group: string, key: Ed25519Key, body: { op: "acquire" | "renew" | "release" | "takeover"; epoch: number; ttl?: number }): Promise<LeaseRecord> {
+  async readGroup(group: string, key: Ed25519Key): Promise<{ group: string; members: GroupMember[]; lease: LeaseRecord }> {
+    return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}`)).json() as Promise<{ group: string; members: GroupMember[]; lease: LeaseRecord }>;
+  }
+
+  /** The group's lease (PROTOCOL.md "Groups and the lease"). A refusal answers `conflict` with the current lease. */
+  async lease(group: string, key: Ed25519Key, body: LeaseOpBody): Promise<LeaseRecord> {
     try {
       return ((await (await this.#signed(`group:${group}`, key, "POST", `/v1/groups/${group}/lease`, body)).json()) as { lease: LeaseRecord }).lease;
     } catch (err) {
-      if (err instanceof HandshakeError && err.code === "held" && err.body?.lease) throw new ContractError("conflict", "the lease is held", { lease: err.body.lease });
+      throw heldConflict(err);
+    }
+  }
+
+  // ---- the account channel (devices with an account) ----
+
+  /** `GET /v1/accounts/self`: the account's other online devices, the records addressed to this one, and the lease. */
+  async readAccount(token: string): Promise<{ online: string[]; records: unknown[]; lease: LeaseRecord }> {
+    return (await this.#send("GET", "/v1/accounts/self", undefined, { authorization: `Bearer ${token}` })).json() as Promise<{ online: string[]; records: unknown[]; lease: LeaseRecord }>;
+  }
+
+  /** This device's latest record of a kind for another device of the account; false when the service holds a newer one. */
+  async putAccountRecord(token: string, to: string, kind: HandshakeKind, body: { gen: number; ttl: number; box: string }): Promise<boolean> {
+    try {
+      await this.#send("PUT", `/v1/accounts/self/records/${kind}/${encodeURIComponent(to)}`, body, { authorization: `Bearer ${token}` });
+      return true;
+    } catch (err) {
+      if (err instanceof HandshakeError && err.code === "stale") return false;
       throw err;
+    }
+  }
+
+  async sendAccountMessage(token: string, body: { to: string; kind: HandshakeKind; ttl: number; box: string }): Promise<{ id: string; delivered: boolean }> {
+    return (await this.#send("POST", "/v1/accounts/self/messages", body, { authorization: `Bearer ${token}` })).json() as Promise<{ id: string; delivered: boolean }>;
+  }
+
+  async accountInbox(token: string): Promise<InboxMessage[]> {
+    return ((await (await this.#send("POST", "/v1/accounts/self/inbox", undefined, { authorization: `Bearer ${token}` })).json()) as { messages: InboxMessage[] }).messages;
+  }
+
+  async accountTicket(token: string): Promise<{ url: string; expiresAt: number }> {
+    return (await this.#send("POST", "/v1/accounts/self/tickets", undefined, { authorization: `Bearer ${token}` })).json() as Promise<{ url: string; expiresAt: number }>;
+  }
+
+  /** The account's lease; its holder is a device id. A refusal answers `conflict` with the current lease. */
+  async accountLease(token: string, body: LeaseOpBody): Promise<LeaseRecord> {
+    try {
+      return ((await (await this.#send("POST", "/v1/accounts/self/lease", body, { authorization: `Bearer ${token}` })).json()) as { lease: LeaseRecord }).lease;
+    } catch (err) {
+      throw heldConflict(err);
     }
   }
 
@@ -300,3 +393,17 @@ export class HandshakeClient {
 
 /** A key's public half as the service names members. */
 export const memberKey = (key: Ed25519Key): string => toBase64Url(key.publicKey);
+
+export type LeaseOp = "acquire" | "renew" | "release" | "takeover";
+export interface LeaseOpBody {
+  op: LeaseOp;
+  epoch: number;
+  /** Seconds, 10–300. */
+  ttl?: number;
+}
+
+/** A `409 held` as the contracts' `conflict`, carrying the lease the service holds. */
+function heldConflict(err: unknown): unknown {
+  if (err instanceof HandshakeError && err.code === "held" && err.body?.lease) return new ContractError("conflict", "the lease is held", { lease: err.body.lease });
+  return err;
+}

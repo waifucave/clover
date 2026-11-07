@@ -1973,6 +1973,10 @@ if (import.meta.main) {
     });
     break;
   }
+  case "code": {
+    const { runCodeCommand } = await import("./code-cli");
+    process.exit(await runCodeCommand(argv.slice(1), { connect: (name) => connect(name), log: (l) => console.log(l), error: (l) => console.error(l) }));
+  }
   case "status": {
     const c = await connect("cli-status");
     const s = await c.daemonStatus();
@@ -2467,6 +2471,13 @@ if (import.meta.main) {
         positionals.push(tok);
       }
       return { positionals, scopeRaw };
+    }
+
+    if (sub === "validate") {
+      const { runPluginValidate } = await import("./plugin-validate-cli");
+      const run = await runPluginValidate(rest);
+      (run.code === 2 ? console.error : console.log)(run.output);
+      process.exit(run.code);
     }
 
     if (sub === "marketplace") {
@@ -3475,6 +3486,7 @@ if (import.meta.main) {
   trust <dir> [--list] | trust list | trust remove <path>
   skills                                          list discovered skills for this directory
   mcp                                              list configured MCP servers and their tools
+  plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>

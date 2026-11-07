@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fixture web page</title></head>
+<body>
+<p id="t">Fixture web page</p>
+<p id="reach"></p>
+<script>
+  // It runs, and reaches nothing of the app's: no bridge, no Node.
+  document.getElementById("t").textContent += " (scripted)";
+  const bridge = typeof window.cloverLayer === "undefined" && typeof window.cloverRoot === "undefined" ? "none" : "present";
+  const node = typeof require === "undefined" && typeof process === "undefined" ? "none" : "present";
+  document.getElementById("reach").textContent = `bridge: ${bridge}; node: ${node}`;
+</script>
+</body>
+</html>

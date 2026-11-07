@@ -10,7 +10,7 @@ import {
   type CardAnswerProof, type Level, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
 import {
-  ACTION_EFFECTS, DECISION_RANK, acpOutcomeFor, bindsComputer, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel,
+  ACTION_EFFECTS, CALL_CARD_METHODS, DECISION_RANK, acpOutcomeFor, bindsComputer, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel,
   verifySignedAnswer, type CallCardRenderer,
   type AgentPermissionOption, type AnswerOrigin, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
 } from "../approval-broker";
@@ -478,6 +478,27 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       const onlyAlways = all.filter((o) => o.kind.endsWith("always") || o.kind === "reject_once");
       expect(acpOutcomeFor({ allowed: true, by: "card" }, onlyAlways)).toEqual({ outcome: "selected", optionId: "r" });
       expect(acpOutcomeFor({ allowed: true, by: "card" }, all.filter((o) => o.kind.endsWith("always")))).toEqual({ outcome: "cancelled" });
+    });
+  });
+}
+
+/** The receiver's card tables (J-M2's review): every call another computer's signed answer may lift
+ *  (`CALL_CARD_METHODS`) has its card, which binds exactly that call, so R1 and R15 never fail closed for want of one.
+ *  `tests/approval-broker.test.ts` runs it against the fake's table; lane C runs it against its sealed card tables. */
+export function runCallCardTableConformance(make: (sha256: (text: string) => string) => CallCardRenderer): void {
+  const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+  describe("CallCardRenderer: the card tables", () => {
+    test("each call an answer may lift renders a card that binds exactly it", () => {
+      const render = make(sha256);
+      for (const { method, params } of CALL_CARD_METHODS) {
+        const card = render({ computer: "Studio", method, params });
+        expect([method, card !== undefined]).toEqual([method, true]);
+        expect([method, card!.options.some((o) => o.kind === "approve")]).toEqual([method, true]);
+        const self = method === "tree.transfer" ? (params as { destination: string }).destination : "Studio";
+        expect([method, card!.binds !== undefined && bindsComputer(card!.binds, method, params, self)]).toEqual([method, true]);
+        expect(card!.binds!.params).toBe(sha256(callBindingInput(method, params)));
+      }
+      expect(CALL_CARD_METHODS.map((m) => m.method)).toEqual(expect.arrayContaining(["tree.transfer", "terminal.open", "mcp.mirror", "computer.setLevel"]));
     });
   });
 }

@@ -24,6 +24,7 @@ export * from "./secret-store";
 export * from "./fence";
 export * from "./approval-broker";
 export * from "./plugin-registry";
+export * from "./plugin-registry-rules";
 export * from "./plugin-host";
 export * from "./session-host";
 export * from "./link-transport";

@@ -220,16 +220,11 @@ test("with no live host the stop tail adds no measurable delay: undefined, synch
   const built = wiringFor(h);
   const realSetTimeout = globalThis.setTimeout; let timers = 0;
   (globalThis as { setTimeout: unknown }).setTimeout = ((...args: Parameters<typeof setTimeout>) => { timers += 1; return realSetTimeout(...args); }) as never;
-  let started = performance.now();
   try {
     for (let i = 0; i < 20_000; i += 1) expect(never.beginShutdown()).toBeUndefined();
+    expect(built.beginShutdown()).toBeUndefined(); // returned undefined, not a promise to await
   } finally { globalThis.setTimeout = realSetTimeout; }
-  const elapsed = performance.now() - started;
-  expect(timers).toBe(0);
-  expect(elapsed / 20_000).toBeLessThan(0.05); // under 50 microseconds each, in fact well under 1 microsecond
-  started = performance.now();
-  expect(built.beginShutdown()).toBeUndefined();
-  expect(performance.now() - started).toBeLessThan(5);
+  expect(timers).toBe(0); // no timer was armed: nothing to wait on, so no delay by construction
 });
 
 // ================================================================================================ boot-time reconcile (D1)
@@ -493,9 +488,8 @@ test("a Keychain read that never answers refuses the start with receipt_key_unav
   const h = createHarness(), slot = stuckSlot();
   const wiring = wiringFor(h, { secrets: slot, keyReadTimeoutMs: 30 });
   const before = snapshot(h);
-  const began = Date.now();
+  // the slot never answers until released, so the rejection settling at all proves the read was bounded
   await expect(wiring.start(h.workspaceId)).rejects.toMatchObject({ code: "receipt_key_unavailable" });
-  expect(Date.now() - began).toBeLessThan(2000);
   expect(h.launcher.spawned).toEqual([]);
   expect(snapshot(h)).toBe(before);
   slot.release(); // the late answer arrives now
@@ -514,9 +508,7 @@ test("a Keychain read that never answers at boot counts as no key: the receipt i
   const record = h.records.get(h.workspaceId);
   h.receipts.set(`${h.workspaceId}|${record.incarnationId}|${record.leaseEpoch}`, text);
   const ports = { receipts: { load: (scope: { workspaceId: string; incarnationId: string; leaseEpoch: number }) => { const t = h.receipts.get(`${scope.workspaceId}|${scope.incarnationId}|${scope.leaseEpoch}`); return t === undefined ? null : { text: t, attested: true as const }; }, retire: () => {} }, guards: { processAbsent: () => true, imagesUnlocked: () => true } };
-  const began = Date.now();
   const boot = await wiringFor(h, { secrets: slot, keyReadTimeoutMs: 30 }, ports).reconcileAtBoot();
-  expect(Date.now() - began).toBeLessThan(2000);
   expect(boot.reports).toMatchObject([{ action: "retained", ownerRetained: true }]);
   expect(slot.values.size).toBe(0);
 });

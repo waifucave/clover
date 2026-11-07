@@ -1,6 +1,7 @@
 // The Agent tool end to end (spec §9.3, plan §4 K-M1): a bot delegates to an ACP agent (the scripted agent process),
 // the agent reaches the bot through the real bridge process, the bot keeps control, the transcript is written, and
 // the watchdog stops a stalled agent. Lane B's fakes stand in for the session host, the broker, the tree and the fence.
+import { readProcessTable, type ProcessTableReader } from "../process/table";
 import { afterEach, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -9,9 +10,11 @@ import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS, WELL_BEHAVED_QUIRKS } from "..
 import { advanceAndSettle } from "../../contracts/fakes/clock";
 import { FakeSessionHost } from "../../contracts/fakes/session-host";
 import { isContractError } from "../../contracts/common";
+import { UserSelections } from "../acp/selections";
 import { MAX_OPEN_ASKS } from "../acp/session";
 import { AcpAgentBackend } from "../backend";
-import { BridgeEndpoint } from "../bridge/endpoint";
+import { bridgeCloverParts } from "../bridge/handlers";
+import { serveClover } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import { AgentManager } from "../manager";
@@ -21,7 +24,7 @@ import { agentToolDefs } from "../tools";
 import { readAgentRecord } from "../records";
 import { REDACTED_TOKEN } from "../transcript";
 import { StallWatchdog } from "../watchdog";
-import { waitFor, World, type WorldOptions } from "./world";
+import { fakeAdmissions, waitFor, World, type WorldOptions } from "./world";
 
 // Real processes: generous on a loaded CI runner.
 setDefaultTimeout(60_000);
@@ -94,6 +97,24 @@ describe("Agent", () => {
     expect(isContractError(await w.manager.agentMessage(r.sessionId, "me?", r.sessionId).catch((e: unknown) => e), "refused")).toBe(true);
   });
 
+  test("a plugin tool through the bridge runs for the delegation: its bot, computer and origin reach the tool source", async () => {
+    const seen: unknown[] = [];
+    const w = make({
+      pluginTools: {
+        tools: async () => [{ name: "Render", description: "Render a scene.", inputSchema: { type: "object" } }],
+        call: async (_s, c, ctx) => {
+          seen.push({ tool: c.tool, bot: ctx.bot, computer: ctx.computer, origin: ctx.origin, level: ctx.level, withSignal: ctx.signal !== undefined });
+          return { content: [{ type: "text", text: "rendered" }], isError: false };
+        },
+      },
+      script: [[{ mcp: { server: "$bridge", tool: "Render", input: { scene: "a" } } }, { say: "Done." }]],
+    });
+    await w.delegate();
+    await waitFor(() => notification(w), "the notification");
+    expect(seen).toEqual([{ tool: "Render", bot: "alpha", computer: "Studio", origin: "bot", level: undefined, withSignal: true }]);
+    expect(w.report("mcp-result").map((x) => x["text"])).toEqual(["rendered"]);
+  });
+
   test("a request outside the bridge goes to a card at ask; a card's always is Clover's own rule and the agent gets allow_once", async () => {
     const w = make({ quirks: S5_CURSOR_QUIRKS, level: "ask", script: [[{ tool: { kind: "execute", title: "`make`", rawInput: { command: "make" } } }, { say: "Built." }]] });
     await w.delegate();
@@ -150,6 +171,16 @@ describe("the bot keeps control", () => {
     expect(w.tokens.has(r.sessionId)).toBe(false);
     await waitFor(() => !alive(pid), "the agent's process to end");
     expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("stopped");
+  });
+
+  test("the token is revoked when the agent's process exits, not only at TaskStop", async () => {
+    const w = make({ script: [[{ wait: true }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    expect(w.tokens.has(r.sessionId)).toBe(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGKILL");
+    await waitFor(() => !w.tokens.has(r.sessionId), "the token to be revoked");
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("crashed");
   });
 
   test("the bot's tools: Agent and TaskStop; lane D's ListAgents gets the agent rows from the hooks", async () => {
@@ -213,9 +244,16 @@ describe("the stall watchdog", () => {
 
   test("a running command counts as progress until its limit", async () => {
     let wall = Date.now();
-    const w = make({ script: [[{ exec: { seconds: 60 } }, { say: "built" }]], wallNow: () => wall });
+    // Deterministic under load: the real process table gives the tree (the command's `sleep` under the agent), but
+    // that one process's start is pinned to the call's start, so `ps`'s second-resolution ages, taken whenever a
+    // loaded machine gets round to them, never decide it.
+    let commandPid = 0;
+    const table: ProcessTableReader = async () => (await readProcessTable()).map((row) => (row.pid === commandPid ? { ...row, startedAt: wall + 1 } : row));
+    const w = make({ script: [[{ exec: { seconds: 60 } }, { say: "built" }]], wallNow: () => wall, table });
     const r = await w.delegate();
     await waitFor(() => w.report("blocked").length > 0, "the command to start");
+    commandPid = Number((w.report("blocked")[0] as { childPid?: number }).childPid);
+    expect(commandPid).toBeGreaterThan(0);
     await advanceAndSettle(w.clock, 11 * 60_000, 60_000);
     await new Promise((res) => setTimeout(res, 800));
     expect(w.host.get(r.sessionId)!.status).toBe("prompting");
@@ -340,15 +378,15 @@ async function restart(w: World, quirks: AgentQuirks) {
   const backend2 = new AcpAgentBackend({
     id: "fake", pluginId: "clover/agent-fake", quirks: fakeLaunch(quirks), clock: w.clock,
     command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, w.agent.config], acpArgs: ["acp"] }, wire: (id) => m2.wire(id),
+    admissions: fakeAdmissions("protected"),
   });
   m2 = new AgentManager({
     home: w.cloverHome, computer: "Studio", host: host2, approvals: w.approvals, tree: w.tree, fence: w.fence, backends: () => [backend2],
     tokens: tokens2, bridge: { ...bridgeCommand(), socketPath: w.endpoint.socketPath }, watchdog: new StallWatchdog({ clock: w.clock }), clock: w.clock,
-    levelOf: () => w.level, startUnsandboxedForTests: true,
+    levelOf: () => w.level,
   });
   w.endpoint.close();
-  const ep2 = new BridgeEndpoint({ socketPath: w.endpoint.socketPath, tokens: tokens2, handlers: m2.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });
-  ep2.listen();
+  const ep2 = serveClover(w.endpoint.socketPath, bridgeCloverParts(tokens2, m2.bridgeHandlers()));
   afterRestart.push(async () => {
     await m2.close();
     ep2.close();
@@ -360,22 +398,18 @@ afterEach(async () => {
   for (const f of afterRestart.splice(0)) await f();
 });
 
-describe("what M1 never runs quietly", () => {
-  test("an agent that isn't sandboxed doesn't start without the user's OK (review 2)", async () => {
-    const w = make({ unsandboxedOk: false, script: [[{ say: "never" }]] });
-    const r = await w.delegate();
-    const n = await waitFor(() => notification(w), "the notification");
-    expect(n.stopReason).toBe("error");
-    expect(n.text).toContain("no sandbox Clover can count on");
-    expect(w.report("started")).toEqual([]);
-    expect(w.host.get(r.sessionId)).toMatchObject({ status: "failed" });
-  });
-
+describe("what never runs quietly", () => {
   test("an agent outside its tested versions needs the OK too, even when sandboxed (review 15)", async () => {
-    const w = make({ unsandboxedOk: false, script: [[{ say: "never" }]] });
+    const w = make({ script: [[{ say: "never" }]] });
     const detect = w.backend.detect.bind(w.backend);
     w.backend.detect = async () => ({ ...(await detect()), sandboxed: true, versionOk: false, version: "0.9.0" });
     await w.delegate();
+    const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
+    expect(card).toMatchObject({ kind: "change", change: "agent-unsandboxed" });
+    expect(card.fields["title"]).toEqual({ type: "text", text: "Start an agent Clover hasn't tested?" });
+    const deny = card.options.find((o) => o.kind === "deny")!;
+    const frame = w.approvals.frameChannel(card.id)!;
+    await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" });
     const n = await waitFor(() => notification(w), "the notification");
     expect(n.text).toContain("outside the versions Clover was tested with");
     expect(w.report("started")).toEqual([]);
@@ -403,6 +437,182 @@ describe("what M1 never runs quietly", () => {
     await w3.delegate();
     await waitFor(() => notification(w3), "the notification");
     expect(w3.report("config")).toEqual([]);
+  });
+});
+
+describe("check 2's minors", () => {
+  test("a fenced path behind 200 harmless ones is still a card at automatic, and listed first (minor 1)", async () => {
+    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit many files", paths: [] } }]] });
+    const fenced = join(w.cloverHome, "run", "x.json");
+    const config = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    config.script[0]![0]!.tool.paths = [...Array.from({ length: 200 }, (_, i) => `f${i}.txt`), fenced];
+    writeFileSync(w.agent.config, JSON.stringify(config));
+    await w.delegate();
+    const card = await waitFor(() => w.approvals.cards()[0], "a card");
+    const items = (card.fields["paths"] as { items: string[] }).items;
+    expect(items[0]).toBe(fenced);
+    expect(items.at(-1)).toBe("… and 1 more");
+  });
+
+  test("a coding session's bridge offers no SendMessage, since there is no bot to message (minor 3)", async () => {
+    const w = make({ script: [[{ say: "hi" }]] });
+    const r = await w.manager.start({ caller: { kind: "user", device: "d".repeat(16), clientMessageId: "m1" }, backend: "fake", prompt: "Hi.", root: "home/Studio/project1" });
+    const offered = await w.manager.bridgeHandlers().tools(r.sessionId);
+    expect(offered.tools.map((t) => t.name)).toEqual(["Glossary"]);
+    expect(offered.instructions).not.toContain("SendMessage");
+    const bot = await w.delegate();
+    expect((await w.manager.bridgeHandlers().tools(bot.sessionId)).tools.map((t) => t.name)).toEqual(["SendMessage", "Glossary"]);
+  });
+
+  test("a choice a crashed delegation left is set back as soon as the agent's next session opens (minor 4)", async () => {
+    const selections = new UserSelections();
+    const w = make({ quirks: S5_CURSOR_QUIRKS, selections, script: [[{ wait: true }]] });
+    await w.delegate("A.", { model: "fake-model-b" });
+    await waitFor(() => w.report("blocked").length === 1, "the agent to block");
+    expect(JSON.parse(readFileSync(w.agent.selection, "utf8"))).toEqual({ model: "fake-model-b" });
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGKILL");
+    await waitFor(() => notification(w), "the crash's notification");
+    expect(selections.record("fake", "model")).toEqual({ user: "fake-model-a", ours: "fake-model-b" });
+    // The next delegation (a new process, which plays this script) sets no model of its own; the user's own comes
+    // back when it opens.
+    const config = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: unknown[][] };
+    config.script = [[{ say: "no model asked" }]];
+    writeFileSync(w.agent.config, JSON.stringify(config));
+    await w.delegate("B.");
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(JSON.parse(readFileSync(w.agent.selection, "utf8"))).toEqual({ model: "fake-model-a" });
+    expect(selections.record("fake", "model")).toBeUndefined();
+  });
+
+  test("lowering the computer to read-only reaches a running agent at its next turn, and raising it switches back (minor 5)", async () => {
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ quirks, level: "ask", modes: ["agent", "plan", "ask"], readOnlyMode: { option: "mode", values: ["ask", "plan"] }, script: [[{ say: "one" }], [{ say: "two" }], [{ say: "three" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    expect(w.report("config")).toEqual([]);
+    w.level = "read-only";
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Two." });
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(w.report("config").map((c) => [c["option"], c["value"]])).toEqual([["mode", "ask"]]);
+    w.level = "ask";
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Three." });
+    await waitFor(() => w.parentInputs("task-notification").length === 3, "the third notification");
+    expect(w.report("config").map((c) => [c["option"], c["value"]])).toEqual([["mode", "ask"], ["mode", "agent"]]);
+  });
+});
+
+/** Lane D's gate, as lane K reads it. */
+function pauseSwitch() {
+  const fns = new Set<() => void>();
+  let paused = false;
+  return {
+    mayAct: () => !paused,
+    watch: (fn: () => void) => (fns.add(fn), () => void fns.delete(fn)),
+    set(p: boolean) {
+      paused = p;
+      for (const f of [...fns]) f();
+    },
+  };
+}
+
+describe("the pause switch pauses background agents too (the owner's ruling)", () => {
+  test("paused, no new prompt is sent and the agent isn't stalled; on resume it goes on", async () => {
+    const gate = pauseSwitch();
+    gate.set(true);
+    const w = make({ pause: gate, script: [[{ say: "done" }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("session").length > 0, "the agent to start");
+    await advanceAndSettle(w.clock, 30 * 60_000, 60_000);
+    expect(w.report("prompt")).toEqual([]);
+    expect(w.host.get(r.sessionId)!.status).toBe("prompting");
+    gate.set(false);
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("done");
+  });
+
+  test("paused mid-turn, the agent is held at its next permission request, unanswered until resume", async () => {
+    const gate = pauseSwitch();
+    const w = make({ pause: gate, script: [[{ wait: true }, { tool: { kind: "edit", title: "Edit", paths: ["a.txt"] } }, { say: "edited" }]] });
+    await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGUSR2");
+    await waitFor(() => w.report("blocked").some((b) => b["on"] === "permission"), "the permission request");
+    await new Promise((res) => setTimeout(res, 300));
+    expect(w.report("answer")).toEqual([]);
+    gate.set(false);
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("edited");
+    expect(w.report("answer")).toMatchObject([{ kind: "allow_once" }]);
+  });
+
+  test("an agent that acts without asking has its turn cancelled at its next tool call while paused", async () => {
+    const gate = pauseSwitch();
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ pause: gate, quirks, level: "ask", script: [[{ wait: true }, { tool: { kind: "edit", title: "Edit", paths: ["a.txt"], ask: false } }, { wait: true }]] });
+    await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGUSR2");
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("cancelled");
+  });
+});
+
+describe("K-M2 review", () => {
+  test("a bridge call held by the pause never runs once the agent is stopped (blocking 1)", async () => {
+    const gate = pauseSwitch();
+    const ran: string[] = [];
+    const w = make({
+      pause: gate,
+      pluginTools: {
+        tools: async () => [{ name: "Render", description: "Render.", inputSchema: { type: "object" } }],
+        call: async (_s, c) => (ran.push(c.tool), { content: [{ type: "text", text: "rendered" }], isError: false }),
+      },
+      script: [[{ wait: true }, { mcp: { server: "$bridge", tool: "Render", input: {}, ask: false } }, { say: "done" }]],
+    });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGUSR2");
+    await new Promise((res) => setTimeout(res, 800));
+    await w.manager.stop(r.sessionId, { bot: "alpha" });
+    gate.set(false);
+    await new Promise((res) => setTimeout(res, 500));
+    expect(ran).toEqual([]);
+  });
+
+  test("the moment the switch pauses, a busy agent that acts without asking is cancelled (should-fix 4)", async () => {
+    const gate = pauseSwitch();
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ pause: gate, quirks, level: "ask", script: [[{ wait: true }]] });
+    await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    gate.set(true);
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("cancelled");
+  });
+
+  test("a session outliving its bridge token is restarted under a new one at a turn boundary (minor 12)", async () => {
+    const w = make({ tokenTtlMs: 2 * 60 * 60_000, script: [[{ say: "one" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    const before = w.report("started").length;
+    w.clock.advance(90 * 60_000);
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Two." });
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(w.report("started").length).toBe(before + 1);
+    expect(w.report("session").map((x) => x["how"])).toEqual(["new", "resume"]);
+    expect(w.tokens.ageOf(r.sessionId)).toBeLessThan(60 * 60_000);
+    expect(readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8")).toContain("token-renewed");
+  });
+
+  test("start refuses a program other than the one admitted (should-fix 5)", async () => {
+    const w = make();
+    const fence = w.fence.policy();
+    const base = { sessionId: "s", root: w.project, fence, bridge: { name: "b", command: "x", args: [], env: {}, tools: [] } };
+    const err = await w.backend.start({ ...base, admitted: { path: "/somewhere/else", version: "1.0.0" } }).catch((e: unknown) => e);
+    expect((err as Error).message).toContain("its program changed");
+    const d = await w.backend.detect();
+    const err2 = await w.backend.start({ ...base, admitted: { path: d.path!, version: d.version!, sha256: "0".repeat(64) } }).catch((e: unknown) => e);
+    expect((err2 as Error).message).toContain("its program changed");
+    expect(w.report("started")).toEqual([]);
   });
 });
 
@@ -443,6 +653,81 @@ describe("a hostile agent (review 12)", () => {
   });
 });
 
+describe("live tabs: the user drives a bot's agent directly", () => {
+  test("the user's message is the agent's next prompt, its turn is the user's, so its cards wait", async () => {
+    const w = make({ level: "ask", script: [[{ say: "first done" }], [{ tool: { kind: "execute", title: "`make`", rawInput: { command: "make" } } }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    await w.host.sendUser(r.sessionId, { text: "Now build it.", device: "d".repeat(16), clientMessageId: "m1", sentAt: w.clock.now() });
+    const card = await waitFor(() => w.approvals.cards()[0], "a card");
+    expect(card.origin).toBe("user");
+    expect(w.report("prompt")[1]!["text"]).toBe("Now build it.");
+    await w.manager.stop(r.sessionId);
+  });
+
+  test("the user's interrupt cancels the agent's turn; the agent stays, and the bot isn't told it finished", async () => {
+    const w = make({ script: [[{ wait: true }], [{ say: "after" }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    await w.host.interrupt(r.sessionId);
+    await waitFor(() => w.host.get(r.sessionId)!.status === "idle", "the turn to end");
+    expect(w.parentInputs("task-notification")).toEqual([]);
+    const ends = w.host.history(r.sessionId).filter((x) => x.type === "turn_ended").map((x) => (x as { end: { reason: string } }).end.reason);
+    expect(ends).toEqual(["interrupted"]);
+    await w.host.sendUser(r.sessionId, { text: "Go on.", device: "d".repeat(16), clientMessageId: "m2", sentAt: w.clock.now() });
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("after");
+  });
+});
+
+describe("the agent's own sandbox, and the OK for one without", () => {
+  test("a backend whose sandbox is admitted starts with the fenced set in its own format, written in the fenced run folder", async () => {
+    const w = make({ script: [[{ wait: true }]] });
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    const dir = join(w.cloverHome, "run", "agents", r.sessionId);
+    const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
+    expect(policy.denyWrite).toEqual(w.fence.policy().denyWrite);
+    expect(policy.denyRead).toContain(join(w.cloverHome, "run"));
+    // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
+    expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
+    expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");
+    expect(w.report("session")[0]!["meta"]).toMatchObject({ fakeSandbox: { policy: join(dir, "policy.json") } });
+    expect(w.approvals.cards()).toEqual([]);
+    await w.manager.stop(r.sessionId, { bot: "alpha" });
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  test("an agent with no sandbox Clover counts on starts only after the user's OK, asked once per version and computer", async () => {
+    const w = make({ sandbox: "none", script: [[{ say: "one" }]] });
+    const r = await w.delegate();
+    const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
+    expect(card).toMatchObject({ kind: "change", change: "agent-unsandboxed", session: r.sessionId });
+    expect(card.options.some((o) => o.remember === "always")).toBe(false);
+    expect(w.report("started")).toEqual([]);
+    const approve = card.options.find((o) => o.kind === "approve")!;
+    const frame = w.approvals.frameChannel(card.id)!;
+    expect(await w.approvals.answer(card.id, { optionId: approve.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" })).toBe("accepted");
+    expect((await waitFor(() => notification(w), "the notification")).text).toBe("one");
+    // The OK is kept: the next delegation to the same agent starts at once.
+    await w.delegate("Again.");
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(w.approvals.cards()).toEqual([]);
+  });
+
+  test("a refused OK ends the delegation before the agent starts, and the bot is told", async () => {
+    const w = make({ sandbox: "none", script: [[{ say: "never" }]] });
+    await w.delegate();
+    const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
+    const deny = card.options.find((o) => o.kind === "deny")!;
+    const frame = w.approvals.frameChannel(card.id)!;
+    await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" });
+    const n = await waitFor(() => notification(w), "the notification");
+    expect(n.stopReason).toBe("error");
+    expect(n.text).toContain("wasn't started");
+    expect(w.report("started")).toEqual([]);
+  });
+});
+
 describe("the agent methods", () => {
   test("agent.start opens a coding session the user drives; agent.backends says what this computer has", async () => {
     const w = make({ script: [[{ say: "Hello from the agent." }]] });
@@ -457,7 +742,7 @@ describe("the agent methods", () => {
     const bot = await methods["agent.start"]!({ backend: "fake", computer: "Studio", root: "home/Studio/project1" }, { caller: { kind: "session", sessionId: "s_alpha", sessionKind: "bot" } }).catch((e: unknown) => e);
     expect(isContractError(bot, "refused")).toBe(true);
     const { backends } = (await methods["agent.backends"]!({}, user)) as { backends: { id: string; computers: { installed: boolean; version?: string; marks: string[] }[] }[] };
-    expect(backends).toMatchObject([{ id: "fake", protocol: "acp", placement: "local", computers: [{ computer: "Studio", installed: true, version: "1.0.0", marks: ["unsandboxed"] }] }]);
+    expect(backends).toMatchObject([{ id: "fake", protocol: "acp", placement: "local", computers: [{ computer: "Studio", installed: true, version: "1.0.0", sandboxed: true, marks: [] }] }]);
     expect(await methods["agent.definitions"]!({}, user)).toEqual({ definitions: [] });
     void WELL_BEHAVED_QUIRKS;
   });

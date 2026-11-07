@@ -336,3 +336,49 @@ describe("JSON with comments", () => {
     expect(bad.ok).toBe(false);
   });
 });
+
+describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun process of its own", () => {
+  const issues = (m: Record<string, unknown>, bundled = false) => validateManifest(
+    { manifest: 1, ...(bundled ? {} : { id: "bedrock" }), name: "Bedrock", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, ...m },
+    bundled ? { parent: { id: "clover", namespace: "clover" }, folderName: "bedrock", bundled: true } : { folderName: "bedrock" },
+  ).issues.map((i) => `${i.code}:${i.path}`);
+  const settings = { region: { type: "string", title: "Region" } };
+
+  test("a network: host and a model's endpoint may name the plugin's settings, never its secrets", () => {
+    expect(issues({ settings, capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] })).toEqual([]);
+    expect(issues({ capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] })).toEqual(["interpolation:/capabilities/0"]);
+    expect(issues({ settings, capabilities: ["network:a.${secret:region}.amazonaws.com"] })).toEqual(["capability_unknown:/capabilities/0"]);
+    expect(issues({ settings, capabilities: ["network:${setting:region}.com"] })).toEqual(["capability_unknown:/capabilities/0"]);
+    const model = (baseUrl: string) => ({ contributes: { models: [{ provider: "bedrock", name: "Bedrock", catalog: [], auth: [], endpoint: { protocol: "openai-chat", baseUrl } }] } });
+    const declared = { capabilities: ["network:${setting:region}.example.com"] };
+    expect(issues({ settings, ...declared, ...model("https://${setting:region}.example.com/v1") })).toEqual([]);
+    expect(issues({ settings, ...model("https://api.example.com/v1?region=${setting:region}") })).toEqual([]);
+    expect(issues({ settings, ...model("https://${secret:region}.example.com/v1") }).some((i) => i.startsWith("interpolation:/contributes/models/0/endpoint/baseUrl"))).toBe(true);
+    expect(issues({ ...declared, ...model("https://${setting:tenant}.example.com/v1") })).toContain("interpolation:/contributes/models/0/endpoint/baseUrl");
+    // #187's review: the host comes from settings only as a declared network: host has it, with no userinfo.
+    const at = "endpoint_host:/contributes/models/0/endpoint/baseUrl";
+    expect(issues({ settings, ...model("https://${setting:region}.example.com/v1") })).toEqual([at]); // not declared
+    expect(issues({ settings, ...declared, ...model("https://${setting:region}/v1") })).toEqual([at]); // the whole host
+    expect(issues({ settings, ...declared, ...model("https://user@${setting:region}.example.com/v1") })).toEqual([at]);
+    expect(issues({ settings, ...model("https://user:pw@api.example.com/v1") })).toEqual([at]);
+    expect(issues({ settings, ...declared, ...model("${setting:region}") }).includes(at)).toBe(true);
+    expect(issues({ settings, capabilities: ["network:${setting:region}.github.io"], ...model("https://${setting:region}.github.io/v1") })).toContain(at);
+    // #187's check 2: the refused model leaves the cleaned manifest; a good one stays.
+    const kept = (over: Record<string, unknown>) => validateManifest({ manifest: 1, id: "bedrock", name: "Bedrock", settings, ...over }, { folderName: "bedrock" }).manifest?.contributes?.models ?? [];
+    expect(kept(model("https://${setting:region}.example.com/v1"))).toEqual([]);
+    expect(kept({ ...model("https://user@api.example.com/v1") })).toEqual([]);
+    expect(kept({ ...declared, ...model("https://${setting:region}.example.com/v1") })).toHaveLength(1);
+    expect(kept({ ...model("https://${secret:region}.example.com/v1") })).toEqual([]);
+    const report = validateManifest({ manifest: 1, id: "bedrock", name: "Bedrock", settings, capabilities: ["network:bedrock-runtime.${setting:region}.amazonaws.com"] }, { folderName: "bedrock" });
+    expect(report.dynamicHosts).toBe(true);
+  });
+
+  test("a sign-in the core runs is the clover tree's; a Bun host may ask for a process of its own", () => {
+    const auth = { auth: [{ method: "core", flow: "xai-device" }] };
+    expect(issues(auth)).toEqual(["auth_core_bundled_only:/auth/0/method"]);
+    expect(issues(auth, true)).toEqual([]);
+    expect(issues({ auth: [{ method: "core", flow: "somewhere-else" }] }, true).length).toBeGreaterThan(0);
+    expect(issues({ host: { entry: "host/index.ts", process: "own" } })).toEqual([]);
+    expect(issues({ host: { entry: "host/index.ts", process: "shared" } }).length).toBeGreaterThan(0);
+  });
+});

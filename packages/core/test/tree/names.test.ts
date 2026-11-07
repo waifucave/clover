@@ -1,7 +1,7 @@
 // How the tree compares and refuses names (S6 review round 2), and how the tool layer reads paths and `cd`.
 import { describe, expect, test } from "bun:test";
 import { isContractError } from "../../src/contracts/common";
-import { checkSegment, foldName, mayBeShortName, sameName } from "../../src/tree/names";
+import { checkSegment, foldName, foldPath, mayBeShortName, sameName } from "../../src/tree/names";
 import { bashTarget, treePathFor } from "../../src/tree/tools";
 
 const invalid = (fn: () => unknown) => { try { fn(); } catch (e) { return isContractError(e, "invalid"); } return false; };
@@ -13,6 +13,15 @@ describe("names", () => {
     expect(sameName("Key", "key", "macos")).toBe(true); // the Kelvin sign
     expect(foldName(".clover. .", "windows")).toBe(".clover");
     expect(foldName(".clover.", "macos")).toBe(".clover.");
+  });
+
+  test("the fold is NFC, then upper case, then lower case: the long s, the sharp s and the Kelvin sign fold as APFS and NTFS read them", () => {
+    for (const os of ["macos", "windows", "linux"] as const) {
+      expect(foldName("\u017Fettings", os)).toBe("settings"); // ſ
+      expect(foldName("Stra\u00DFe", os)).toBe("strasse"); // ß
+      expect(foldName("\u212Aey", os)).toBe("key"); // the Kelvin sign
+      expect(foldPath("/Users/me/.clover/\u017Fettings/\u212Aeys.json", os)).toBe("/users/me/.clover/settings/keys.json");
+    }
   });
 
   test("names a disk would read as something else are refused", () => {
