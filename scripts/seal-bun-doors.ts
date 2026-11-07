@@ -12,12 +12,19 @@
 //
 // On macOS the Keychain items trust the signed `clover-core` alone, so any of these hands the user's tokens and
 // provider keys to whoever can start the binary. No Bun flag turns them off, so this build step does, before the
-// binary is signed: every occurrence of each name in Bun's own code is overwritten with a same-length token of
-// capital letters, derived from the name (so a rebuild is byte-for-byte the same), and Bun looks the token up
-// instead, which nobody sets. The app's own bundle — the module graph Bun embeds in its `.bun` section (`__BUN,__bun`
-// in a Mach-O) — is never touched: the core's own code names some of these variables on purpose (the run home's
-// environment refusals). Bun's built-in JavaScript (`.bun_builtins`) is patched like the native code: there the
-// names are `Bun.env.<NAME>` reads, and a token of capital letters keeps them valid.
+// binary is signed: every occurrence of each name in Bun's own code is overwritten, same length, with a name NO
+// ENVIRONMENT CAN CARRY. A plain renamed token would only move the door: anyone can read it out of the binary and set
+// it (measured: a capital-letter token worked exactly like BUN_BE_BUN). So the replacement starts with a NUL:
+//   - in Bun's native code the lookup is libc `getenv` (a C string, measured: a NUL in the middle made the prefix
+//     settable) or a comparison of the whole slice against each environment entry's key. As a C string the name is
+//     empty, and `getenv("")` finds nothing (measured on macOS; glibc and musl return NULL for an empty name); as a
+//     slice it holds a NUL, which no key can. A name with `=` would not do: macOS's `getenv` stops the name at `=`.
+//   - in Bun's built-in JavaScript the reads are `process.env.NAME` / `Bun.env.NAME` and quoted lists. A member read
+//     `.NAME` becomes `["\0…"]` and a quoted `"NAME"` becomes `"\0…"` (the escape, so the source stays valid JS, an
+//     assignment target included): a key holding U+0000, which no environment has.
+// The rest of each replacement is capital letters derived from the name, so a rebuild is byte-for-byte the same.
+// The app's own bundle — the module graph Bun embeds in its `.bun` section (`__BUN,__bun` in a Mach-O) — is never
+// touched: the core's own code names some of these variables on purpose (the run home's environment refusals).
 //
 // `--check` is the byte check: no sealed name is left outside the module graph. `scripts/verify-sealed-core.ts` then
 // runs the sealed, signed binary with each door set and asserts that nothing foreign runs and no debugger opens.
@@ -35,12 +42,30 @@ export const SEALED_ENV_NAMES = ["BUN_INSPECT_CONNECT_TO", "BUN_INSPECT_PRELOAD"
 /** The names Bun must still contain before sealing (so a Bun that renamed one fails the build, not silently). */
 export const REQUIRED_NATIVE_NAMES = ["BUN_BE_BUN", "BUN_OPTIONS", "BUN_INSPECT", "BUN_INSPECT_CONNECT_TO"] as const;
 
-/** The same-length token a name becomes: capital letters from its SHA-256, never the name itself. */
-export function sealToken(name: string): string {
+/** Capital letters derived from `name`, `length` long: the visible rest of each replacement. */
+export function sealFiller(name: string, length: number): string {
   const digest = createHash("sha256").update(`clover-sealed-env:${name}`).digest();
   let out = "";
-  for (let i = 0; out.length < name.length; i++) out += String.fromCharCode(65 + (digest[i % digest.length]! + i) % 26);
-  return out === name ? `Z${out.slice(1)}` : out;
+  for (let i = 0; out.length < length; i++) out += String.fromCharCode(65 + (digest[i % digest.length]! + i) % 26);
+  return out;
+}
+
+/** Where an occurrence sits: Bun's native code, a JS member read (`.NAME`), or a quoted JS string (`"NAME"`). */
+export type Site = "native" | "member" | "quoted";
+
+export function siteOf(bytes: Uint8Array, at: number, length: number): Site {
+  const before = bytes[at - 1], after = bytes[at + length];
+  if (before === 0x2e) return "member";
+  if ((before === 0x22 || before === 0x27 || before === 0x60) && after === before) return "quoted";
+  return "native";
+}
+
+/** What an occurrence of `name` becomes, and where it starts (a member read replaces its dot too). */
+export function sealedReplacement(name: string, site: Site): { bytes: Uint8Array; offset: number } {
+  const enc = new TextEncoder();
+  if (site === "member") return { bytes: enc.encode(`["\\0${sealFiller(name, name.length - 5)}"]`), offset: -1 };
+  if (site === "quoted") return { bytes: enc.encode(`\\0${sealFiller(name, name.length - 2)}`), offset: 0 };
+  return { bytes: Uint8Array.of(0, ...enc.encode(sealFiller(name, name.length - 1))), offset: 0 };
 }
 
 export type ExecutableFormat = "macho" | "elf" | "pe";
@@ -115,11 +140,13 @@ export function sealBunDoors(bytes: Uint8Array): SealResult {
   const sealed: Record<string, number> = {};
   for (const name of SEALED_ENV_NAMES) {
     const at = occurrences(bytes, enc.encode(name), graph);
-    const token = enc.encode(sealToken(name));
-    for (const i of at) bytes.set(token, i);
+    for (const i of at) {
+      const r = sealedReplacement(name, siteOf(bytes, i, name.length));
+      bytes.set(r.bytes, i + r.offset);
+    }
     sealed[name] = at.length;
   }
-  const alreadySealed = REQUIRED_NATIVE_NAMES.every((n) => sealed[n] === 0 && occurrences(bytes, enc.encode(sealToken(n)), graph).length > 0);
+  const alreadySealed = REQUIRED_NATIVE_NAMES.every((n) => sealed[n] === 0 && occurrences(bytes, sealedReplacement(n, "native").bytes, graph).length > 0);
   if (!alreadySealed) {
     const missing = REQUIRED_NATIVE_NAMES.filter((n) => sealed[n] === 0);
     if (missing.length > 0) throw new Error(`Bun no longer names ${missing.join(", ")} where this step looks: audit the new Bun's doors before shipping it (scripts/seal-bun-doors.ts)`);
@@ -137,7 +164,7 @@ export function sealProblems(bytes: Uint8Array): string[] {
     if (left.length > 0) problems.push(`${name} is still in Bun's code at ${left.map((o) => `0x${o.toString(16)}`).join(", ")}`);
   }
   for (const name of REQUIRED_NATIVE_NAMES) {
-    if (occurrences(bytes, enc.encode(sealToken(name)), graph).length === 0) problems.push(`${name}'s sealed token is missing: the binary was not sealed by this step`);
+    if (occurrences(bytes, sealedReplacement(name, "native").bytes, graph).length === 0) problems.push(`${name}'s sealed token is missing: the binary was not sealed by this step`);
   }
   return problems;
 }

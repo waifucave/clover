@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, hostTarget } from "./build-daemon";
-import { sealProblems } from "./seal-bun-doors";
+import { sealFiller, sealProblems } from "./seal-bun-doors";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -66,6 +66,11 @@ export function doors(): Door[] {
     { name: "working folder node_modules (the runtime ladder's package rung)", args: ["__runtimes-probe"], check: "probe", cwdFiles: { "node_modules": "$PLANT" } },
     { name: "CLOVER_RUNTIME_EXECUTABLE (dist ignores it)", env: { CLOVER_RUNTIME_EXECUTABLE: "$NP/@yanlinglabs/winter-agent-sdk-darwin-arm64/bin/winter" }, args: ["__runtimes-probe"], check: "probe" },
     { name: "DYLD_INSERT_LIBRARIES (hardened runtime)", env: { DYLD_INSERT_LIBRARIES: "$DYLIB" }, os: ["darwin"] },
+    // The seal's own replacements, read out of the binary: their visible letters, and the empty name their NUL makes.
+    { name: "BUN_BE_BUN's sealed letters", env: { [sealFiller("BUN_BE_BUN", "BUN_BE_BUN".length - 1)]: "1" }, args: ["$PAYLOAD"] },
+    { name: "BUN_OPTIONS' sealed letters", env: { [sealFiller("BUN_OPTIONS", "BUN_OPTIONS".length - 1)]: "--preload $PAYLOAD" } },
+    { name: "BUN_INSPECT's sealed letters", env: { [sealFiller("BUN_INSPECT", "BUN_INSPECT".length - 1)]: "ws://127.0.0.1:47999/sealed?wait=1" } },
+    { name: "an empty variable name (=--preload …)", env: { "": "--preload $PAYLOAD" }, os: ["darwin", "linux"] },
   ];
 }
 

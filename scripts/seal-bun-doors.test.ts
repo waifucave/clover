@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { moduleGraphRange, REQUIRED_NATIVE_NAMES, SEALED_ENV_NAMES, sealBunDoors, sealProblems, sealToken } from "./seal-bun-doors";
+import { moduleGraphRange, REQUIRED_NATIVE_NAMES, SEALED_ENV_NAMES, sealBunDoors, sealedReplacement, sealFiller, sealProblems } from "./seal-bun-doors";
 
 const enc = new TextEncoder();
 /** Bun's native code as it names the doors: NUL-terminated, and in a run of names with no separators. */
-const NATIVE = `\0NO_COLOR\0BUN_BE_BUN\0BUN_INSTRUMENTS\0link binaryBUN_OPTIONSBUN_INSPECTBUN_INSPECT_CONNECT_TOBUN_INSPECT_NOTIFYBUN_INSPECT_PRELOADNODE_CHANNEL_FD\0nodePath = Bun.env.NODE_PATH, x\0`;
+const NATIVE = `\0NO_COLOR\0BUN_BE_BUN\0BUN_INSTRUMENTS\0link binaryBUN_OPTIONSBUN_INSPECTBUN_INSPECT_CONNECT_TOBUN_INSPECT_NOTIFYBUN_INSPECT_PRELOADNODE_CHANNEL_FD\0nodePath = Bun.env.NODE_PATH, x\0 if (process.env.BUN_INSPECT_NOTIFY = "", y) ["HOME",\n "NODE_PATH",\n "X"]\0`;
 /** The app's own bundle, which names some of them on purpose (the run home's environment refusals). */
 const GRAPH = `const refused = ["NODE_OPTIONS", "NODE_PATH", "BUN_OPTIONS", "BUN_INSPECT", "BUN_BE_BUN"];`;
 
@@ -83,16 +83,36 @@ function pe(native: string, graph: string): Uint8Array {
   return b;
 }
 
-describe("sealToken", () => {
-  test("the same length, capital letters only, never the name, the same every build", () => {
+describe("the replacements: same length, and a name no environment can carry", () => {
+  test("native: a NUL, then capital letters (an empty C string, and a slice no key can equal)", () => {
     for (const name of SEALED_ENV_NAMES) {
-      const t = sealToken(name);
-      expect(t).toHaveLength(name.length);
-      expect(t).toMatch(/^[A-Z]+$/);
-      expect(t).not.toBe(name);
-      expect(sealToken(name)).toBe(t);
+      const r = sealedReplacement(name, "native");
+      expect(r.offset).toBe(0);
+      expect(r.bytes.length).toBe(name.length);
+      expect(r.bytes[0]).toBe(0);
+      expect(Buffer.from(r.bytes.subarray(1)).toString("latin1")).toMatch(/^[A-Z]+$/);
+      expect(Buffer.from(sealedReplacement(name, "native").bytes).equals(Buffer.from(r.bytes))).toBe(true);
     }
-    expect(new Set(SEALED_ENV_NAMES.map(sealToken)).size).toBe(SEALED_ENV_NAMES.length);
+  });
+  test("a JS member read `.NAME` becomes a computed read of a key holding U+0000, valid as an assignment target too", () => {
+    for (const name of SEALED_ENV_NAMES) {
+      const r = sealedReplacement(name, "member");
+      expect(r.offset).toBe(-1);
+      expect(r.bytes.length).toBe(name.length + 1);
+      const code = Buffer.from(r.bytes).toString("latin1");
+      const env: Record<string, string> = { [name]: "set" };
+      expect(new Function("env", `return env${code}`)(env)).toBeUndefined();
+      expect(() => new Function("env", `env${code} = ""; return 1`)).not.toThrow();
+      expect((new Function(`return Object.keys({}${code} === undefined ? { k: 1 } : {})`)() as string[])).toEqual(["k"]);
+      expect(code.startsWith('["\\0')).toBe(true);
+    }
+  });
+  test("a quoted JS name becomes a string holding U+0000", () => {
+    for (const name of SEALED_ENV_NAMES) {
+      const r = sealedReplacement(name, "quoted");
+      expect(r.bytes.length).toBe(name.length);
+      expect(new Function(`return "${Buffer.from(r.bytes).toString("latin1")}"`)()).toBe(`\0${sealFiller(name, name.length - 2)}`);
+    }
   });
 });
 
@@ -106,13 +126,15 @@ describe("sealBunDoors", () => {
       expect(sealProblems(bytes).length).toBeGreaterThan(0);
       const r = sealBunDoors(bytes);
       expect(r.alreadySealed).toBe(false);
-      expect(r.sealed).toEqual({ BUN_INSPECT_CONNECT_TO: 1, BUN_INSPECT_PRELOAD: 1, BUN_INSPECT_NOTIFY: 1, BUN_INSPECT: 1, BUN_OPTIONS: 1, BUN_BE_BUN: 1, NODE_PATH: 1 });
+      expect(r.sealed).toEqual({ BUN_INSPECT_CONNECT_TO: 1, BUN_INSPECT_PRELOAD: 1, BUN_INSPECT_NOTIFY: 2, BUN_INSPECT: 1, BUN_OPTIONS: 1, BUN_BE_BUN: 1, NODE_PATH: 2 });
       expect(Buffer.from(bytes.slice(graph.start, graph.end)).equals(Buffer.from(graphBefore))).toBe(true);
       expect(sealProblems(bytes)).toEqual([]);
       // Nothing else moved: the separators and the neighbours are where they were.
       const native = Buffer.from(bytes.subarray(0, graph.start)).toString("latin1");
-      expect(native).toContain(`\0NO_COLOR\0${sealToken("BUN_BE_BUN")}\0BUN_INSTRUMENTS\0`);
-      expect(native).toContain(`Bun.env.${sealToken("NODE_PATH")}, x`);
+      expect(native).toContain(`\0NO_COLOR\0\0${sealFiller("BUN_BE_BUN", 9)}\0BUN_INSTRUMENTS\0`);
+      expect(native).toContain(`Bun.env["\\0${sealFiller("NODE_PATH", 4)}"], x`);
+      expect(native).toContain(`process.env["\\0${sealFiller("BUN_INSPECT_NOTIFY", 13)}"] = ""`);
+      expect(native).toContain(`"\\0${sealFiller("NODE_PATH", 7)}",`);
       expect(native).toContain("NODE_CHANNEL_FD");
       // The bundle still names every one (its refusals list is the app's, not Bun's).
       for (const name of ["NODE_PATH", "BUN_OPTIONS", "BUN_INSPECT", "BUN_BE_BUN"]) expect(count(bytes, name)).toBe(1);
