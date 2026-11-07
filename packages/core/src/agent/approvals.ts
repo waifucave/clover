@@ -112,6 +112,12 @@ export class ApprovalBroker {
     return out;
   }
 
+  /** How many approvals wait for an answer, in every session (the update gate's: an update never installs over a
+   *  pending card). */
+  pendingCount(): number {
+    return this.pending.size;
+  }
+
   /** SP-approvals T4: the stored meta for ONE still-pending approval, WITHOUT resolving it —
    *  Task 5's `approval.respond` handler needs to look up the chosen `optionId`'s `rule`/`scope`
    *  BEFORE deciding whether to persist a permission rule, but must leave the entry untouched for

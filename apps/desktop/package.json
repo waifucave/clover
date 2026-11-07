@@ -23,8 +23,10 @@
     "@types/react-dom": "19.3.0",
     "@waifucave/clover-plugin-sdk": "workspace:*",
     "@waifucave/clover-protocol": "workspace:*",
+    "@waifucave/clover-update-feed": "workspace:*",
     "electron": "45.2.3",
     "electron-builder": "26.18.0",
+    "electron-updater": "6.8.11",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   }

@@ -13,8 +13,14 @@
 //   4. runs electron-builder for the OS's targets (`--publish never`, always) with the channel; with --sign, the
 //      identity and notarization on macOS, and forced signing and the update publisher on Windows
 //   5. with --sign on macOS: signs, notarizes and staples the dmg, measures the update file's dmg entry again,
-//      and checks every signature (the app, the daemon, the sidecar, the dmg), Gatekeeper's verdict and the staples
-//   6. on latest, copies the update files to the beta names (lib.ts's `writeServedCopies`), and checks the installers and update files are all there, each update file against the files it names, and
+//      and checks the app and the app inside the update zip (every signature, the daemon's and the sidecar's
+//      entitlements, the seal, Gatekeeper's verdict, the staple) and the dmg (its signature, its staple, Gatekeeper
+//      on opening it); on Windows, the Authenticode signatures of the installer, Clover.exe, clover-core.exe and
+//      clover-link.exe, by the publisher
+//   6. copies the daemon out of the app (signed with it, on a signed build) as clover-core-<version>-<target>, with its
+//      update file for each channel served (lib.ts's `writeCoreAssets`), for a server's daemon to update itself from
+//   7. records the commit it built (BUILD-COMMIT-<os>.txt; a signed build needs a clean checkout), on latest copies
+//      the update files to the beta names (lib.ts's `writeServedCopies`), and checks the installers and update files are all there, each update file against the files it names, and
 //      writes SHA256SUMS-<os>.txt beside them
 //
 // Signing is the owner's: without --sign the build is unsigned (CI's release workflow), whatever the environment
@@ -28,16 +34,19 @@
 // None is printed, logged or written anywhere. Nothing is published.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
 import {
-  channelArgs, checkUpdateInfo, codesignArgs, codesignDmgArgs, expectedArtifacts, feedFile, formatUpdateInfo, identityTeam,
+  authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
+  expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems,
-  writeServedCopies, type Channel,
+  writeCoreAssets, writeServedCopies, type Channel,
 } from "./lib";
+import { coreFeedFile } from "../../packages/update-feed/src/index";
 
 export type BuildOs = "mac" | "win";
 
@@ -97,6 +106,13 @@ export function signingInputs(os: BuildOs, env: Record<string, string | undefine
 
 export const DAEMON_TARGET: Readonly<Record<BuildOs, DaemonTarget>> = { mac: "darwin-arm64", win: "windows-x64" };
 
+/** The daemon inside the built app (the one the release ships, signed with the app on a signed build). */
+export function daemonInApp(outDir: string, os: BuildOs): string {
+  return os === "mac"
+    ? join(outDir, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon", "clover-core")
+    : join(outDir, "win-unpacked", "resources", "daemon", "clover-core.exe");
+}
+
 /** electron-builder's command for the OS's release, run in apps/desktop. Secrets reach it through its environment only. */
 export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, string | undefined>): string[] {
   const base = a.os === "mac" ? ["electron-builder", "--mac", "dmg", "zip", "--arm64"] : ["electron-builder", "--win", "nsis", "--x64"];
@@ -127,22 +143,59 @@ function must(say: string, cmd: readonly string[], cwd: string, env?: Record<str
 
 const sha256 = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
 
-/** The signed app's checks: each signature, Gatekeeper's verdict and the notarization staples. */
-function verifyMac(outDir: string, version: string, teamId: string): string[] {
-  const app = join(outDir, "mac-arm64", "Clover.app");
-  const dmg = join(outDir, `Clover-${version}.dmg`);
+/** One signed app's checks: its signatures, the resources' entitlements, its seal, Gatekeeper's verdict and its staple. */
+function verifyMacApp(label: string, app: string, teamId: string, root: string, cwd: string): string[] {
   const problems: string[] = [];
-  const display = (path: string) => parseCodesignDisplay(run(["codesign", "-dvvv", path], outDir).out);
-  problems.push(...signatureProblems("Clover.app", display(app), teamId));
-  for (const b of RESOURCE_BINARIES) problems.push(...signatureProblems(b.file, display(join(app, "Contents", "Resources", "daemon", b.file)), teamId, b.identifier));
-  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", app], outDir);
-  if (deep.status !== 0) problems.push(`codesign --verify --deep --strict refuses Clover.app: ${deep.out.trim().slice(0, 400)}`);
-  const gate = run(["spctl", "--assess", "--type", "execute", "--verbose=2", app], outDir);
-  if (gate.status !== 0 || !/source=Notarized Developer ID/.test(gate.out)) problems.push(`Gatekeeper doesn't accept Clover.app as notarized: ${gate.out.trim().slice(0, 400)}`);
-  for (const path of [app, dmg]) if (run(["xcrun", "stapler", "validate", path], outDir).status !== 0) problems.push(`${path.split("/").pop()} has no notarization staple`);
-  const dmgSig = display(dmg);
-  if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`the dmg is not signed by team ${teamId}`);
+  const display = (path: string) => parseCodesignDisplay(run(["codesign", "-dvvv", path], cwd).out);
+  problems.push(...signatureProblems(label, display(app), teamId));
+  for (const b of RESOURCE_BINARIES) {
+    const path = join(app, "Contents", "Resources", "daemon", b.file);
+    problems.push(...signatureProblems(`${label}'s ${b.file}`, display(path), teamId, b.identifier));
+    // Exactly the entitlements it was meant to have: the daemon's file, and none for the sidecar.
+    const have = parseEntitlementKeys(run(["codesign", "-d", "--entitlements", "-", "--xml", path], cwd).out);
+    const want = b.entitlements === undefined ? [] : entitlementsIn(readFileSync(join(root, b.entitlements), "utf8"));
+    if (have.join(",") !== want.join(",")) problems.push(`${label}'s ${b.file} has the entitlements [${have.join(", ")}], not [${want.join(", ")}]`);
+  }
+  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", app], cwd);
+  if (deep.status !== 0) problems.push(`codesign --verify --deep --strict refuses ${label}: ${deep.out.trim().slice(0, 400)}`);
+  const gate = run(["spctl", "--assess", "--type", "execute", "--verbose=2", app], cwd);
+  if (gate.status !== 0 || !/source=Notarized Developer ID/.test(gate.out)) problems.push(`Gatekeeper doesn't accept ${label} as notarized: ${gate.out.trim().slice(0, 400)}`);
+  if (run(["xcrun", "stapler", "validate", app], cwd).status !== 0) problems.push(`${label} has no notarization staple`);
   return problems;
+}
+
+/**
+ * The signed release's checks: the app, the app inside the update zip (what electron-updater installs), and the dmg
+ * (its signature, its staple, and Gatekeeper's verdict on opening it).
+ */
+function verifyMac(outDir: string, version: string, teamId: string, root: string): string[] {
+  const dmg = join(outDir, `Clover-${version}.dmg`);
+  const problems = verifyMacApp("Clover.app", join(outDir, "mac-arm64", "Clover.app"), teamId, root, outDir);
+  const unzipped = mkdtempSync(join(tmpdir(), "clover-release-zip-"));
+  try {
+    if (run(["ditto", "-x", "-k", join(outDir, `Clover-${version}-mac.zip`), unzipped], outDir).status !== 0) problems.push("the update zip doesn't unpack");
+    else problems.push(...verifyMacApp("the update zip's Clover.app", join(unzipped, "Clover.app"), teamId, root, outDir));
+  } finally {
+    rmSync(unzipped, { recursive: true, force: true });
+  }
+  const dmgSig = parseCodesignDisplay(run(["codesign", "-dvvv", dmg], outDir).out);
+  if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`the dmg is not signed by team ${teamId}`);
+  if (run(["xcrun", "stapler", "validate", dmg], outDir).status !== 0) problems.push("the dmg has no notarization staple");
+  const open = run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", dmg], outDir);
+  if (open.status !== 0 || !/source=Notarized Developer ID/.test(open.out)) problems.push(`Gatekeeper doesn't accept the dmg as notarized: ${open.out.trim().slice(0, 400)}`);
+  return problems;
+}
+
+/** The signed Windows release's checks: the installer, the app, and the daemon and sidecar beside it. */
+function verifyWin(outDir: string, version: string, publisher: string): string[] {
+  const unpacked = join(outDir, "win-unpacked");
+  const files = [
+    [`Clover-Setup-${version}.exe`, join(outDir, `Clover-Setup-${version}.exe`)],
+    ["Clover.exe", join(unpacked, "Clover.exe")],
+    ["clover-core.exe", join(unpacked, "resources", "daemon", "clover-core.exe")],
+    ["clover-link.exe", join(unpacked, "resources", "daemon", "clover-link.exe")],
+  ] as const;
+  return files.flatMap(([name, path]) => authenticodeProblems(name, run(authenticodeCommand(path), outDir).out, publisher));
 }
 
 export function main(argv: readonly string[], root: string): number {
@@ -174,12 +227,15 @@ export function main(argv: readonly string[], root: string): number {
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
+    console.log(`release/build: the daemon's own update: ${daemonInApp("out/dist", a.os)} as its release file, with its update files`);
     console.log(`release/build: expects ${expectedArtifacts(version, a.os, a.channel).join(", ")}`);
     return 0;
   }
   try {
     const outDir = join(desktop, "out", "dist");
     const staged = join(desktop, "out", "daemon");
+    // A release is of one commit; a signed one of a clean checkout of it.
+    const commit = checkoutCommit(root, a.sign);
     rmSync(outDir, { recursive: true, force: true });
     must("the app", ["bun", "run", "build"], desktop);
     if (runScriptLine(`bun scripts/build-daemon.ts --target ${target}`, root) !== 0) throw new Error("the daemon's build failed");
@@ -210,10 +266,17 @@ export function main(argv: readonly string[], root: string): number {
         if (info.files.some((e) => e.url === dmgName)) writeFileSync(path, formatUpdateInfo(refreshEntry(info, dmgName, readFileSync(dmg))));
       }
       rmSync(`${dmg}.blockmap`, { force: true });
-      const problems = verifyMac(outDir, version, identityTeam(process.env.CLOVER_MAC_IDENTITY!));
+      const problems = verifyMac(outDir, version, identityTeam(process.env.CLOVER_MAC_IDENTITY!), root);
       for (const p of problems) console.error(`release/build: ${p}`);
       if (problems.length > 0) return 1;
     }
+    if (a.sign && a.os === "win") {
+      const problems = verifyWin(outDir, version, process.env.CLOVER_WIN_PUBLISHER!);
+      for (const p of problems) console.error(`release/build: ${p}`);
+      if (problems.length > 0) return 1;
+    }
+    writeCoreAssets(outDir, version, a.os, a.channel, daemonInApp(outDir, a.os));
+    writeBuildCommit(outDir, a.os, commit);
     writeServedCopies(outDir, a.channel, [a.os]);
 
     const problems: string[] = [];
@@ -223,10 +286,12 @@ export function main(argv: readonly string[], root: string): number {
       if (!existsSync(path)) continue;
       const read = (n: string) => (existsSync(join(outDir, n)) ? new Uint8Array(readFileSync(join(outDir, n))) : undefined);
       problems.push(...checkUpdateInfo(parseUpdateInfo(readFileSync(path, "utf8")), version, read).map((p) => `${feedFile(ch, a.os)}: ${p}`));
+      const core = coreFeedFile(ch, CORE_TARGET[a.os]);
+      if (existsSync(join(outDir, core))) problems.push(...checkCoreFeed(readFileSync(join(outDir, core), "utf8"), version, read).map((p) => `${core}: ${p}`));
     }
     for (const p of problems) console.error(`release/build: ${p}`);
     if (problems.length > 0) return 1;
-    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n)).sort();
+    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n) || n.startsWith("clover-core-")).sort();
     writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
     console.log(`release/build: ${shipped.join(", ")} in ${outDir}${a.sign ? "" : " (unsigned)"}`);
     return 0;

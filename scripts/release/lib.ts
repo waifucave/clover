@@ -1,6 +1,7 @@
 // Clover's release (plan §4 M-M2): the update channels and feeds, the artifacts each OS's release holds, and the
 // signing and notarization commands, as pure functions the release scripts (build.ts, publish.ts) and their tests
-// share. Nothing here runs a command or reads a secret; `writeServedCopies` is its one write, into a build's output.
+// share. Nothing here reads a secret; `writeServedCopies` and `writeBuildCommit` are its only writes, into a build's
+// output, and `writeBuildCommit` its only command (git).
 //
 // The feed: electron-updater's GitHub provider over this public repository's releases (electron-builder.yml's
 // `publish`), the same releases the Homebrew cask and winget download from. A release is tagged v<version> and holds
@@ -11,9 +12,15 @@
 //            release (publish.ts --promote)
 // electron-updater reads `<channel>-mac.yml`, `<channel>.yml` (Windows), `<channel>-linux.yml` and
 // `<channel>-linux-arm64.yml` from the newest release its channel allows.
+//
+// A server's daemon (a `clover-core server install`, no app) updates itself from the same releases: each OS's build
+// also leaves its daemon as `clover-core-<version>-<target>` and the daemon's update file `<channel>-core-<target>.yml`
+// (version, file, sha512, size; packages/update-feed's `formatCoreFeed`), and the owner's release step signs both.
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { coreBinaryFile, coreFeedFile, formatCoreFeed, parseCoreFeed, type CoreTarget } from "../../packages/update-feed/src/index";
 
 export const CHANNELS = ["latest", "beta"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -49,9 +56,78 @@ export function installers(version: string, os: ReleaseOs): string[] {
   }
 }
 
-/** Every file `os`'s release build must leave: its installers and its update files for each channel served. */
+/** The file a build leaves saying which commit it was built from (publish.ts tags the release at it). */
+export function buildCommitFile(os: ReleaseOs): string {
+  return `BUILD-COMMIT-${os}.txt`;
+}
+
+/** The checkout's commit, or a refusal: a release build is of a commit, and a signed one of a clean checkout. */
+export function checkoutCommit(root: string, requireClean: boolean): string {
+  const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
+  const commit = (head.stdout ?? "").trim();
+  if (head.status !== 0 || !/^[0-9a-f]{40}$/.test(commit)) throw new Error("a release builds from a git checkout");
+  if (requireClean) {
+    const dirty = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: root, encoding: "utf8" });
+    if (dirty.status !== 0 || (dirty.stdout ?? "").trim() !== "") throw new Error("a signed release builds from a clean checkout: commit or stash the changes first");
+  }
+  return commit;
+}
+
+/** Records the commit a build came from beside its files (`buildCommitFile`). */
+export function writeBuildCommit(outDir: string, os: ReleaseOs, commit: string): void {
+  writeFileSync(join(outDir, buildCommitFile(os)), `${commit}\n`);
+}
+
+/** The daemon's target each OS's release build makes (scripts/build-daemon.ts's). */
+export const CORE_TARGET: Readonly<Record<ReleaseOs, CoreTarget>> = { mac: "darwin-arm64", win: "windows-x64", "linux-x64": "linux-x64", "linux-arm64": "linux-arm64" };
+
+/** The daemon's files in `os`'s release: its binary and its update file for each channel served. */
+export function coreArtifacts(version: string, os: ReleaseOs, channel: Channel): string[] {
+  return [coreBinaryFile(version, CORE_TARGET[os]), ...channelsServed(channel).map((c) => coreFeedFile(c, CORE_TARGET[os]))];
+}
+
+/** Every file `os`'s release build must leave: its installers, its update files for each channel served, and the
+ *  daemon's (`coreArtifacts`). */
 export function expectedArtifacts(version: string, os: ReleaseOs, channel: Channel): string[] {
-  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os))];
+  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os)), ...coreArtifacts(version, os, channel)];
+}
+
+/**
+ * After the build: the daemon `binary` (the one inside the app, signed with it on a signed macOS build) copied as
+ * `clover-core-<version>-<target>`, and its update file for each channel served. Returns the files written.
+ */
+export function writeCoreAssets(outDir: string, version: string, os: ReleaseOs, channel: Channel, binary: string): string[] {
+  const file = coreBinaryFile(version, CORE_TARGET[os]);
+  copyFileSync(binary, join(outDir, file));
+  const bytes = readFileSync(join(outDir, file));
+  const feed = formatCoreFeed({ version, file, sha512: sha512Base64(bytes), size: bytes.length });
+  const feeds = channelsServed(channel).map((c) => coreFeedFile(c, CORE_TARGET[os]));
+  for (const f of feeds) writeFileSync(join(outDir, f), feed);
+  return [file, ...feeds];
+}
+
+/** What's wrong with a daemon's update file against the binary it names (`read` gives a file's bytes, or undefined). */
+export function checkCoreFeed(text: string, version: string, read: (name: string) => Uint8Array | undefined): string[] {
+  let feed: ReturnType<typeof parseCoreFeed>;
+  try {
+    feed = parseCoreFeed(text);
+  } catch (err) {
+    return [(err as Error).message];
+  }
+  const problems: string[] = [];
+  if (feed.version !== version) problems.push(`it is for ${feed.version}, not ${version}`);
+  const bytes = read(feed.file);
+  if (bytes === undefined) problems.push(`${feed.file} is missing`);
+  else {
+    if (sha512Base64(bytes) !== feed.sha512) problems.push(`${feed.file}'s sha512 doesn't match`);
+    if (bytes.length !== feed.size) problems.push(`${feed.file}'s size is ${bytes.length}, not ${feed.size}`);
+  }
+  return problems;
+}
+
+/** Whether `name` is one of the daemon's update files. */
+export function isCoreFeed(name: string): boolean {
+  return /^(latest|beta)-core-[a-z0-9-]+\.yml$/.test(name);
 }
 
 /** After electron-builder: each update file `oses`' build wrote for `channel`, copied under the other channels it serves
@@ -198,6 +274,34 @@ export function parseCodesignDisplay(out: string): CodeSignature {
     timestamped: /^Timestamp=/m.test(out),
     adhoc: flags.split(",").includes("adhoc") || /^Signature=adhoc$/m.test(out),
   };
+}
+
+/** The entitlement keys in `codesign -d --entitlements - --xml <path>`'s plist (none when it printed none). */
+export function parseEntitlementKeys(xml: string): string[] {
+  return [...xml.matchAll(/<key>([^<]+)<\/key>\s*<true\s*\/>/g)].map((m) => m[1]!).sort();
+}
+
+/** The keys an entitlements file grants. */
+export function entitlementsIn(plist: string): string[] {
+  return parseEntitlementKeys(plist);
+}
+
+/** One file's Authenticode check, from PowerShell's `Get-AuthenticodeSignature` (`<Status>|<signer subject>`). */
+export function authenticodeProblems(name: string, line: string, publisher: string): string[] {
+  const [status = "", subject = ""] = line.trim().split("|");
+  const problems: string[] = [];
+  if (status !== "Valid") problems.push(`${name}'s Authenticode signature is ${status || "missing"}, not Valid`);
+  const m = /(?:^|,\s*)CN=(?:"([^"]+)"|([^,]+))/.exec(subject);
+  const cn = m?.[1] ?? m?.[2]?.trim();
+  if (status === "Valid" && cn !== publisher) problems.push(`${name} is signed by ${cn ?? "(no CN)"}, not ${publisher}`);
+  return problems;
+}
+
+/** The PowerShell that reports a file's Authenticode status and signer, one line, for `authenticodeProblems`. */
+export function authenticodeCommand(path: string): string[] {
+  const literal = path.replace(/'/g, "''");
+  return ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+    `$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; Write-Output ($s.Status.ToString() + '|' + $(if ($s.SignerCertificate) { $s.SignerCertificate.Subject } else { '' }))`];
 }
 
 /** What's wrong with one signed file for a release by `teamId` (notarization refuses each of these). */
