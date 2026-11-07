@@ -32,7 +32,7 @@ export interface StartBrowserOptions {
   peers?: BrowserPeers;
   grants?: PersonsBrowserGrants;
   emit?: (event: BrowserEvent) => void;
-  /** The headless shell's stream chunks (the stream sender takes them). */
+  /** The headless shell's stream chunks (by default the service's own stream sender takes them). */
   streamData?: (stream: string, chunk: StreamChunk) => void;
   log?: (line: string) => void;
   /** For tests: the headless browser's own options on top. */
@@ -68,7 +68,8 @@ export function startBrowser(o: StartBrowserOptions): DaemonBrowser {
       computer: o.computer,
       network: filter,
       report: (events) => service.report(events),
-      ...(o.streamData !== undefined ? { streamData: o.streamData } : {}),
+      // The shell's JPEG frames go to the service's stream sender, as the app's chunks do.
+      streamData: o.streamData ?? ((stream, chunk) => service.streamData(stream, chunk)),
       ...(o.log !== undefined ? { log: o.log } : {}),
       ...o.headlessOptions,
     });

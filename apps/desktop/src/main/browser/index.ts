@@ -12,7 +12,7 @@
 // the app's window guards leave them alone: `isBrowserContents` tells them apart from the moment each is made.
 import { app, BrowserWindow, dialog, Menu, type BaseWindow, type ContextMenuParams, type Rectangle } from "electron";
 import { randomBytes } from "node:crypto";
-import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabCommand, type AppTabEvent, type BrowserNetworkConfig, type TabOwner, type TabPlace, type TabView, type Viewport as Size } from "./contract";
+import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabCommand, type AppTabEvent, type BrowserNetworkConfig, type StreamChunk, type TabOwner, type TabPlace, type TabView, type Viewport as Size } from "./contract";
 import { HostWindow } from "./host-window";
 import { choosePopup } from "./popups";
 import { ScreenReaderSwitch, type ScreenReaderProbe } from "./screen-reader";
@@ -21,6 +21,7 @@ import { checkProxySetting, DEFAULT_PROXY_SETTING, type BrowserProxySetting } fr
 import { appProxyRoutes, resetPacSession, runCommand } from "./system-proxy";
 import { PeerOwner } from "./peer-owner";
 import { guardPage, isSessionReady, prepareTabSession, resetViewportSession } from "./session";
+import { TabStreamer, type StreamPageAssets, type StreamStats } from "./stream";
 import { BrowserTab, HostTab, OffscreenTab, tabWebPreferences, type TabEnv } from "./tab";
 import { Viewport, type ViewportAssets } from "./viewport";
 
@@ -30,6 +31,7 @@ export { BOT_LAN_POLICY, BOT_POLICY, PERSON_POLICY, SESSION_POLICY, type Address
 export type { BrowserProxySetting } from "./proxy";
 export type { AppTabCommand, AppTabEvent, BrowserNetworkConfig, StreamChunk, StreamCodec, TabOwner, TabPlace, TabView } from "./contract";
 export type { ViewportAssets } from "./viewport";
+export type { StreamPageAssets, StreamStats } from "./stream";
 
 /** Where a browser view's frame is: its window, and the frame's rectangle in the window's content. */
 export interface ViewTarget {
@@ -71,6 +73,12 @@ export interface BrowserHostOptions {
   } & Pick<NetworkFilterOptions, "lookup" | "dial" | "log" | "acceptPeer">;
   /** The network settings to start with (the core sends them again with `configure` as soon as it connects). */
   config?: BrowserNetworkConfig;
+  /** A streamed tab's chunks, to the daemon (spec §12.1 "From another device"), tagged with the stream the core
+   *  named in its `stream` command: a `config`, then frames, then `ended`. Lane E carries them over the pair. Without
+   *  this and `streamAssets` the app refuses to stream. */
+  streamData?(stream: string, chunk: StreamChunk): void;
+  /** The encoder page's built files (`BROWSER_ASSETS.streamPreload`/`streamHtml`). */
+  streamAssets?: StreamPageAssets;
 }
 
 export class BrowserHost {
@@ -82,6 +90,7 @@ export class BrowserHost {
   private flushing = false;
   private readonly env: TabEnv;
   private readonly network: NetworkFilter;
+  private readonly streamer: TabStreamer | undefined;
   private lanBots: ReadonlySet<string> = new Set();
   private proxy: BrowserProxySetting = DEFAULT_PROXY_SETTING;
 
@@ -94,6 +103,8 @@ export class BrowserHost {
       acceptPeer: opts.network?.acceptPeer ?? ((peer, port) => owner.accepts(peer, port)),
     });
     if (opts.config !== undefined) void this.configure(opts.config);
+    const { streamData, streamAssets } = opts;
+    this.streamer = streamData !== undefined && streamAssets !== undefined ? new TabStreamer({ assets: streamAssets, send: (stream, chunk) => streamData(stream, chunk) }) : undefined;
     const host = this;
     this.env = {
       computer: opts.computer,
@@ -103,7 +114,10 @@ export class BrowserHost {
       contextMenu: (tab, params) => host.contextMenu(tab, params),
       fileChooser: (tab, chooser) => void host.fileChooser(tab, chooser),
       cursor: (tab, type) => { if (tab instanceof OffscreenTab) host.viewportOf(tab)?.cursor(tab, type); },
-      paint: (tab, dirty, image) => { if (tab instanceof OffscreenTab && tab.place === "shown") host.viewportOf(tab)?.paint(tab, dirty, image); },
+      paint: (tab, dirty, image) => {
+        if (tab instanceof OffscreenTab && tab.place === "shown") host.viewportOf(tab)?.paint(tab, dirty, image);
+        host.streamer?.paint(tab, dirty, image);
+      },
       dragIntercepted: (tab, data) => { if (tab instanceof OffscreenTab) host.viewportOf(tab)?.dragIntercepted(tab, data); },
     };
   }
@@ -162,8 +176,14 @@ export class BrowserHost {
       case "cdp":
         return tab.cdp(command.method, command.params);
       case "stream":
+        if (this.streamer === undefined) throw new Error("this app doesn't stream tabs");
+        if (command.on) await this.streamer.start(tab, command);
+        else this.streamer.stop(command.stream, "stopped");
+        return null;
       case "stream-control":
-        throw new Error("this app doesn't stream tabs yet");
+        if (this.streamer === undefined) throw new Error("this app doesn't stream tabs");
+        this.streamer.control(command);
+        return null;
     }
   }
 
@@ -221,8 +241,14 @@ export class BrowserHost {
     this.show(tab, view, tab.viewport);
   }
 
+  /** The streams running now: codec, encoder, bitrate and what was sent (diagnostics). */
+  streams(): StreamStats[] {
+    return this.streamer?.stats() ?? [];
+  }
+
   shutdown(): void {
     this.screenReader.stop();
+    this.streamer?.shutdown();
     for (const tab of this.tabs.values()) tab.close();
     for (const slot of this.views.values()) slot.viewport?.destroy();
     this.views.clear();
@@ -300,6 +326,7 @@ export class BrowserHost {
   private forget(id: string): void {
     const tab = this.tabs.get(id);
     if (tab === undefined) return;
+    this.streamer?.tabClosed(id);
     this.unshow(tab);
     this.tabs.delete(id);
     if (tab instanceof HostTab) this.hostWindow.closeIfEmpty();

@@ -7,3 +7,4 @@ export * from "./proxy";
 export * from "./peers";
 export * from "./peer-owner";
 export * from "./daemon";
+export * from "./stream";

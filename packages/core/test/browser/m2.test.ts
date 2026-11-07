@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import {
   BrowserError, BrowserService, personsBrowserGrants, serveBrowserPeers, USER_BROWSER_PARTITION_GRANT, type BrowserEvent,
-  type BrowserPeers, type PersonsBrowserCard, type SessionGrantsPort,
+  STREAM_LINK_LABEL, StreamFrameReader, type BrowserPeers, type PersonsBrowserCard, type SessionGrantsPort, type StreamChunk,
 } from "../../src/browser";
 import { FakeApp } from "./fakes";
 
@@ -224,5 +224,39 @@ describe("the computer field, across computers", () => {
     expect(await code(here.open(asAlpha, { owner: alpha, computer: "Nowhere" }))).toBe("no_computer");
     const refused = twoComputers({ mayCall: () => false });
     expect(await code(refused.here.open(asAlpha, { owner: alpha, computer: "Laptop" }))).toBe("app_failed");
+  });
+});
+
+describe("browser.stream through the service", () => {
+  test("the person's phone gets a tab as video: the app is told to stream, its chunks reach the phone, a close ends it; a session that can't use the tab can't stream it", async () => {
+    const net = new FakeLinkNetwork();
+    const studio = net.endpoint("dev-studio");
+    const phone = net.endpoint("dev-phone");
+    const app = new FakeApp();
+    const service = new BrowserService({ computer: "Studio", app: () => app, newId: () => "tab_1", streams: { transport: studio } });
+    const got: StreamChunk[] = [];
+    let ended: Error | undefined | "no";
+    ended = "no";
+    phone.onStream(STREAM_LINK_LABEL, (stream) => {
+      const reader = new StreamFrameReader();
+      stream.onData((bytes) => got.push(...reader.push(bytes)));
+      stream.onEnd((e) => { ended = e; });
+    });
+    const tab = await service.open(person, { owner: alpha });
+    expect(await code(service.stream(asLuna, tab.id, { on: true }, "dev-phone"))).toBe("no_tab");
+    const { stream } = await service.stream(person, tab.id, { on: true, maxKbps: 1000 }, "dev-phone");
+    expect(stream).toBeDefined();
+    // The app encodes under its own stream id (one encoder may serve several viewers); the viewer's is the link's.
+    const cmd = app.commands.at(-1)!;
+    expect(cmd).toMatchObject({ id: tab.id, command: { kind: "stream", on: true, maxKbps: 1000 } });
+    const encoder = (cmd.command as { stream: string }).stream;
+    service.streamData(encoder, { kind: "config", codec: "vp8", codecString: "vp8", width: 1280, height: 800 });
+    service.streamData(encoder, { kind: "frame", key: true, timestamp: 1, data: new Uint8Array([1, 2, 3]) });
+    await tick();
+    expect(got.map((c) => c.kind)).toEqual(["config", "frame"]);
+    service.report([{ kind: "closed", id: tab.id, by: "page" }]);
+    await tick();
+    expect(ended).not.toBe("no");
+    expect(await code(service.stream(person, "tab_1", { on: true }, "dev-phone"))).toBe("no_tab");
   });
 });

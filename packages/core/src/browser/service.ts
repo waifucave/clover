@@ -21,6 +21,8 @@ import { checkProxySetting, DEFAULT_PROXY_SETTING } from "./proxy";
 import type { ApprovalRequest } from "../contracts/approval-broker";
 import { BrowserError, checkCdpMethod, checkPoint, checkViewport, partitionFor, sameOwner } from "./policy";
 import { RemoteBrowsers, type BrowserPeers } from "./peers";
+import { TabStreams, type TabStreamsOptions } from "./stream";
+import type { StreamChunk, StreamCodec } from "./contract";
 
 /** Who is calling. The transport decides it (lane B's caller check): a layer acting for the person is `user`, a
  *  session's call is `agent`, and so is a plugin's call made while it serves a session's tool call (ruling R7: the core
@@ -141,6 +143,9 @@ export interface BrowserServiceOptions {
   /** The app's port, or undefined while no app runs on this computer. Where no app runs at all (a server), the
    *  headless shell's port (`headless/`). */
   app: () => AppTabPort | undefined;
+  /** The streamed view (`browser.stream`, `stream.ts`): its link to each viewer's device. Default: the peers' link;
+   *  without either, nothing streams. `tuning`, `ended` and the rest are `TabStreams`' own options. */
+  streams?: Partial<Omit<TabStreamsOptions, "computer" | "app">>;
   /** The network settings to start with: the proxy setting (Settings' `browser.proxy`) and the bots whose LAN
    *  setting is on (lane D's bot settings). `configure` changes them. */
   network?: BrowserNetworkConfig;
@@ -160,12 +165,40 @@ export class BrowserService {
   /** Tabs being opened now: the app may report them before `open` answers. */
   private readonly opening = new Set<string>();
   private readonly remote: RemoteBrowsers | undefined;
+  private readonly streams: TabStreams | undefined;
 
   constructor(private readonly opts: BrowserServiceOptions) {
     this.now = opts.now ?? Date.now;
     this.newId = opts.newId ?? (() => `tab_${randomBytes(9).toString("base64url")}`);
     this.network = checkNetwork(opts.network ?? { proxy: DEFAULT_PROXY_SETTING, lanBots: [] });
     this.remote = opts.peers !== undefined ? new RemoteBrowsers(opts.peers, (e) => this.emit(e)) : undefined;
+    const transport = opts.streams?.transport ?? opts.peers?.transport;
+    this.streams = transport !== undefined ? new TabStreams({ ...opts.streams, transport, computer: opts.computer, app: opts.app }) : undefined;
+  }
+
+  /** `browser.stream`: this computer's tab as video to another device (`device`, the caller's own, from its link), or
+   *  that stream stopped. Streaming only looks at the tab, so a tab the person holds streams too. */
+  async stream(caller: BrowserCaller, id: string, args: { on: boolean; maxKbps?: number; codecs?: StreamCodec[] }, device: string): Promise<{ stream?: string }> {
+    this.entry(caller, id, { lookOnly: true });
+    if (this.streams === undefined) throw new BrowserError("no_computer", "this computer has no link to other devices, so it streams no tab");
+    if (args.maxKbps !== undefined && (!Number.isInteger(args.maxKbps) || args.maxKbps < 50 || args.maxKbps > 50_000)) {
+      throw new BrowserError("bad_viewport", "maxKbps is a whole number from 50 to 50000");
+    }
+    if (!args.on) {
+      await this.streams.stop({ tab: id, device });
+      return {};
+    }
+    return this.streams.start({ tab: id, device, ...(args.maxKbps !== undefined ? { maxKbps: args.maxKbps } : {}), ...(args.codecs !== undefined ? { codecs: args.codecs } : {}) });
+  }
+
+  /** A streamed tab's chunk from the app (lane E's carriage of the app's `streamData`), or from the headless shell. */
+  streamData(stream: string, chunk: StreamChunk): void {
+    this.streams?.data(stream, chunk);
+  }
+
+  /** The app went (its pair dropped, or it is restarting): every stream it was encoding ends. */
+  appGone(): void {
+    this.streams?.appGone();
   }
 
   /** Every event the service emits (this computer's tabs, and the other computers' tabs it reached), besides
@@ -177,6 +210,7 @@ export class BrowserService {
 
   /** Stops listening to other computers. */
   dispose(): void {
+    this.streams?.close();
     this.remote?.dispose();
     this.listeners.clear();
   }
@@ -360,6 +394,7 @@ export class BrowserService {
         }
         case "closed":
           closedNow.add(event.id);
+          this.streams?.tabClosed(event.id);
           this.forget(event.id);
           break;
         case "cdp": {
@@ -393,6 +428,8 @@ export class BrowserService {
    *  is opened again at its last address, which reloads it (§12.1). Returns the ids reopened. */
   async reconnect(): Promise<string[]> {
     const app = this.app();
+    // Streams the old app was encoding are gone with it.
+    this.streams?.appGone();
     // The settings first, so no tab reopened below connects before its proxy and LAN setting are in place.
     await app.configure(this.networkConfig);
     const live = await app.list();
