@@ -93,7 +93,7 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
     home: input.home, store: input.store, clock: input.clock,
     self: input.self ?? { name: hostname(), kind: "desktop", os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux" },
     // The sidecar under this OS's fence (C-M3 item 4, fence/sidecar-spawn.ts).
-    ...(input.wire ? { wire: input.wire } : { sidecar: { binary: binary!, onLog: (l: string) => log(`[clover-link] ${l}`), spawn: input.sidecarSpawn ?? fencedSidecarSpawn({ onLog: (l: string) => log(`[clover-link] ${l}`) }) } as never }),
+    ...(input.wire ? { wire: input.wire } : { sidecar: { binary: binary!, onLog: (l: string) => log(`[clover-link] ${l}`), spawn: input.sidecarSpawn ?? fencedSidecarSpawn({ cloverHome: input.home, onLog: (l: string) => log(`[clover-link] ${l}`) }) } as never }),
     ...(input.directory ? { directory: input.directory } : {}),
   });
   Object.assign(input.handlers, laneMethodHandlers(devicesMethods({

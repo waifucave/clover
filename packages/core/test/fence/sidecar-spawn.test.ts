@@ -27,7 +27,10 @@ describe("the sidecar's fence: profile and arguments", () => {
   test("macOS: deny by default, only its own binary runs, the hidden folders last but the binary after them", () => {
     const p = sidecarSeatbeltProfile("/Applications/Clover.app/Contents/Resources/daemon/clover-link", ["/Users/someone"]);
     expect(p).toContain("(deny default)");
-    expect(p).toContain("(allow network*)");
+    expect(p).not.toContain("(allow network*)"); // IP only: no Unix socket on the disk
+    for (const rule of ["(allow network-outbound (remote ip))", "(allow network-bind (local ip))", "(allow network-inbound (local ip))"]) expect(p).toContain(rule);
+    expect(p).not.toMatch(/\(allow file-read-metadata\)/); // scoped, not everywhere
+    expect(p).toContain('(literal "/Applications/Clover.app/Contents/Resources/daemon")'); // the steps of its own path
     expect(p).not.toMatch(/allow file-write\* /);
     const deny = p.indexOf('(deny file-read* file-write* (subpath "/Users/someone"))');
     const exec = p.indexOf('(allow process-exec (literal "/Applications/Clover.app/Contents/Resources/daemon/clover-link"))');
@@ -37,14 +40,17 @@ describe("the sidecar's fence: profile and arguments", () => {
   });
 
   test("Linux: the root read-only, every home and the session's sockets empty, its own namespaces", () => {
-    const args = sidecarBwrapArgs("/srv/me", "/srv/me/.clover/bin/clover-link", () => true);
+    const args = sidecarBwrapArgs("/srv/me", "/data/clover/bin/clover-link", () => true, { cloverHome: "/data/clover", seccompFd: 3, disableUserns: true });
     expect(args.slice(0, 3)).toEqual(["--ro-bind", "/", "/"]);
-    for (const p of ["/home", "/root", "/run/user", "/srv/me", "/tmp"]) expect(args.join(" ")).toContain(`--tmpfs ${p}`);
+    for (const p of ["/home", "/root", "/run/user", "/media", "/run/media", "/mnt", "/srv/me", "/data/clover", "/tmp"]) expect(args.join(" ")).toContain(`--tmpfs ${p}`);
+    expect(args.join(" ")).toContain("--seccomp 3");
+    expect(args.join(" ")).toContain("--unshare-user --disable-userns");
+    expect(sidecarBwrapArgs("/srv/me", "/x", () => true)).not.toContain("--disable-userns");
     for (const f of ["--unshare-pid", "--unshare-ipc", "--cap-drop", "--new-session", "--die-with-parent"]) expect(args).toContain(f);
     expect(args).not.toContain("--unshare-net");
     // The binary bound back in after the tmpfs mounts that would hide it.
     const bind = args.lastIndexOf("--ro-bind");
-    expect(args.slice(bind, bind + 3)).toEqual(["--ro-bind", "/srv/me/.clover/bin/clover-link", "/srv/me/.clover/bin/clover-link"]);
+    expect(args.slice(bind, bind + 3)).toEqual(["--ro-bind", "/data/clover/bin/clover-link", "/data/clover/bin/clover-link"]);
     expect(bind).toBeGreaterThan(args.lastIndexOf("--tmpfs"));
     expect(sidecarBwrapArgs("/home/me", "/opt/clover-link", (p) => p === "/home" || p === "/home/me").filter((a) => a === "--tmpfs")).toHaveLength(3);
   });
@@ -59,8 +65,9 @@ describe("the sidecar's fence: profile and arguments", () => {
     expect(() => fencedSidecarSpawn({ platform: "linux", bwrapPaths: [process.execPath], spawn })(["/nonexistent/clover-link"])).toThrow(SidecarFenceUnavailable);
     fencedSidecarSpawn({ platform: "win32", spawn })(["C:\\Clover\\clover-link.exe"]);
     expect(seen[1]).toEqual(["C:\\Clover\\clover-link.exe"]);
-    fencedSidecarSpawn({ platform: "darwin", userHome: "/Users/someone", spawn })([process.execPath]);
+    fencedSidecarSpawn({ platform: "darwin", userHome: "/Users/someone", cloverHome: "/Volumes/Data/clover", spawn })([process.execPath]);
     expect(seen[2]!.slice(0, 2)).toEqual([SANDBOX_EXEC, "-p"]);
+    expect(seen[2]![2]).toContain('(deny file-read* file-write* (subpath "/Volumes/Data/clover"))');
     expect(seen[2]!.at(-1)).toBe(realpathSync(process.execPath));
     expect(() => fencedSidecarSpawn({ platform: "darwin", spawn })(["/nonexistent/clover-link"])).toThrow(SidecarFenceUnavailable);
   });
@@ -76,6 +83,34 @@ describe.skipIf(process.platform !== "darwin")("the sidecar's Seatbelt profile, 
     expect(run("/usr/bin/touch", [join(realpathSync(tmpdir()), `clover-c-touch-${process.pid}`)])).not.toBe(0);
     expect(existsSync(join(realpathSync(tmpdir()), `clover-c-touch-${process.pid}`))).toBe(false);
     expect(run("/bin/cat", ["/etc/hosts"])).toBe(0);
+  });
+
+  test("no Unix socket: a listener on the disk can't be reached, while TCP to a local address can", async () => {
+    const { createServer } = await import("node:net");
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-uds-")));
+    const sock = join(dir, "s.sock");
+    const uds = createServer((c) => c.end("x")).listen(sock);
+    const tcp = createServer((c) => c.end("x")).listen(0, "127.0.0.1");
+    await Promise.all([new Promise((r) => uds.once("listening", r)), new Promise((r) => tcp.once("listening", r))]);
+    try {
+      const nc = (args: string[], fenced: boolean) => Bun.spawnSync([...(fenced ? [SANDBOX_EXEC, "-p", sidecarSeatbeltProfile("/usr/bin/nc", [])] : []), "/usr/bin/nc", "-w", "2", ...args], { stdin: "ignore", timeout: 8000 }).exitCode;
+      expect(nc(["-U", sock], false)).toBe(0);
+      expect(nc(["-U", sock], true)).not.toBe(0);
+      expect(nc(["127.0.0.1", String((tcp.address() as { port: number }).port)], true)).toBe(0);
+    } finally {
+      uds.close();
+      tcp.close();
+    }
+  });
+
+  test("a Clover home outside the user's home is hidden too", () => {
+    const clover = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-home-")));
+    writeFileSync(join(clover, "settings.json"), "{}");
+    const seen: string[][] = [];
+    fencedSidecarSpawn({ userHome: "/Users/nobody-here", cloverHome: clover, spawn: (argv) => { seen.push([...argv]); return {} as never; } })(["/bin/cat"]);
+    const [, , profile] = seen[0]!;
+    expect(Bun.spawnSync([SANDBOX_EXEC, "-p", profile!, "/bin/cat", join(clover, "settings.json")]).exitCode).not.toBe(0);
+    expect(Bun.spawnSync([SANDBOX_EXEC, "-p", profile!, "/bin/cat", "/etc/hosts"]).exitCode).toBe(0);
   });
 });
 
@@ -93,11 +128,13 @@ const readAll = async (s: ReadableStream<Uint8Array>) => Buffer.concat(await Arr
 
 describe.skipIf(process.platform !== "win32")("the Windows sidecar, reduced, live", () => {
   test("low integrity, no privileges, Administrators deny-only, and it can start nothing", async () => {
-    const groups = await startReducedSidecar([`${SYS32}\\whoami.exe`, "/groups"]);
+    const groups = await startReducedSidecar([`${SYS32}\\whoami.exe`, "/groups", "/fo", "csv"]);
     const g = await readAll(groups.stdout);
     expect(await groups.exited).toBe(0);
     expect(g).toMatch(/Low Mandatory Level/);
     expect(g).not.toMatch(/Medium Mandatory Level/);
+    // Administrators, where the user has it, is deny-only, whether or not the daemon runs elevated.
+    for (const line of g.split("\n").filter((l) => /S-1-5-32-544/.test(l))) expect(line).toMatch(/deny only/i);
     const priv = await startReducedSidecar([`${SYS32}\\whoami.exe`, "/priv"]);
     const p = await readAll(priv.stdout);
     await priv.exited;
