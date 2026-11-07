@@ -121,7 +121,7 @@ const SECRET_SEGMENTS: ReadonlySet<string> = new Set([
   "KEY", "KEYS", "APIKEY", "TOKEN", "TOKENS", "SECRET", "SECRETS", "PASS", "PASSWORD", "PASSWD", "PWD", "CREDENTIAL", "CREDENTIALS", "AUTH", "PAT", "DSN", "PRIVATE",
 ]);
 /** Words that mark a secret wherever they stand in a name, run together or not (`GITHUBTOKEN`, `PGPASSWORD`). */
-const SECRET_WORDS = ["TOKEN", "SECRET", "PASSWORD", "PASSWD", "APIKEY", "CREDENTIAL", "PRIVATEKEY"];
+const SECRET_WORDS = ["TOKEN", "SECRET", "PASSWORD", "PASSWD", "PASSPHRASE", "APIKEY", "CREDENTIAL", "PRIVATEKEY", "COOKIE", "BEARER", "CONNECTIONSTRING"];
 /** The first segment of an address that carries a login: a data store's, or a webhook's (any segment). */
 const STORE_PREFIX = /^(DATABASE|DB|REDIS|MONGO|POSTGRES|MYSQL)/;
 /** Names that hand over an agent of the user's keys. */
@@ -144,8 +144,10 @@ export function looksLikeSecret(name: string): boolean {
   if (segs.some((s) => SECRET_SEGMENTS.has(s))) return true;
   const joined = segs.join("");
   if (SECRET_WORDS.some((w) => joined.includes(w))) return true;
+  // A webhook's address carries its key, with `_URL` or without (`SLACK_WEBHOOK`).
+  if (segs.some((s) => s.includes("WEBHOOK"))) return true;
   const last = segs.at(-1);
-  if ((last === "URL" || last === "URI") && segs.length > 1 && (STORE_PREFIX.test(segs[0]!) || segs.some((s) => s.includes("WEBHOOK")))) return true;
+  if ((last === "URL" || last === "URI") && segs.length > 1 && STORE_PREFIX.test(segs[0]!)) return true;
   return false;
 }
 
