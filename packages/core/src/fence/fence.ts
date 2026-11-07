@@ -23,7 +23,7 @@ import {
 } from "../contracts/fence";
 import { canonicalPath } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
-import { botFolders, fenceLayout, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
+import { botFolders, fenceLayout, globalHooksPathDirs, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
 
 /** Pending kinds this fence enforces before B's contract has them. */
 export const ENFORCED_AHEAD = ["hook-shell", "session-transcripts"] as const;
@@ -115,6 +115,8 @@ export class CloverFence implements Fence {
       const lib = jp.join(this.#home, ".local", "lib");
       const names = pythonSiteDirNames(() => readdirSync(lib, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name));
       for (const n of names) add("login-start", jp.join(lib, n, "site-packages"));
+      // The user's configured global hooks folder, if any (ruling 5): a planted hook there runs later too.
+      for (const p of globalHooksPathDirs(this.#home)) add("login-start", p);
     }
     const userData = this.#layout["browser-profiles"] ?? [`${this.#userData}/Partitions`];
     for (const p of userData) add("browser-profiles", p);

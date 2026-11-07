@@ -44,6 +44,9 @@ export interface BwrapInput {
   /** The session's own repo's `.git/hooks`, when it is there: bound read-only. Other repos under the home are a
    *  known limit on Linux (bwrap can't match patterns): the fence still judges every tool call that reaches them. */
   readonly repoHooks?: string | null;
+  /** Fenced files the supervisor refuses instead of the mounts (spec item 1116): never held for these, so `~` and
+   *  `~/.config` stay writable for ordinary new names. */
+  readonly supervised?: readonly string[];
 }
 
 const realFs = {
@@ -79,10 +82,12 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   // Where Clover names things outside its home: the nearest folder that is there takes the naming folders' shape
   // when a fenced item isn't there yet (a `.zshrc` a bash user never made, the login unit on a fresh home):
   // read-only, its present children writable, nothing new in it (fails closed: no new top-level names there for the
-  // command). `held` names each such folder for the refusal's explanation.
+  // command). `held` names each such folder for the refusal's explanation. Supervised files never hold: the
+  // supervisor refuses them, so `~` and `~/.config` stay writable for ordinary new names.
   const naming = new Set<string>();
+  const supervised = new Set(input.supervised ?? []);
   for (const d of fenced) {
-    if (inside(d, cloverHome) || fs.kind(d) !== null) continue;
+    if (inside(d, cloverHome) || fs.kind(d) !== null || supervised.has(d)) continue;
     let p = dirname(d);
     while (fs.kind(p) === null && p !== dirname(p)) p = dirname(p);
     if (writable.some((w) => inside(p, w))) {

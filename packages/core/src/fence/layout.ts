@@ -29,11 +29,12 @@
 // controller's ruling): Clover's own login item first, then the shells and their logout scripts, SSH and git config,
 // the folders that come ahead on PATH, and the desktop's autostart, systemd and session-script folders.
 // Waiting on kinds in B's contract, so not yet in `fencedSet()`: `pendingFenced` below.
-import { readdirSync } from "node:fs";
-import { join, posix, win32 } from "node:path";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { isAbsolute, join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { FencedKind } from "../contracts/fence";
 import { linkedRouterSupportsRunHome } from "../runtime-sdk/run-home-support";
+import { parseGitConfigWatched } from "./git-config";
 
 export type LaidOutKind = Exclude<FencedKind, "dev-folders" | "bot-memory" | "login-start" | "browser-profiles" | "agent-installs">;
 
@@ -143,6 +144,44 @@ export function loginStartPaths(home: string, cloverHome: string, os: Os): strin
   ];
 }
 
+/** The fenced login-start FOLDERS, made empty and read-only at sandbox setup (ruling 1). Derived, not listed:
+ *  every login-start path that is neither a safe nor an unsafe file and not one of Clover's own files. */
+export function loginStartDirs(home: string, cloverHome: string, os: Os): string[] {
+  if (os === "windows") return [];
+  const all = new Set(loginStartPaths(home, cloverHome, os));
+  for (const f of [...loginStartSafeFiles(home, os), ...loginStartUnsafeFiles(home, os)]) all.delete(f);
+  // Clover's own files are created and owned by the core.
+  const p = pathFor(os, home);
+  all.delete(p.join(home, "Library", "LaunchAgents", "com.waifucave.clover.core.plist"));
+  all.delete(pathFor(os, cloverHome).join(cloverHome, "login"));
+  return [...all];
+}
+
+/** The fenced login-start FILES that are safe to create empty (0600) at sandbox setup: sourcing an empty shell
+ *  file, logout script or X session script is a no-op, and an empty config means the program's defaults (npm, git,
+ *  bun, cargo, gnupg, pip's ini style, mimeapps). `.gitconfig` and the shells belong here; their hooks and the
+ *  folders around them stay fenced. */
+export function loginStartSafeFiles(home: string, os: Os): string[] {
+  const u = (...parts: string[]) => pathFor(os, home).join(home, ...parts);
+  const shells = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".profile", ".bash_aliases", ".zlogout", ".logout"];
+  const configs = [".npmrc", ".gitconfig", ".bunfig.toml", ".cargo/config.toml", ".cargo/config",
+    ".gnupg/gpg.conf", ".gnupg/gpg-agent.conf", ".gnupg/dirmngr.conf"];
+  if (os === "macos") return [...shells, ...configs].map((f) => u(f));
+  if (os === "linux") return [...shells, ".pam_environment", ".xprofile", ".xsessionrc", ...configs, ".config/mimeapps.list"].map((f) => u(f));
+  return [];
+}
+
+/** The fenced login-start FILES that are never created empty: an empty one still changes behavior — `.bash_profile`
+ *  and `.bash_login` shadow the user's `.profile`, an empty `.xinitrc` replaces the default X startup, an empty
+ *  `.vimrc`/`.emacs` replaces the editor's defaults, and an empty loginwindow plist is not a plist the login
+ *  window wrote. The Linux supervisor refuses them (spec item 1116); macOS refuses them by static deny. */
+export function loginStartUnsafeFiles(home: string, os: Os): string[] {
+  const u = (...parts: string[]) => pathFor(os, home).join(home, ...parts);
+  if (os === "macos") return [".bash_profile", ".bash_login", ".vimrc", ".emacs", "Library/Preferences/com.apple.loginwindow.plist"].map((f) => u(...f.split("/")));
+  if (os === "linux") return [".bash_profile", ".bash_login", ".xinitrc", ".vimrc", ".emacs"].map((f) => u(...f.split("/")));
+  return [];
+}
+
 /** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */
 export function botFolders(cloverHome: string): string[] {
   try { return readdirSync(join(cloverHome, "bots"), { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name); }
@@ -156,4 +195,31 @@ export function botFolders(cloverHome: string): string[] {
 export function gitTemplateDir(cloverHome: string): string {
   const p = cloverHome.startsWith("/") && !cloverHome.includes("\\") ? posix : win32;
   return p.join(cloverHome, "git-template");
+}
+
+/** The user's configured global `core.hooksPath` folders (spec item 1116, ruling 5): read from the global git
+ *  configs without following links. A hook planted in one runs later, outside the sandbox, so each is fenced
+ *  with the login-start set. Relative values resolve against the home; `~` expands. `/dev/null` (hooks off)
+ *  and empty values are skipped. */
+export function globalHooksPathDirs(home: string): string[] {
+  const readNoFollow = (p: string): string | null => {
+    try {
+      const st = lstatSync(p);
+      if (!st.isFile() || st.isSymbolicLink()) return null;
+      return readFileSync(p, "utf8");
+    } catch { return null; }
+  };
+  const out = new Set<string>();
+  for (const cfg of [join(home, ".gitconfig"), join(home, ".config", "git", "config")]) {
+    const text = readNoFollow(cfg);
+    if (text === null) continue;
+    for (const k of parseGitConfigWatched(text)) {
+      if (k.dotted.toLowerCase() !== "core.hookspath") continue;
+      const v = k.value.trim();
+      if (v === "" || v === "/dev/null") continue;
+      const expanded = v.startsWith("~/") ? join(home, v.slice(2)) : v;
+      out.add(isAbsolute(expanded) ? expanded : join(home, expanded));
+    }
+  }
+  return [...out];
 }

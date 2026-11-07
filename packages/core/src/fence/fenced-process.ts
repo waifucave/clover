@@ -6,14 +6,17 @@
 //            (AppArmor's restriction on Ubuntu without bwrap's profile) the door says so and refuses
 //   Windows  not yet: the door says so and refuses
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { fenceContextFor } from "../contracts/fence";
 import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote, unixSocketFilter } from "./linux-bwrap";
-import { gitTemplateDir } from "./layout";
+import { gitTemplateDir, globalHooksPathDirs, loginStartDirs, loginStartSafeFiles, loginStartUnsafeFiles } from "./layout";
+import { revertWatchedGitChanges, watchedGitChanges } from "./git-config";
 import { macFenceProfile } from "./macos-profile";
 import { callerPlaces } from "./per-caller";
 import { runCommand, type FencedRun, type FencedRunResult, type FencedSpawner } from "./spawn";
@@ -46,13 +49,19 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     if (!existsSync(SANDBOX_EXEC)) return closed("macOS's sandbox (sandbox-exec) isn't on this Mac");
     return {
       available: true,
-      run: (r) => {
+      run: async (r) => {
         const template = ensureGitTemplate(o.fence.cloverHome);
-        if (typeof template !== "string") return Promise.resolve(template);
+        if (typeof template !== "string") return template;
         const ctx = fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
         const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
-        return runCommand(withGitTemplate(r, template), { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
+        const configBefore = snapshotFiles(watchedConfigFiles(o.fence.home, r.cwd));
+        const result = await runCommand(withGitTemplate(r, template), { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
+        if (result.kind === "refused") return result;
+        // Repos made during the run weren't on disk at snapshot time: watch their configs as newly appeared.
+        for (const p of watchedConfigFiles(o.fence.home, r.cwd)) if (!configBefore.has(p)) configBefore.set(p, null);
+        const note = revertPlantedGitKeys(configBefore);
+        return note === null ? result : { ...result, stderr: result.stderr + note };
       },
     };
   }
@@ -103,12 +112,41 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           // fires later outside the sandbox. Other repos under the home are the known limit (bwrap can't match
           // patterns); the fence judges every tool call that reaches them.
           const repoHooks = ownRepoHooks(r.cwd, o.fence.home);
-          if (repoHooks !== null) { try { mkdirSync(repoHooks, { recursive: true, mode: 0o700 }); } catch { /* stays unbound */ } }
-          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks });
-          const result = await runCommand(withGitTemplate(r, template), { shell: "sh", argv: [bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
+          if (repoHooks !== null) { try { mkdirNoLinks(repoHooks); } catch { /* stays unbound: the belt still watches it */ } }
+          // Missing fenced login-start folders and safe files are made now, empty and link-free (ruling 1 and 2):
+          // the sandbox then binds them read-only instead of holding their parents, so ordinary new names stay
+          // writable. Clover's own browser partitions count too. A folder or file that can't be made refuses the
+          // run rather than silently staying unbound (an existing link is the user's own: left alone).
+          const loginDirs = loginStartDirs(o.fence.home, o.fence.cloverHome, "linux");
+          const loginSafe = loginStartSafeFiles(o.fence.home, "linux");
+          const browserProfiles = o.fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path);
+          // The user's configured global hooks folder, when under the home and missing: made empty and read-only
+          // like the login-start folders, so it never holds its parent (outside the home it is fenced without a
+          // mount, and the fence still judges it).
+          const hooksDirs = globalHooksPathDirs(o.fence.home).filter((p) => p === o.fence.home || p.startsWith(`${o.fence.home}/`));
+          try {
+            for (const d of [...loginDirs, ...browserProfiles, ...hooksDirs]) mkdirNoLinks(d);
+            for (const f of loginSafe) ensureEmptyFile(f);
+          } catch (e) {
+            return { kind: "refused", reason: `a fenced process can't be started here: a login-start place can't be made (${e instanceof Error ? e.message : String(e)})` };
+          }
+          const unsafe = loginStartUnsafeFiles(o.fence.home, "linux");
+          const beltBefore = new Map(unsafe.map((p) => [p, existsNoFollow(p)]));
+          const configBefore = snapshotFiles(watchedConfigFiles(o.fence.home, r.cwd));
+          const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: unsafe });
+          // The supervisor watches the fenced login-start files that don't exist yet (spec item 1116): it refuses
+          // plants with EACCES. Its folder list reaches the shim as JSON; the template dir rides GIT_TEMPLATE_DIR.
+          const shimEnv = { ...r.env, GIT_TEMPLATE_DIR: template, CLOVER_SUPERVISED_FILES: JSON.stringify(loginStartUnsafeFiles(o.fence.home, "linux")) };
+          const result = await runCommand({ ...r, env: shimEnv }, { shell: "sh", argv: [process.execPath, join(import.meta.dir, "linux-sandbox-shim.ts"), bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
-          const note = heldFolderNote(result.stderr, plan.held);
-          return note === null ? result : { ...result, stderr: result.stderr + note };
+          // Repos made during the run weren't on disk at snapshot time: watch their configs as newly appeared.
+          for (const p of watchedConfigFiles(o.fence.home, r.cwd)) if (!configBefore.has(p)) configBefore.set(p, null);
+          const notes = [
+            heldFolderNote(result.stderr, plan.held),
+            quarantinePlanted(beltBefore, o.fence.cloverHome),
+            revertPlantedGitKeys(configBefore),
+          ].filter((n): n is string => n !== null);
+          return notes.length === 0 ? result : { ...result, stderr: result.stderr + notes.join("") };
         } finally {
           closeSync(fd);
           rmSync(dir, { recursive: true, force: true });
@@ -139,9 +177,151 @@ function withGitTemplate(r: FencedRun, template: string): FencedRun {
   return { ...r, env: { ...r.env, GIT_TEMPLATE_DIR: template } };
 }
 
+/** Reads a file's bytes without following a link, or null when it isn't a plain file. */
+function readIfFile(path: string): string | null {
+  try {
+    const st = lstatSync(path);
+    if (!st.isFile() || st.isSymbolicLink()) return null;
+    return readFileSync(path, "utf8");
+  } catch { return null; }
+}
+
+/** Snapshots file contents (null where missing) for the post-command checks, without following links. */
+export function snapshotFiles(paths: readonly string[]): Map<string, string | null> {
+  const m = new Map<string, string | null>();
+  for (const p of paths) m.set(p, readIfFile(p));
+  return m;
+}
+
+/** Makes a link-free empty file, 0600: parents first, then O_CREAT|O_EXCL|O_NOFOLLOW. An existing file or link
+ *  is the user's own: left alone. Anything else fails the run, so nothing plants through a half-made path. */
+function ensureEmptyFile(path: string): void {
+  mkdirNoLinks(dirname(path));
+  let fd: number;
+  try {
+    fd = openSync(path, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code === "EEXIST") return; // already there: leave it
+    throw e; // ELOOP (a link) and the rest: fail closed
+  }
+  try { closeSync(fd); } catch { /* created: good enough */ }
+}
+
+/** Whether a path exists at all, without following a final link. */
+function existsNoFollow(path: string): boolean {
+  try { lstatSync(path); return true; } catch { return false; }
+}
+
+/** Quarantines files that appeared since the snapshot (spec item 1116's belt while the supervisor is new): moves
+ *  each aside under the Clover home (outside every runner view) and locks it down, without following links.
+ *  Returns the report line, or null when nothing appeared. */
+export function quarantinePlanted(before: Map<string, boolean>, cloverHome: string): string | null {
+  const planted: string[] = [];
+  for (const [p, wasThere] of before) {
+    if (wasThere) continue;
+    try { lstatSync(p); } catch { continue; } // still missing
+    try {
+      const qdir = join(cloverHome, "quarantine");
+      mkdirSync(qdir, { recursive: true, mode: 0o700 });
+      const q = join(qdir, `${basename(p)}.quarantined-${randomBytes(4).toString("hex")}`);
+      renameSync(p, q);
+      try { chmodSync(q, 0); } catch { /* moved aside is enough */ }
+      planted.push(p);
+    } catch { /* stays: the fence still judges every tool call that reaches it */ }
+  }
+  return planted.length === 0 ? null : `clover: the run planted ${planted.join(", ")}; quarantined\n`;
+}
+
+/** Whether every folder holding `path` is a plain folder, without following links. */
+function chainIsClean(path: string): boolean {
+  let at = dirname(path);
+  for (;;) {
+    let st: ReturnType<typeof lstatSync> | undefined;
+    try { st = lstatSync(at); } catch { return false; }
+    if (st === undefined || !st.isDirectory() || st.isSymbolicLink()) return false;
+    if (at === dirname(at)) return true;
+    at = dirname(at);
+  }
+}
+
+/** Reverts risky git keys a sandboxed command added or changed (spec item 1116): only the watched keys are
+ *  touched, other edits stay, and nothing is written through a planted link or into a planted folder. A file that
+ *  appeared with watched keys set has those lines dropped (an empty file left behind sets nothing). Returns the
+ *  report line, or null. */
+export function revertPlantedGitKeys(before: Map<string, string | null>): string | null {
+  const notes: string[] = [];
+  for (const [p, prev] of before) {
+    const cur = readIfFile(p);
+    if (cur === prev) continue;
+    const changed = watchedGitChanges(prev, cur);
+    if (changed.length === 0) continue; // an unwatched change (or unreadable now): leave it
+    if (!chainIsClean(p)) {
+      notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): planted link above`);
+      continue;
+    }
+    try {
+      const fixed = revertWatchedGitChanges(cur ?? "", changed);
+      const fd = openSync(p, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | fsConstants.O_NOFOLLOW, 0o600);
+      try { writeFileSync(fd, fixed, { encoding: "utf8" }); } finally { try { closeSync(fd); } catch { /* written */ } }
+      notes.push(`${p}: reverted risky git keys (${changed.map((c) => c.dotted).join(", ")})`);
+    } catch {
+      notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): could not revert`);
+    }
+  }
+  return notes.length === 0 ? null : `clover: the run set risky git keys; ${notes.join("; ")}\n`;
+}
+
+/** The git configs a sandboxed command could plant risky keys in: the global ones, the session repo's, and any
+ *  repo made during the run one level under the cwd (deeper nesting is a documented miss: the supervisor and the
+ *  belt still cover planted hooks, and the fence judges every tool call). Missing files are watched too: a file
+ *  that appears is reverted when it carries a watched key. */
+function watchedConfigFiles(home: string, cwd: string): string[] {
+  const out = new Set([join(home, ".gitconfig"), join(home, ".config", "git", "config")]);
+  const under = (p: string, root: string) => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
+  let at: string | null = cwd;
+  const seen = new Set<string>();
+  while (at !== null && !seen.has(at) && (at === home || under(at, home))) {
+    seen.add(at);
+    out.add(join(at, ".git", "config"));
+    try {
+      for (const n of readdirSync(at)) {
+        const c = join(at, n);
+        let st: ReturnType<typeof lstatSync> | undefined;
+        try { st = lstatSync(c); } catch { continue; }
+        if (st !== undefined && st.isDirectory() && !st.isSymbolicLink()) out.add(join(c, ".git", "config"));
+      }
+    } catch { /* unreadable */ }
+    if (at === home) break;
+    at = dirname(at);
+  }
+  return [...out];
+}
+/** Makes `target` and any missing parents, refusing a link anywhere on the way down (like `makeBotFolders`):
+ *  a planted link never redirects the creation. An existing non-folder is left alone (the read-only bind still
+ *  covers it). Throws naming the offending link. */
+export function mkdirNoLinks(target: string): void {
+  const missing: string[] = [];
+  let at = target;
+  for (;;) {
+    let st: ReturnType<typeof lstatSync> | undefined;
+    try { st = lstatSync(at); } catch { st = undefined; }
+    if (st === undefined) {
+      missing.unshift(at);
+      const parent = dirname(at);
+      if (parent === at) throw new Error(`${target} has no plain folder above it`);
+      at = parent;
+      continue;
+    }
+    if (st.isSymbolicLink()) throw new Error(`${at} is a link: folders are never made through a link`);
+    if (!st.isDirectory()) return; // something else is already there: leave it for the read-only bind
+    break;
+  }
+  for (const p of missing) mkdirSync(p, { mode: 0o700 });
+}
+
 /** The session's own repo's `.git/hooks`, when `cwd` sits inside a repo under `home`: the folder a planted hook
  *  would fire from. Climbs without following links — a link on the way up stops the climb — and stays under the
- *  home; null outside a repo, outside the home, or through a link. */
+ *  home. A `.git` file (a linked worktree) is resolved through its `gitdir:` line; anything else resolves null. */
 export function ownRepoHooks(cwd: string, home: string): string | null {
   const under = (p: string, root: string) => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
   let at = cwd;
@@ -151,7 +331,16 @@ export function ownRepoHooks(cwd: string, home: string): string | null {
     if (me === undefined || me.isSymbolicLink()) return null; // never climb through a link
     let st: ReturnType<typeof lstatSync> | undefined;
     try { st = lstatSync(join(at, ".git")); } catch { st = undefined; }
-    if (st !== undefined && !st.isSymbolicLink()) return join(at, ".git", "hooks");
+    if (st !== undefined && !st.isSymbolicLink()) {
+      if (st.isDirectory()) return join(at, ".git", "hooks");
+      // A linked worktree names its real git dir: `gitdir: <path>`.
+      try {
+        const line = readFileSync(join(at, ".git"), "utf8").split("\n")[0] ?? "";
+        const m = /^gitdir:\s*(.+?)\s*$/.exec(line);
+        if (m !== null) return join(at, m[1]!, "hooks");
+      } catch { /* unreadable: no hooks to bind */ }
+      return null;
+    }
     if (at === home || !under(at, home) || dirname(at) === at) return null;
     at = dirname(at);
   }

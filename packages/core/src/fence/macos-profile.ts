@@ -129,8 +129,9 @@ export function macFenceProfile(input: MacProfileInput): string {
     if (c.ownBot !== null) lines.push(`(allow file-read* (regex #"^${rx(c.ownBot)}(/|$)"))`);
   }
   // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): refused everywhere
-  // under it, after the caller's own allows (a runner's own folders may hold a repo too).
-  lines.push(`(deny file-write* (regex #"^${rx(input.home)}/.*/\\.git/hooks(/|$)"))`);
+  // under it, after the caller's own allows (a runner's own folders may hold a repo too). Bare repos (`*.git`)
+  // match the same way.
+  lines.push(`(deny file-write* (regex #"^${rx(input.home)}/.*\\.git/hooks(/|$)"))`);
   // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it.
   lines.push(`(allow file-read* (subpath ${q(gitTemplateDir(input.cloverHome))}))`);
   // No network (the daemon's socket included); `filtered` comes with the escape floor's ports.

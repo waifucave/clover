@@ -7,7 +7,7 @@ import { runFenceConformance } from "../../src/contracts/conformance/fence";
 import { CLOUD_METADATA_ADDRESSES, policyAllows } from "../../src/contracts/fence";
 import { CloverFence, isRefusedShare, unmapIpv4 } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
-import { botFolders, pendingFenced } from "../../src/fence/layout";
+import { botFolders, loginStartDirs, loginStartPaths, loginStartSafeFiles, loginStartUnsafeFiles, pendingFenced } from "../../src/fence/layout";
 import { makeBotFolders } from "../../src/fence/per-caller";
 import { FENCED_SPAWN_NOT_YET } from "../../src/fence/spawn";
 import { linkedRouterSupportsRunHome } from "../../src/runtime-sdk/run-home-support";
@@ -174,6 +174,22 @@ describe("the real fence on a real disk", () => {
     expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions")]);
   });
 
+  test("login-start kinds partition the list: every path is a made dir, a safe file, an unsafe file, or Clover's own", () => {
+    for (const os of ["macos", "linux"] as const) {
+      const home = os === "macos" ? "/Users/me" : "/h";
+      const clover = os === "macos" ? "/Users/me/.clover" : "/h/.clover";
+      const all = new Set(loginStartPaths(home, clover, os));
+      const dirs = new Set(loginStartDirs(home, clover, os));
+      const safe = new Set(loginStartSafeFiles(home, os));
+      const unsafe = new Set(loginStartUnsafeFiles(home, os));
+      for (const p of [...dirs, ...safe, ...unsafe]) expect(all.has(p), `${os}: ${p} is listed`).toBe(true);
+      const own = os === "macos"
+        ? [join(home, "Library", "LaunchAgents", "com.waifucave.clover.core.plist"), join(clover, "login")]
+        : [];
+      expect([...all].sort()).toEqual([...dirs, ...safe, ...unsafe, ...own].sort());
+    }
+  });
+
   test("python user site folders are fenced by the folders on the disk", () => {
     const { home, clover, fence } = make("macos");
     mkdirSync(join(home, ".local", "lib", "python3.12", "site-packages"), { recursive: true });
@@ -189,18 +205,49 @@ describe("the real fence on a real disk", () => {
   test("git hooks in any repo under the home are login-start, for every caller", () => {
     const { home, clover, fence } = make();
     mkdirSync(join(home, "project", ".git", "hooks"), { recursive: true });
+    mkdirSync(join(home, "archive.git", "hooks"), { recursive: true });
     const hooks = join(home, "project", ".git", "hooks");
     const hook = join(hooks, "post-checkout");
+    const bareHooks = join(home, "archive.git", "hooks");
+    const bare = join(bareHooks, "post-checkout");
     for (const f of [fence, fence.forCaller(session("luna", "bot", "s1")), fence.forCaller(session(undefined, "coding", "c1")), fence.forCaller({ kind: "plugin", pluginId: "tarot" })]) {
       expect(f.check({ op: "write", path: hook })).toEqual({ allowed: false, reason: "login-start", path: hooks });
+      expect(f.check({ op: "write", path: bare })).toEqual({ allowed: false, reason: "login-start", path: bareHooks });
       expect(f.check({ op: "delete", path: hook })).toMatchObject({ allowed: false, reason: "login-start" });
       expect(f.check({ op: "move", path: hook, to: join(hooks, "pre-commit") })).toMatchObject({ allowed: false, reason: "login-start" });
     }
     expect(fence.touches([hook])).toMatchObject({ kind: "login-start", path: hooks });
+    expect(fence.touches([bare])).toMatchObject({ kind: "login-start", path: bareHooks });
     // `.git/config` stays writable: normal git use writes it, so it is no fenced item.
     expect(fence.check({ op: "write", path: join(home, "project", ".git", "config") })).toEqual({ allowed: true });
     // Like every fenced kind, hooks stay shut for user-context writes too; the user's own surfaces bypass earlier.
     expect(fence.forCaller({ kind: "user", client: "app" }).check({ op: "write", path: hook })).toMatchObject({ allowed: false, reason: "login-start" });
+    void clover;
+  });
+
+  test("the user's global core.hooksPath folder is fenced too, read without following links", () => {
+    const { home, clover, fence } = make();
+    // Absolute, ~/ and relative values resolve under the home; /dev/null (hooks off) is skipped.
+    writeFileSync(join(home, ".gitconfig"), ["[core]", "\thooksPath = ~/my-hooks", "[core]", "\thooksPath = /dev/null"].join("\n"));
+    writeFileSync(join(home, ".config-git"), "x");
+    mkdirSync(join(home, ".config", "git"), { recursive: true });
+    writeFileSync(join(home, ".config", "git", "config"), ["[core]", "\thooksPath = shared/hooks"].join("\n"));
+    const kinds = fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path);
+    expect(kinds).toContain(join(home, "my-hooks"));
+    expect(kinds).toContain(join(home, "shared", "hooks"));
+    expect(fence.check({ op: "write", path: join(home, "my-hooks", "pre-commit") })).toMatchObject({ allowed: false, reason: "login-start" });
+    expect(fence.touches([join(home, "shared", "hooks", "x")])).toMatchObject({ kind: "login-start" });
+    void clover;
+  });
+
+  test("a linked global git config is never followed for the hooks folder", () => {
+    const { home, clover, fence } = make();
+    mkdirSync(join(home, "evil"), { recursive: true });
+    writeFileSync(join(home, "evil", "config"), "[core]\n\thooksPath = ~/hooked\n");
+    symlinkSync(join(home, "evil", "config"), join(home, ".gitconfig"));
+    const kinds = fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path);
+    expect(kinds).not.toContain(join(home, "hooked"));
+    expect(fence.check({ op: "write", path: join(home, "hooked", "pre-commit") })).toEqual({ allowed: true });
     void clover;
   });
 
