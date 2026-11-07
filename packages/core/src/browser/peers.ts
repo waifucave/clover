@@ -15,11 +15,12 @@
 //
 // The holder tells each calling device about the tabs it has opened or used there (`tab_changed`, `tab_closed`), and
 // about DevTools events on the tabs it follows (`cdp_event`), so the caller's own events carry them.
+import type { Level } from "@waifucave/clover-protocol";
 import type { Link, LinkTransport } from "../contracts/link-transport";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Screenshot, ScreenshotFormat, TabOwner, TabView, Viewport } from "./contract";
 import { BrowserError, type BrowserErrorCode } from "./policy";
-import type { BrowserCaller, BrowserEvent, BrowserService, CdpListener } from "./service";
+import { peerSessionId, type BrowserCaller, type BrowserEvent, type BrowserService, type CdpListener } from "./service";
 
 /** Lane J's computers, as the browser needs them, and lane H's link. */
 export interface BrowserPeers {
@@ -28,8 +29,18 @@ export interface BrowserPeers {
   computer(name: string): { device: string; online: boolean } | undefined;
   /** Whether `device` may call this computer's browser at all (a paired computer, not revoked). */
   mayCall(device: string): boolean;
+  /** This computer's own approval level (spec §9.1: an action is judged by the level of the computer it touches).
+   *  Read at each call. Default `ask`. */
+  level?: () => Level;
   timeoutMs?: number;
 }
+
+/** The DevTools methods that only look (read-only computers pass these and nothing else). */
+export const LOOKING_CDP_METHODS: readonly string[] = [
+  "Page.getNavigationHistory", "Page.getLayoutMetrics", "Page.getFrameTree", "DOM.getDocument", "DOM.querySelector",
+  "DOM.querySelectorAll", "DOM.describeNode", "DOM.getBoxModel", "DOM.getOuterHTML", "Accessibility.getFullAXTree",
+  "Accessibility.getPartialAXTree", "DOMSnapshot.captureSnapshot", "CSS.getComputedStyleForNode",
+];
 
 /** Who a peer's call is for, on the wire: the calling computer's session and its bot. */
 interface As {
@@ -46,13 +57,14 @@ function asOf(caller: BrowserCaller): As {
   return { ...(caller.session !== undefined ? { session: caller.session } : {}), ...(caller.bot !== undefined ? { bot: caller.bot } : {}) };
 }
 
-function callerOf(raw: unknown): BrowserCaller {
+/** A peer's caller: the session and bot it names, on the device of the authenticated link it came on (`from`). */
+function callerOf(raw: unknown, from: string): BrowserCaller {
   const a = (raw ?? {}) as Partial<As>;
   const ok = (v: unknown) => v === undefined || (typeof v === "string" && v.length > 0 && v.length <= 128);
   if (!ok(a.session) || !ok(a.bot) || (a.session === undefined && a.bot === undefined)) {
     throw new ContractError("invalid", "a peer's browser call names the session it is for");
   }
-  return { kind: "agent", ...(a.bot !== undefined ? { bot: a.bot } : {}), ...(a.session !== undefined ? { session: a.session } : {}) };
+  return { kind: "agent", device: from, ...(a.bot !== undefined ? { bot: a.bot } : {}), ...(a.session !== undefined ? { session: a.session } : {}) };
 }
 
 /** A BrowserError as it crosses the link (a ContractError keeps its code there), and back. */
@@ -97,7 +109,7 @@ export function serveBrowserPeers(o: { service: BrowserService; peers: BrowserPe
     offs.push(t.handle(method, async (raw, from) => {
       guard(from);
       const p = (raw ?? {}) as Record<string, unknown>;
-      const caller = callerOf(p["as"]);
+      const caller = callerOf(p["as"], from);
       try {
         return await fn(p, caller, from);
       } catch (e) {
@@ -111,38 +123,62 @@ export function serveBrowserPeers(o: { service: BrowserService; peers: BrowserPe
     return v;
   };
 
-  handle("browser.tabs", (p, caller) => {
-    const owner = p["owner"] as TabOwner | undefined;
+  // This computer's own level judges a peer's call (the controller's ruling on the `computer` field): read-only lets it
+  // only look; at `ask` everything that acts needs the person's OK here, which this computer can't ask for yet (lane
+  // C-M3's broker will show the card on this side), so it is refused `needs_ok`; from `ask-risky` up, acting in the
+  // bot's or session's own partition passes (nothing it does reaches a file or a command).
+  const mayAct = (what: string) => {
+    const level = o.peers.level?.() ?? "ask";
+    if (level === "read-only") throw new BrowserError("read_only", `this computer is read-only: another computer's session may only look at its tabs, not ${what}`);
+    if (level === "ask") throw new BrowserError("needs_ok", `this computer asks before anything acts, and its card can't be shown for another computer's session yet: ${what} needs the person's OK here`);
+  };
+  /** A session's tabs here are its (device, session) pair's own. */
+  const ownerFor = (raw: unknown, from: string): TabOwner | undefined => {
+    const owner = raw as TabOwner | undefined;
+    if (owner?.kind !== "session" || typeof owner.session !== "string") return owner;
+    return { kind: "session", session: peerSessionId(from, owner.session) };
+  };
+
+  handle("browser.tabs", (p, caller, from) => {
+    const owner = ownerFor(p["owner"], from);
     return { tabs: o.service.tabs(caller, owner !== undefined ? { owner } : {}) };
   });
   handle("browser.open", async (p, caller, from) => {
     if (p["show"] !== undefined) throw new BrowserError("not_yours", "a tab on another computer is shown only in that computer's app; watch it as a stream");
-    const tab = await o.service.open(caller, { owner: p["owner"] as TabOwner, ...(typeof p["url"] === "string" ? { url: p["url"] } : {}) });
+    mayAct("opening a tab");
+    const tab = await o.service.open(caller, { owner: ownerFor(p["owner"], from)!, ...(typeof p["url"] === "string" ? { url: p["url"] } : {}) });
     follow(from, tab.id);
     return { tab };
   });
   handle("browser.close", async (p, caller) => {
+    mayAct("closing a tab");
     await o.service.close(caller, str(p, "id"));
     return { ok: true };
   });
   handle("browser.navigate", async (p, caller, from) => {
+    mayAct("loading a page");
     const tab = await o.service.navigate(caller, str(p, "id"), str(p, "url"));
     follow(from, tab.id);
     return { tab };
   });
-  handle("browser.hide", async (p, caller) => ({ tab: await o.service.hide(caller, str(p, "id")) }));
+  handle("browser.hide", async (p, caller) => {
+    mayAct("moving a tab");
+    return { tab: await o.service.hide(caller, str(p, "id")) };
+  });
   handle("browser.screenshot", async (p, caller) => o.service.screenshot(caller, str(p, "id"), {
     ...(typeof p["format"] === "string" ? { format: p["format"] as ScreenshotFormat } : {}),
     ...(typeof p["quality"] === "number" ? { quality: p["quality"] } : {}),
   }));
   handle("browser.cdp", async (p, caller, from) => {
     const id = str(p, "id");
+    const method = str(p, "method");
+    if (!LOOKING_CDP_METHODS.includes(method)) mayAct(`the DevTools call ${method.slice(0, 64)}`);
+    const result = await o.service.cdp(caller, id, method, p["params"] as Record<string, unknown> | undefined, {
+      ...(p["viewport"] !== undefined ? { viewport: p["viewport"] as Viewport } : {}),
+    });
+    // A device follows a tab only once a call on it worked (as navigate does).
     follow(from, id);
-    return {
-      result: await o.service.cdp(caller, id, str(p, "method"), p["params"] as Record<string, unknown> | undefined, {
-        ...(p["viewport"] !== undefined ? { viewport: p["viewport"] as Viewport } : {}),
-      }),
-    };
+    return { result };
   });
   handle("browser.cdp.watch", (p, caller, from) => {
     const id = str(p, "id");

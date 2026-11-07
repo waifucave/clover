@@ -12,13 +12,14 @@
 //   except looking at it (`tabs`, `screenshot`, DevTools events);
 // * the DevTools allow list, the URL rule, and a point from a picture taken at another size;
 // * a tab that stopped drawing gives an error, never an old picture.
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   AGENT_VIEWPORT, isBrowserUrlAllowed, type AppTabCommand, type AppTabEvent, type BrowserNetworkConfig, type Screenshot,
   type ScreenshotFormat, type TabOwner, type TabPlace, type TabView, type Viewport,
 } from "./contract";
 import { checkProxySetting, DEFAULT_PROXY_SETTING } from "./proxy";
 import type { ApprovalRequest } from "../contracts/approval-broker";
+import type { DeviceRegistry } from "../contracts/device-registry";
 import { BrowserError, checkCdpMethod, checkPoint, checkViewport, partitionFor, sameOwner } from "./policy";
 import { RemoteBrowsers, type BrowserPeers } from "./peers";
 import { TabStreams, type TabStreamsOptions } from "./stream";
@@ -30,7 +31,10 @@ import type { StreamChunk, StreamCodec } from "./contract";
  *  code is `plugin`. */
 export type BrowserCaller =
   | { kind: "user" }
-  | { kind: "agent"; bot?: string; session?: string }
+  /** `device`: another computer's session, by the device on the authenticated link its call came on (never by what
+   *  the call says). Such a caller never reaches the person's own tabs here, and its session's tabs are its own
+   *  (device, session) pair's: `peerSessionId`. */
+  | { kind: "agent"; bot?: string; session?: string; device?: string }
   | { kind: "plugin"; pluginId: string }
   | { kind: "core" };
 
@@ -54,12 +58,18 @@ export function browserCallerOf(caller: ProtocolCaller, servingToolCallOf?: Extr
     case "session":
       return { kind: "agent", ...(c.bot !== undefined ? { bot: c.bot } : {}), session: c.sessionId };
     case "peer":
-      return { kind: "agent", ...(c.bot !== undefined ? { bot: c.bot } : {}), ...(c.sessionId !== undefined ? { session: c.sessionId } : {}) };
+      return { kind: "agent", device: c.device, ...(c.bot !== undefined ? { bot: c.bot } : {}), ...(c.sessionId !== undefined ? { session: c.sessionId } : {}) };
     case "plugin":
       return { kind: "plugin", pluginId: c.pluginId };
     case "core":
       return { kind: "core" };
   }
+}
+
+/** The session id a tab of another computer's session is owned by here: its (device, session) pair, hashed, so no
+ *  peer's session ever shares a local session's tabs or partition, nor another device's of the same id. */
+export function peerSessionId(device: string, session: string): string {
+  return `peer:${createHash("sha256").update(`${device}\u0000${session}`).digest("hex").slice(0, 40)}`;
 }
 
 /** The app's side of the browser, as lane E's transport hands it to the core. */
@@ -146,6 +156,8 @@ export interface BrowserServiceOptions {
   /** The streamed view (`browser.stream`, `stream.ts`): its link to each viewer's device. Default: the peers' link;
    *  without either, nothing streams. `tuning`, `ended` and the rest are `TabStreams`' own options. */
   streams?: Partial<Omit<TabStreamsOptions, "computer" | "app">>;
+  /** Lane H's devices: a device revoked loses its streams at once, whether or not its link has gone down yet. */
+  devices?: Pick<DeviceRegistry, "watch">;
   /** The network settings to start with: the proxy setting (Settings' `browser.proxy`) and the bots whose LAN
    *  setting is on (lane D's bot settings). `configure` changes them. */
   network?: BrowserNetworkConfig;
@@ -164,6 +176,8 @@ export class BrowserService {
   private readonly listeners = new Set<(event: BrowserEvent) => void>();
   /** Tabs being opened now: the app may report them before `open` answers. */
   private readonly opening = new Set<string>();
+  /** Of those, the ones the app said closed before `open` answered: never registered, never reopened. */
+  private readonly closedWhileOpening = new Set<string>();
   private readonly remote: RemoteBrowsers | undefined;
   private readonly streams: TabStreams | undefined;
 
@@ -174,6 +188,14 @@ export class BrowserService {
     this.remote = opts.peers !== undefined ? new RemoteBrowsers(opts.peers, (e) => this.emit(e)) : undefined;
     const transport = opts.streams?.transport ?? opts.peers?.transport;
     this.streams = transport !== undefined ? new TabStreams({ ...opts.streams, transport, computer: opts.computer, app: opts.app }) : undefined;
+    this.offDevices = opts.devices?.watch((change) => { if (change.type === "revoked") this.deviceRevoked(change.id); });
+  }
+
+  private readonly offDevices: (() => void) | undefined;
+
+  /** A device was revoked: every stream to it ends now (its link is cut too, but not necessarily first). */
+  deviceRevoked(device: string): void {
+    this.streams?.deviceGone(device);
   }
 
   /** `browser.stream`: this computer's tab as video to another device (`device`, the caller's own, from its link), or
@@ -210,6 +232,7 @@ export class BrowserService {
 
   /** Stops listening to other computers. */
   dispose(): void {
+    this.offDevices?.();
     this.streams?.close();
     this.remote?.dispose();
     this.listeners.clear();
@@ -264,6 +287,8 @@ export class BrowserService {
       checkView(args.show.view);
     }
     if (!this.mayTouch(caller, args.owner)) {
+      // Another computer's session never reaches the person's own tabs here: their card is this computer's to show.
+      if (args.owner.kind === "user" && caller.kind === "agent" && caller.device !== undefined) throw needsOk();
       if (args.owner.kind !== "user" || caller.kind !== "agent" || caller.session === undefined) throw this.notYours(caller);
       // The person's own browser: their yes for this session, asked on a card the first time (R10, lane D's grants).
       const yes = this.opts.grants !== undefined && (await this.opts.grants.ensure(caller.session, personsBrowserCard(this.opts.computer)).catch(() => false));
@@ -277,6 +302,7 @@ export class BrowserService {
     // While it opens, the app's own reports about it are the open's to settle, never a stranger's tab to adopt.
     this.opening.add(id);
     const view = await app.open({ id, owner: args.owner, url: args.url, place: "headless" }).catch((e) => { throw appFailed(e); }).finally(() => this.opening.delete(id));
+    if (this.closedWhileOpening.delete(id)) throw new BrowserError("tab_closed", "the tab closed (its page, or a crash) before it finished opening");
     const entry: Entry = { view: { ...view, id, owner: args.owner, partition, computer: this.opts.computer, heldByUser: false }, listeners: new Set() };
     this.entries.set(id, entry);
     this.emit({ type: "tab_changed", tab: { ...entry.view } });
@@ -394,6 +420,7 @@ export class BrowserService {
         }
         case "closed":
           closedNow.add(event.id);
+          if (this.opening.has(event.id)) this.closedWhileOpening.add(event.id);
           this.streams?.tabClosed(event.id);
           this.forget(event.id);
           break;
@@ -502,10 +529,13 @@ export class BrowserService {
   private mayTouch(caller: BrowserCaller, owner: TabOwner): boolean {
     if (caller.kind === "plugin") return owner.kind === "plugin" && owner.plugin === caller.pluginId;
     if (caller.kind !== "agent") return true;
-    if (owner.kind === "user") return caller.session !== undefined && this.opts.grants?.has(caller.session) === true;
+    // Another computer's session: never the person's tabs (whatever this computer granted a session of that id), and
+    // a session's tabs only its own (device, session) pair's.
+    if (owner.kind === "user") return caller.device === undefined && caller.session !== undefined && this.opts.grants?.has(caller.session) === true;
     if (owner.kind === "plugin") return false;
     if (caller.bot !== undefined) return owner.kind === "bot" && owner.bot === caller.bot;
-    return owner.kind === "session" && caller.session !== undefined && owner.session === caller.session;
+    if (owner.kind !== "session" || caller.session === undefined) return false;
+    return owner.session === (caller.device !== undefined ? peerSessionId(caller.device, caller.session) : caller.session);
   }
 
   private notYours(caller: BrowserCaller): BrowserError {

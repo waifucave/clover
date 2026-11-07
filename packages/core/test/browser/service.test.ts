@@ -148,7 +148,7 @@ describe("opening and owning tabs", () => {
     expect(browserCallerOf(plugin)).toEqual({ kind: "plugin", pluginId: "clover/browser" });
     expect(browserCallerOf(plugin, { kind: "session", sessionId: "s1", bot: "alpha" })).toEqual({ kind: "agent", bot: "alpha", session: "s1" });
     expect(browserCallerOf(plugin, { kind: "session", sessionId: "s2" })).toEqual({ kind: "agent", session: "s2" });
-    expect(browserCallerOf({ kind: "peer", device: "d1", sessionId: "s3", bot: "luna" })).toEqual({ kind: "agent", bot: "luna", session: "s3" });
+    expect(browserCallerOf({ kind: "peer", device: "d1", sessionId: "s3", bot: "luna" })).toEqual({ kind: "agent", device: "d1", bot: "luna", session: "s3" });
     expect(browserCallerOf({ kind: "user" })).toEqual({ kind: "user" });
     expect(browserCallerOf({ kind: "core" })).toEqual({ kind: "core" });
   });

@@ -2,9 +2,10 @@
 // `open({ show })` and `TabView.view` (R8), lane D's grants behind the person's browser (R10), and the `computer`
 // field across computers, two daemons joined by the fake link.
 import { describe, expect, test } from "bun:test";
+import type { Level } from "@waifucave/clover-protocol";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import {
-  BrowserError, BrowserService, personsBrowserGrants, serveBrowserPeers, USER_BROWSER_PARTITION_GRANT, type BrowserEvent,
+  BrowserError, BrowserService, browserCallerOf, personsBrowserGrants, serveBrowserPeers, USER_BROWSER_PARTITION_GRANT, type BrowserEvent,
   STREAM_LINK_LABEL, StreamFrameReader, type BrowserPeers, type PersonsBrowserCard, type SessionGrantsPort, type StreamChunk,
 } from "../../src/browser";
 import { FakeApp } from "./fakes";
@@ -137,7 +138,7 @@ describe("lane D's grants behind the person's own browser (R10)", () => {
 });
 
 describe("the computer field, across computers", () => {
-  function twoComputers(opts: { mayCall?: (device: string) => boolean } = {}) {
+  function twoComputers(opts: { mayCall?: (device: string) => boolean; level?: Level; grants?: SessionGrantsPort } = {}) {
     const net = new FakeLinkNetwork();
     const studio = net.endpoint("dev-studio");
     const laptop = net.endpoint("dev-laptop");
@@ -146,13 +147,14 @@ describe("the computer field, across computers", () => {
       transport,
       computer: (name) => (names[name] !== undefined && names[name] !== transport.self ? { device: names[name]!, online: net.reachable(transport.self, names[name]!) } : undefined),
       mayCall: opts.mayCall ?? (() => true),
+      level: () => opts.level ?? "automatic",
     });
     const laptopApp = new FakeApp();
     let n = 0;
     const here = new BrowserService({ computer: "Studio", app: () => new FakeApp(), peers: peersOf(studio), newId: () => `tab_s${++n}` });
     const events: BrowserEvent[] = [];
     here.onEvent((e) => events.push(e));
-    const there = new BrowserService({ computer: "Laptop", app: () => laptopApp, peers: peersOf(laptop), newId: () => `tab_l${++n}` });
+    const there = new BrowserService({ computer: "Laptop", app: () => laptopApp, peers: peersOf(laptop), newId: () => `tab_l${++n}`, ...(opts.grants !== undefined ? { grants: personsBrowserGrants(opts.grants) } : {}) });
     serveBrowserPeers({ service: there, peers: peersOf(laptop) });
     return { net, here, there, laptopApp, events };
   }
@@ -215,6 +217,54 @@ describe("the computer field, across computers", () => {
     expect(got).toEqual(["Page.loadEventFired"]);
   });
 
+  test("a peer is the device of its link: it never reaches the person's tabs, even naming a local session that holds the grant, nor a local session's tabs of the same id", async () => {
+    const held = new Set(["sess_code/browser.partition.user"]);
+    const grants: SessionGrantsPort = { has: (s, k) => held.has(`${s}/${k}`), ensure: async () => ({ allowed: true, by: "grant" }) };
+    const { here, there } = twoComputers({ grants });
+    const local = { kind: "agent", session: "sess_code" } as const;
+    // Here, on the laptop, the local session holds the person's OK.
+    const own = await there.open(local, { owner: { kind: "user" } });
+    const localTab = await there.open(local, { owner: { kind: "session", session: "sess_code" } });
+    // Another computer's session of the same id: needs_ok for the person's tabs, and none of the local session's.
+    expect(await code(here.open(local, { owner: { kind: "user" }, computer: "Laptop" }))).toBe("needs_ok");
+    const theirs = await here.open(local, { owner: { kind: "session", session: "sess_code" }, computer: "Laptop" });
+    expect(theirs.partition).not.toBe(localTab.partition);
+    const listed = (await here.list(local, { computer: "Laptop" })).map((t) => t.id);
+    expect(listed).toEqual([theirs.id]);
+    expect(listed).not.toContain(own.id);
+    // browserCallerOf keeps the peer's device.
+    expect(browserCallerOf({ kind: "peer", device: "dev-studio", sessionId: "sess_code" })).toEqual({ kind: "agent", device: "dev-studio", session: "sess_code" });
+  });
+
+  test("the receiving computer's own level judges the call: read-only only looks, ask refuses acting with needs_ok", async () => {
+    for (const level of ["read-only", "ask"] as const) {
+      const { here, there, laptopApp } = twoComputers({ level });
+      const want = level === "read-only" ? "read_only" : "needs_ok";
+      expect(await code(here.open(asAlpha, { owner: alpha, computer: "Laptop" }))).toBe(want);
+      // A tab the laptop's own bot opened there: another computer may look at it, not act on it.
+      const tab = await there.open({ kind: "agent", bot: "alpha" }, { owner: alpha, url: "https://example.com/" });
+      expect((await here.list(asAlpha, { computer: "Laptop" })).map((t) => t.id)).toEqual([tab.id]);
+      laptopApp.answers.screenshot = { format: "png", data: "iVBORw0K", width: 1280, height: 800, takenAt: 1 };
+      expect(await here.screenshot(asAlpha, tab.id)).toMatchObject({ width: 1280 });
+      await here.cdp(asAlpha, tab.id, "Page.getNavigationHistory");
+      const sent = laptopApp.commands.length;
+      expect(await code(here.navigate(asAlpha, tab.id, "https://example.org/"))).toBe(want);
+      expect(await code(here.cdp(asAlpha, tab.id, "Runtime.evaluate", { expression: "1" }))).toBe(want);
+      expect(await code(here.close(asAlpha, tab.id))).toBe(want);
+      expect(laptopApp.commands.length).toBe(sent);
+    }
+  });
+
+  test("a failed DevTools call doesn't make the device follow the tab", async () => {
+    const { here, there, events } = twoComputers();
+    const tab = await there.open({ kind: "agent", bot: "luna" }, { owner: { kind: "bot", bot: "luna" } });
+    await here.list(asLuna, { computer: "Laptop" });
+    expect(await code(here.cdp(asAlpha, tab.id, "Page.reload"))).toBe("no_tab");
+    there.report([{ kind: "changed", tab: { ...there.tabs(person)[0]!, title: "Not for you" } }]);
+    await tick();
+    expect(events.some((e) => e.type === "tab_changed" && e.tab.title === "Not for you")).toBe(false);
+  });
+
   test("an offline computer answers at once; an unknown one is no_computer; an unpaired caller is refused", async () => {
     const { net, here } = twoComputers();
     const tab = await here.open(asAlpha, { owner: alpha, computer: "Laptop" });
@@ -258,5 +308,39 @@ describe("browser.stream through the service", () => {
     await tick();
     expect(ended).not.toBe("no");
     expect(await code(service.stream(person, "tab_1", { on: true }, "dev-phone"))).toBe("no_tab");
+  });
+});
+
+describe("the review's fixes", () => {
+  test("a tab the app closes while its open is pending is dropped, answered closed, and never reopened", async () => {
+    const app = new FakeApp();
+    let service!: BrowserService;
+    const open = app.open.bind(app);
+    app.open = async (args) => {
+      const view = await open(args);
+      service.report([{ kind: "closed", id: args.id, by: "crash" }]);
+      return view;
+    };
+    service = new BrowserService({ computer: "Studio", app: () => app, newId: () => "tab_1" });
+    expect(await code(service.open(person, { owner: alpha }))).toBe("tab_closed");
+    expect(service.tabs(person)).toEqual([]);
+    app.open = open;
+    expect(await service.reconnect()).toEqual([]);
+  });
+
+  test("a revoked device loses its streams at once, its link still up", async () => {
+    const net = new FakeLinkNetwork();
+    const studio = net.endpoint("dev-studio");
+    net.endpoint("dev-phone").onStream(STREAM_LINK_LABEL, () => undefined);
+    const app = new FakeApp();
+    let revoke!: (id: string) => void;
+    const devices = { watch: (fn: (c: { type: "revoked"; id: string }) => void) => { revoke = (id) => fn({ type: "revoked", id }); return () => undefined; } };
+    const service = new BrowserService({ computer: "Studio", app: () => app, newId: () => "tab_1", streams: { transport: studio }, devices: devices as never });
+    const tab = await service.open(person, { owner: alpha });
+    await service.stream(person, tab.id, { on: true }, "dev-phone");
+    const before = app.commands.length;
+    revoke("dev-phone");
+    await tick();
+    expect(app.commands.slice(before)).toContainEqual(expect.objectContaining({ command: expect.objectContaining({ kind: "stream", on: false }) }));
   });
 });
