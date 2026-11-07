@@ -50,7 +50,7 @@ describe("the daemon's links", () => {
     expect(await link.request<string>("who", null)).toBe("laptop again");
   });
 
-  test("the links register the lease's renew with the update gate, and the memory sync's hook with lane J's node", async () => {
+  test("the links register the lease's renew with the update gate, and hand lane J's node the memory hook and the lease", async () => {
     const net = new MemoryNetwork();
     const hooks = new Set<() => Promise<void> | void>();
     const updateGate = { beforeRestart: (fn: () => Promise<void> | void) => (hooks.add(fn), () => void hooks.delete(fn)) };
@@ -62,6 +62,8 @@ describe("the daemon's links", () => {
     // A lone computer's lease is its own (no record to renew): the hook is a no-op there, never a failure.
     await Promise.all([...hooks].map((fn) => fn()));
     expect(typeof computerNodeLinks(links).memoryChanged).toBe("function");
+    // Lane J's node takes the lease too (its fencing token on acts between computers): a lone computer's carries none.
+    expect(computerNodeLinks(links).lease?.state().scope).toBeUndefined();
     await links.close();
     expect(hooks.size).toBe(0);
   });

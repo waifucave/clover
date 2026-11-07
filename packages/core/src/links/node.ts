@@ -106,15 +106,30 @@ export interface DeviceLinks {
 }
 
 /** What lane J's `startComputerNode` takes from the links: with `memoryChanged`, the holder's hook for a change in a
- *  bot's memory on disk (J-M3), which the memory sync sends on. */
+ *  bot's memory on disk (J-M3), which the memory sync sends on; and with `lease`, this computer's lease, whose fencing
+ *  token goes on every act it asks of another computer and judges every act asked of it (J-M3's `lease` option,
+ *  lane/j-m3-asks 65ec27de1; without it nothing is carried or checked). */
 export function computerNodeLinks(l: DeviceLinks): {
   transport: CloverLinkTransport; devices: FileDeviceRegistry; self: { name: string; device: string }; memoryChanged?: (bot: string, rel: string) => void;
+  lease?: Pick<MainComputerHandle["lease"], "state" | "watch">;
 } {
   const self = l.registry.self();
   const memory = l.memory;
   return {
     transport: l.transport, devices: l.registry, self: { name: self.computer ?? self.name, device: self.id },
     ...(memory ? { memoryChanged: (bot: string, rel: string) => memory.changed(bot, rel) } : {}),
+    ...(l.main ? { lease: fencingLease(l.main.lease) } : {}),
+  };
+}
+
+/** The lease as a fencing token's source (`fencingTokenOf` reads `scope`, `epoch` and `holder`): its state with the
+ *  record it is on (the account's, or the group's), and no scope for a lease held locally with no record, which then
+ *  carries no token. */
+export function fencingLease(lease: MainComputerHandle["lease"]): Pick<MainComputerHandle["lease"], "state" | "watch"> {
+  const scoped = (s: ReturnType<typeof lease.state>) => (lease.hasScope() ? { ...s, scope: lease.scopeId() } : s);
+  return {
+    state: () => scoped(lease.state()),
+    watch: (fn) => lease.watch((s) => fn(scoped(s))),
   };
 }
 
