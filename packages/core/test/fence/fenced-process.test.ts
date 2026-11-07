@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
-import { fencedSpawner } from "../../src/fence/fenced-process";
+import { fencedSpawner, includeTargets, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys, writeLocked } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../src/fence/linux-bwrap";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
@@ -49,7 +49,7 @@ describe("the macOS profile, as text", () => {
   test("Clover home default-deny first; holder folders; outside naming; specific fenced denies", () => {
     // Policy matching the real fence: Clover home in denyWrite/denyRead for default-deny,
     // plus specific fenced items, one of them outside the home.
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me", "/tmp/x"],
       denyWrite: ["/U/me/.clover/settings.json", "/U/me/.clover/plugins-state/oks", "/U/me/.clover", "/U/me/Library/LaunchAgents/com.waifucave.clover.core.plist"],
       denyRead: ["/U/me/.clover/run", "/U/me/.clover"],
@@ -81,13 +81,14 @@ describe("the macOS profile, as text", () => {
     expect(at(denyPluginsStateOks)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(at(denyLaunchAgentsPlist)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(p).toContain(denyRunSubpath);
+    expect(p).toContain('(allow file-read* (subpath "/U/me/.clover/git-template"))'); // Clover's empty git template reads
     expect(p).toContain('(deny process-exec (literal "/usr/bin/open") (literal "/bin/launchctl") (literal "/usr/bin/osascript"))');
     expect(p.trim().endsWith("(deny network*)")).toBe(true);
   });
 
   test("naming allows come before the home deny in effect, and never reach inside it", () => {
     // A fenced item directly under /U would make /U a naming folder that contains the home: skipped.
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover", "/U/x"], denyRead: ["/U/me/.clover"],
       closedDoors: [], blockedAddresses: [], network: "none" } });
     expect(p).not.toContain('(regex #"^/U/[^/]")');
@@ -96,7 +97,7 @@ describe("the macOS profile, as text", () => {
 
   test("the caller's rules: its own folders read and write after the denies; the home stays denied otherwise", () => {
     const caller = callerPlaces("/U/me/.clover", "macos", { sessionId: "s1", memoryOf: "luna" });
-    const p = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, caller, policy: {
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, caller, policy: {
       allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover"], denyRead: ["/U/me/.clover"],
       closedDoors: [], blockedAddresses: [], network: "none" } });
     const at = (s: string) => p.indexOf(s);
@@ -115,7 +116,7 @@ describe("the macOS profile, as text", () => {
     // No plugin-data allow: this runner is no plugin.
     expect(p).not.toContain("plugin-data");
     // A runner that is a coding session gets its outputs, and no bot folder, memory, scratch or routines.
-    const someoneElse = macFenceProfile({ cloverHome: "/U/me/.clover", perUserTemp: null, policy: {
+    const someoneElse = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
       allowWrite: ["/U/me"], denyWrite: [], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" },
       caller: callerPlaces("/U/me/.clover", "macos", { sessionId: "c1" }) });
     expect(someoneElse).toContain('(allow file-read* file-write* (regex #"^/U/me/\\.clover/outputs/c1/"))');
@@ -154,7 +155,11 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           join(home, "Library", "LaunchAgents"),
           join(home, ".ssh"), join(home, "bin"), join(home, ".local", "bin"),
           join(home, ".config", "git"), join(home, ".config", "fish", "conf.d"),
-          join(home, ".config", "environment.d"), join(home, ".config", "plasma-workspace", "env")];
+          join(home, ".config", "environment.d"), join(home, ".config", "plasma-workspace", "env"),
+          join(home, ".vim"), join(home, ".config", "nvim"), join(home, ".gnupg"),
+          join(home, ".config", "pip"), join(home, ".bun", "bin"), join(home, ".cargo", "bin"),
+          join(home, ".oh-my-zsh", "custom"), join(home, "Library", "Preferences"), join(home, "Library", "Scripts"),
+          join(home, "project", ".git", "hooks")];
         for (const d of dirs) mkdirSync(d, { recursive: true });
         const files: Record<string, string> = {
           [join(clover, "settings.json")]: "s", [join(clover, "run", "tok")]: "t",
@@ -167,7 +172,7 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
         const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp: join(root, "tmp") });
         const ctx = fenceContextFor(caller);
         const policy = fence.policy(ctx);
-        const profile = macFenceProfile({ policy, cloverHome: clover, perUserTemp: null, caller: callerPlaces(clover, "macos", ctx) });
+        const profile = macFenceProfile({ policy, cloverHome: clover, home, perUserTemp: null, caller: callerPlaces(clover, "macos", ctx) });
         type Probe = { shell: string; op: "read" | "write" | "unlink"; path: string };
         const P: Probe[] = [
           { shell: `cat '${join(clover, "settings.json")}'`, op: "read", path: join(clover, "settings.json") },
@@ -212,6 +217,22 @@ describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox
           { shell: `echo x > '${join(home, ".config", "environment.d", "evil.conf")}'`, op: "write", path: join(home, ".config", "environment.d", "evil.conf") },
           { shell: `echo x > '${join(home, ".config", "plasma-workspace", "env", "evil.sh")}'`, op: "write", path: join(home, ".config", "plasma-workspace", "env", "evil.sh") },
           { shell: `echo x > '${join(home, "Library", "LaunchAgents", "evil.plist")}'`, op: "write", path: join(home, "Library", "LaunchAgents", "evil.plist") },
+          { shell: `echo x > '${join(home, ".vimrc")}'`, op: "write", path: join(home, ".vimrc") },
+          { shell: `echo x > '${join(home, ".vim", "evil.vim")}'`, op: "write", path: join(home, ".vim", "evil.vim") },
+          { shell: `echo x > '${join(home, ".config", "nvim", "evil.lua")}'`, op: "write", path: join(home, ".config", "nvim", "evil.lua") },
+          { shell: `echo x > '${join(home, ".emacs")}'`, op: "write", path: join(home, ".emacs") },
+          { shell: `echo x > '${join(home, ".gnupg", "gpg.conf")}'`, op: "write", path: join(home, ".gnupg", "gpg.conf") },
+          { shell: `echo x > '${join(home, ".config", "pip", "evil.conf")}'`, op: "write", path: join(home, ".config", "pip", "evil.conf") },
+          { shell: `echo x > '${join(home, ".bunfig.toml")}'`, op: "write", path: join(home, ".bunfig.toml") },
+          { shell: `echo x > '${join(home, ".bun", "bin", "evil")}'`, op: "write", path: join(home, ".bun", "bin", "evil") },
+          { shell: `echo x > '${join(home, ".npmrc")}'`, op: "write", path: join(home, ".npmrc") },
+          { shell: `echo x > '${join(home, ".cargo", "bin", "evil")}'`, op: "write", path: join(home, ".cargo", "bin", "evil") },
+          { shell: `echo x > '${join(home, ".cargo", "config.toml")}'`, op: "write", path: join(home, ".cargo", "config.toml") },
+          { shell: `echo x > '${join(home, ".bash_aliases")}'`, op: "write", path: join(home, ".bash_aliases") },
+          { shell: `echo x > '${join(home, ".oh-my-zsh", "custom", "evil.zsh")}'`, op: "write", path: join(home, ".oh-my-zsh", "custom", "evil.zsh") },
+          { shell: `echo x > '${join(home, "Library", "Preferences", "com.apple.loginwindow.plist")}'`, op: "write", path: join(home, "Library", "Preferences", "com.apple.loginwindow.plist") },
+          { shell: `echo x > '${join(home, "Library", "Scripts", "evil.sh")}'`, op: "write", path: join(home, "Library", "Scripts", "evil.sh") },
+          { shell: `echo x > '${join(home, "project", ".git", "config")}'`, op: "write", path: join(home, "project", ".git", "config") },
         ];
         const script = P.map((pr, i) => `{ ${pr.shell}; } >/dev/null 2>&1; echo "${i}:$?";`).join("\n");
         const proc = Bun.spawn(["/usr/bin/sandbox-exec", "-p", profile, "/bin/sh", "-c", script], { stdout: "pipe", stderr: "pipe" });
@@ -295,6 +316,197 @@ describe("the Linux sandbox's mounts, as arguments", () => {
   });
 });
 
+describe("the session's own repo", () => {
+  test("ownRepoHooks finds the repo holding the cwd, without following links; elsewhere null", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-repo-")));
+    const home = join(root, "home");
+    mkdirSync(join(home, "project", "sub"), { recursive: true });
+    mkdirSync(join(home, "project", ".git", "hooks"), { recursive: true });
+    try {
+      expect(ownRepoHooks(join(home, "project", "sub"), home)).toBe(join(home, "project", ".git", "hooks"));
+      expect(ownRepoHooks(join(home, "project"), home)).toBe(join(home, "project", ".git", "hooks"));
+      expect(ownRepoHooks(join(home, "elsewhere"), home)).toBeNull();
+      expect(ownRepoHooks(join(root, "outside"), home)).toBeNull();
+      symlinkSync(join(home, "project"), join(home, "linked"));
+      expect(ownRepoHooks(join(home, "linked", "sub"), home)).toBeNull(); // the link itself isn't climbed through
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("mkdirNoLinks makes plain folders and refuses links", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-mkdir-")));
+    try {
+      const fresh = join(root, "a", "b");
+      mkdirNoLinks(fresh);
+      expect(existsSync(fresh)).toBe(true);
+      expect((statSync(fresh).mode & 0o777)).toBe(0o700);
+      const linked = join(root, "l");
+      symlinkSync(join(root, "a"), linked);
+      expect(() => mkdirNoLinks(join(linked, "c"))).toThrow(/link/);
+      expect(existsSync(join(linked, "c"))).toBe(false);
+      writeFileSync(join(root, "f"), "x");
+      mkdirNoLinks(join(root, "f", "c")); // a file where folders go: left alone, the read-only bind still covers it
+      expect(existsSync(join(root, "f", "c"))).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("repoConfigFiles watches the repo config, its worktree config, submodule configs, and a worktree's shared config", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-repocfg-")));
+    try {
+      const repo = join(root, "repo");
+      mkdirSync(join(repo, ".git", "modules", "sub"), { recursive: true });
+      writeFileSync(join(repo, ".git", "config"), "[core]\n\trepositoryformatversion = 0\n");
+      const files = repoConfigFiles(repo);
+      expect(files).toContain(join(repo, ".git", "config"));
+      expect(files).toContain(join(repo, ".git", "config.worktree"));
+      expect(files).toContain(join(repo, ".git", "modules", "sub", "config"));
+      // A linked worktree: its own config plus the shared one.
+      const wt = join(root, "wt");
+      mkdirSync(wt, { recursive: true });
+      writeFileSync(join(wt, ".git"), "gitdir: /common/.git/worktrees/wt\n");
+      const wfiles = repoConfigFiles(wt);
+      expect(wfiles).toContain(join("/common/.git/worktrees/wt", "config"));
+      expect(wfiles).toContain(join("/common/.git", "config"));
+      // A planted link resolves nothing.
+      const linked = join(root, "linked");
+      mkdirSync(linked, { recursive: true });
+      symlinkSync(join(repo, ".git"), join(linked, ".git"));
+      expect(repoConfigFiles(linked)).toEqual([]);
+      expect(repoConfigFiles(join(root, "missing"))).toEqual([]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("revertPlantedGitKeys renames a temp file over and leaves no strays", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    try {
+      const cfg = join(root, "config");
+      writeFileSync(cfg, "[user]\n\tname = Luna\n");
+      const before = new Map([[cfg, readFileSync(cfg, "utf8")]]);
+      writeFileSync(cfg, "[user]\n\tname = Luna\n[core]\n\thooksPath = /tmp/evil\n");
+      const note = revertPlantedGitKeys(before);
+      expect(note).toMatch(/core\.hookspath/);
+      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Luna\n[core]\n");
+      // No temp strays in the folder: git's lockfile is renamed over, never left behind.
+      expect(readdirSync(root)).toEqual(["config"]);
+      // An unchanged file is left alone (null note).
+      expect(revertPlantedGitKeys(new Map([[cfg, readFileSync(cfg, "utf8")]]))).toBeNull();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("revertPlantedGitKeys falls back to the pre-run bytes when git still sees the key (not reverted)", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    try {
+      const cfg = join(root, "config");
+      const prev = "[user]\n\tname = Luna\n[core]\n\teditor = vim\n";
+      writeFileSync(cfg, prev);
+      const before = new Map([[cfg, prev]]);
+      // A valueless hooksPath: git reads boolean true, the line revert cannot drop it.
+      writeFileSync(cfg, `${prev}\thooksPath\n`);
+      const note = revertPlantedGitKeys(before);
+      expect(note).toMatch(/not reverted/);
+      expect(note).toMatch(/core\.hookspath/);
+      // The pre-run bytes are back, byte for byte.
+      expect(readFileSync(cfg, "utf8")).toBe(prev);
+      expect(readdirSync(root)).toEqual(["config"]); // no lockfile stray
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("revertPlantedGitKeys removes an appeared file it cannot cleanly revert", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    try {
+      const cfg = join(root, "config");
+      const before = new Map([[cfg, null]]);
+      writeFileSync(cfg, "[core]\n\thooksPath\n");
+      const note = revertPlantedGitKeys(before);
+      expect(note).toMatch(/not reverted/);
+      expect(existsSync(cfg)).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("writeLocked never leaves a config.lock behind, and keeps the user's mode", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-lock-")));
+    try {
+      const cfg = join(root, "config");
+      writeFileSync(cfg, "[user]\n\tname = Luna\n");
+      chmodSync(cfg, 0o644);
+      // The landed write keeps the 0644 mode (not the 0600 lock mode), and the user's git reads it.
+      expect(writeLocked(cfg, "[user]\n\tname = Sol\n", "[user]\n\tname = Luna\n")).toBe("ok");
+      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Sol\n");
+      expect(statSync(cfg).mode & 0o777).toBe(0o644);
+      expect(Bun.spawnSync(["git", "config", "--file", cfg, "--list"]).exitCode).toBe(0);
+      // A changed re-read refuses without clobbering — and without a lock stray.
+      writeFileSync(cfg, "[user]\n\tname = Luna\n");
+      expect(writeLocked(cfg, "[user]\n\tname = Sol\n", "[user]\n\tname = Stale\n")).toBe("changed");
+      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Luna\n");
+      expect(existsSync(`${cfg}.lock`)).toBe(false);
+      expect(Bun.spawnSync(["git", "config", "--file", cfg, "--list"]).exitCode).toBe(0);
+      // A failed write (an unwritable folder) leaves no lock either (non-root: root bypasses modes).
+      const ro = join(root, "ro");
+      mkdirSync(ro);
+      const locked = join(ro, "config");
+      writeFileSync(locked, "x");
+      if (process.geteuid?.() !== 0) {
+        chmodSync(ro, 0o555);
+        try {
+          expect(writeLocked(locked, "y", "x")).toBe("error");
+          expect(existsSync(`${locked}.lock`)).toBe(false);
+        } finally { chmodSync(ro, 0o755); }
+      }
+      expect(readdirSync(root).sort()).toEqual(["config", "ro"]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("includeTargets resolves include.path and includeIf paths the way git reads them", () => {
+    const home = join(tmpdir(), "fake-home");
+    const base = join(home, ".config", "git");
+    expect(includeTargets(["[include]", "\tpath = ~/extra.inc", '[includeIf "gitdir:~/work/"]', "\tpath = ./local.inc"].join("\n"), base, home))
+      .toEqual([join(home, "extra.inc"), join(base, "local.inc")]);
+    expect(includeTargets(["[include]", "\tpath = /abs/other.inc"].join("\n"), base, home)).toEqual(["/abs/other.inc"]);
+    expect(includeTargets("[user]\n\tname = Luna\n", base, home)).toEqual([]);
+    expect(includeTargets(null, base, home)).toEqual([]);
+  });
+
+  test("includeTargets expands globs where the platform can", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-inc-")));
+    try {
+      writeFileSync(join(root, "a.inc"), "[user]\n");
+      writeFileSync(join(root, "b.inc"), "[user]\n");
+      const got = includeTargets(`[include]\n\tpath = ${root}/*.inc\n`, root, root);
+      expect(got.sort()).toEqual([join(root, "a.inc"), join(root, "b.inc")]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("the Linux sandbox's mounts bind the session repo's hooks read-only", () => {
+    const dirs = new Set(["/h", "/h/p", "/h/p/.git", "/h/p/.git/hooks", "/h/.clover", "/h/.clover/git-template"]);
+    const fs = {
+      kind: (p: string) => (dirs.has(p) ? "dir" as const : null),
+      list: (d: string) => [...dirs].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
+    };
+    const s = bwrapArgs({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, repoHooks: "/h/p/.git/hooks", policy: {
+      allowWrite: ["/h"], denyWrite: ["/h/.clover"], denyRead: ["/h/.clover"], closedDoors: [], blockedAddresses: [], network: "none" } }).join(" ");
+    expect(s).toContain("--ro-bind /h/p/.git/hooks /h/p/.git/hooks");
+    // Clover's empty git template is bound back read-only, even without a caller.
+    expect(s).toContain("--ro-bind /h/.clover/git-template /h/.clover/git-template");
+  });
+
+  test("supervised files are never held for: the supervisor refuses them instead", () => {
+    const dirs = new Set(["/h", "/h/.clover", "/t"]);
+    const fs = { kind: (p: string) => (dirs.has(p) ? "dir" as const : p === "/h/.bashrc" ? "file" as const : null), list: () => [] as string[] };
+    const { held, args } = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h", uid: 1, fs,
+      supervised: ["/h/.zshrc", "/h/.bash_profile", "/h/.config/systemd/user/clover-core.service"],
+      policy: {
+        allowWrite: ["/h", "/t"], denyWrite: ["/h/.bashrc", "/h/.zshrc", "/h/.bash_profile", "/h/.clover/settings.json"],
+        denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" } });
+    // The supervised ones never hold, and the existing safe file needs no holding either: nothing is held.
+    expect(held).toEqual([]);
+    expect(args.join(" ")).toContain("--bind /h /h");
+    expect(args.join(" ")).not.toContain("--ro-bind /h /h");
+    // Without the supervisor list the same missing file would hold the whole home.
+    const { held: heldWithout } = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h", uid: 1, fs, policy: {
+      allowWrite: ["/h", "/t"], denyWrite: ["/h/.zshrc"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" } });
+    expect(heldWithout).toEqual([{ folder: "/h", because: "/h/.zshrc" }]);
+  });
+});
+
 describe("a folder held for a fenced file that isn't there yet (accepted for now, the controller's ruling)", () => {
   test("the plan names it, and a read-only refusal there is explained: which file, a subfolder, or ask the user", () => {
     const dirs = new Set(["/h", "/h/.clover", "/t"]);
@@ -310,13 +522,14 @@ describe("a folder held for a fenced file that isn't there yet (accepted for now
 });
 
 describe("the Linux seccomp filter", () => {
-  test("nine instructions: the architecture, io_uring_setup, socket(AF_UNIX) refused; anything else allowed", () => {
+  test("ten instructions: the architecture, x32 numbers, io_uring_setup, socket(AF_UNIX) refused; anything else allowed", () => {
     const f = unixSocketFilter("x64")!;
-    expect(f.length).toBe(9 * 8);
+    expect(f.length).toBe(10 * 8);
     expect(f.readUInt32LE(1 * 8 + 4)).toBe(0xc000003e);
-    expect(f.readUInt32LE(4 * 8 + 4)).toBe(41);
-    expect(unixSocketFilter("arm64")!.readUInt32LE(4 * 8 + 4)).toBe(198);
-    expect(f.readUInt32LE(8 * 8 + 4)).toBe(0x00050001); // EPERM
+    expect(f.readUInt32LE(5 * 8 + 4)).toBe(41);
+    expect(unixSocketFilter("arm64")!.readUInt32LE(5 * 8 + 4)).toBe(198);
+    expect(f.readUInt32LE(9 * 8 + 4)).toBe(0x00050001); // EPERM
+    expect([f.readUInt16LE(3 * 8), f.readUInt32LE(3 * 8 + 4)]).toEqual([0x35, 0x40000000]); // JGE x32
     expect(unixSocketFilter("ia32")).toBeNull();
   });
 });
@@ -361,6 +574,33 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(ok(await w.run(`echo x > '${join(w.home, ".config", "fish", "conf.d", "evil.fish")}'`))).toBe(false);
       mkdirSync(join(w.home, ".config", "environment.d"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, ".config", "environment.d", "evil.conf")}'`))).toBe(false);
+      // Editors, package managers and the loginwindow plist: none of it is planted either.
+      mkdirSync(join(w.home, ".vim"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "nvim"), { recursive: true });
+      mkdirSync(join(w.home, ".gnupg"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "pip"), { recursive: true });
+      mkdirSync(join(w.home, ".bun", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".cargo", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".oh-my-zsh", "custom"), { recursive: true });
+      mkdirSync(join(w.home, "Library", "Preferences"), { recursive: true });
+      mkdirSync(join(w.home, "Library", "Scripts"), { recursive: true });
+      for (const f of [join(w.home, ".vimrc"), join(w.home, ".vim", "evil.vim"), join(w.home, ".config", "nvim", "evil.lua"), join(w.home, ".emacs"),
+        join(w.home, ".gnupg", "gpg.conf"), join(w.home, ".config", "pip", "evil.conf"), join(w.home, ".bunfig.toml"),
+        join(w.home, ".bun", "bin", "evil"), join(w.home, ".npmrc"), join(w.home, ".cargo", "bin", "evil"),
+        join(w.home, ".cargo", "config.toml"), join(w.home, ".bash_aliases"), join(w.home, ".oh-my-zsh", "custom", "evil.zsh"),
+        join(w.home, "Library", "Preferences", "com.apple.loginwindow.plist"), join(w.home, "Library", "Scripts", "evil.sh")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      // A hook in any repo under the home: planting fails too.
+      mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
+      expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
+      // Lane M's self-update files under the Clover home: the daemon binary, a staged boot record and the
+      // install record are refused (the Clover home default-deny backs the kind).
+      for (const f of [join(w.clover, "bin", "clover-core"), join(w.clover, "update", "boot.json"), join(w.clover, "install.json")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      expect(existsSync(join(w.clover, "install.json"))).toBe(false); // never created, never planted
     } else {
       // The systemd user unit, an autostart entry, and the shell startup files: a bot's session plants none.
       expect(ok(await w.run(`echo x >> '${join(w.home, ".config", "systemd", "user", "clover-core.service")}'`))).toBe(false);
@@ -376,11 +616,37 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       for (const f of [".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".bash_logout", ".pam_environment", ".xprofile"]) {
         expect(ok(await w.run(`echo x > '${join(w.home, f)}'`))).toBe(false);
       }
-      expect(existsSync(join(w.home, ".bashrc"))).toBe(false);
+      expect(existsSync(join(w.home, ".bashrc"))).toBe(true); // pre-created empty at setup (ruling 2)
+      expect(readFileSync(join(w.home, ".bashrc"), "utf8")).toBe(""); // and the plant didn't land
       for (const d of [join(w.home, "bin"), join(w.home, ".local", "bin"), join(w.home, ".ssh")] ) {
         mkdirSync(d, { recursive: true });
         expect(ok(await w.run(`echo x > '${join(d, d.endsWith(".ssh") ? "config" : "evil")}'`))).toBe(false);
       }
+      // Editors, package managers, fish and the desktop entries: none of it is planted either.
+      mkdirSync(join(w.home, ".vim"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "nvim"), { recursive: true });
+      mkdirSync(join(w.home, ".gnupg"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "pip"), { recursive: true });
+      mkdirSync(join(w.home, ".bun", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".cargo", "bin"), { recursive: true });
+      mkdirSync(join(w.home, ".config", "fish", "conf.d"), { recursive: true });
+      for (const f of [join(w.home, ".vimrc"), join(w.home, ".vim", "evil.vim"), join(w.home, ".config", "nvim", "evil.lua"),
+        join(w.home, ".gnupg", "gpg.conf"), join(w.home, ".config", "pip", "evil.conf"), join(w.home, ".bunfig.toml"),
+        join(w.home, ".npmrc"), join(w.home, ".cargo", "config.toml"), join(w.home, ".config", "fish", "conf.d", "evil.fish"),
+        join(w.home, ".gitconfig"), join(w.home, ".config", "mimeapps.list")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      // A hook in any repo under the home: planting fails too.
+      mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
+      expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
+      expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
+      // Lane M's self-update files under the Clover home: the daemon binary and its swap copy, a staged boot
+      // record and the install record are refused; the install record is never created and never planted.
+      for (const f of [join(w.clover, "bin", "clover-core"), join(w.clover, "bin", "clover-core.new"),
+        join(w.clover, "update", "boot.json"), join(w.clover, "install.json")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      expect(existsSync(join(w.clover, "install.json"))).toBe(false);
     }
     // A fenced file that isn't there yet can't be made either.
     expect(ok(await w.run(`echo '{}' > '${join(w.clover, "trust.json")}'`))).toBe(false);
@@ -422,10 +688,11 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(ok(await w.run("/bin/launchctl print system >/dev/null"))).toBe(false);
     } else {
       expect(ok(await w.run(`test -z "$(ls -A /run/user/${process.getuid!()} 2>/dev/null)"`))).toBe(true); // the user's bus is hidden
-      // The home takes no new names while the login unit isn't there, and the refusal says which and why.
-      const held = await w.run(`echo x > '${join(w.home, "new-top-level.txt")}'`);
-      expect(held.kind === "exited" && held.code !== 0).toBe(true);
-      expect(held.kind === "exited" && held.stderr).toMatch(new RegExp(`${w.home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} takes no new names under the fence, because \\S+ is fenced and isn't there yet; write in a subfolder of it, or ask the user`));
+      // Ordinary new top-level names stay writable: the missing login-start folders are made at setup and the
+      // supervisor refuses only the unsafe files (spec §9.1; rulings 1-3 replace the old held home).
+      const fresh = await w.run(`echo x > '${join(w.home, "new-top-level.txt")}' && cat '${join(w.home, "new-top-level.txt")}'`);
+      expect(fresh.kind === "exited" && fresh.code === 0 && fresh.stdout).toBe("x\n");
+      expect(fresh.kind === "exited" && fresh.stderr).not.toMatch(/takes no new names under the fence/);
       // Its own pid namespace: a handful of its own processes, and not the daemon's.
       expect(ok(await w.run(`test $(ls /proc | grep -c '^[0-9]') -lt 10 && test ! -e /proc/${process.pid}/cmdline`))).toBe(true);
     }
@@ -481,6 +748,89 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     expect(readFileSync(b("luna", "memory", "MEMORY.md"), "utf8")).toBe("luna'smore\nside\n");
   }, 90_000);
 
+  test("a read-only bound login file cannot be renamed away (EBUSY), and openat2 is performed", async () => {
+    if (here !== "linux" || process.arch !== "x64") return; // the Linux supervisor's answers
+    const w = world();
+    const own = { caller: botCaller("luna", "s1") };
+    // The setup pre-creates .bashrc empty and binds it read-only. A performed rename must report EBUSY —
+    // the kernel's own answer for a mountpoint — rather than moving the real file or answering EACCES.
+    const bashrc = join(w.home, ".bashrc"), moved = join(w.home, "moved-bashrc");
+    const r = await w.run(`mv '${bashrc}' '${moved}'`, own);
+    expect(r.kind === "exited" && r.code !== 0).toBe(true);
+    expect(r.kind === "exited" && r.stderr).toMatch(/busy/i);
+    expect(existsSync(bashrc)).toBe(true);
+    expect(existsSync(moved)).toBe(false);
+    // openat2 (SYS 437 on x64) is never continued: its flags live in the target's memory, so every openat2
+    // is performed. Creates, reads and plant refusals all work through it.
+    if (!ok(await w.run(`command -v python3`, own))) return; // no python in the sandbox: skip
+    const o2 = (script: string) => `python3 - <<'PYEOF'\nimport ctypes, os\nlibc = ctypes.CDLL("libc.so.6", use_errno=True)\nclass How(ctypes.Structure):\n    _fields_ = [("flags", ctypes.c_uint64), ("mode", ctypes.c_uint64), ("resolve", ctypes.c_uint64)]\ndef o2(path, flags, mode=0o644):\n    how = How(flags=flags, mode=mode, resolve=0)\n    fd = libc.syscall(437, -100, os.fsencode(path), ctypes.byref(how), ctypes.sizeof(how))\n    if fd < 0:\n        raise OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()))\n    return fd\n${script}\nPYEOF`;
+    const created = join(w.home, "project", "o2.txt");
+    expect(ok(await w.run(o2(`fd = o2("${created}", os.O_WRONLY | os.O_CREAT | os.O_TRUNC)\nos.write(fd, b"via-openat2\\n")\nos.close(fd)`), own))).toBe(true);
+    expect(readFileSync(created, "utf8")).toBe("via-openat2\n");
+    // A read through openat2 works the same way (performed, not continued).
+    const rd = await w.run(o2(`fd = o2("${created}", os.O_RDONLY)\nprint(os.read(fd, 100).decode(), end="")`), own);
+    expect(rd.kind === "exited" && rd.code === 0 && rd.stdout).toBe("via-openat2\n");
+    // And a plant through openat2 is refused, like any other write.
+    expect(ok(await w.run(o2(`o2("${bashrc}", os.O_WRONLY | os.O_CREAT)`), own))).toBe(false);
+    expect(readFileSync(bashrc, "utf8")).toBe("");
+  }, 90_000);
+
+  test("a write-open without O_CREAT on a missing path is ENOENT and creates nothing; so is a read-only openat2", async () => {
+    if (here !== "linux" || process.arch !== "x64") return; // the Linux supervisor's answers
+    const w = world();
+    const own = { caller: botCaller("luna", "s1") };
+    if (!ok(await w.run(`command -v python3`, own))) return; // no python in the sandbox: skip
+    const missing = join(w.home, "project", "never-there.txt");
+    // open and openat without O_CREAT (plain os.open: O_WRONLY, O_RDWR): the kernel's own ENOENT, no file.
+    for (const flags of ["os.O_WRONLY", "os.O_RDWR"]) {
+      const r = await w.run(`python3 -c 'import os; os.open("${missing}", ${flags})'`, own);
+      expect(r.kind === "exited" && r.code !== 0).toBe(true);
+      expect(r.kind === "exited" && r.stderr).toMatch(/No such file|ENOENT/i);
+    }
+    // A read-only openat2 on a missing path: ENOENT too, never a mode-000 create.
+    const o2miss = await w.run(`python3 - <<'PYEOF'\nimport ctypes, os\nlibc = ctypes.CDLL("libc.so.6", use_errno=True)\nclass How(ctypes.Structure):\n    _fields_ = [("flags", ctypes.c_uint64), ("mode", ctypes.c_uint64), ("resolve", ctypes.c_uint64)]\nhow = How(flags=os.O_RDONLY, mode=0, resolve=0)\nfd = libc.syscall(437, -100, os.fsencode("${missing}"), ctypes.byref(how), ctypes.sizeof(how))\nraise SystemExit(0 if fd >= 0 else 2)\nPYEOF`, own);
+    expect(o2miss.kind === "exited" && o2miss.code).toBe(2);
+    expect(existsSync(missing)).toBe(false);
+    // And a scoped openat2 (RESOLVE_BENEATH) on an existing file is refused outright, not silently unscoped.
+    const real = join(w.home, "project", "real.txt");
+    writeFileSync(real, "hi\n");
+    const o2scoped = await w.run(`python3 - <<'PYEOF'\nimport ctypes, os\nlibc = ctypes.CDLL("libc.so.6", use_errno=True)\nclass How(ctypes.Structure):\n    _fields_ = [("flags", ctypes.c_uint64), ("mode", ctypes.c_uint64), ("resolve", ctypes.c_uint64)]\nhow = How(flags=os.O_RDONLY, mode=0, resolve=0x08)\nfd = libc.syscall(437, -100, os.fsencode("${real}"), ctypes.byref(how), ctypes.sizeof(how))\nraise SystemExit(0 if fd >= 0 else 2)\nPYEOF`, own);
+    expect(o2scoped.kind === "exited" && o2scoped.code).toBe(2);
+  }, 90_000);
+
+  test("git config guard: a risky key set through git config or a direct edit is reverted", async () => {
+    const w = world();
+    const own = { caller: botCaller("luna", "s1") };
+    // A repo the command works in, and a global config.
+    expect(ok(await w.run(`git init -q repo && cd repo && git config user.email t@e && git config user.name t`, own))).toBe(true);
+    writeFileSync(join(w.home, ".gitconfig"), "[user]\n\tname = Luna\n");
+    // Through git config: the command sees its own write, but afterwards the key is reverted and reported.
+    const planted = await w.run(`cd repo && git config core.hooksPath /tmp/evil && git config user.email evil@x.io && git config --get core.hooksPath`, own);
+    expect(planted.kind === "exited" && planted.stdout).toBe("/tmp/evil\n");
+    expect(planted.kind === "exited" && planted.stderr).toMatch(/core\.hookspath/);
+    expect(readFileSync(join(w.home, "project", "repo", ".git", "config"), "utf8")).not.toContain("hooksPath");
+    expect(readFileSync(join(w.home, "project", "repo", ".git", "config"), "utf8")).toContain("evil@x.io");
+    expect(ok(await w.run(`cd repo && git config --get core.hooksPath || echo GONE`, own))).toBe(true);
+    // A direct file edit: reverted the same way.
+    const edited = await w.run(`printf '[core]\\n\\tfsmonitor = /tmp/evil\\n' >> repo/.git/config && git -C repo config --get core.fsmonitor`, own);
+    expect(edited.kind === "exited" && edited.stdout).toBe("/tmp/evil\n");
+    expect(readFileSync(join(w.home, "project", "repo", ".git", "config"), "utf8")).not.toContain("fsmonitor");
+    // The global config is guarded too.
+    const gold = join(w.home, ".git-global-test");
+    writeFileSync(gold, "[user]\n\tname = Luna\n[core]\n\tpager = less\n");
+    const gb = new Map([[gold, readFileSync(gold, "utf8")]]);
+    writeFileSync(gold, "[user]\n\tname = Luna\n[core]\n\tpager = less\n[credential]\n\thelper = /tmp/evil\n");
+    const gnote = revertPlantedGitKeys(gb);
+    expect(gnote).toMatch(/credential\.helper/);
+    expect(gnote).not.toMatch(/pager/);
+    expect(readFileSync(gold, "utf8")).toContain("core");
+    expect(readFileSync(gold, "utf8")).not.toContain("helper");
+    // An unwatched change alone is left in place.
+    writeFileSync(gold, "[user]\n\tname = Sol\n");
+    expect(revertPlantedGitKeys(new Map([[gold, "[user]\n\tname = Luna\n"]]))).toBeNull();
+    expect(readFileSync(gold, "utf8")).toBe("[user]\n\tname = Sol\n");
+  }, 90_000);
+
   test("bots' folders for runners: its own bot's whole folder reads, every other runner sees none; transcripts hidden", async () => {
     const w = world();
     const b = (...p: string[]) => join(w.clover, "bots", ...p);
@@ -520,9 +870,19 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
   test("ordinary work runs: a shell pipeline, git init and commit in the project, mktemp", async () => {
     const w = world();
-    const r = await w.run(`printf 'a\\nb\\n' | sort -r | head -1 && git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x && git log --oneline | wc -l | tr -d ' ' && TMPDIR='${w.temp}' mktemp >/dev/null && echo done`);
+    const r = await w.run(`printf 'a\nb\n' | sort -r | head -1 && git init -q . && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x && git log --oneline | wc -l | tr -d ' ' && TMPDIR='${w.temp}' mktemp >/dev/null && echo done`);
     expect(r).toMatchObject({ kind: "exited", code: 0, shell: "sh" });
     expect(r.kind === "exited" && r.stdout).toBe("b\n1\ndone\n");
+  }, 60_000);
+
+  test("git init and clone work without installing hooks", async () => {
+    const w = world();
+    // Plain init and clone, as a bot runs them: Clover's empty template installs no hooks.
+    expect(ok(await w.run(`git init -q . && test ! -e .git/hooks && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m x`))).toBe(true);
+    expect(existsSync(join(w.home, "project", ".git", "hooks"))).toBe(false);
+    mkdirSync(join(w.home, "clone")); // the held home takes no new top-level names: the target exists first
+    expect(ok(await w.run(`git clone -q . ../clone && test ! -e ../clone/.git/hooks && cd ../clone && git -c user.email=t@e -c user.name=t commit -q --allow-empty -m y && git log --oneline | wc -l`))).toBe(true);
+    expect(existsSync(join(w.home, "clone", ".git", "hooks"))).toBe(false);
   }, 60_000);
 });
 

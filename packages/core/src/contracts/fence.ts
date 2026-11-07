@@ -407,6 +407,33 @@ export function windowsAlias(path: string): string | undefined {
   return names.find((n, i) => (n.includes(":") && !(i === 0 && /^[A-Za-z]:$/.test(n))) || /~\d/.test(n));
 }
 
+/** The hooks folder of the repo a plant targets (`<repo>/.git/hooks`, bare repos `<name>.git/hooks`), when the
+ *  path sits at or under it and the repo under `home` — any repo there. Compared folded, so another case can't
+ *  dodge it. `login-start`: a hook runs later, outside the sandbox (spec item 1116). */
+export function gitHooksRoot(path: string, home: string, os?: Os): string | null {
+  const parts = path.split(/[\\/]/).filter((s) => s !== "");
+  const hp = home.split(/[\\/]/).filter((s) => s !== "");
+  if (parts.length <= hp.length) return null;
+  const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
+  const endsGit = (s: string) => foldName(s.length >= 4 ? s.slice(-4) : s, os) === foldName(".git", os);
+  if (!hp.every((h, i) => same(h, parts[i]!))) return null; // not under the home
+  for (let i = hp.length; i + 1 < parts.length; i++) {
+    if (endsGit(parts[i]!) && same(parts[i + 1]!, "hooks")) {
+      const sep = path.includes("\\") ? "\\" : "/";
+      return (/^[\\/]/.test(path) ? sep : "") + parts.slice(0, i + 2).join(sep);
+    }
+  }
+  return null;
+}
+
+/** The `python*` folder names inside a `lib` folder (a user site lives in each one's `site-packages`), from the
+ *  folder names on the disk; `[]` where the disk has none or can't be read (the fake's fictional paths). */
+export function pythonSiteDirNames(listLib: () => string[]): string[] {
+  try {
+    return listLib().filter((n) => n.toLowerCase().startsWith("python"));
+  } catch { return []; }
+}
+
 export interface JudgeOptions {
   /** The computer's OS, for its folding rules (`foldName`). */
   os?: Os;

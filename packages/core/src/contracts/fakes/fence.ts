@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, gitHooksRoot, ownFoldersOf, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -35,7 +35,8 @@ export const FAKE_FENCE_LAYOUT: Record<Exclude<FencedKind, "dev-folders">, strin
   /** Wherever the OK'd agents are installed (`agentInstalls`). */
   "agent-installs": null,
   "secrets-file": "secrets.enc",
-  "key-file": "secrets.key",
+  /** The key file, and the systemd-creds-sealed key on headless Linux (lane C's layout lists both). */
+  "key-file": null,
 };
 
 export interface FakeFenceOptions {
@@ -65,36 +66,63 @@ function defaultUserData(os: Os, home: string): string {
 
 /** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
 /** The login-start places: every folder and file a planted write could run later, outside the sandbox (spec item
- *  1116, the controller's ruling) — Clover's own login item first, then the shells and their logout scripts, SSH and
- *  git config, the folders that come ahead on PATH, and the desktop's autostart, systemd and session-script folders.
- *  Lane C's layout lists the same. */
+ *  1116, the controller's ruling) — Clover's own login item first, then the shells and their logout scripts, SSH
+ *  and git config, the folders that come ahead on PATH, editors, package managers, and the desktop's autostart,
+ *  systemd, application and session-script folders. The gnupg entries are only its config files (gpg writes its
+ *  trustdb and random seed in normal use), and `.git/config` stays writable (git writes it in normal use; setting
+ *  risky keys through it is the reviewer's call) — only `.git/hooks` is fenced, as a pattern (any repo under the
+ *  home). macOS also fences the loginwindow plist and `~/Library/Scripts`. Lane C's layout lists the same. */
 function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
   const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
     ".bash_logout", ".zlogout", ".logout"];
   const shells = [...shell.map((f) => `${home}/${f}`), `${home}/.config/fish`];
   const pathAhead = [`${home}/.local/bin`, `${home}/bin`];
   const sshGit = [`${home}/.ssh`, `${home}/.gitconfig`, `${home}/.config/git`];
+  const editors = [`${home}/.vimrc`, `${home}/.vim`, `${home}/.config/nvim`, `${home}/.emacs`, `${home}/.emacs.d`];
+  const packageManagers = [`${home}/.bunfig.toml`, `${home}/.bun/bin`, `${home}/.npmrc`, `${home}/.cargo/bin`,
+    `${home}/.cargo/config.toml`, `${home}/.cargo/config`, `${home}/.config/pip`, `${home}/.pip`];
   if (os === "macos") {
     return [
       `${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`,
       `${home}/Library/LaunchAgents`, `${home}/Library/LaunchDaemons`, `${home}/Library/StartupItems`,
       `${home}/Library/Application Support/com.apple.backgroundtaskmanagementagent`,
-      ...shells, ...pathAhead, ...sshGit,
+      `${home}/Library/Preferences/com.apple.loginwindow.plist`, `${home}/Library/Scripts`,
+      ...shells, ...pathAhead, ...sshGit, ...editors, ...packageManagers,
+      `${home}/Library/Python`,
+      `${home}/.bash_aliases`, `${home}/.oh-my-zsh/custom`,
+      `${home}/.gnupg/gpg.conf`, `${home}/.gnupg/gpg-agent.conf`, `${home}/.gnupg/dirmngr.conf`,
       `${home}/.config/environment.d`,
     ];
   }
   if (os === "linux") {
     return [
-      `${home}/.config/systemd/user`, `${home}/.config/autostart`, `${home}/.local/share/systemd/user`,
+      `${home}/.config/systemd`, `${home}/.local/share/systemd/user`,
+      `${home}/.config/autostart`, `${home}/.local/share/applications`, `${home}/.config/mimeapps.list`,
       `${home}/.config/environment.d`, `${home}/.pam_environment`, `${home}/.xprofile`, `${home}/.xsessionrc`, `${home}/.xinitrc`,
       `${home}/.config/autostart-scripts`, `${home}/.config/plasma-workspace/env`, `${home}/.config/plasma-workspace/shutdown`,
-      ...shells, ...pathAhead, ...sshGit,
+      ...shells, ...pathAhead, ...sshGit, ...editors, ...packageManagers,
+      `${home}/.bash_aliases`, `${home}/.oh-my-zsh/custom`,
+      `${home}/.gnupg/gpg.conf`, `${home}/.gnupg/gpg-agent.conf`, `${home}/.gnupg/dirmngr.conf`,
     ];
   }
   return [
     `${home}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup`,
     `${home}/Documents/PowerShell`, `${home}/Documents/WindowsPowerShell`,
     `${home}/.bashrc`, `${home}/.bash_profile`, `${home}/.profile`, `${home}/.minttyrc`,
+  ];
+}
+
+/** Lane M's self-update files under the Clover home (lane C's `layout.ts` lists the same): the `bin/` daemon
+ *  binary, its `.new`/`.old` swap copies, the `update/` folder, and the install record. Never owned, read-only. */
+function selfUpdatePaths(cloverHome: string): string[] {
+  return [
+    `${cloverHome}/bin/clover-core`,
+    `${cloverHome}/bin/clover-core.new`,
+    `${cloverHome}/bin/clover-core.old`,
+    `${cloverHome}/bin/.new`,
+    `${cloverHome}/bin/.old`,
+    `${cloverHome}/update`,
+    `${cloverHome}/install.json`,
   ];
 }
 
@@ -126,21 +154,37 @@ export class FakeFence implements Fence {
     const out: FencedPath[] = [];
     const add = (kind: FencedKind, path: string) =>
       out.push({ kind, path: normalizePosix(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : CALLER_KINDS.includes(kind) ? "caller" : "write" });
+    // Lane M's self-update files first (lane C's `layout.ts` pending `self-update`, pending until B names the
+    // kind): never owned by any caller, read-only. First on purpose: they sit under login-start's `bin/` folder,
+    // and the more specific kind names the attack.
+    for (const p of (this.#layout as Record<string, string[] | undefined>)["self-update"] ?? selfUpdatePaths(this.#cloverHome)) {
+      add("self-update" as FencedKind, p);
+    }
     for (const [kind, rel] of Object.entries(FAKE_FENCE_LAYOUT) as [Exclude<FencedKind, "dev-folders">, string | null][]) {
       if ((kind === "secrets-file" || kind === "key-file") && this.os === "macos") continue; // the Keychain holds them there
       const override = this.#layout[kind];
       if (override) for (const p of override) add(kind, p);
       else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
+      else if (kind === "key-file") for (const n of ["secrets.key", "secrets.key.cred"]) add(kind, `${this.#cloverHome}/${n}`);
       else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
       else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
       else if (kind === "agent-installs") for (const p of this.#agentInstalls) add(kind, p);
       else if (kind === "bot-memory") for (const bot of this.#bots) out.push({ kind, path: `${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`, deny: "caller", bot });
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
+    // Python's user site folders need the disk read (`pythonSiteDirNames`); the fake's fictional paths have none,
+    // so its set lacks them — lane C's real fence and the sandboxes read them, and pin them on a real disk.
     return out;
   }
 
   check(op: FenceOp, ctx?: FenceContext): FenceVerdict {
+    const writes = op.op === "write" || op.op === "delete" || op.op === "move";
+    if (writes) {
+      for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) {
+        const hooks = gitHooksRoot(p, this.#home, this.os);
+        if (hooks !== null) return { allowed: false, reason: "login-start", path: hooks };
+      }
+    }
     return judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome, ...(ctx ? { caller: ctx } : {}) });
   }
 
@@ -149,6 +193,8 @@ export class FakeFence implements Fence {
       const p = patternItemAt(path, this.#cloverHome, this.os);
       if (p?.kind === "bot-memory") return { kind: "bot-memory", path: p.root, deny: "caller", ...(p.folder ? { bot: p.folder.replace("--", "/") } : {}) };
       if (p?.kind === "sessions-runtime") return { kind: "sessions-runtime", path: p.root, deny: "read-write" };
+      const hooks = gitHooksRoot(path, this.#home, this.os);
+      if (hooks !== null) return { kind: "login-start", path: hooks, deny: "write" };
       for (const item of this.fencedSet()) {
         if (isInsideFolded(path, item.path, this.os) || isInsideFolded(item.path, path, this.os)) return item;
       }

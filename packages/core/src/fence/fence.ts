@@ -17,16 +17,16 @@ import { join, posix, win32 } from "node:path";
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, judge, ownFoldersOf, patternItemAt, READ_DENIED_KINDS,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, judge, ownFoldersOf, patternItemAt, pythonSiteDirNames, READ_DENIED_KINDS,
   type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
   type SandboxPolicy,
 } from "../contracts/fence";
 import { canonicalPath } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
-import { botFolders, fenceLayout, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
+import { botFolders, fenceLayout, globalHooksPathDirs, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
 
 /** Pending kinds this fence enforces before B's contract has them. */
-export const ENFORCED_AHEAD = ["hook-shell", "session-transcripts"] as const;
+export const ENFORCED_AHEAD = ["hook-shell", "session-transcripts", "self-update"] as const;
 
 export interface CloverFenceOptions {
   os?: Os;
@@ -111,11 +111,33 @@ export class CloverFence implements Fence {
       for (const p of this.#layout[kind] ?? paths) add(kind, p);
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
+    // Enforced ahead of B's contract naming them: the per-user Git whose bash runs Windows hooks (write-denied),
+    // the runtime's transcript store (write-denied: runners never write a transcript; the home default-deny
+    // already keeps their reads out, while the core and the user's own surfaces still reach it), and lane M's
+    // self-update files (write-denied, never owned). Ahead of the login-start places on purpose: the self-update
+    // files sit under login-start's `bin/` folder, and the more specific kind names the attack (a runner swapping
+    // the daemon), not the generic plant.
+    const pending = pendingFenced({ home: this.#home, cloverHome: this.#cloverHome, os: this.os });
+    const aheadDeny: Record<string, "write" | "read-write"> = { "hook-shell": "write", "session-transcripts": "write", "self-update": "write" };
+    for (const kind of this.#enforceAhead ? ENFORCED_AHEAD : []) {
+      for (const path of (this.#layout as Record<string, string[] | undefined>)[kind] ?? pending[kind] ?? []) {
+        out.push({ kind: kind as FencedKind, path: this.#canonical(path), deny: aheadDeny[kind]! });
+      }
+    }
     // The kinds that need more than the Clover home: the login places (under the user's home), the browser's
     // partitions (always both shipped and dev profiles from the OS app-data folder, so neither app build can read
     // the other's sign-ins, plus an explicitly passed userData and a headless sessionData when given), and the
     // OK'd agent installs.
     for (const p of this.#layout["login-start"] ?? loginStartPaths(this.#home, this.#cloverHome, this.os)) add("login-start", p);
+    // Python's user site folders (one `site-packages` per `python*` folder read on this disk).
+    if (this.#layout["login-start"] === undefined) {
+      const jp = this.os === "windows" && !this.#home.startsWith("/") ? win32 : posix;
+      const lib = jp.join(this.#home, ".local", "lib");
+      const names = pythonSiteDirNames(() => readdirSync(lib, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name));
+      for (const n of names) add("login-start", jp.join(lib, n, "site-packages"));
+      // The user's configured global hooks folder, if any (ruling 5): a planted hook there runs later too.
+      for (const p of globalHooksPathDirs(this.#home)) add("login-start", p);
+    }
     const appData = this.os === "macos"
       ? joinHome(this.#home, this.os, "Library", "Application Support")
       : this.os === "windows"
@@ -140,21 +162,14 @@ export class CloverFence implements Fence {
     for (const [folder, bot] of known) {
       out.push({ kind: "bot-memory", path: this.#canonical(p.join(this.#cloverHome, "bots", folder, "memory")), deny: "caller", ...(this.#bots.includes(bot) ? { bot } : {}) });
     }
-    // Enforced ahead of B's contract naming them: the per-user Git whose bash runs Windows hooks (write-denied),
-    // and the runtime's transcript store (write-denied: runners never write a transcript; the home default-deny
-    // already keeps their reads out, while the core and the user's own surfaces still reach it).
-    const pending = pendingFenced({ home: this.#home, cloverHome: this.#cloverHome, os: this.os });
-    const aheadDeny: Record<string, "write" | "read-write"> = { "hook-shell": "write", "session-transcripts": "write" };
-    for (const kind of this.#enforceAhead ? ENFORCED_AHEAD : []) {
-      for (const path of (this.#layout as Record<string, string[] | undefined>)[kind] ?? pending[kind] ?? []) {
-        out.push({ kind: kind as FencedKind, path: this.#canonical(path), deny: aheadDeny[kind]! });
-      }
-    }
     return out;
   }
 
   /** The Clover home, canonical: a command's sandbox names where Clover names things from it. */
   get cloverHome(): string { return this.#cloverHome; }
+
+  /** The user's home folder: commands may write in it (§9.1), less the fenced set. */
+  get home(): string { return this.#home; }
 
   #fold(path: string): string {
     // `judge` and `isInside` are POSIX: a Windows path is compared as `c:/users/...`, which they take as relative.
@@ -197,6 +212,14 @@ export class CloverFence implements Fence {
       const forms = this.#forms(raw);
       if (forms === null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
       all.push(...forms);
+    }
+    // A hook planted in any repo under the user's home runs later, outside the sandbox (spec item 1116): refused
+    // as `login-start`, ahead of the kinds, whatever the caller.
+    if (write) {
+      for (const p of all) {
+        const hooks = gitHooksRoot(p, this.#home, this.os);
+        if (hooks !== null) return { allowed: false, reason: "login-start", path: hooks };
+      }
     }
     // B's shared `judge`: the fenced kinds, then the home default-deny, folded on every OS. Each folded item maps
     // back to its own; the pattern roots (`bots/<x>/memory`, `sessions-runtime`) come back in the home's own form.
@@ -260,6 +283,8 @@ export class CloverFence implements Fence {
         return { kind: "bot-memory", path: root, deny: "caller" };
       }
       if (at?.kind === "sessions-runtime") return { kind: "sessions-runtime", path: joinHome(this.#cloverHome, this.os, "sessions-runtime"), deny: "read-write" };
+      const hooks = gitHooksRoot(form, this.#home, this.os);
+      if (hooks !== null) return { kind: "login-start", path: hooks, deny: "write" };
       for (const item of this.fencedSet()) {
         if (item.deny === "caller") continue; // judged by its pattern above
         if (inside(form, item.path, this.os) || inside(item.path, form, this.os)) return item;

@@ -1,7 +1,7 @@
 // The bot service (../service.ts) end to end: a plugin declares a bot, the core loads it from the registry, lists it
 // with its state, and runs its one conversation and its side threads, on a temp home that survives restarts.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BotView, CLOVER_ERR, RoutineRunView, SESSIONS_EVENTS, SessionView } from "@waifucave/clover-protocol";
 import { isContractError } from "../../contracts/common";
@@ -78,6 +78,16 @@ describe("Alpha", () => {
     expect(events).toMatchObject([{ type: "assistant_message", text: readFileSync(join(ALPHA_FOLDER, "bot/greeting.md"), "utf8").trim() }]);
     expect(readFileSync(join(botPaths(home, "alpha").memory, "MEMORY.md"), "utf8")).toBe(readFileSync(join(ALPHA_FOLDER, "bot/memory/MEMORY.md"), "utf8"));
     expect(b.drivers.made.map((m) => [m.ctx.sessionId, m.ctx.kind, m.ctx.current().instructions.startsWith("You are Alpha")])).toEqual([["b_alpha", "bot", true]]);
+    expect(b.warnings).toEqual([]);
+    await b.shutdown();
+  });
+
+  test("starting a bot sweeps its leftover temp files", async () => {
+    const home = tempDir();
+    mkdirSync(botPaths(home, "alpha").memory, { recursive: true });
+    writeFileSync(join(botPaths(home, "alpha").memory, "leave.tmp-0123456789abcdef"), "half-written");
+    const b = await boot({ home, plugins: await alphaInputs() });
+    expect(existsSync(join(botPaths(home, "alpha").memory, "leave.tmp-0123456789abcdef"))).toBe(false);
     expect(b.warnings).toEqual([]);
     await b.shutdown();
   });

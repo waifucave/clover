@@ -18,11 +18,15 @@
 //     session (no TIOCSTI), and the user's D-Bus hidden (`systemd-run --user` and the rest of the closed doors).
 //
 // Notes for the runner (a bot's Bash under here): a denied part of the home looks absent, not "permission denied"
-// (the tmpfs view holds nothing there: no listing, no stat), and a write into the view fails as a read-only file
-// system (the view is remounted read-only around the bound-back own folders).
+// (the tmpfs view holds nothing there: no listing, no stat), a write into the view fails as a read-only file
+// system (the view is remounted read-only around the bound-back own folders), `pip install --user` is refused (the
+// user site folders are fenced: bots use virtual environments), and `git init` and `git clone` use Clover's empty
+// template (`GIT_TEMPLATE_DIR`): no hooks are installed, plant none anyway, and the fence judges every tool call
+// that reaches another repo's).
 import { lstatSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SandboxPolicy } from "../contracts/fence";
+import { gitTemplateDir } from "./layout";
 import type { CallerPlaces } from "./per-caller";
 
 export interface BwrapInput {
@@ -37,6 +41,12 @@ export interface BwrapInput {
   readonly seccompFd?: number;
   /** The runner's caller: its own folders are the only ways back into the Clover home's view. */
   readonly caller?: CallerPlaces;
+  /** The session's own repo's `.git/hooks`, when it is there: bound read-only. Other repos under the home are a
+   *  known limit on Linux (bwrap can't match patterns): the fence still judges every tool call that reaches them. */
+  readonly repoHooks?: string | null;
+  /** Fenced files the supervisor refuses instead of the mounts (spec item 1116): never held for these, so `~` and
+   *  `~/.config` stay writable for ordinary new names. */
+  readonly supervised?: readonly string[];
 }
 
 const realFs = {
@@ -72,10 +82,12 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   // Where Clover names things outside its home: the nearest folder that is there takes the naming folders' shape
   // when a fenced item isn't there yet (a `.zshrc` a bash user never made, the login unit on a fresh home):
   // read-only, its present children writable, nothing new in it (fails closed: no new top-level names there for the
-  // command). `held` names each such folder for the refusal's explanation.
+  // command). `held` names each such folder for the refusal's explanation. Supervised files never hold: the
+  // supervisor refuses them, so `~` and `~/.config` stay writable for ordinary new names.
   const naming = new Set<string>();
+  const supervised = new Set(input.supervised ?? []);
   for (const d of fenced) {
-    if (inside(d, cloverHome) || fs.kind(d) !== null) continue;
+    if (inside(d, cloverHome) || fs.kind(d) !== null || supervised.has(d)) continue;
     let p = dirname(d);
     while (fs.kind(p) === null && p !== dirname(p)) p = dirname(p);
     if (writable.some((w) => inside(p, w))) {
@@ -113,6 +125,11 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     else if (k !== null) a.push("--ro-bind", "/dev/null", r);
   }
 
+  // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): the session's own
+  // repo's hooks are bound read-only (other repos under the home are the known limit, above).
+  if (input.repoHooks !== null && input.repoHooks !== undefined && fs.kind(input.repoHooks) === "dir") {
+    a.push("--ro-bind", input.repoHooks, input.repoHooks);
+  }
   // The Clover home as a tmpfs view holding only the caller's own folders (the home default-deny, for runners).
   // Without a caller every own folder is absent: the view holds nothing.
   if (fs.kind(cloverHome) === "dir") {
@@ -133,6 +150,10 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
       const k = fs.kind(p);
       if (k === "dir" || k === "file") a.push("--bind", p, p);
     }
+    // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it. Bound after
+    // the tmpfs, which would otherwise hide it.
+    const template = gitTemplateDir(cloverHome);
+    if (fs.kind(template) === "dir") a.push("--ro-bind", template, template);
     a.push("--remount-ro", cloverHome);
   }
   // The closed doors: the user's session bus and systemd (systemd-run --user), and the system bus.
@@ -155,22 +176,24 @@ export function heldFolderNote(stderr: string, held: readonly HeldFolder[]): str
 }
 
 /** The seccomp filter (classic BPF, `struct sock_filter[]`): `socket(AF_UNIX, …)` and `io_uring_setup` fail with EPERM,
- *  and so does every call of another architecture (a 32-bit binary's), so no Unix socket on the disk can be reached.
+ *  and so does every call of another architecture (a 32-bit binary's) or with the x32 bit (>= 0x40000000, which
+ *  would otherwise reuse another number under the same audit), so no Unix socket on the disk can be reached.
  *  Null where the architecture isn't one Clover ships for. */
 export function unixSocketFilter(arch: string = process.arch): Buffer | null {
   const t = arch === "x64" ? { audit: 0xc000003e, socket: 41 } : arch === "arm64" ? { audit: 0xc00000b7, socket: 198 } : null;
   if (t === null) return null;
-  const LD = 0x20, JEQ = 0x15, RET = 0x06, ALLOW = 0x7fff0000, EPERM = 0x00050001, IO_URING_SETUP = 425, AF_UNIX = 1;
+  const LD = 0x20, JEQ = 0x15, JGE = 0x35, RET = 0x06, ALLOW = 0x7fff0000, EPERM = 0x00050001, IO_URING_SETUP = 425, AF_UNIX = 1, X32 = 0x40000000;
   const prog: [number, number, number, number][] = [
     [LD, 0, 0, 4], //            0: the architecture
-    [JEQ, 0, 6, t.audit], //     1: another one: EPERM (8)
+    [JEQ, 0, 7, t.audit], //     1: another one: EPERM (9)
     [LD, 0, 0, 0], //            2: the call
-    [JEQ, 4, 0, IO_URING_SETUP], // 3: EPERM (8)
-    [JEQ, 0, 2, t.socket], //    4: not socket(): allow (7)
-    [LD, 0, 0, 16], //           5: its first argument, the domain (low 32 bits)
-    [JEQ, 1, 0, AF_UNIX], //     6: AF_UNIX: EPERM (8), else allow (7)
-    [RET, 0, 0, ALLOW], //       7
-    [RET, 0, 0, EPERM], //       8
+    [JGE, 5, 0, X32], //         3: x32 numbers: EPERM (9)
+    [JEQ, 4, 0, IO_URING_SETUP], // 4: EPERM (9)
+    [JEQ, 0, 2, t.socket], //    5: not socket(): allow (8)
+    [LD, 0, 0, 16], //           6: its first argument, the domain (low 32 bits)
+    [JEQ, 1, 0, AF_UNIX], //     7: AF_UNIX: EPERM (9), else allow (8)
+    [RET, 0, 0, ALLOW], //       8
+    [RET, 0, 0, EPERM], //       9
   ];
   const b = Buffer.alloc(prog.length * 8);
   prog.forEach(([code, jt, jf, k], i) => { b.writeUInt16LE(code, i * 8); b.writeUInt8(jt, i * 8 + 2); b.writeUInt8(jf, i * 8 + 3); b.writeUInt32LE(k >>> 0, i * 8 + 4); });
