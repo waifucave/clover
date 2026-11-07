@@ -149,7 +149,9 @@ export class FakeFence implements Fence {
     const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: [...set.map((i) => i.path), patterns[0]!],
+      // The whole bots folder is write-denied (agents and the rest of a bot's folder are read-only); the
+      // runner's own memory comes back below as `ownMemory`.
+      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`],
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],

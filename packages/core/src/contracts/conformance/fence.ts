@@ -121,6 +121,9 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
         const p = f.forCaller(c).policy();
         expect(p.denyRead).toContain(`${CLOVER}/bots/*/memory`);
         expect(p.denyWrite).toContain(`${CLOVER}/bots/*/memory`);
+        // Some denyWrite entry covers the agents folder (the bots root here, the whole home on lanes with the
+        // home default-deny), for every runner.
+        expect(p.denyWrite.some((d) => `${CLOVER}/bots/luna/agents/a_1.jsonl`.startsWith(d))).toBe(true);
       }
       expect(f.forCaller(main).policy().ownMemory).toBe(mem("luna"));
       expect(f.forCaller(session("luna", "side-thread")).policy().ownMemory).toBe(mem("luna"));
