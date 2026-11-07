@@ -239,7 +239,13 @@ function errnoOf(e: unknown): number {
  *  mounts) redirects it. The base is consumed; the caller closes the returned parent. */
 function walkOne(lib: SupervisorLib, pid: number, dirfd: number, path: string, absolute: boolean): { parentFd: number; name: string } | { errno: number } {
   const { dir, name } = splitParent(path);
-  if (name === "") return { errno: 2 }; // ENOENT, as the kernel for an empty final component
+  if (name === "") {
+    // An empty final component: ENOENT, except the root itself (`/`), which names `.` under its own root.
+    if (!absolute) return { errno: 2 };
+    const base = resolveBase(lib, pid, true, dirfd);
+    if (base.fd < 0) return { errno: base.err };
+    return { parentFd: base.fd, name: "." };
+  }
   const base = resolveBase(lib, pid, absolute, dirfd);
   if (base.fd < 0) return { errno: base.err };
   if (dir === "" && !absolute) return { parentFd: base.fd, name };
