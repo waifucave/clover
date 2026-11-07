@@ -2180,8 +2180,6 @@
 
     "@types/react-dom/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
-    "@waifucave/clover-agent-runtime/@waifucave/clover-web": ["@waifucave/clover-web@0.0.69", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.69/4474c70be3e64ec76f6052f7606a54b776722d95", {}, "sha512-MieuSu0EvURXUHR+cEkUBYT22i3qhmocCQoWnLLOPSC+iZrCBjtvY+S2HKYgwDHx2RFEooMPP4cvmmtLI9TJOA=="],
-
     "@waifucave/clover-desktop/@types/react": ["@types/react@19.3.0", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg=="],
 
     "@waifucave/clover-desktop/@types/react-dom": ["@types/react-dom@19.3.0", "", { "peerDependencies": { "@types/react": "^19.3.0" } }, "sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q=="],
