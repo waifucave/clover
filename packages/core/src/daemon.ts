@@ -44,7 +44,6 @@ import { DeviceKey } from "./identity/device-key";
 import type { DeviceLinks } from "./links/node";
 import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
-import type { UpdateRestartGate } from "./lease/main";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
 import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
@@ -81,6 +80,9 @@ import { ApprovedProjectRules } from "./agent/approved-project-rules";
 import { sdkGlobalConfigPath, sdkHomeFor, sdkSettingsPath, trustRecordFile } from "./agent/paths";
 import { forgetSdkFile, liveSdkGlobalConfig, liveSdkSettings, readSdkGlobalConfigDetailed, readSdkSettingsDetailed } from "./sdk-files";
 import { ApprovalBroker } from "./agent/approvals";
+import { UpdateGate } from "./update/gate";
+import { acceptUpdateExit, updateHandlers, type SelfUpdate } from "./update/service";
+import { readInstallMarker } from "./update/install-marker";
 import { ElicitationBroker } from "./runtime-sdk/url-elicitation";
 import { QuestionBroker } from "./agent/questions";
 import { createPersistedChildren, type AgentRegistry } from "./agent/bg-agent-registry";
@@ -276,6 +278,12 @@ export interface RunningDaemon {
    *  background after the socket is bound. `ready` settles once they are up, or found absent (no sidecar), or failed
    *  (logged); each getter is undefined before then and without one. */
   cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined };
+  /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
+   *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
+  updateGate: UpdateGate;
+  /** M-M2: a server install's own update (`clover-core daemon run` sets it), which `update.status` and `update.apply`
+   *  then serve. */
+  setSelfUpdate(self: SelfUpdate): void;
   /** Dispatch's children tracker (`agent/dispatch-children.ts`) — the SAME instance the `sessions`
    *  capability server's `session_spawn` and every driver's turn-settled hook reach. */
   dispatchChildren: DispatchChildren | undefined;
@@ -2215,6 +2223,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
   };
   const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
+    // M-M2: no new turn while the update gate closes for a restart (`updateGate` is set further down, before any turn).
+    updateClosing: () => updateGate.closed,
     home: cloverHome,
     // WS-21: every incarnation's run home, when the linked router applies them (see `runHomeDeps`).
     ...(runHomeDeps === undefined ? {} : { runHome: runHomeDeps }),
@@ -2398,6 +2408,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(bgAgents?.list(sid) ?? []).map((a) => ({ threadId: a.threadId, parentThreadId: "main", status: a.status === "running" ? "running" as const : "completed" as const, ...(a.status === "running" ? {} : { stopReason: a.status }) })),
     ],
   };
+  // M-M2: the update's idle gate (src/update/gate.ts). The daemon's own work is here; K's runners, routines, live Bash
+  // runners and the bots add theirs through `RunningDaemon.updateGate`.
+  const updateGate = new UpdateGate();
+  updateGate.register({ name: "turns", count: () => signals.activeTurnCount() });
+  updateGate.register({
+    name: "agents",
+    // Every session's, not only the live drivers': a background agent outlives its parent's turn and driver.
+    count: () => bgAgents?.runningCount?.()
+      ?? cloverDrivers.list().reduce((n, d) => n + (bgAgents?.list(d.sessionId) ?? []).filter((a) => a.status === "running").length, 0),
+  });
+  updateGate.register({ name: "approvals", count: () => approvalBroker.pendingCount() });
+  updateGate.register({ name: "questions", count: () => questions.pendingCount() });
+  updateGate.register({ name: "elicitations", count: () => elicitationBroker.pendingCount() });
+  updateGate.register({ name: "workflows", count: () => workflowRuntime?.runningCount() ?? 0 });
   const childrenRpc = createChildrenRpc({
     registry: () => bgAgents,
     facetFor: (sid) => { const backend = runtime?.records.get(sid)?.backendSessionId; return backend === undefined || runtimeSdk === undefined ? undefined : attachedFacetFor(runtimeSdk, backend); },
@@ -3173,6 +3197,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // stop reach them through these.
   let daemonLinks: DaemonLinks | undefined;
   let daemonParts: DaemonParts | undefined;
+  let selfUpdate: SelfUpdate | undefined;
+  // M-M2: `update.status` and `update.apply` join the lanes' handlers (one map: the links, node and bot side add theirs).
+  Object.assign(cloverLaneHandlers, updateHandlers({
+    gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
+    channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
+  }));
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
@@ -3183,6 +3213,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
+    acceptUpdateExit: () => acceptUpdateExit(updateGate),
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,
@@ -3388,8 +3419,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // started in the background so a slow sidecar never holds the daemon's start; their methods join the Clover server's
   // handlers when they're up. A daemon with no sidecar (run from source) runs none of them, and says so. The stop
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
-  // TODO(#198, lane M): `RunningDaemon.updateGate` here, so the lease renews just before an update's restart.
-  const updateGate: UpdateRestartGate | undefined = undefined;
   const partsClock = new SystemClock();
   let partsRegistry: OpenedRegistry | undefined;
   let partsStopping = false;
@@ -3422,7 +3451,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     daemonLinks = await startDaemonLinks({
       home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
-      ...(updateGate ? { updateGate } : {}),
+      // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
+      updateGate,
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });
@@ -3465,6 +3495,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     buildSessionCapabilities,
     clover: cloverDrivers,
     cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots },
+    updateGate,
+    setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
     wakes: computerUseRuntime.wakes,
     // The HOLDER, read through a closure — never `settings` captured by value, which would freeze

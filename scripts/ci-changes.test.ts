@@ -31,8 +31,18 @@ describe("ci-changes", () => {
   });
 
   test("the packages: packaging/ and the app's builder config build and open the Linux packages; an app change does too", () => {
-    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "scripts"]);
-    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
+    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "installers", "scripts"]);
+    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "installers", "typecheck", "scripts"]);
+  });
+
+  test("the installers' release build runs for what makes them, never for code, CI's own files or a lockfile alone", () => {
+    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json", "scripts/build-packages.ts", "packages/update-feed/src/index.ts"]) {
+      expect(areasFor([f]).installers).toBe(true);
+    }
+    for (const f of ["bun.lock", ".bun-version", ".github/workflows/ci.yml", "packages/core/src/daemon.ts", "apps/desktop/src/main/index.ts", "packages/cli/src/main.ts"]) {
+      expect(areasFor([f]).installers).toBe(false);
+    }
+    expect(areasFor(undefined).installers).toBe(true);
   });
 
   test("the merge queue's sweep (its own workflow): the scripts' tests, which run its step against stand-ins", () => {
@@ -126,9 +136,9 @@ describe("ci-changes", () => {
     expect(on(["Package.swift"])).toContain("swift");
   });
 
-  test("CI itself runs every area; the toolchain, the root manifest or a lockfile every area but the Swift kits; so does no diff", () => {
-    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES);
-    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f]), f).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift"));
+  test("CI itself runs every area but the installers; the toolchain, the root manifest or a lockfile every area but the Swift kits and the installers; so does no diff", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "installers"));
+    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f]), f).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift" && a !== "installers"));
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
   });
 

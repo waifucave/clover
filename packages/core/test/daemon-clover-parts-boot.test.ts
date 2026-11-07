@@ -90,11 +90,12 @@ describe("the daemon's Clover parts, booted", () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");
     const bots = await fakeBots();
+    const leaseNotes: string[] = [];
     daemon = await startDaemon({
       home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
       links: {
         wire: (k) => net.endpoint(k.publicKey), handshake: new HandshakeClient({ baseUrl: hs.url, clock }), publicTime: null,
-        mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" },
+        mainComputer: { ...mainComputer, log: (l: string) => void leaseNotes.push(l) }, watch: () => () => {}, self: { name: "Studio", os: "macos" },
       },
       parts: { userHome: temp("clover-int-user-"), bots },
     });
@@ -112,6 +113,7 @@ describe("the daemon's Clover parts, booted", () => {
     const listed = await call<{ devices: { id: string; isThis: boolean }[] }>("device.list");
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
     expect((await call<{ bots: { id: string }[] }>("bot.list")).bots.map((b) => b.id)).toEqual(["luna"]);
+    expect(await call("update.status")).toMatchObject({ idle: true }); // lane M's handlers sit beside the lanes'
 
     // A second computer pairs; the user makes this one the main computer from the terminal.
     const laptop = await peer(net, hs, "Laptop");
@@ -127,6 +129,10 @@ describe("the daemon's Clover parts, booted", () => {
     expect(side.bots.botsRunHere()).toEqual(["luna"]);
     expect((await call<{ lease: { holder: string | null } }>("main.get")).lease.holder).toBe(links.key.id);
     expect((await call<{ devices: { id: string; isMain: boolean }[] }>("device.list")).devices.find((d) => d.id === links.key.id)?.isMain).toBe(true);
+
+    // An update's restart: the lease renews just before it, on the daemon's own gate (H-M3's `beforeRestart`).
+    await daemon.updateGate.prepareRestart();
+    expect(leaseNotes.some((l) => l.startsWith("[lease] renewed before an update's restart"))).toBe(true);
 
     // The stop: the bot side, the node and the links close (the laptop's link goes down), and the socket goes.
     const socket = daemon.socketPath;
