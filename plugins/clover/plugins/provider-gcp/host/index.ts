@@ -6,7 +6,8 @@
 //
 // The plugin never holds the user's token: every request goes through the core's keyed fetch with the entry's
 // `auth`, `gcp-oauth`, the user's own sign-in. Instances get no service account.
-import { ComputeClient, GcpError, LABEL, type Instance } from "../src/client";
+import { createHash } from "node:crypto";
+import { ComputeClient, DEVICE_LABEL, GcpError, LABEL, type Instance } from "../src/client";
 
 export const GCP_SECRET = "gcp-oauth";
 
@@ -27,10 +28,11 @@ async function client(ctx: ProviderContext): Promise<ComputeClient> {
   });
 }
 
-/** Compute Engine's names: lower case, a letter first. */
-const instanceName = (name: string) => {
-  const n = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^[^a-z]+/, "").replace(/-+$/, "").slice(0, 63);
-  return n || "clover";
+/** Compute Engine's names: lower case, a letter first, and a short hash of the computer's label, so names that fold
+ *  to the same one (`2Box` and `Box`) are still two instances. */
+export const instanceName = (name: string, label: string) => {
+  const n = name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^[^a-z]+/, "").replace(/-+$/, "").slice(0, 54).replace(/-+$/, "");
+  return `${n || "clover"}-${createHash("sha256").update(label).digest("hex").slice(0, 8)}`;
 };
 
 const plain = (e: unknown): Error => (e instanceof GcpError ? new Error(`Google Cloud: ${e.message} (${e.code})`) : (e as Error));
@@ -55,7 +57,7 @@ export const provider = {
   async create(a: { name: string; size: string; region: string; image?: string; userData: string; label: string }, ctx: ProviderContext): Promise<{ serverId: string; address?: string }> {
     try {
       const c = await client(ctx);
-      const name = instanceName(a.name);
+      const name = instanceName(a.name, a.label);
       await c.insert({ name, zone: a.region, machineType: a.size, ...(a.image ? { image: a.image } : {}), userData: a.userData, label: a.label });
       const i = await c.get(a.region, name);
       if (!i?.id) throw new Error(`Google Cloud: the instance ${name} wasn't there after it was made`);
@@ -65,13 +67,17 @@ export const provider = {
       throw plain(e);
     }
   },
-  async list(a: { label?: string }, ctx: ProviderContext): Promise<{ serverId: string; label: string; region: string; size?: string; state: State; address?: string }[]> {
+  async list(a: { label?: string }, ctx: ProviderContext): Promise<{ serverId: string; label: string; region: string; size?: string; state: State; address?: string; device?: string }[]> {
     try {
       return (await (await client(ctx)).listLabelled())
         .filter((i) => typeof i.labels?.[LABEL] === "string" && typeof i.id === "string" && (a.label === undefined || i.labels[LABEL] === a.label))
         .map((i) => {
           const ip = ipOf(i);
-          return { serverId: i.id!, label: i.labels![LABEL]!, region: last(i.zone), ...(i.machineType ? { size: last(i.machineType) } : {}), state: stateOf(i), ...(ip ? { address: ip } : {}) };
+          const device = i.labels?.[DEVICE_LABEL];
+          return {
+            serverId: i.id!, label: i.labels![LABEL]!, region: last(i.zone), ...(i.machineType ? { size: last(i.machineType) } : {}), state: stateOf(i),
+            ...(ip ? { address: ip } : {}), ...(device ? { device } : {}),
+          };
         });
     } catch (e) {
       throw plain(e);
@@ -106,12 +112,16 @@ export const provider = {
       throw plain(e);
     }
   },
-  /** The VM has paired: its `user-data` (the cloud-init, with the spent token) is taken out of its metadata. */
-  async paired(a: { serverId: string; label: string; region: string }, ctx: ProviderContext): Promise<void> {
+  /** The VM has paired: it gets the `clover-device` label, by which a new main knows it paired, and its `user-data`
+   *  (the cloud-init, with the spent token) is taken out of its metadata. */
+  async paired(a: { serverId: string; label: string; region: string; device: string }, ctx: ProviderContext): Promise<void> {
     try {
+      if (!/^[0-9a-f]{32}$/.test(a.device)) throw new Error("Google Cloud: that isn't a device label");
       const c = await client(ctx);
       const i = await labelled(c, a.region, a.serverId, a.label);
-      if (i) await c.removeMetadata(a.region, i.name, "user-data");
+      if (!i) throw new Error(`Google Cloud: instance ${a.serverId} is gone`);
+      await c.addLabels(a.region, i.name, { [DEVICE_LABEL]: a.device });
+      await c.removeMetadata(a.region, i.name, "user-data");
     } catch (e) {
       throw plain(e);
     }

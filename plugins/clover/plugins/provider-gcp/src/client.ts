@@ -17,12 +17,15 @@ export interface Instance {
   zone?: string;
   machineType?: string;
   labels?: Record<string, string>;
+  labelFingerprint?: string;
   metadata?: { fingerprint?: string; items?: { key: string; value?: string }[] };
   networkInterfaces?: { accessConfigs?: { natIP?: string }[] }[];
 }
 
 /** The label every Clover VM carries, with its folder's id (the core's `CLOUD_LABEL`). */
 export const LABEL = "clover-computer";
+/** The label a VM gets once a device paired with it, a hash of the device's id (the core's `CLOUD_DEVICE_LABEL`). */
+export const DEVICE_LABEL = "clover-device";
 
 export class GcpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -121,6 +124,15 @@ export class ComputeClient {
     if (!/^\d{1,20}$/.test(id)) throw new GcpError(400, "invalid_id", `${id} isn't an instance id`);
     const r = await this.#call<{ items?: Instance[] }>("GET", `${this.#zone(zone)}/instances?filter=${encodeURIComponent(`id = ${id}`)}`);
     return (r.items ?? []).find((i) => i.id === id) ?? null;
+  }
+
+  /** Adds labels to an instance, keeping the others (Compute Engine's `setLabels`, with its fingerprint). */
+  async addLabels(zone: string, name: string, labels: Record<string, string>): Promise<void> {
+    const i = await this.get(zone, name);
+    if (!i) throw new GcpError(404, "NOT_FOUND", `the instance ${name} is gone`);
+    await this.#wait(zone, await this.#call<Operation>("POST", `${this.#zone(zone)}/instances/${seg(name)}/setLabels`, {
+      labels: { ...i.labels, ...labels }, labelFingerprint: i.labelFingerprint,
+    }));
   }
 
   /** Removes a metadata key (the VM's `user-data`, once it has paired). */

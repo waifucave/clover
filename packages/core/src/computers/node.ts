@@ -293,7 +293,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     const authority = leaseAuthority(o.lease);
     const vms = new CloudComputers({
       clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host), providerIds: () => providerIds(c.plugins),
-      authority, confirm: c.confirm, userData: c.userData, isPaired: (name) => registry.get(name) !== undefined,
+      authority, confirm: c.confirm, userData: c.userData, pairedDevices: () => o.devices.list().map((d) => d.id),
       ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
     });
     const active = () => authority.canAct() && authority.tenure() !== undefined;

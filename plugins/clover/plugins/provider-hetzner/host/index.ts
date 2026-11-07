@@ -5,7 +5,7 @@
 // The plugin never holds the user's token: every request goes through the core's keyed fetch with the entry's `auth`,
 // `hetzner-api-token`. A VM is made with the cloud-init the core hands over (Clover's official image) and gets no
 // cloud credentials: Hetzner has no service accounts, and the image blocks the metadata address.
-import { HetznerClient, HetznerError, LABEL, type Server } from "../src/client";
+import { DEVICE_LABEL, HetznerClient, HetznerError, LABEL, type Server } from "../src/client";
 
 export const HETZNER_SECRET = "hetzner-api-token";
 
@@ -50,13 +50,14 @@ export const provider = {
       throw plain(e);
     }
   },
-  async list(a: { label?: string }, ctx: ProviderContext): Promise<{ serverId: string; label: string; region: string; size?: string; state: State; address?: string }[]> {
+  async list(a: { label?: string }, ctx: ProviderContext): Promise<{ serverId: string; label: string; region: string; size?: string; state: State; address?: string; device?: string }[]> {
     try {
       return (await client(ctx).listServers(a.label)).filter((s) => typeof s.labels?.[LABEL] === "string").map((s) => {
         const ip = ipOf(s);
         return {
           serverId: String(s.id), label: s.labels![LABEL]!, region: s.datacenter?.location?.name ?? "",
           ...(s.server_type?.name ? { size: s.server_type.name } : {}), state: stateOf(s), ...(ip ? { address: ip } : {}),
+          ...(s.labels?.[DEVICE_LABEL] ? { device: s.labels[DEVICE_LABEL] } : {}),
         };
       });
     } catch (e) {
@@ -91,5 +92,17 @@ export const provider = {
       throw plain(e);
     }
   },
-  // No `paired`: Hetzner keeps a server's user-data and can't clear it. The token in it worked once and is spent.
+  /** The VM has paired: it gets the `clover-device` label, by which a new main knows it paired. Hetzner keeps a
+   *  server's user-data and can't clear it; the token in it worked once and is spent. */
+  async paired(a: { serverId: string; label: string; region: string; device: string }, ctx: ProviderContext): Promise<void> {
+    try {
+      if (!/^[0-9a-f]{32}$/.test(a.device)) throw new Error("Hetzner: that isn't a device label");
+      const c = client(ctx);
+      const s = await labelled(c, a.serverId, a.label);
+      if (!s) throw new Error(`Hetzner: server ${a.serverId} is gone`);
+      await c.setLabels(a.serverId, { ...s.labels, [DEVICE_LABEL]: a.device });
+    } catch (e) {
+      throw plain(e);
+    }
+  },
 };

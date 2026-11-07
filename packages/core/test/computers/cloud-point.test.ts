@@ -87,7 +87,7 @@ describe("cloud computers on a node", () => {
       const studio = await cluster.add("Studio", opts);
       const laptop = await cluster.add("Laptop1", opts);
       await cluster.join();
-      const NONE = { created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [] };
+      const NONE = { created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [], duplicates: [] };
       // Nobody holds the lease yet: nothing is asked, even when asked to sync. The registry's main flag doesn't count.
       studio.node.registry.updateSelf({ isMain: true });
       expect(await studio.node.cloud!.sync()).toEqual(NONE);

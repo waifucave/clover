@@ -90,4 +90,16 @@ describe("the computerProviders handler", () => {
     expect(h.servers.has(900)).toBe(true);
     expect(((await provider.delete({ serverId: "../servers", label: LABEL, region: "fsn1" }, ctx).catch((e: Error) => e)) as Error).message).toContain("isn't a server id");
   });
+
+  test("paired labels the server with the device's hash, keeping its other labels; only on its own server", async () => {
+    const h = new FakeHetzner(KEY);
+    const ctx = context(h);
+    await made(h);
+    const device = "a".repeat(32);
+    await provider.paired({ serverId: "101", label: LABEL, region: "fsn1", device }, ctx);
+    expect(h.servers.get(101)!.labels).toEqual({ "clover-computer": LABEL, "clover-device": device });
+    expect((await provider.list({ label: LABEL }, ctx))[0]!.device).toBe(device);
+    expect(((await provider.paired({ serverId: "101", label: "computer-other", region: "fsn1", device }, ctx).catch((e: Error) => e)) as Error).message).toContain("isn't the Clover computer");
+    expect(((await provider.paired({ serverId: "101", label: LABEL, region: "fsn1", device: "device-id-itself" }, ctx).catch((e: Error) => e)) as Error).message).toContain("isn't a device label");
+  });
 });

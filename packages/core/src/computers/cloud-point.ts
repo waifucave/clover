@@ -27,7 +27,7 @@ export function leaseAuthority(lease: Lease): CloudAuthority {
   };
 }
 
-const none = (): ReconcileResult => ({ created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [] });
+const none = (): ReconcileResult => ({ created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [], duplicates: [] });
 
 /** How long a provider call may take: a VM's create or resize waits for the cloud's own actions. */
 export const PROVIDER_CALL_TIMEOUT_MS = 10 * 60_000;

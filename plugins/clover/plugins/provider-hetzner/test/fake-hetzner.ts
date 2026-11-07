@@ -60,6 +60,10 @@ export class FakeHetzner {
       if (!s) return fail(404, "not_found", "server not found");
       const action = m[3];
       if (!action && method === "GET") return reply(200, { server: this.#view(s) });
+      if (!action && method === "PUT") {
+        if (body.labels) s.labels = body.labels as Record<string, string>;
+        return reply(200, { server: this.#view(s) });
+      }
       if (!action && method === "DELETE") {
         this.servers.delete(s.id);
         return reply(200, { action: this.#act() });

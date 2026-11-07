@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isContractError } from "../../src/contracts/common";
 import {
-  CloudComputers, cloudLabelOf, FileCloudStateStore, PairingTokens,
+  CloudComputers, cloudLabelOf, deviceTagOf, FileCloudStateStore, PairingTokens,
   type CloudAuthority, type CloudCard, type CloudFolder, type CloudInstance, type CloudProviderHandler,
 } from "../../src/computers/cloud";
 import { cloudInit, readCloudJoinFiles, removeCloudJoinFiles } from "../../src/computers/image";
@@ -17,6 +17,8 @@ class FakeProvider implements CloudProviderHandler {
   readonly vms = new Map<string, CloudInstance & { userData: string }>();
   /** The next create makes the VM and then throws (the answer lost), or throws before making it. */
   failNext: "after" | "before" | undefined;
+  /** Holds `paired` until released (a slow cloud). */
+  hold: Promise<void> | undefined;
   #n = 0;
   async create(a: { name: string; size: string; region: string; userData: string; label: string }) {
     this.calls.push(`create ${a.name} ${a.size} ${a.region} ${a.label}`);
@@ -50,8 +52,10 @@ class FakeProvider implements CloudProviderHandler {
     const v = this.#mine(a);
     return { state: v ? v.state : ("gone" as const) };
   }
-  async paired(a: { serverId: string; label: string }) {
+  async paired(a: { serverId: string; label: string; device: string }) {
     this.calls.push(`paired ${a.serverId} ${a.label}`);
+    await this.hold;
+    this.#mine(a)!.device = a.device;
   }
 }
 
@@ -74,13 +78,14 @@ const userData = ({ name, token }: { name: string; token: string }) => cloudInit
 });
 const tokenIn = (y: string) => /pairing-token"?\n[^\n]*\n[^\n]*\n[^\n]*\n\s*content: "([A-Za-z0-9_-]+)"/.exec(y)?.[1];
 const LABEL = "computer-hetzner-1";
-const NONE = { created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [] };
+const NONE = { created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [], duplicates: [] };
 
 interface SetupOptions {
   answers?: (c: CloudCard) => boolean | Promise<boolean>;
   home?: string;
   provider?: FakeProvider;
   authority?: FakeAuthority;
+  /** Lane H's device list: the paired devices' ids. */
   paired?: Set<string>;
   now?: { t: number };
 }
@@ -98,7 +103,7 @@ function setup(o: SetupOptions = {}) {
   const cloud = new CloudComputers({
     clock, store: new FileCloudStateStore(home), provider: (id) => (id === "hetzner" ? provider : undefined), providerIds: () => ["hetzner"],
     authority, confirm: async (c) => { cards.push(c); return answers(c); }, userData, makeMain: async (n) => { mains.push(n); },
-    isPaired: (n) => paired.has(n),
+    pairedDevices: () => [...paired],
   });
   return { cloud, provider, authority, cards, mains, home, paired, now, advance: (ms: number) => { now.t += ms; } };
 }
@@ -107,7 +112,8 @@ const folder = (o: Partial<CloudFolder> = {}): CloudFolder => ({ folder: "comput
 
 describe("cloud computers", () => {
   test("a new folder asks before the VM is made, with its label; the VM pairs with its token once through H's door", async () => {
-    const { cloud, provider, cards, mains, home } = setup();
+    // Lane H's device list has the VM's device once it paired.
+    const { cloud, provider, cards, mains, home } = setup({ paired: new Set(["device-vm-1"]) });
     const door = cloud.door(() => [folder()]);
     expect(await cloud.reconcile([folder()])).toMatchObject({ created: ["Cloud1"] });
     expect(cards[0]).toEqual({ kind: "cloud-create", name: "Cloud1", provider: "hetzner", size: "cx22", region: "fsn1", folder: "computer-hetzner-1" });
@@ -125,7 +131,10 @@ describe("cloud computers", () => {
     if (process.platform === "win32") expect(file.startsWith(home)).toBe(true);
     else expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(await door.consume(token, "device-vm-1")).toEqual({ computer: "Cloud1" });
+    await cloud.whenIdle();
     expect(provider.calls).toContain(`paired srv-1 ${LABEL}`);
+    // The VM now carries a hash of the device that paired, never the id.
+    expect(provider.vms.get("srv-1")!.device).toBe(deviceTagOf("device-vm-1"));
     expect(cards.at(-1)).toEqual({ kind: "cloud-make-main", name: "Cloud1" });
     expect(mains).toEqual(["Cloud1"]);
     expect(cloud.get("Cloud1")).toMatchObject({ state: "paired", device: "device-vm-1" });
@@ -143,13 +152,13 @@ describe("cloud computers", () => {
     const { cloud, provider, cards } = setup();
     await cloud.reconcile([folder({ makeMain: "no" })]);
     await cloud.door(() => [folder({ makeMain: "no" })]).consume(tokenIn(provider.userData[0]!)!, "device-vm-1");
+    await cloud.whenIdle();
     expect(cards.map((c) => c.kind)).toEqual(["cloud-create"]);
   });
 
   test("editing the size asks before resizing; removing the folder asks before deleting; deleting always asks", async () => {
-    const { cloud, provider, cards, paired } = setup({ answers: (c) => c.kind !== "cloud-delete" || c.why === "asked" });
+    const { cloud, provider, cards } = setup({ answers: (c) => c.kind !== "cloud-delete" || c.why === "asked" });
     await cloud.reconcile([folder()]);
-    paired.add("Cloud1");
     expect(await cloud.reconcile([folder({ size: "cx32" })])).toMatchObject({ resized: ["Cloud1"] });
     expect(cards.at(-1)).toEqual({ kind: "cloud-resize", name: "Cloud1", provider: "hetzner", from: "cx22", to: "cx32" });
     expect(provider.calls.at(-1)).toBe(`resize srv-1 ${LABEL} cx32`);
@@ -252,9 +261,8 @@ describe("only the lease's holder acts (#254, B1)", () => {
   test("a resize or delete card answered after the lease moved does nothing; a computer without the lease never asks", async () => {
     const authority = new FakeAuthority();
     let onCard: (c: CloudCard) => void = () => {};
-    const { cloud, provider, cards, paired } = setup({ authority, answers: (c) => { onCard(c); return true; } });
+    const { cloud, provider, cards } = setup({ authority, answers: (c) => { onCard(c); return true; } });
     await cloud.reconcile([folder()]);
-    paired.add("Cloud1");
     onCard = (c) => { if (c.kind !== "cloud-create") authority.regain(); };
     expect((await cloud.reconcile([folder({ size: "cx52" })])).failed[0]!.reason).toContain("lost the main computer's lease");
     expect((await cloud.delete("Cloud1").catch((e) => e)).code).toBe("not_main");
@@ -274,17 +282,20 @@ describe("the cloud is the source of truth (#254, B2)", () => {
     const first = setup({ provider });
     await first.cloud.reconcile([folder(), folder({ folder: "computer-hetzner-2", name: "Cloud2" })]);
     expect(provider.vms.size).toBe(2);
-    // Another computer becomes the main one: its own home, no cloud.json. Cloud1 has paired, Cloud2 hasn't.
+    await first.cloud.door(() => [folder({ makeMain: "no" })]).consume(tokenIn(provider.userData[0]!)!, "device-vm-1");
+    await first.cloud.whenIdle();
+    // Another computer becomes the main one: its own home, no cloud.json. Cloud1 has paired (its device is in the
+    // device list, and its label says so), Cloud2 hasn't.
     const authority = new FakeAuthority();
     authority.epoch = 2;
-    const next = setup({ provider, authority, paired: new Set(["Cloud1"]), answers: (c) => c.kind !== "cloud-repair" });
+    const next = setup({ provider, authority, paired: new Set(["device-vm-1"]), answers: (c) => c.kind !== "cloud-repair" });
     const r = await next.cloud.reconcile([folder(), folder({ folder: "computer-hetzner-2", name: "Cloud2" })]);
     expect(r.adopted.sort()).toEqual(["Cloud1", "Cloud2"]);
     expect(r.created).toEqual([]);
     expect(next.cards.map((c) => c.kind)).toEqual(["cloud-repair"]); // Cloud2: unpaired, its token was another main's
     expect(next.cards[0]).toEqual({ kind: "cloud-repair", name: "Cloud2", provider: "hetzner", why: "main-changed" });
     expect(provider.calls.filter((c) => c.startsWith("create"))).toHaveLength(2);
-    expect(next.cloud.get("Cloud1")).toMatchObject({ state: "paired", serverId: "srv-1", label: LABEL });
+    expect(next.cloud.get("Cloud1")).toMatchObject({ state: "paired", serverId: "srv-1", label: LABEL, device: "device-vm-1" });
     // A VM whose folder went is found by its label too, and deleting it asks.
     const r2 = await next.cloud.reconcile([folder()]);
     expect(next.cards.at(-1)).toEqual({ kind: "cloud-delete", name: "Cloud2", provider: "hetzner", why: "folder-removed" });
@@ -340,7 +351,7 @@ describe("pairing tokens (#254, should-fix 1)", () => {
     await first.cloud.reconcile([folder()]);
     const token = tokenIn(provider.userData[0]!)!;
     // A restart: the same home, a new CloudComputers. The token still works, once.
-    const again = setup({ provider, home, now });
+    const again = setup({ provider, home, now, paired: new Set(["device-vm-1", "device-vm-2"]) });
     expect(await again.cloud.door(() => [folder({ makeMain: "no" })]).consume(token, "device-vm-1")).toEqual({ computer: "Cloud1" });
     // Another VM whose token runs out before it pairs.
     await again.cloud.reconcile([folder(), folder({ folder: "computer-hetzner-2", name: "Cloud2" })]);
@@ -400,5 +411,84 @@ describe("on the VM after pairing (#254, should-fix 6)", () => {
     expect(existsSync(join(dir, "name"))).toBe(true);
     expect(readCloudJoinFiles(dir)).toBeNull();
     removeCloudJoinFiles(dir); // twice is fine
+  });
+});
+
+describe("#254's follow-ups", () => {
+  test("the door answers as soon as the device is recorded: a slow cloud and an open make-main card don't hold it", async () => {
+    let answer!: (yes: boolean) => void;
+    let release!: () => void;
+    const { cloud, provider, cards, mains } = setup({ answers: (c) => (c.kind === "cloud-make-main" ? new Promise<boolean>((r) => { answer = r; }) : true) });
+    await cloud.reconcile([folder()]);
+    provider.hold = new Promise<void>((r) => { release = r; });
+    const answered = await Promise.race([
+      cloud.door(() => [folder()]).consume(tokenIn(provider.userData[0]!)!, "device-vm-1"),
+      new Promise((r) => setTimeout(() => r("held"), 1000)),
+    ]);
+    expect(answered).toEqual({ computer: "Cloud1" });
+    expect(cloud.get("Cloud1")).toMatchObject({ state: "paired", device: "device-vm-1" });
+    // Both are still under way: the card is open and the cloud hasn't answered.
+    expect(cards.at(-1)).toEqual({ kind: "cloud-make-main", name: "Cloud1" });
+    expect(provider.vms.get("srv-1")!.device).toBeUndefined();
+    expect(mains).toEqual([]);
+    release();
+    answer(true);
+    await cloud.whenIdle();
+    expect(provider.vms.get("srv-1")!.device).toBe(deviceTagOf("device-vm-1"));
+    expect(mains).toEqual(["Cloud1"]);
+  });
+
+  test("paired is the device that paired, not a computer's name: an adopted VM that never paired gets the repair card", async () => {
+    const provider = new FakeProvider();
+    const first = setup({ provider });
+    await first.cloud.reconcile([folder()]);
+    // A new main whose device list has a device whose computer is called Cloud1 too (the user's own laptop, say),
+    // and one that paired with nothing here. The VM has no device label: it never paired.
+    const authority = new FakeAuthority();
+    authority.epoch = 2;
+    const next = setup({ provider, authority, paired: new Set(["device-laptop-named-cloud1"]), answers: () => false });
+    const r = await next.cloud.reconcile([folder()]);
+    expect(r.adopted).toEqual(["Cloud1"]);
+    expect(next.cards).toEqual([{ kind: "cloud-repair", name: "Cloud1", provider: "hetzner", why: "main-changed" }]);
+    expect(next.cloud.get("Cloud1")!.state).toBe("created");
+    // A VM whose device was revoked isn't paired any more either.
+    const { cloud: c3, provider: p3, cards: k3, paired } = setup({ answers: (c) => c.kind !== "cloud-repair" && c.kind !== "cloud-make-main" });
+    await c3.reconcile([folder()]);
+    paired.add("device-vm-1");
+    await c3.door(() => [folder()]).consume(tokenIn(p3.userData[0]!)!, "device-vm-1");
+    await c3.whenIdle();
+    expect(await c3.reconcile([folder()])).toEqual(NONE);
+    paired.delete("device-vm-1");
+    await c3.reconcile([folder()]);
+    expect(k3.at(-1)).toMatchObject({ kind: "cloud-repair", name: "Cloud1" });
+  });
+
+  test("two VMs with one label: the known one is kept, the other reported with a card offering to delete it", async () => {
+    const provider = new FakeProvider();
+    const { cloud, cards } = setup({ provider, answers: (c) => c.kind !== "cloud-duplicate" || c.serverId === "srv-8" });
+    await cloud.reconcile([folder()]);
+    // Two more with the same label (a race, or made by hand).
+    for (const id of ["srv-8", "srv-9"]) provider.vms.set(id, { serverId: id, label: LABEL, region: "fsn1", size: "cx22", state: "running", userData: "" });
+    const r = await cloud.reconcile([folder()]);
+    expect(cards.filter((c) => c.kind === "cloud-duplicate")).toEqual([
+      { kind: "cloud-duplicate", name: "Cloud1", provider: "hetzner", serverId: "srv-8", region: "fsn1" },
+      { kind: "cloud-duplicate", name: "Cloud1", provider: "hetzner", serverId: "srv-9", region: "fsn1" },
+    ]);
+    expect(r.duplicates).toEqual([{ name: "Cloud1", serverId: "srv-8", deleted: true }, { name: "Cloud1", serverId: "srv-9", deleted: false }]);
+    expect([...provider.vms.keys()].sort()).toEqual(["srv-1", "srv-9"]);
+    // The one this main knows stays its computer; the kept duplicate isn't asked about again.
+    expect(cloud.get("Cloud1")!.serverId).toBe("srv-1");
+    const asked = cards.length;
+    expect(await cloud.reconcile([folder()])).toEqual(NONE);
+    expect(cards.length).toBe(asked);
+    // A new main with no cache keeps the one whose device paired, and asks about the rest.
+    const p2 = new FakeProvider();
+    for (const [id, device] of [["srv-3", undefined], ["srv-2", deviceTagOf("device-vm-1")]] as const) {
+      p2.vms.set(id, { serverId: id, label: LABEL, region: "fsn1", size: "cx22", state: "running", userData: "", ...(device ? { device } : {}) });
+    }
+    const next = setup({ provider: p2, paired: new Set(["device-vm-1"]), answers: () => false });
+    const r2 = await next.cloud.reconcile([folder()]);
+    expect(next.cloud.get("Cloud1")).toMatchObject({ serverId: "srv-2", state: "paired" });
+    expect(r2.duplicates).toEqual([{ name: "Cloud1", serverId: "srv-3", deleted: false }]);
   });
 });

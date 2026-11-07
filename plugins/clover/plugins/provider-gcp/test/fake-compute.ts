@@ -8,6 +8,7 @@ export interface FakeInstance {
   machineType: string;
   status: string;
   labels: Record<string, string>;
+  labelFingerprint: string;
   metadata: { fingerprint: string; items: { key: string; value?: string }[] };
   body: Record<string, unknown>;
 }
@@ -32,7 +33,7 @@ export class FakeCompute {
     const base = `https://compute.googleapis.com/compute/v1/projects/${this.project}/zones/${i.zone}`;
     return {
       id: i.id, name: i.name, status: i.status, zone: base, machineType: `${base}/machineTypes/${i.machineType.split("/").pop()}`,
-      labels: i.labels, metadata: i.metadata, networkInterfaces: [{ accessConfigs: [{ natIP: "192.0.2.10" }] }],
+      labels: i.labels, labelFingerprint: i.labelFingerprint, metadata: i.metadata, networkInterfaces: [{ accessConfigs: [{ natIP: "192.0.2.10" }] }],
     };
   }
 
@@ -40,7 +41,7 @@ export class FakeCompute {
   add(o: { name: string; zone: string; machineType?: string; labels?: Record<string, string> }): FakeInstance {
     const i: FakeInstance = {
       id: String(++this.#id), name: o.name, zone: o.zone, machineType: `zones/${o.zone}/machineTypes/${o.machineType ?? "e2-small"}`, status: "RUNNING",
-      labels: o.labels ?? {}, metadata: { fingerprint: `fp-${this.#fp++}`, items: [] }, body: {},
+      labels: o.labels ?? {}, labelFingerprint: `lf-${this.#fp++}`, metadata: { fingerprint: `fp-${this.#fp++}`, items: [] }, body: {},
     };
     this.instances.set(i.name, i);
     return i;
@@ -97,6 +98,12 @@ export class FakeCompute {
     if (verb === "setMachineType") {
       if (i.status !== "TERMINATED") return fail(400, "FAILED_PRECONDITION", "The instance must be stopped");
       i.machineType = String(body.machineType);
+      return reply(200, this.#operation());
+    }
+    if (verb === "setLabels") {
+      if (body.labelFingerprint !== i.labelFingerprint) return fail(412, "CONDITION_NOT_MET", "Labels fingerprint either invalid or resource labels have changed");
+      i.labels = (body.labels ?? {}) as Record<string, string>;
+      i.labelFingerprint = `lf-${this.#fp++}`;
       return reply(200, this.#operation());
     }
     if (verb === "setMetadata") {
