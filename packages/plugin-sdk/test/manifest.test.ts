@@ -146,6 +146,20 @@ describe("code, engines and platforms", () => {
     }
   });
 
+  test("a built plugin (`built: true`, the release build's) names JavaScript modules only", () => {
+    const code = { ...min(), engines: { clover: "^1.0.0" }, built: true };
+    const bundled = { bundled: true };
+    expect(codes(validateManifest({ ...code, host: { entry: "host/index.js" }, client: { entry: "client/index.js", css: ["client/index.css"] } }, bundled))).toEqual([]);
+    // An installed plugin can't claim it: only bundled trees are built by Clover's release (#271's L2).
+    const claimed = validateManifest({ ...code, host: { entry: "host/index.js" } });
+    expect([claimed.ok, has(claimed, "built_not_bundled", "plugin")]).toEqual([false, true]);
+    const ts = validateManifest({ ...code, host: { entry: "host/index.ts" }, client: { entry: "client/index.tsx" } }, bundled);
+    expect(ts.issues.filter((i) => i.code === "built_entry").map((i) => `${i.refuses}:${i.path}`)).toEqual(["plugin:/host/entry", "plugin:/client/entry"]);
+    expect(ts.ok).toBe(false);
+    expect(has(validateManifest({ ...code, built: false }), "schema", "plugin")).toBe(true);
+    expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" } }).ok).toBe(true);
+  });
+
   test("handlers need host code, components need a client module", () => {
     const r = validateManifest({ ...min(), contributes: { commands: [{ name: "draw", description: "Draw a card", handler: "draw" }] } });
     expect(r.ok).toBe(true);

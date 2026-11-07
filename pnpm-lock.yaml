@@ -502,6 +502,10 @@ importers:
         version: 5.9.3
 
   plugins/clover/plugins/island:
+    dependencies:
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
