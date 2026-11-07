@@ -1,5 +1,5 @@
 // The update's idle gate (spec §3.1: "An update waits until the daemon is between turns and no agent runs, then
-// stops the pair, installs both and starts them again"; Winter's Sparkle gate). An update downloads in the background
+// stops the pair, installs both and starts them again", as the Sparkle gate did). An update downloads in the background
 // but installs only while nothing is busy. "Busy" is a registry each lane adds its own work to:
 //   turns       a turn in flight in any session (the Clover drivers)
 //   agents      a background agent still running
