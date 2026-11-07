@@ -116,9 +116,21 @@ export function readQuirksFile(folder: string, path: string): QuirksFile {
 /** The core's own backends' ids: Clover's coding agent and lane A's in-process subagents. No plugin contributes them. */
 export const RESERVED_BACKEND_IDS: ReadonlySet<string> = new Set(["clover-code", "clover"]);
 
-/** An environment name that looks like a secret: `*_KEY`, `*_TOKEN`, `*_SECRET*`, `*PASSWORD*`, `*_CREDENTIAL*`. */
+/** Segments of an environment name (split at `_`, any case) that mark a secret. */
+const SECRET_SEGMENTS: ReadonlySet<string> = new Set([
+  "KEY", "KEYS", "APIKEY", "TOKEN", "TOKENS", "SECRET", "SECRETS", "PASS", "PASSWORD", "PASSWD", "CREDENTIAL", "CREDENTIALS", "AUTH", "PAT", "DSN", "PRIVATE",
+]);
+/** A data store's address, which carries its login: `DATABASE_URL`, `REDIS_URL`, `MONGODB_URL` and the like. */
+const STORE_URL = /^(DATABASE|DB|REDIS|MONGO|POSTGRES|MYSQL)[A-Z0-9_]*_URL$/i;
+/** Names that hand over an agent of the user's keys. */
+const SECRET_NAMES: ReadonlySet<string> = new Set(["SSH_AUTH_SOCK", "GPG_AGENT_INFO"]);
+
+/** An environment name that looks like a secret (#233's review): one of its `_`-delimited segments marks one (`KEY`,
+ *  `APIKEY`, `TOKEN`, `SECRET`, `PASS`, `PASSWORD`, `PASSWD`, `CREDENTIAL(S)`, `AUTH`, `PAT`, `DSN`, `PRIVATE`), it is a
+ *  data store's `*_URL`, or it is the SSH or GPG agent's. A pattern can't catch every name, so the OK card lists them. */
 export function looksLikeSecret(name: string): boolean {
-  return /(_KEY$|_TOKEN$|_SECRET|PASSWORD|_CREDENTIAL)/i.test(name);
+  if (SECRET_NAMES.has(name.toUpperCase()) || STORE_URL.test(name)) return true;
+  return name.toUpperCase().split("_").some((seg) => SECRET_SEGMENTS.has(seg));
 }
 
 /** One contributed ACP backend, as the core builds it. */
@@ -161,6 +173,10 @@ export function contributedBackends(registry: Pick<PluginRegistry, "entries" | "
       continue;
     }
     const bundled = c.pluginId === bundledAgentPluginId(id) && record.provenance.by === "bundled";
+    if (!bundled && /^\s*clover/i.test(v.name ?? id)) {
+      log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: only Clover's own backends are named Clover`);
+      continue;
+    }
     if (!bundled) {
       const secret = file.quirks.launch.envAllow.find(looksLikeSecret);
       if (secret !== undefined) {
@@ -171,7 +187,9 @@ export function contributedBackends(registry: Pick<PluginRegistry, "entries" | "
     const command = { program: v.command, acpArgs: v.args ?? [] };
     // Another plugin's backend counts as acting without asking, whatever its file says.
     const fileQuirks: FileQuirks = bundled || file.quirks.marks.includes("unasked-actions") ? file.quirks : { ...file.quirks, marks: [...file.quirks.marks, "unasked-actions"] };
-    candidates.push({ id, pluginId: c.pluginId, name: v.name ?? id, bundled, file, command, quirks: quirksWithCommand(fileQuirks, command) });
+    // Another plugin's backend is listed with its plugin's id beside its name.
+    const name = bundled ? (v.name ?? id) : `${v.name ?? id} (${c.pluginId})`;
+    candidates.push({ id, pluginId: c.pluginId, name, bundled, file, command, quirks: quirksWithCommand(fileQuirks, command) });
   }
   // One entry per id: Clover's bundled one while it is on, else the first claim.
   const out: ContributedBackend[] = [];

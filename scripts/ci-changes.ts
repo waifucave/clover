@@ -60,7 +60,9 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
     "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts",
     // an agent backend's bare command on PATH (its .exe or .cmd on Windows)
-    "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts"],
+    "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts",
+    // the bundled agent plugins' manifests, whose bare commands that check is about
+    "plugins/clover/plugins/agent-*/clover.json"],
   // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and the
   // devices and identity the link's handshake and pairing use
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/"],
