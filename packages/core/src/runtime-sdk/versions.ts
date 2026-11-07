@@ -12,7 +12,12 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.69";
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
 /** Bumped to 0.0.69 (2026-11-06, K-M3): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
- *  runs the coding agent as an ACP agent over `query()` (clover-code, 0.0.68). 0.0.66 and 0.0.67 (A-M3) came between.
+ *  runs the coding agent as an ACP agent over `query()` (clover-code, 0.0.68).
+ *  Earlier: bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name
+ *  (`shadowBuiltins`: the core's `SendMessage`, `ListAgents`, `TaskStop`, `Agent`), and `Options.hostToolSearch`
+ *  keeps deferral on for `Glossary`, which loads tools through `ToolSearch`'s `select:` path.
+ *  Earlier: bumped to 0.0.66 (2026-11-06, A-M3's first commit): a code model plugin's turn errors cross the plugin host and
+ *  the control wire as plain data (`plainProviderError`), not an empty `{}`.
  *  Earlier: bumped to 0.0.65 (2026-11-06, A-M2's review): a turn's result states its context (`context_tokens`, which the
  *  projector reads), a signing adapter runs over its plugin's `net.fetch`, a keyed fetch refusal is final, an
  *  untrusted plugin's risk and admission are ignored, and Codex's originator is a product token.

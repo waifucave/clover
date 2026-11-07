@@ -1,6 +1,7 @@
 // The Agent tool end to end (spec §9.3, plan §4 K-M1): a bot delegates to an ACP agent (the scripted agent process),
 // the agent reaches the bot through the real bridge process, the bot keeps control, the transcript is written, and
 // the watchdog stops a stalled agent. Lane B's fakes stand in for the session host, the broker, the tree and the fence.
+import { readProcessTable, type ProcessTableReader } from "../process/table";
 import { afterEach, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -343,9 +344,16 @@ describe("the stall watchdog", () => {
 
   test("a running command counts as progress until its limit", async () => {
     let wall = Date.now();
-    const w = make({ script: [[{ exec: { seconds: 60 } }, { say: "built" }]], wallNow: () => wall });
+    // Deterministic under load: the real process table gives the tree (the command's `sleep` under the agent), but
+    // that one process's start is pinned to the call's start, so `ps`'s second-resolution ages, taken whenever a
+    // loaded machine gets round to them, never decide it.
+    let commandPid = 0;
+    const table: ProcessTableReader = async () => (await readProcessTable()).map((row) => (row.pid === commandPid ? { ...row, startedAt: wall + 1 } : row));
+    const w = make({ script: [[{ exec: { seconds: 60 } }, { say: "built" }]], wallNow: () => wall, table });
     const r = await w.delegate();
     await waitFor(() => w.report("blocked").length > 0, "the command to start");
+    commandPid = Number((w.report("blocked")[0] as { childPid?: number }).childPid);
+    expect(commandPid).toBeGreaterThan(0);
     await advanceAndSettle(w.clock, 11 * 60_000, 60_000);
     await new Promise((res) => setTimeout(res, 800));
     expect(w.host.get(r.sessionId)!.status).toBe("prompting");

@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 
 import { createTestHarness } from "wrangler";
 
+import { workerReady } from "../../../shared/testing/worker-ready.mjs";
+
 const config = JSON.parse(process.env.FORWARDER_E2E ?? "{}");
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -29,40 +31,13 @@ function objectOfTag(tag) {
   return Buffer.from(tag, "base64url").subarray(1, 12).toString("base64url");
 }
 
-/**
- * Waits until the Worker itself answers (its own JSON 404 for "/"), not just until the harness has a port: after the
- * update below the runtime reloads, and on a slow runner (Windows CI) the first connections otherwise fail and the
- * client backs off past the test's wait. Each try has its own timeout, so a request that hangs is tried again.
- */
-async function workerAnswers(origin, limitMs = 90_000) {
-  const started = Date.now();
-  let last = "no answer";
-  while (Date.now() - started < limitMs) {
-    try {
-      const response = await fetch(`${origin}/`, { signal: AbortSignal.timeout(5_000) });
-      const body = await response.text();
-      if (response.status === 404 && body.includes("not_found")) {
-        process.stderr.write(`forwarder harness: the Worker answered at ${origin} after ${Date.now() - started} ms\n`);
-        return;
-      }
-      last = `${response.status} ${body.slice(0, 80)}`;
-    } catch (err) {
-      last = String(err?.message ?? err);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`the forwarder Worker didn't answer at ${origin} within ${limitMs} ms (last: ${last})`);
-}
-
 const server = createTestHarness({ root, workers: [worker("http://127.0.0.1")] });
 let { url } = await server.listen();
 // The Worker builds webhook and socket URLs from HOOKS_ORIGIN, so give it the address it is reachable at.
 await server.update({ root, workers: [worker(url.origin)] });
 ({ url } = await server.listen());
-// wrangler's harness binds 127.0.0.1 (never localhost, which Windows tries as ::1 first); refuse anything else.
-if (url.hostname !== "127.0.0.1") throw new Error(`the forwarder harness listens on ${url.hostname}, not 127.0.0.1`);
-await workerAnswers(url.origin);
-process.stdout.write(`${JSON.stringify({ url: url.origin })}\n`);
+const origin = await workerReady(url, { label: "forwarder", limitMs: 90_000 });
+process.stdout.write(`${JSON.stringify({ url: origin })}\n`);
 
 const lines = createInterface({ input: process.stdin });
 for await (const line of lines) {

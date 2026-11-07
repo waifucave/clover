@@ -1,0 +1,22 @@
+{
+  "name": "@waifucave/clover-plugin-web",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/web: mcp__clover__WebSearch and mcp__clover__WebFetch, the bots' web tools (spec §6.7).",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@waifucave/clover-web": "0.0.67"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "5.9.3"
+  }
+}
