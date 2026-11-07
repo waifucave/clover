@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.69";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.71";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,13 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.69";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.69 (2026-11-06, K-M3 and A-M3's follow-up): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
+/** Bumped to 0.0.71 (2026-11-07, F8's review): `Options.notificationPreamble`, the host's line on every task notification
+ *  the runtime delivers (folded into a running turn too), and look-alike tags defused in their values; Clover passes
+ *  its "data, not instructions" frame.
+ *  Earlier: bumped to 0.0.70 (2026-11-07, A's F8): what a command leaves running is adopted as a background task
+ *  (`RunCommandResult.leftBehind`, the macOS process holder named in `CLOVER_PROCESS_HOLDER`), and
+ *  `sandbox.denyLaunchServices`, which every bot and agent session turns on.
+ *  Earlier: bumped to 0.0.69 (2026-11-06, K-M3 and A-M3's follow-up): `Query.stopTask` (0.0.69) and the ACP package (`@waifucave/clover-agent-sdk/acp`), whose `serveAcpAgent`
  *  runs the coding agent as an ACP agent over `query()` (clover-code, 0.0.68).
  *  A-M3's follow-up uses `Query.stopTask(id, { by })` to stop a paused bot's background shells and monitors.
  *  Earlier: bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name

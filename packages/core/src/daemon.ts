@@ -460,6 +460,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  unless `CLOVER_LOGIN_SHELL_PATH=off` (both test preloads set it). `false`: skipped. An object:
    *  the test seam (a fake runner and/or env to update). */
   loginShellPath?: LoginShellPathDeps | false;
+  /** Test seam: how `settings.json` is watched (default `fs.watch`). A test passes a stream that never fires to
+   *  stand in for one macOS hasn't armed yet, and so proves the watcher's catch-up re-read. */
+  settingsWatch?: (path: string, cb: () => void) => { close(): void };
   /** TEST ONLY (WS-21 ordering contract): stands in for the router's `reconcileRootForRecovery` in the boot
    *  sweep and in Migration C's phase 2 — when set it takes precedence over the linked router's own door, so
    *  a test can observe the reconcile's ordering or make it fail. A production caller never sets it. */
@@ -2893,6 +2896,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       onChangeObserved: () => advanceAuthorityRevision(cloverHome),
       load: loadSettings,
       apply,
+      ...(opts.settingsWatch ? { watch: opts.settingsWatch } : {}),
       log: (msg) => console.error(`settings-watcher: ${msg}`),
     });
     settingsWatcher.start(settings);

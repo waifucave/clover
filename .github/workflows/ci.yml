@@ -374,6 +374,10 @@ jobs:
         working-directory: packages/core
         run: bun test --timeout 30000 test/tree test/computers src/contracts/tests/tree.test.ts src/contracts/tests/computer-registry.test.ts
 
+      - name: An agent backend's bare command on PATH (its .exe or .cmd on Windows)
+        working-directory: packages/core
+        run: bun test --timeout 30000 src/agents/tests/windows-path.test.ts
+
   # The link sidecar (native/link, lane H's clover-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
   # the core's link tests run over it on loopback (src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB
   # stream, a revoke, a key the core didn't allow). Nothing leaves the runner: the relay is off and the endpoints bind

@@ -100,6 +100,23 @@ export function sidecarEnv(env: Record<string, string | undefined> = process.env
   return out;
 }
 
+/** Writes to a process's stdin and never throws or leaves a rejection unhandled: a pipe to a process that just died
+ *  throws, or its write or its flush rejects (on Windows the write itself answers EPIPE later), and the exit is handled
+ *  where stdout ends. */
+export function pipeWriter(stdin: { write(b: Uint8Array): number | Promise<number>; flush(): number | Promise<number> }): (b: Uint8Array) => void {
+  const quiet = (r: unknown) => {
+    if (r instanceof Promise) r.catch(() => undefined);
+  };
+  return (b) => {
+    try {
+      quiet(stdin.write(b));
+      quiet(stdin.flush());
+    } catch {
+      // gone
+    }
+  };
+}
+
 /** The plain spawn: the process with pipes and `sidecarEnv`. Lane C's fence wraps this. */
 export function spawnSidecar(argv: readonly string[], onLog?: (line: string) => void): SidecarProcess {
   const p = Bun.spawn([...argv], { stdin: "pipe", stdout: "pipe", stderr: onLog ? "pipe" : "ignore", env: sidecarEnv() });
@@ -121,16 +138,7 @@ export function spawnSidecar(argv: readonly string[], onLog?: (line: string) => 
     })();
   }
   return {
-    write: (b) => {
-      // A pipe to a process that just died throws, or its flush rejects: the exit is handled where stdout ends.
-      try {
-        p.stdin.write(b);
-        const f = p.stdin.flush();
-        if (f instanceof Promise) f.catch(() => undefined);
-      } catch {
-        // gone
-      }
-    },
+    write: pipeWriter(p.stdin),
     stdout: p.stdout,
     kill: () => p.kill(),
     exited: p.exited,
