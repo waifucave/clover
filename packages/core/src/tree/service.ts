@@ -6,7 +6,7 @@
 // Methods served (`peer` role). Those marked * are lane J's additions, requested of lane B for the protocol:
 //   tree.stat, tree.read, tree.write (+ `executable`*), tree.list, tree.remove, tree.move, tree.glob,
 //   tree.grep (+ `ignoreCase`*), tree.mkdir*, tree.readlink*, tree.symlink*, tree.watch*, tree.unwatch*,
-//   tool.run, tool.cancel (+ `session`*)
+//   tool.run, tool.cancel (+ `session`*); every one with the calling computer's fencing token (`fence`, `fencing.ts`)
 // Notifications sent: `tree.changed`* (a watch's changes), `tool_output` (a running call's output, + `session`*).
 //
 // Bulk calls (reads, writes, glob, grep, and the direct path's transfers) run at most `BULK_PER_DEVICE` at once per
@@ -14,7 +14,7 @@
 // (review minor 5, check 2's N3); one write carries at most `TREE_IO_MAX`. A running call is known by its device, session and call id (minor 7).
 import { z } from "zod";
 import {
-  COMPUTERS_METHODS, Level, SessionId, SignedCardAnswer, TreePath,
+  COMPUTERS_METHODS, FencingToken, Level, SessionId, SignedCardAnswer, TreePath,
   type Caller, type FileStat,
 } from "@waifucave/clover-protocol";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
@@ -24,9 +24,11 @@ import type { LinkTransport } from "../contracts/link-transport";
 import { TREE_IO_MAX, type HolderCall, type LocalHolder } from "./holder";
 import type { TreeChangedNotice } from "./remote";
 import { judgePeer, type PeerReviewer } from "./judge";
+import { checkActFence, type ActFence } from "./fencing";
 
 const M = COMPUTERS_METHODS;
-const Via = { session: SessionId.optional(), level: Level.optional(), answer: SignedCardAnswer.optional() };
+const Via = { session: SessionId.optional(), level: Level.optional(), answer: SignedCardAnswer.optional(), fence: FencingToken.optional() };
+const Fence = { fence: FencingToken.optional() };
 
 /** What each served method takes: lane B's params, with lane J's additions marked in the header. */
 export const TREE_PEER_PARAMS = {
@@ -42,9 +44,9 @@ export const TREE_PEER_PARAMS = {
   "tree.readlink": z.object({ ...Via, path: TreePath }),
   "tree.symlink": z.object({ ...Via, path: TreePath, target: z.string().min(1).max(4096) }),
   "tree.watch": z.object({ ...Via, path: TreePath }),
-  "tree.unwatch": z.object({ watchId: z.string().min(1).max(128) }),
-  "tool.run": M.toolRun.params,
-  "tool.cancel": M.toolCancel.params.extend({ session: SessionId.optional() }),
+  "tree.unwatch": z.object({ watchId: z.string().min(1).max(128), ...Fence }),
+  "tool.run": M.toolRun.params.extend(Fence),
+  "tool.cancel": M.toolCancel.params.extend({ session: SessionId.optional(), ...Fence }),
 } as const;
 
 /** Bulk calls one computer runs here at once, and how many more may wait. */
@@ -84,6 +86,8 @@ export const BashInput = z.object({
 
 
 export interface TreeServiceOptions {
+  /** This computer's guard for the fencing token on every call asked of it (`fencing.ts`). */
+  fence?: ActFence;
   transport: LinkTransport;
   holder: LocalHolder;
   clock: Pick<Clock, "now">;
@@ -156,6 +160,8 @@ export class TreeService {
         if (!opts.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
         const parsed = TREE_PEER_PARAMS[method].safeParse(raw);
         if (!parsed.success) throw new ContractError("invalid", `${method}: ${parsed.error.issues[0]?.message ?? "bad params"}`);
+        // The calling computer's fencing token, against this computer's own lease (`fencing.ts`).
+        checkActFence(opts.fence, (parsed.data as { fence?: unknown }).fence, method);
         const p = parsed.data as { session?: string; level?: Level; answer?: z.infer<typeof SignedCardAnswer> };
         // The receiver stamps who the call is for (review N2): a peer, for the session it names, never the user.
         const as: Caller = { kind: "peer", device: from, ...(p.session === undefined ? {} : { sessionId: p.session }) };

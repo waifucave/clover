@@ -22,6 +22,8 @@ import type { AnswerAsker, PeerReviewer } from "../tree/judge";
 import { LocalTerminals, serveTerminals, TerminalRouter, type ShellLauncher } from "../tree/terminals";
 import { CoreTree } from "../tree/tree";
 import { FolderWatches } from "../tree/watch";
+import type { Lease } from "../contracts/lease";
+import { leaseFence } from "../tree/fencing";
 import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
@@ -69,6 +71,9 @@ export interface ComputerNodeOptions {
   };
   /** The terminal panel's shells here (R4): how a shell starts, and the card for a paste of several lines. */
   terminals?: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> };
+  /** This computer's lease (lane H): its fencing token goes on every act this computer asks of another, and every act
+   *  asked of it is judged against it (`fencing.ts`). Left out, nothing is carried or judged (tests, no group yet). */
+  lease?: Pick<Lease, "state" | "watch">;
   log?: (line: string) => void;
 }
 
@@ -124,7 +129,9 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   });
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);
+  const fence = o.lease ? leaseFence(o.lease) : undefined;
   const peers = new ComputerPeers({
+    ...(fence ? { fence } : {}),
     registry, transport: o.transport, roots: () => ({ home: o.home, botsRoot, os, bots: bots() }), devices: o.devices,
     ...(o.botPlacement ? { placement: o.botPlacement } : {}), ...(o.log ? { log: o.log } : {}),
     ...(o.answers ? { render: o.answers.render } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
@@ -151,6 +158,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   // One set of per-computer bulk slots for the tree service and the direct path (check 2's N3).
   const bulk = new BulkSlots();
   const service = new TreeService({
+    ...(fence ? { fence } : {}),
     bulk,
     transport: o.transport, holder, clock: o.clock, level: () => registry.self().level, mayCall,
     ...(o.answers ? { answers: o.answers } : {}), ...(o.executor ? { tools: o.executor } : {}),
@@ -176,7 +184,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     let r = remotes.get(c.device);
     if (!r) {
       const device = c.device;
-      r = new RemoteHolder({ transport: o.transport, device, computer: () => registry.byDevice(device)?.name ?? device, ...(o.askUser ? { ask: o.askUser } : {}) });
+      r = new RemoteHolder({ transport: o.transport, device, computer: () => registry.byDevice(device)?.name ?? device, ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}) });
       remotes.set(device, r);
     }
     return r;
@@ -188,13 +196,14 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     return { computer: c.name, device: c.name === registry.self().name ? null : c.device };
   };
   // The direct path (edit J8, review S1): this computer as the destination or the source of a move or copy.
-  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.resolve(path).computer) });
+  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.resolve(path).computer), ...(fence ? { fence } : {}) });
   const tree: CoreTree = new CoreTree({
     directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot),
     transfer: ({ from, to, move, source, destination, call }) => {
       const session = call.as.kind === "session" || call.as.kind === "peer" ? call.as.sessionId : undefined;
       // R1: asks the user up front for each holder whose level needs their answer, then sends the call once.
       return transferAsking({
+        ...(fence ? { fence } : {}),
         transport: o.transport, holder, receiveHere: xfer.receiveHere, as: call.as,
         source: where(source), destination: where(destination),
         params: {
@@ -207,6 +216,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     },
   });
   const tools = new TreeTools({
+    ...(fence ? { fence } : {}),
     tree, directory, transport: o.transport,
     deviceOf: (name) => registry.get(name)?.device,
     ...(o.executor ? { local: { holder, executor: o.executor } } : {}),
@@ -214,6 +224,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   });
   const mcpRouter: McpRouter | undefined = o.mcp
     ? new McpRouter({
+      ...(fence ? { fence } : {}),
       tree, holder, directory, transport: o.transport, deviceOf: (name) => registry.get(name)?.device,
       placement: o.mcp.placement, fields: o.mcp.fields, call: o.mcp.call, scratch: o.mcp.scratch,
       ...(o.askUser ? { ask: o.askUser } : {}),
@@ -256,6 +267,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     }),
     treeRootReady: () => rootReady,
     close: () => {
+      fence?.close();
       offRoot();
       terminals.dispose();
       offMirror();

@@ -32,7 +32,7 @@ import {
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { fenceContextFor, judge as fenceJudge, nonAsciiAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
+import { fenceContextFor, judge as fenceJudge, nonAsciiAlias, windowsAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
 import { splitTreePath, treeCallBinding, type TreeChange, type TreeData, type TreeReviewer } from "../contracts/tree";
 import { atOps, type AtOps } from "./at";
 import { checkSegment, foldName, foldPath, hostOs, mayBeShortName } from "./names";
@@ -488,6 +488,12 @@ export class LocalHolder implements Holder {
     if (!parts) throw new ContractError("invalid", `${path} isn't in the folder tree (home/<Computer>/… or bots/<bot>/…)`);
     const segments = parts.rest === "" ? [] : parts.rest.split("/");
     for (const s of segments) checkSegment(s, this.os);
+    // Lane B's alias rule (#187): on Windows a stream (`a.json::$DATA`) or a short 8.3 name (`CLOVER~1`) is another
+    // file's name, refused wherever it is, for every caller. `checkSegment` and the listed-name check stay as walls.
+    if (this.os === "windows") {
+      const alias = windowsAlias(segments.join("/"));
+      if (alias !== undefined) throw new ContractError("refused", `${path}: "${alias}" may be another file's name on Windows (a stream or a short name)`);
+    }
     const treePath = path.replace(/\/+$/, "");
     if (parts.area === "home") {
       const names = [this.#o.name(), ...(this.#o.aliases?.() ?? [])];
@@ -777,7 +783,7 @@ export class LocalHolder implements Holder {
     if (!plain.allowed) return plain;
     const fold = (p: string) => foldPath(p, this.os);
     const set = fence.fencedSet().map((item) => ({ ...item, path: fold(item.path) }));
-    const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) });
+    const folded = fenceJudge(set, op.op === "move" ? { ...op, path: fold(op.path), to: fold(op.to) } : { ...op, path: fold(op.path) }, { os: this.os });
     if (folded.allowed) return folded;
     // Name the item as the fence does, not folded.
     const item = fence.fencedSet().find((i) => fold(i.path) === folded.path);

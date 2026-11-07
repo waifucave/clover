@@ -120,6 +120,7 @@ export interface ClusterOptions {
   reviewer?: (name: string) => PeerReviewer | undefined;
   terminals?: (name: string) => { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> } | undefined;
   mcp?: (name: string) => ComputerNodeOptions["mcp"] | undefined;
+  lease?: (name: string) => ComputerNodeOptions["lease"] | undefined;
 }
 
 export class Cluster {
@@ -160,6 +161,7 @@ export class Cluster {
     const reviewer = opts.reviewer?.(name);
     const terminals = opts.terminals?.(name);
     const mcp = opts.mcp?.(name);
+    const lease = opts.lease?.(name);
     const node = startComputerNode({
       clock,
       transport: this.net.endpoint(device),
@@ -175,6 +177,7 @@ export class Cluster {
       ...(reviewer ? { reviewer } : {}),
       ...(terminals ? { terminals } : {}),
       ...(mcp ? { mcp } : {}),
+      ...(lease ? { lease } : {}),
     });
     const c: TestComputer = { name, device, home, cloverHome, node, bots };
     this.computers.set(name, c);

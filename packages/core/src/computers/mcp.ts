@@ -19,6 +19,7 @@
 //   stricter of that computer's level and the call's (R1), its answer bound to the tool and its input.
 // * Mirror installs a local server on the other computers, each copy running on its own computer: `mcp.mirror` to
 //   each, which installs only with the user's answer for that computer's own card.
+import { fenceParam, type ActFence } from "../tree/fencing";
 import { extname } from "node:path";
 import { z } from "zod";
 import { Level, SessionId, SignedCardAnswer, type Caller } from "@waifucave/clover-protocol";
@@ -155,6 +156,8 @@ export interface McpRouterOptions {
   /** A session's scratch folder, a tree folder on this computer (§6.4; lane D). */
   scratch: (session: string) => string;
   /** Shows the user another computer's card where its level needs their answer (R1). */
+  /** This computer's fencing token, on every call it asks of another (`fencing.ts`). */
+  fence?: ActFence;
   ask?: AnswerAsker;
 }
 
@@ -224,7 +227,7 @@ export class McpRouter {
     try {
       const link = await this.#o.transport.connect(device);
       const r = await withAnswer(ctx.answer ? undefined : this.#o.ask, (answer) => link.request<{ output: McpResult; isError: boolean }>("tool.run", {
-        session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: mcpToolName(server, tool), input: carried, level,
+        session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: mcpToolName(server, tool), input: carried, level, ...fenceParam(this.#o.fence),
         ...((answer ?? ctx.answer) ? { answer: answer ?? ctx.answer } : {}),
       }, { priority: "control" }));
       return { result: r.output, computer: c.name };
