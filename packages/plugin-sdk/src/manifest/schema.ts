@@ -409,6 +409,11 @@ export const ManifestSchema = z.strictObject({
   /** Runs add-ons of its own, in a format it chooses (§5.4). */
   addons: z.strictObject({ description: Text }).optional(),
   contributes: ContributionsSchema.optional(),
+  /** Written by Clover's release build (`buildPluginForShipping`, core `registry/ship.ts`), never by hand: `host.entry`,
+   *  `client.entry` and each program a `stdio` server or agent backend runs with `bun` or `node` name built ES modules
+   *  of JavaScript, with their dependencies bundled in and a client's CSS listed in `client.css`. The registry loads
+   *  them as they are, and never builds them again. */
+  built: z.literal(true).optional(),
   /** A hint; the OK shows the core's own record (§5.6). */
   generated: z.strictObject({
     from: z.enum(["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin", "winter"]),
