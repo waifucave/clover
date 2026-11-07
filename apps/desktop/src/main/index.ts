@@ -1335,6 +1335,9 @@ async function smoke(): Promise<void> {
                 const cloverHit = await cloverFrame.executeJavaScript(
                   `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 4).map((el) => ({ tag: el.tagName, src: el.tagName === "IFRAME" ? el.src.slice(0, 60) : null }))); })()`, true).catch(() => null) as string | null;
                 log(`sealed-click: clover hit-test: ${String(cloverHit ?? "failed").slice(0, 400)}`);
+                await cloverFrame.executeJavaScript(`(() => { window.__cloverPresses = []; document.addEventListener('pointerdown', (e) => window.__cloverPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
+                const cloverPe = await cloverFrame.executeJavaScript(`(() => { const f = document.querySelector('iframe'); return f ? getComputedStyle(f).pointerEvents : "no-iframe"; })()`, true).catch(() => null) as string | null;
+                log(`sealed-click: clover iframe pointer-events: ${String(cloverPe ?? "failed")}`);
               }
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
@@ -1354,6 +1357,11 @@ async function smoke(): Promise<void> {
               const rootAfter = await win.webContents.executeJavaScript(
                 `(() => ({ presses: (window.__rootPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
               if (rootAfter !== null && typeof rootAfter === "object") log(`sealed-click: root presses=${JSON.stringify((rootAfter as { presses?: unknown }).presses ?? [])}`);
+              if (cloverFrame !== undefined) {
+                const cloverAfter = await cloverFrame.executeJavaScript(
+                  `(() => ({ presses: (window.__cloverPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
+                if (cloverAfter !== null && typeof cloverAfter === "object") log(`sealed-click: clover presses=${JSON.stringify((cloverAfter as { presses?: unknown }).presses ?? [])}`);
+              }
               }
             } else {
               log(`sealed-click: no button rect (button=${buttonRect === null ? "null" : "ok"} chain=${chainOk ? "ok" : "null"})`);
