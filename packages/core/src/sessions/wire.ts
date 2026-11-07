@@ -151,6 +151,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
           };
         case "note":
           return { type: "note", ...envelope, from: input.by, label: input.label, text: input.text };
+        case "task":
+          return { type: "note", ...envelope, from: { kind: "core" }, label: `Background task ${input.status}`, text: input.text };
       }
       return undefined;
     }

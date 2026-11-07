@@ -99,6 +99,12 @@ export interface BotSessionContext {
   /** Whether the cached prompt has expired: the turn starting now rebuilds the harness blocks (the MCP block, the
    *  devices block, the `computer` lists) without compacting (§6.1). */
   cacheCold(): boolean;
+  /** A background task of the session's runtime finished, failed or was stopped (lane A's ask): the driver hands its
+   *  notification here instead of starting a turn itself. The host records it and folds it into the running turn, or
+   *  starts a turn for it (`origin: "task-notification"`) once the pause, the lease and the update gate let one start;
+   *  the driver then runs that turn through `turn()` like any other. Optional (lane A's ask): a driver whose context
+   *  has none keeps holding such a turn until the session may start one. One wake per notification. */
+  wake?(input: Omit<Extract<DeliveredInput, { from: "task" }>, "from">): Promise<{ disposition: Disposition; seq: number }>;
 }
 
 /** How a message reaches a bot's conversation on another computer (lane H's link: `peer.session.send`, and a bot's
@@ -678,6 +684,7 @@ export class BotService {
       mayAct: () => gate.mayAct({ kind }),
       whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),
       cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,
+      wake: (input) => this.#o.host.deliver(sessionId, { from: "task", ...input }),
     };
   }
 

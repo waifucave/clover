@@ -108,7 +108,7 @@ export function canCompact(driver: SessionDriver): driver is CompactingDriver {
 }
 
 /** What `deliver` takes: every input but the user's. */
-export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "routine", "plugin", "note"]);
+export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
