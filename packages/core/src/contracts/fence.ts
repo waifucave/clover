@@ -152,7 +152,8 @@ export interface SandboxPolicy {
 export interface FenceContext {
   memoryOf?: string;
   user?: boolean;
-  /** The calling session, whose own `outputs/<session>/` it reaches. */
+  /** The calling session, whose own `outputs/<session>/` it reaches: a bot's session, a side thread, or a coding
+   *  session the user started; never a delegated agent's. */
   sessionId?: string;
   /** The calling plugin's own id, whose own `plugin-data/<id>/` it reaches (a valid plugin id). */
   pluginId?: string;
@@ -165,6 +166,9 @@ export function fenceContextFor(caller: Caller): FenceContext {
   if (caller.kind === "user" || caller.kind === "core") return { user: true };
   if (caller.kind === "plugin") return isAnyPluginId(caller.pluginId) ? { pluginId: caller.pluginId } : {};
   if (caller.kind !== "session") return {};
+  // A delegated agent (an ACP agent a bot started, the bridge's caller) gets no way into the Clover home, its own
+  // outputs included (the controller's ruling on #234's review, F4): its work comes back through its report.
+  if (caller.sessionKind === "agent") return {};
   const own = { sessionId: caller.sessionId };
   // Only a valid bot id (#197's check 5): `..` would climb out of `bots/`, and `LUNA` would land on Luna's folder on a
   // folding disk.

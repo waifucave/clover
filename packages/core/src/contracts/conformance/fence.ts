@@ -205,7 +205,10 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
         }
       }
       // 1. A session's own outputs, read and write; another session's, neither.
-      for (const c of [main, callers.agent, callers.coding]) expect(reach(c, `${CLOVER}/outputs/s_1/report.md`)).toEqual([true, true]);
+      for (const c of [main, callers.side, callers.coding]) expect(reach(c, `${CLOVER}/outputs/s_1/report.md`)).toEqual([true, true]);
+      // A delegated agent gets no way into the home, its own session's outputs included (#234's review, F4).
+      expect(reach(callers.agent, `${CLOVER}/outputs/s_1/report.md`)).toEqual([false, false]);
+      expect(reach(session("luna", "agent", "s_5"), `${CLOVER}/outputs/s_5/report.md`)).toEqual([false, false]);
       expect(reach(callers.other, `${CLOVER}/outputs/s_1/report.md`)).toEqual([false, false]);
       expect(reach(callers.peer, `${CLOVER}/outputs/s_1/report.md`)).toEqual([false, false]);
       // 2. A bot's own scratch, for its main conversation and side threads.
@@ -265,6 +268,9 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       expect([policyAllows(p, "read", `${CLOVER}/projects/x.jsonl`), policyAllows(p, "read", `${CLOVER}/sessions/s_1.jsonl`), policyAllows(p, "unlink", `${CLOVER}/outputs/s_1`)]).toEqual([false, false, false]);
       const coding = f.forCaller(callers.coding).policy();
       expect([coding.ownOutputs, coding.ownScratch, coding.ownBot, coding.ownRoutines, coding.ownMemory, coding.ownPluginData]).toEqual([`${CLOVER}/outputs/s_1`, undefined, undefined, undefined, undefined, undefined]);
+      const agent = f.forCaller(callers.agent).policy();
+      expect([agent.ownOutputs, agent.ownScratch, agent.ownBot, agent.ownRoutines, agent.ownMemory, agent.ownPluginData]).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
+      expect(policyAllows(agent, "write", `${CLOVER}/outputs/s_1/a`)).toBe(false);
     });
 
     test("a bot id that isn't one reaches no memory: `..` and `LUNA` (#197's check 5)", () => {
