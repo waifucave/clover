@@ -42,6 +42,9 @@ export interface CloverFenceOptions {
   agentInstalls?: readonly string[];
   /** The app's userData folder (E's), which holds the Clover Browser's partitions; the OS's usual one by default. */
   userData?: string;
+  /** A headless run's session data folder (lane E passes `app.getPath("sessionData")` here; TODO(lane E): wire it).
+   *  Its `Partitions` folder is fenced like the app's. */
+  sessionData?: string;
   /** Replaces the layout for some items (tests). */
   layout?: Partial<Record<FencedKind, string[]>>;
   /** The Clover Browser's SOCKS5 filter's loopback ports (lane L's `DaemonBrowser.filterPorts()`): unauthenticated, since
@@ -73,6 +76,7 @@ export class CloverFence implements Fence {
   readonly #cloverHome: string;
   readonly #temp: string;
   readonly #userData: string;
+  readonly #sessionData: string | undefined;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #canonical: (path: string) => string;
   readonly #listeners = new Listeners<void>();
@@ -88,6 +92,7 @@ export class CloverFence implements Fence {
     this.#cloverHome = this.#canonical(opts.cloverHome);
     this.#temp = this.#canonical(opts.temp ?? (this.os === "windows" ? win32.join(opts.home, "AppData", "Local", "Temp") : "/tmp"));
     this.#userData = this.#canonical(opts.userData ?? defaultUserData(this.os, opts.home));
+    this.#sessionData = opts.sessionData === undefined ? undefined : this.#canonical(opts.sessionData);
     this.#devFolders = (opts.devFolders ?? []).map((p) => this.#canonical(p));
     this.#agentInstalls = [...(opts.agentInstalls ?? [])].map((p) => this.#canonical(p));
     this.#bots = [...(opts.bots ?? [])];
@@ -107,9 +112,15 @@ export class CloverFence implements Fence {
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
     // The kinds that need more than the Clover home: the login places (under the user's home), the browser's
-    // partitions (under userData), and the OK'd agent installs.
+    // partitions (under userData, plus the dev profile's next to it and a headless session's when lane E passes it),
+    // and the OK'd agent installs.
     for (const p of this.#layout["login-start"] ?? loginStartPaths(this.#home, this.#cloverHome, this.os)) add("login-start", p);
-    const userData = this.#layout["browser-profiles"] ?? [`${this.#userData}/Partitions`];
+    const devUserData = `${this.#userData.replace(/[\\/]+$/, "")} Dev`;
+    const userData = this.#layout["browser-profiles"] ?? [
+      joinHome(this.#userData, this.os, "Partitions"),
+      joinHome(devUserData, this.os, "Partitions"),
+      ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),
+    ];
     for (const p of userData) add("browser-profiles", p);
     for (const p of this.#layout["agent-installs"] ?? this.#agentInstalls) add("agent-installs", p);
     // Each bot's memory, `<home>/bots/<bot>/memory/` (deny `caller`: `judge` binds it by pattern to the bot whose id

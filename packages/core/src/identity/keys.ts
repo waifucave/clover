@@ -81,3 +81,28 @@ export function publicKeyFromBase64(text: string): Bytes | null {
   const bytes = fromBase64(text);
   return bytes && bytes.byteLength === 32 ? bytes : null;
 }
+
+/** An answer key's algorithm (B's #187 `AnswerKeyAlg`; absent means ed25519). */
+export type AnswerKeyAlg = "ed25519" | "p256";
+
+/** An answer key's raw public key: 32 bytes for Ed25519, the 65-byte uncompressed point for P-256 (B's #187). */
+export function answerKeyBytes(alg: AnswerKeyAlg, text: string): Bytes | null {
+  const raw = fromBase64(text);
+  if (!raw) return null;
+  if (alg === "p256") return raw.length === 65 && raw[0] === 0x04 ? raw : null;
+  return raw.length === 32 ? raw : null;
+}
+
+/** Checks a signature with the key's own algorithm: Ed25519, or ECDSA P-256 over SHA-256 with a raw `r‖s` signature
+ *  (as B's `verifyKeySignature` does; lane H switches to it when #187 lands). False for anything that won't verify. */
+export function verifyKeySignature(alg: AnswerKeyAlg, publicKey: Uint8Array, data: Uint8Array, signature: Uint8Array): boolean {
+  if (alg === "ed25519") return verifyEd25519(publicKey, data, signature);
+  if (publicKey.byteLength !== 65 || publicKey[0] !== 0x04 || signature.byteLength !== 64) return false;
+  try {
+    const b64u = (b: Uint8Array) => Buffer.from(b).toString("base64url");
+    const key = createPublicKey({ key: { kty: "EC", crv: "P-256", x: b64u(publicKey.subarray(1, 33)), y: b64u(publicKey.subarray(33, 65)) }, format: "jwk" });
+    return nodeVerify("sha256", data, { key, dsaEncoding: "ieee-p1363" }, signature);
+  } catch {
+    return false;
+  }
+}

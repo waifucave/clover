@@ -167,7 +167,10 @@ describe("the real fence on a real disk", () => {
       join(root, "home", "Library", "LaunchAgents"), join(root, "home", "Library", "LaunchDaemons"),
       join(root, "home", ".zshrc"), join(root, "home", ".bashrc"), join(root, "home", ".config", "fish"),
     ]));
-    expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions")]);
+    expect(fence.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([join(root, "home", "Library", "Application Support", "Clover", "Partitions"), join(root, "home", "Library", "Application Support", "Clover Dev", "Partitions")]);
+    // A headless session data dir fences its own Partitions (lane E passes app.getPath("sessionData")).
+    const headless = new CloverFence({ home: join(root, "home"), cloverHome: join(root, "home", ".clover"), sessionData: join(root, "home", "app-data", "default", "session"), canonical: (x) => x });
+    expect(headless.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toContain(join(root, "home", "app-data", "default", "session", "Partitions"));
   });
 
   test("the home default-deny: every runner denied the whole home, each caller its own ways back in", () => {

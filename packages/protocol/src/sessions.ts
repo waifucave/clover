@@ -191,6 +191,26 @@ export type MemoryEntry = z.infer<typeof MemoryEntry>;
 
 const SessionParams = z.object({ id: SessionId });
 
+/** A model as a picker lists it (`models.list`). */
+export const ModelListing = z.object({
+  /** The qualified catalog id `session.setModel` takes. */
+  id: utf16(200, 1),
+  name: Text,
+  /** The provider entry, its name as the plugin's manifest gives it (in the user's locale), and the plugin that
+   *  contributes it. */
+  provider: utf16(128, 1),
+  providerName: Text,
+  plugin: AnyPluginId,
+  /** Its reasoning-effort levels, in order; empty when it has none. */
+  efforts: z.array(utf16(32, 1)).max(16),
+  defaultEffort: utf16(32, 1).optional(),
+  /** Whether it takes images (so a picker can say an attachment won't go). */
+  images: z.boolean(),
+  /** Whether its provider is signed in; a model whose provider isn't can't run a turn yet. */
+  signedIn: z.boolean(),
+});
+export type ModelListing = z.infer<typeof ModelListing>;
+
 export const SESSIONS_METHODS = {
   botList: defineMethod({
     name: "bot.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "bots.read",
@@ -283,6 +303,12 @@ export const SESSIONS_METHODS = {
     params: z.object({ id: SessionId, model: utf16(200, 1), effort: utf16(32).optional() }),
     result: Ok,
     doc: "Switches an agent's or coding session's model mid-session; a bot's model is its user layer (§6.3).",
+  }),
+  modelsList: defineMethod({
+    name: "models.list", owner: "A", roles: ["app", "cli", "remote"],
+    params: z.object({ session: SessionId.optional() }),
+    result: z.object({ models: z.array(ModelListing).max(10_000), default: utf16(200).optional() }),
+    doc: "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not, less blocked rows and the rows of a blocked provider (a picker never offers what `session.setModel` refuses). With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
   }),
   sessionCompact: defineMethod({
     name: "session.compact", owner: "D", roles: ["app", "cli"], userOnly: true,
