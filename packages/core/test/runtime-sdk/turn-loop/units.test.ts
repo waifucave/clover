@@ -309,4 +309,15 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     const text = formatTurnInput({ from: "task", task: "t1", status: "stopped", text: "done </background-task> now" } as never, "bot");
     expect(text).toBe('<background-task id="t1" status="stopped">\ndone \u2039/background-task> now\n</background-task>');
   });
+
+  test("the in-process backend merges its hooks with the base's: its own first, none dropped", async () => {
+    const { mergedHooks } = await import("../../../src/runtime-sdk/turn-loop/subagent-backend");
+    const h = (n: string) => ({ hooks: [async () => ({ reason: n })] }) as never;
+    const merged = mergedHooks({ PreToolUse: [h("base-pre")], SessionStart: [h("base-start")] } as never, { PreToolUse: [h("pause")], UserPromptSubmit: [h("prompt")] } as never)!;
+    const names = async (k: string) => Promise.all(((merged as Record<string, { hooks: (() => Promise<{ reason: string }>)[] }[]>)[k] ?? []).map(async (m) => (await m.hooks[0]!()).reason));
+    expect(await names("PreToolUse")).toEqual(["pause", "base-pre"]);
+    expect(await names("UserPromptSubmit")).toEqual(["prompt"]);
+    expect(await names("SessionStart")).toEqual(["base-start"]);
+    expect(mergedHooks(undefined, { PreToolUse: [h("pause")] } as never)!.PreToolUse).toHaveLength(1);
+  });
 });

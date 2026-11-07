@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentPermissionAsk, AgentStartSpec } from "../../../src/contracts/agent-backend";
+import { isContractError } from "../../../src/contracts/common";
 import { inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 
@@ -127,6 +128,14 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       await session.stop();
     }
   }, 60_000);
+
+  test("a missing root is refused (not_found), never created, as lane K's clover-code refuses it", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const missing = join(temp("clover-a3-sub-root-"), "not-there");
+    const err = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN }).start(spec(missing, "winter-test/calls")).then(() => undefined, (e: unknown) => e);
+    expect(isContractError(err, "not_found")).toBe(true);
+    expect(existsSync(missing)).toBe(false);
+  });
 
   test("a delegation can't reach the bot's memory (the owner's decision): Read and Write there are refused", async () => {
     const home = temp("clover-a3-sub-home-");
