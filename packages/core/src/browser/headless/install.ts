@@ -9,9 +9,13 @@
 //   archive's hash, never read back from anything on disk.
 // Installs live under the folder the caller gives (the daemon passes `<home>/browser/`), never in `~/.cache` or the
 // user's own Chrome: `<dir>/cft/<version>-<platform>/`. An install is unpacked into a staging folder and renamed into
-// place, so a half-written one is never used.
+// place, so a half-written one is never used. Its permissions are tightened as it is unpacked (directories 0700,
+// executables 0500, other files 0400; Windows keeps no modes), and a browser is never launched from the install itself:
+// `stageForLaunch` makes a private copy under `<dir>/run/` (a clone where the file system has them), checks that
+// copy against the pinned digest and runs that, so no file can change between the check and the launch.
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmSync } from "node:fs";
+import { chmodSync, constants as fsConstants, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import ruled from "../../../../../plugins/clover/plugins/browser/headless-shell.pins.json" with { type: "json" };
 import integrity from "./integrity.json" with { type: "json" };
@@ -198,6 +202,7 @@ export async function installHeadlessShell(opts: InstallOptions): Promise<Instal
     if (treeDigestOfArchive(zip, plat) !== p.tree) throw new InstallError("tree", "the archive matched its SHA-256 but not its tree's pinned digest");
     extractAll(zip, staging, (d) => Bun.hash.crc32(d));
     if ((await treeDigestOfDir(staging, plat)) !== p.tree) throw new InstallError("tree", "the unpacked browser doesn't match the pinned tree");
+    tightenTree(staging, plat);
     rmSync(dir, { recursive: true, force: true });
     renameSync(staging, dir);
   } catch (e) {
@@ -248,4 +253,83 @@ async function download(url: string, p: PlatformPin, fetchFn: (url: string) => P
   const serverMd5 = googMd5Hex(res.headers.get("x-goog-hash"));
   if (serverMd5 !== undefined && serverMd5 !== md5.digest("hex")) throw new InstallError("md5", "the server's MD5 doesn't match what arrived");
   return out;
+}
+
+/** Directories 0700, files the owner's alone: 0500 where the owner could execute them, else 0400. Symlinks are left as
+ *  they are. No-op on Windows (no modes there; the folder's own access list applies). */
+export function tightenTree(root: string, plat: string = cftPlatform() ?? ""): void {
+  if (plat.startsWith("win") || process.platform === "win32") return;
+  const walk = (path: string): void => {
+    const st = lstatSync(path);
+    if (st.isSymbolicLink()) return;
+    if (st.isDirectory()) {
+      chmodSync(path, 0o700);
+      for (const name of readdirSync(path)) walk(join(path, name));
+    } else if (st.isFile()) {
+      chmodSync(path, (st.mode & 0o100) !== 0 ? 0o500 : 0o400);
+    }
+  };
+  walk(root);
+}
+
+export interface StagedLaunch {
+  /** The browser's executable, in a private copy. */
+  bin: string;
+  /** The copy's folder. */
+  dir: string;
+  /** Removes the copy (the browser has gone); safe to call again, and never throws. */
+  release(): void;
+}
+
+/** A private copy of an install, checked against the pinned digest, to launch from. The copy is made under
+ *  `<dir>/run/<pid>-<random>/` (0700, a name nothing can predict), cloned where the file system supports it, tightened
+ *  as the install is, and its whole tree is hashed again before it is returned; one that doesn't match is removed and
+ *  refused. Copies whose process is gone (a crash) are removed first. */
+export async function stageForLaunch(installed: Installed, opts: { dir: string; pin?: HeadlessPin }): Promise<StagedLaunch> {
+  const pin = opts.pin ?? HEADLESS_PIN;
+  const p = pin.platforms[installed.platform];
+  if (p === undefined) throw new InstallError("no_pin", `there's no pinned headless browser for ${installed.platform}`);
+  const runRoot = join(opts.dir, "run");
+  mkdirSync(runRoot, { recursive: true, mode: 0o700 });
+  if (process.platform !== "win32") chmodSync(runRoot, 0o700);
+  removeStaleRuns(runRoot);
+  const copy = join(runRoot, `${process.pid}-${randomBytes(12).toString("hex")}`);
+  const release = (): void => {
+    try {
+      rmSync(copy, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      // A browser still exiting holds its files on Windows; the next start removes it as stale.
+    }
+  };
+  try {
+    // The copy's name is new and unguessable, and its parent is 0700: nothing else can have made it first.
+    cpSync(installed.dir, copy, { recursive: true, mode: fsConstants.COPYFILE_FICLONE, verbatimSymlinks: true });
+    tightenTree(copy, installed.platform);
+    if ((await treeDigestOfDir(copy, installed.platform)) !== p.tree) throw new InstallError("tree", "the browser's private copy doesn't match the pinned tree");
+  } catch (e) {
+    release();
+    if (e instanceof InstallError) throw e;
+    throw new InstallError("unpack", `copying the headless browser failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const bin = binaryIn(copy, installed.platform);
+  if (!existsSync(bin)) {
+    release();
+    throw new InstallError("unpack", `no browser at ${bin} in its private copy`);
+  }
+  return { bin, dir: copy, release };
+}
+
+function removeStaleRuns(runRoot: string): void {
+  for (const name of readdirSync(runRoot)) {
+    const pid = Number(/^(\d+)-/.exec(name)?.[1]);
+    let alive = true;
+    if (Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+      } catch (e) {
+        alive = (e as NodeJS.ErrnoException).code === "EPERM";
+      }
+    }
+    if (!alive) rmSync(join(runRoot, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
 }

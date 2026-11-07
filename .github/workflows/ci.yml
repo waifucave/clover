@@ -163,7 +163,7 @@ jobs:
 
       - name: The private Secret Service's tools and the display (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0 xvfb xauth
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0 xvfb xauth weston
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -255,6 +255,42 @@ jobs:
         env:
           CLOVER_UI_TESTS: "1"
         run: xvfb-run -a bun test test/browser.test.ts
+
+      # Lane L-M3: the same fixtures where the display changes. Windows at 150 % and 200 % (a viewport that draws at
+      # its frame, agent pictures still 1280x800, points still right); Linux on Wayland under a headless Weston with no
+      # X server (offscreen tabs draw, the viewport works, the screen-reader host draws).
+      - name: App · Browser test (display scale 1.5, Windows)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Windows' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_SCALE: "1.5"
+        run: bun test test/browser.test.ts
+
+      - name: App · Browser test (display scale 2, Windows)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Windows' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_SCALE: "2"
+        run: bun test test/browser.test.ts
+
+      - name: App · Browser test (Wayland, headless Weston)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
+          CLOVER_BROWSER_TEST_WAYLAND: "1"
+        run: ../../scripts/ci/weston.sh bun test test/browser.test.ts
+
+      - name: App · Browser stream test (Wayland, headless Weston)
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+        working-directory: apps/desktop
+        env:
+          CLOVER_UI_TESTS: "1"
+          CLOVER_BROWSER_TEST_ARGS: "--ozone-platform=wayland"
+        run: ../../scripts/ci/weston.sh bun test test/browser-stream.test.ts
 
       # Lane L-M2's streamed view (lane M: fold into your consolidation with the two above).
       - name: App · Browser stream test

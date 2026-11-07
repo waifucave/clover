@@ -49,12 +49,20 @@ describe("PeerOwner", () => {
     expect(await other.accepts(at(PEER), LISTENER)).toBe(false);
   });
 
-  test("Linux, a network process whose fds can't be read: its owner's uid instead, said once", async () => {
+  test("Linux, a network process whose fds can't be read: every connection is refused (fail closed), said once; the readable path says so too", async () => {
     const logs: string[] = [];
-    const owner = new PeerOwner({ platform: "linux", run: async () => "", allowedPids: () => [77], fs: linuxFs({ 77: "denied" }), uid: 501, log: (l) => logs.push(l) });
-    expect(await owner.accepts(at(PEER), LISTENER)).toBe(true);
-    expect(await owner.accepts(at(PEER + 1), LISTENER)).toBe(false); // uid 502's
+    const owner = new PeerOwner({ platform: "linux", run: async () => "", allowedPids: () => [77], fs: linuxFs({ 77: "denied" }), log: (l) => logs.push(l) });
+    // The connection is the same user's (uid 501 in the table) and would have passed a uid check; it must not pass.
+    expect(await owner.accepts(at(PEER), LISTENER)).toBe(false);
+    expect(await owner.accepts(at(PEER + 1), LISTENER)).toBe(false);
     expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatch(/Linux path: .*can't be read.*refused/);
+    const readable: string[] = [];
+    const ok = new PeerOwner({ platform: "linux", run: async () => "", allowedPids: () => [77], fs: linuxFs({ 77: ["socket:[2222]"] }), log: (l) => readable.push(l) });
+    expect(await ok.accepts(at(PEER), LISTENER)).toBe(true);
+    expect(await ok.accepts(at(PEER), LISTENER)).toBe(true);
+    expect(readable).toHaveLength(1);
+    expect(readable[0]).toMatch(/Linux path: .*read from \/proc/);
   });
 
   test("macOS: lsof on the allowed processes alone; one reading for a burst of connections", async () => {

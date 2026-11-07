@@ -161,9 +161,13 @@ export interface StreamTuning {
   /** Keeping up for `raiseAfterMs` multiplies it by this, up to `maxKbps`. */
   raiseFactor: number;
   raiseAfterMs: number;
-  /** Bytes written to a viewer's link stream and not yet taken past which it has fallen behind; by default half a
-   *  second of video at its current bitrate, and at least 64 KiB. It has caught up again under a quarter of that. */
+  /** Bytes written to a viewer's link stream and not yet taken past which it has fallen behind; by default
+   *  `highWaterSeconds` of video at its current bitrate, and at least `highWaterMinBytes`. It has caught up again
+   *  under `lowWaterFraction` of that. */
   highWaterBytes?: number;
+  highWaterSeconds: number;
+  highWaterMinBytes: number;
+  lowWaterFraction: number;
   /** A keyframe asked for that hasn't come in this long is asked for again. */
   keyframeRetryMs: number;
 }
@@ -175,6 +179,9 @@ export const DEFAULT_STREAM_TUNING: StreamTuning = {
   lowerEveryMs: 1000,
   raiseFactor: 1.25,
   raiseAfterMs: 4000,
+  highWaterSeconds: 0.5,
+  highWaterMinBytes: 64 * 1024,
+  lowWaterFraction: 0.25,
   keyframeRetryMs: 1000,
 };
 
@@ -394,7 +401,11 @@ export class TabStreams {
   }
 
   private high(v: Viewer): number {
-    return this.tuning.highWaterBytes ?? Math.max(64 * 1024, Math.round((v.kbps * 1000) / 8 / 2));
+    return this.tuning.highWaterBytes ?? Math.max(this.tuning.highWaterMinBytes, Math.round(((v.kbps * 1000) / 8) * this.tuning.highWaterSeconds));
+  }
+
+  private low(v: Viewer): number {
+    return this.high(v) * this.tuning.lowWaterFraction;
   }
 
   private frame(group: AppStream, chunk: Extract<StreamChunk, { kind: "frame" }>): void {
@@ -406,7 +417,7 @@ export class TabStreams {
         continue;
       }
       const high = this.high(v);
-      const low = high / 4;
+      const low = this.low(v);
       if (v.backlog > low) v.calmSince = now;
       if (v.backlog > high) this.fellBehind(v, now);
       if (v.needKey && (!chunk.key || v.backlog > low)) {
@@ -422,7 +433,7 @@ export class TabStreams {
         v.raised++;
       }
     }
-    if ([...group.viewers].some((v) => v.needKey && v.configSent && v.backlog <= this.high(v) / 4)) this.askKey(group, false);
+    if ([...group.viewers].some((v) => v.needKey && v.configSent && v.backlog <= this.low(v))) this.askKey(group, false);
     this.syncKbps(group);
   }
 
@@ -446,7 +457,7 @@ export class TabStreams {
       () => {
         v.backlog -= bytes.byteLength;
         // Caught up while waiting for a keyframe: ask for one now rather than at the next frame.
-        if (!v.done && v.needKey && v.configSent && v.backlog <= this.high(v) / 4) this.askKey(v.group, false);
+        if (!v.done && v.needKey && v.configSent && v.backlog <= this.low(v)) this.askKey(v.group, false);
       },
       () => {
         v.backlog -= bytes.byteLength;

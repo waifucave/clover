@@ -251,6 +251,8 @@ describe.skipIf(!RUN)("the daemon's browser where no app runs, for real", () => 
       });
       expect(`${answer} ${logs.join(" | ")}`).toStartWith("closed");
     } finally {
+      // Which way the filter told the shell's connections apart on this machine (Linux: /proc/<pid>/fd, or refused).
+      console.log(`network filter, ${process.platform}: ${JSON.stringify(logs.filter((l) => /network filter/.test(l)))}`);
       await browser.shutdown();
       server.stop(true);
     }

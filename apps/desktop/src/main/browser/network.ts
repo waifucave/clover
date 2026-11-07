@@ -406,20 +406,30 @@ export class NetworkFilter {
       client.end();
       return;
     }
-    // Loopback is always reached directly (Chromium's own rule); anything else takes the setting's routes.
-    const routes = ips.every((ip) => classifyAddress(ip) === "loopback") || this.upstream === undefined
-      ? [{ kind: "direct" } as const]
-      : await this.upstream({ scheme, host: host.startsWith("[") ? host.slice(1, -1) : host, port }).catch((e: unknown) => {
+    // Loopback, private and link-local addresses are reached directly, address by address, never through the proxy
+    // setting (owner's ruling on the #260 review: a proxy is for the public internet; a name that has a loopback
+    // address and a public one sends only the public one through it). Only an address the policy allowed got this far.
+    // Only public addresses take the setting's routes, one address at a time through a proxy.
+    const local = ips.filter((ip) => classifyAddress(ip) !== "public");
+    const outer = ips.filter((ip) => classifyAddress(ip) === "public");
+    const attempts: { route: Upstream; ips: string[] }[] = [];
+    let routes: Upstream[] = [{ kind: "direct" }];
+    if (outer.length > 0 && this.upstream !== undefined) {
+      routes = await this.upstream({ scheme, host: host.startsWith("[") ? host.slice(1, -1) : host, port }).catch((e: unknown) => {
         this.opts.log?.(`browser proxy: no route (${e instanceof Error ? e.message : String(e)})`);
         return [] as Upstream[];
       });
+    }
+    const localAttempt = local.length > 0 ? [{ route: { kind: "direct" } as Upstream, ips: local }] : [];
+    const outerAttempts = outer.length > 0 ? routes.map((route) => ({ route, ips: outer })) : [];
+    attempts.push(...(classifyAddress(ips[0]!) === "public" ? [...outerAttempts, ...localAttempt] : [...localAttempt, ...outerAttempts]));
     let lastError: NodeJS.ErrnoException | undefined;
-    for (const route of routes) {
+    for (const { route, ips: group } of attempts) {
       // Directly, the checked addresses race, each started a little after the one before (happy eyeballs, RFC 8305):
       // a first address that never answers, or answers slowly with a refusal (Windows retries a SYN to a closed
       // loopback port for about 2 s, as `localhost`'s ::1 does when a server listens on IPv4 only), never holds up the
       // next. Through a proxy, one address at a time.
-      for (const ip of route.kind === "direct" ? [ips] : ips.map((one) => [one])) {
+      for (const ip of route.kind === "direct" ? [group] : group.map((one) => [one])) {
         if (client.destroyed) return;
         const upstream = await (route.kind === "direct" ? this.race(ip, port) : this.viaProxy(route, ip[0]!, port)).catch((e: NodeJS.ErrnoException) => {
           lastError = e;
@@ -448,7 +458,7 @@ export class NetworkFilter {
       }
     }
     if (!client.destroyed) {
-      reply(client, lastError?.code === "ECONNREFUSED" ? REPLY.refused : routes.length === 0 ? REPLY.notAllowed : REPLY.unreachable);
+      reply(client, lastError?.code === "ECONNREFUSED" ? REPLY.refused : attempts.length === 0 ? REPLY.notAllowed : REPLY.unreachable);
       client.end();
     }
   }

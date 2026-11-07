@@ -14,7 +14,7 @@ export { DISABLED_FEATURES, browserEnv, headlessArgs, profileDir, profileName, w
 export { imageSize } from "./image";
 export {
   CFT_BASE, HEADLESS_PIN, InstallError, pinFrom, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, treeDigestOfArchive,
-  treeDigestOfDir, type HeadlessShellPins, type HeadlessPin, type InstallOptions, type Installed, type PlatformPin,
+  stageForLaunch, tightenTree, treeDigestOfDir, type StagedLaunch, type HeadlessShellPins, type HeadlessPin, type InstallOptions, type Installed, type PlatformPin,
 } from "./install";
 export { launchHeadlessShell, type LaunchSpec, type Launcher } from "./launch";
 export { quoteWindowsArg, windowsEnvBlock } from "./winpipe";
