@@ -16,7 +16,7 @@
 //
 // The check is bounded, since a third-party schema runs in the core (#234's review, F3): a `pattern` stays in a
 // linear-time subset (at most 256 characters; no backreference, lookaround, or quantified group holding a quantifier
-// or an alternation; at most 2 quantifiers with no upper bound or one above 16), is tried only on strings of at most
+// or an alternation; the product of its quantifiers' ranges at most 2^24), is tried only on strings of at most
 // 4,096 code points (`patternLength`) and on at most 64K characters in all per call (`budget`), the args are at most
 // 256 KiB of JSON (`size`), `uniqueItems` is linear, and one call visits at most 100,000 schema nodes (`budget`).
 
@@ -48,28 +48,35 @@ export const ARGS_MAX_PATTERN_INPUT = 4096;
 export const ARGS_VISIT_BUDGET = 100_000;
 /** The most characters (UTF-16 code units) one call tries patterns on, in all; past it the check fails `budget`. */
 export const ARGS_PATTERN_INPUT_BUDGET = 64 * 1024;
-/** A quantifier's upper bound past which it counts as unbounded (#234's check 2, F3). */
-export const ARGS_PATTERN_BOUND = 16;
-/** The most unbounded (or above-16) quantifiers one `pattern` may hold: three in a row (`^a*a*a*b$`) backtrack in
- *  cubic time. */
-export const ARGS_MAX_PATTERN_UNBOUNDED = 2;
+/** The most one `pattern`'s quantifiers may multiply to (#234's check 3, F3): the product over every quantifier, nested
+ *  ones included, of how many repetitions it allows (`max - min + 1`; `?` is 2, `{3}` is 1), with no upper bound
+ *  counted as `ARGS_PATTERN_UNBOUNDED`. It bounds how many ways a match can be tried: two `*`s pass (2^24), and
+ *  `^a*a*a*b$`, ten `a{0,16}` or sixty `\w?` don't. */
+export const ARGS_MAX_PATTERN_PRODUCT = 2 ** 24;
+/** What a quantifier with no upper bound (`*`, `+`, `{n,}`) counts as: the longest string a pattern is tried on. */
+export const ARGS_PATTERN_UNBOUNDED = ARGS_MAX_PATTERN_INPUT;
 
 /** Why a `pattern` is outside the linear-time subset, or undefined when it is in it: no backreference, no lookaround,
  *  no quantified group that holds a quantifier or an alternation (the shapes that backtrack exponentially, such as
- *  `^(a+)+$` or `(a|a)*`), and at most 2 quantifiers with no upper bound or one above 16 (more backtrack in polynomial
- *  time, such as `^a*a*a*b$`); a quantified group counts the ones it holds. */
+ *  `^(a+)+$` or `(a|a)*`), and quantifiers whose ranges multiply to at most `ARGS_MAX_PATTERN_PRODUCT` (more backtrack
+ *  in polynomial time, such as `^a*a*a*b$`). */
 export function patternProblem(source: string): string | undefined {
   if (source.length > ARGS_MAX_PATTERN) return "too long";
   // One frame per open group: whether it holds a quantifier or an alternation at any depth.
-  // `unbounded`: how many quantifiers with no upper bound, or one above 16, it holds.
-  const frames: { quant: boolean; alt: boolean; unbounded: number }[] = [{ quant: false, alt: false, unbounded: 0 }];
+  const frames: { quant: boolean; alt: boolean }[] = [{ quant: false, alt: false }];
   const isQuant = (i: number) => source[i] === "*" || source[i] === "+" || source[i] === "?" || (source[i] === "{" && /^\{\d+(,\d*)?\}/.test(source.slice(i)));
-  const isUnbounded = (i: number) => {
-    if (source[i] === "*" || source[i] === "+") return true;
-    const m = source[i] === "{" ? /^\{(\d+)(,(\d*))?\}/.exec(source.slice(i)) : null;
-    return m !== null && m[2] !== undefined && (m[3] === "" || Number(m[3]) > ARGS_PATTERN_BOUND);
+  // How many repetitions the quantifier at `i` allows. A group's quantifier multiplies what the group holds, which the
+  // running product over the whole pattern already counts.
+  const range = (i: number): number => {
+    if (source[i] === "*" || source[i] === "+") return ARGS_PATTERN_UNBOUNDED;
+    if (source[i] === "?") return 2;
+    const m = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(i))!;
+    if (m[2] === undefined) return 1;
+    if (m[3] === "") return ARGS_PATTERN_UNBOUNDED;
+    return Math.max(1, Number(m[3]) - Number(m[1]) + 1);
   };
-  const tooMany = () => frames.reduce((n, f) => n + f.unbounded, 0) > ARGS_MAX_PATTERN_UNBOUNDED;
+  let product = 1;
+  const tooMany = (i: number) => (product *= range(i)) > ARGS_MAX_PATTERN_PRODUCT;
   // The index just past the quantifier at `i`, and its lazy `?` if any.
   const skipQuant = (i: number) => {
     const end = source[i] === "{" ? source.indexOf("}", i) + 1 : i + 1;
@@ -89,7 +96,7 @@ export function patternProblem(source: string): string | undefined {
     }
     if (c === "(") {
       if (source.startsWith("(?=", i) || source.startsWith("(?!", i) || source.startsWith("(?<=", i) || source.startsWith("(?<!", i)) return "a lookaround";
-      frames.push({ quant: false, alt: false, unbounded: 0 });
+      frames.push({ quant: false, alt: false });
       continue;
     }
     if (c === ")") {
@@ -100,18 +107,18 @@ export function patternProblem(source: string): string | undefined {
       const parent = frames[frames.length - 1]!;
       parent.quant ||= f.quant || quantified;
       parent.alt ||= f.alt;
-      parent.unbounded += f.unbounded + (isUnbounded(i + 1) ? 1 : 0);
-      if (tooMany()) return "more than 2 quantifiers with no upper bound or one above 16";
       // The group's own quantifier is counted here, not again as the next character.
-      if (quantified) i = skipQuant(i + 1) - 1;
+      if (quantified) {
+        if (tooMany(i + 1)) return "quantifiers that allow too many ways to match";
+        i = skipQuant(i + 1) - 1;
+      }
       continue;
     }
     if (c === "|") frames[frames.length - 1]!.alt = true;
     else if (isQuant(i) && !(c === "?" && source[i - 1] === "(")) {
       const f = frames[frames.length - 1]!;
       f.quant = true;
-      if (isUnbounded(i)) f.unbounded++;
-      if (tooMany()) return "more than 2 quantifiers with no upper bound or one above 16";
+      if (tooMany(i)) return "quantifiers that allow too many ways to match";
       i = skipQuant(i) - 1;
     }
   }

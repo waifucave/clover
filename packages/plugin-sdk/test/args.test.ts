@@ -129,14 +129,17 @@ describe("validateArgs", () => {
       expect(performance.now() - started).toBeLessThan(50);
     });
 
-    test("a pattern holds at most 2 quantifiers with no upper bound or one above 16, a quantified group counting its own (check 2)", () => {
-      for (const ok of ["^a*b*$", "^a+b{0,16}c*$", "^\\w{1,16}\\s?\\d{3}x*y+$", "^a*?b+?$", "^(?:ab){0,16}c*$"]) expect([ok, patternProblem(ok)]).toEqual([ok, undefined]);
-      for (const bad of ["^a*a*a*b$", "\\w*".repeat(40), "^a+b{1,}c*$", "^a*b{0,17}c+$", "^(?:ab)*c*d+$", "^(?:a*)?b*c*$"]) {
+    test("a pattern's quantifiers multiply to at most 2^24 ways to match, nested ones included (check 3)", () => {
+      for (const ok of ["colou?r", "^a*b*$", "^a+b+$", "^[a-z]+@[a-z]+\\.com$", "^\\d{3}-\\d{4}$", "^a{0,16}b{0,16}c{0,16}$", "^(?:ab){0,16}c*$", "^a*?b+?$"]) {
+        expect([ok, patternProblem(ok)]).toEqual([ok, undefined]);
+      }
+      // The reviewer's four, and the cubic ones.
+      for (const bad of ["a{0,16}".repeat(10), "a{0,16}".repeat(30), "a*a*" + "a{0,16}".repeat(4), "\\w?".repeat(60), "^a*a*a*b$", "\\w*".repeat(40), "^a*b*c?$", "^(?:a{0,16}){0,16}b*$", "^a{1,}b{1,}c{0,2}$"]) {
         expect([bad, patternProblem(bad) !== undefined, checkArgsSchema({ type: "string", pattern: bad }).ok]).toEqual([bad, true, false]);
       }
-      // Refused at schema time, so the cubic match never runs.
+      // Refused at schema time, so the match never runs.
       const started = performance.now();
-      expect(validateArgs({ type: "object", properties: { s: { type: "string", pattern: "\\w*".repeat(40) + "!" } } }, { s: "a".repeat(4000) })).toEqual({ ok: false, path: "", keyword: "schema" });
+      expect(validateArgs({ type: "object", properties: { s: { type: "string", pattern: "a{0,16}".repeat(30) + "!" } } }, { s: "a".repeat(4000) })).toEqual({ ok: false, path: "", keyword: "schema" });
       expect(performance.now() - started).toBeLessThan(50);
     });
 
