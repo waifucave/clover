@@ -15,6 +15,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -103,6 +104,12 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/reg.rs     |  37 +++++++
  src/user.rs    |  16 ++-
  4 files changed, 417 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 125 ++++++++++++++++++----
+ src/install.rs | 279 ++++++++++++++++++++++++++++++++++++++++++++++---
+ src/reg.rs     |  37 +++++++
+ src/user.rs    |  16 ++-
+ 4 files changed, 414 insertions(+), 43 deletions(-)
 
  src/cli.rs     | 125 ++++++++++++++++++----
  src/install.rs | 279 ++++++++++++++++++++++++++++++++++++++++++++++---
@@ -376,7 +383,7 @@ index 8e616e2..992f5f0 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..9e44ed0 100644
+index ba0ac37..027cd16 100644
 --- a/src/install.rs
 +++ b/src/install.rs
 @@ -49,19 +49,116 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
@@ -478,8 +485,8 @@ index ba0ac37..9e44ed0 100644
 +fn caller_is_admin() -> bool {
 +    use windows::core::BOOL;
 +    use windows::Win32::Foundation::CloseHandle;
-+    use windows::Win32::Security::CheckTokenMembership;
-+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken, TOKEN_QUERY};
++    use windows::Win32::Security::{CheckTokenMembership, TOKEN_QUERY};
++    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 +    unsafe {
 +        let mut tok = Default::default();
 +        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut tok).is_err() {
