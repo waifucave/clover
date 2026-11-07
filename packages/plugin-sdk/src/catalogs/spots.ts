@@ -12,6 +12,9 @@
 import { z } from "zod";
 import { utf16 } from "@waifucave/clover-protocol";
 import { HandlerName, Path, Text } from "../manifest/fields";
+import { foldTitle } from "./fold";
+
+export { foldTitle, lookalikeOf } from "./fold";
 
 export interface SpotInfo {
   readonly name: string;
@@ -131,85 +134,6 @@ export const SPOTS: readonly SpotInfo[] = [
 export const SPOT_NAMES: ReadonlySet<string> = new Set(SPOTS.map((s) => s.name));
 export function spotInfo(name: string): SpotInfo | undefined {
   return SPOTS.find((s) => s.name === name);
-}
-
-/** Letters from other scripts that read as Latin ones (a short table after Unicode's confusables, UTS #39), and the
- *  digits and strokes that read as letters. */
-const CONFUSABLES: Readonly<Record<string, string>> = Object.fromEntries([
-  // Cyrillic
-  ..."АaВbЕeКkМmНhОoРpСcТtХxУyІlЈjЅsҮyҺhӀlԚqԜwаaеeоoрpсcуyхxіiјjѕsԁdһhӏlԛqԝwүyёeїiгrпn".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Greek
-  ..."ΑaΒbΕeΖzΗhΙlΚkΜmΝnΟoΡpΤtΥyΧxαaβbεeιiκkνvοoρpτtυuχxγyωw".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Latin lookalikes, Armenian, digits and strokes
-  ..."ıiɩiɑaɡgʏyℓlǀlօoսuցgհhոn0o1l|l".match(/../gu)!.map((p) => [...p] as [string, string]),
-]);
-const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
-
-/** Small capitals and Cherokee letters that read as Latin ones (lane G's island comparison, kept in agreement). */
-const LOOKALIKES: Readonly<Record<string, string>> = Object.fromEntries([
-  // Small capitals
-  ..."ᴀaʙbᴄcᴅdᴇeꜰfɢgʜhɪiᴊjᴋkʟlᴍmɴnᴏoᴘpǫqʀrꜱsᴛtᴜuᴠvᴡwʏyᴢz".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Letters with a stroke or hook, which NFD leaves whole (#187's review): đ ł ø ƚ ɗ ħ ŧ ɍ and their kin
-  ..."đdĐdɗdƊdłlŁlƚlȽlɫlɬløoØoǿoǾoħhĦhŧtŦtɍrɌrƀbɃbɨiƗiʉuɄuǥgǤgɇeɆeɉjɈjƶzƵzȼcȻcꝁkꝀkƥpƤpɓbƁbƈcƇcɠgƓgƙkƘkƴyƳyȥzȤz".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Greek lunate sigma (mapped before NFKC, which would make it Σ), and other letters that read as Latin ones
-  ..."ϲcϹcყyɘeѻoѺo○o◯oᏁnᏑn".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Lisu (U+A4D0–A4FF), whose letters are Latin capitals, some turned; its tone marks are dropped
-  ..."ꓐbꓑpꓒdꓓdꓔtꓕtꓖgꓗkꓘkꓙjꓚcꓛcꓜzꓝfꓞfꓟmꓠnꓡlꓢsꓣrꓤrꓥvꓦvꓧhꓨhꓩfꓪwꓫxꓬyꓭgꓮaꓯaꓰeꓱeꓲlꓳoꓴuꓵuꓶuꓷo".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Cherokee capitals (a small letter is upper-cased to its capital first)
-  ..."ᎪaᏴbᏟcᎠdᎬeᏀgᎻhᏆlᎫjᏦkᏞlᎷmᏢpᏒrᏚsᎢtᏙvᎳwᏔwᎩyᏃz".match(/../gu)!.map((p) => [...p] as [string, string]),
-]);
-/** The island's own lookalike tables (lane G, before #264), folded in so the manifest check refuses everything the
- *  island did: Cyrillic, Greek, Armenian and Cherokee letters that read as Latin ones, in both cases, and Latin's
- *  small capitals. One entry of theirs is left out as too loose: Greek η, which reads as an "n" only in some faces. */
-const ISLAND_LOOKALIKES: Readonly<Record<string, string>> = Object.fromEntries([
-  // Cyrillic capitals and small letters
-  ..."АaВbЕeЁeЗ3КkМmНhОoРpСcТtУyХxЅsІlЇlЈjҮyԚqԜwӀlꙆl".match(/../gu)!.map((p) => [...p] as [string, string]),
-  ..."аaвbеeёeгrз3кkмmнhоoпnрpсcтtуyхxѕsіlїlјjԁdһhӏlԛqԝwүyҽeѵvꙇl".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Greek capitals and small letters (σ and ς read as "o" and "c"; ϲ, Ϲ and ϳ, Ϳ too)
-  ..."ΑaΒbΕeΖzΗhΙlΚkΜmΝnΟoΡpΤtΥyΧxϹcͿj".match(/../gu)!.map((p) => [...p] as [string, string]),
-  ..."αaβbγyεeιlκkνvοoρpσoτtυuχxϲcϳjςc".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Armenian capitals and small letters
-  ..."ՏsՕoՍuաwզqհhոnսuօo".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Cherokee capitals (a small letter is upper-cased to its capital first)
-  ..."ᎪaᏴbᏟcᎠdᎬeᏀgᎻhᎥlᎫjᏦkᏞlᎷmᏫoᏢpᏚsᎢtᏙvᎳwᏃz".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Latin lookalikes
-  ..."ɑaɡgıiȷjɩiʋuɣyꞵbǀl".match(/../gu)!.map((p) => [...p] as [string, string]),
-]);
-
-/** Every lookalike, one map: the confusables, the small capitals and Latin letters with a stroke, and the island's. */
-const LOOKALIKE: Readonly<Record<string, string>> = { ...ISLAND_LOOKALIKES, ...LOOKALIKES, ...CONFUSABLES };
-
-function mapLookalikes(text: string): string {
-  let out = "";
-  for (const ch of text) out += LOOKALIKE[ch] ?? ch;
-  return out;
-}
-
-const CHEROKEE_SMALL = /[\uAB70-\uABBF\u13F8-\u13FD]/gu;
-/** ™ ® © ℠ ℗, and Lisu's tone marks (U+A4F8–A4FD), which read as nothing. */
-const DROPPED_MARKS = /[\u2122\u00AE\u00A9\u2120\u2117\uA4F8-\uA4FD]/gu;
-
-/** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review; lane
- *  G's island comparison, #264): compatibility forms decomposed (NFKD: width, mathematical letters, ligatures) and every
- *  accent and other mark dropped, invisible characters dropped (zero-width spaces and joiners, bidi marks, variation
- *  selectors), each letter's lookalike folded to its Latin letter (a Cyrillic "о" is "o"; small capitals, Cherokee,
- *  Armenian and Greek letters too), case folded, and the lookalikes folded once more, so a capital whose small form is
- *  in the table is caught ("Ї" is "ї" is "l"). Then every run of anything but letters and digits is dropped, so a
- *  missing or invisible space changes nothing ("Needsyou" is "Needs you"), and I, i, 1, | and l read as one letter,
- *  "rn" as "m", "vv" as "w" and "cl" as "d" ("Iris" is "iris" is "lris"). Folding too much only reserves more. */
-export function foldTitle(title: string): string {
-  // Marks that NFKD would spell out as letters (™ as "TM") go first, with Lisu's tone marks; the lunate sigmas, which
-  // NFKD turns into Σ and ς, read as "c".
-  const bare = title.replace(DROPPED_MARKS, "").replace(/[\u03F2\u03F9]/gu, "c")
-    .normalize("NFKD").replace(/\p{M}/gu, "").replace(INVISIBLE, "").replace(DROPPED_MARKS, "")
-    .replace(CHEROKEE_SMALL, (ch) => ch.toUpperCase());
-  const folded = mapLookalikes(mapLookalikes(bare).toUpperCase().toLowerCase());
-  return mapLookalikes(folded.normalize("NFKD").replace(/\p{M}/gu, ""))
-    .replace(/[^\p{L}\p{N}]+/gu, "")
-    .replace(/[il1|]/g, "l")
-    .replace(/rn/g, "m")
-    .replace(/vv/g, "w")
-    .replace(/cl/g, "d");
 }
 
 /** Names only the bundled `clover` tree's plugins may have (lane G's ask): the app's own, beside the titles spots

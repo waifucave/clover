@@ -4,7 +4,7 @@
 // small capitals, accents, case, I/i/1/l, "rn" and "m", "vv" and "w", "cl" and "d", and every space and punctuation
 // mark. Pure.
 
-import { foldTitle } from "@waifucave/clover-plugin-sdk";
+import { foldTitle } from "@waifucave/clover-plugin-sdk/fold";
 
 const BLANKS = /[\p{White_Space}\u115F\u1160\u3164\uFFA0\u2800]+/gu;
 

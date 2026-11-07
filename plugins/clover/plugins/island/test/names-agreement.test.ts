@@ -96,3 +96,15 @@ describe("foldTitle refuses everything the island's old fold refused", () => {
     expect(passed).toEqual([]);
   }, 60_000);
 });
+
+describe("the island's client bundle", () => {
+  test("imports the fold from the SDK's dependency-free subpath, never its root (which brings zod and the catalogs)", () => {
+    const src = readFileSync(join(import.meta.dir, "..", "src", "model", "names.ts"), "utf8");
+    expect(src).toContain('from "@waifucave/clover-plugin-sdk/fold"');
+    for (const dir of ["src", "client"]) {
+      const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
+      const walk = (d: string): string[] => readdirSync(d).flatMap((n) => (statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : /\.tsx?$/.test(n) ? [join(d, n)] : []));
+      for (const file of walk(join(import.meta.dir, "..", dir))) expect([file, /from "@waifucave\/clover-plugin-sdk"/.test(readFileSync(file, "utf8"))]).toEqual([file, false]);
+    }
+  });
+});
