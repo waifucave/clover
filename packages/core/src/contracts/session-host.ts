@@ -70,10 +70,10 @@ export type DeliveredInput =
   | { from: "plugin"; pluginId: string; text: string; app?: { callId: string } }
   | { from: "note"; label: string; text: string; by: { kind: "plugin"; pluginId: string } | { kind: "hook"; pluginId: string; hook: string } | { kind: "core" } }
   /** A background task the session's own runtime ran (a Bash run in the background, a monitor) finished, failed or
-   *  was stopped. A driver never starts a turn by itself: it hands this to the host (`BotSessionContext.wake`), which
+   *  was stopped, or (`event`) a running monitor reported an event and goes on running. A driver never starts a turn by itself: it hands this to the host (`BotSessionContext.wake`), which
    *  records it and folds it into the running turn or starts one (through the pause, the lease and the update gate),
    *  so the turn is logged, its usage counted and its end recorded like any other. */
-  | { from: "task"; task: string; status: "completed" | "failed" | "stopped"; text: string };
+  | { from: "task"; task: string; status: "completed" | "failed" | "stopped" | "event"; text: string };
 
 export type TurnInput = UserInput | DeliveredInput;
 

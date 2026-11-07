@@ -42,14 +42,21 @@ describe("a turn the driver asks for", () => {
     expect(d.turns[0]!.folded.map((i) => i.from)).toEqual(["task"]);
     d.end({ text: "done" });
     await flush();
+    // A running monitor's event wakes it too; the task goes on running.
+    expect(await ctx.wake!({ task: "monitor_1", status: "event", text: "CPU above 90%" })).toMatchObject({ disposition: "turn" });
+    await flush();
+    expect(d.turns[1]).toMatchObject({ origin: "task-notification", input: { from: "task", task: "monitor_1", status: "event" } });
+    expect(projectRecords(b.host.history("b_alpha"), { kind: "bot" }).filter((e) => e.type === "note").at(-1)).toMatchObject({ label: "Background task event", text: "CPU above 90%" });
+    d.end({ text: "noted" });
+    await flush();
     await b.bots.setPaused(true, theUser);
     expect(await ctx.wake!({ task: "bash_9", status: "stopped", text: "stopped by the user" })).toMatchObject({ disposition: "queued" });
     await flush();
-    expect(d.turns).toHaveLength(1);
+    expect(d.turns).toHaveLength(2);
     await b.bots.setPaused(false, theUser);
     await flush();
-    expect(d.turns).toHaveLength(2);
-    expect(d.turns[1]).toMatchObject({ origin: "task-notification", input: { from: "task", task: "bash_9" } });
+    expect(d.turns).toHaveLength(3);
+    expect(d.turns[2]).toMatchObject({ origin: "task-notification", input: { from: "task", task: "bash_9" } });
     await b.shutdown();
   });
 });
