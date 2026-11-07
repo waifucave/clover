@@ -262,9 +262,25 @@ interface Hosted {
   interruptAfterCompaction: boolean;
   /** A turn another computer started and the log never ended: caught up before this computer starts one. */
   foreignTurn?: { on: string };
-  /** Which other computers' late records `appendLate` has appended, by their device and seq there (read once). */
-  lateSeen?: Set<string>;
+  /** Which other computers' late records (and runs' notes) `appendLate` has appended, by where they first came from
+   *  (read from the log once). */
+  late?: { seen: Set<string> };
 }
+
+/** Where a late record first came from (`appendLate`): the device and computer, its place and time there; a note
+ *  that opens a run of them names the run instead (`note`, its place -1). */
+interface LateFrom {
+  device: string;
+  computer: string;
+  seq: number;
+  ts: number;
+  epoch?: number;
+  note?: string;
+}
+
+type LateRecord = SessionRecord & { late: true; copiedFrom?: string; lateFrom: LateFrom };
+
+const lateKey = (from: LateFrom) => (from.note !== undefined ? `${from.device}\u0000note\u0000${from.note}` : `${from.device}\u0000${from.seq}`);
 
 /** How many records a full read of a log takes at a time. */
 const RESTATE_PAGE = 1_000;
@@ -727,6 +743,9 @@ export class DurableSessionHost implements SessionHost {
   setAside(id: string, fromSeq: number, opts: { from: string }): SessionRecord[] {
     const s = this.#sessions.get(id);
     if (!s) throw new ContractError("not_found", `no session ${id}`);
+    // Refused while this computer runs the session, a turn of its included: a turn still running here (the old main's,
+    // as the lease leaves) would go on writing past the cut. Losing the lease interrupts that turn (the bot side), and
+    // the sync tries again on its next exchange, when it has ended.
     if (this.#runsLive(s)) throw new ContractError("refused", `this computer runs session ${id}; its log is the one the others follow`);
     const log = this.#logOf(s);
     if (!Number.isInteger(fromSeq) || fromSeq < 0 || fromSeq > log.length) {
@@ -741,7 +760,7 @@ export class DurableSessionHost implements SessionHost {
     const entry: EarlierLog = { id: earlierId, at, fromSeq, records: records.length, from: opts.from };
     // The file first, then the meta that lists it, then the cut: a crash between them leaves the records in the log
     // (set aside again, which the runner's `appendLate` takes once) or in a kept file.
-    writeJsonAtomic(this.#earlierPath(s, earlierId), { session: id, ...entry, list: records });
+    writeJsonAtomic(this.#earlierPath(s, earlierId), { session: id, ...entry, list: records }, { mode: 0o600 });
     const meta: SessionMeta = { ...s.meta, earlier: [...(s.meta.earlier ?? []), entry] };
     writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
     s.meta = meta;
@@ -781,35 +800,50 @@ export class DurableSessionHost implements SessionHost {
 
   /** On the computer running the session: another computer's set-aside records (`setAside` there), put after this
    *  log's own with new seqs. Each keeps its time and epoch, is marked `late`, `copiedFrom` and `lateFrom` (its device,
-   *  computer and place there), and is history only: nothing runs, and the status, the line of inputs and the turn
-   *  don't move. A grant is kept as a copied grant (it grants nothing here), and a status record is left out. A core
-   *  note, "Earlier on <computer>", goes before the first records a device sends, so every copy of the transcript
-   *  shows where they came from. Taken once per device and seq there, so a resend adds nothing. How many records it
-   *  appended (the note not counted). */
-  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string }): number {
+   *  computer and place there; a record already late from a third computer keeps its own), and is history only:
+   *  nothing runs, and the status, the line of inputs and the turn don't move. A grant is kept as a copied grant (it
+   *  grants nothing here), and a status record is left out. A core note, "Earlier on <computer>", goes before each
+   *  run a device sends, so every copy of the transcript shows where they came from: a run is named by `earlierId`
+   *  (the sender's `EarlierLog` id) when given, else by the place of its first record (the first of `records`, so a
+   *  run sent in pages needs `earlierId`). Taken once
+   *  per original device and seq, so a resend adds nothing. Refused `busy` while one of this session's own turns or
+   *  compactions runs (late records inside a running turn would end it early for a reader of the log): the sender
+   *  tries again. How many records it appended (the notes not counted). */
+  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string; earlierId?: string }): number {
     const s = this.#sessions.get(id);
     if (!s) throw new ContractError("not_found", `no session ${id}`);
     if (!(s.driver !== undefined && this.#runHere(s))) {
       throw new ContractError("refused", `this computer doesn't run session ${id}; another computer's earlier records go to the one that does`);
     }
+    if (s.running !== undefined || s.compacting !== undefined) {
+      throw new ContractError("busy", `session ${id} is running a turn here; its earlier records from ${opts.computer} go in once it ends`);
+    }
     for (const r of records) {
       if (r.sessionId !== id) throw new ContractError("invalid", `a record of ${r.sessionId} was sent as ${id}'s`);
       if (!Number.isInteger(r.seq) || r.seq < 0) throw new ContractError("invalid", `session ${id}: a late record with no place (seq ${String(r.seq)})`);
     }
-    const seen = this.#lateSeenOf(s);
-    const key = (seq: number) => `${opts.from}\u0000${seq}`;
-    const fresh = records.filter((r) => r.type !== "status" && !seen.has(key(r.seq)));
+    const late = this.#lateOf(s);
+    const run = opts.earlierId !== undefined ? `e:${opts.earlierId}` : `s:${records[0]?.seq ?? 0}`;
+    // Where each came from: its own first place when it is late already, else the sender's.
+    const origin = (r: SessionRecord): LateFrom => {
+      const own = (r as { lateFrom?: Partial<LateFrom> }).lateFrom;
+      if (own !== undefined && typeof own.device === "string" && typeof own.seq === "number" && typeof own.computer === "string" && typeof own.ts === "number") {
+        return { device: own.device, computer: own.computer, seq: own.seq, ts: own.ts, ...(typeof own.epoch === "number" ? { epoch: own.epoch } : {}), ...(typeof own.note === "string" ? { note: own.note } : {}) };
+      }
+      return { device: opts.from, computer: opts.computer, seq: r.seq, ts: r.ts, ...(r.epoch === undefined ? {} : { epoch: r.epoch }) };
+    };
+    const fresh = records.filter((r) => r.type !== "status" && !late.seen.has(lateKey(origin(r))));
     if (fresh.length === 0) return 0;
     const log = this.#logOf(s);
-    type LateRecord = SessionRecord & { late: true; copiedFrom?: string; lateFrom: { device: string; computer: string; seq: number; ts: number; epoch?: number } };
     const write = (record: LateRecord) => {
       log.append(record, { durable: true });
-      seen.add(key(record.lateFrom.seq));
+      late.seen.add(lateKey(record.lateFrom));
       s.subscribers.emit(structuredClone(record));
       if (this.#taps.size > 0) this.#taps.emit({ record: structuredClone(record), view: this.#viewOf(s) });
     };
-    if (!seen.has(key(-1))) {
-      const now = this.#clock.now();
+    const note = (run: string) => {
+      const from: LateFrom = { device: opts.from, computer: opts.computer, seq: -1, ts: this.#clock.now(), note: run };
+      if (late.seen.has(lateKey(from))) return;
       const epoch = this.#epoch?.();
       write({
         type: "input", disposition: "note",
@@ -817,19 +851,21 @@ export class DurableSessionHost implements SessionHost {
           from: "note", by: { kind: "core" }, label: `Earlier on ${opts.computer}`.slice(0, 120),
           text: `What follows happened on ${opts.computer} before it followed this conversation here. It is kept after the rest, marked late.`,
         },
-        seq: log.length, sessionId: id, ts: now, ...(epoch === undefined ? {} : { epoch }),
-        late: true, lateFrom: { device: opts.from, computer: opts.computer, seq: -1, ts: now },
+        seq: log.length, sessionId: id, ts: from.ts, ...(epoch === undefined ? {} : { epoch }), late: true, lateFrom: from,
       } as LateRecord);
-    }
+    };
     for (const r of fresh) {
-      const { seq, sessionId: _id, ts, epoch, late: _l, copiedFrom: _c, lateFrom: _f, ...body } = structuredClone(r) as SessionRecord & {
+      const from = origin(r);
+      // A record already late from elsewhere goes in as it is (its own note came with it); the sender's own open a run.
+      if (from.device === opts.from && from.note === undefined) note(run);
+      const { seq: _seq, sessionId: _id, ts: _ts, epoch: _epoch, late: _l, copiedFrom, lateFrom: _f, ...body } = structuredClone(r) as SessionRecord & {
         late?: true; copiedFrom?: string; lateFrom?: unknown;
       };
       let kept = body as SessionRecordBody;
       if (kept.type === "driver" && kept.event.type === "session_grant") kept = { ...kept, event: { ...kept.event, type: COPIED_GRANT_EVENT_TYPE } };
       write({
-        ...kept, seq: log.length, sessionId: id, ts, ...(epoch === undefined ? {} : { epoch }),
-        late: true, copiedFrom: opts.from, lateFrom: { device: opts.from, computer: opts.computer, seq, ts, ...(epoch === undefined ? {} : { epoch }) },
+        ...kept, seq: log.length, sessionId: id, ts: r.ts, ...(r.epoch === undefined ? {} : { epoch: r.epoch }),
+        late: true, copiedFrom: typeof copiedFrom === "string" ? copiedFrom : opts.from, lateFrom: from,
       } as unknown as LateRecord);
     }
     s.view = { ...s.view, updatedAt: this.#clock.now() };
@@ -837,19 +873,21 @@ export class DurableSessionHost implements SessionHost {
     return fresh.length;
   }
 
-  /** The devices and seqs whose late records the session holds, read from its log once. */
-  #lateSeenOf(s: Hosted): Set<string> {
-    if (s.lateSeen !== undefined) return s.lateSeen;
-    const seen = new Set<string>();
+  /** The late records the session holds, by where they first came from (a run's note by its run); read from its log
+   *  once. */
+  #lateOf(s: Hosted): { seen: Set<string> } {
+    if (s.late !== undefined) return s.late;
+    const late = { seen: new Set<string>() };
     const log = this.#logOf(s);
     for (let from = 0; from < log.length; from += RESTATE_PAGE) {
       for (const r of log.read(from, from + RESTATE_PAGE)) {
-        const lf = (r as { lateFrom?: { device?: unknown; seq?: unknown } }).lateFrom;
-        if (typeof lf?.device === "string" && typeof lf.seq === "number") seen.add(`${lf.device}\u0000${lf.seq}`);
+        const lf = (r as { lateFrom?: Partial<LateFrom> }).lateFrom;
+        if (typeof lf?.device !== "string" || typeof lf.seq !== "number") continue;
+        late.seen.add(lateKey(lf as LateFrom));
       }
     }
-    s.lateSeen = seen;
-    return seen;
+    s.late = late;
+    return late;
   }
 
   #earlierPath(s: Hosted, earlierId: string): string {
@@ -869,7 +907,7 @@ export class DurableSessionHost implements SessionHost {
     for (const q of replay.questions) s.questions.add(q);
     if (replay.running && replay.runningOn !== undefined && replay.runningOn !== this.#computer) s.foreignTurn = { on: replay.runningOn };
     else delete s.foreignTurn;
-    s.lateSeen = undefined;
+    s.late = undefined;
     s.view = { ...viewOfMeta(s.meta, replay.status, at, replay.failure) };
     this.#emitView(s);
   }
