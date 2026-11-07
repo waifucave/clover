@@ -58,7 +58,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  clampSentAt, pluginIdToSegment, TRANSIENT_EVENT_TYPES,
+  clampSentAt, pluginIdToSegment, SessionView as SessionViewSchema, TRANSIENT_EVENT_TYPES,
   type Caller, type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin,
 } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
@@ -71,7 +71,7 @@ import {
 } from "../contracts/session-host";
 import { readJson, writeJsonAtomic } from "./atomic-file";
 import { MAX_RECORD_BYTES, RecordTooLargeError, SessionLogFile, shrinkRecord } from "./event-log";
-import { mintSessionId, sessionLogPath, sessionMetaPath, transcriptsDir } from "./ids";
+import { mainSessionIdFor, mintSessionId, SESSION_ID_PREFIX, sessionLogPath, sessionMetaPath, transcriptsDir } from "./ids";
 
 /** After the user's interrupt, how long a driver that said it stopped has to end its turn before the host ends it. */
 export const INTERRUPT_GRACE_MS = 5_000;
@@ -364,17 +364,25 @@ function trackCall(open: Map<string, string>, event: { type: string; [key: strin
 }
 
 /** A record as this computer keeps a copy of it: a grant renamed so it grants nothing here, marked late if so. */
-function copied(r: SessionRecord, late: boolean): SessionRecord {
-  let copy = structuredClone(r) as SessionRecord & { late?: true };
+function copied(r: SessionRecord, late: boolean, from: string): SessionRecord {
+  let copy = structuredClone(r) as SessionRecord & { late?: true; copiedFrom?: string };
   if (copy.type === "driver" && copy.event.type === "session_grant") copy = { ...copy, event: { ...copy.event, type: COPIED_GRANT_EVENT_TYPE } };
   if (late) copy.late = true;
+  // The record's first copy names where it came from; a copy of a copy keeps that (the usage counter skips both).
+  copy.copiedFrom ??= from;
   return copy;
 }
 
-/** Whether a held record is the one copied again: alike but for the late mark (a resend can carry another). */
+/** Whether a record is a copy from another computer (`ingest`): its usage is counted where it ran. */
+export function isCopiedRecord(r: SessionRecord): boolean {
+  return typeof (r as { copiedFrom?: unknown }).copiedFrom === "string";
+}
+
+/** Whether a held record is the one copied again: alike but for the late mark and the copy's source (a resend can
+ *  carry another of either). */
 function sameRecord(held: SessionRecord, incoming: SessionRecord): boolean {
-  const { late: _a, ...a } = held as SessionRecord & { late?: true };
-  const { late: _b, ...b } = incoming as SessionRecord & { late?: true };
+  const { late: _a, copiedFrom: _c, ...a } = held as SessionRecord & { late?: true; copiedFrom?: string };
+  const { late: _b, copiedFrom: _d, ...b } = incoming as SessionRecord & { late?: true; copiedFrom?: string };
   return Bun.deepEquals(a, b);
 }
 
@@ -663,6 +671,22 @@ export class DurableSessionHost implements SessionHost {
     return this.#sessions.get(id)?.driver !== undefined;
   }
 
+  /** A copied session's view is checked as a client's would be, and must be what its id says: a `b_` id is its bot's
+   *  main conversation and nothing else, and a minted id carries its kind's prefix. A view naming this computer as the
+   *  one running it is refused, unless it is a bot's main conversation whose lease is elsewhere (review S1). */
+  #checkCopiedView(view: SessionView): void {
+    const parsed = SessionViewSchema.safeParse(view);
+    if (!parsed.success) throw new ContractError("invalid", `a copied session's view doesn't parse: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+    if (!view.id.startsWith(SESSION_ID_PREFIX[view.kind])) throw new ContractError("invalid", `session ${view.id} isn't a ${view.kind}'s id`);
+    if (view.kind === "bot" && (view.bot === undefined || view.id !== mainSessionIdFor(view.bot))) {
+      throw new ContractError("invalid", `session ${view.id} isn't ${view.bot === undefined ? "a bot" : view.bot}'s main conversation`);
+    }
+    if (this.#computer !== undefined && view.computer === this.#computer) {
+      const leaseElsewhere = view.kind === "bot" && this.#runsHere !== undefined && !this.#runsHere(view);
+      if (!leaseElsewhere) throw new ContractError("refused", `session ${view.id} names this computer as the one running it; its records aren't copied here`);
+    }
+  }
+
   /** The next seq the session's log expects (its length; 0 for a session this computer doesn't know): lane H's
    *  `SessionRecordSink.head`, where records copied from the computer running it go on. */
   head(id: string): number {
@@ -677,7 +701,8 @@ export class DurableSessionHost implements SessionHost {
    *    a different record at a held seq is a fork (two computers wrote that place) and refuses the batch `conflict`;
    *    one past the head is a gap and nothing is taken (the sync asks for the history first);
    *  * a copied `session_grant` is kept as `session_grant_copied`, which grants nothing here and never reaches clients;
-   *  * `late` (from an earlier lease) marks each record it appends;
+   *  * `late` (from an earlier lease) marks each record it appends, and each is marked `copiedFrom` the sender (so
+   *    the usage counter, which counts a turn where it ran, skips it);
    *  * no driver ever runs, and nothing is sent on (taps aren't told: the copy isn't this computer's to sync).
    *  A session this computer runs takes no copies: any session but a bot's main conversation, and that one while the
    *  lease is here or a turn of its still runs here. A bot's main conversation keeps its driver on every computer (the
@@ -685,7 +710,11 @@ export class DurableSessionHost implements SessionHost {
    *  are kept as a restart would read them, so a takeover runs what waits and catches the open turn up. A known
    *  session's runner follows `view`. */
   ingest(view: SessionView, records: SessionRecord[], opts: { from: string; late: boolean }): void {
+    this.#checkCopiedView(view);
     let s = this.#sessions.get(view.id);
+    if (s !== undefined && (s.meta.kind !== view.kind || s.meta.bot !== view.bot || s.meta.parent !== view.parent)) {
+      throw new ContractError("invalid", `session ${view.id} is a ${s.meta.kind} here; ${opts.from} sent it as a ${view.kind}`);
+    }
     if (s !== undefined && s.driver !== undefined && (s.running !== undefined || s.compacting !== undefined || this.#runHere(s))) {
       throw new ContractError("refused", `this computer runs session ${view.id}; its records aren't copied here from ${opts.from}`);
     }
@@ -696,7 +725,7 @@ export class DurableSessionHost implements SessionHost {
       if (r.sessionId !== view.id) throw new ContractError("invalid", `a record of ${r.sessionId} was copied as ${view.id}'s`);
       if (r.seq < next) {
         const held = log!.read(r.seq, r.seq + 1)[0];
-        if (held === undefined || !sameRecord(held, copied(r, false))) {
+        if (held === undefined || !sameRecord(held, copied(r, false, opts.from))) {
           throw new ContractError("conflict", `session ${view.id}: this computer holds another record at seq ${r.seq} than ${opts.from} sent; the two logs forked there`);
         }
         continue;
@@ -734,7 +763,7 @@ export class DurableSessionHost implements SessionHost {
     let appended = 0;
     for (const r of records) {
       if (r.seq < target.length) continue;
-      const copy = copied(r, opts.late);
+      const copy = copied(r, opts.late, opts.from);
       target.append(copy, { durable: copy.type !== "driver" });
       hosted.subscribers.emit(structuredClone(copy));
       replay.apply(copy);
