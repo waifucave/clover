@@ -103,6 +103,12 @@ describe("remote clients over links, on the Clover server", () => {
     await expect(door.hello({ device: "r".repeat(32), link: true }, 3, hello("remote", "r".repeat(32)), () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED }); // revoked
     await expect(door.hello({ device: phone, link: true }, 4, hello("web", phone), () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED }); // the hello's role isn't the registry's
     expect((await door.hello({ device: phone, link: true }, 5, hello("remote", phone), () => {})).conn.role).toBe("remote");
+    // A refusal before linkHello still spends the token the door minted for that hello.
+    const spent: string[] = [];
+    const spending = linkClientServer(s, { get: (id) => devices.get(id) as never }, (t) => { spent.push(t); tokens.revoke(t); });
+    const h = hello("remote", laptop);
+    await expect(spending.hello({ device: laptop, link: true }, 6, h, () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+    expect(spent).toEqual([h.token]);
   });
 
   test("each minted token is spent by its hello, and the server closes a link connection itself", async () => {
