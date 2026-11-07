@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseProfileImagePath } from "../../src/platform/login/live";
 import {
   renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, renderAppSystemdUnit, renderAppSchtasksXml,
   renderXdgAutostart, loginLabel, loginUnitPath, parkedPlistPath, appUnitPath, xdgAutostartPath,
@@ -157,4 +158,17 @@ test("a server's logon task (Windows) starts the binary if it is there, else its
   expect(schtasksFallbackProblem("D:\\srv & co\\daemon\\clover-core.exe", "D:\\srv & co\\daemon\\clover-core.old.exe", user)).toBeUndefined();
   expect(schtasksFallback("D:\\srv & co\\daemon\\clover-core.exe", "D:\\srv & co\\daemon\\clover-core.old.exe", user).workingDir).toBe("D:\\srv & co\\daemon");
   expect(schtasksFallbackProblem(bin, "C:\\elsewhere\\clover-core.old.exe", user)).toContain("isn't beside");
+});
+
+test("a server on a network share (UNC) is refused, with why", () => {
+  expect(schtasksFallbackProblem("\\\\nas\\home\\a\\.clover\\bin\\daemon\\clover-core.exe", "\\\\nas\\home\\a\\.clover\\bin\\daemon\\clover-core.old.exe", "\\\\nas\\home\\a")).toContain("network share");
+  expect(schtasksFallbackProblem("//nas/home/a/.clover/bin/daemon/clover-core.exe", "//nas/home/a/.clover/bin/daemon/clover-core.old.exe", "C:\\Users\\a")).toContain("network share");
+});
+
+test("the account's logon profile, from the registry's ProfileList, its variables expanded", () => {
+  const out = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1\r\n    ProfileImagePath    REG_EXPAND_SZ    %SystemDrive%\\Users\\R&D ^50% !team\r\n\r\n";
+  expect(parseProfileImagePath(out, { SYSTEMDRIVE: "D:" })).toBe("D:\\Users\\R&D ^50% !team");
+  expect(parseProfileImagePath(out, {})).toBeUndefined();
+  expect(parseProfileImagePath("    ProfileImagePath    REG_SZ    C:\\Users\\a\r\n", {})).toBe("C:\\Users\\a");
+  expect(parseProfileImagePath("ERROR: The system was unable to find the specified registry key or value.", {})).toBeUndefined();
 });

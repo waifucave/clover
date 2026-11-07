@@ -5,7 +5,7 @@ import { migrateEarlierLayout, parseServerArgs, serverBinary, serverInstall, ser
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1981,9 +1981,20 @@ if (import.meta.main) {
       process.exit(1);
     }
     const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+    // Windows: the logon task names its folder under %USERPROFILE% as the account sees it at logon, which this
+    // process's own USERPROFILE may not be (a profile moved, a session with another environment): the registry says.
+    let profile: string | undefined;
+    if (base.os === "win32") {
+      profile = winUser === undefined ? undefined : await windowsProfilePath(winUser, bunRunner);
+      if (profile === undefined) {
+        console.error("server install: this account's profile folder could not be read from the registry (ProfileList), so its logon task can't be written");
+        process.exit(1);
+      }
+      if (profile.toLowerCase() !== homedir().toLowerCase()) console.log(`server install: this account logs on with its profile at ${profile}, not ${homedir()}: the logon task uses ${profile}`);
+    }
     mkdirSync(base.logsDir, { recursive: true });
     const deps = {
-      spec: winUser ? { ...base, winUser } : base,
+      spec: { ...base, ...(winUser ? { winUser } : {}), ...(profile !== undefined ? { homedir: profile } : {}) },
       os: liveLoginOsDeps(), run: bunRunner, loginEnable, loginRemove, stopDaemon: stopRunningDaemon,
       readMarker: (home: string) => readInstallMarker(home), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
       user: process.env.USER ?? process.env.LOGNAME, log: (line: string) => console.log(line),
@@ -2025,7 +2036,9 @@ if (import.meta.main) {
         reRegister: async (bin) => {
           const base = currentLoginSpec();
           const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
-          return (await loginEnable({ ...base, bin, fallbackBin: oldBinary(bin), ...(winUser ? { winUser } : {}) }, liveLoginOsDeps())).registered;
+          const profile = winUser === undefined ? undefined : await windowsProfilePath(winUser, bunRunner);
+          if (profile === undefined) return false;
+          return (await loginEnable({ ...base, bin, fallbackBin: oldBinary(bin), winUser: winUser!, homedir: profile }, liveLoginOsDeps())).registered;
         },
       });
       if (migrated.kind === "restart") process.exit(UPDATE_RESTART_EXIT_CODE);

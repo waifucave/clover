@@ -16,7 +16,17 @@ const F_FULLFSYNC = 51;
  *  a plain fsync; any other failure (EIO, a dying disk) throws. */
 export const FULLFSYNC_UNSUPPORTED = new Set([45 /* ENOTSUP */, 25 /* ENOTTY */, 22 /* EINVAL */]);
 
-/** fcntl(fd, F_FULLFSYNC), and the errno it left (`__error()`). */
+/**
+ * fcntl(fd, F_FULLFSYNC), and the errno it left (`__error()`). They are two ffi calls, so errno is read in a second
+ * native call: nothing of ours runs on this thread between them, but the runtime could in principle make a failing
+ * system call there (a GC step) and change errno. The window is accepted, because a misread errno fails safe:
+ *   - read as "unsupported" when it wasn't: the plain fsync that follows meets the same failure (a disk error stays),
+ *     and throws;
+ *   - read as another error when it was "unsupported": the flush throws, the swap isn't done, and it is tried later.
+ * A C shim reading errno in the same call (the `cc` of bun:ffi) was weighed and refused: it compiles C from a file at
+ * run time, and a file a same-user process could swap before the compile would be a door for foreign code into the
+ * core.
+ */
 type FullFsync = (fd: number) => { result: number; errno: number };
 
 let fullFsync: FullFsync | null | undefined;

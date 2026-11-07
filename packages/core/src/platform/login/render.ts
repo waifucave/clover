@@ -344,6 +344,7 @@ export function schtasksFallback(bin: string, fallback: string, homedir: string)
 
 /** Why the logon task's fallback can't be written for these paths, or undefined. */
 export function schtasksFallbackProblem(bin: string, fallback: string, homedir: string): string | undefined {
+  if (/^[\\/]{2}/.test(bin)) return `${bin} is on a network share: a server installs on this computer's own disk (its logon task can start before the share is reachable, and a swap there isn't atomic)`;
   if (winDir(bin) !== winDir(fallback)) return `${fallback} isn't beside ${bin}`;
   for (const n of [winBase(bin), winBase(fallback)]) if (!/^[A-Za-z0-9._-]+$/.test(n)) return `${n}: not one of the daemon's file names`;
   const home = homedir.replace(/[\\/]+$/, "").toLowerCase();

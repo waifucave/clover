@@ -567,4 +567,34 @@ describe("a server's daemon updating itself", () => {
     expect(() => replaceBinary(bin, `${bin}.missing`, oldBinary(bin), refusing)).toThrow("injected");
     expect(readFileSync(bin, "utf8")).toBe("new");
   });
+
+  // Windows is where healing happens: these build the state a cut between its two renames leaves, with its .exe names,
+  // from plain files, so they run on every OS (CI's Windows leg included).
+  const cutBetweenRenames = (newBytes: string, recorded: string) => {
+    const home = mkdtempSync(join(tmpdir(), "clover-heal-"));
+    const bin = join(home, "bin", "daemon", "clover-core.exe");
+    mkdirSync(join(home, "bin", "daemon"), { recursive: true });
+    mkdirSync(join(home, "update"), { recursive: true });
+    writeFileSync(oldBinary(bin), "old version");
+    writeFileSync(`${bin}.new`, newBytes);
+    writeFileSync(join(home, "update", "boot.json"), JSON.stringify({ version: "1.3.0", boots: 0, sha512: createHash("sha512").update(recorded).digest("base64") }));
+    return { home, bin };
+  };
+
+  test("healing, Windows names: .new that hashes to the recorded SHA-512 finishes the swap, and its starts stay watched", () => {
+    const c = cutBetweenRenames("new version", "new version");
+    expect(healFromOld(c.home, c.bin, oldBinary(c.bin))).toEqual({ kind: "finished the swap" });
+    expect(readFileSync(c.bin, "utf8")).toBe("new version");
+    expect(existsSync(`${c.bin}.new`)).toBe(false);
+    expect(beginUpdatedBoot(c.home, c.bin)).toBe("watching");
+    expect(superviseTarget(oldBinary(c.bin))).toBe(c.bin);
+  });
+
+  test("healing, Windows names: a .new that doesn't hash to it restores the old copy and drops the record", () => {
+    const c = cutBetweenRenames("something else", "new version");
+    expect(healFromOld(c.home, c.bin, oldBinary(c.bin))).toEqual({ kind: "restored", from: oldBinary(c.bin) });
+    expect(readFileSync(c.bin, "utf8")).toBe("old version");
+    expect(existsSync(join(c.home, "update", "boot.json"))).toBe(false);
+    expect(healFromOld(c.home, c.bin, oldBinary(c.bin))).toEqual({ kind: "not needed" });
+  });
 });
