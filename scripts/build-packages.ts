@@ -89,9 +89,11 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
 export const LINK_BUILD = ["cargo", "build", "--release", "--locked", "--manifest-path", "native/link/Cargo.toml"] as const;
 export const LINK_OUTPUT = "native/link/target/release/clover-link";
 
-/** What a package must hold: the daemon, its link sidecar beside it, and the AppArmor profile in the app's resources. */
+/** What a package must hold: the daemon, its link sidecar beside it, the AppArmor profile in the app's resources, and
+ *  each bundled top-level plugin's manifest in resources/plugins (the registry's `bundledDirs`). */
 export const REQUIRED_FILES = [
   "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
+  "/opt/Clover/resources/plugins/clover/clover.json", "/opt/Clover/resources/plugins/alpha/clover.json",
 ] as const;
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
 export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";

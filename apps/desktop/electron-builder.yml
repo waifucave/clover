@@ -26,6 +26,21 @@ extraResources:
       - clover-core.exe
       - clover-link
       - clover-link.exe
+  # The bundled plugins (the registry's `bundledDirs`, packages/core/src/registry): the repository's plugins/ as the
+  # app's read-only resources/plugins/, each subfolder one top-level plugin (`clover`, `alpha`). The core finds it
+  # beside its own folder: <dirname(clover-core)>/../plugins, i.e. Clover.app/Contents/Resources/plugins on macOS,
+  # <install>\resources\plugins on Windows, /opt/Clover/resources/plugins in the Linux packages. Tests, tsconfigs and
+  # anything installed (node_modules) stay out.
+  - from: ../../plugins
+    to: plugins
+    filter:
+      - "**/*"
+      - "!**/node_modules/**"
+      - "!**/test/**"
+      - "!**/tests/**"
+      - "!**/*.test.ts"
+      - "!**/*.test.tsx"
+      - "!**/tsconfig*.json"
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
 npmRebuild: false
 nodeGypRebuild: false

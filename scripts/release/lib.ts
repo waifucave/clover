@@ -158,6 +158,22 @@ export function identityTeam(identity: string): string {
  * only the entitlements it needs. The daemon is Bun, whose JIT needs `allow-jit` and, until the SIP-on check drops
  * it, `allow-unsigned-executable-memory` (scripts/clover-core.entitlements); the link sidecar is Rust and needs none.
  */
+/** The bundled plugins' folder in the app's resources (electron-builder.yml): the registry's `bundledDirs` entry. The
+ *  core resolves it as <dirname(clover-core)>/../plugins, the daemon living in resources/daemon/. */
+export const BUNDLED_PLUGINS_DIR = "plugins";
+/** The top-level plugins every build ships (each with its manifest). */
+export const BUNDLED_PLUGIN_IDS = ["clover", "alpha"] as const;
+
+/** What's wrong with a packaged app's bundled plugins under `resources`: each top-level plugin's manifest is there,
+ *  and no test, tsconfig or node_modules came along. */
+export function bundledPluginsProblems(resources: string, exists: (path: string) => boolean, walk: (dir: string) => string[]): string[] {
+  const dir = join(resources, BUNDLED_PLUGINS_DIR);
+  const problems = BUNDLED_PLUGIN_IDS.filter((id) => !exists(join(dir, id, "clover.json"))).map((id) => `${join(dir, id, "clover.json")} is missing: the ${id} plugin isn't bundled`);
+  const stray = walk(dir).filter((rel) => /(^|\/)(node_modules|tests?)\//.test(rel) || /\.test\.tsx?$/.test(rel) || /(^|\/)tsconfig[^/]*\.json$/.test(rel));
+  if (stray.length > 0) problems.push(`${dir} holds files a release leaves out: ${stray.slice(0, 5).join(", ")}${stray.length > 5 ? ", …" : ""}`);
+  return problems;
+}
+
 export const RESOURCE_BINARIES = [
   { file: "clover-core", identifier: "com.waifucave.clover.core", entitlements: "scripts/clover-core.entitlements" },
   { file: "clover-link", identifier: "com.waifucave.clover.link", entitlements: undefined },
