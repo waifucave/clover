@@ -118,15 +118,19 @@ export function configProblems(cfg: PlatformCi, linuxFiles: readonly string[], r
 
 export interface FileResult { tests: number; skipped: number; failures: number }
 
-/** Per file, from bun's JUnit report: its top-level <testsuite> (two-space indent) totals. */
+/**
+ * Per file, from bun's JUnit report: its top-level <testsuite> (two-space indent) totals. A `test.todo` is reported
+ * as skipped (`<skipped message="TODO" />`) but is pending on every OS, not a Linux skip: it is left out of `skipped`.
+ */
 export function parseJunit(xml: string): Map<string, FileResult> {
   const out = new Map<string, FileResult>();
-  for (const m of xml.matchAll(/^ {2}<testsuite ([^>]*)>/gm)) {
+  for (const m of xml.matchAll(/^ {2}<testsuite ([^>]*?)(?:\/>|>([\s\S]*?)^ {2}<\/testsuite>)/gm)) {
     const attr = (name: string): string | undefined => new RegExp(`\\b${name}="([^"]*)"`).exec(m[1]!)?.[1];
     const file = attr("file");
     if (file === undefined) continue;
+    const todos = (m[2] ?? "").match(/<skipped message="TODO"/g)?.length ?? 0;
     const prev = out.get(file) ?? { tests: 0, skipped: 0, failures: 0 };
-    out.set(file, { tests: prev.tests + Number(attr("tests") ?? 0), skipped: prev.skipped + Number(attr("skipped") ?? 0), failures: prev.failures + Number(attr("failures") ?? 0) });
+    out.set(file, { tests: prev.tests + Number(attr("tests") ?? 0), skipped: prev.skipped + Math.max(0, Number(attr("skipped") ?? 0) - todos), failures: prev.failures + Number(attr("failures") ?? 0) });
   }
   return out;
 }

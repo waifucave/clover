@@ -119,6 +119,34 @@ describe("platform-tests", () => {
     ]);
   });
 
+  test("a todo is pending on every OS, not a Linux skip: it doesn't count as skipped", () => {
+    const xml = [
+      '<testsuites name="bun test" tests="5">',
+      '  <testsuite name="t.test.ts" file="t.test.ts" tests="3" failures="0" skipped="2" time="0">',
+      '    <testsuite name="Tree" file="t.test.ts" tests="3" failures="0" skipped="2">',
+      '      <testcase name="ok" file="t.test.ts" />',
+      '      <testcase name="later" file="t.test.ts">',
+      '        <skipped message="TODO" />',
+      '      </testcase>',
+      '      <testcase name="gated" file="t.test.ts">',
+      '        <skipped />',
+      '      </testcase>',
+      '    </testsuite>',
+      '  </testsuite>',
+      '  <testsuite name="u.test.ts" file="u.test.ts" tests="2" failures="0" skipped="1" time="0">',
+      '    <testcase name="pending" file="u.test.ts">',
+      '      <skipped message="TODO" />',
+      '    </testcase>',
+      '  </testsuite>',
+      '  <testsuite name="e.test.ts" file="e.test.ts" tests="0" failures="0" skipped="0" time="0" />',
+      '</testsuites>',
+    ].join("\n");
+    const ran = parseJunit(xml);
+    expect(ran.get("t.test.ts")).toEqual({ tests: 3, skipped: 1, failures: 0 });
+    expect(ran.get("u.test.ts")).toEqual({ tests: 2, skipped: 0, failures: 0 });
+    expect(ran.get("e.test.ts")).toEqual({ tests: 0, skipped: 0, failures: 0 });
+  });
+
   test("a clear Bun crash is exit 133 or a signal with no summary", () => {
     expect(isClearCrash(133, "")).toBe(true);
     expect(isClearCrash(null, "")).toBe(true);

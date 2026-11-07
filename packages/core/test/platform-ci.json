@@ -38,8 +38,7 @@
     "test/platform/win-pipe.test.ts": "Windows' named pipes: Windows only",
     "test/runtime-sdk/embedded-live-path-protection.test.ts": "a live run with its env only, on every OS",
     "test/runtime-sdk/hooks-measure.e2e.test.ts": "one measurement needs the built runtime binary, on every OS",
-    "test/runtime-sdk/worker-churn-soak.test.ts": "a soak, run on demand with its env, on every OS",
-    "test/tree/conformance.test.ts": "R1 and R15 are pending (todo) until J-M2 (#177)"
+    "test/runtime-sdk/worker-churn-soak.test.ts": "a soak, run on demand with its env, on every OS"
   },
   "darwinGateAllowed": {
     "test/lock.test.ts": "\"darwin\" is classifyLockFailure's platform argument (the errno table per OS), not a gate"
