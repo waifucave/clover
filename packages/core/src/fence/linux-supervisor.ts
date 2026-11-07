@@ -271,7 +271,7 @@ export function openSupervisorLib(): {
   renameat2(olddirfd: number, oldpath: unknown, newdirfd: number, newpath: unknown, flags: number): number;
   fchmodat(dirfd: number, path: unknown, mode: number, flags: number): number;
   process_vm_readv(pid: number, local: unknown, liovcnt: number, remote: unknown, riovcnt: number, flags: number): number | bigint;
-  errnoLocation(): unknown;
+  __errno_location(): unknown;
   getpid(): number;
 } | null {
   const lib = ffiLib("linux-supervisor", "libc.so.6", {
@@ -287,7 +287,7 @@ export function openSupervisorLib(): {
     renameat2: { args: ["i32", "ptr", "i32", "ptr", "u32"], returns: "i32" },
     fchmodat: { args: ["i32", "ptr", "u32", "u32"], returns: "i32" },
     process_vm_readv: { args: ["i32", "ptr", "u64", "ptr", "u64", "u64"], returns: "i64" },
-    errnoLocation: { args: [], returns: "ptr" },
+    __errno_location: { args: [], returns: "ptr" },
     getpid: { args: [], returns: "i32" },
   });
   return lib as never;
@@ -296,7 +296,9 @@ export function openSupervisorLib(): {
 /** Our own libc errno after a failed call (the wrappers return -1 and set it). */
 function errNo(lib: SupervisorLib): number {
   try {
-    const p = lib.errnoLocation() as unknown;
+    const f = (lib as unknown as Record<string, () => unknown>).__errno_location;
+    if (typeof f !== "function") return EACCES;
+    const p = f() as unknown;
     const { toArrayBuffer } = require("bun:ffi") as typeof import("bun:ffi");
     return Buffer.from(toArrayBuffer(p as never, 0, 4) as ArrayBuffer).readInt32LE(0);
   } catch { return EACCES; }
