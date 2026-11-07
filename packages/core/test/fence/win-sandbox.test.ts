@@ -37,6 +37,7 @@ import {
   icaclsRemoveDenyArgs,
   mkdirArgs,
   removeDirArgs,
+  claimDirArgs,
   installerTargetSid,
   psEncodedArgs,
   knownFolderArgs,
@@ -112,9 +113,9 @@ describe("the pinned launcher", () => {
 
 describe("the sandbox command's args", () => {
   test("setup provisions the principal under Clover's sublayer, loopback closed", () => {
-    // The principal is required: no bare-prefix default.
-    const a = setupArgs("C:\\Clover\\srt-win.exe", CLOVER_WFP_SUBLAYER, "clover-sb-f41c96d1");
-    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-f41c96d1", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    // The principal and owner are required: no bare-prefix default.
+    const a = setupArgs("C:\\Clover\\srt-win.exe", CLOVER_WFP_SUBLAYER, "clover-sb-f41c96d1", "S-1-5-21-1");
+    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-f41c96d1", "--sublayer-guid", CLOVER_WFP_SUBLAYER, "--owner-sid", "S-1-5-21-1"]);
     expect(a.join(" ")).not.toContain("allow-loopback");
   });
 
@@ -520,6 +521,14 @@ describe("the icacls/cmd shapes (measured on the VM)", () => {
     const a = mkdirArgs("C:\\Users\\x\\Startup");
     expect(a.slice(0, 5)).toEqual(["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand"]);
     expect(Buffer.from(a[5]!, "base64").toString("utf16le")).toContain('New-Item -ItemType Directory -Force -Path "C:\\Users\\x\\Startup"');
+  });
+  test("markers claim refuses non-admin owners and locks the DACL", () => {
+    const a = claimDirArgs("C:\\ProgramData\\Clover Sandbox");
+    expect(a[4]).toBe("-EncodedCommand");
+    const script = Buffer.from(a[5]!, "base64").toString("utf16le");
+    expect(script).toContain("takeown.exe");
+    expect(script).toContain("icacls.exe");
+    expect(script).toContain("S-1-5-32-544");
   });
 });
 

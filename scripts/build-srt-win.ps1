@@ -41,6 +41,12 @@ $crateDir = Join-Path $srcDir "vendor/srt-win-src"
 $outDir = Join-Path $root "vendor/srt-win"
 $outExe = Join-Path $outDir "srt-win.exe"
 
+# Pinned Clover patches (file name -> SHA-256). `Apply-Patches` refuses
+# unknown or extra `*.patch` files and any hash mismatch before building.
+$PinnedPatches = @{
+  "0001-per-principal-setup-records.patch" = "0af8666054b6ab9d35d6ee1a8782bea8206b409f6f973289f6294e66673cfc95"
+}
+
 function Check-Tools {
   foreach ($t in @("git", "cargo") ) {
     if (-not (Get-Command $t -ErrorAction SilentlyContinue)) { throw "build-srt-win: $t is not on PATH" }
@@ -74,9 +80,19 @@ function Sync-Source {
 function Apply-Patches {
   # Clover's per-principal patch set (vendor/srt-win/patches/*.patch).
   # Applied after the checkout, before the build, in sorted order.
+  # Only pinned files may be present, and each must match its hash.
   $patchDir = Join-Path $root "vendor/srt-win/patches"
-  $patches = Get-ChildItem -Path $patchDir -Filter "*.patch" -ErrorAction SilentlyContinue | Sort-Object Name
-  foreach ($p in $patches) {
+  $found = @(Get-ChildItem -Path $patchDir -Filter "*.patch" -ErrorAction SilentlyContinue | Sort-Object Name)
+  $pinned = @($PinnedPatches.Keys | Sort-Object)
+  $foundNames = @($found | ForEach-Object { $_.Name })
+  $extra = @($foundNames | Where-Object { $_ -notin $pinned })
+  if ($extra.Count -gt 0) { throw "build-srt-win: unpinned patch files: $($extra -join ', ')" }
+  $missing = @($pinned | Where-Object { $_ -notin $foundNames })
+  if ($missing.Count -gt 0) { throw "build-srt-win: pinned patch files missing: $($missing -join ', ')" }
+  foreach ($p in $found) {
+    $got = (Get-FileHash -Algorithm SHA256 $p.FullName).Hash.ToLower()
+    $want = $PinnedPatches[$p.Name].ToLower()
+    if ($got -ne $want) { throw "build-srt-win: patch hash mismatch for $($p.Name): got $got, expected $want" }
     Write-Host "build-srt-win: applying $($p.Name)"
     Push-Location $srcDir
     try {
@@ -86,7 +102,7 @@ function Apply-Patches {
       if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch failed: $($p.Name)" }
     } finally { Pop-Location }
   }
-  if (-not $patches) { Write-Host "build-srt-win: no patches to apply" }
+  if ($found.Count -eq 0) { Write-Host "build-srt-win: no patches to apply" }
 }
 
 function Build-Launcher {

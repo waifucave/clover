@@ -34,7 +34,7 @@ export {
   protectedCopyPath, isProtectedCopy, profileLaunchCheck, sandboxHomeEnv,
   setDescriptionArgs, getDescriptionArgs, descriptionMatches, parseWhoamiSid,
   warmUpArgs, profileQueryArgs, parseProfileImagePath, startupFolders,
-  mkdirArgs, removeDirArgs, icaclsDenyArgs, icaclsRemoveDenyArgs, isTemporaryProfile,
+  mkdirArgs, removeDirArgs, claimDirArgs, icaclsDenyArgs, icaclsRemoveDenyArgs, isTemporaryProfile,
   installerTargetSid, psEncodedArgs, knownFolderArgs,
   sessionGrantArgs, sessionGrantInput, sessionRevokeArgs, sessionForgetArgs, sessionRestoreArgs,
   installMarkerPath, formatInstallMarker, parseInstallMarker, markerAllowsSetup, markerAllowsRemove,

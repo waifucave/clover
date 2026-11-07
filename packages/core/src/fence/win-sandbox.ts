@@ -126,9 +126,10 @@ export const SANDBOX_EXIT = { OK: 0, FAILED: 1, NOT_ELEVATED: 2, HASH_MISMATCH: 
 /** `srt-win install`: one elevated step provisioning the principal and its WFP filters (the launcher
  *  self-elevates via UAC; idempotent — re-running rotates the password and refreshes the filters).
  *  Loopback stays closed (the default): Bash gets no network, as on macOS and Linux.
- *  The principal is required: the bare prefix is not an account. */
-export function setupArgs(launcher: string, sublayer: string, principal: string): readonly string[] {
-  return [launcher, "install", "--sandbox-user", principal, "--sublayer-guid", sublayer];
+ *  The principal is required: the bare prefix is not an account. `ownerSid` is recorded on the
+ *  install (`--owner-sid`) and gates later use to that owner (admins/SYSTEM excepted). */
+export function setupArgs(launcher: string, sublayer: string, principal: string, ownerSid: string): readonly string[] {
+  return [launcher, "install", "--sandbox-user", principal, "--sublayer-guid", sublayer, "--owner-sid", ownerSid];
 }
 
 /** `srt-win uninstall`: undoes everything (`--keep-user` is never passed: remove removes all of it).
@@ -497,6 +498,25 @@ export function icaclsRemoveDenyArgs(path: string, sid: string): readonly string
  *  name, or volume label syntax is incorrect"); the encoded script keeps every path inert. */
 export function mkdirArgs(path: string): readonly string[] {
   return psEncodedArgs(`New-Item -ItemType Directory -Force -Path "${path}" | Out-Null`);
+}
+
+/** Claim a state dir for admins only (ruling 5: markers folder, as lane M does for the protected
+ *  copy). Creates it when missing, then: resolve the owner's SID (locale-proof, never a name match);
+ *  anyone besides Administrators, SYSTEM or TrustedInstaller is refused with exit 1 (a squatted
+ *  folder owned by a non-admin fails the setup closed); otherwise take ownership for Administrators
+ *  and strip inheritance, granting full control to Administrators and SYSTEM only. */
+export function claimDirArgs(path: string): readonly string[] {
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    `$p='${path.replace(/'/g, "''")}'`,
+    "if (-Not (Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Force -Path $p | Out-Null }",
+    "$own=(Get-Acl -LiteralPath $p).Owner",
+    "try { $sid=(New-Object System.Security.Principal.NTAccount $own).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid='' }",
+    "if ($sid -ne 'S-1-5-32-544' -and $sid -ne 'S-1-5-18' -and $sid -ne 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464') { Write-Error ('refusing state dir owned by ' + $own); exit 1 }",
+    "& takeown.exe /f $p /a | Out-Null; if ($LASTEXITCODE -ne 0) { exit 1 }",
+    "& icacls.exe $p /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null; if ($LASTEXITCODE -ne 0) { exit 1 }",
+  ].join("; ");
+  return psEncodedArgs(script);
 }
 
 /** `powershell Remove-Item`: remove a folder tree. The encoded script keeps the path inert. */
