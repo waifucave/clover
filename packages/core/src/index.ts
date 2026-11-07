@@ -321,7 +321,7 @@ export { CloverSecretStore, openCloverSecretStore, secretStoreWarning, probeSyst
 export * as registry from "./registry/index";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
 export {
-  bundledManifest, bundledPluginIds, bundledPluginsDir, loadBundledManifest, readBundledFile, readBundledPlugin,
+  bundledManifest, bundledPluginIds, bundledPluginsDir, formatBundledManifest, loadBundledManifest, measureBundledTree, readBundledFile, readBundledPlugin,
   type BundledEntry, type BundledManifest, type BundledPluginRead, type BundledRead,
 } from "./bundled-plugins-dir";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";

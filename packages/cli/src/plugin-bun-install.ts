@@ -1,5 +1,5 @@
 // Plain Bun for plugins on a server install (the controller's ruling (a), #244): `clover-core server install` puts
-// `<home>/bin/clover-plugin-bun` beside `<home>/bin/clover-core`, and the server's daemon fetches it again at start
+// `<home>/bin/daemon/clover-plugin-bun` beside `<home>/bin/daemon/clover-core`, and the server's daemon fetches it again at start
 // whenever its own Bun version (the daemon's `Bun.version`, which a self-update can change) differs from the installed
 // one. Lane B's `pluginBun()` finds it beside the compiled core and fails closed without it.
 //
@@ -19,13 +19,13 @@ import { dirname, join } from "node:path";
 import { parsePluginBunFeed, pluginBunBinaryFile, pluginBunFeedFile, SIGNATURE_SUFFIX, verifyFeed, type CoreFeed, type CoreTarget, type FeedChannel } from "@waifucave/clover-update-feed";
 import { httpFetch, MAX_FEED_BYTES, runVersion, UPDATE_REPO, type Fetcher } from "./self-update";
 
-/** Where a server install keeps plugin Bun: beside its daemon. */
+/** Where a server install keeps plugin Bun: beside its daemon, in `<home>/bin/daemon/`. */
 export function serverPluginBun(home: string, os: NodeJS.Platform | "win32" | "darwin" | "linux"): string {
-  return join(home, "bin", os === "win32" ? "clover-plugin-bun.exe" : "clover-plugin-bun");
+  return join(home, "bin", "daemon", os === "win32" ? "clover-plugin-bun.exe" : "clover-plugin-bun");
 }
 
 export interface PluginBunDeps {
-  /** `<home>/bin/clover-plugin-bun` (`serverPluginBun`). */
+  /** `<home>/bin/daemon/clover-plugin-bun` (`serverPluginBun`). */
   path: string;
   /** The daemon's Bun version, which plugin Bun must be. */
   bunVersion: string;

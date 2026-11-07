@@ -26,7 +26,7 @@ import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
 import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
 import { runNameScan } from "./release/name-scan";
 import { sealProblems } from "./seal-bun-doors";
-import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writePluginBunAssets, writeServedCopies, type Channel } from "./release/lib";
+import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writePluginBunAssets, writePluginsAssets, writeServedCopies, type Channel } from "./release/lib";
 import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree, writeStagedManifest } from "./release/bundled-plugins";
 import { BUNDLED_MANIFEST_FILE } from "../packages/core/src/bundled-plugins-dir";
 
@@ -217,7 +217,16 @@ export function main(argv: readonly string[], root: string): number {
     for (const s of steps) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
     return 0;
   }
+  // A release is of one commit, from a fully clean checkout of it (the build reads the whole tree).
+  let commit: string;
+  try {
+    commit = checkoutCommit(root);
+  } catch (err) {
+    console.error(`build-packages: ${(err as Error).message}`);
+    return 1;
+  }
   rmSync(outDir, { recursive: true, force: true });
+  const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
   // The bundled plugins: the committed files only, staged where electron-builder.yml packs them and measured into
   // the manifest each daemon carries; the stages removed however the build ends (a stale stage would go into a later
   // plain `bun run dist`).
@@ -248,6 +257,8 @@ export function main(argv: readonly string[], root: string): number {
         const problems = bundledPluginsProblems(resources, manifest, existsSync, walkTree);
         for (const p of problems) console.error(`build-packages: ${p} (${s.stage})`);
         if (problems.length > 0) return 1;
+        // The same tree for a server on this architecture: the tarball and its update files.
+        writePluginsAssets(outDir, version, s.stage === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(resources, "plugins"));
       }
     }
   } catch (err) {
@@ -259,14 +270,12 @@ export function main(argv: readonly string[], root: string): number {
     rmSync(manifestFile, { force: true });
   }
   // The daemon for a server's own update: each architecture's binary as its release file, with its update files.
-  const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
   for (const a of args.arches) writeCoreAssets(outDir, version, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(root, ...daemonOutput(daemonTargetFor(a)).split("/")));
   // Plain Bun for plugins, for a server install on this architecture (scripts/bundled-binaries.ts).
   for (const a of args.arches) writePluginBunAssets(outDir, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(dirname(join(root, ...daemonOutput(daemonTargetFor(a)).split("/"))), "clover-plugin-bun"));
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
   // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).
-  const commit = checkoutCommit(root, false);
   for (const a of args.arches) writeBuildCommit(outDir, a === "x64" ? "linux-x64" : "linux-arm64", commit);
   // The identity scan over everything built (scripts/release/name-scan.ts): skipped, and said, without the guard.
   try {

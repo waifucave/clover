@@ -8,12 +8,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
-import { pluginBunArtifacts,
+import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
   writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys,
 } from "./lib";
-import { pluginBunBinaryFile, pluginBunFeedFile, coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
+import { pluginsFeedFile, pluginsTarballFile, parsePluginsFeed, unpackTarball, pluginBunBinaryFile, pluginBunFeedFile, coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
 import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, promotedSignature, RELEASE_OSES, signFeeds, proveShippedMacCore, sealProofCommand, sealProofProblem, type ShippedOpeners } from "./publish";
 
@@ -55,9 +55,58 @@ describe("the feed and the channels", () => {
     expect(installers("1.2.3", "mac")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip"]);
     expect(installers("1.2.3", "linux-arm64")).toEqual(["clover_1.2.3_arm64.deb", "clover-1.2.3.arm64.rpm", "Clover-1.2.3-arm64.AppImage"]);
     expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml", "clover-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml",
-      `clover-plugin-bun-${PLUGIN_BUN.version}-windows-x64.exe`, "latest-plugin-bun-windows-x64.yml", "beta-plugin-bun-windows-x64.yml"]);
+      `clover-plugin-bun-${PLUGIN_BUN.version}-windows-x64.exe`, "latest-plugin-bun-windows-x64.yml", "beta-plugin-bun-windows-x64.yml",
+      "clover-plugins-1.2.3-windows-x64.tar.gz", "latest-plugins-windows-x64.yml", "beta-plugins-windows-x64.yml"]);
+    expect(pluginsArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-plugins-1.2.3-linux-arm64.tar.gz", "beta-plugins-linux-arm64.yml"]);
     expect(pluginBunArtifacts("linux-arm64", "beta")).toEqual([`clover-plugin-bun-${PLUGIN_BUN.version}-linux-arm64`, "beta-plugin-bun-linux-arm64.yml"]);
     expect(coreArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-core-1.2.3-linux-arm64", "beta-core-linux-arm64.yml"]);
+  });
+
+  test("a release builds from a fully clean checkout: an edit, a staged change or an untracked file anywhere refuses it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-release-checkout-"));
+    const git = (...args: string[]) => {
+      const r = Bun.spawnSync(["git", ...args], { cwd: dir, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } });
+      if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+      return r.stdout.toString().trim();
+    };
+    git("init", "-q");
+    mkdirSync(join(dir, "packages", "core"), { recursive: true });
+    writeFileSync(join(dir, "packages", "core", "a.ts"), "export {};\n");
+    writeFileSync(join(dir, ".gitignore"), "dist/\n");
+    git("add", "-A");
+    git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "c");
+    const head = git("rev-parse", "HEAD");
+    expect(checkoutCommit(dir)).toBe(head);
+    // What the build writes is ignored: still clean.
+    mkdirSync(join(dir, "dist"));
+    writeFileSync(join(dir, "dist", "clover-core"), "built");
+    expect(checkoutCommit(dir)).toBe(head);
+    writeFileSync(join(dir, "packages", "core", "a.ts"), "export const x = 1;\n");
+    expect(() => checkoutCommit(dir)).toThrow("fully clean checkout");
+    git("checkout", "--", ".");
+    writeFileSync(join(dir, "services.ts"), "untracked");
+    expect(() => checkoutCommit(dir)).toThrow("services.ts");
+    git("add", "services.ts");
+    expect(() => checkoutCommit(dir)).toThrow("fully clean checkout");
+    expect(dirtyEntries("")).toEqual([]);
+    expect(dirtyEntries(" M a.ts\n?? b.ts\n")).toEqual([" M a.ts", "?? b.ts"]);
+  });
+
+  test("the bundled plugins' release files: the app's resources/plugins packed, and an update file naming it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-plugins-assets-"));
+    const plugins = join(dir, "resources", "plugins");
+    mkdirSync(join(plugins, "clover", "bin"), { recursive: true });
+    writeFileSync(join(plugins, "clover", "clover.json"), "{}");
+    writeFileSync(join(plugins, "clover", "bin", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
+    const out = join(dir, "out");
+    mkdirSync(out);
+    expect(writePluginsAssets(out, "1.2.3", "linux-x64", "latest", plugins)).toEqual(["clover-plugins-1.2.3-linux-x64.tar.gz", "latest-plugins-linux-x64.yml", "beta-plugins-linux-x64.yml"]);
+    const tarball = new Uint8Array(readFileSync(join(out, "clover-plugins-1.2.3-linux-x64.tar.gz")));
+    const files = unpackTarball(tarball);
+    expect(files.map((f) => [f.path, f.executable])).toEqual([["clover/bin/run.sh", process.platform !== "win32"], ["clover/clover.json", false]]);
+    const feed = parsePluginsFeed(readFileSync(join(out, "beta-plugins-linux-x64.yml"), "utf8"));
+    expect(feed).toEqual({ version: "1.2.3", file: "clover-plugins-1.2.3-linux-x64.tar.gz", sha512: sha512Base64(tarball), size: tarball.length });
+    expect(tarballFilesOf(plugins).map((f) => f.path)).toEqual(["clover/bin/run.sh", "clover/clover.json"]);
   });
 
   test("the daemon's release files: its binary and an update file naming it, for each channel served", () => {
@@ -220,6 +269,9 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
       const bun = pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]);
       blobs.set(bun, utf8(`${bun} bytes`));
       for (const c of channelsServed(channel)) blobs.set(pluginBunFeedFile(c, CORE_TARGET[os]), utf8(formatCoreFeed({ version: PLUGIN_BUN.version, file: bun, sha512: sha512Base64(blobs.get(bun)!), size: blobs.get(bun)!.length })));
+      const tarball = pluginsTarballFile(version, CORE_TARGET[os]);
+      blobs.set(tarball, utf8(`${tarball} bytes`));
+      for (const c of channelsServed(channel)) blobs.set(pluginsFeedFile(c, CORE_TARGET[os]), utf8(formatCoreFeed({ version, file: tarball, sha512: sha512Base64(blobs.get(tarball)!), size: blobs.get(tarball)!.length })));
       blobs.set(buildCommitFile(os), utf8(`${COMMIT}\n`));
       dirs.set(`out/${os}`, blobs);
     }
@@ -259,6 +311,9 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     const badCore = builds("beta");
     badCore.get("out/linux-x64")!.set("clover-core-1.2.3-linux-x64", utf8("tampered"));
     expect(plan(badCore, "beta").problems).toContain("beta-core-linux-x64.yml: clover-core-1.2.3-linux-x64's sha512 doesn't match");
+    const badPlugins = builds("beta");
+    badPlugins.get("out/mac")!.set("clover-plugins-1.2.3-darwin-arm64.tar.gz", utf8("tampered"));
+    expect(plan(badPlugins, "beta").problems).toContain("beta-plugins-darwin-arm64.yml: clover-plugins-1.2.3-darwin-arm64.tar.gz's sha512 doesn't match");
     const twice = builds("beta");
     twice.get("out/win")!.set("Clover-1.2.3.dmg", utf8("x"));
     expect(plan(twice, "beta").problems.some((x) => x.includes("is in both"))).toBe(true);
@@ -267,7 +322,7 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
   test("each update file and daemon binary is signed with the Keychain's key, checked against the app's, and nothing else is signed", () => {
     const dirs = builds("latest");
     const p = plan(dirs, "latest");
-    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => [...channelsServed("latest").flatMap((c) => [feedFile(c, os), coreFeedFile(c, CORE_TARGET[os]), pluginBunFeedFile(c, CORE_TARGET[os])]), coreBinaryFile(version, CORE_TARGET[os]), pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os])]).sort());
+    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => [...channelsServed("latest").flatMap((c) => [feedFile(c, os), coreFeedFile(c, CORE_TARGET[os]), pluginBunFeedFile(c, CORE_TARGET[os]), pluginsFeedFile(c, CORE_TARGET[os])]), coreBinaryFile(version, CORE_TARGET[os]), pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]), pluginsTarballFile(version, CORE_TARGET[os])]).sort());
     const key = generateFeedKey();
     const sigs = signFeeds(p, (d, n) => dirs.get(d)!.get(n)!, key.privateKey, key.publicKey);
     expect(sigs.map((s) => s.name).sort()).toEqual(p.feeds.map((f) => `${f}.sig`).sort());

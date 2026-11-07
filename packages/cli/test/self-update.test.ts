@@ -3,12 +3,13 @@
 // binary crashing twice (rolled back), and a good swap. Nothing reaches the network or a real home.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
 import { UpdateGate, UPDATE_RESTART_EXIT_CODE } from "@waifucave/clover-core";
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, isNewer, MAX_FEED_BYTES, readCapped, rolledBack, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
+import { beginUpdatedBoot, bootWasGood, coreTargetOf, isNewer, MAX_FEED_BYTES, pluginsDirOf, readCapped, rolledBack, runBundledManifest, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
+import { treeManifestSha256 } from "../src/plugins-install";
 
 const posix = test.if(process.platform !== "win32");
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -58,10 +59,26 @@ function github(key: { privateKey: string }, releases: Release[]) {
   return { fetch, asked, files };
 }
 
-function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number }) {
+/** A plugins tree for `version` written at `dir`, and the SHA-256 of the manifest it measures to. */
+function pluginsTree(dir: string, version: string): string {
+  mkdirSync(join(dir, "clover"), { recursive: true });
+  writeFileSync(join(dir, "clover", "clover.json"), `{"id":"clover","v":"${version}"}`);
+  return treeManifestSha256(dir)!;
+}
+
+/** The server's bundled plugins (the `<home>/bin/daemon` layout): what the new binary says it carries, and how a
+ *  version's tree is staged (or refused). */
+interface PluginsOpt { says?: string | "none" | undefined; refuse?: string }
+
+function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number; plugins?: PluginsOpt }) {
   const home = mkdtempSync(join(tmpdir(), "clover-self-update-"));
-  mkdirSync(join(home, "bin"));
-  const bin = join(home, "bin", "clover-core");
+  const binDir = opts.plugins === undefined ? join(home, "bin") : join(home, "bin", "daemon");
+  mkdirSync(binDir, { recursive: true });
+  const bin = join(binDir, "clover-core");
+  const pluginsDir = join(home, "bin", "plugins");
+  const staged: string[] = [];
+  const nextSha = pluginsTree(join(mkdtempSync(join(tmpdir(), "clover-self-update-tree-")), "p"), "1.3.0");
+  if (opts.plugins !== undefined) pluginsTree(pluginsDir, opts.version ?? "1.2.3");
   writeFileSync(bin, versionScript(opts.version ?? "1.2.3"), { mode: 0o755 });
   const key = generateFeedKey();
   const gh = github(key, opts.releases);
@@ -85,8 +102,21 @@ function server(opts: { version?: string; channel?: "latest" | "beta"; releases:
     ...(opts.reopenAfterMs !== undefined ? { reopenAfterMs: opts.reopenAfterMs } : {}),
     exit: (code) => { exited.push(code); },
     log: (l) => lines.push(l),
+    ...(opts.plugins === undefined ? {} : {
+      runManifest: async () => ("says" in opts.plugins! ? opts.plugins!.says : nextSha),
+      plugins: {
+        dir: pluginsDir,
+        stage: async (version: string, sha: string) => {
+          staged.push(`${version} ${sha === nextSha ? "the new manifest" : sha}`);
+          if (opts.plugins!.refuse !== undefined) return { why: opts.plugins!.refuse };
+          rmSync(`${pluginsDir}.new`, { recursive: true, force: true });
+          pluginsTree(`${pluginsDir}.new`, version);
+          return { files: 1 };
+        },
+      },
+    }),
   });
-  return { home, bin, updater, did, exited, lines, asked: gh.asked, files: gh.files, gate, advance: (ms: number) => { now += ms; } };
+  return { home, bin, pluginsDir, staged, nextSha, updater, did, exited, lines, asked: gh.asked, files: gh.files, gate, advance: (ms: number) => { now += ms; } };
 }
 
 describe("a server's daemon updating itself", () => {
@@ -308,5 +338,76 @@ describe("a server's daemon updating itself", () => {
     expect(s.exited).toEqual([]);
     expect(s.gate.closed).toBe(false);
     expect(s.lines.some((l) => l.includes("installing the update failed") && l.includes("no checked update"))).toBe(true);
+  });
+
+  posix("the bundled plugins update with the daemon: staged against the new binary's manifest, swapped with it, kept as .old until a good boot", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    const before = treeManifestSha256(s.pluginsDir);
+    expect(await s.updater.check()).toEqual({ kind: "ready", version: "1.3.0" });
+    expect(s.staged).toEqual(["1.3.0 the new manifest"]);
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.3.0"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(s.nextSha);
+    expect(treeManifestSha256(`${s.pluginsDir}.old`)).toBe(before);
+    expect(existsSync(`${s.pluginsDir}.new`)).toBe(false);
+    expect(pluginsDirOf(s.bin)).toBe(s.pluginsDir);
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    bootWasGood(s.home, s.bin);
+    expect(existsSync(`${s.pluginsDir}.old`)).toBe(false);
+  });
+
+  posix("a rollback puts the old plugins back with the old binary", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    const before = treeManifestSha256(s.pluginsDir);
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("rolled-back");
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(before);
+    expect(treeManifestSha256(`${s.pluginsDir}.bad`)).toBe(s.nextSha);
+    bootWasGood(s.home, s.bin);
+    expect(existsSync(`${s.pluginsDir}.bad`)).toBe(false);
+  });
+
+  posix("a new binary with no manifest, or plugins that can't be had, refuse the update: nothing waits", async () => {
+    const none = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { says: "none" } });
+    expect(await none.updater.check()).toEqual({ kind: "refused", why: "clover-core-1.3.0-linux-x64 carries no bundled-plugins manifest" });
+    expect(existsSync(`${none.bin}.new`)).toBe(false);
+    const silent = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { says: undefined } });
+    expect((await silent.updater.check()).kind).toBe("refused");
+    const refused = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { refuse: "clover-plugins-1.3.0-linux-x64.tar.gz: bad signature" } });
+    expect(await refused.updater.check()).toEqual({ kind: "refused", why: "the bundled plugins for 1.3.0: clover-plugins-1.3.0-linux-x64.tar.gz: bad signature" });
+    expect(existsSync(`${refused.bin}.new`)).toBe(false);
+    expect(refused.updater.ready()).toBe(false);
+  });
+
+  posix("plugins.new changed while it waited: refused at the swap, the daemon keeps running on both old ones", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    const before = treeManifestSha256(s.pluginsDir);
+    await s.updater.check();
+    writeFileSync(join(`${s.pluginsDir}.new`, "clover", "planted.js"), "globalThis.x = 1;");
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    expect(s.exited).toEqual([]);
+    expect(s.gate.closed).toBe(false);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(before);
+    expect(existsSync(`${s.pluginsDir}.new`)).toBe(false);
+    expect(s.lines.at(-1)).toContain("is no longer the checked plugins for 1.3.0");
+  });
+
+  posix("__bundled-manifest is asked like --version: PATH alone, its SHA-256 or none, and nothing else counts", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-manifest-check-"));
+    const sha = "a".repeat(64);
+    const answer = (name: string, body: string) => { writeFileSync(join(dir, name), script(body), { mode: 0o755 }); return join(dir, name); };
+    expect(await runBundledManifest(answer("one", `[ "$1" = __bundled-manifest ] && [ -z "$HOME" ] && echo "bundled-manifest: 996 files, sha256 ${sha}"`))).toBe(sha);
+    expect(await runBundledManifest(answer("none", 'echo "bundled-manifest: 0 files, sha256 none"'))).toBe("none");
+    expect(await runBundledManifest(answer("odd", 'echo "bundled-manifest: refused (two)"; exit 1'))).toBeUndefined();
+    expect(await runBundledManifest(answer("hang", "sleep 30"), 300)).toBeUndefined();
   });
 });

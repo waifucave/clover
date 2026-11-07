@@ -5,6 +5,7 @@
 // the latest name, nor one OS's under another's. The app's updater and the daemon's self-update check it before they read anything in the
 // file, so a sha512 in it is trusted only once the file is: that covers the Linux AppImage, which has no OS signature
 // check, and a release account someone else got into.
+import { gunzipSync, gzipSync } from "node:zlib";
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify, type KeyObject } from "node:crypto";
 import { UPDATE_FEED_PUBLIC_KEY } from "./key";
 
@@ -61,12 +62,25 @@ export function pluginBunBinaryFile(bunVersion: string, target: CoreTarget): str
   return `clover-plugin-bun-${bunVersion}-${target}${target === "windows-x64" ? ".exe" : ""}`;
 }
 
+/** The bundled plugins' update file for `target` on `channel` (`latest-plugins-linux-x64.yml`): what a server install
+ *  fetches into `<home>/bin/plugins`, and again with each update of its daemon (whose core embeds their manifest). */
+export function pluginsFeedFile(channel: FeedChannel, target: CoreTarget): string {
+  return `${channel}-plugins-${target}.yml`;
+}
+
+/** The bundled plugins in a release (`clover-plugins-1.2.3-linux-x64.tar.gz`): the tree that target's core's manifest
+ *  names, exactly. */
+export function pluginsTarballFile(version: string, target: CoreTarget): string {
+  return `clover-plugins-${version}-${target}.tar.gz`;
+}
+
 /**
  * The names a signature may cover: the app's update files (a channel and an OS, scripts/release/lib.ts's `feedFile`),
- * the daemon's (`coreFeedFile`) and plugin Bun's (`pluginBunFeedFile`), and those binaries themselves
- * (`coreBinaryFile`, `pluginBunBinaryFile`), which a server checks before it trusts their bytes.
+ * the daemon's (`coreFeedFile`), plugin Bun's (`pluginBunFeedFile`) and the bundled plugins' (`pluginsFeedFile`), and
+ * the files they name (`coreBinaryFile`, `pluginBunBinaryFile`, `pluginsTarballFile`), which a server checks before
+ * it trusts their bytes.
  */
-export const FEED_NAME = /^(?:(latest|beta)(-mac|-linux|-linux-arm64|-(?:core|plugin-bun)-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml|clover-(?:core|plugin-bun)-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64\.exe))$/;
+export const FEED_NAME = /^(?:(latest|beta)(-mac|-linux|-linux-arm64|-(?:core|plugin-bun|plugins)-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml|clover-(?:core|plugin-bun)-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64\.exe)|clover-plugins-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64)\.tar\.gz)$/;
 
 /** The daemon's update file (`coreFeedFile`): one binary, its version, SHA-512 (base64) and size. */
 export interface CoreFeed {
@@ -88,6 +102,11 @@ export function parseCoreFeed(text: string): CoreFeed {
 /** Plain Bun's update file (`pluginBunFeedFile`): the same four fields, `version` being Bun's. */
 export function parsePluginBunFeed(text: string): CoreFeed {
   return parseBinaryFeed(text, "clover-plugin-bun-", "plugin Bun");
+}
+
+/** The bundled plugins' update file (`pluginsFeedFile`): the same four fields, naming `clover-plugins-…tar.gz`. */
+export function parsePluginsFeed(text: string): CoreFeed {
+  return parseBinaryFeed(text, "clover-plugins-", "bundled plugins");
 }
 
 function parseBinaryFeed(text: string, prefix: string, what: string): CoreFeed {
@@ -150,4 +169,127 @@ export function verifyFeed(name: string, bytes: Uint8Array, signature: string | 
   } catch {
     return { ok: false, reason: "bad signature" };
   }
+}
+
+// ---- the bundled plugins' tarball ----
+//
+// A plain ustar archive, gzipped, of regular files only: no folder entries (a file's folders are implied), no links,
+// no devices, no extended headers. `packTarball` writes it the same way every time (sorted paths, mode 0644 or 0755,
+// owner 0, time 0); `unpackTarball` reads it strictly and never touches the disk, so the caller checks every file
+// before anything is written.
+
+/** One file of the tarball: its path (relative, with `/`), its bytes, and whether it is executable. */
+export interface TarballFile { path: string; bytes: Uint8Array; executable: boolean }
+
+const BLOCK = 512;
+/** The most a tarball may unpack to (and the most files it may hold): far above the bundled plugins today. */
+export const MAX_TARBALL_BYTES = 512 * 1024 * 1024;
+export const MAX_TARBALL_FILES = 100_000;
+
+/** Whether `path` is a plain relative path: `/`-separated, no empty, `.` or `..` segment, no backslash, colon or NUL. */
+export function plainRelativePath(path: string): boolean {
+  if (path === "" || /[\\:\0]/.test(path)) return false;
+  return path.split("/").every((s) => s !== "" && s !== "." && s !== "..");
+}
+
+function octal(n: number, width: number): string {
+  return `${n.toString(8).padStart(width - 1, "0")}\0`;
+}
+
+/** The ustar name and prefix for `path` (name at most 100 bytes, prefix at most 155, split at a `/`). */
+function splitName(path: string): { name: Uint8Array; prefix: Uint8Array } {
+  const enc = new TextEncoder();
+  const whole = enc.encode(path);
+  if (whole.length <= 100) return { name: whole, prefix: new Uint8Array() };
+  for (let i = path.length - 1; i > 0; i--) {
+    if (path[i] !== "/") continue;
+    const prefix = enc.encode(path.slice(0, i)), name = enc.encode(path.slice(i + 1));
+    if (prefix.length <= 155 && name.length <= 100 && name.length > 0) return { name, prefix };
+  }
+  throw new Error(`${path} is too long for a ustar header`);
+}
+
+/** The gzipped tarball of `files` (sorted by path; each path plain and relative, no duplicates). */
+export function packTarball(files: readonly TarballFile[]): Uint8Array {
+  const sorted = [...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const parts: Uint8Array[] = [];
+  let last: string | undefined;
+  for (const f of sorted) {
+    if (!plainRelativePath(f.path)) throw new Error(`${JSON.stringify(f.path)} is not a plain relative path`);
+    if (f.path === last) throw new Error(`${f.path} is in the tarball twice`);
+    last = f.path;
+    const header = new Uint8Array(BLOCK);
+    const { name, prefix } = splitName(f.path);
+    const put = (at: number, text: string) => header.set(new TextEncoder().encode(text), at);
+    header.set(name, 0);
+    put(100, octal(f.executable ? 0o755 : 0o644, 8));
+    put(108, octal(0, 8));
+    put(116, octal(0, 8));
+    put(124, octal(f.bytes.length, 12));
+    put(136, octal(0, 12));
+    put(148, "        ");
+    put(156, "0");
+    put(257, "ustar\0");
+    put(263, "00");
+    header.set(prefix, 345);
+    let sum = 0;
+    for (const b of header) sum += b;
+    put(148, `${sum.toString(8).padStart(6, "0")}\0 `);
+    parts.push(header, f.bytes);
+    const pad = (BLOCK - (f.bytes.length % BLOCK)) % BLOCK;
+    if (pad > 0) parts.push(new Uint8Array(pad));
+  }
+  parts.push(new Uint8Array(BLOCK * 2));
+  const tar = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) { tar.set(p, at); at += p.length; }
+  return new Uint8Array(gzipSync(tar, { level: 9 }));
+}
+
+/** A tarball's files, read strictly: gzip, then ustar headers with good checksums, regular files only (type `0`),
+ *  plain relative paths, no duplicates, within MAX_TARBALL_BYTES and MAX_TARBALL_FILES. Throws on anything else. */
+export function unpackTarball(gz: Uint8Array): TarballFile[] {
+  let tar: Uint8Array;
+  try {
+    tar = new Uint8Array(gunzipSync(gz, { maxOutputLength: MAX_TARBALL_BYTES }));
+  } catch (err) {
+    throw new Error(`not a gzip stream within ${MAX_TARBALL_BYTES} bytes (${(err as Error).message})`);
+  }
+  const dec = new TextDecoder("utf-8", { fatal: true });
+  const field = (h: Uint8Array, at: number, len: number) => {
+    const raw = h.subarray(at, at + len);
+    const end = raw.indexOf(0);
+    return dec.decode(end === -1 ? raw : raw.subarray(0, end));
+  };
+  const num = (h: Uint8Array, at: number, len: number) => {
+    const text = field(h, at, len).trim();
+    if (!/^[0-7]+$/.test(text)) throw new Error("a tar header holds a bad number");
+    return parseInt(text, 8);
+  };
+  const out: TarballFile[] = [];
+  const seen = new Set<string>();
+  let at = 0;
+  for (;;) {
+    if (at + BLOCK > tar.length) throw new Error("the tarball ends without its end blocks");
+    const h = tar.subarray(at, at + BLOCK);
+    if (h.every((b) => b === 0)) break;
+    let sum = 0;
+    for (let i = 0; i < BLOCK; i++) sum += i >= 148 && i < 156 ? 32 : h[i]!;
+    if (num(h, 148, 8) !== sum) throw new Error("a tar header's checksum is wrong");
+    if (field(h, 257, 6) !== "ustar") throw new Error("not a ustar archive");
+    const type = String.fromCharCode(h[156]!);
+    const prefix = field(h, 345, 155), name = field(h, 0, 100);
+    const path = prefix === "" ? name : `${prefix}/${name}`;
+    if (type !== "0" && h[156] !== 0) throw new Error(`${path}: only regular files ship (type ${JSON.stringify(type)})`);
+    if (!plainRelativePath(path)) throw new Error(`${JSON.stringify(path)} is not a plain relative path`);
+    if (seen.has(path)) throw new Error(`${path} is in the tarball twice`);
+    seen.add(path);
+    if (seen.size > MAX_TARBALL_FILES) throw new Error(`the tarball holds over ${MAX_TARBALL_FILES} files`);
+    const size = num(h, 124, 12);
+    const mode = num(h, 100, 8);
+    if (at + BLOCK + size > tar.length) throw new Error(`${path} runs past the end of the tarball`);
+    out.push({ path, bytes: tar.slice(at + BLOCK, at + BLOCK + size), executable: (mode & 0o111) !== 0 });
+    at += BLOCK + Math.ceil(size / BLOCK) * BLOCK;
+  }
+  return out;
 }

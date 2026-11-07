@@ -1,25 +1,38 @@
 // `clover-core server install [--channel latest|beta]` and `clover-core server uninstall` (plan §4 M-M2): the daemon
 // alone on a computer with no app (a server, a cloud computer), started by the OS and updating itself.
 //
-// `install` copies this binary to `<home>/bin/clover-core` (the one place a server's binary lives, which its own update
-// replaces), puts plain Bun for plugins beside it (`<home>/bin/clover-plugin-bun`, plugin-bun-install.ts), registers lane C's login start for it (`loginEnable`: the same LaunchAgent on macOS, systemd user unit on
+// `install` copies this binary to `<home>/bin/daemon/clover-core` (the one place a server's binary lives, which its own
+// update replaces), puts plain Bun for plugins beside it (`<home>/bin/daemon/clover-plugin-bun`, plugin-bun-install.ts)
+// and the bundled plugins this core's manifest names in `<home>/bin/plugins` (plugins-install.ts: the release's
+// tarball, checked), the layout core's `bundledPluginsDir` reads as the app's `resources/daemon` and
+// `resources/plugins`; registers lane C's login start for it (`loginEnable`: the same LaunchAgent on macOS, systemd user unit on
 // Linux and per-user Task Scheduler task at logon on Windows that `clover-core autostart` writes, each running
 // `clover-core supervise`), on Linux turns lingering on (`loginctl enable-linger`) so the unit runs with no one logged
 // in, and writes `<home>/install.json` `{ kind: "server" }`, the marker that lets the daemon update itself. A binary
 // inside an app (`…/resources/daemon/`) is refused: the app updates that one.
 //
 // `uninstall` stops the daemon cleanly, removes the login start, turns lingering off again if install turned it on,
-// and removes the marker and the binaries. On Windows the binary running the uninstall can't delete itself, and says so.
+// and removes the marker, the binaries and the bundled plugins. A home with the earlier layout (`<home>/bin/clover-core`
+// and plugin Bun beside it) has those removed at install and uninstall. On Windows the binary running the uninstall can't delete itself, and says so.
 import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { InstallChannel, InstallMarker, LoginOsDeps, LoginSpec, Runner } from "@waifucave/clover-core";
 import { serverPluginBun, type PluginBunResult } from "./plugin-bun-install";
+import { serverPluginsDir, type PluginsResult } from "./plugins-install";
 
 export const SERVER_USAGE = "usage: clover-core server install [--channel latest|beta] | server uninstall";
 
-/** Where a server install keeps its binary. */
+/** Where a server install keeps its binary: `<home>/bin/daemon/`, with plain Bun for plugins beside it and the bundled
+ *  plugins in `<home>/bin/plugins`. */
 export function serverBinary(home: string, os: LoginSpec["os"]): string {
-  return join(home, "bin", os === "win32" ? "clover-core.exe" : "clover-core");
+  return join(home, "bin", "daemon", os === "win32" ? "clover-core.exe" : "clover-core");
+}
+
+/** The earlier layout's files (`<home>/bin/clover-core`, plugin Bun beside it, and what their updates left). */
+export function earlierLayoutFiles(home: string, os: LoginSpec["os"]): string[] {
+  const exe = os === "win32" ? ".exe" : "";
+  const core = join(home, "bin", `clover-core${exe}`), bun = join(home, "bin", `clover-plugin-bun${exe}`);
+  return [core, `${core}.new`, `${core}.old`, `${core}.bad`, bun, `${bun}.new`, `${bun}.old`, `${bun}.swap`];
 }
 
 /** Whether `bin` is the daemon inside an app (`Clover.app/Contents/Resources/daemon/`, `resources/daemon/`). */
@@ -58,6 +71,9 @@ export interface ServerDeps {
   /** Puts plain Bun for plugins at `path` (plugin-bun-install.ts's `ensurePluginBun`, for this daemon's Bun and the
    *  install's channel). */
   pluginBun(path: string, channel: InstallChannel): Promise<PluginBunResult>;
+  /** Puts the bundled plugins this daemon's manifest names in `dir` (plugins-install.ts's `ensureServerPlugins`, from
+   *  the release's tarball for this daemon's version and the install's channel). */
+  plugins(dir: string, channel: InstallChannel): Promise<PluginsResult>;
 }
 
 const same = (a: string, b: string): boolean => {
@@ -77,10 +93,12 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
     return 1;
   }
   const bin = serverBinary(spec.home, spec.os);
+  const earlier = earlierLayoutFiles(spec.home, spec.os);
   if (!same(spec.bin, bin)) {
     mkdirSync(dirname(bin), { recursive: true });
     // A running server's binary is replaced by its own update, not here.
     if (existsSync(bin)) await d.stopDaemon({ ...spec, bin });
+    else if (existsSync(earlier[0]!) && !same(spec.bin, earlier[0]!)) await d.stopDaemon({ ...spec, bin: earlier[0]! });
     copyFileSync(spec.bin, bin);
     if (spec.os !== "win32") chmodSync(bin, 0o755);
   }
@@ -91,6 +109,17 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
   if (bun.kind === "refused") {
     d.log(`server install: plain Bun for plugins could not be installed (${bun.why}); nothing was registered`);
     return 1;
+  }
+  // The bundled plugins this core's manifest names: from the release, checked, swapped in whole.
+  const plugins = await d.plugins(serverPluginsDir(spec.home), channel);
+  if (plugins.kind === "refused") {
+    d.log(`server install: the bundled plugins could not be installed (${plugins.why}); nothing was registered`);
+    return 1;
+  }
+  // The earlier layout's binaries go (this one, if it was one of them, keeps running and is removed by the OS's
+  // unlink semantics; on Windows it stays until it ends).
+  for (const f of earlier) {
+    try { rmSync(f, { force: true }); } catch { /* in use (Windows) */ }
   }
   let linger = marker?.linger ?? false;
   if (spec.os === "linux" && !linger && d.user !== undefined) {
@@ -107,7 +136,7 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
     d.log(`server install: the login start was written but the OS did not register it (${st.label})`);
     return 1;
   }
-  d.log(`server install: clover-core at ${bin} with plain Bun for plugins beside it, started by the OS (${st.label}), updating itself on ${channel}`);
+  d.log(`server install: clover-core at ${bin} with plain Bun for plugins beside it and the bundled plugins in ${serverPluginsDir(spec.home)}, started by the OS (${st.label}), updating itself on ${channel}`);
   return 0;
 }
 
@@ -129,11 +158,19 @@ export async function serverUninstall(d: ServerDeps): Promise<number> {
   d.removeMarker(spec.home);
   let kept: string | undefined;
   const bun = serverPluginBun(spec.home, spec.os);
-  for (const f of [`${bin}.new`, `${bin}.old`, `${bin}.bad`, bin, `${bun}.new`, `${bun}.old`, `${bun}.swap`, bun]) {
+  const plugins = serverPluginsDir(spec.home);
+  for (const f of [`${bin}.new`, `${bin}.old`, `${bin}.bad`, bin, `${bun}.new`, `${bun}.old`, `${bun}.swap`, bun, ...earlierLayoutFiles(spec.home, spec.os)]) {
     try {
       rmSync(f, { force: true });
     } catch {
       kept = f;
+    }
+  }
+  for (const dir of [plugins, `${plugins}.new`, `${plugins}.old`, `${plugins}.bad`]) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      kept = dir;
     }
   }
   d.log(`server uninstall: the daemon ${stopped}; login start and the marker removed${kept === undefined ? "" : `; ${kept} is in use and stays (delete it once this process ends)`}`);

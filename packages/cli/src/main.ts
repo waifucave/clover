@@ -1,5 +1,6 @@
 import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater } from "./self-update";
 import { daemonBunVersion, ensurePluginBun, serverPluginBun } from "./plugin-bun-install";
+import { ensureServerPlugins, serverPluginsDir, stageServerPlugins } from "./plugins-install";
 import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -1683,6 +1684,12 @@ async function runSupervise(): Promise<void> {
   console.error(`[supervise] loop ended: ${result.ended} (starts=${result.starts}, crashes=${result.crashes})`);
 }
 
+/** The SHA-256 of the bundled-plugins manifest text this binary carries (its embedded Blob), or undefined for none. */
+async function ownManifestSha256(): Promise<string | undefined> {
+  const { text } = await loadBundledManifest();
+  return text === undefined ? undefined : new Bun.CryptoHasher("sha256").update(text).digest("hex");
+}
+
 if (import.meta.main) {
   // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs, read from
   // the raw environment too, so a duplicate entry can't hide one) and, on macOS, no keychains from a HOME that isn't the
@@ -1983,6 +1990,11 @@ if (import.meta.main) {
         if (target === undefined) return Promise.resolve({ kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` });
         return ensurePluginBun({ path, bunVersion: daemonBunVersion(), target, channel, log: (line) => console.log(line) });
       },
+      plugins: async (dir: string, channel: "latest" | "beta") => {
+        const target = coreTargetOf(process.platform, process.arch);
+        if (target === undefined) return { kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` };
+        return ensureServerPlugins({ dir, version: CORE_VERSION, manifestSha256: await ownManifestSha256(), target, channel, log: (line) => console.log(line) });
+      },
     };
     process.exit(parsed.action === "install" ? await serverInstall(deps, parsed.channel) : await serverUninstall(deps));
     break;
@@ -2052,6 +2064,11 @@ if (import.meta.main) {
         drain: async () => { clearTimeout(goodBoot); await daemon.stop(); },
         exit: (code) => process.exit(code),
         log: (line) => console.error(line),
+        // The bundled plugins update with the daemon: each version's tarball, against the new binary's manifest.
+        plugins: {
+          dir: serverPluginsDir(home),
+          stage: (version, manifestSha256) => stageServerPlugins({ dir: serverPluginsDir(home), version, manifestSha256, target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) }),
+        },
       });
       daemon.setSelfUpdate(self);
       self.start();
@@ -2059,6 +2076,11 @@ if (import.meta.main) {
       // matching one is fetched (or put back from `.old`) at this start (plugin-bun-install.ts).
       void ensurePluginBun({ path: serverPluginBun(home, process.platform), bunVersion: daemonBunVersion(), target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) })
         .then((r) => { if (r.kind === "refused") console.error(`update: plain Bun for plugins: ${r.why}`); });
+      // So do the bundled plugins: a folder that isn't this core's manifest's tree (a rollback that found no `.old`, a
+      // folder someone changed) is fetched again at this start. The registry trusts only files that match anyway.
+      void ownManifestSha256()
+        .then((manifestSha256) => ensureServerPlugins({ dir: serverPluginsDir(home), version: CORE_VERSION, manifestSha256, target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) }))
+        .then((r) => { if (r.kind === "refused") console.error(`update: the bundled plugins: ${r.why}`); });
     }
     // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
     // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app

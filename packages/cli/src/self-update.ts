@@ -1,5 +1,5 @@
 // A server's daemon updating itself (spec §3.1, plan §4 M-M2). Only a server install does (`<home>/install.json` says
-// `server`, written by `clover-core server install`, whose binary lives at `<home>/bin/clover-core`); the app updates
+// `server`, written by `clover-core server install`, whose binary lives at `<home>/bin/daemon/clover-core`); the app updates
 // itself and the daemon inside it, and a deb or rpm updates through apt or dnf.
 //
 // Every few hours the daemon reads its update file from this repository's newest release its channel allows
@@ -9,10 +9,14 @@
 //   2. the binary's own signature, then its SHA-512 and size against the update file
 //   3. only then the new binary runs, once: `--version`, with nothing in its environment but PATH, for at most 10 s,
 //      and it must name the version the update file promised
+//   4. the bundled plugins that version ships (plugins-install.ts): the new binary is asked which manifest it carries
+//      (`__bundled-manifest`, the same environment and limit), and that version's tarball, checked as the binary is,
+//      must measure to it; it waits as `<home>/bin/plugins.new`
 // The checked binary waits beside the old one (`clover-core.new`) until the daemon is idle (the update gate,
 // src/update/gate.ts in core). Then the gate closes (no new turn starts), the steps before a restart run (the lease
 // renews), idle is checked again, `.new` is checked again (its SHA-512 and size, just before it is used), the old
-// binary is renamed `clover-core.old` and the new one takes its name, and only then the daemon drains and exits with
+// binary is renamed `clover-core.old` and the new one takes its name (and `plugins.new`, measured again, takes
+// `plugins`' place, the old folder kept as `plugins.old`), and only then the daemon drains and exits with
 // UPDATE_RESTART_EXIT_CODE, which `clover-core supervise` answers by starting it at once. A swap that fails before the
 // drain leaves the daemon running on the old binary, the gate open, and that version waiting out a back-off.
 //
@@ -22,11 +26,12 @@
 //
 // The boot after a swap is watched (`beginUpdatedBoot`, the first thing `daemon run` does): each start of the new
 // version counts, a start that ran GOOD_BOOT_MS (or stopped cleanly) clears the count and removes the old binary, and
-// the third start (two crashes) puts the old binary back and restarts into it; that version is then never taken
-// again. On Windows a running binary can't be deleted, so a `.old` that is still in use stays until a later good boot.
+// the third start (two crashes) puts the old binary (and the old plugins) back and restarts into it; that version is
+// then never taken again. On Windows a running binary can't be deleted, so a `.old` that is still in use stays until a later good boot.
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { swapPluginsIn, treeManifestSha256 } from "./plugins-install";
 import {
   coreBinaryFile, coreFeedFile, parseCoreFeed, SIGNATURE_SUFFIX, verifyFeed, type CoreFeed, type CoreTarget, type FeedChannel,
 } from "@waifucave/clover-update-feed";
@@ -141,6 +146,13 @@ export function beginUpdatedBoot(home: string, bin: string, log: (line: string) 
     rmSync(`${bin}.bad`, { force: true });
     renameSync(bin, `${bin}.bad`);
     renameSync(old, bin);
+    // The bundled plugins the old version shipped come back with it.
+    const plugins = pluginsDirOf(bin);
+    if (plugins !== undefined && existsSync(`${plugins}.old`)) {
+      rmSync(`${plugins}.bad`, { recursive: true, force: true });
+      if (existsSync(plugins)) renameSync(plugins, `${plugins}.bad`);
+      renameSync(`${plugins}.old`, plugins);
+    }
     writeJson(rolledBackFile(home), [...new Set([...rolledBack(home), record.version])]);
     rmSync(bootFile(home), { force: true });
     log(`update: ${record.version} crashed ${boots - 1} times; the previous version is back`);
@@ -151,10 +163,26 @@ export function beginUpdatedBoot(home: string, bin: string, log: (line: string) 
   }
 }
 
+/** A server's bundled plugins folder for its binary `bin` (`<home>/bin/daemon/clover-core` → `<home>/bin/plugins`), or
+ *  undefined for any other layout. */
+export function pluginsDirOf(bin: string): string | undefined {
+  return basename(dirname(bin)) === "daemon" ? join(dirname(dirname(bin)), "plugins") : undefined;
+}
+
 /** LANE C: a start that ran GOOD_BOOT_MS, or stopped cleanly: the new version stays, and the old binary goes (on
- *  Windows, once nothing runs from it any more). Never throws. */
+ *  Windows, once nothing runs from it any more), with the old and rolled-back plugins. Never throws. */
 export function bootWasGood(home: string, bin: string): void {
   rmSync(bootFile(home), { force: true });
+  const plugins = pluginsDirOf(bin);
+  if (plugins !== undefined) {
+    for (const dir of [`${plugins}.old`, `${plugins}.bad`]) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // a file in use (Windows): a later good boot
+      }
+    }
+  }
   // The old binary, a rolled-back one, and any old one a running supervisor held at a swap and so was moved aside
   // (Windows: `retireOld`); each that is still in use stays for a later good boot.
   for (const f of retiredBinaries(bin)) {
@@ -267,12 +295,29 @@ export async function runVersion(path: string, timeoutMs = VERSION_CHECK_MS): Pr
   }
 }
 
+/** Runs `path __bundled-manifest` like `runVersion` (`versionEnv`, at most VERSION_CHECK_MS): the SHA-256 of the
+ *  manifest text the binary carries, "none" when it carries none, or undefined when it failed or answered otherwise. */
+export async function runBundledManifest(path: string, timeoutMs = VERSION_CHECK_MS): Promise<string | undefined> {
+  try {
+    const proc = Bun.spawn([path, "__bundled-manifest"], { env: versionEnv(process.env, process.platform), stdin: "ignore", stdout: "pipe", stderr: "ignore", windowsHide: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<undefined>((resolve) => { timer = setTimeout(() => { proc.kill(); resolve(undefined); }, timeoutMs); });
+    const answer = Promise.all([new Response(proc.stdout).text(), proc.exited]).then(([out, code]) => (code === 0 && proc.signalCode === null ? out.trim() : undefined));
+    const said = await Promise.race([answer, late]);
+    clearTimeout(timer);
+    const m = said === undefined ? null : /^bundled-manifest: \d+ files, sha256 ([0-9a-f]{64}|none)$/.exec(said);
+    return m === null ? undefined : m[1];
+  } catch {
+    return undefined;
+  }
+}
+
 interface ReleaseAsset { name: string; browser_download_url: string }
 interface Release { tag_name: string; draft: boolean; prerelease: boolean; assets: ReleaseAsset[] }
 
 export interface SelfUpdaterDeps {
   home: string;
-  /** The installed binary (`<home>/bin/clover-core`), the one replaced. */
+  /** The installed binary (`<home>/bin/daemon/clover-core`), the one replaced. */
   bin: string;
   version: string;
   target: CoreTarget;
@@ -282,6 +327,14 @@ export interface SelfUpdaterDeps {
   repo?: string;
   fetch?: Fetcher;
   runVersion?: (path: string) => Promise<string | undefined>;
+  /** The manifest a binary carries (`runBundledManifest`), but in tests. */
+  runManifest?: (path: string) => Promise<string | undefined>;
+  /** The bundled plugins, which update with the daemon (plugins-install.ts): their folder (`<home>/bin/plugins`), and
+   *  how a version's tree is checked and staged as `<dir>.new` against the manifest a binary carries. */
+  plugins?: {
+    dir: string;
+    stage(version: string, manifestSha256: string): Promise<{ files: number } | { why: string }>;
+  };
   gate: {
     whenIdle(everyMs?: number, signal?: AbortSignal): Promise<void>;
     closeForRestart(opts?: { reopenAfterMs?: number; timeoutMs?: number; log?: (line: string) => void }): Promise<boolean>;
@@ -308,6 +361,8 @@ export type CheckResult =
 /** A server's daemon's own update (core's `SelfUpdate`, served by `update.status` and `update.apply`). */
 export class SelfUpdater {
   #found: CoreFeed | undefined;
+  /** The manifest the checked binary carries, which `<plugins>.new` measures to. */
+  #pluginsSha: string | undefined;
   #ready = false;
   #applying: Promise<void> | undefined;
   readonly #stop = new AbortController();
@@ -428,6 +483,20 @@ export class SelfUpdater {
       rmSync(staged, { force: true });
       return { kind: "refused", why: `${feed.file}'s --version said ${said === undefined ? "nothing (it failed or ran over 10 s)" : JSON.stringify(said.slice(0, 80))}, not clover ${feed.version}` };
     }
+    // 4. The bundled plugins that version ships, against the manifest the new binary carries.
+    if (this.d.plugins !== undefined) {
+      const sha = await (this.d.runManifest ?? runBundledManifest)(staged);
+      if (sha === undefined || sha === "none") {
+        rmSync(staged, { force: true });
+        return { kind: "refused", why: `${feed.file} ${sha === "none" ? "carries no bundled-plugins manifest" : "didn't say which bundled-plugins manifest it carries"}` };
+      }
+      const plugins = await this.d.plugins.stage(feed.version, sha);
+      if ("why" in plugins) {
+        rmSync(staged, { force: true });
+        return { kind: "refused", why: `the bundled plugins for ${feed.version}: ${plugins.why}` };
+      }
+      this.#pluginsSha = sha;
+    }
     this.#ready = true;
     this.d.log(`update: ${feed.version} is checked and waits for an idle moment`);
     return { kind: "ready", version: feed.version };
@@ -449,6 +518,12 @@ export class SelfUpdater {
         rmSync(staged, { force: true });
         throw new Error(`${staged} is no longer the checked ${feed.version}; it was removed`);
       }
+      // `plugins.new` likewise: still the tree the new binary's manifest names.
+      const plugins = this.d.plugins;
+      if (plugins !== undefined && (this.#pluginsSha === undefined || treeManifestSha256(`${plugins.dir}.new`) !== this.#pluginsSha)) {
+        rmSync(`${plugins.dir}.new`, { recursive: true, force: true });
+        throw new Error(`${plugins.dir}.new is no longer the checked plugins for ${feed.version}; it was removed`);
+      }
       if (!retireOld(bin)) throw new Error(`${old} is still in use and can't be moved aside`);
       // The boot count first: a kill between here and the restart still has the new version's starts watched (and a
       // stray count with no `.old` behind it clears itself at the next start).
@@ -459,6 +534,17 @@ export class SelfUpdater {
       } catch (err) {
         renameSync(old, bin);
         throw err;
+      }
+      if (plugins !== undefined) {
+        try {
+          // The old folder stays as `.old` until a good boot (a rollback puts it back).
+          swapPluginsIn(plugins.dir, true);
+        } catch (err) {
+          // The binary goes back too: a version never runs beside another's plugins.
+          renameSync(bin, staged);
+          renameSync(old, bin);
+          throw err;
+        }
       }
     } catch (err) {
       this.#swapFailed(feed?.version, err);
@@ -481,9 +567,9 @@ export class SelfUpdater {
     if (version !== undefined) this.#failed.set(version, { until: (this.d.now ?? Date.now)() + wait, wait });
     this.#ready = false;
     this.d.gate.reopen();
-    for (const f of [bootFile(this.d.home), `${this.d.bin}.new`]) {
+    for (const f of [bootFile(this.d.home), `${this.d.bin}.new`, ...(this.d.plugins === undefined ? [] : [`${this.d.plugins.dir}.new`])]) {
       try {
-        rmSync(f, { force: true });
+        rmSync(f, { recursive: true, force: true });
       } catch {
         // `.new` goes with the next check's (it writes `.new` afresh); a count with no `.old` clears itself at a start
       }

@@ -328,6 +328,13 @@ jobs:
       - name: Build and check the packages
         run: bun scripts/build-packages.ts --arch ${{ matrix.arch }} --check
 
+      # A server on this architecture takes the daemon's release file and the bundled plugins' tarball: the tarball is
+      # the tree that daemon embeds the manifest of (#244).
+      - name: The bundled plugins' tarball is the tree the daemon's manifest names
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-linux-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-linux-*.tar.gz)"
+
       - name: Install the deb, check it, and remove it
         run: |
           deb=$(ls apps/desktop/out/dist/*_${{ matrix.deb }}.deb)
@@ -397,6 +404,14 @@ jobs:
           said=$(env -i PATH="$PATH" "${extra[@]}" "$bin" --version)
           echo "$bin --version: $said"
           test "$said" = "clover $version"
+
+      # The bundled plugins' tarball for a server is the tree that daemon embeds the manifest of (#244), as the daemon
+      # itself reports it, run as a server's self-update runs it.
+      - name: The bundled plugins' tarball is the tree the daemon's manifest names
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-*.tar.gz)"
 
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core

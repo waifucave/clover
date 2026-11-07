@@ -24,9 +24,11 @@
 //      on opening it); on Windows, the Authenticode signatures of the installer, Clover.exe, clover-core.exe,
 //      clover-link.exe and clover-plugin-bun.exe, by the publisher
 //   6. copies the daemon out of the app (signed with it, on a signed build) as clover-core-<version>-<target>, with its
-//      update file for each channel served (lib.ts's `writeCoreAssets`), for a server's daemon to update itself from
+//      update file for each channel served (lib.ts's `writeCoreAssets`), for a server's daemon to update itself from;
+//      plugin Bun beside it likewise; and the app's resources/plugins packed as clover-plugins-<version>-<target>.tar.gz
+//      with its update file (`writePluginsAssets`), the tree that core's manifest names
 //   7. runs the identity scan over everything in out/dist (scripts/release/name-scan.ts; a signed release fails
-//      closed without the owner's guard), then records the commit it built (BUILD-COMMIT-<os>.txt; a signed build needs a clean checkout), on latest copies
+//      closed without the owner's guard), then records the commit it built (BUILD-COMMIT-<os>.txt; every build needs a fully clean checkout), on latest copies
 //      the update files to the beta names (lib.ts's `writeServedCopies`), and checks the installers and update files are all there, each update file against the files it names, and
 //      writes SHA256SUMS-<os>.txt beside them
 //
@@ -57,9 +59,9 @@ import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems,
-  checkPluginBunFeed, writeCoreAssets, writePluginBunAssets, writeServedCopies, type Channel,
+  checkPluginBunFeed, checkPluginsFeed, writeCoreAssets, writePluginBunAssets, writePluginsAssets, writeServedCopies, type Channel,
 } from "./lib";
-import { coreFeedFile, pluginBunFeedFile } from "../../packages/update-feed/src/index";
+import { coreFeedFile, pluginBunFeedFile, pluginsFeedFile } from "../../packages/update-feed/src/index";
 
 export type BuildOs = "mac" | "win";
 
@@ -257,8 +259,8 @@ export function main(argv: readonly string[], root: string): number {
   try {
     const outDir = join(desktop, "out", "dist");
     const staged = join(desktop, "out", "daemon");
-    // A release is of one commit; a signed one of a clean checkout of it.
-    const commit = checkoutCommit(root, a.sign);
+    // A release is of one commit, from a fully clean checkout of it (the build reads the whole tree).
+    const commit = checkoutCommit(root);
     rmSync(outDir, { recursive: true, force: true });
     must("the app", ["bun", "run", "build"], desktop);
     // The bundled plugins' stage (the committed files only), its manifest, and the daemon's stage, where
@@ -333,6 +335,8 @@ export function main(argv: readonly string[], root: string): number {
     }
     writeCoreAssets(outDir, version, a.os, a.channel, daemonInApp(outDir, a.os));
     writePluginBunAssets(outDir, a.os, a.channel, join(dirname(daemonInApp(outDir, a.os)), bundledFiles(target)[0]!));
+    // The bundled plugins for a server: the app's resources/plugins (held to the core's manifest above), packed.
+    writePluginsAssets(outDir, version, a.os, a.channel, join(dirname(dirname(daemonInApp(outDir, a.os))), "plugins"));
     writeBuildCommit(outDir, a.os, commit);
     writeServedCopies(outDir, a.channel, [a.os]);
 
@@ -347,13 +351,15 @@ export function main(argv: readonly string[], root: string): number {
       if (existsSync(join(outDir, core))) problems.push(...checkCoreFeed(readFileSync(join(outDir, core), "utf8"), version, read).map((p) => `${core}: ${p}`));
       const bun = pluginBunFeedFile(ch, CORE_TARGET[a.os]);
       if (existsSync(join(outDir, bun))) problems.push(...checkPluginBunFeed(readFileSync(join(outDir, bun), "utf8"), read).map((p) => `${bun}: ${p}`));
+      const plugins = pluginsFeedFile(ch, CORE_TARGET[a.os]);
+      if (existsSync(join(outDir, plugins))) problems.push(...checkPluginsFeed(readFileSync(join(outDir, plugins), "utf8"), version, read).map((p) => `${plugins}: ${p}`));
     }
     for (const p of problems) console.error(`release/build: ${p}`);
     if (problems.length > 0) return 1;
     // The identity scan over everything built (scripts/release/name-scan.ts): fails closed on a signed release.
     const scan = runNameScan(outDir, { required: a.sign });
     console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason}); a signed release never skips it`);
-    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n) || n.startsWith("clover-core-") || n.startsWith("clover-plugin-bun-")).sort();
+    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n) || n.startsWith("clover-core-") || n.startsWith("clover-plugin-bun-") || n.startsWith("clover-plugins-")).sort();
     writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
     console.log(`release/build: ${shipped.join(", ")} in ${outDir}${a.sign ? "" : " (unsigned)"}`);
     return 0;

@@ -65,7 +65,7 @@ describe("plain Bun for plugins on a server", () => {
   posix("install: fetched, checked and put beside the daemon; then left in place", async () => {
     const s = server([{ tag: "v1.0.0", bun: "1.4.4" }]);
     expect(await s.ensure("1.4.4")).toEqual({ kind: "installed", version: "1.4.4", from: "release" });
-    expect(s.path).toBe(join(s.home, "bin", "clover-plugin-bun"));
+    expect(s.path).toBe(join(s.home, "bin", "daemon", "clover-plugin-bun"));
     expect(await runVersion(s.path)).toBe("1.4.4");
     const asked = s.gh.asked.length;
     expect(await s.ensure("1.4.4")).toEqual({ kind: "in place" });
@@ -119,8 +119,7 @@ describe("plain Bun for plugins on a server", () => {
   });
 });
 
-test("the server's plugin Bun is <home>/bin/clover-plugin-bun, .exe on Windows", () => {
-  writeFileSync(join(mkdtempSync(join(tmpdir(), "x-")), "noop"), "");
-  expect(serverPluginBun("/srv/home", "darwin")).toBe(join("/srv/home", "bin", "clover-plugin-bun"));
-  expect(serverPluginBun("C:/h", "win32")).toBe(join("C:/h", "bin", "clover-plugin-bun.exe"));
+test("the server's plugin Bun is <home>/bin/daemon/clover-plugin-bun, beside the daemon, .exe on Windows", () => {
+  expect(serverPluginBun("/srv/home", "darwin")).toBe(join("/srv/home", "bin", "daemon", "clover-plugin-bun"));
+  expect(serverPluginBun("C:/h", "win32")).toBe(join("C:/h", "bin", "daemon", "clover-plugin-bun.exe"));
 });

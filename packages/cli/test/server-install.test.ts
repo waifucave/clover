@@ -5,10 +5,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readInstallMarker, removeInstallMarker, writeInstallMarker, type LoginSpec } from "@waifucave/clover-core";
-import { insideApp, parseServerArgs, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
+import { earlierLayoutFiles, insideApp, parseServerArgs, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
 import { serverPluginBun, type PluginBunResult } from "../src/plugin-bun-install";
+import { serverPluginsDir, type PluginsResult } from "../src/plugins-install";
 
-function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registered?: boolean; bin?: string; pluginBun?: PluginBunResult } = {}) {
+function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registered?: boolean; bin?: string; pluginBun?: PluginBunResult; plugins?: PluginsResult } = {}) {
   const root = mkdtempSync(join(tmpdir(), "clover-server-install-"));
   const home = join(root, "home");
   mkdirSync(home);
@@ -29,7 +30,7 @@ function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registe
     },
     loginEnable: async (spec) => { enabled.push(spec); return { registered: opts.registered ?? true, label: "com.waifucave.clover.core" }; },
     loginRemove: async (spec) => { removed.push(spec); },
-    stopDaemon: async () => "not-running",
+    stopDaemon: async (spec) => { stopped.push(spec.bin); return "not-running"; },
     readMarker: (h) => readInstallMarker(h), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
     user: "srv", log: (l) => lines.push(l),
     pluginBun: async (path, channel) => {
@@ -37,9 +38,16 @@ function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registe
       if (opts.pluginBun?.kind !== "refused") writeFileSync(path, "plain bun");
       return opts.pluginBun ?? { kind: "installed", version: "1.4.4", from: "release" };
     },
+    plugins: async (dir, channel) => {
+      bundled.push({ dir, channel });
+      if (opts.plugins?.kind !== "refused") { mkdirSync(join(dir, "clover"), { recursive: true }); writeFileSync(join(dir, "clover", "clover.json"), "{}"); }
+      return opts.plugins ?? { kind: "installed", version: "1.2.3", files: 1 };
+    },
   };
   const plugin: Array<{ path: string; channel: string }> = [];
-  return { home, bin, deps, ran, enabled, removed, lines, plugin };
+  const bundled: Array<{ dir: string; channel: string }> = [];
+  const stopped: string[] = [];
+  return { home, bin, deps, ran, enabled, removed, lines, plugin, bundled, stopped };
 }
 
 describe("clover-core server install and uninstall", () => {
@@ -51,10 +59,11 @@ describe("clover-core server install and uninstall", () => {
     for (const bad of [[], ["install", "--channel", "nightly"], ["uninstall", "--force"], ["enable"]]) expect(() => parseServerArgs(bad)).toThrow(/usage/);
   });
 
-  test("Linux: the binary into <home>/bin, lane C's login start for it, lingering on, and the server marker", async () => {
+  test("Linux: the binary into <home>/bin/daemon, lane C's login start for it, lingering on, and the server marker", async () => {
     const s = setup("linux");
     expect(await serverInstall(s.deps, "beta")).toBe(0);
     const bin = serverBinary(s.home, "linux");
+    expect(bin).toBe(join(s.home, "bin", "daemon", "clover-core"));
     expect(readFileSync(bin, "utf8")).toBe("the daemon");
     expect(s.enabled.map((e) => e.bin)).toEqual([bin]);
     expect(s.ran).toEqual(["loginctl show-user srv --property=Linger --value", "loginctl enable-linger srv"]);
@@ -103,14 +112,45 @@ describe("clover-core server install and uninstall", () => {
     const s = setup("linux");
     expect(await serverInstall(s.deps, "beta")).toBe(0);
     const bun = serverPluginBun(s.home, "linux");
-    expect(bun).toBe(join(s.home, "bin", "clover-plugin-bun"));
+    expect(bun).toBe(join(s.home, "bin", "daemon", "clover-plugin-bun"));
     expect(s.plugin).toEqual([{ path: bun, channel: "beta" }]);
     expect(readFileSync(bun, "utf8")).toBe("plain bun");
     writeFileSync(`${bun}.old`, "older bun");
     expect(await serverUninstall(s.deps)).toBe(0);
     expect(existsSync(bun)).toBe(false);
     expect(existsSync(`${bun}.old`)).toBe(false);
-    expect(serverPluginBun("/h", "win32")).toBe(join("/h", "bin", "clover-plugin-bun.exe"));
+    expect(serverPluginBun("/h", "win32")).toBe(join("/h", "bin", "daemon", "clover-plugin-bun.exe"));
+  });
+
+  test("the bundled plugins go in <home>/bin/plugins on install, on the install's channel, and go with it on uninstall", async () => {
+    const s = setup("linux");
+    expect(await serverInstall(s.deps, "beta")).toBe(0);
+    const dir = serverPluginsDir(s.home);
+    expect(dir).toBe(join(s.home, "bin", "plugins"));
+    expect(s.bundled).toEqual([{ dir, channel: "beta" }]);
+    expect(existsSync(join(dir, "clover", "clover.json"))).toBe(true);
+    for (const d of [`${dir}.old`, `${dir}.new`]) mkdirSync(d);
+    expect(await serverUninstall(s.deps)).toBe(0);
+    for (const d of [dir, `${dir}.old`, `${dir}.new`]) expect(existsSync(d)).toBe(false);
+  });
+
+  test("a server whose bundled plugins can't be installed isn't installed: nothing registered, no marker", async () => {
+    const s = setup("linux", { plugins: { kind: "refused", why: "clover-plugins-1.2.3-linux-x64.tar.gz isn't the tree this core's manifest names" } });
+    expect(await serverInstall(s.deps, "latest")).toBe(1);
+    expect(s.enabled).toEqual([]);
+    expect(readInstallMarker(s.home)).toBeUndefined();
+    expect(s.lines.at(-1)).toContain("isn't the tree this core's manifest names");
+  });
+
+  test("the earlier layout (<home>/bin/clover-core, plugin Bun beside it) is stopped and removed at install", async () => {
+    const s = setup("linux");
+    const earlier = earlierLayoutFiles(s.home, "linux");
+    mkdirSync(join(s.home, "bin"), { recursive: true });
+    for (const f of [earlier[0]!, `${earlier[0]}.old`, join(s.home, "bin", "clover-plugin-bun")]) writeFileSync(f, "earlier");
+    expect(await serverInstall(s.deps, "latest")).toBe(0);
+    expect(s.stopped).toEqual([earlier[0]!]);
+    for (const f of earlier) expect(existsSync(f)).toBe(false);
+    expect(existsSync(serverBinary(s.home, "linux"))).toBe(true);
   });
 
   test("a server that can't have plain Bun for plugins isn't installed: nothing registered, no marker", async () => {
