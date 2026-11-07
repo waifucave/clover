@@ -11,6 +11,7 @@
 // network filter. A desktop whose app is closed has no browser until the pair starts the app again; it never falls back
 // to the headless shell.
 import { join } from "node:path";
+import type { DeviceRegistry } from "../contracts/device-registry";
 import type { BrowserNetworkConfig } from "./contract";
 import { HeadlessBrowser, type HeadlessBrowserOptions } from "./headless";
 import { bunRun } from "./headless/browser";
@@ -29,7 +30,11 @@ export interface StartBrowserOptions {
   /** No app runs on this computer at all: tabs live in the headless shell. */
   headless: boolean;
   network?: BrowserNetworkConfig;
+  /** The other computers and the link to them. `peers.level` is this computer's own approval level, which judges every
+   *  call another computer's session makes here (lane INT passes the daemon's). */
   peers?: BrowserPeers;
+  /** Lane H's device registry: a revoked device's streams end at once, whether or not its link has gone down yet. */
+  devices?: Pick<DeviceRegistry, "watch">;
   grants?: PersonsBrowserGrants;
   emit?: (event: BrowserEvent) => void;
   /** The headless shell's stream chunks (by default the service's own stream sender takes them). */
@@ -81,6 +86,7 @@ export function startBrowser(o: StartBrowserOptions): DaemonBrowser {
     ...(o.network !== undefined ? { network: o.network } : {}),
     ...(o.peers !== undefined ? { peers: o.peers } : {}),
     ...(o.grants !== undefined ? { grants: o.grants } : {}),
+    ...(o.devices !== undefined ? { devices: o.devices } : {}),
     ...(o.emit !== undefined ? { emit: o.emit } : {}),
   });
   const unserve = o.peers !== undefined ? serveBrowserPeers({ service, peers: o.peers }) : () => undefined;

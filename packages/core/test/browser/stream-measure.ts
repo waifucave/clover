@@ -2,7 +2,7 @@
 //   scripts/pinned-bun packages/core/test/browser/stream-measure.ts [baseline|sweep]
 // `baseline` prints every scenario under the current defaults, with a socket buffer of 0, 64 KiB and 256 KiB;
 // `sweep` ranks combinations of the thresholds by the sum of the scenarios' scores (`refine` sweeps around the first
-// sweep's best, with the goodput rule); `loopback` runs the real-time TCP runs; `compare` prints chosen tunings side by side.
+// sweep's best); `loopback` runs the real-time TCP runs; `compare` prints chosen tunings side by side.
 import { SCENARIOS, simulate, type Metrics } from "./throttle-sim";
 import { DEFAULT_STREAM_TUNING, type StreamTuning } from "../../src/browser/stream";
 import { LOOPBACK_SCENARIOS, runLoopback } from "./stream-loopback";
@@ -32,7 +32,7 @@ if (mode === "baseline") {
   }
 } else if (mode === "compare") {
   const candidates: Record<string, Partial<StreamTuning>> = JSON.parse(process.argv[3] ?? "{}");
-  for (const [name, tuning] of Object.entries({ "current defaults (before)": { highWaterSeconds: 0.5, lowerFactor: 0.6, raiseFactor: 1.25, raiseAfterMs: 4000, lowerEveryMs: 1000, goodputFactor: 0 }, "defaults now": {}, ...candidates })) {
+  for (const [name, tuning] of Object.entries({ "current defaults (before)": { highWaterSeconds: 0.5, lowerFactor: 0.6, raiseFactor: 1.25, raiseAfterMs: 4000, lowerEveryMs: 1000 }, "defaults now": {}, ...candidates })) {
     for (const sndbufBytes of [0, 64 * 1024, 256 * 1024]) {
       const ms = await all({ ...DEFAULT_STREAM_TUNING, ...tuning }, sndbufBytes);
       console.log(`${name.padEnd(28)} buffer ${String(sndbufBytes / 1024).padStart(3)} KiB  total ${f(ms.reduce((s, m) => s + m.score, 0)).padStart(6)}  worst p95 ${f(Math.max(...ms.map((m) => m.latencyP95)), 0).padStart(5)} ms  lagging ${f(ms.reduce((s, m) => s + m.laggingSec, 0))} s  frozen ${f(ms.reduce((s, m) => s + m.frozenSec, 0))} s  mean util ${f((ms.reduce((s, m) => s + m.utilization, 0) / ms.length) * 100, 0)}%`);
@@ -46,14 +46,12 @@ if (mode === "baseline") {
     raiseFactor: [1.05, 1.1, 1.25],
     raiseAfterMs: [8000, 12000],
     lowerEveryMs: [250, 500],
-    goodputFactor: [0, 0.85],
   } : {
     highWaterSeconds: [0.25, 0.5, 1],
     lowerFactor: [0.5, 0.6, 0.75],
     raiseFactor: [1.1, 1.25, 1.5],
     raiseAfterMs: [2000, 4000, 8000],
     lowerEveryMs: [500, 1000, 2000],
-    goodputFactor: [0],
   };
   const buffers = refine ? [0, 64 * 1024, 256 * 1024] : [0, 64 * 1024];
   const results: { tuning: Partial<StreamTuning>; score: number; worst: number }[] = [];
@@ -62,8 +60,8 @@ if (mode === "baseline") {
       for (const raiseFactor of grid.raiseFactor)
         for (const raiseAfterMs of grid.raiseAfterMs)
           for (const lowerEveryMs of grid.lowerEveryMs)
-            for (const goodputFactor of grid.goodputFactor) {
-              const tuning = { highWaterSeconds, lowerFactor, raiseFactor, raiseAfterMs, lowerEveryMs, goodputFactor };
+            {
+              const tuning = { highWaterSeconds, lowerFactor, raiseFactor, raiseAfterMs, lowerEveryMs };
               let score = 0;
               let worst = 0;
               // The score is the mean over the buffer sizes a real link has (a QUIC or TCP stream takes tens of KiB).
@@ -76,7 +74,7 @@ if (mode === "baseline") {
             }
   results.sort((a, b) => a.score - b.score);
   for (const r of results.slice(0, 15)) console.log(`${f(r.score)}  worst freeze ${f(r.worst)}s  ${JSON.stringify(r.tuning)}`);
-  const same = (t: Partial<StreamTuning>) => t.highWaterSeconds === 0.5 && t.lowerFactor === 0.6 && t.raiseFactor === 1.25 && t.raiseAfterMs === 4000 && t.lowerEveryMs === 1000 && (t.goodputFactor ?? 0) === 0;
+  const same = (t: Partial<StreamTuning>) => t.highWaterSeconds === 0.5 && t.lowerFactor === 0.6 && t.raiseFactor === 1.25 && t.raiseAfterMs === 4000 && t.lowerEveryMs === 1000;
   const current = results.find((r) => same(r.tuning));
   console.log(`before (0.5 s, x0.6, x1.25, 4 s, 1 s): ${current === undefined ? "not in this grid" : `${f(current.score)} (rank ${results.indexOf(current) + 1} of ${results.length})`}`);
 }

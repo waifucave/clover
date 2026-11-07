@@ -126,7 +126,7 @@ function setup(tuning: Record<string, number> = {}) {
   const ended: { stream: string; reason: string }[] = [];
   const streams = new TabStreams({
     computer: "Studio", transport, app: () => app, now: () => now, newId: () => `id_${++n}`,
-    tuning: { highWaterBytes: 10_000, ...tuning }, ended: (e) => ended.push(e),
+    tuning: { highWaterBytes: 10_000, lowerFactor: 0.6, lowerEveryMs: 1000, raiseFactor: 1.25, raiseAfterMs: 4000, ...tuning }, ended: (e) => ended.push(e),
   });
   const appStream = (): string => {
     const c = app.of("stream").at(-1) as Extract<AppTabCommand, { kind: "stream" }>;
