@@ -77,6 +77,9 @@ export const CLOVER_EXEMPT_PATHS: readonly string[] = [
   "packages/protocol/scripts/generate.ts",
   // The deprecated Norma cask points Norma's users at Winter.
   "packaging/norma-deprecated.rb",
+  // D-M3: carrying Winter's routines and `_assistant` memories over to Alpha (spec §12); Winter is what it reads.
+  "packages/core/src/routines/migrate-winter.ts",
+  "packages/core/src/routines/tests/migrate-winter.test.ts",
 ];
 
 /** Tracked paths the path pass never moves, though a component spells `winter`. */
