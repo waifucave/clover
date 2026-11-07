@@ -3177,9 +3177,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
+  const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
-    tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
+    tokens: cloverTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
     deviceId: createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32),
@@ -3394,6 +3395,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const linksReady = (opts.links === false ? Promise.resolve(undefined) : startDaemonLinks({
     home: dirs.home, store: contractSecrets, clock: new SystemClock(), handlers: cloverLaneHandlers,
     dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
+    // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
+    clients: { server: cloverServer, tokens: cloverTokens },
     log: (line) => console.error(line),
   })).then((d) => { daemonLinks = d; return d; }, (err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); return undefined; });
   return {

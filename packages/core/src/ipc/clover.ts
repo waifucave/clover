@@ -181,6 +181,10 @@ export interface CloverServer {
   isCloverHello(params: unknown): boolean;
   /** `end` closes the connection (a revoked bridge token's, a refused bridge). */
   hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
+  /** A paired phone's or browser's hello on its link (lane H's `mountRemoteClients`, through `linkClientServer`): no
+   *  local process to probe, since the link proved the device. The token must be the one the core minted for that
+   *  device and role; the caller is the user on that device. Never reachable from the socket. */
+  linkHello(connId: number, params: unknown, link: { device: string; role: "remote" | "web" }, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
   /** A response from the client to one of the daemon's requests (the heartbeat's). */
@@ -302,6 +306,32 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     return handler(conn, p.data);
   };
 
+  const parseHello = (params: unknown): CloverHelloParams => {
+    const parsed = CloverHelloParams.safeParse(params);
+    if (!parsed.success) throw new CloverRpcError(ERR.INVALID_PARAMS, "invalid hello");
+    if (!helloVersionServed(parsed.data.protocolVersion)) {
+      throw new CloverRpcError(CLOVER_ERR.VERSION_REFUSED, "protocol version not served", { min: CLOVER_PROTOCOL_MIN_VERSION, max: CLOVER_PROTOCOL_VERSION });
+    }
+    return parsed.data;
+  };
+
+  // A connection after its hello: kept for routing (`coreEvent`) and closing.
+  const register = (connId: number, h: CloverHelloParams, caller: Caller, write: (bytes: Uint8Array) => void, extra: Pick<CloverConn, "hostProcess" | "bridgeConnection">): { conn: CloverConn; result: CloverHelloResult } => {
+    if (conns.has(connId)) throw new CloverRpcError(ERR.INVALID_REQUEST, "that connection already said hello");
+    const conn: CloverConn = {
+      connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...extra,
+      send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
+      notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
+      follows: new Map(),
+    };
+    conns.set(connId, conn);
+    deps.log?.(`[clover] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
+    return {
+      conn,
+      result: { ok: true, serverVersion: deps.serverVersion, protocolVersion: CLOVER_PROTOCOL_VERSION, caller, device: deps.deviceId, features: [...(deps.features ?? [])] },
+    };
+  };
+
   const pairStatus = (): PairStatus => {
     const extras = deps.pairStatusExtras?.() ?? { bots: [], routines: 0, agents: 0, canHandOver: false };
     return PairStatus.parse({ ...extras, safeMode: deps.pair?.status().safeMode ?? false });
@@ -360,12 +390,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     async hello(socket, connId, params, write, end) {
-      const parsed = CloverHelloParams.safeParse(params);
-      if (!parsed.success) throw new CloverRpcError(ERR.INVALID_PARAMS, "invalid hello");
-      const h = parsed.data;
-      if (!helloVersionServed(h.protocolVersion)) {
-        throw new CloverRpcError(CLOVER_ERR.VERSION_REFUSED, "protocol version not served", { min: CLOVER_PROTOCOL_MIN_VERSION, max: CLOVER_PROTOCOL_VERSION });
-      }
+      const h = parseHello(params);
       let caller: Caller;
       let peer: PeerFacts;
       let bridge: { sessionId: string; connection: number } | undefined;
@@ -388,19 +413,19 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
         if (gone.has(socket)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "closed");
       }
       if (bridge) bridged.set(connId, { ...bridge, ...(end ? { end } : {}) });
-      const conn: CloverConn = {
-        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}),
-        send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
-        notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
-        follows: new Map(),
-      };
-      conns.set(connId, conn);
-      if (h.role === "app") { deps.pair?.appConnected(String(connId), conn.features); startBeat(conn, peer.pid, peer.handle); }
-      deps.log?.(`[clover] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
-      return {
-        conn,
-        result: { ok: true, serverVersion: deps.serverVersion, protocolVersion: CLOVER_PROTOCOL_VERSION, caller, device: deps.deviceId, features: [...(deps.features ?? [])] },
-      };
+      const r = register(connId, h, caller, write, { ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}) });
+      if (h.role === "app") { deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
+      return r;
+    },
+
+    async linkHello(connId, params, link, write) {
+      const h = parseHello(params);
+      if (h.role !== link.role || h.device !== link.device) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "a link's hello is its device's, in its role");
+      const binding = await deps.tokens.verify(h);
+      if (isRefusal(binding)) throw new CloverRpcError(binding.code, binding.message);
+      if (binding.role !== link.role || !("device" in binding) || binding.device !== link.device) throw new CloverRpcError(ERR_UNAUTHORIZED, "the token is for another device or role");
+      const caller: Caller = { kind: "user", client: link.role === "remote" ? "ios" : "web", device: link.device };
+      return register(connId, h, caller, write, {});
     },
 
     async handle(conn, method, params) {

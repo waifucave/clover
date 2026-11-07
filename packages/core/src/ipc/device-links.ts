@@ -7,8 +7,10 @@
 //     C-M3's approval broker raises its card (the controller's ruling: `refuseUntilBroker`).
 //   - `peer.call` runs through the Clover server's `dispatch`. A call that needs the user's signed answer is refused
 //     until C-M3's cards render (`renderNothing`), so verifySignedAnswer fails closed.
+//   - A paired phone or browser speaks the Clover protocol over its link (H-M2's `mountRemoteClients`, on the Clover
+//     server through `mountCloverRemoteClients`, C-M3 item 3) when the daemon passes `clients`.
 // Still to come: the sidecar's spawn under the fence (with C-M2's Bash fence: UDP and its pipes only), and H-M2's
-// `mountRemoteClients`, `mountMainChoiceRequests`, `publicTime` and `revokeOptions()` once #184 merges.
+// `mountMainChoiceRequests`, `publicTime` and `revokeOptions()`.
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { hostname } from "node:os";
@@ -21,6 +23,8 @@ import { startDeviceLinks, type DeviceLinks, type DeviceLinksOptions } from "../
 import { mountPeerCall } from "../links/peer-call";
 import { watchNetwork } from "../platform/network-watch";
 import { laneMethodHandlers, type CloverHandler } from "./clover";
+import { mountCloverRemoteClients, type CloverRemoteClientsOptions } from "./link-clients";
+import type { RemoteTokens } from "../links/remote-clients";
 
 /** Until C-M3's broker: no card can be raised, so a change that needs one is refused. */
 export const refuseUntilBroker: CardOpener = async () => ({ allowed: Promise.resolve(false) });
@@ -50,6 +54,8 @@ export interface DaemonLinksInput {
   self?: DeviceLinksOptions["self"];
   /** Runs a peer's call as that peer, under the role's allow list (`CloverServer.dispatch`). */
   dispatch(method: string, params: unknown, caller: Extract<Caller, { kind: "peer" }>, role: Extract<CloverRole, "remote" | "web">): Promise<unknown>;
+  /** The Clover server and its tokens, for paired phones' and browsers' connections over their links. */
+  clients?: { server: CloverRemoteClientsOptions["server"]; tokens: RemoteTokens };
   /** The Clover server's lane handlers, filled in once the links are up. */
   handlers: Record<string, CloverHandler>;
   /** Test seams: the wire and where peers are (no sidecar), and the network watch. */
@@ -88,6 +94,9 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
     devices: links.registry, ledger: memoryLedger(), render: renderNothing, clock: input.clock,
     dispatch: (method, params, caller, role) => input.dispatch(method, params, caller, role),
   });
+  const offClients = input.clients === undefined ? undefined : mountCloverRemoteClients({
+    transport: links.transport, registry: links.registry, server: input.clients.server, tokens: input.clients.tokens, log,
+  });
   const offNet = (input.watch ?? watchNetwork)((why) => {
     log(`[links] network ${why === "wake" ? "after a wake" : "changed"}: re-dialling`);
     links.transport.networkChanged();
@@ -96,6 +105,6 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
   void links.refresh().catch(() => undefined);
   return {
     links,
-    async close() { offNet(); offPeer(); await links.close(); },
+    async close() { offNet(); offClients?.(); offPeer(); await links.close(); },
   };
 }
