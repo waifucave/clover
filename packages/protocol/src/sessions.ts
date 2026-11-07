@@ -111,6 +111,10 @@ export const SessionView = z.object({
   /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you
    *  marks; a card's content stays behind `approvals` and the sealed frames). */
   needsYou: z.object({ cards: z.number().int().nonnegative(), questions: z.number().int().nonnegative() }).optional(),
+  /** When this computer's copy last forked from the computer running the session and was cut back to follow it: what
+   *  this computer held from there was kept aside and went to that computer, which shows it after its own, marked late
+   *  ("Earlier on <computer>"). A client reads the history again when it changes. */
+  rebasedAt: Timestamp.optional(),
 });
 export type SessionView = z.infer<typeof SessionView>;
 
