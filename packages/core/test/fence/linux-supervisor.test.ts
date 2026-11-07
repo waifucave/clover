@@ -131,7 +131,8 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       const hostRoot = openSync("/", 0o200000);
       const wa = openParentDir(l, hostRoot, `${root}/a`, true);
       if (!("parentFd" in wa)) throw new Error("absolute open failed");
-      expect(parentIdentity(wa.parentFd)).toEqual(id);
+      const ast = lstatSync(join(root, "a"));
+      expect(parentIdentity(wa.parentFd)).toEqual({ dev: BigInt(ast.dev), ino: BigInt(ast.ino) });
       try { closeSync(wa.parentFd); } catch { /* pinned */ }
       // Identity matching against a supervised list.
       const wb = openParentDir(l, freshBase(), "a", false);
