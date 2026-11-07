@@ -2474,6 +2474,13 @@ if (import.meta.main) {
       return { positionals, scopeRaw };
     }
 
+    if (sub === "validate") {
+      const { runPluginValidate } = await import("./plugin-validate-cli");
+      const run = await runPluginValidate(rest);
+      (run.code === 2 ? console.error : console.log)(run.output);
+      process.exit(run.code);
+    }
+
     if (sub === "marketplace") {
       const mktSub = process.argv[4];
       const mktRest = process.argv.slice(5);
@@ -3480,6 +3487,7 @@ if (import.meta.main) {
   trust <dir> [--list] | trust list | trust remove <path>
   skills                                          list discovered skills for this directory
   mcp                                              list configured MCP servers and their tools
+  plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>

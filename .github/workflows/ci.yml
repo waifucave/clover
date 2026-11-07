@@ -63,6 +63,7 @@ jobs:
       core: ${{ steps.areas.outputs.core }}
       cli: ${{ steps.areas.outputs.cli }}
       scripts: ${{ steps.areas.outputs.scripts }}
+      scriptsmac: ${{ steps.areas.outputs.scriptsmac }}
       codegen: ${{ steps.areas.outputs.codegen }}
       swift: ${{ steps.areas.outputs.swift }}
       verify: ${{ steps.areas.outputs.verify }}
@@ -177,8 +178,10 @@ jobs:
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
         run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
 
+      # The built daemon and app are kept only from a push to main or a manual run: nothing in a pull request or a
+      # merge group downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() && env.DAEMON == 'true' }}
+        if: ${{ !cancelled() && env.DAEMON == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
           name: clover-core-${{ matrix.target }}
           path: dist/daemon/${{ matrix.target }}/
@@ -225,7 +228,7 @@ jobs:
         run: xvfb-run -a bun test test/browser.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
           name: clover-app-${{ matrix.target }}
           path: apps/desktop/out/dist/
@@ -504,7 +507,7 @@ jobs:
   #    tests run on the embedded runtime; those two still spawn the binary.
   #  - the repo's own scripts' tests (`scripts/**/*.test.ts`): the layout's conventions, the build, dev and release
   #    tools' pure halves, the held scripts, the limiter, the rename's codemod. None builds an app or starts a
-  #    daemon. `embed-runtimes.test.ts` stages the agent runtime's binary from dist/.
+  #    daemon. `embed-runtimes.darwin.test.ts` stages the agent runtime's binary from dist/.
   #  - the compiled-binary proofs (Winter Phase 8d, P8d-5): verify:workflow, verify:automation-worker,
   #    verify:runtime-state, verify:fd-receiver and verify:runtimes, which resolves the `winter` binary through its
   #    own ladder (the installed platform package first).
@@ -512,13 +515,13 @@ jobs:
   macos:
     name: macOS (core, cli, scripts, verify, link)
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scripts == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true'
+    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scriptsmac == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true'
     runs-on: macos-latest
     timeout-minutes: 60
     env:
       CORE: ${{ needs.changes.outputs.core }}
       CLI: ${{ needs.changes.outputs.cli }}
-      SCRIPTS: ${{ needs.changes.outputs.scripts }}
+      SCRIPTS: ${{ needs.changes.outputs.scriptsmac }}
       VERIFY: ${{ needs.changes.outputs.verify }}
       LINK: ${{ needs.changes.outputs.link }}
     steps:
@@ -595,9 +598,11 @@ jobs:
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
         run: bun test test/*.ts
 
-      - name: Scripts · test
+      # Only the repo scripts' macOS tests (`scripts/**/*.darwin.test.ts`: codesign, the predecessor app's bundles,
+      # LaunchServices); the rest run on Linux, in the scripts job.
+      - name: Scripts · the macOS-only tests
         if: ${{ !cancelled() && env.SCRIPTS == 'true' }}
-        run: bun test scripts
+        run: bun scripts/platform-tests.ts --root scripts --darwin
 
       - name: Link · the link tests over the sidecar
         if: ${{ !cancelled() && env.LINK == 'true' }}
@@ -644,6 +649,34 @@ jobs:
       - name: verify:runtimes
         if: ${{ !cancelled() && env.VERIFY == 'true' }}
         run: bun run verify:runtimes
+
+  # The repo scripts' tests (`scripts/**/*.test.ts`) on Linux: the layout's conventions, the build, dev and release
+  # tools' pure halves, the held scripts, the limiter, the rename's codemod. The few that need macOS are named
+  # `*.darwin.test.ts` and run in the macos job (scripts/platform-tests.ts picks each side's files).
+  scripts:
+    name: scripts · linux
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # xmllint, for release-lib's appcast checks (macOS has it built in).
+      - name: xmllint
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scripts · test
+        run: bun scripts/platform-tests.ts --root scripts --not-darwin
 
   # The protocol package generates a JSON schema and the Swift round-trip fixtures. If a schema
   # change landed without re-running the generator, the tree is dirty here — which is exactly the
@@ -831,7 +864,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

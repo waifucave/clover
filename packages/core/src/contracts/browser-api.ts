@@ -92,7 +92,7 @@ export function mayActOnHeldTab(as: Caller, input: BrowserInput = {}): boolean {
  *  (`userPartition`); the user and the core for any owner. */
 export function mayOpenFor(owner: TabOwner, as: Caller, userPartition: (session: string) => boolean): boolean {
   if (as.kind === "user" || as.kind === "core") return true;
-  if (as.kind === "plugin") return owner.kind === "plugin" && owner.pluginId === as.pluginId;
+  if (as.kind === "plugin") return owner.kind === "plugin" && owner.plugin === as.pluginId;
   if (as.kind !== "session") return false;
   if (owner.kind === "session") return owner.session === as.sessionId;
   if (owner.kind === "bot") return as.bot !== undefined && owner.bot === as.bot;
@@ -106,7 +106,7 @@ export function partitionFor(owner: TabOwner): string {
   switch (owner.kind) {
     case "bot": return `persist:bot-${owner.bot.replace(/\//g, "--")}`;
     case "session": return `persist:session-${owner.session}`;
-    case "plugin": return `persist:plugin-${owner.pluginId.replace(/\//g, "--")}`;
+    case "plugin": return `persist:plugin-${owner.plugin.replace(/\//g, "--")}`;
     case "user": return "persist:user";
   }
 }

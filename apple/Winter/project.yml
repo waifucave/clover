@@ -526,7 +526,7 @@ targets:
       # Winter Phase 8d (P8d-1/P8d-2): the SECOND embedded binary, right after winter-core, same
       # Release-only shape. The body lives in scripts/embed-runtimes.sh (not inline, unlike the
       # script above) because it has a real gate worth unit-testing standalone
-      # (scripts/embed-runtimes.test.ts) — stage the P8d-1 runtimes/ layout and re-sign winter
+      # (scripts/embed-runtimes.darwin.test.ts) — stage the P8d-1 runtimes/ layout and re-sign winter
       # with a stable identifier. (WS-23: the vendored claude binary it used to verify is no longer
       # embedded — the official leg is retired.) Xcode already exports BUILT_PRODUCTS_DIR,
       # CONTENTS_FOLDER_PATH, CONFIGURATION and EXPANDED_CODE_SIGN_IDENTITY into a Run Script
@@ -545,7 +545,7 @@ targets:
       # ComputerV2: Winter Computer Use, the signed helper app that holds its own Accessibility and Screen
       # Recording grants, at Contents/Helpers/Winter Computer Use.app. Release only, like the two embeds
       # above; the body (copy, re-sign with the STATED designated requirement TCC keys the grants on, check)
-      # is scripts/embed-computer-helper.sh, tested standalone by scripts/embed-computer-helper.test.ts.
+      # is scripts/embed-computer-helper.sh, tested standalone by scripts/embed-computer-helper.darwin.test.ts.
       - name: Embed Winter Computer Use
         basedOnDependencyAnalysis: false
         script: |
@@ -555,7 +555,7 @@ targets:
       # Contents/Helpers/WinterCowork. Release only (a Debug app embeds neither). The inputs are built by
       # scripts/build-cowork-native.ts into dist/cowork-native (release.ts runs it first). The body (checks, per-binary signing
       # with a STATED designated requirement, the pin manifest) is scripts/embed-cowork-native.sh, tested standalone by
-      # scripts/embed-cowork-native.test.ts. Shipping the pair activates nothing: the daemon still refuses Cowork sessions.
+      # scripts/embed-cowork-native.darwin.test.ts. Shipping the pair activates nothing: the daemon still refuses Cowork sessions.
       - name: Embed Cowork native
         basedOnDependencyAnalysis: false
         script: |

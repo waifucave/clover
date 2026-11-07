@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
-  // The main process runs on Electron's Node, never Bun: Node's types only, so a Bun API cannot slip in.
-  "compilerOptions": { "types": ["node"] },
+  // The main process runs on Electron's Node, never Bun. Bun's types are here only because the plugin SDK's index
+  // carries a Bun-only module; test/main-no-bun.test.ts keeps every Bun API out of src/main.
+  "compilerOptions": { "types": ["node", "bun"] },
   "include": ["src/main"]
 }

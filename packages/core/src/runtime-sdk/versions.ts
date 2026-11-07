@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.65";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.67";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,12 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.65";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.65 (2026-11-06, A-M2's review): a turn's result states its context (`context_tokens`, which the
+/** Bumped to 0.0.67 (2026-11-06, A-M3): a host's plain-named tool may take an unoffered built-in's name
+ *  (`shadowBuiltins`: the core's `SendMessage`, `ListAgents`, `TaskStop`, `Agent`), and `Options.hostToolSearch`
+ *  keeps deferral on for `Glossary`, which loads tools through `ToolSearch`'s `select:` path.
+ *  Earlier: bumped to 0.0.66 (2026-11-06, A-M3's first commit): a code model plugin's turn errors cross the plugin host and
+ *  the control wire as plain data (`plainProviderError`), not an empty `{}`.
+ *  Earlier: bumped to 0.0.65 (2026-11-06, A-M2's review): a turn's result states its context (`context_tokens`, which the
  *  projector reads), a signing adapter runs over its plugin's `net.fetch`, a keyed fetch refusal is final, an
  *  untrusted plugin's risk and admission are ignored, and Codex's originator is a product token.
  *  Earlier: bumped to 0.0.64 (2026-11-06, A-M2): every provider a model plugin. The catalog built from a host's model plugins

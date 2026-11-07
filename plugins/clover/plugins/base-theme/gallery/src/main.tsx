@@ -76,6 +76,8 @@ function Ready({ story, children }: { story?: GalleryStory; children: ReactNode 
     const settle = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     (async () => {
       try {
+        // The fonts first: a card measures its words, and a late font would change its size after the sample.
+        await document.fonts?.ready;
         await settle();
         if (story?.ready) await story.ready();
         await settle();
