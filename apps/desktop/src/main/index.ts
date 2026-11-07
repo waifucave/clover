@@ -1244,6 +1244,16 @@ async function smoke(): Promise<void> {
             (element === undefined || f.url.includes(element) || (element !== undefined && f.url.includes(encodeURIComponent(element)))));
           if (frame !== undefined) {
             log(`sealed-click: frame found ${frame.url.slice(0, 80)}`);
+            // Real input reaches out-of-process frames only in a shown window: a hidden window's main frame takes
+            // the press while its layer frames never hear it (the E2E's own finding on every OS: root presses, clover
+            // none — the browser has no compositor surface to route into the child process). The smoke run shows the
+            // main window without focusing it once its sealed frame is there, so the press routes and IOv2 sees the
+            // button. Headless otherwise stays hidden (no Dock, no tray, no focus); under CI's virtual display no
+            // human screen is touched.
+            if (!win.isVisible()) {
+              win.showInactive();
+              log(`sealed-click: main window shown for the press`);
+            }
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
             if (cover === true) {
               await frame.executeJavaScript(`(() => {
@@ -1264,8 +1274,9 @@ async function smoke(): Promise<void> {
               })()`, true).catch(() => undefined);
             }
             // Let the IntersectionObserver register the visibility change (trackVisibility, delay 200 ms), and the
-            // button's own 500 ms visible + 400 ms open gates pass before the press.
-            await new Promise((r) => setTimeout(r, 800));
+            // button's own 500 ms visible + 400 ms open gates pass before the press. The window was just shown above,
+            // so visibility starts counting here.
+            await new Promise((r) => setTimeout(r, 1200));
             const buttonRaw = await frame.executeJavaScript(
               `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
             const buttonRect = buttonRaw !== null && typeof buttonRaw === "object" && typeof (buttonRaw as { x?: unknown }).x === "number" ? buttonRaw as { x: number; y: number; width: number; height: number } : null;
@@ -1389,15 +1400,25 @@ async function smoke(): Promise<void> {
           // Viewport coordinates for this window's own webContents (not screen coordinates).
           const centerX = Math.round(buttonRect.x + buttonRect.width / 2);
           const centerY = Math.round(buttonRect.y + buttonRect.height / 2);
+          // Record what the fallback page hears, so a silent gate shows up in the log (the part path's presses=).
+          await frame.executeJavaScript(`(() => { window.__fbEvents = []; for (const t of ["pointerover", "pointerdown", "click"]) document.addEventListener(t, (e) => window.__fbEvents.push([t, Math.round(e.clientX), Math.round(e.clientY), e.isTrusted, e.target instanceof Element ? (e.target.closest(".seal-button") !== null ? "button" : e.target.tagName) : "?"]), true); })()`, true).catch(() => null);
           // The fallback's own gates: the pointer must enter after the window shows, and a second after it shows.
-          // Move there first so pointerover fires, wait out the 1 s, then press.
+          // Move there first so pointerover fires, wait out the 1 s, then press. A second move right before the
+          // press covers a first one lost while the page still loaded.
           void w.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
           await new Promise((r) => setTimeout(r, 1300));
           if (w.isDestroyed()) break;
           log(`sealed-click: fallback press sent at ${centerX},${centerY}`);
+          void w.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
+          await new Promise((r) => setTimeout(r, 120));
+          if (w.isDestroyed()) break;
           void w.webContents.sendInputEvent({ type: "mouseDown", x: centerX, y: centerY, button: "left" });
           void w.webContents.sendInputEvent({ type: "mouseUp", x: centerX, y: centerY, button: "left" });
           sealedClicked = true;
+          await new Promise((r) => setTimeout(r, 1000));
+          const fbAfter = await frame.executeJavaScript(
+            `(() => ({ events: (window.__fbEvents ?? []).slice(0, 8), answered: document.body.dataset.answered ?? null }))()`, true).catch(() => null) as { events: unknown; answered: string | null } | null;
+          if (fbAfter !== null && typeof fbAfter === "object") log(`sealed-click: fallback after press events=${JSON.stringify((fbAfter as { events?: unknown }).events ?? [])} answered=${String((fbAfter as { answered?: unknown }).answered ?? "")}`);
         }
         break;
       }

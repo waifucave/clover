@@ -183,7 +183,9 @@ export function ownCardPage(input: {
     const b2 = e.target !== null && e.target instanceof Element ? e.target.closest(".seal-button") : null;
     if (b2 === null) return;
     e.preventDefault();
-    void b.answer(b2.dataset.option);
+    void b.answer(b2.dataset.option).then((r) => {
+      if (r !== null && typeof r === "object" && (r as { accepted?: unknown }).accepted === true) document.body.dataset.answered = "yes";
+    });
   }, { capture: true });
 })();`;
   return page({ cardId: input.cardId, token: input.token, tokens: input.tokens }, `${bits}

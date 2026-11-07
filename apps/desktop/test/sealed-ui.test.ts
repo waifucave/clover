@@ -183,6 +183,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", cover: true } });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
+    // The press reached the sealed page itself (not just the main frame), and the page refused it.
+    expect(r.output).toContain("presses=[[");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
@@ -190,6 +192,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once", opacity: 0 } });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
+    // The press reached the sealed page itself (not just the main frame), and the page refused it.
+    expect(r.output).toContain("presses=[[");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
@@ -197,6 +201,8 @@ describe.if(enabled)("the sealed card in Electron (E-M3 end-to-end)", () => {
     const r = await runApp({ click: { cardId: CARD_ID, element: "button:allow_once" }, acting: true });
     expect(r.output).toContain("sealed-click: frame found");
     expect(r.output).toContain("sealed-click: press sent at");
+    // The press reached the sealed page itself (not just the main frame), and the app refused it.
+    expect(r.output).toContain("presses=[[");
     expect(answerCallsOf(r.home), r.output).toHaveLength(0);
   }, 120_000);
 
