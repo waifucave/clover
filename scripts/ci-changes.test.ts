@@ -36,7 +36,7 @@ describe("ci-changes", () => {
   });
 
   test("the installers' release build runs for what makes them, never for code, CI's own files or a lockfile alone", () => {
-    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json"]) {
+    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json", "scripts/build-packages.ts", "packages/update-feed/src/index.ts"]) {
       expect(areasFor([f]).installers).toBe(true);
     }
     for (const f of ["bun.lock", ".bun-version", ".github/workflows/ci.yml", "packages/core/src/daemon.ts", "apps/desktop/src/main/index.ts", "packages/cli/src/main.ts"]) {

@@ -67,7 +67,7 @@ import { sdkGlobalConfigPath, sdkHomeFor, sdkSettingsPath, trustRecordFile } fro
 import { forgetSdkFile, liveSdkGlobalConfig, liveSdkSettings, readSdkGlobalConfigDetailed, readSdkSettingsDetailed } from "./sdk-files";
 import { ApprovalBroker } from "./agent/approvals";
 import { UpdateGate } from "./update/gate";
-import { updateHandlers, type SelfUpdate } from "./update/service";
+import { updateExitAllowed, updateHandlers, type SelfUpdate } from "./update/service";
 import { readInstallMarker } from "./update/install-marker";
 import { ElicitationBroker } from "./runtime-sdk/url-elicitation";
 import { QuestionBroker } from "./agent/questions";
@@ -2188,6 +2188,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
   };
   const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
+    // M-M2: no new turn while the update gate closes for a restart (`updateGate` is set further down, before any turn).
+    updateClosing: () => updateGate.closed,
     home: cloverHome,
     // WS-21: every incarnation's run home, when the linked router applies them (see `runHomeDeps`).
     ...(runHomeDeps === undefined ? {} : { runHome: runHomeDeps }),
@@ -2377,9 +2379,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   updateGate.register({ name: "turns", count: () => signals.activeTurnCount() });
   updateGate.register({
     name: "agents",
-    count: () => cloverDrivers.list().reduce((n, d) => n + (bgAgents?.list(d.sessionId) ?? []).filter((a) => a.status === "running").length, 0),
+    // Every session's, not only the live drivers': a background agent outlives its parent's turn and driver.
+    count: () => bgAgents?.runningCount?.()
+      ?? cloverDrivers.list().reduce((n, d) => n + (bgAgents?.list(d.sessionId) ?? []).filter((a) => a.status === "running").length, 0),
   });
   updateGate.register({ name: "approvals", count: () => approvalBroker.pendingCount() });
+  updateGate.register({ name: "questions", count: () => questions.pendingCount() });
+  updateGate.register({ name: "elicitations", count: () => elicitationBroker.pendingCount() });
+  updateGate.register({ name: "workflows", count: () => workflowRuntime?.runningCount() ?? 0 });
   const childrenRpc = createChildrenRpc({
     registry: () => bgAgents,
     facetFor: (sid) => { const backend = runtime?.records.get(sid)?.backendSessionId; return backend === undefined || runtimeSdk === undefined ? undefined : attachedFacetFor(runtimeSdk, backend); },
@@ -3148,6 +3155,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
+    updateExitAllowed: () => updateExitAllowed(updateGate),
     handlers: updateHandlers({
       gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
       channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",

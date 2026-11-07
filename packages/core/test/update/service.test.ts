@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { CLOVER_METHODS } from "@waifucave/clover-protocol";
 import type { CloverConn } from "../../src/ipc/clover";
 import { UpdateGate } from "../../src/update/gate";
-import { updateHandlers, type SelfUpdate } from "../../src/update/service";
+import { updateExitAllowed, updateHandlers, type SelfUpdate } from "../../src/update/service";
 
 const conn = {} as CloverConn;
 const parse = (method: string, result: unknown) => CLOVER_METHODS.get(method)!.result.parse(result);
@@ -39,6 +39,24 @@ describe("update.status and update.apply", () => {
     busy = 0;
     expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "now" });
     expect(renewed).toBe(1);
+  });
+
+  test("apply closes the gate for the restart; a turn that starts during the steps before it makes the answer when-idle, gate open", async () => {
+    const gate = new UpdateGate();
+    let turns = 0;
+    gate.register({ name: "turns", count: () => turns });
+    const h = updateHandlers({ gate, current: "1.2.3", channel: () => "latest" });
+    expect(updateExitAllowed(gate)).toBe(false); // not closed yet
+    expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "now" });
+    expect(gate.closed).toBe(true);
+    expect(updateExitAllowed(gate)).toBe(true);
+    turns = 1;
+    expect(updateExitAllowed(gate)).toBe(false); // closed but busy: the app's exit is refused
+    gate.reopen();
+    turns = 0;
+    gate.beforeRestart(() => { turns = 1; });
+    expect(parse("update.apply", await h["update.apply"]!(conn, {}))).toEqual({ at: "when-idle" });
+    expect(gate.closed).toBe(false);
   });
 
   test("on a server, apply starts the daemon's own update: now when idle, when-idle otherwise", async () => {

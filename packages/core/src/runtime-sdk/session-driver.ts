@@ -340,6 +340,8 @@ function noteStaleEffortOnce(model: string, effort: string): void {
 
 export interface CloverLegDeps {
   home: string;
+  /** M-M2: true while the update gate is closing for a restart (`update/gate.ts`): no new turn starts then. */
+  updateClosing?: () => boolean;
   /** `CLOVER_PROFILE` for the child (`""` on dist). */
   profile?: string;
   /** THE LIVE settings holder. */
@@ -1397,6 +1399,10 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
      * (`apiKeyProviderIsUnauthenticated`) — never a settings-field special case.
      */
     const beforeTurn = async (): Promise<void> => {
+      // M-M2: the daemon is about to restart for an update; nothing is appended, and sending again after it works.
+      if (deps.updateClosing?.() === true) {
+        throw new CloverLegRefusal("daemon_shutting_down", "Clover is restarting for an update; send it again in a moment", "update-restarting");
+      }
       const live = deps.store.meta(sessionId);
       const settings = deps.settings();
       const model = mode === "dispatch" ? (live.model ?? pinsFor(settings).dispatch) : (live.model ?? settings?.provider?.model);

@@ -1925,6 +1925,10 @@ if (import.meta.main) {
     break;
   }
   case "daemon run": {
+    // LANE C — M-M2's boot-count hook (self-update.ts), first, before anything else the daemon does (the log file
+    // included), so a crash anywhere in the start counts: after a server's daemon swapped in its update, this counts
+    // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.
+    if (beginUpdatedBoot(resolveCloverHome(), process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
     // Whole-branch review: register the shutdown handlers HERE, not (only) in daemon.ts. daemon.ts's
     // SIGTERM/SIGINT handlers live under `if (import.meta.main)`, which is FALSE for the compiled
     // binary and this CLI entry (main.ts is `import.meta.main`, daemon.ts is not) — so without this
@@ -1946,9 +1950,6 @@ if (import.meta.main) {
     // touches the home; `installDaemonLogFile` and `startDaemon` refuse it again on their own.
     const daemonLog = installDaemonLogFile(resolveCloverHome());
     console.error(`daemon log: ${daemonLog.path}`);
-    // LANE C — M-M2's boot-count hook (self-update.ts): after a server's daemon swapped in its update, this counts
-    // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.
-    if (beginUpdatedBoot(resolveCloverHome(), process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
     let daemon: Awaited<ReturnType<typeof startDaemon>>;
     try {
       daemon = await startDaemon();

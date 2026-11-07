@@ -98,7 +98,14 @@ const installs = new InstallGate({
   exiting: () => pair.exiting("update"),
   stopApp: () => leaveApp(),
   daemonGone: () => daemonGone(15_000),
-  install: (relaunch) => updater?.install(relaunch),
+  install: (relaunch) => updater?.install(relaunch) ?? false,
+  // The app's side is down and no install came: start again (the pair comes back with it), or end a Quit with an error.
+  recover: (relaunch, why) => {
+    log(`updater: ${why}; ${relaunch ? "starting again" : "quitting"}`);
+    if (relaunch) app.relaunch();
+    app.exit(relaunch ? 0 : 1);
+  },
+  after: (ms, fn) => { setTimeout(fn, ms); },
   every: (ms, fn) => {
     const t = setInterval(fn, ms);
     return () => clearInterval(t);

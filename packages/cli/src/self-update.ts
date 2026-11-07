@@ -10,17 +10,23 @@
 //   3. only then the new binary runs, once: `--version`, with nothing in its environment but PATH, for at most 10 s,
 //      and it must name the version the update file promised
 // The checked binary waits beside the old one (`clover-core.new`) until the daemon is idle (the update gate,
-// src/update/gate.ts in core); then the steps before a restart run (the lease renews), the daemon drains, the old binary
-// is renamed `clover-core.old`, the new one takes its name, and the daemon exits with UPDATE_RESTART_EXIT_CODE, which
-// `clover-core supervise` answers by starting it at once.
+// src/update/gate.ts in core). Then the gate closes (no new turn starts), the steps before a restart run (the lease
+// renews), idle is checked again, `.new` is checked again (its SHA-512 and size, just before it is used), the old
+// binary is renamed `clover-core.old` and the new one takes its name, and only then the daemon drains and exits with
+// UPDATE_RESTART_EXIT_CODE, which `clover-core supervise` answers by starting it at once. A swap that fails before the
+// drain leaves the daemon running on the old binary, the gate open, and that version waiting out a back-off.
+//
+// Downloads are bounded: an update file or a signature at most 64 KiB, the binary at most its signed size. All of these
+// files live in the home's fenced set (core's `selfGrantDenyWrite`): no session can plant a binary, a rollback or the
+// marker.
 //
 // The boot after a swap is watched (`beginUpdatedBoot`, the first thing `daemon run` does): each start of the new
 // version counts, a start that ran GOOD_BOOT_MS (or stopped cleanly) clears the count and removes the old binary, and
 // the third start (two crashes) puts the old binary back and restarts into it; that version is then never taken
 // again. On Windows a running binary can't be deleted, so a `.old` that is still in use stays until a later good boot.
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import {
   coreBinaryFile, coreFeedFile, parseCoreFeed, SIGNATURE_SUFFIX, verifyFeed, type CoreFeed, type CoreTarget, type FeedChannel,
 } from "@waifucave/clover-update-feed";
@@ -33,6 +39,10 @@ export const VERSION_CHECK_MS = 10_000;
 export const GOOD_BOOT_MS = 30_000;
 /** The third start of a new version (two crashes) rolls it back. */
 export const ROLLBACK_AT_BOOT = 3;
+/** The most an update file or a `.sig` may be. */
+export const MAX_FEED_BYTES = 64 * 1024;
+/** After a failed swap, how long that version waits before it is tried again (doubling, to a day). */
+export const SWAP_BACKOFF_MS = 60 * 60 * 1000;
 
 /** The release target this process is, or undefined (no self-update elsewhere). */
 export function coreTargetOf(platform: string, arch: string): CoreTarget | undefined {
@@ -144,39 +154,107 @@ export function beginUpdatedBoot(home: string, bin: string, log: (line: string) 
 /** LANE C: a start that ran GOOD_BOOT_MS, or stopped cleanly: the new version stays, and the old binary goes (on
  *  Windows, once nothing runs from it any more). Never throws. */
 export function bootWasGood(home: string, bin: string): void {
-  try {
-    if (!existsSync(bootFile(home))) {
-      // A `.old` a running supervisor still held at an earlier good boot (Windows) goes now, if it can.
-      rmSync(`${bin}.old`, { force: true });
-      return;
+  rmSync(bootFile(home), { force: true });
+  // The old binary, a rolled-back one, and any old one a running supervisor held at a swap and so was moved aside
+  // (Windows: `retireOld`); each that is still in use stays for a later good boot.
+  for (const f of retiredBinaries(bin)) {
+    try {
+      rmSync(f, { force: true });
+    } catch {
+      // still in use (Windows)
     }
-    rmSync(bootFile(home), { force: true });
-    rmSync(`${bin}.old`, { force: true });
-    rmSync(`${bin}.bad`, { force: true });
+  }
+}
+
+/** `.old`, `.bad` and the `.old-<time>` copies moved aside, beside `bin`. */
+function retiredBinaries(bin: string): string[] {
+  const dir = dirname(bin), base = basename(bin);
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
   } catch {
-    // Windows: still in use. A later good boot tries again.
+    return [];
+  }
+  return names.filter((n) => n === `${base}.old` || n === `${base}.bad` || n.startsWith(`${base}.old-`)).map((n) => join(dir, n));
+}
+
+/** Clears the way for `.old`: removed, or (Windows, where a running supervisor holds it) moved aside to be removed at
+ *  a later good boot. False when neither works. */
+function retireOld(bin: string): boolean {
+  const old = `${bin}.old`;
+  try {
+    rmSync(old, { force: true });
+    return true;
+  } catch {
+    try {
+      renameSync(old, `${old}-${Date.now()}`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
 // ---- the check and the swap ----
 
-/** One HTTP GET's body, or undefined on anything but a 200. */
-export type Fetcher = (url: string, accept?: string) => Promise<Uint8Array | undefined>;
+/** One HTTP GET's body, or undefined on anything but a 200, or a body over `maxBytes`. */
+export type Fetcher = (url: string, opts: { accept?: string; maxBytes: number }) => Promise<Uint8Array | undefined>;
 
-export const httpFetch: Fetcher = async (url, accept) => {
+/** A body read up to `maxBytes`: undefined (the read stopped) once it is longer. */
+export async function readCapped(body: ReadableStream<Uint8Array> | null, maxBytes: number): Promise<Uint8Array | undefined> {
+  if (body === null) return new Uint8Array();
+  const reader = body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      return undefined;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+export const httpFetch: Fetcher = async (url, opts) => {
   try {
-    const r = await fetch(url, { headers: { "User-Agent": "clover-core", ...(accept ? { Accept: accept } : {}) }, redirect: "follow", signal: AbortSignal.timeout(5 * 60_000) });
-    return r.ok ? new Uint8Array(await r.arrayBuffer()) : undefined;
+    const r = await fetch(url, { headers: { "User-Agent": "clover-core", ...(opts.accept ? { Accept: opts.accept } : {}) }, redirect: "follow", signal: AbortSignal.timeout(5 * 60_000) });
+    if (!r.ok) return undefined;
+    const declared = Number(r.headers.get("content-length") ?? NaN);
+    if (Number.isFinite(declared) && declared > opts.maxBytes) {
+      await r.body?.cancel().catch(() => {});
+      return undefined;
+    }
+    return await readCapped(r.body, opts.maxBytes);
   } catch {
     return undefined;
   }
 };
 
-/** Runs `path --version` with nothing in its environment but PATH, for at most VERSION_CHECK_MS: its output, or
- *  undefined when it failed or ran too long. */
+/** The new binary's environment for `--version`: PATH alone, and on Windows the two variables a process can't start
+ *  without (Winsock and CNG read `SystemRoot`), which CI's installers job runs the built daemon under. */
+export function versionEnv(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): Record<string, string> {
+  const out: Record<string, string> = { PATH: env.PATH ?? env.Path ?? "" };
+  if (platform === "win32") {
+    const root = env.SystemRoot ?? env.SYSTEMROOT;
+    const windir = env.windir ?? env.WINDIR;
+    if (root !== undefined) out.SystemRoot = root;
+    if (windir !== undefined) out.windir = windir;
+  }
+  return out;
+}
+
+/** Runs `path --version` with `versionEnv`'s environment, for at most VERSION_CHECK_MS: its output, or undefined when
+ *  it failed or ran too long. */
 export async function runVersion(path: string, timeoutMs = VERSION_CHECK_MS): Promise<string | undefined> {
   try {
-    const proc = Bun.spawn([path, "--version"], { env: { PATH: process.env.PATH ?? "" }, stdin: "ignore", stdout: "pipe", stderr: "ignore", windowsHide: true });
+    const proc = Bun.spawn([path, "--version"], { env: versionEnv(process.env, process.platform), stdin: "ignore", stdout: "pipe", stderr: "ignore", windowsHide: true });
     let timer: ReturnType<typeof setTimeout> | undefined;
     // The answer by the deadline, or none: a child it left holding the pipe doesn't hold the check.
     const late = new Promise<undefined>((resolve) => { timer = setTimeout(() => { proc.kill(); resolve(undefined); }, timeoutMs); });
@@ -204,7 +282,11 @@ export interface SelfUpdaterDeps {
   repo?: string;
   fetch?: Fetcher;
   runVersion?: (path: string) => Promise<string | undefined>;
-  gate: { whenIdle(everyMs?: number, signal?: AbortSignal): Promise<void>; prepareRestart(timeoutMs?: number, log?: (line: string) => void): Promise<void> };
+  gate: {
+    whenIdle(everyMs?: number, signal?: AbortSignal): Promise<void>;
+    closeForRestart(opts?: { reopenAfterMs?: number; timeoutMs?: number; log?: (line: string) => void }): Promise<boolean>;
+    reopen(): void;
+  };
   /** Stops the daemon (`RunningDaemon.stop`), before the binaries change places. */
   drain(): Promise<void>;
   /** The process exits (with UPDATE_RESTART_EXIT_CODE after a swap). */
@@ -212,6 +294,7 @@ export interface SelfUpdaterDeps {
   restartCode: number;
   log(line: string): void;
   idlePollMs?: number;
+  now?(): number;
 }
 
 export type CheckResult =
@@ -225,6 +308,8 @@ export class SelfUpdater {
   #ready = false;
   #applying: Promise<void> | undefined;
   readonly #stop = new AbortController();
+  /** Versions whose swap failed: not tried again before `until`. */
+  readonly #failed = new Map<string, { until: number; wait: number }>();
 
   constructor(private readonly d: SelfUpdaterDeps) {}
 
@@ -239,12 +324,19 @@ export class SelfUpdater {
   /** Install the checked update at the next idle moment (now, when idle). */
   apply(): void {
     if (!this.#ready || this.#applying !== undefined) return;
-    this.#applying = this.d.gate.whenIdle(this.d.idlePollMs ?? 60_000, this.#stop.signal)
-      .then(() => this.swap())
+    const attempt = async (): Promise<void> => {
+      // Idle, then closed for the restart and idle still; work that started meanwhile sends it back to waiting.
+      for (;;) {
+        await this.d.gate.whenIdle(this.d.idlePollMs ?? 60_000, this.#stop.signal);
+        if (await this.d.gate.closeForRestart({ timeoutMs: 5_000, log: this.d.log })) break;
+      }
+      await this.swap();
+    };
+    this.#applying = attempt()
       .catch((err: unknown) => {
-        this.#applying = undefined;
         if (!this.#stop.signal.aborted) this.d.log(`update: ${err instanceof Error ? err.message : String(err)}`);
-      });
+      })
+      .finally(() => { this.#applying = undefined; });
   }
 
   /** Checks now, then every `everyMs`; a checked update installs at the next idle moment. Returns a stop. */
@@ -254,7 +346,7 @@ export class SelfUpdater {
       void this.check().then((r) => {
         if (r.kind === "ready") this.apply();
         else if (r.kind === "refused") this.d.log(`update: refused: ${r.why}`);
-      });
+      }, (err: unknown) => this.d.log(`update: the check failed: ${err instanceof Error ? err.message : String(err)}`));
     };
     run();
     const t = setInterval(run, everyMs);
@@ -265,8 +357,8 @@ export class SelfUpdater {
     };
   }
 
-  #get(url: string, accept?: string): Promise<Uint8Array | undefined> {
-    return (this.d.fetch ?? httpFetch)(url, accept);
+  #get(url: string, maxBytes: number, accept?: string): Promise<Uint8Array | undefined> {
+    return (this.d.fetch ?? httpFetch)(url, { maxBytes, ...(accept ? { accept } : {}) });
   }
 
   #verify(name: string, bytes: Uint8Array, signature: Uint8Array | undefined) {
@@ -276,7 +368,7 @@ export class SelfUpdater {
 
   /** The newest release this channel allows that carries this target's update file. */
   async #release(feedName: string): Promise<Release | undefined> {
-    const body = await this.#get(`https://api.github.com/repos/${this.d.repo ?? UPDATE_REPO}/releases?per_page=30`, "application/vnd.github+json");
+    const body = await this.#get(`https://api.github.com/repos/${this.d.repo ?? UPDATE_REPO}/releases?per_page=30`, 4 * 1024 * 1024, "application/vnd.github+json");
     if (body === undefined) return undefined;
     let releases: unknown;
     try {
@@ -294,11 +386,11 @@ export class SelfUpdater {
     const release = await this.#release(feedName);
     if (release === undefined) return { kind: "up to date" };
     const asset = (name: string) => release.assets.find((a) => a.name === name)?.browser_download_url;
-    const feedBytes = await this.#get(asset(feedName)!);
-    if (feedBytes === undefined) return { kind: "refused", why: `${feedName} could not be read` };
+    const feedBytes = await this.#get(asset(feedName)!, MAX_FEED_BYTES);
+    if (feedBytes === undefined) return { kind: "refused", why: `${feedName} could not be read (or is over ${MAX_FEED_BYTES} bytes)` };
     // 1. The update file's signature, before a byte of it is read.
     const sigUrl = asset(`${feedName}${SIGNATURE_SUFFIX}`);
-    const feedVerdict = this.#verify(feedName, feedBytes, sigUrl === undefined ? undefined : await this.#get(sigUrl));
+    const feedVerdict = this.#verify(feedName, feedBytes, sigUrl === undefined ? undefined : await this.#get(sigUrl, MAX_FEED_BYTES));
     if (!feedVerdict.ok) return { kind: "refused", why: `${feedName}: ${feedVerdict.reason}` };
     let feed: CoreFeed;
     try {
@@ -308,14 +400,17 @@ export class SelfUpdater {
     }
     if (!isNewer(feed.version, this.d.version)) return { kind: "up to date" };
     if (rolledBack(this.d.home).includes(feed.version)) return { kind: "refused", why: `${feed.version} was rolled back here` };
+    const failed = this.#failed.get(feed.version);
+    if (failed !== undefined && (this.d.now ?? Date.now)() < failed.until) return { kind: "refused", why: `${feed.version}'s swap failed; it is tried again later` };
     if (feed.file !== coreBinaryFile(feed.version, this.d.target)) return { kind: "refused", why: `${feedName} names ${feed.file}, not this target's binary` };
     this.#found = feed;
     const binUrl = asset(feed.file);
-    const binBytes = binUrl === undefined ? undefined : await this.#get(binUrl);
-    if (binBytes === undefined) return { kind: "refused", why: `${feed.file} could not be read` };
+    // At most its signed size: a longer download stops there.
+    const binBytes = binUrl === undefined ? undefined : await this.#get(binUrl, feed.size);
+    if (binBytes === undefined) return { kind: "refused", why: `${feed.file} could not be read (or is over its ${feed.size} bytes)` };
     // 2. The binary's signature, then its SHA-512 and size against the update file.
     const binSigUrl = asset(`${feed.file}${SIGNATURE_SUFFIX}`);
-    const binVerdict = this.#verify(feed.file, binBytes, binSigUrl === undefined ? undefined : await this.#get(binSigUrl));
+    const binVerdict = this.#verify(feed.file, binBytes, binSigUrl === undefined ? undefined : await this.#get(binSigUrl, MAX_FEED_BYTES));
     if (!binVerdict.ok) return { kind: "refused", why: `${feed.file}: ${binVerdict.reason}` };
     if (createHash("sha512").update(binBytes).digest("base64") !== feed.sha512 || binBytes.length !== feed.size) {
       return { kind: "refused", why: `${feed.file}'s sha512 or size doesn't match ${feedName}` };
@@ -335,21 +430,23 @@ export class SelfUpdater {
     return { kind: "ready", version: feed.version };
   }
 
-  /** The swap: the steps before a restart, drain, the old binary to `.old`, the new one in, and the restart exit. */
+  /**
+   * The swap, with the gate already closed for the restart (`apply`): `.new` checked again, the old binary moved to
+   * `.old` and the new one into its place, then the drain and the restart exit. A failure before the drain leaves the
+   * old binary in place and the daemon running, reopens the gate, and puts the version on a back-off.
+   */
   async swap(): Promise<void> {
     const feed = this.#found;
     const bin = this.d.bin, staged = `${bin}.new`, old = `${bin}.old`;
     if (!this.#ready || feed === undefined || !existsSync(staged)) throw new Error("no checked update to install");
-    // A `.old` a running supervisor still holds (Windows) would block the rename: refused before anything stops.
     try {
-      rmSync(old, { force: true });
-    } catch {
-      throw new Error(`${old} is still in use; the update waits for the next restart`);
-    }
-    this.d.log(`update: installing ${feed.version} (from ${this.d.version})`);
-    await this.d.gate.prepareRestart(5_000, this.d.log);
-    await this.d.drain();
-    try {
+      // `.new` waited, maybe for hours: it is the checked binary only if it still hashes to the signed SHA-512.
+      const bytes = readFileSync(staged);
+      if (bytes.length !== feed.size || createHash("sha512").update(bytes).digest("base64") !== feed.sha512) {
+        rmSync(staged, { force: true });
+        throw new Error(`${staged} is no longer the checked ${feed.version}; it was removed`);
+      }
+      if (!retireOld(bin)) throw new Error(`${old} is still in use and can't be moved aside`);
       renameSync(bin, old);
       try {
         renameSync(staged, bin);
@@ -357,11 +454,31 @@ export class SelfUpdater {
         renameSync(old, bin);
         throw err;
       }
-      writeJson(bootFile(this.d.home), { version: feed.version, boots: 0 });
     } catch (err) {
-      this.d.log(`update: the swap failed, the old version stays: ${err instanceof Error ? err.message : String(err)}`);
+      this.#swapFailed(feed.version, err);
+      return;
     }
-    // Drained either way: the supervisor starts whichever binary is in place now.
-    this.d.exit(this.d.restartCode);
+    writeJson(bootFile(this.d.home), { version: feed.version, boots: 0 });
+    this.d.log(`update: ${feed.version} is in place (from ${this.d.version}); restarting`);
+    try {
+      await this.d.drain();
+    } finally {
+      // The new binary is in place: the restart starts it, whatever the drain said.
+      this.d.exit(this.d.restartCode);
+    }
+  }
+
+  #swapFailed(version: string, err: unknown): void {
+    const prev = this.#failed.get(version);
+    const wait = Math.min(24 * 60 * 60 * 1000, prev === undefined ? SWAP_BACKOFF_MS : prev.wait * 2);
+    this.#failed.set(version, { until: (this.d.now ?? Date.now)() + wait, wait });
+    this.#ready = false;
+    this.d.gate.reopen();
+    try {
+      rmSync(`${this.d.bin}.new`, { force: true });
+    } catch {
+      // it goes with the next check's (`check` writes `.new` afresh)
+    }
+    this.d.log(`update: installing ${version} failed, the daemon keeps running on ${this.d.version} and tries again in ${Math.round(wait / 60_000)} min: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

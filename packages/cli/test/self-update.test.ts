@@ -3,12 +3,12 @@
 // binary crashing twice (rolled back), and a good swap. Nothing reaches the network or a real home.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
 import { UpdateGate, UPDATE_RESTART_EXIT_CODE } from "@waifucave/clover-core";
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, isNewer, rolledBack, runVersion, SelfUpdater, type Fetcher } from "../src/self-update";
+import { beginUpdatedBoot, bootWasGood, coreTargetOf, isNewer, MAX_FEED_BYTES, readCapped, rolledBack, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
 
 const posix = test.if(process.platform !== "win32");
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -50,11 +50,15 @@ function github(key: { privateKey: string }, releases: Release[]) {
     return { tag_name: tag, draft: false, prerelease: r.prerelease ?? false, assets };
   });
   files.set(RELEASES, enc(JSON.stringify(list)));
-  const fetch: Fetcher = async (u) => { asked.push(u); return files.get(u); };
-  return { fetch, asked };
+  const fetch: Fetcher = async (u, opts) => {
+    asked.push(u);
+    const b = files.get(u);
+    return b !== undefined && b.length <= opts.maxBytes ? b : undefined;
+  };
+  return { fetch, asked, files };
 }
 
-function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number }) {
+function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void }) {
   const home = mkdtempSync(join(tmpdir(), "clover-self-update-"));
   mkdirSync(join(home, "bin"));
   const bin = join(home, "bin", "clover-core");
@@ -64,17 +68,18 @@ function server(opts: { version?: string; channel?: "latest" | "beta"; releases:
   const gate = new UpdateGate();
   if (opts.busy) gate.register({ name: "turns", count: opts.busy });
   const did: string[] = [];
-  gate.beforeRestart(() => { did.push("lease renewed"); });
+  gate.beforeRestart(() => { did.push("lease renewed"); opts.onRenew?.(); });
+  let now = 1_000_000;
   const exited: number[] = [];
   const lines: string[] = [];
   const updater = new SelfUpdater({
     home, bin, version: opts.version ?? "1.2.3", target: TARGET, channel: opts.channel ?? "latest", publicKey: key.publicKey,
-    fetch: gh.fetch, gate, restartCode: UPDATE_RESTART_EXIT_CODE, idlePollMs: 1,
+    fetch: gh.fetch, gate, restartCode: UPDATE_RESTART_EXIT_CODE, idlePollMs: 1, now: () => now,
     drain: async () => { did.push("drained"); },
     exit: (code) => { exited.push(code); },
     log: (l) => lines.push(l),
   });
-  return { home, bin, updater, did, exited, lines, asked: gh.asked };
+  return { home, bin, updater, did, exited, lines, asked: gh.asked, files: gh.files, gate, advance: (ms: number) => { now += ms; } };
 }
 
 describe("a server's daemon updating itself", () => {
@@ -189,5 +194,91 @@ describe("a server's daemon updating itself", () => {
     writeFileSync(join(home, "update", "boot.json"), "{not json");
     expect(beginUpdatedBoot(home, join(home, "bin", "clover-core"))).toBe("normal");
     expect(() => bootWasGood(home, join(home, "nowhere", "clover-core"))).not.toThrow();
+  });
+
+  test("downloads are bounded: an update file over 64 KiB, or a binary over its signed size, is refused", async () => {
+    const big = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    const feedUrl = [...big.files.keys()].find((u) => u.endsWith("/latest-core-linux-x64.yml"))!;
+    big.files.set(feedUrl, new Uint8Array(MAX_FEED_BYTES + 1));
+    expect(await big.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining("over 65536 bytes") });
+    const long = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    const binUrl = [...long.files.keys()].find((u) => u.endsWith("/clover-core-1.3.0-linux-x64"))!;
+    long.files.set(binUrl, enc(`${versionScript("1.3.0")}# and more`));
+    expect(await long.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining("over its") });
+    // The reader itself stops at the limit.
+    const stream = (chunks: string[]) => new ReadableStream<Uint8Array>({ start(c) { for (const x of chunks) c.enqueue(enc(x)); c.close(); } });
+    expect(await readCapped(stream(["abc", "def"]), 6)).toEqual(enc("abcdef"));
+    expect(await readCapped(stream(["abc", "defg"]), 6)).toBeUndefined();
+    expect(await readCapped(null, 6)).toEqual(new Uint8Array());
+  });
+
+  test("--version's environment: PATH alone, and on Windows SystemRoot and windir too", () => {
+    const env = { PATH: "/bin", HOME: "/h", SystemRoot: "C:\\Windows", windir: "C:\\Windows", CLOVER_HOME: "/c" };
+    expect(versionEnv(env, "linux")).toEqual({ PATH: "/bin" });
+    expect(versionEnv(env, "darwin")).toEqual({ PATH: "/bin" });
+    expect(versionEnv(env, "win32")).toEqual({ PATH: "/bin", SystemRoot: "C:\\Windows", windir: "C:\\Windows" });
+    expect(versionEnv({ Path: "C:\\x", SYSTEMROOT: "C:\\W", WINDIR: "C:\\W" }, "win32")).toEqual({ PATH: "C:\\x", SystemRoot: "C:\\W", windir: "C:\\W" });
+  });
+
+  posix("a .new changed while it waited is refused just before the rename: the daemon keeps running, the gate reopens, the version backs off", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    expect((await s.updater.check()).kind).toBe("ready");
+    writeFileSync(`${s.bin}.new`, versionScript("6.6.6"), { mode: 0o755 });
+    s.updater.apply();
+    for (let i = 0; i < 50 && !s.lines.some((l) => l.includes("failed")); i++) await Bun.sleep(5);
+    expect(s.exited).toEqual([]);
+    expect(s.did).toEqual(["lease renewed"]);
+    expect(s.gate.closed).toBe(false);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(existsSync(`${s.bin}.new`)).toBe(false);
+    expect(s.lines.some((l) => l.includes("no longer the checked 1.3.0"))).toBe(true);
+    expect(s.updater.ready()).toBe(false);
+    // The same version waits out its back-off, then is taken again.
+    expect(await s.updater.check()).toMatchObject({ kind: "refused", why: expect.stringContaining("tried again later") });
+    s.advance(SWAP_BACKOFF_MS + 1);
+    expect((await s.updater.check()).kind).toBe("ready");
+  });
+
+  posix("a swap that fails before the drain never exits: no restart loop", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    await s.updater.check();
+    // The binaries' folder refuses the renames (as a Windows file in use would).
+    chmodSync(join(s.home, "bin"), 0o555);
+    try {
+      await s.updater.swap();
+    } finally {
+      chmodSync(join(s.home, "bin"), 0o755);
+    }
+    expect(s.exited).toEqual([]);
+    expect(s.did).toEqual([]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(s.lines.some((l) => l.includes("installing 1.3.0 failed, the daemon keeps running"))).toBe(true);
+  });
+
+  posix("a turn that starts during the steps before the restart sends the swap back to waiting", async () => {
+    let busy = 0;
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], busy: () => busy, onRenew: () => { if (busy === 0 && !started) { started = true; busy = 1; } } });
+    let started = false;
+    await s.updater.check();
+    s.updater.apply();
+    await Bun.sleep(30);
+    // The turn that slipped in during the renew: nothing drained, nothing swapped, the gate open for it.
+    expect(s.did).toEqual(["lease renewed"]);
+    expect(s.exited).toEqual([]);
+    expect(s.gate.closed).toBe(false);
+    busy = 0;
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.did).toEqual(["lease renewed", "lease renewed", "drained"]);
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+  });
+
+  posix("a good boot removes the old, the rolled-back and the moved-aside binaries", () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-good-boot-"));
+    const bin = join(home, "clover-core");
+    for (const f of [bin, `${bin}.old`, `${bin}.bad`, `${bin}.old-1700000000000`, `${bin}.new`]) writeFileSync(f, "x");
+    bootWasGood(home, bin);
+    expect(existsSync(bin)).toBe(true);
+    expect(existsSync(`${bin}.new`)).toBe(true);
+    for (const f of [`${bin}.old`, `${bin}.bad`, `${bin}.old-1700000000000`]) expect(existsSync(f)).toBe(false);
   });
 });

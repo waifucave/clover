@@ -66,6 +66,34 @@ describe("the update's idle gate", () => {
     expect(lines.sort()).toEqual(["update: a step before the restart failed: offline", "update: a step before the restart failed: took over 20 ms"]);
   });
 
+  test("closing for a restart: idle, closed, the steps, idle still; a turn that starts during the steps reopens it", async () => {
+    const gate = new UpdateGate();
+    let turns = 0;
+    gate.register({ name: "turns", count: () => turns });
+    expect(gate.closed).toBe(false);
+    expect(await gate.closeForRestart()).toBe(true);
+    expect(gate.closed).toBe(true);
+    gate.reopen();
+    // Busy at the start: never closes.
+    turns = 1;
+    expect(await gate.closeForRestart()).toBe(false);
+    expect(gate.closed).toBe(false);
+    // A turn that starts during the steps before the restart (it slipped past the latch): reopened, and false.
+    turns = 0;
+    const off = gate.beforeRestart(() => { expect(gate.closed).toBe(true); turns = 1; });
+    expect(await gate.closeForRestart()).toBe(false);
+    expect(gate.closed).toBe(false);
+    off();
+  });
+
+  test("a close that no restart follows reopens by itself", async () => {
+    const gate = new UpdateGate();
+    gate.close(20);
+    expect(gate.closed).toBe(true);
+    await Bun.sleep(60);
+    expect(gate.closed).toBe(false);
+  });
+
   // The lease under H's timings (contracts/lease.ts: "30 s and a 5 s margin are sound"; the fake carries them until
   // lane H's real lease): an update's restart is not Hand over and quit. The lease renews just before the restart
   // (`beforeRestart`), the daemon is down for 10-20 s, and nothing on another computer can take the bots meanwhile.

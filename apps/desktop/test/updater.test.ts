@@ -6,7 +6,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
-import { FeedRefused, feedFileOf, IDLE_POLL_MS, InstallGate, installKindOf, parseUpdateConfig, writeInstallMarker, updatesItself, verifyingExecutor, VerifiedGitHubProvider, type InstallGateDeps } from "../src/main/updater";
+import { FeedRefused, feedFileOf, IDLE_POLL_MS, INSTALL_QUIT_MS, InstallGate, installKindOf, parseUpdateConfig, unknownReleaseYml, writeInstallMarker, updatesItself, verifyingExecutor, VerifiedGitHubProvider, type InstallGateDeps } from "../src/main/updater";
 
 const FEED = "version: 1.2.3\nfiles:\n  - url: Clover-1.2.3-mac.zip\n    sha512: abc\n    size: 10\npath: Clover-1.2.3-mac.zip\nsha512: abc\nreleaseDate: '2026-11-06T00:00:00.000Z'\n";
 
@@ -122,8 +122,9 @@ describe("the app's updates", () => {
 
   describe("the idle gate (InstallGate) against a fake daemon", () => {
     /** A fake daemon answering `update.status` and `update.apply` from its busy work, and a log of what the app did. */
-    function harness(busy: string[] = []) {
+    function harness(busy: string[] = [], opts: { refuseExit?: boolean; install?: () => boolean } = {}) {
       const daemon = { busy, up: true, prepared: 0 };
+      const timers: Array<{ ms: number; fn: () => void }> = [];
       const did: string[] = [];
       let tick: (() => void) | undefined;
       const deps: InstallGateDeps = {
@@ -134,10 +135,16 @@ describe("the app's updates", () => {
           daemon.prepared++;
           return "now";
         },
-        exiting: async () => { did.push("pair.exiting{update}"); },
+        exiting: async () => {
+          if (opts.refuseExit) { did.push("pair.exiting{update} refused"); return false; }
+          did.push("pair.exiting{update}");
+          return true;
+        },
         stopApp: () => { did.push("stop the app"); },
         daemonGone: async () => { daemon.up = false; did.push("daemon gone"); },
-        install: (relaunch) => { did.push(relaunch ? "install, then start" : "install"); },
+        install: (relaunch) => { did.push(relaunch ? "install, then start" : "install"); return opts.install?.() ?? true; },
+        recover: (relaunch, why) => { did.push(`recover (${relaunch ? "start again" : "quit with an error"}): ${why}`); },
+        after: (ms, fn) => { timers.push({ ms, fn }); },
         every: (ms, fn) => {
           expect(ms).toBe(IDLE_POLL_MS);
           tick = fn;
@@ -148,7 +155,7 @@ describe("the app's updates", () => {
       const gate = new InstallGate(deps);
       // One poll's worth: what `every` would run a minute later.
       const poll = async () => { tick?.(); await Bun.sleep(0); await Bun.sleep(0); };
-      return { daemon, did, gate, poll, polling: () => tick !== undefined };
+      return { daemon, did, gate, poll, polling: () => tick !== undefined, timers };
     }
 
     test("busy: the update waits, polling every minute; at the first idle moment it installs and starts again", async () => {
@@ -163,7 +170,7 @@ describe("the app's updates", () => {
       daemon.busy = [];
       await poll();
       expect(daemon.prepared).toBe(1);
-      expect(did).toEqual(["polling stopped", "pair.exiting{update}", "stop the app", "daemon gone", "install, then start"]);
+      expect(did).toEqual(["pair.exiting{update}", "polling stopped", "stop the app", "daemon gone", "install, then start"]);
       expect(polling()).toBe(false);
       // Installs once.
       await poll();
@@ -174,7 +181,7 @@ describe("the app's updates", () => {
     test("idle when the download finishes: it installs at once", async () => {
       const { did, gate } = harness();
       await gate.downloaded("1.3.0");
-      expect(did).toEqual(["polling stopped", "pair.exiting{update}", "stop the app", "daemon gone", "install, then start"]);
+      expect(did).toEqual(["pair.exiting{update}", "polling stopped", "stop the app", "daemon gone", "install, then start"]);
     });
 
     test("a turn that starts between the status and the apply keeps the update waiting", async () => {
@@ -209,5 +216,42 @@ describe("the app's updates", () => {
       expect(did).toEqual(["polling stopped", "stop the app", "daemon gone", "install"]);
       expect(await gate.quitting()).toBe(false);
     });
+
+    test("the daemon refusing the update's exit (work started meanwhile) stops nothing; the next idle moment installs", async () => {
+      const h = harness([], { refuseExit: true });
+      await h.gate.downloaded("1.3.0");
+      expect(h.did).toEqual(["pair.exiting{update} refused"]);
+      expect(h.gate.installing).toBe(false);
+      expect(h.polling()).toBe(true);
+    });
+
+    test("an install that doesn't start, or throws, after the app stopped its side recovers: start again, or a Quit ends with an error", async () => {
+      const failed = harness([], { install: () => false });
+      await failed.gate.downloaded("1.3.0");
+      expect(failed.did.at(-1)).toBe("recover (start again): the install didn't start");
+      const threw = harness(["turns:1"], { install: () => { throw new Error("no installer"); } });
+      await threw.gate.downloaded("1.3.0");
+      expect(await threw.gate.quitting()).toBe(true);
+      expect(threw.did.at(-1)).toBe("recover (quit with an error): the install didn't start");
+      // One that started but left the app running is caught by the timer.
+      const quiet = harness();
+      await quiet.gate.downloaded("1.3.0");
+      expect(quiet.timers.map((t) => t.ms)).toEqual([INSTALL_QUIT_MS]);
+      quiet.timers[0]!.fn();
+      expect(quiet.did.at(-1)).toContain("recover (start again): the app was still running");
+    });
+  });
+
+  test("any .yml from a release's downloads that isn't an update file's name is refused before it is fetched", async () => {
+    for (const name of ["latest-linux-ia32.yml", "latest-linux-arm.yml", "alpha-mac.yml", "rc.yml", "latest-core-linux-x64.yml"]) {
+      const path = `/waifucave/clover/releases/download/v1.2.3/${name}`;
+      expect(unknownReleaseYml(path)).toBe(name);
+      const ex = fakeExecutor({ [path]: FEED });
+      await expect(verifyingExecutor(ex, generateFeedKey().publicKey).request({ path }, undefined)).rejects.toThrow(/refused: bad name/);
+      expect(ex.asked).toEqual([]);
+    }
+    expect(unknownReleaseYml("/waifucave/clover/releases/download/v1.2.3/latest-mac.yml")).toBeUndefined();
+    expect(unknownReleaseYml("/waifucave/clover/releases/download/v1.2.3/Clover-1.2.3-mac.zip")).toBeUndefined();
+    expect(unknownReleaseYml("/waifucave/clover/releases.atom")).toBeUndefined();
   });
 });

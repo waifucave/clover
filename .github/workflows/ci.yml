@@ -371,6 +371,19 @@ jobs:
           bun scripts/release/build.ts --channel latest
           ls -l apps/desktop/out/dist
 
+      # The daemon's release file answers `--version` in the environment a server's self-update gives it
+      # (packages/cli/src/self-update.ts's versionEnv): PATH alone, and on Windows SystemRoot and windir too.
+      - name: The daemon's release file answers --version as its self-update runs it
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bin=$(ls apps/desktop/out/dist/clover-core-"$version"-*)
+          extra=()
+          if [ "$RUNNER_OS" = Windows ]; then extra=(SystemRoot="${SYSTEMROOT:-$SystemRoot}" windir="${WINDIR:-$windir}"); fi
+          said=$(env -i PATH="$PATH" "${extra[@]}" "$bin" --version)
+          echo "$bin --version: $said"
+          test "$said" = "clover $version"
+
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
   # suite (the macos job), so this job is the other two OSes' only run of them. It was spike-s6.yml's `tree` job (R6).

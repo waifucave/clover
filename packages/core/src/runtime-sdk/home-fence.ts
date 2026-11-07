@@ -51,7 +51,7 @@ export function homeFencedDirs(home: string, options?: HostStorageFenceOptions):
  * lies under one (`isHomeWriteOnly`). The escape floor matches one only as a whole path segment
  * (`<home>/computer-use-notes.txt` is not `<home>/computer-use`), a glob after it still counting.
  */
-export const HOME_WRITE_ONLY_FENCED: readonly string[] = ["cache", "plugins", "sdk/plugins", "computer-use", "cowork"];
+export const HOME_WRITE_ONLY_FENCED: readonly string[] = ["cache", "plugins", "sdk/plugins", "computer-use", "cowork", "bin", "update", "install.json"];
 
 /** Whether a fenced path, relative to `<home>`, is one the escape floor refuses in a write-shaped
  *  position only. */

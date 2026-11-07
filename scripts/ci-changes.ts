@@ -37,7 +37,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/release/", ...CORE, "packages/cli/", "native/link/"],
   // the macOS and Windows installers (the unsigned release build: dmg, zip, NSIS), on macOS and Windows machines: only
   // what makes them, so a code change alone doesn't spend a macOS job on them (the app and daemon jobs build those)
-  installers: ["apps/desktop/electron-builder.yml", "apps/desktop/package.json", "packaging/", "scripts/release/", "scripts/build-daemon.ts"],
+  installers: ["apps/desktop/electron-builder.yml", "apps/desktop/package.json", "packaging/", "scripts/release/", "scripts/build-daemon.ts",
+    "scripts/build-packages.ts", "packages/update-feed/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],

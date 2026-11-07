@@ -35,6 +35,15 @@ export function feedFileOf(path: string | null | undefined): string | undefined 
   return FEED_FILE.test(name) ? name : undefined;
 }
 
+/** A `.yml` under a release's downloads that isn't an update file's name (`feedFileOf`), or undefined. */
+export function unknownReleaseYml(path: string | null | undefined): string | undefined {
+  if (path === null || path === undefined) return undefined;
+  const bare = path.split("?")[0]!;
+  if (!bare.includes("/releases/download/")) return undefined;
+  const name = decodeURIComponent(bare.split("/").pop() ?? "");
+  return name.endsWith(".yml") && !FEED_FILE.test(name) ? name : undefined;
+}
+
 export class FeedRefused extends Error {
   constructor(readonly file: string, readonly verdict: Exclude<FeedVerdict, { ok: true }>) {
     super(`the update file ${file} is refused: ${verdict.reason}`);
@@ -54,6 +63,10 @@ export function verifyingExecutor<E extends Executor>(inner: E, publicKey?: stri
     get(target, prop, receiver) {
       if (prop !== "request") return Reflect.get(target, prop, receiver);
       return async (options: RequestOptions, token: unknown, data?: unknown): Promise<string | null | undefined> => {
+        // Fail closed by name: any `.yml` from a release that isn't one of the update files a signature can cover is
+        // refused before it is fetched (another arch's, a custom channel's), not handed over unchecked.
+        const unknown = unknownReleaseYml(options.path);
+        if (unknown !== undefined) throw new FeedRefused(unknown, { ok: false, reason: "bad name" });
         const text = await target.request(options, token, data);
         const file = feedFileOf(options.path);
         if (file === undefined) return text;
@@ -127,20 +140,28 @@ export function writeInstallMarker(home: string, kind: "app" | "package", log: (
 export const UPDATE_CHECK_MS = 4 * 60 * 60 * 1000;
 /** While an update is ready, how often the app asks the daemon whether it is idle. */
 export const IDLE_POLL_MS = 60_000;
+/** An install that started quits the app within this (macOS's Squirrel first fetches it from electron-updater). */
+export const INSTALL_QUIT_MS = 120_000;
 
 export interface InstallGateDeps {
   /** `update.status`'s idle verdict; undefined when the daemon can't be asked (then nothing installs). */
   status(): Promise<{ idle: boolean; busy: readonly string[] } | undefined>;
   /** `update.apply`: `now` once the daemon is idle and ready for its restart. */
   apply(): Promise<"now" | "when-idle" | undefined>;
-  /** `pair.exiting{update}`: the app leaves on purpose, and the pair stops with it. */
-  exiting(): Promise<void>;
+  /** `pair.exiting{update}`: the app leaves on purpose, and the pair stops with it. False when the daemon refused
+   *  (no longer idle for the update) or didn't answer: nothing is stopped then. */
+  exiting(): Promise<boolean>;
   /** Stops the app's side (the pair's connection, the browser, the tray) before the install. */
   stopApp(): void;
   /** Resolves once the daemon has gone (bounded), so the installer never meets its files in use. */
   daemonGone(): Promise<void>;
-  /** electron-updater's quitAndInstall; `relaunch`: start the new app after (an idle install) or not (a Quit). */
-  install(relaunch: boolean): void;
+  /** electron-updater's quitAndInstall; `relaunch`: start the new app after (an idle install) or not (a Quit). False
+   *  (or a throw) when it couldn't start the install. */
+  install(relaunch: boolean): boolean;
+  /** The app's side stopped but the install didn't happen: start the app again (`relaunch`), or quit with an error. */
+  recover(relaunch: boolean, why: string): void;
+  /** Runs `fn` once after `ms`. */
+  after(ms: number, fn: () => void): void;
   /** Runs `fn` every `ms`; returns a stop. */
   every(ms: number, fn: () => void): () => void;
   log(line: string): void;
@@ -198,13 +219,26 @@ export class InstallGate {
 
   async #install(relaunch: boolean, tellDaemon = true): Promise<void> {
     this.#installing = true;
+    if (tellDaemon && !(await this.d.exiting())) {
+      // The daemon wasn't idle by the time the app said it was leaving (or didn't answer): stay, and ask again later.
+      this.#installing = false;
+      this.d.log(`updater: the daemon refused the update's exit; ${this.#ready} waits for the next idle moment`);
+      return;
+    }
     this.#stopPolling?.();
     this.#stopPolling = undefined;
     this.d.log(`updater: installing ${this.#ready}${relaunch ? " now the daemon is idle" : ""}`);
-    if (tellDaemon) await this.d.exiting();
     this.d.stopApp();
     await this.d.daemonGone();
-    this.d.install(relaunch);
+    let started = false;
+    try {
+      started = this.d.install(relaunch);
+    } catch (err) {
+      this.d.log(`updater: the install threw: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    if (!started) return this.d.recover(relaunch, "the install didn't start");
+    // An install that started quits the app; one that hasn't within INSTALL_QUIT_MS failed quietly.
+    this.d.after(INSTALL_QUIT_MS, () => this.d.recover(relaunch, `the app was still running ${INSTALL_QUIT_MS / 1000} s after the install started`));
   }
 
   /** Stops the polling (the app is leaving for another reason). */
@@ -224,11 +258,11 @@ export interface UpdaterDeps {
 
 export interface Updater {
   stop(): void;
-  /** Quits and installs the downloaded update; `relaunch` starts the new app after. */
-  install(relaunch: boolean): void;
+  /** Quits and installs the downloaded update; `relaunch` starts the new app after. False when there's nothing to. */
+  install(relaunch: boolean): boolean;
 }
 
-const NO_UPDATER: Updater = { stop: () => {}, install: () => {} };
+const NO_UPDATER: Updater = { stop: () => {}, install: () => false };
 
 /** Starts the checks (now, then every UPDATE_CHECK_MS). A no-op where the app doesn't update itself. */
 export async function startUpdater(deps: UpdaterDeps): Promise<Updater> {
@@ -268,6 +302,7 @@ export async function startUpdater(deps: UpdaterDeps): Promise<Updater> {
       // macOS (Squirrel) reads this instead of quitAndInstall's arguments: relaunch, or install as the app quits.
       autoUpdater.autoRunAppAfterInstall = relaunch;
       autoUpdater.quitAndInstall(true, relaunch);
+      return true;
     },
   };
 }

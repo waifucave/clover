@@ -44,18 +44,25 @@ export function updateHandlers(d: UpdateServiceDeps): Record<string, CloverHandl
         busy: wireBusy(v.busy),
       };
     },
-    // On an app install, `now` means the app may stop the pair and install: the daemon first runs the steps before
-    // a restart (the lease's renew), so the restart runs inside a full lease. A server install's own update waits
-    // for idle itself (`self.apply`).
+    // On an app install, `now` means the app may stop the pair and install: the gate closes (no new turn starts), the
+    // steps before a restart run (the lease's renew, so the restart runs inside a full lease), and idle is checked
+    // again; work that started meanwhile reopens it and the answer is `when-idle`. A server install's own update
+    // waits for idle itself (`self.apply`).
     "update.apply": async () => {
       const self = d.self?.();
       if (self !== undefined) {
         self.apply();
         return { at: d.gate.verdict().idle ? "now" : "when-idle" };
       }
-      if (!d.gate.verdict().idle) return { at: "when-idle" };
-      await d.gate.prepareRestart(5_000, d.log);
-      return { at: "now" };
+      return { at: (await d.gate.closeForRestart({ timeoutMs: 5_000, ...(d.log ? { log: d.log } : {}) })) ? "now" : "when-idle" };
     },
   };
 }
+
+/** `pair.exiting{update}` goes ahead only with the gate closed for the restart and nothing busy. */
+export function updateExitAllowed(gate: UpdateGate): boolean {
+  return gate.closed && gate.verdict().idle;
+}
+
+/** The session drivers' pre-turn check: while the gate is closing for a restart, a new turn is refused (a retry). */
+export const UPDATE_RESTARTING_MESSAGE = "Clover is restarting for an update; send it again in a moment";

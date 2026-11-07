@@ -16,12 +16,16 @@ describe("update.status on a running daemon", () => {
     const home = mkdtempSync(join(tmpdir(), "clover-update-boot-"));
     daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false });
     const call = (method: string) => cloverCall(daemon!.socketPath, { role: "cli", token: daemon!.tokens.harness, clientName: "update-test" }, method, {});
-    expect(daemon.updateGate.names()).toEqual(["turns", "agents", "approvals"]);
+    expect(daemon.updateGate.names()).toEqual(["turns", "agents", "approvals", "questions", "elicitations", "workflows"]);
     expect(await call("update.status")).toEqual({ current: CORE_VERSION, channel: "latest", ready: false, idle: true, busy: [] });
     expect(await call("update.apply")).toEqual({ at: "now" });
+    // Closed for the restart: no new turn starts until it reopens (here, by hand; in life, the restart or its timer).
+    expect(daemon.updateGate.closed).toBe(true);
+    daemon.updateGate.reopen();
     const off = daemon.updateGate.register({ name: "routines", count: () => 1 });
     expect(await call("update.status")).toMatchObject({ idle: false, busy: ["routines:1"] });
     expect(await call("update.apply")).toEqual({ at: "when-idle" });
+    expect(daemon.updateGate.closed).toBe(false);
     off();
   });
 });

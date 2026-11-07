@@ -9,6 +9,12 @@
 // The app asks over the socket (`update.status`'s `idle` and `busy`), and so does the daemon's own self-update
 // (server installs). The gate never stops work: it only says when stopping would cut nothing.
 //
+// Between "idle" and the stop there is a window (the steps before a restart, the app stopping its side): the gate
+// CLOSES for it (`close`), and while it is closed no new turn starts (the session drivers' pre-turn gate asks `closed`
+// and refuses with a retry: "Clover is restarting for an update"). Whoever closes it checks idle again after the
+// steps before the restart, and reopens it if work started meanwhile; a close that no restart follows reopens by
+// itself after `reopenAfterMs`, so a lost app never leaves turns refused.
+//
 // A restart for an update does NOT hand the bots' lease over (it is not Hand over and quit, which releases it): it is
 // a short restart, and the lease's own grace covers it. Just before the restart the gate runs its `beforeRestart`
 // hooks, where the lease renews (lane H registers it), so another computer could take over only after a full TTL
@@ -29,6 +35,44 @@ export interface GateVerdict {
 
 export class UpdateGate {
   private readonly sources = new Map<string, BusySource>();
+  #closed = false;
+  #reopenTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Whether the gate is closing for a restart: no new turn may start. */
+  get closed(): boolean {
+    return this.#closed;
+  }
+
+  /** Closes the gate for a restart; it reopens by itself after `reopenAfterMs` unless the process is gone by then. */
+  close(reopenAfterMs = 60_000): void {
+    this.#closed = true;
+    if (this.#reopenTimer) clearTimeout(this.#reopenTimer);
+    this.#reopenTimer = setTimeout(() => this.reopen(), reopenAfterMs);
+    this.#reopenTimer.unref?.();
+  }
+
+  /** Opens the gate again: the restart isn't happening (work started, or no one followed up). */
+  reopen(): void {
+    this.#closed = false;
+    if (this.#reopenTimer) clearTimeout(this.#reopenTimer);
+    this.#reopenTimer = undefined;
+  }
+
+  /**
+   * The whole closing: idle now, close, the steps before a restart, and idle still. True with the gate left closed
+   * (the restart may go ahead); false with it open again (busy before, or work that started during the steps).
+   */
+  async closeForRestart(opts: { reopenAfterMs?: number; timeoutMs?: number; log?: (line: string) => void } = {}): Promise<boolean> {
+    if (!this.verdict().idle) {
+      this.reopen();
+      return false;
+    }
+    this.close(opts.reopenAfterMs);
+    await this.prepareRestart(opts.timeoutMs, opts.log);
+    if (this.verdict().idle) return true;
+    this.reopen();
+    return false;
+  }
 
   /** Adds a source (a lane's work); returns its removal. A second source under the same name replaces the first. */
   register(source: BusySource): () => void {
