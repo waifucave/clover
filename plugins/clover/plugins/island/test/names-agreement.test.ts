@@ -6,14 +6,14 @@ import { isReservedPluginName, isReservedTab } from "../src/model/tabs";
 import { nameSkeleton, readsAs } from "../src/model/names";
 
 const NAMES = [
-  "Needs you", "Needs​ you", "Needs​you", "Needsyou", "Needs-you", "N­eeds you", "‮Needs you",
+  "Needs you", "Needs\u200B you", "Needs\u200Byou", "Needsyou", "Needs-you", "N\u00ADeeds you", "\u202ENeeds you",
   "Needs yоu", "Nееds you", "Νeeds you", "ɴᴇᴇᴅꜱ ʏᴏᴜ", "𝐍𝐞𝐞𝐝𝐬 𝐲𝐨𝐮", "Ｎｅｅｄｓ　ｙｏｕ", "Nééds yoü",
-  "Needsㅤyou", "NEEDS YOU", "Needs y0u", "Needs you️", "Needs", "Needs you now", "Feeds you", "Devices", "Usage",
+  "Needs\u3164you", "NEEDS YOU", "Needs y0u", "Needs you\uFE0F", "Needs", "Needs you now", "Feeds you", "Devices", "Usage",
   "Clover", "CLOVER", "Clоver", "C1over", "dover", "Homelab",
 ];
 
 const PAIRS: [string, string][] = [
-  ["Iris", "iris"], ["ILSE", "ilse"], ["Ivy", "lvy"], ["Luna", "Ꮮuna"], ["Luna", "Lu​na"], ["Luna", "Lúna"],
+  ["Iris", "iris"], ["ILSE", "ilse"], ["Ivy", "lvy"], ["Luna", "Ꮮuna"], ["Luna", "Lu\u200Bna"], ["Luna", "Lúna"],
   ["modern", "modem"], ["vvolf", "wolf"], ["clover", "dover"], ["Alpha", "Аlpha"], ["Alpha", "Αⅼpha"],
   ["Luna", "Lena"], ["Alpha", "Alpha 2"], ["Home", "Homes"],
 ];
@@ -32,7 +32,7 @@ describe("the island's names agree with the manifest check's", () => {
   test("the lookalikes the island's own fold caught, B's catches too", () => {
     for (const [a, b] of PAIRS.slice(0, 11)) expect([a, b, readsAs(a, b)]).toEqual([a, b, true]);
     for (const [a, b] of PAIRS.slice(11)) expect([a, b, readsAs(a, b)]).toEqual([a, b, false]);
-    for (const name of ["Clover", "CLOVER", "Clоver", "C1over", "Needs​ you"]) expect([name, isReservedPluginName(name)]).toEqual([name, true]);
+    for (const name of ["Clover", "CLOVER", "Clоver", "C1over", "Needs\u200B you"]) expect([name, isReservedPluginName(name)]).toEqual([name, true]);
     expect(isReservedPluginName("Homelab")).toBe(false);
   });
 });
