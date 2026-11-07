@@ -141,8 +141,16 @@ describe("agent backends from plugins", () => {
   });
 
   test("another plugin's backend counts as acting without asking, and may not ask for a secret-looking name", () => {
-    expect(["OPENAI_API_KEY", "GH_TOKEN", "MY_SECRET_X", "db_password", "AWS_CREDENTIALS", "x_secret"].every(looksLikeSecret)).toBe(true);
-    expect(["PATH", "HOME", "LANG", "KEYBOARD", "TOKENIZERS_PARALLELISM"].some(looksLikeSecret)).toBe(false);
+    // The reviewer's misses, and the rest of the table.
+    const secret = [
+      "OPENAI_API_KEY", "GH_TOKEN", "MY_SECRET_X", "db_password", "AWS_CREDENTIALS", "x_secret",
+      "AWS_ACCESS_KEY_ID", "OPENAI_APIKEY", "GH_PAT", "SENTRY_DSN", "NPM_AUTH", "PRIVATE_KEY_PATH", "MY_PASS", "MYSQL_PASSWD", "AWS_SECRETS", "ANTHROPIC_KEYS",
+      "DATABASE_URL", "DB_URL", "REDIS_URL", "MONGODB_URL", "POSTGRES_URL", "MYSQL_URL", "DATABASE_READ_URL",
+      "SSH_AUTH_SOCK", "GPG_AGENT_INFO", "ssh_auth_sock",
+    ];
+    for (const n of secret) expect([n, looksLikeSecret(n)]).toEqual([n, true]);
+    const ordinary = ["PATH", "HOME", "LANG", "KEYBOARD", "TOKENIZERS_PARALLELISM", "PATHEXT", "AUTHOR", "PASSENGER", "XDG_DATA_HOME", "TERM", "USER", "HOMEPAGE_URL", "API_URL"];
+    for (const n of ordinary) expect([n, looksLikeSecret(n)]).toEqual([n, false]);
     const root = mkdtempSync(join(tmpdir(), "clover-k-marks-"));
     temps.push(root);
     const plain = join(root, "plain");
@@ -171,11 +179,28 @@ describe("agent backends from plugins", () => {
     // A secret-looking name from the daemon's environment: refused, and said why.
     expect(got.some((c) => c.id === "greedy")).toBe(false);
     expect(lines.join("\n")).toContain("OPENAI_API_KEY");
+    // Another plugin's backend is listed with its plugin's id beside its name.
+    expect(got.find((c) => c.id === "plain")!.name).toBe("Plain (someone/plain)");
     // Clover's own Devin row keeps its measured marks and the login it needs.
     const devin = got.find((c) => c.id === "devin")!;
     expect(devin.bundled).toBe(true);
     expect(devin.quirks.launch.envAllow).toContain("WINDSURF_API_KEY");
     expect(devin.quirks.marks).toEqual(devin.file.quirks.marks);
+  });
+
+  test("a backend from another plugin may not be named Clover", () => {
+    const root = mkdtempSync(join(tmpdir(), "clover-k-name-"));
+    temps.push(root);
+    writeFileSync(join(root, "quirks.json"), JSON.stringify(QUIRKS_OF("grok")));
+    const records: Record<string, Partial<PluginRecord>> = { "someone/agents": { folder: root, treeHash: "a".repeat(64), provenance: { by: "found", at: 1 } as PluginRecord["provenance"] } };
+    const entries: Contribution[] = ["Clover", "clover pro", " CloverCode", "My agent"].map((name, n) => ({
+      point: "agentBackends", pluginId: "someone/agents", ref: `agentBackends/${n}`, entryId: `a${n}`, state: "active",
+      value: { id: `a${n}`, name, protocol: "acp", command: "agent", quirks: "quirks.json" },
+    }));
+    const registry = { entries: () => entries, get: (id: string) => records[id] as PluginRecord | undefined } as unknown as Pick<PluginRegistry, "entries" | "get">;
+    const lines: string[] = [];
+    expect(contributedBackends(registry, (l) => lines.push(l)).map((c) => c.name)).toEqual(["My agent (someone/agents)"]);
+    expect(lines.filter((l) => l.includes("named Clover"))).toHaveLength(3);
   });
 
   test("only Clover's own plugin for an id is bundled; a broken entry is left out with its reason; a backend is built once per tree", () => {

@@ -238,7 +238,7 @@ export class AgentManager {
     const transcript = new AgentTranscript(this.#o.home, id, bot);
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
     writeAgentRecord(this.#o.home, daemon);
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who,
@@ -285,6 +285,20 @@ export class AgentManager {
     }
     const backend = this.#o.backends().find((b) => b.id === view.backend);
     if (!backend) return refuse(`no backend named ${view.backend}`);
+    // Another plugin that took the id since (the bundled one switched off, a third party's on) never gets the session:
+    // its program would see the agent's session id and root. The session ends, saying why.
+    if (daemon.pluginId !== backend.pluginId) {
+      const why = `its agent's plugin changed (from ${daemon.pluginId ?? "an unknown one"} to ${backend.pluginId}), so it can't go on; start a new session`;
+      if (this.#o.host.get(view.id)) {
+        // A note in its log says why, for the user who opens it; then it ends.
+        const host = this.#o.host;
+        void (async () => {
+          await host.deliver(view.id, { from: "note", label: "Agent", text: `This agent session ended: ${why}.`, by: { kind: "core" } }).catch(() => {});
+          await host.stop(view.id, why).catch(() => {});
+        })();
+      }
+      return refuse(why);
+    }
     let rootPath: string;
     try {
       rootPath = this.#rootPath(view.root);

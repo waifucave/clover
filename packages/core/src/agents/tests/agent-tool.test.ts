@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { AgentQuirks } from "../../contracts/agent-backend";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS, WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { advanceAndSettle } from "../../contracts/fakes/clock";
-import { FakeSessionHost } from "../../contracts/fakes/session-host";
+import { FakeSessionDriver, FakeSessionHost } from "../../contracts/fakes/session-host";
 import { isContractError } from "../../contracts/common";
 import { UserSelections } from "../acp/selections";
 import { MAX_OPEN_ASKS } from "../acp/session";
@@ -452,6 +452,23 @@ describe("models and sessions", () => {
     expect(w.approvals.cards()).toEqual([]);
   });
 
+  test("a reattach never hands a session to another plugin that took its backend's id since (#233's review)", async () => {
+    const w = make({ script: [[{ say: "first done" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    const view = w.host.get(r.sessionId)!;
+    expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ backend: "fake", pluginId: "clover/agent-fake" });
+    const started = w.report("started").length;
+    // Clover's own plugin is off and a third party's holds the id now.
+    const { m2, host2 } = await restart(w, WELL_BEHAVED_QUIRKS, "someone/agents");
+    host2.open({ id: r.sessionId, kind: "agent", bot: "alpha", parent: "s_alpha", computer: "Studio", backend: "fake", root: view.root! }, new FakeSessionDriver());
+    expect(m2.reattach({ ...view, status: "idle" })).toBe(false);
+    // The session ends, saying why; the third party's program never started, so it never saw the session id or root.
+    await waitFor(() => host2.get(r.sessionId)?.status === "stopped", "the session ended");
+    expect(JSON.stringify(host2.history(r.sessionId))).toContain("plugin changed");
+    expect(w.report("started")).toHaveLength(started);
+  });
+
   test("a reattach is refused when the daemon's record and the host disagree, or the record is gone", async () => {
     const w = make({ script: [[{ say: "first done" }]] });
     const r = await w.delegate();
@@ -468,7 +485,7 @@ describe("models and sessions", () => {
 
 /** The daemon closes (every agent's process ends, its records stay) and a new one starts: a new host restored the
  *  bot's session (a fresh fake here), new tokens, a new manager. */
-async function restart(w: World, quirks: AgentQuirks) {
+async function restart(w: World, quirks: AgentQuirks, pluginId = "clover/agent-fake") {
   await w.manager.close();
   expect(w.tokens.has(w.host.list({ kind: "agent" })[0]?.id ?? "")).toBe(false);
   const host2 = new FakeSessionHost({ clock: w.clock, approvals: w.approvals });
@@ -476,7 +493,7 @@ async function restart(w: World, quirks: AgentQuirks) {
   const tokens2 = new BridgeTokens();
   let m2!: AgentManager;
   const backend2 = new AcpAgentBackend({
-    id: "fake", pluginId: "clover/agent-fake", quirks: fakeLaunch(quirks), clock: w.clock,
+    id: "fake", pluginId, quirks: fakeLaunch(quirks), clock: w.clock,
     command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, w.agent.config], acpArgs: ["acp"] }, wire: (id) => m2.wire(id),
     admissions: fakeAdmissions("protected"),
   });
