@@ -76,7 +76,7 @@ function deps(home: string, spawn: SpawnClaudeCodeProcess, over: Partial<BotDriv
 }
 
 /** The SDK's `query`, with every frame the runtime sends recorded and timed. */
-function tappedQuery(): { frames: { at: number; msg: Record<string, unknown> }[]; query: typeof sdkQuery } {
+function tappedQuery(over: Record<string, (target: never) => unknown> = {}): { frames: { at: number; msg: Record<string, unknown> }[]; query: typeof sdkQuery } {
   const frames: { at: number; msg: Record<string, unknown> }[] = [];
   const query: typeof sdkQuery = (args) => {
     const q = sdkQuery(args);
@@ -93,6 +93,7 @@ function tappedQuery(): { frames: { at: number; msg: Record<string, unknown> }[]
     return new Proxy(q, {
       get(target, prop) {
         if (prop === Symbol.asyncIterator) return () => tapped;
+        if (typeof prop === "string" && over[prop] !== undefined) return over[prop]!(target as never);
         const v = Reflect.get(target, prop, target) as unknown;
         return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
       },
@@ -286,6 +287,112 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       const next = await driver.turn({ from: "task", task: wakes[0]!.task, status: "completed", text: wakes[0]!.text } as never, control("task-notification" as never));
       expect(next.reason).toBe("end_turn");
     } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  function pausable(over: Partial<BotSessionContext> = {}) {
+    const s = { may: true, resume: () => {} };
+    const ctx = {
+      mayAct: () => s.may,
+      whenMayAct: (signal?: AbortSignal) => new Promise<void>((r, j) => {
+        s.resume = () => { s.may = true; r(); };
+        signal?.addEventListener("abort", () => j(new Error("aborted")), { once: true });
+      }),
+      ...over,
+    };
+    return { s, ctx };
+  }
+
+  test("review P7: a foreground command already running when the pause comes on finishes; the pause never cuts a call off", async () => {
+    const home = tempHome();
+    const dir = tempHome();
+    const started = join(dir, "start"), marker = join(dir, "done");
+    const { s, ctx } = pausable();
+    const driver = new BotSessionDriver(context(home, "winter-test/calls", ctx), deps(home, spawn, { pausePollMs: 100 }));
+    try {
+      const p = driver.turn(user(`CALL Bash ${JSON.stringify({ command: `touch ${JSON.stringify(started)}; sleep 3; touch ${JSON.stringify(marker)}` })}`), control());
+      for (let i = 0; i < 100 && !existsSync(started); i++) await Bun.sleep(50);
+      expect(existsSync(started)).toBe(true);
+      s.may = false;
+      await Bun.sleep(4_500);
+      expect(existsSync(marker)).toBe(true);
+      s.resume();
+      expect((await p).reason).toBe("end_turn");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("review P8: nothing is recorded while paused after a tool round ends", async () => {
+    const home = tempHome();
+    const { s, ctx } = pausable();
+    const driver = new BotSessionDriver(context(home, "winter-test/calls", ctx), deps(home, spawn));
+    const c = control();
+    try {
+      const p = driver.turn(user('CALL Bash {"command":"sleep 1.5"}\nCALL Bash {"command":"echo again"}'), c);
+      await Bun.sleep(300);
+      s.may = false;
+      const pausedAt = Date.now();
+      const seen = c.records.length;
+      await Bun.sleep(3_000);
+      // The running call finished (its result recorded); nothing after it until the resume.
+      const after = c.records.slice(seen).map((r) => r.type).filter((t) => t !== "tool_result" && t !== "tool_call_updated");
+      expect(after.filter((t) => t === "tool_call" || t === "assistant_message")).toEqual([]);
+      expect(Date.now() - pausedAt).toBeGreaterThanOrEqual(3_000);
+      s.resume();
+      expect((await p).reason).toBe("end_turn");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("review P9: a wake names the task that ended, after an earlier notification was taken inside a host turn", async () => {
+    const home = tempHome();
+    const wakes: { task: string; status: string; text: string }[] = [];
+    const ctx = Object.assign(context(home, "winter-test/calls"), { wake: (w: { task: string; status: string; text: string }) => { wakes.push(w); return { disposition: "turn", seq: 1 }; } });
+    const { frames, query } = tappedQuery();
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query }));
+    try {
+      // Task A ends while the turn's next call runs: its notification is taken inside the turn, not as a wake.
+      await driver.turn(user([
+        'CALL Bash {"command":"sleep 0.5; echo A","run_in_background":true,"description":"taskAAA"}',
+        'CALL Bash {"command":"sleep 2.5"}',
+        'CALL Bash {"command":"echo after"}',
+      ].join("\n")), control());
+      await Bun.sleep(1_500);
+      expect(wakes).toEqual([]);
+      await driver.turn(user('CALL Bash {"command":"sleep 0.5; echo B","run_in_background":true,"description":"taskBBB"}'), control());
+      for (let i = 0; i < 60 && wakes.length === 0; i++) await Bun.sleep(100);
+      const startedB = frames.find((f) => f.msg.subtype === "task_started" && f.msg.description === "taskBBB")!.msg.task_id;
+      expect(wakes.map((w) => w.task)).toEqual([String(startedB)]);
+      expect(wakes[0]!.text).toContain("taskBBB");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("review F3: a stop that failed is tried again while the pause holds", async () => {
+    const home = tempHome();
+    const { s, ctx } = pausable();
+    const marker = join(tempHome(), "ran.txt");
+    let calls = 0;
+    const { query } = tappedQuery({
+      stopTask: (target) => async (id: string, o?: { by?: "host" | "assistant" }) => {
+        calls += 1;
+        if (calls === 1) throw new Error("the runtime was busy");
+        return (target as { stopTask: (id: string, o?: unknown) => Promise<unknown> }).stopTask(id, o);
+      },
+    });
+    const driver = new BotSessionDriver(context(home, "winter-test/calls", ctx), deps(home, spawn, { query, pausePollMs: 200 }));
+    try {
+      await driver.turn(user(`CALL Bash ${JSON.stringify({ command: `sleep 4; touch ${JSON.stringify(marker)}`, run_in_background: true, description: "wait" })}`), control());
+      s.may = false;
+      await Bun.sleep(6_000);
+      expect(calls).toBeGreaterThanOrEqual(2);
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      s.may = true;
       await driver.stop();
     }
   }, 60_000);

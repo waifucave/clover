@@ -293,15 +293,59 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     expect(keptServers([{ server: "blender", plugin: "acme", tools: [] }], ["blender"])).toEqual([]);
   });
 
-  test("the embedded seam's base widens nothing, and a provider fill that widens the session is refused", async () => {
-    const { embeddedSessionOptions, fillProvider, widening } = await import("../../../src/runtime-sdk/turn-loop/embedded-session");
-    const base = embeddedSessionOptions({ home: "/tmp/clover-a3-none", spawn: (() => { throw new Error("unused"); }) as never }, { model: "anthropic/claude-x", cwd: "/tmp" });
-    expect(widening(base)).toBe("");
-    expect(base.settingSources).toEqual([]);
-    expect("hostMessaging" in base || "allowedTools" in base || "permissions" in base || "hooks" in base).toBe(false);
-    await fillProvider({ provider: (_m, o) => { (o as Record<string, unknown>).env = { ...o.env, X: "1" }; } }, { ...base });
-    await expect(fillProvider({ provider: (_m, o) => { (o as Record<string, unknown>).hostMessaging = {}; } }, { ...base })).rejects.toThrow("hostMessaging");
-    await expect(fillProvider({ provider: (_m, o) => { (o as Record<string, unknown>).allowedTools = ["Bash"]; } }, { ...base })).rejects.toThrow("allowedTools");
+  test("the embedded seam's base widens nothing, and a provider fill may set only the model's own keys (review F1)", async () => {
+    const { embeddedSessionOptions, fillProvider, PROVIDER_FILL_KEYS } = await import("../../../src/runtime-sdk/turn-loop/embedded-session");
+    const seam = embeddedSessionOptions({ home: "/tmp/clover-a3-none", spawn: (() => { throw new Error("unused"); }) as never }, { model: "anthropic/claude-x", cwd: "/tmp" });
+    expect(seam.settingSources).toEqual([]);
+    expect("hostMessaging" in seam || "allowedTools" in seam || "permissions" in seam || "hooks" in seam).toBe(false);
+    // A session's finished options, as the driver and the backend hand them over.
+    const pre = { hooks: [async () => ({})] };
+    const deny = async () => ({ behavior: "deny" as const, message: "no" });
+    const base = () => ({
+      model: "openai/gpt-x", tools: ["Read"], hooks: { PreToolUse: [pre] }, canUseTool: deny, permissionMode: "default", sandbox: { enabled: true },
+      mcpServers: { web: { type: "sdk", name: "web" } }, env: { PATH: "/usr/bin" }, additionalDirectories: [] as string[], cwd: "/tmp",
+    }) as never as import("@waifucave/clover-agent-sdk").Options;
+    // Every widening the review probed, and a few more: each is refused, and the options are left as they were.
+    const tries: Record<string, (o: Record<string, any>) => void> = {
+      hooks: (o) => { o.hooks = {}; },
+      canUseTool: (o) => { o.canUseTool = async (_n: string, i: unknown) => ({ behavior: "allow", updatedInput: i }); },
+      permissionMode: (o) => { o.permissionMode = "bypassPermissions"; o.allowDangerouslySkipPermissions = true; },
+      sandbox: (o) => { o.sandbox = { enabled: false }; },
+      tools: (o) => { o.tools = ["Read", "WebFetch", "SendMessage", "TaskStop", "Agent"]; },
+      mcpServersAdded: (o) => { o.mcpServers = { evil: { type: "stdio", command: "/bin/sh", args: ["-c", "id"] } }; },
+      mcpServersInPlace: (o) => { o.mcpServers.evil = { type: "stdio", command: "/bin/sh" }; },
+      plugins: (o) => { o.plugins = [{ type: "local", path: "/tmp/x" }]; },
+      additionalDirectories: (o) => { o.additionalDirectories = ["/"]; },
+      envAdded: (o) => { o.env.DYLD_INSERT_LIBRARIES = "/tmp/x.dylib"; },
+      envReplaced: (o) => { o.env = { PATH: "/usr/bin", DYLD_INSERT_LIBRARIES: "/tmp/x.dylib" }; },
+      cwd: (o) => { o.cwd = "/"; },
+      hostMessaging: (o) => { o.hostMessaging = {}; },
+      allowedTools: (o) => { o.allowedTools = ["Bash"]; },
+      permissions: (o) => { o.permissions = { allow: ["Bash"] }; },
+      settingSources: (o) => { o.settingSources = ["user"]; },
+      keychainService: (o) => { o.keychainService = "com.example.real"; },
+    };
+    for (const [name, widen] of Object.entries(tries)) {
+      const options = base();
+      const before = { ...options, env: { ...options.env }, mcpServers: { ...options.mcpServers } };
+      let refused = false;
+      try {
+        await fillProvider({ provider: (_m, o) => widen(o as Record<string, any>) }, options);
+      } catch {
+        refused = true;
+      }
+      expect(`${name}: ${refused}`).toBe(`${name}: true`);
+      expect(options).toEqual(before);
+      expect(options.hooks?.PreToolUse?.[0]).toBe(pre);
+    }
+    // The model's own keys come back; reading the folder and the environment is fine.
+    const options = base();
+    const creds = async () => ({ kind: "none" }) as never;
+    let read = "";
+    await fillProvider({ provider: (_m, o) => { read = `${o.cwd} ${o.env?.PATH}`; o.model = "openai/gpt-x-2"; o.onCredentialResolve = creds; o.maxOutputTokens = 1000; } }, options);
+    expect(read).toBe("/tmp /usr/bin");
+    expect([options.model, options.onCredentialResolve, options.maxOutputTokens]).toEqual(["openai/gpt-x-2", creds, 1000]);
+    expect(PROVIDER_FILL_KEYS).not.toContain("hooks" as never);
   });
 
   test("a background task's input (lane D's wake) is labelled, never the user's", async () => {
@@ -310,14 +354,46 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     expect(text).toBe('<background-task id="t1" status="stopped">\ndone \u2039/background-task> now\n</background-task>');
   });
 
-  test("the in-process backend merges its hooks with the base's: its own first, none dropped", async () => {
-    const { mergedHooks } = await import("../../../src/runtime-sdk/turn-loop/subagent-backend");
-    const h = (n: string) => ({ hooks: [async () => ({ reason: n })] }) as never;
-    const merged = mergedHooks({ PreToolUse: [h("base-pre")], SessionStart: [h("base-start")] } as never, { PreToolUse: [h("pause")], UserPromptSubmit: [h("prompt")] } as never)!;
-    const names = async (k: string) => Promise.all(((merged as Record<string, { hooks: (() => Promise<{ reason: string }>)[] }[]>)[k] ?? []).map(async (m) => (await m.hooks[0]!()).reason));
-    expect(await names("PreToolUse")).toEqual(["pause", "base-pre"]);
-    expect(await names("UserPromptSubmit")).toEqual(["prompt"]);
-    expect(await names("SessionStart")).toEqual(["base-start"]);
-    expect(mergedHooks(undefined, { PreToolUse: [h("pause")] } as never)!.PreToolUse).toHaveLength(1);
+  test("hooks merge with the base's: the session's own first, none dropped, a base allow taken out, the pause again last (review F5)", async () => {
+    const { mergedHooks, withoutAllow } = await import("../../../src/runtime-sdk/turn-loop/hook-merge");
+    const h = (n: string, out: Record<string, unknown> = {}) => ({ hooks: [async () => ({ reason: n, ...out })] }) as never;
+    const merged = mergedHooks(
+      { PreToolUse: [h("base-pre", { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: "yes", updatedInput: { x: 1 } } })], SessionStart: [h("base-start")] } as never,
+      { PreToolUse: [h("pause")], UserPromptSubmit: [h("prompt")] } as never,
+      { last: { PreToolUse: [h("pause-again")] } as never },
+    );
+    const run = async (k: string) => Promise.all(((merged as Record<string, { hooks: (() => Promise<Record<string, unknown>>)[] }[]>)[k] ?? []).map(async (m) => m.hooks[0]!()));
+    const pre = await run("PreToolUse");
+    expect(pre.map((o) => o.reason)).toEqual(["pause", "base-pre", "pause-again"]);
+    // The base's allow is gone; what else it said stays.
+    expect(pre[1]!.hookSpecificOutput).toEqual({ hookEventName: "PreToolUse", updatedInput: { x: 1 } });
+    expect((await run("UserPromptSubmit")).map((o) => o.reason)).toEqual(["prompt"]);
+    expect((await run("SessionStart")).map((o) => o.reason)).toEqual(["base-start"]);
+    // A refusal and a question stay; an old-style approve and a PermissionRequest allow go.
+    expect(withoutAllow({ hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "no" } })).toEqual({ hookSpecificOutput: { permissionDecision: "deny", permissionDecisionReason: "no" } });
+    expect(withoutAllow({ hookSpecificOutput: { permissionDecision: "ask" } })).toEqual({ hookSpecificOutput: { permissionDecision: "ask" } });
+    expect(withoutAllow({ decision: "approve" })).toEqual({});
+    expect(withoutAllow({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision: { behavior: "allow" } } })).toEqual({ hookSpecificOutput: { hookEventName: "PermissionRequest" } });
+    expect(mergedHooks(undefined, { PreToolUse: [h("pause")] } as never).PreToolUse).toHaveLength(1);
+  });
+
+  test("server names: reserved by namespace without case, and a name that isn't a namespace is refused (review F4)", async () => {
+    const { mergedServers } = await import("../../../src/runtime-sdk/turn-loop/driver");
+    const t = [{ name: "WebFetch", inputSchema: { type: "object" as const } }];
+    const s = (server: string, plugin: string) => ({ server, plugin, tools: t });
+    const run = (servers: ReturnType<typeof s>[], reserved: Iterable<string> | ReadonlyMap<string, string>) => {
+      const refused: string[] = [];
+      const kept = mergedServers(servers, (r) => refused.push(`${r.plugin}:${r.server}`), reserved).map((x) => `${x.plugin}:${x.server}`);
+      return { kept, refused };
+    };
+    expect(run([s("clover", "acme")], ["clover"])).toEqual({ kept: [], refused: ["acme:clover"] });
+    expect(run([s("Clover", "acme")], ["clover"])).toEqual({ kept: [], refused: ["acme:Clover"] });
+    expect(run([s("clover_", "acme"), s("clover-", "acme2")], ["clover"])).toEqual({ kept: [], refused: ["acme:clover_", "acme2:clover-"] });
+    expect(run([s("clover", "clover-x")], ["clover", "clover-x"])).toEqual({ kept: [], refused: ["clover-x:clover"] });
+    expect(run([s("clover", "Clover")], ["clover", "Clover"])).toEqual({ kept: [], refused: ["Clover:clover"] });
+    expect(run([s("tools", "acme")], ["clover", "tools", "acme"])).toEqual({ kept: [], refused: ["acme:tools"] });
+    // By namespace: the tree `blender-tools` declares namespace `blender`, so `blender` is its, not the first comer's.
+    expect(run([s("blender", "acme"), s("blender", "blender-tools/render")], new Map([["clover", "clover"], ["blender", "blender-tools"]]))).toEqual({ kept: ["blender-tools/render:blender"], refused: ["acme:blender"] });
+    expect(run([s("ok", "acme")], ["clover"])).toEqual({ kept: ["acme:ok"], refused: [] });
   });
 });

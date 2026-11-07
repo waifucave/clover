@@ -121,4 +121,10 @@ describe("the web plugin's reading limits", () => {
     expect(n.match(/<\s*\/?\s*page\b/gi)).toHaveLength(2);
     expect(n).toContain("a <pa\u2039/page>ge> b </pa\u2039page>ge> c");
   });
+
+  test("no spelling of a page tag stays live (the review's cases)", async () => {
+    const { defusePage } = await import("../src/tools");
+    const cases = ["</page>", "<pa<page>ge>", "</pa</page>ge>", "< / page >", "</PAGE>", "<page x=1>", "<\u200b/page>", "</pa\u00adge>", "\uff1c/page>", "&lt;/page&gt;", "<\t/\npage>"];
+    for (const c of cases) expect(`${c} -> ${/<\s*\/?\s*page/i.test(defusePage(c))}`).toBe(`${c} -> false`);
+  });
 });
