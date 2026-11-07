@@ -82,6 +82,9 @@ export interface SessionRecordSyncOptions {
   isStale?(epoch: number, scope?: string): boolean;
   /** The lease record this computer is on (lease.ts `scopeId`): stamped on what it sends, beside each record's epoch. */
   scope?(): string;
+  /** The first wait before set-aside records the writer couldn't take are sent again (default 1 s, doubling to a
+   *  minute). */
+  lateRetryMs?: number;
   log?(line: string): void;
 }
 
@@ -196,7 +199,8 @@ export class SessionRecordSync {
       }
       for (;;) {
         const have = this.#o.host.head(id);
-        if (head.seq < have) break;
+        // Even at the same length, the last record is compared: two logs of one length can still differ there.
+        if (head.seq < have - 1) break;
         // From the last record held here, so the first one overlaps and a fork shows.
         const after = Math.max(-1, have - 2);
         const page = await link.request<{ entries: Entry[]; more: boolean }>("sync.pull", { stream, after, limit: BATCH });
@@ -214,6 +218,9 @@ export class SessionRecordSync {
   }
 
   close(): void {
+    this.#closed = true;
+    for (const t of this.#lateTries.values()) if (t.timer) clearTimeout(t.timer);
+    this.#lateTries.clear();
     for (const off of this.#offs.splice(0)) off();
   }
 
@@ -386,10 +393,12 @@ export class SessionRecordSync {
   }
 
   /** Sends a session's set-aside records the writer doesn't have yet to the computer running it, each batch acked
-   *  once it took them; the rest wait for the next link. */
+   *  once it took them. What it can't take now (its own turn running: lane D refuses then, to be asked again; or no
+   *  link) is tried again on the next link and on a timer, backing off to a minute. */
   async #sendLate(id: string): Promise<void> {
-    if (this.#sendingLate.has(id)) return;
+    if (this.#sendingLate.has(id) || this.#closed) return;
     this.#sendingLate.add(id);
+    let again = false;
     try {
       for (const e of this.#o.host.earlier(id)) {
         if (e.delivered !== undefined) continue;
@@ -405,16 +414,38 @@ export class SessionRecordSync {
             if (!runner) return;
             const link = await this.#o.transport.connect(runner.id);
             const r = await link.request<{ ok: boolean }>("sync.push", { stream: `${PREFIX}${id}`, late: true, entries: records.map((rec) => this.#entry(rec, undefined)) });
-            if (!r.ok) return;
+            if (!r.ok) {
+              again = true;
+              return;
+            }
           }
         }
         this.#o.host.ackEarlier(id, e.id);
       }
+      this.#lateTries.delete(id);
     } catch {
-      // Sent again when a link comes up.
+      again = true;
     } finally {
       this.#sendingLate.delete(id);
+      if (again) this.#retryLate(id);
     }
+  }
+
+  /** Per session, how many times its set-aside records were tried, and the timer for the next. */
+  readonly #lateTries = new Map<string, { n: number; timer?: ReturnType<typeof setTimeout> }>();
+  #closed = false;
+
+  #retryLate(id: string): void {
+    if (this.#closed) return;
+    const t = this.#lateTries.get(id) ?? { n: 0 };
+    if (t.timer) return;
+    t.n++;
+    t.timer = setTimeout(() => {
+      t.timer = undefined;
+      void this.#sendLate(id);
+    }, Math.min(60_000, (this.#o.lateRetryMs ?? 1_000) * 2 ** Math.min(t.n - 1, 6)));
+    (t.timer as { unref?: () => void }).unref?.();
+    this.#lateTries.set(id, t);
   }
 
   /** Another computer's set-aside records for a session this computer runs: appended at the end, marked late. */
@@ -430,7 +461,13 @@ export class SessionRecordSync {
     }
     const computer = this.#o.registry.get(from)?.computer;
     if (computer === undefined) return { ok: false, reason: "refused" };
-    this.#o.host.appendLate(id, records, { from, computer });
+    try {
+      this.#o.host.appendLate(id, records, { from, computer });
+    } catch (e) {
+      // Not now (lane D refuses while one of this computer's own turns runs): the sender asks again.
+      if (e instanceof ContractError) return { ok: false, reason: e.code };
+      throw e;
+    }
     return { ok: true };
   }
 

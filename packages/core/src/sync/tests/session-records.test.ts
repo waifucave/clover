@@ -73,7 +73,7 @@ class MemoryHost implements SessionHostForSync {
     const fresh = records.filter((r) => r.seq >= s.records.length).map((r) => (opts.late ? { ...r, late: true } : r) as SessionRecord);
     s.records.push(...fresh);
     this.sessions.set(view.id, s);
-    this.ingested.push({ from: opts.from, late: opts.late, n: fresh.length });
+    if (fresh.length > 0) this.ingested.push({ from: opts.from, late: opts.late, n: fresh.length });
   }
 
   readonly asides: { id: string; from: string; records: SessionRecord[]; earlierId: string; delivered?: number }[] = [];
@@ -96,7 +96,14 @@ class MemoryHost implements SessionHostForSync {
 
   /** As lane D's host: each record's body at the end, marked late, once per (from, seq). */
   readonly #lateSeen = new Set<string>();
+  /** One of this computer's own turns runs: lane D refuses late records until it ends (typed, to be asked again). */
+  busy = false;
+  lateRefusals = 0;
   appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string }): void {
+    if (this.busy) {
+      this.lateRefusals++;
+      throw new ContractError("conflict", "a turn is running here: ask again once it ended");
+    }
     const s = this.sessions.get(id)!;
     for (const r of records) {
       const k = `${opts.from}\u0000${r.seq}`;
@@ -154,6 +161,7 @@ async function world(names: string[], opts: { stale?: (name: string, epoch: numb
       self: d.id, computer: () => n, transport: d.transport, registry: d.registry, host,
       ...(opts.stale ? { isStale: (e: number) => opts.stale!(n, e) } : {}),
       ...(opts.holder ? { holder: opts.holder } : {}),
+      lateRetryMs: 50,
     });
     stops.push(() => sync.close());
   }
@@ -350,4 +358,22 @@ describe("forks: two computers that wrote the same place", () => {
     expect(w.h("Studio").asides).toEqual([]);
     expect(w.h("Studio").bodies("b_alpha")).toEqual(w.h("Laptop").bodies("b_alpha"));
   });
+
+  test("the main is in the middle of its own turn: its refusal is asked again, and the records arrive once the turn ended", async () => {
+    const { w, studioDev, laptopDev } = await shared();
+    const studio = w.h("Studio");
+    const laptop = w.h("Laptop");
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "A10" } }, 1);
+    laptop.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "B10" } }, 2);
+    laptop.busy = true;
+    w.c.net.heal(studioDev.key.publicKey, laptopDev.key.publicKey);
+    await reconnect(laptopDev, studioDev);
+    await waitFor(() => laptop.lateRefusals >= 2, 10_000); // asked, refused, asked again
+    expect(laptop.head("b_alpha")).toBe(11);
+    expect(studio.asides[0]?.delivered).toBeUndefined();
+    laptop.busy = false;
+    await waitFor(() => laptop.head("b_alpha") === 12 && studio.head("b_alpha") === 12, 10_000);
+    expect((laptop.history("b_alpha")[11] as { event?: { text?: string }; late?: boolean })).toMatchObject({ event: { text: "A10" }, late: true });
+    expect(studio.asides[0]?.delivered).toEqual(expect.any(Number));
+  }, 20_000);
 });
