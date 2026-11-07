@@ -147,7 +147,7 @@ describe("the real fence on a real disk", () => {
     expect(luna.check({ op: "write", path: b("luna", "memory", "MEMORY.md") })).toEqual({ allowed: true });
     expect(luna.check({ op: "read", path: b("LUNA", "Memory", "MEMORY.md") })).toEqual({ allowed: true }); // folded
     expect(luna.check({ op: "read", path: b("sol", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
-    expect(luna.check({ op: "write", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true }); // the rest of a bot's folder isn't memory
+    expect(luna.check({ op: "write", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false, reason: "bot-memory" }); // agents are read-only, even to its own bot
     expect(luna.check({ op: "read", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true });
     expect(luna.check({ op: "move", path: b("luna"), to: b("luna2") })).toMatchObject({ allowed: false, reason: "bot-memory" });
     // The memory folder itself: not deleted or moved, by its own bot either.
@@ -160,7 +160,14 @@ describe("the real fence on a real disk", () => {
       expect(other.check({ op: "write", path: b("future-bot", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
       expect(other.check({ op: "write", path: b("future-bot") })).toMatchObject({ allowed: false });
       expect(other.touches([b("luna", "memory")])).toMatchObject({ kind: "bot-memory" });
+      // Another bot, a coding session, its agent, a plugin: luna's agents folder is read-only to all of them.
+      expect(other.check({ op: "read", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true });
+      expect(other.check({ op: "write", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false, reason: "bot-memory" });
     }
+    // A plugin writing another bot's agents folder: refused too.
+    const plugin = fence.forCaller({ kind: "plugin", pluginId: "tarot" });
+    expect(plugin.check({ op: "write", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+    expect(plugin.check({ op: "read", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true });
     expect(fence.forCaller({ kind: "session", sessionId: "c1", sessionKind: "coding" }).check({ op: "write", path: join(home, "project", "x") })).toEqual({ allowed: true });
     expect(botFolders(clover)).toEqual(["luna"]);
   });

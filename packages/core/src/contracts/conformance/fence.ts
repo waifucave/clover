@@ -110,8 +110,11 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
         expect([op, f.forCaller(main).check(op).allowed]).toEqual([op, false]);
       }
       expect(f.forCaller(main).check({ op: "move", path: `${mem("luna")}/a.md`, to: `${mem("alpha")}/a.md` }).allowed).toBe(false);
-      // The rest of a bot's folder isn't memory.
-      expect(f.forCaller(session("luna", "agent")).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(true);
+      // The rest of a bot's folder isn't memory: the home default-deny keeps it from everyone but its bot, read only.
+      expect(f.forCaller(session("luna", "agent")).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(false);
+      expect(f.forCaller(main).check({ op: "read", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(true);
+      expect(f.forCaller(main).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(false);
+      expect(reach(main, `${CLOVER}/bots/luna/agents/a_1.jsonl`)).toEqual([true, false]);
       // Runners (J's ruling): every runner is denied every bot's memory, known or not; the owning bot's main
       // conversation and side threads get their own back (`ownMemory`), and no other bot's.
       for (const c of [main, session("luna", "side-thread"), session(undefined, "coding"), session("luna", "agent"), { kind: "plugin", pluginId: "tarot" } as const]) {
@@ -266,8 +269,10 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
         expect(f.check({ op: "write", path: `${CLOVER}/\u00DFettings/x.json` })).toEqual({ allowed: false, reason: "clover-home", path: CLOVER });
         expect(f.check({ op: "write", path: `${CLOVER}/plugins-state/\u00F6ks/x.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
         expect(f.check({ op: "read", path: `${CLOVER}/\u0455ettings/settings.json` })).toMatchObject({ allowed: false, reason: "clover-home" });
-        // Where Clover doesn't name things (a bot's notes, a routine's files), any name is the user's own.
-        expect(f.check({ op: "write", path: `${CLOVER}/bots/luna/agents/\u65E5\u8A18.md` }).allowed).toBe(true);
+        // Where Clover doesn't name things (a bot's memory and scratch), any name is the bot's own.
+        const luna = f.forCaller({ kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" });
+        expect(luna.check({ op: "write", path: `${CLOVER}/bots/luna/memory/\u65E5\u8A18.md` }).allowed).toBe(true);
+        expect(luna.check({ op: "write", path: `${CLOVER}/scratch/luna/caf\u00E9.md` }).allowed).toBe(true);
         expect(f.check({ op: "write", path: `${CLOVER}/routines/alpha/caf\u00E9.md` }).allowed).toBe(true);
         expect(f.check({ op: "write", path: `${HOME}/\u017Fettings.json` }).allowed).toBe(true);
       }

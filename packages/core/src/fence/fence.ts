@@ -10,6 +10,7 @@
 import { lstatSync, readdirSync, type BigIntStats } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Caller, Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
   CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, judge, READ_DENIED_KINDS, fenceContextFor, patternItemAt, windowsAlias,
@@ -247,13 +248,16 @@ export class CloverFence implements Fence {
     const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: [...set.map((i) => i.path), patterns[0]!],
+      // The whole bots folder is write-denied (agents and the rest of a bot's folder are read-only); the
+      // runner's own memory comes back below as `ownMemory`.
+      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`],
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
       closedDoors: [...CLOSED_DOORS[this.os]],
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES, ...this.#loopbackPorts().flatMap((port) => [`127.0.0.1:${port}`, `[::1]:${port}`])],
       network: "none",
-      ...(ctx?.memoryOf !== undefined ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
+      // Only a valid bot id builds the way back in (`..` would climb out of `bots/`).
+      ...(ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
     };
   }
 
