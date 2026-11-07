@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { cleanup } from "node-datachannel";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
 
-import { HandshakeClient } from "@waifucave/clover-service-handshake/client";
+import { type Connect, connectWebSocket, HandshakeClient } from "@waifucave/clover-service-handshake/client";
 import { harnessReady, type HandshakeHarness, startHandshake } from "@waifucave/clover-service-handshake/harness";
 import { Companion, MemoryStore, PairingError, type PairRecord } from "@waifucave/clover-service-web/app";
 import { readInvite, type RtcEnvironment, type RtcLink } from "@waifucave/clover-service-web/protocol";
@@ -121,9 +121,17 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
   return { host, registry, store, links, shown };
 }
 
-function browser(store = new MemoryStore()): Companion {
-  return new Companion({ store, rtc, handshake: "https://handshake.invalid", allowedHandshakes: [harness.url], name: "Test browser" });
+function browser(store = new MemoryStore(), options: { connect?: Connect } = {}): Companion {
+  return new Companion({ store, rtc, handshake: "https://handshake.invalid", allowedHandshakes: [harness.url], name: "Test browser", ...options });
 }
+
+/** A browser whose socket reaches the service only after `ms`: slower than the computer's whole answer. */
+const slowSocket =
+  (ms: number): Connect =>
+  async (url) => {
+    await Bun.sleep(ms);
+    return connectWebSocket(url);
+  };
 
 async function invite(c: Computer, code = "481516") {
   const url = await c.host.createInvite({ code, expiresAt: Date.now() + 10 * 60_000 });
@@ -210,6 +218,21 @@ describe.skipIf(!ready)("the web companion", () => {
     const tampered = { ...(await invite(c)), code: "000000" };
     const wrong = await browser()
       .pair(tampered, { onWords: () => undefined })
+      .catch((e: unknown) => e);
+    expect((wrong as PairingError).code).toBe("code");
+    c.host.stop();
+  }, 30_000);
+
+  test("a browser whose socket opens late still pairs: it asks only once its socket is open", async () => {
+    // The computer confirms at once and ends the invite right after `paired`. Had the request gone out before the
+    // socket was open, the answers would wait in the invite's inbox, which its end deletes: a "refused" pairing.
+    const c = await computer();
+    await c.host.start();
+    const record = await browser(new MemoryStore(), { connect: slowSocket(400) }).pair(await invite(c), { onWords: () => undefined });
+    expect(record.computerName).toBe("Studio");
+    expect(c.registry.added).toHaveLength(1);
+    const wrong = await browser(new MemoryStore(), { connect: slowSocket(400) })
+      .pair({ ...(await invite(c)), code: "000000" }, { onWords: () => undefined })
       .catch((e: unknown) => e);
     expect((wrong as PairingError).code).toBe("code");
     c.host.stop();

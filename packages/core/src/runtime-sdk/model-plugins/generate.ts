@@ -37,6 +37,12 @@ function declarativeAuth(authKinds: readonly string[], protocol: keyof typeof GE
   return [{ method: "api-key", secret: API_KEY_SECRET, help: `Your ${name} API key. Clover keeps it in your credential store and adds it to ${name}'s requests itself.`, ...(placement !== undefined ? { placement } : {}) }];
 }
 
+/** A URL's authority when it takes labels from settings (`${setting:resource}.services.ai.azure.com`). */
+function settingAuthority(url: string): string | undefined {
+  const authority = /^https?:\/\/([^/?#]*)/i.exec(url)?.[1];
+  return authority?.includes("${setting:") ? authority : undefined;
+}
+
 /** One provider's plugin files. */
 export function modelPluginFiles(catalog: WinterCatalog, providerId: string): GeneratedFiles {
   const provider = catalog.providers.find((p) => p.id === providerId);
@@ -55,6 +61,9 @@ export function modelPluginFiles(catalog: WinterCatalog, providerId: string): Ge
       ...(keys.length > 0
         ? { settings: Object.fromEntries(keys.map((k) => [k, { type: "string", title: k, description: `Your ${name} ${k}, as its endpoint names it (${provider.endpointTemplate}).`, required: true }])) }
         : {}),
+      // An endpoint whose host takes labels from settings names that host as a `network:` host (#187's review), so the
+      // OK shows it and the key reaches only it.
+      ...(settingAuthority(entry.endpoint.baseUrl) ? { capabilities: [`network:${settingAuthority(entry.endpoint.baseUrl)}`] } : {}),
       contributes: { models: [{ provider: providerId, name, catalog: "catalog.json", auth: declarativeAuth(provider.authKinds, entry.endpoint.protocol, name), endpoint: entry.endpoint }] },
     };
   } else {

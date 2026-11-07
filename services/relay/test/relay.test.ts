@@ -165,14 +165,24 @@ describe("mail", () => {
     expect((await call(`/v1/mail/${device}/big`, { method: "PUT", body: new Uint8Array(1024 * 1024 + 1), headers: { "x-expires-at": soon } })).status).toBe(413);
     expect((await call(`/v1/mail/${device}/far`, { method: "PUT", body: new Uint8Array(1), headers: { "x-expires-at": String(Date.now() + 31 * 24 * 3600_000) } })).status).toBe(400);
     expect((await call(`/v1/mail/${device}/past`, { method: "PUT", body: new Uint8Array(1), headers: { "x-expires-at": String(Date.now() - 1) } })).status).toBe(400);
-    for (let i = 0; i < 256; i++) await call(`/v1/mail/${device}/n${i}`, { method: "PUT", body: new Uint8Array([i % 256]), headers: { "x-expires-at": soon } });
+    // The count: 255 pieces put straight into the mailbox's table (256 calls through the Worker took most of the
+    // test's time on slow runners), then the 256th through the Worker is taken and one more is refused.
+    expect((await call(`/v1/mail/${device}/n0`, { method: "PUT", body: new Uint8Array([0]), headers: { "x-expires-at": soon } })).status).toBeLessThan(300);
+    const mailbox = env.MAIL.getByName(device);
+    await runInDurableObject(mailbox, (_, state) => {
+      for (let i = 1; i < 255; i++) state.storage.sql.exec("INSERT INTO mail (id, expires, size, sealed) VALUES (?, ?, 1, ?)", `n${i}`, Number(soon), new Uint8Array([i]));
+    });
+    expect((await call(`/v1/mail/${device}/n255`, { method: "PUT", body: new Uint8Array(1), headers: { "x-expires-at": soon } })).status).toBeLessThan(300);
     const full = await call(`/v1/mail/${device}/n256`, { method: "PUT", body: new Uint8Array(1), headers: { "x-expires-at": soon } });
     expect([full.status, await full.json()]).toEqual([409, { error: "full" }]);
 
+    // Expiry without waiting: a piece put through the Worker, then moved past its time in the table; the alarm drops it.
     const brief = `brief${Date.now()}`;
-    await call(`/v1/mail/${brief}/x`, { method: "PUT", body: new Uint8Array(1), headers: { "x-expires-at": String(Date.now() + 200) } });
-    await new Promise((r) => setTimeout(r, 300));
+    expect((await call(`/v1/mail/${brief}/x`, { method: "PUT", body: new Uint8Array(1), headers: { "x-expires-at": soon } })).status).toBeLessThan(300);
     const stub = env.MAIL.getByName(brief);
+    await runInDurableObject(stub, (_, state) => {
+      state.storage.sql.exec("UPDATE mail SET expires = ?", Date.now() - 1);
+    });
     await runDurableObjectAlarm(stub);
     expect(await runInDurableObject(stub, (_, state) => state.storage.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM mail").one().n)).toBe(0);
   });

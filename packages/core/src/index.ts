@@ -334,3 +334,4 @@ export {
 
 export { installDaemonLogFile, daemonLogPathFor, DAEMON_LOG_FILE, DAEMON_LOG_MAX_BYTES, type DaemonLogFileHandle } from "./daemon-log-file";
 export { CloverSecretStore, openCloverSecretStore, secretStoreWarning, probeSystemdCreds, systemdCredsKey, KeychainValues, EncryptedFileValues, bunVault, memoryVault, vaultKey, keyFileKey, type Vault, type ValueBackend } from "./secrets/clover-secret-store";
+export * as registry from "./registry/index";

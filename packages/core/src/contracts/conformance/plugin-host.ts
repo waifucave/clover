@@ -337,6 +337,9 @@ export function runPluginHostConformance(make: PluginHostFactory): void {
       expect(hostProcessFor({ id: "luna/tarot", source: "index" })).toBe("shared");
       expect(hostProcessFor({ id: "opensky", source: "index", runtime: "node" })).toBe("own");
       expect(hostProcessFor({ id: "clover/model-bedrock", source: "bundled", runtime: "node" })).toBe("own");
+      // A Bun plugin that signs with its secret may ask for a process of its own (lane A's ask).
+      expect(hostProcessFor({ id: "clover/model-vertex", source: "bundled", process: "own" })).toBe("own");
+      expect(hostProcessFor({ id: "tarot", source: "local", runtime: "bun", process: "own" })).toBe("own");
     });
 
     test("a third-party worker presenting a clover/* id is refused, and the account token and keys answer only the clover process (S4)", async () => {
