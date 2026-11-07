@@ -6,11 +6,12 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, r
 import { dirname } from "node:path";
 import { syncDir, syncFile } from "./durable-io";
 
-export function writeJsonAtomic(path: string, value: unknown): void {
+/** `mode`: the file's permissions (before the umask); 0600 for one that holds a conversation, as its log is. */
+export function writeJsonAtomic(path: string, value: unknown, opts: { mode?: number } = {}): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
   const data = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8");
-  const fd = openSync(tmp, "wx");
+  const fd = openSync(tmp, "wx", opts.mode ?? 0o666);
   try {
     let written = 0;
     while (written < data.length) written += writeSync(fd, data, written, data.length - written);
