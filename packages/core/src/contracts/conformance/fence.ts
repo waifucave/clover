@@ -114,6 +114,21 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       expect(f.forCaller(session("luna", "agent")).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(false);
       expect(f.forCaller(main).check({ op: "read", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(true);
       expect(f.forCaller(main).check({ op: "write", path: `${CLOVER}/bots/luna/agents/a_1.jsonl` }).allowed).toBe(false);
+      // Another bot's, a coding session's or a plugin's write into luna's agent log would put words in luna's context
+      // (#213's review): each is refused, with every spelling, link-free path and folding; the user and the core write it.
+      const log = `${CLOVER}/bots/luna/agents/a_1.jsonl`;
+      for (const [name, caller] of [
+        ["another bot", session("alpha", "bot")], ["another bot's side thread", session("alpha", "side-thread")],
+        ["a coding session", session(undefined, "coding")], ["an agent of another bot", session("alpha", "agent")],
+        ["a plugin", { kind: "plugin", pluginId: "luna" }], ["a peer", { kind: "peer", device: "desk0000000000000001", sessionId: "s_1", bot: "luna" }],
+      ] as const) {
+        for (const op of [{ op: "write", path: log }, { op: "write", path: `${CLOVER}/BOTS/Luna/agents/a_2.jsonl` }, { op: "write", path: `${CLOVER}/bots/alpha/../luna/agents/a_3.jsonl` },
+          { op: "delete", path: log }, { op: "move", path: `${CLOVER}/scratch/alpha/x`, to: log }] as const) {
+          expect([name, op, f.forCaller(caller).check(op).allowed]).toEqual([name, op, false]);
+        }
+      }
+      expect(f.forCaller({ kind: "user", client: "app" }).check({ op: "write", path: log }).allowed).toBe(true);
+      expect(f.forCaller({ kind: "core" }).check({ op: "write", path: log }).allowed).toBe(true);
       // Runners: every runner is denied the whole Clover home, every bot's memory with it; the owning bot's main
       // conversation and side threads get their own back (`ownMemory`), and no other bot's.
       for (const c of [main, session("luna", "side-thread"), session(undefined, "coding"), session("luna", "agent"), { kind: "plugin", pluginId: "tarot" } as const]) {
