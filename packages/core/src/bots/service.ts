@@ -105,8 +105,9 @@ export interface BotSessionContext {
    *  the driver then runs that turn through `turn()` like any other. Optional (lane A's ask): a driver whose context
    *  has none keeps holding such a turn until the session may start one. One wake per notification.
    *  A storm of `event` wakes (a monitor that keeps reporting) never piles up: while a turn runs or one is queued for
-   *  the session (behind the pause, the lease or the update gate too), further events merge into one pending wake,
-   *  with the latest text and how many came, delivered as that turn ends; it answers `queued` meanwhile. */
+   *  the session (behind the pause, the lease or the update gate too), further events merge into one pending wake per
+   *  task, with that task's latest text and how many came, delivered as that turn ends (the first starts a turn, the
+   *  rest fold into it); it answers `queued` meanwhile. */
   wake?(input: Omit<Extract<DeliveredInput, { from: "task" }>, "from">): Promise<{ disposition: Disposition; seq: number }>;
 }
 
@@ -180,10 +181,9 @@ export const SIDE_THREAD_RESULT_MAX_CHARS = 4_000;
 
 type WakeInput = Omit<Extract<DeliveredInput, { from: "task" }>, "from">;
 
-interface PendingWake {
-  task: string;
-  text: string;
-  count: number;
+/** A session's merged `event` wakes, one per task, waiting for its turn to end. */
+interface PendingWakes {
+  tasks: Map<string, { text: string; count: number }>;
   off: () => void;
 }
 
@@ -209,7 +209,7 @@ export class BotService {
   readonly #layers: UserLayerStore;
   readonly #bots = new Map<string, Live>();
   /** Each session's merged `event` wakes, waiting for its turn to end. */
-  readonly #wakes = new Map<string, PendingWake>();
+  readonly #wakes = new Map<string, PendingWakes>();
   readonly #events = new Listeners<BotServiceEvent>();
   readonly #warn: (message: string) => void;
   #offs: Unsubscribe[] = [];
@@ -712,8 +712,9 @@ export class BotService {
     if (input.status !== "event" || !busy) return host.deliver(id, { from: "task", ...input });
     let w = this.#wakes.get(id);
     if (w === undefined) {
-      const fresh: PendingWake = { task: input.task, text: input.text, count: 0, off: () => {} };
-      // As the running (or next) turn ends, the merged wake goes in: one more turn at most.
+      const fresh: PendingWakes = { tasks: new Map(), off: () => {} };
+      // As the running (or next) turn ends, each task's merged wake goes in: the first starts a turn and the rest
+      // fold into it (a driver that can't fold queues them), so at most one more turn per task, usually one in all.
       fresh.off = host.subscribe(id, (r) => {
         if (r.type !== "turn_ended" && !(r.type === "status" && (r.status === "stopped" || r.status === "failed"))) return;
         const p = this.#wakes.get(id);
@@ -721,20 +722,24 @@ export class BotService {
         this.#wakes.delete(id);
         p.off();
         if (r.type === "status") return;
-        const text = p.count > 1 ? `${p.text}\n\n(${p.count} events from this task came while you were busy; the latest is shown.)` : p.text;
         // After the host has finished ending the turn (the record comes first), so it starts a turn, not a fold.
         queueMicrotask(() => {
-          host.deliver(id, { from: "task", task: p.task, status: "event", text }).catch((err: unknown) => {
-            this.#warn(`${id}'s merged task events weren't delivered: ${err instanceof Error ? err.message : String(err)}`);
-          });
+          void (async () => {
+            for (const [task, e] of p.tasks) {
+              const text = e.count > 1 ? `${e.text}\n\n(${e.count} events from this task came while you were busy; the latest is shown.)` : e.text;
+              await host.deliver(id, { from: "task", task, status: "event", text }).catch((err: unknown) => {
+                this.#warn(`${id}'s merged events of ${task} weren't delivered: ${err instanceof Error ? err.message : String(err)}`);
+              });
+            }
+          })();
         });
       });
       w = fresh;
       this.#wakes.set(id, w);
     }
-    w.task = input.task;
-    w.text = input.text;
-    w.count++;
+    // One pending wake per task: its latest text and how many came.
+    const e = w.tasks.get(input.task);
+    w.tasks.set(input.task, { text: input.text, count: (e?.count ?? 0) + 1 });
     return { disposition: "queued", seq: host.length(id) };
   }
 

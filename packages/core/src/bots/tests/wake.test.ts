@@ -100,4 +100,29 @@ describe("a turn the driver asks for", () => {
     expect(d.turns[3]!.folded.map((i) => i.from === "task" && i.status)).toEqual(["stopped"]);
     await b.shutdown();
   });
+
+  test("two monitors interleaving while busy: each task's latest reading and count arrive under its own id, in one more turn", async () => {
+    const b = await boot({ home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs });
+    const ctx = b.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx;
+    const d = b.drivers.for("b_alpha");
+    await b.host.sendUser("b_alpha", { text: "watch both", device: "studio", sentAt: 1, clientMessageId: "w" });
+    await flush();
+    for (let i = 1; i <= 10; i++) {
+      await ctx.wake!({ task: "cpu", status: "event", text: `cpu ${i}` });
+      if (i <= 4) await ctx.wake!({ task: "disk", status: "event", text: `disk ${i}` });
+    }
+    await flush();
+    expect(d.turns).toHaveLength(1);
+    expect(d.turns[0]!.folded).toEqual([]);
+    d.end({ text: "watching" });
+    await flush();
+    // One more turn: cpu's wake starts it and disk's folds in.
+    expect(d.turns).toHaveLength(2);
+    const got = [d.turns[1]!.input, ...d.turns[1]!.folded].map((i) => (i.from === "task" ? { task: i.task, text: i.text } : undefined));
+    expect(got).toEqual([
+      { task: "cpu", text: "cpu 10\n\n(10 events from this task came while you were busy; the latest is shown.)" },
+      { task: "disk", text: "disk 4\n\n(4 events from this task came while you were busy; the latest is shown.)" },
+    ]);
+    await b.shutdown();
+  });
 });
