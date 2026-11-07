@@ -1,7 +1,10 @@
 // The real ApprovalBroker (lane C, C-M3; B's contract `contracts/approval-broker.ts`, rules 1-8). It keeps the
 // contract's rules exactly as the reference fake does, and adds what a computer needs to live with it:
 //   * saved rules (a card's "always") persist in `<home>/rules/saved-rules.json`, inside the fenced set, owner-only,
-//     and are read back at start, so an "always" outlives a restart;
+//     and are read back at start, so an "always" outlives a restart. The file holds a hash of each rule's key and a
+//     scrubbed display string, never the raw key (a command can carry a secret); a key that looks like it carries a
+//     credential is never offered "always" nor saved (#267's ruling 4);
+//   * a card past its `expiresAt` is settled as expired whenever the broker next looks at it, whatever its timer did;
 //   * resolved cards are kept for `card.get` for a day, at most 2,000 of them, then dropped oldest first;
 //   * its levels, its fence, the safety reviewer and the device-answer verifier are the daemon's (injected).
 // It runs B's conformance suite (`test/approvals/broker.test.ts`).
@@ -18,12 +21,26 @@ import {
 import type { Clock, TimerHandle } from "../contracts/clock";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import type { Fence } from "../contracts/fence";
+import { looksCredentialBearing, ruleDisplay, ruleKeyHash } from "./strings";
+
+/** A saved rule as it sits on disk: its key's hash (what a request matches on) and a scrubbed display string. */
+export interface StoredRule {
+  keyHash: string;
+  display: string;
+  computers: string[];
+  cardId: string;
+  savedAt: number;
+}
 
 /** Where saved rules live between runs. */
 export interface RuleStore {
-  load(): SavedRule[];
-  save(rules: readonly SavedRule[]): void;
+  load(): StoredRule[];
+  save(rules: readonly StoredRule[]): void;
 }
+
+/** A saved rule in memory: the raw key only for a rule saved in this run, which `rules()` lists; one read back from
+ *  disk lists its display string. */
+interface HeldRule extends StoredRule { ruleKey?: string }
 
 export interface CloverApprovalBrokerOptions {
   clock: Clock;
@@ -68,7 +85,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   readonly #log: (line: string) => void;
   readonly #pending = new Map<string, Pending>();
   readonly #resolved = new Map<string, CardRecord>();
-  readonly #rules: SavedRule[];
+  readonly #rules: HeldRule[];
   readonly #listeners = new Listeners<ApprovalEvent>();
 
   constructor(opts: CloverApprovalBrokerOptions) {
@@ -79,23 +96,28 @@ export class CloverApprovalBroker implements ApprovalBroker {
     this.#verify = opts.verify ?? (() => false);
     this.#store = opts.rules;
     this.#log = opts.log ?? (() => {});
-    let loaded: SavedRule[] = [];
-    try { loaded = this.#store?.load() ?? []; } catch (err) { this.#log(`[approvals] saved rules unreadable, starting with none: ${String(err)}`); }
-    this.#rules = loaded;
+    let loaded: StoredRule[] = [];
+    // A fixed line: the parse error could quote the file.
+    try { loaded = this.#store?.load() ?? []; } catch { this.#log("[approvals] the saved rules file is unreadable; starting with no saved rules"); }
+    this.#rules = loaded.map((r) => ({ ...r, computers: [...r.computers] }));
   }
 
   async request(req: ApprovalRequest, opts: { signal?: AbortSignal } = {}): Promise<ApprovalDecision> {
     if (opts.signal?.aborted) return { allowed: false, by: "cancelled" };
     const auto = await this.#decide(req);
     if (auto) return auto;
+    // Stopped while the reviewer judged it: no card is raised, so none is left open (#267's review item 3).
+    if (opts.signal?.aborted) return { allowed: false, by: "cancelled" };
     return this.#showCard(req, opts.signal);
   }
 
   cards(): Card[] {
+    this.#sweepExpired();
     return [...this.#pending.values()].map((p) => structuredClone(p.card));
   }
 
   get(cardId: string): CardRecord | undefined {
+    this.#sweepExpired();
     const p = this.#pending.get(cardId);
     if (p) return { card: structuredClone(p.card) };
     const r = this.#resolved.get(cardId);
@@ -103,12 +125,14 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 
   pending(computer?: string): CardMeta[] {
+    this.#sweepExpired();
     return [...this.#pending.values()]
       .filter((p) => computer === undefined || p.card.computer === computer)
       .map((p) => cardMetaOf(p.card));
   }
 
   frameChannel(cardId: string): string | undefined {
+    this.#sweepExpired();
     const p = this.#pending.get(cardId);
     if (!p) return undefined;
     p.channel ??= `frame_${randomBytes(12).toString("hex")}`;
@@ -116,6 +140,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 
   async answer(cardId: string, a: CardAnswer, from: AnswerOrigin): Promise<AnswerResult> {
+    this.#sweepExpired();
     const p = this.#pending.get(cardId);
     if (!p) return this.#resolved.has(cardId) ? "already-answered" : "unknown-card";
     if (a.hash !== p.card.hash) return "hash-mismatch";
@@ -130,9 +155,14 @@ export class CloverApprovalBroker implements ApprovalBroker {
       if (!(await this.#verify(p.card, a, from))) return "bad-proof";
     }
     if (p.done) return "already-answered";
+    // The proof check awaited: a card whose time ran out meanwhile is expired, not answered.
+    if (this.#expiredNow(p)) {
+      this.#settle(p, "expired", { allowed: false, by: "expired", cardId });
+      return "already-answered";
+    }
     const allowed = option.kind === "approve";
-    const remembered = allowed && option.remember === "always" && p.req.ruleKey !== undefined;
-    if (remembered) this.#saveRule({ ruleKey: p.req.ruleKey!, computers: [...p.req.computers], cardId, savedAt: this.#clock.now() });
+    const remembered = allowed && option.remember === "always" && rememberable(p.req);
+    if (remembered) this.#saveRule(p.req.ruleKey!, p.req.computers, cardId);
     const device = a.proof.via === "device" ? a.proof.device : undefined;
     this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id, device, children);
     return "accepted";
@@ -143,14 +173,16 @@ export class CloverApprovalBroker implements ApprovalBroker {
   cancelSession(sessionId: string): number { return this.#endSession(sessionId, "cancelled"); }
 
   rules(): SavedRule[] {
-    return this.#rules.map((r) => ({ ...r, computers: [...r.computers] }));
+    return this.#rules.map((r) => ({ ruleKey: r.ruleKey ?? r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));
   }
 
   watch(fn: (e: ApprovalEvent) => void): Unsubscribe { return this.#listeners.add(fn); }
 
-  #saveRule(rule: SavedRule): void {
-    this.#rules.push(rule);
-    try { this.#store?.save(this.#rules); } catch (err) { this.#log(`[approvals] saving a rule failed; it holds until restart: ${String(err)}`); }
+  #saveRule(ruleKey: string, computers: readonly string[], cardId: string): void {
+    this.#rules.push({ keyHash: ruleKeyHash(ruleKey), display: ruleDisplay(ruleKey), ruleKey, computers: [...computers], cardId, savedAt: this.#clock.now() });
+    const stored: StoredRule[] = this.#rules.map((r) => ({ keyHash: r.keyHash, display: r.display, computers: [...r.computers], cardId: r.cardId, savedAt: r.savedAt }));
+    // A fixed line: the error could name the file or quote what was written.
+    try { this.#store?.save(stored); } catch { this.#log("[approvals] saving a rule failed; it holds until the daemon restarts"); }
   }
 
   async #decide(req: ApprovalRequest): Promise<ApprovalDecision | undefined> {
@@ -162,8 +194,9 @@ export class CloverApprovalBroker implements ApprovalBroker {
     if (req.paths?.length && this.#fence) { // rule 3
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }
-    if (req.ruleKey !== undefined) { // rule 4
-      const rule = this.#rules.find((r) => r.ruleKey === req.ruleKey && req.computers.every((c) => r.computers.includes(c)));
+    if (rememberable(req) && req.computers.length > 0) { // rule 4: a rule names every computer the request does
+      const hash = ruleKeyHash(req.ruleKey!);
+      const rule = this.#rules.find((r) => r.keyHash === hash && r.computers.length > 0 && req.computers.every((c) => r.computers.includes(c)));
       if (rule) return { allowed: true, by: "rule" };
     }
     const verdict = levelDecision(level, req.effect, req.ownTarget); // rule 5
@@ -177,9 +210,9 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const issuedAt = this.#clock.now();
     const expires = cardExpires(req.kind, req.origin); // rule 6
     const once = ALWAYS_CARD_KINDS.includes(req.kind);
-    const options = once
+    const options = once || !rememberable(req)
       ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)
-      : req.options ?? (req.ruleKey === undefined ? DEFAULT_OPTIONS : [
+      : req.options ?? ([
         DEFAULT_OPTIONS[0]!, { id: "always", kind: "approve", label: "Always allow", remember: "always" }, DEFAULT_OPTIONS[1]!,
       ]);
     const unhashed: Omit<Card, "hash"> = {
@@ -206,7 +239,18 @@ export class CloverApprovalBroker implements ApprovalBroker {
       }
       signal?.addEventListener("abort", () => this.#settle(p, "cancelled", { allowed: false, by: "cancelled", cardId: card.id }), { once: true });
       this.#listeners.emit({ type: "requested", card: structuredClone(card) });
+      if (signal?.aborted) this.#settle(p, "cancelled", { allowed: false, by: "cancelled", cardId: card.id });
     });
+  }
+
+  #expiredNow(p: Pending): boolean {
+    return p.card.expiresAt !== null && this.#clock.now() >= p.card.expiresAt;
+  }
+
+  /** Every open card past its `expiresAt` settles as expired, whatever its timer did (a clock that jumped, a timer
+   *  that fired late or never). */
+  #sweepExpired(): void {
+    for (const p of [...this.#pending.values()]) if (this.#expiredNow(p)) this.#settle(p, "expired", { allowed: false, by: "expired", cardId: p.card.id });
   }
 
   #endSession(sessionId: string, how: "withdrawn" | "cancelled"): number { // rule 7
@@ -242,4 +286,9 @@ export class CloverApprovalBroker implements ApprovalBroker {
       else break;
     }
   }
+}
+
+/** Whether a request may be remembered: it has a key, and the key doesn't look like it carries a credential. */
+function rememberable(req: ApprovalRequest): boolean {
+  return req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey);
 }

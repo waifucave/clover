@@ -318,9 +318,10 @@ export { CloverSecretStore, openCloverSecretStore, secretStoreWarning, probeSyst
 export * as registry from "./registry/index";
 // C-M3: the real approval broker, its saved rules on disk, and the bots' approval check (INT wires them:
 // `canUseTool: botApprovalCheck(broker)`, `openCard: brokerCardOpener(broker)`).
-export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverApprovalBrokerOptions, type RuleStore } from "./approvals/broker";
-export { fileRuleStore, savedRulesPath } from "./approvals/rule-store";
-export { botApprovalCheck, botToolRequest, effectOf as botToolEffect } from "./approvals/bot-check";
+export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverApprovalBrokerOptions, type RuleStore, type StoredRule } from "./approvals/broker";
+export { fileRuleStore, savedRulesPath, SAVED_RULES_VERSION } from "./approvals/rule-store";
+export { botApprovalCheck, botToolRequest, effectOf as botToolEffect, isBuiltinTool, resolveSessionPath, type BotToolRequestOptions } from "./approvals/bot-check";
+export { looksCredentialBearing } from "./approvals/strings";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
 export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";
