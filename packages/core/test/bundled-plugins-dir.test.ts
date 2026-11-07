@@ -7,7 +7,7 @@ import { cpSync, mkdirSync, mkdtempSync as mkdtempRaw, readFileSync, realpathSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  bundledManifest, bundledPluginIds, bundledPluginsDir, EMPTY_BUNDLED_MANIFEST, formatBundledManifest, loadEmbeddedManifest, measureBundledTree,
+  bundledManifest, bundledPluginIds, bundledPluginsDir, EMPTY_BUNDLED_MANIFEST, formatBundledManifest, loadBundledManifest, loadEmbeddedManifest, measureBundledTree, nonPortablePath,
   parseBundledManifest, readBundledFile, readBundledPlugin, validBundledPath, type BundledManifest,
 } from "../src/bundled-plugins-dir";
 
@@ -63,7 +63,9 @@ describe("the candidate folder, by layout", () => {
     expect(bundledPluginsDir("/nowhere/resources/daemon/clover-core", { manifest: SOME })).toBeUndefined();
   });
 
-  test("this test process (bun, not a compiled core) carries no manifest", () => {
+  test("this test process (bun, not a compiled core) carries no manifest, loaded or not", async () => {
+    expect(bundledManifest().files).toEqual({});
+    expect((await loadBundledManifest()).manifest.files).toEqual({});
     expect(bundledManifest().files).toEqual({});
   });
 });
@@ -96,6 +98,17 @@ describe("a bundled file counts only through its verified bytes", () => {
     expect(readBundledPlugin(dir, "alpha", genuine.manifest).ok).toBe(true);
   });
 
+  posixTest("a FIFO named in the manifest is refused at once, never read (a blocking read would hang the daemon)", () => {
+    const { plugins, manifest } = install();
+    rmSync(join(plugins, "clover", "host.js"));
+    const made = Bun.spawnSync(["mkfifo", join(plugins, "clover", "host.js")]);
+    expect(made.exitCode).toBe(0);
+    const started = performance.now();
+    expect(readBundledFile(plugins, "clover/host.js", manifest)).toEqual({ ok: false, refusal: "clover/host.js: not a regular file" });
+    expect(readBundledPlugin(plugins, "clover", manifest).ok).toBe(false);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
   posixTest("a size mismatch, a hash mismatch, a symlink and a missing file are each refused", () => {
     const { plugins, manifest } = install();
     writeFileSync(join(plugins, "alpha", "ui", "index.js"), "export default 12;\n");
@@ -110,6 +123,8 @@ describe("a bundled file counts only through its verified bytes", () => {
     expect(linked.ok).toBe(false);
     rmSync(join(plugins, "clover", "host.js"));
     expect(readBundledFile(plugins, "clover/host.js", manifest)).toEqual({ ok: false, refusal: "clover/host.js: can't be opened (ENOENT)" });
+    // A symlink is refused before it is opened.
+    expect(linked).toEqual({ ok: false, refusal: "clover/host.js: not a regular file" });
   });
 
   test("an extra file is refused: by name, and the plugin whose folder holds it", () => {
@@ -154,16 +169,24 @@ describe("the manifest's text", () => {
     expect(() => parseBundledManifest(`{"format":1,"files":{"x/y":{"sha256":"${"0".repeat(64)}","size":-1}}}`)).toThrow("{sha256, size}");
   });
 
-  test("the embedded file: none is the empty manifest, one is read, two are refused", () => {
-    const dir = mkdtempSync(join(tmpdir(), "lane-m-bundled-embed-"));
+  test("the embedded file, read from its Blob: none is the empty manifest, one is read, two or a bad one are refused", async () => {
     const text = formatBundledManifest(SOME);
-    writeFileSync(join(dir, "clover-bundled-plugins-abc123.manifest"), text);
-    expect(loadEmbeddedManifest([], dir).manifest).toEqual(EMPTY_BUNDLED_MANIFEST);
-    expect(loadEmbeddedManifest(["other.txt"], dir).manifest).toEqual(EMPTY_BUNDLED_MANIFEST);
-    const one = loadEmbeddedManifest(["clover-bundled-plugins-abc123.manifest"], dir);
+    const file = (name: string, body: string) => ({ name, bytes: async () => new TextEncoder().encode(body) });
+    expect((await loadEmbeddedManifest([])).manifest).toEqual(EMPTY_BUNDLED_MANIFEST);
+    expect((await loadEmbeddedManifest([file("other.txt", "x")])).manifest).toEqual(EMPTY_BUNDLED_MANIFEST);
+    const one = await loadEmbeddedManifest([file("clover-bundled-plugins-abc123.manifest", text), file("other.txt", "x")]);
     expect(one.manifest).toEqual(parseBundledManifest(text));
-    expect(one.text).toBe(readFileSync(join(dir, "clover-bundled-plugins-abc123.manifest"), "utf8"));
-    expect(() => loadEmbeddedManifest(["clover-bundled-plugins-a.manifest", "clover-bundled-plugins-b.manifest"], dir)).toThrow("2 bundled-plugins manifests");
+    expect(one.text).toBe(text);
+    await expect(loadEmbeddedManifest([file("clover-bundled-plugins-a.manifest", text), file("clover-bundled-plugins-b.manifest", text)])).rejects.toThrow("2 bundled-plugins manifests");
+    await expect(loadEmbeddedManifest([file("clover-bundled-plugins-a.manifest", "{")])).rejects.toThrow();
+  });
+
+  test("a path that can't ship to every OS (a Windows device name, a trailing dot or space) is refused when measured", () => {
+    for (const rel of ["a/CON", "a/nul.txt", "a/Com1.js", "a/lpt9", "a/com\u00b9", "aux/x.js", "a/x.", "a/x "]) expect(nonPortablePath(rel)).toBeDefined();
+    for (const rel of ["a/console.js", "a/null.js", "a/com10", "a/x.js", "a/.env.example"]) expect(nonPortablePath(rel)).toBeUndefined();
+    const { plugins } = install();
+    writeFileSync(join(plugins, "alpha", "nul.json"), "{}");
+    expect(() => measureBundledTree(plugins)).toThrow("Windows device name");
   });
 
   posixTest("measuring refuses a symlink in the tree", () => {

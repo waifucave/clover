@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DAEMON_TARGETS, daemonCompileCommand, MANIFEST_EMBED, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs } from "./build-daemon";
+import { DAEMON_TARGETS, daemonCompileCommand, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs } from "./build-daemon";
 
 const compileCore = (JSON.parse(readFileSync(join(import.meta.dir, "..", "packages", "cli", "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"]!;
 
@@ -51,6 +51,15 @@ describe("build:daemon", () => {
     expect(parseBuildDaemonArgs(["--plugins-manifest", "/x/m.manifest"], "darwin-arm64")).toEqual({ targets: ["darwin-arm64"], smoke: false, dryRun: false, pluginsManifest: "/x/m.manifest" });
     expect(parseBuildDaemonArgs(["--plugins-manifest=/y"], "darwin-arm64").pluginsManifest).toBe("/y");
     expect(() => parseBuildDaemonArgs(["--plugins-manifest"], "darwin-arm64")).toThrow("--plugins-manifest takes a file");
+  });
+
+  test("a cross-built core is checked by the manifest's bytes in it, exactly once", () => {
+    const m = new TextEncoder().encode('{"format":1,"files":{}}\n');
+    const bin = (...parts: Uint8Array[]) => new Uint8Array(Buffer.concat(parts.map((p) => Buffer.from(p))));
+    const junk = new Uint8Array([0, 1, 2, 3]);
+    expect(occurrences(bin(junk, m, junk), m)).toBe(1);
+    expect(occurrences(bin(junk, junk), m)).toBe(0);
+    expect(occurrences(bin(m, junk, m), m)).toBe(2);
   });
 
   test("a compile:core of another shape is refused, not guessed at", () => {

@@ -16,6 +16,8 @@
 //     ownership, read-only mounts) is needed or used.
 //   - A dev or source build has no embedded manifest, so nothing is bundled (lane B settles the dev layout). The
 //     user's own `<cloverHome>/plugins` is never the bundled folder.
+//   - The manifest is read from the embedded Blob itself (`loadBundledManifest`, once, at the daemon's start), never
+//     through a path. Until it is loaded, `bundledManifest()` is the empty one: nothing is bundled.
 import { createHash } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -38,6 +40,16 @@ export const EMPTY_BUNDLED_MANIFEST: BundledManifest = Object.freeze({ files: Ob
 export function validBundledPath(rel: string): boolean {
   if (rel === "" || /[\\:\0]/.test(rel)) return false;
   return rel.split("/").every((s) => s !== "" && s !== "." && s !== "..");
+}
+
+/** Why a path can't ship to every OS, or undefined: a Windows device name in any segment (`CON`, `PRN`, `AUX`, `NUL`,
+ *  `COM0`–`COM9`, `LPT0`–`LPT9`, with any extension, in any case), or a segment ending in a dot or a space. */
+export function nonPortablePath(rel: string): string | undefined {
+  for (const seg of rel.split("/")) {
+    if (/^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\..*)?$/i.test(seg)) return `${seg} is a Windows device name`;
+    if (/[. ]$/.test(seg)) return `${seg} ends in a dot or a space, which Windows drops`;
+  }
+  return undefined;
 }
 
 /** The manifest's one text form (keys sorted), which the build embeds and hashes. */
@@ -76,6 +88,8 @@ export function measureBundledTree(dir: string): BundledManifest {
       if (st.isDirectory()) walk(r);
       else if (st.isFile()) {
         if (!validBundledPath(r)) throw new Error(`${r}: not a plain relative path`);
+        const odd = nonPortablePath(r);
+        if (odd !== undefined) throw new Error(`${r}: ${odd}: a bundled file must ship to every OS`);
         const bytes = readFileSync(join(dir, r));
         files[r] = { sha256: createHash("sha256").update(bytes).digest("hex"), size: bytes.length };
       } else throw new Error(`${join(dir, r)} is ${st.isSymbolicLink() ? "a symlink" : "not a regular file"}: the bundled tree holds regular files only`);
@@ -85,32 +99,34 @@ export function measureBundledTree(dir: string): BundledManifest {
   return { files };
 }
 
-/** The embedded manifest from a compiled core's embedded files (`names`, each readable at `join(root, name)`): the
- *  one named like BUNDLED_MANIFEST_FILE, or the empty manifest when there is none. Two, or one that doesn't parse,
- *  throws: a release core is built with exactly one good manifest. */
-export function loadEmbeddedManifest(names: readonly string[], root: string, read: (path: string) => string = (p) => readFileSync(p, "utf8")): { manifest: BundledManifest; text?: string } {
-  const found = names.filter((n) => EMBEDDED_NAME.test(n));
+/** An embedded file of a compiled core: its name, and its bytes. */
+export interface EmbeddedFile { name?: string; bytes(): Promise<Uint8Array> }
+
+/** The manifest among a compiled core's embedded files: the one named like BUNDLED_MANIFEST_FILE, read from its Blob,
+ *  or the empty manifest when there is none. Two, or one that doesn't parse, throws: a release core is built with
+ *  exactly one good manifest. */
+export async function loadEmbeddedManifest(files: readonly EmbeddedFile[]): Promise<{ manifest: BundledManifest; text?: string }> {
+  const found = files.filter((f) => EMBEDDED_NAME.test(f.name ?? ""));
   if (found.length === 0) return { manifest: EMPTY_BUNDLED_MANIFEST };
   if (found.length > 1) throw new Error(`the core embeds ${found.length} bundled-plugins manifests`);
-  const text = read(join(root, found[0]!));
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(await found[0]!.bytes());
   return { manifest: parseBundledManifest(text), text };
 }
 
+let loaded: Promise<{ manifest: BundledManifest; text?: string }> | undefined;
 let cached: { manifest: BundledManifest; text?: string } | undefined;
 
-/** The core's own embedded manifest and its text, read once per process; empty outside a compiled core. */
-export function embeddedBundledManifest(): { manifest: BundledManifest; text?: string } {
-  if (cached !== undefined) return cached;
-  const embedded = typeof Bun !== "undefined" ? (Bun.embeddedFiles as ReadonlyArray<Blob & { name?: string }>) : [];
-  // Embedded files live beside the entrypoint in the binary's own file system (`/$bunfs/root/`, `B:/~BUN/root/` on
-  // Windows), which no file on disk can stand in for.
-  cached = embedded.length === 0 ? { manifest: EMPTY_BUNDLED_MANIFEST } : loadEmbeddedManifest(embedded.map((f) => f.name ?? ""), dirname(Bun.main));
-  return cached;
+/** Reads the core's own embedded manifest from its Blob, once per process (later calls answer the same); empty outside
+ *  a compiled core. The daemon awaits it at its start, before anything asks for a bundled plugin. */
+export function loadBundledManifest(): Promise<{ manifest: BundledManifest; text?: string }> {
+  loaded ??= loadEmbeddedManifest(typeof Bun !== "undefined" ? (Bun.embeddedFiles as unknown as readonly EmbeddedFile[]) : []).then((m) => (cached = m));
+  return loaded;
 }
 
-/** The manifest this core was built with (empty for a dev or source build). */
+/** The manifest this core was built with, once `loadBundledManifest` has read it; until then (and for a dev or source
+ *  build) the empty one, so nothing counts as bundled. */
 export function bundledManifest(): BundledManifest {
-  return embeddedBundledManifest().manifest;
+  return cached?.manifest ?? EMPTY_BUNDLED_MANIFEST;
 }
 
 /** A bundled file's verified bytes, or why it was refused. */
@@ -125,9 +141,18 @@ export function readBundledFile(root: string, rel: string, manifest: BundledMani
   if (!validBundledPath(rel)) return { ok: false, refusal: `${rel}: not a plain relative path` };
   const entry = Object.hasOwn(manifest.files, rel) ? manifest.files[rel] : undefined;
   if (entry === undefined) return { ok: false, refusal: `${rel}: not in the bundled-plugins manifest this core was built with` };
+  const path = join(root, rel);
+  // A regular file before it is opened: a planted FIFO or device is refused without a read that could block. The open
+  // is non-blocking and follows no last-segment link, and fstat checks the file actually opened.
+  try {
+    const st = lstatSync(path);
+    if (!st.isFile()) return { ok: false, refusal: `${rel}: not a regular file` };
+  } catch (err) {
+    return { ok: false, refusal: `${rel}: can't be opened (${(err as NodeJS.ErrnoException).code ?? (err as Error).message})` };
+  }
   let fd: number;
   try {
-    fd = openSync(join(root, rel), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   } catch (err) {
     return { ok: false, refusal: `${rel}: can't be opened (${(err as NodeJS.ErrnoException).code ?? (err as Error).message})` };
   }
