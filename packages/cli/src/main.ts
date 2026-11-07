@@ -1691,16 +1691,33 @@ if (import.meta.main) {
     }
   }
   // verify:sealed-core's probe: one request carrying a dummy key in `Authorization` and `x-api-key` to the URL given,
-  // then `fetch-probe: <status>`. The gate checks the key never shows in this process's output, whatever environment
-  // it ran with (BUN_CONFIG_VERBOSE_FETCH printed request headers, keys included). It never prints the key itself.
+  // then `fetch-probe: <status>` or `fetch-probe: failed (<code>)`; with `--worker`, made from a Worker, as an embedded
+  // session's are. The gate checks the key never shows in this process's output, whatever environment it ran with
+  // (BUN_CONFIG_VERBOSE_FETCH printed request headers, keys included), and which certificate authorities a request
+  // trusts (the OS store, `--use-system-ca`; never a self-signed certificate). It never prints the key itself.
   if (process.argv[2] === "__fetch-probe") {
     const [url, key] = [process.argv[3] ?? "", process.argv[4] ?? ""];
+    // Self-contained (it is also sent to the Worker as source): fetch only.
+    const probe = async (u: string, k: string): Promise<string> => {
+      try {
+        const r = await fetch(u, { headers: { authorization: `Bearer ${k}`, "x-api-key": k } });
+        return `fetch-probe: ${r.status}`;
+      } catch (err) {
+        const e = err as { code?: string; name?: string };
+        return `fetch-probe: failed (${e.code ?? e.name ?? "error"})`;
+      }
+    };
     let line: string;
-    try {
-      const r = await fetch(url, { headers: { authorization: `Bearer ${key}`, "x-api-key": key } });
-      line = `fetch-probe: ${r.status}`;
-    } catch (err) {
-      line = `fetch-probe: failed (${(err as Error).name})`;
+    if (process.argv.includes("--worker")) {
+      const worker = new Worker(URL.createObjectURL(new Blob([`const probe = ${probe.toString()};\nonmessage = async (e) => postMessage(await probe(e.data.url, e.data.key));`])));
+      line = await new Promise<string>((resolve) => {
+        worker.onmessage = (e) => resolve(String(e.data));
+        worker.onerror = (e) => resolve(`fetch-probe: failed (worker: ${e.message})`);
+        worker.postMessage({ url, key });
+      });
+      worker.terminate();
+    } else {
+      line = await probe(url, key);
     }
     process.stdout.write(`${line}\n`);
     process.exit(0);

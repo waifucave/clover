@@ -29,7 +29,7 @@ describe("build:daemon", () => {
     for (const target of Object.keys(DAEMON_TARGETS) as (keyof typeof DAEMON_TARGETS)[]) {
       const command = daemonCompileCommand(compileCore, target);
       expect(command).toBe(compileCore
-        .replace("bun build --compile", `bun build --compile --target=${DAEMON_TARGETS[target]}`)
+        .replace("bun build --compile", `bun build --compile --target=${DAEMON_TARGETS[target]} --compile-exec-argv=--use-system-ca`)
         .replace("--outfile ../../dist/clover-core", `--outfile ../../${daemonOutput(target)}`)
         .replaceAll("bun build ", "bun build --define __CLOVER_DIST__=true "));
       // The pre-bundles stay as they are but for the dist define, and the compile keeps all three entrypoints.
