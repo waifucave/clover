@@ -35,7 +35,9 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   test("a prompt runs in the root; a write asks the host first; events and usage arrive", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");
-    const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN });
+    // It runs no command (a Write and its ask), so it runs anywhere the embedded runtime does; the seam says the sandbox
+    // is ready, which off macOS it isn't (the test below covers that).
+    const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true });
     expect((await backend.detect()).installed).toBe(true);
     const session = await backend.start(spec(root, "winter-test/calls"));
     const asks: AgentPermissionAsk[] = [];
