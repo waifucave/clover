@@ -161,7 +161,8 @@ export class CloverApprovalBroker implements ApprovalBroker {
       return "already-answered";
     }
     const allowed = option.kind === "approve";
-    const remembered = allowed && option.remember === "always" && rememberable(p.req);
+    // A rule names the computers it holds on: a request that names none is never remembered (nor matched, rule 4).
+    const remembered = allowed && option.remember === "always" && rememberable(p.req) && p.req.computers.length > 0;
     if (remembered) this.#saveRule(p.req.ruleKey!, p.req.computers, cardId);
     const device = a.proof.via === "device" ? a.proof.device : undefined;
     this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id, device, children);
@@ -210,7 +211,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const issuedAt = this.#clock.now();
     const expires = cardExpires(req.kind, req.origin); // rule 6
     const once = ALWAYS_CARD_KINDS.includes(req.kind);
-    const options = once || !rememberable(req)
+    const options = once || !rememberable(req) || req.computers.length === 0
       ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)
       : req.options ?? ([
         DEFAULT_OPTIONS[0]!, { id: "always", kind: "approve", label: "Always allow", remember: "always" }, DEFAULT_OPTIONS[1]!,

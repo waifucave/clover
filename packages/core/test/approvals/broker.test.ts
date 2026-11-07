@@ -65,9 +65,13 @@ describe("the real broker's saved rules and records", () => {
     const saved = answerNext(b, "always");
     await b.request(bash());
     await saved;
+    let card: Card | undefined;
+    const off = b.watch((e) => { if (e.type === "requested") card = e.card; });
     const shown = answerNext(b, "deny");
     expect(await b.request(bash({ computers: [] }))).toMatchObject({ allowed: false, by: "card" });
     await shown;
+    off();
+    expect(card!.options.map((o) => o.id)).toEqual(["approve", "deny"]); // and no "always" is offered for it
   });
 
   test("a damaged or old rules file loads as no rules, and the log line is fixed (never the parse error)", async () => {
