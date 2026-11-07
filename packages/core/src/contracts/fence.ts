@@ -212,17 +212,43 @@ export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string):
 export function pluginLoadDenies(folders: readonly string[]): string[] {
   const out = new Set<string>();
   for (const folder of folders) {
-    const slashed = folder.replace(/\\/g, "/");
-    const drive = /^[A-Za-z]:/.exec(slashed)?.[0] ?? "";
-    const names = slashed.slice(drive.length).split("/").filter((n) => n !== "" && n !== ".");
-    const stack: string[] = [];
-    for (const n of names) {
-      if (n === "..") stack.pop();
-      else stack.push(n);
+    for (const { root, names, sep } of windowsAwareSpellings(folder)) {
+      const stack: string[] = [];
+      for (const n of names) {
+        if (n === "..") stack.pop();
+        else if (n !== "" && n !== ".") stack.push(n);
+      }
+      for (let i = stack.length; i >= 0; i--) out.add(`${root}${sep}${[...stack.slice(0, i), "node_modules"].join(sep)}`);
     }
-    for (let i = stack.length; i >= 0; i--) out.add(`${drive}/${[...stack.slice(0, i), "node_modules"].join("/")}`);
   }
   return [...out];
+}
+
+/** A folder's root and names, in each spelling a sandbox may match it by: POSIX (`/a/b`); a drive (`C:\a`, `C:/a`); a
+ *  UNC share (`\\server\share\a`, whose root is the share, never above it); and a `\\?\` path, both as written and as
+ *  its plain form (`\\?\C:\a` and `C:\a`; `\\?\UNC\server\share\a` and `\\server\share\a`), since the Windows sandbox
+ *  compares the plain one. Backslashes stay backslashes. */
+function windowsAwareSpellings(folder: string): { root: string; names: string[]; sep: string }[] {
+  const sep = folder.includes("\\") ? "\\" : "/";
+  const parts = (rest: string) => rest.split(/[\\/]/);
+  const long = /^[\\/]{2}\?[\\/](.*)$/.exec(folder);
+  if (long !== null) {
+    const inner = long[1]!;
+    const unc = /^UNC[\\/]([^\\/]+)[\\/]([^\\/]+)(.*)$/i.exec(inner);
+    if (unc !== null) {
+      return [
+        { root: `\\\\?\\UNC\\${unc[1]}\\${unc[2]}`, names: parts(unc[3]!), sep: "\\" },
+        { root: `\\\\${unc[1]}\\${unc[2]}`, names: parts(unc[3]!), sep: "\\" },
+      ];
+    }
+    const drive = /^([A-Za-z]:)(.*)$/.exec(inner);
+    if (drive !== null) return [{ root: `\\\\?\\${drive[1]}`, names: parts(drive[2]!), sep: "\\" }, { root: drive[1]!, names: parts(drive[2]!), sep: "\\" }];
+  }
+  const unc = /^[\\/]{2}([^\\/?]+)[\\/]([^\\/]+)(.*)$/.exec(folder);
+  if (unc !== null) return [{ root: `${sep}${sep}${unc[1]}${sep}${unc[2]}`, names: parts(unc[3]!), sep }];
+  const drive = /^([A-Za-z]:)(.*)$/.exec(folder);
+  if (drive !== null) return [{ root: drive[1]!, names: parts(drive[2]!), sep }];
+  return [{ root: "", names: parts(folder), sep: "/" }];
 }
 
 /** Whether `op` writes inside one of `denies` (`pluginLoadDenies`). */
