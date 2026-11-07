@@ -120,7 +120,10 @@ describe("cloud computers", () => {
     expect(saved).toContain("srv-1");
     expect(saved).not.toContain(token);
     expect(JSON.parse(saved).tokens).toMatchObject([{ computer: "Cloud1", tenure: "group-1:1" }]);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // 0600 where the disk has POSIX modes. Windows has none: the file is in the Clover home, which the per-user ACL
+    // already keeps to this user, and it holds only the tokens' hashes.
+    if (process.platform === "win32") expect(file.startsWith(home)).toBe(true);
+    else expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(await door.consume(token, "device-vm-1")).toEqual({ computer: "Cloud1" });
     expect(provider.calls).toContain(`paired srv-1 ${LABEL}`);
     expect(cards.at(-1)).toEqual({ kind: "cloud-make-main", name: "Cloud1" });
