@@ -325,6 +325,7 @@ export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverA
 export { fileRuleStore, savedRulesPath, SAVED_RULES_VERSION } from "./approvals/rule-store";
 export { botApprovalCheck, botToolRequest, effectOf as botToolEffect, isBuiltinTool, resolveSessionPath, type BotToolRequestOptions } from "./approvals/bot-check";
 export { looksCredentialBearing } from "./approvals/strings";
+export { cloudCardConfirm, cloudCardRequest, CLOUD_CARD_TEXT, type CloudCardRequest, type CloudVmRef } from "./approvals/cloud-cards";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
 export {
   bundledManifest, bundledPluginIds, bundledPluginsDir, loadBundledManifest, readBundledFile, readBundledPlugin,
