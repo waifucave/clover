@@ -2,10 +2,12 @@
 // nothing a release leaves out; a plugin's runtime dependencies must ship with it; and the exact import check on a
 // built tree.
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildBundledPlugins, builtPluginImportProblems, bundledPluginsProblems, type PluginBuilder, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
+import { buildBundledPlugins, builtPluginImportProblems, bundledPluginsProblems, lockedPackages, type PluginBuilder, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, repoInputVetter, scanModule, stageBundledPlugins, unshippedPluginDependencies, unvettedInputs, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
+import { buildPluginModule } from "../../packages/core/src/registry/build";
+import { buildPluginForShipping, hostShipTarget } from "../../packages/core/src/registry/ship";
 import { measureBundledTree, parseBundledManifest, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -18,6 +20,8 @@ function repo(files: Record<string, string>): string {
     if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
   };
   git("init", "-q");
+  // A release checkout has its lockfile (the inputs check reads it).
+  if (files["bun.lock"] === undefined) files = { ...files, "bun.lock": '{\n  "lockfileVersion": 1,\n  "packages": {},\n}\n' };
   for (const [f, body] of Object.entries(files)) { mkdirSync(join(dir, f, ".."), { recursive: true }); writeFileSync(join(dir, f), body); }
   for (const f of Object.keys(files).filter((f) => f.endsWith(".sh"))) chmodSync(join(dir, f), 0o755);
   git("add", "-A");
@@ -234,7 +238,7 @@ describe("the bundled plugins, built for shipping (lane B's buildPluginForShippi
       if (extra !== undefined) { mkdirSync(join(o.out, extra, ".."), { recursive: true }); writeFileSync(join(o.out, extra), "native"); files.push(extra); }
       return {
         dir: o.out, files: files.sort(),
-        modules: seen.filter((f) => f.endsWith(".js")).map((f) => ({ file: f, kind: "host" as const, source: readFileSync(join(folder, f), "utf8") })),
+        modules: seen.filter((f) => f.endsWith(".js")).map((f) => ({ file: f, kind: "host" as const, source: readFileSync(join(folder, f), "utf8"), inputs: [join(folder, f)] })),
         natives: extra === undefined ? [] : [{ file: extra, package: "node-datachannel", target: o.target }],
       };
     };
@@ -276,4 +280,74 @@ describe("the bundled plugins, built for shipping (lane B's buildPluginForShippi
     const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/package.json": "{\"dependencies\":{\"left-pad\":\"1\"}}" });
     await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("clover: left-pad: a dependency nothing ships");
   });
+});
+
+describe("what the bundler read: every input tracked at HEAD or in a package bun.lock holds (#244 check 4)", () => {
+  const lock = (pkgs: string[]): string => `{\n  "lockfileVersion": 1,\n  "packages": {\n${pkgs.map((p) => `    "${p.replace(/@[^@]*$/, "")}": ["${p}", "", {}, "sha512-x"],\n`).join("")}  },\n}\n`;
+
+  test("bun.lock's packages, read with its trailing commas", () => {
+    expect([...lockedPackages(lock(["left-pad@1.3.0", "@scope/pkg@2.0.0"]))].sort()).toEqual(["@scope/pkg@2.0.0", "left-pad@1.3.0"]);
+  });
+
+  test("the reviewer's probe: an entry importing an ignored file outside its plugin gets it inlined, and the inputs check refuses it by name", async () => {
+    const dir = repo({
+      ".gitignore": "ignored/\n",
+      "plugins/clover/host.ts": "import { gen } from \"../../ignored/gen.ts\";\nexport const x = gen;\n",
+    });
+    mkdirSync(join(dir, "ignored"));
+    writeFileSync(join(dir, "ignored", "gen.ts"), "export const gen = \"generated, never committed\";\n");
+    const out = mkdtempSync(join(tmpdir(), "lane-m-inputs-out-"));
+    const built = await buildPluginModule({ entry: join(dir, "plugins", "clover", "host.ts"), outFile: join(out, "host.js"), side: "bun" });
+    // Inlined: the copy filter never saw it.
+    expect(built.source).toContain("generated, never committed");
+    expect(built.inputs.map((p) => p.split("/").slice(-2).join("/")).sort()).toEqual(["clover/host.ts", "ignored/gen.ts"]);
+    expect(repoInputVetter(dir)(built.inputs)).toEqual(["ignored/gen.ts: the build read a file that isn't tracked at HEAD"]);
+    // Through the release's build: the build fails, naming it, and the stage is removed.
+    const dest = join(dir, "out", "plugins");
+    const leaking: PluginBuilder = async (folder, o) => {
+      mkdirSync(o.out, { recursive: true });
+      writeFileSync(join(o.out, "host.js"), built.source);
+      return { dir: o.out, files: ["host.js"], modules: [{ file: "host.js", kind: "host", source: built.source, inputs: built.inputs }], natives: [] };
+    };
+    await expect(buildBundledPlugins(dir, dest, "darwin-arm64", { build: leaking })).rejects.toThrow("ignored/gen.ts: the build read a file that isn't tracked at HEAD");
+    expect(existsSync(dest)).toBe(false);
+  });
+
+  test("a node_modules file passes only when its package's name and version are bun.lock's; outside the checkout is refused", () => {
+    const dir = repo({ "bun.lock": lock(["left-pad@1.3.0"]), "plugins/clover/host.ts": "x" });
+    const pkg = (version: string, name = "left-pad"): string => {
+      mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
+      writeFileSync(join(dir, "node_modules", "left-pad", "package.json"), JSON.stringify({ name, version }));
+      writeFileSync(join(dir, "node_modules", "left-pad", "index.js"), "module.exports = 1;");
+      return join(dir, "node_modules", "left-pad", "index.js");
+    };
+    const vet = repoInputVetter(dir);
+    expect(vet([pkg("1.3.0"), join(dir, "plugins", "clover", "host.ts")])).toEqual([]);
+    // A package whose version was changed by hand (or installed outside the lockfile).
+    expect(vet([pkg("1.3.1")])).toEqual(["node_modules/left-pad/index.js: in left-pad@1.3.1, which bun.lock doesn't hold"]);
+    expect(vet([pkg("1.3.0", "right-pad")])).toEqual(["node_modules/left-pad/index.js: in node_modules/left-pad, whose package.json doesn't name left-pad with a version"]);
+    const outside = join(mkdtempSync(join(tmpdir(), "lane-m-outside-")), "x.ts");
+    writeFileSync(outside, "x");
+    expect(vet([outside])).toEqual([`${realpathSync(outside)}: the build read a file outside the checkout`]);
+    expect(vet([join(dir, "gone.ts")])).toEqual([`${join(dir, "gone.ts")}: the build read it, and it isn't a file here`]);
+    // A tracked file modified in the working tree is still HEAD's path; the release's clean-checkout gate refuses the edit.
+    expect(unvettedInputs([join(dir, "plugins", "clover", "host.ts")], { root: dir, tracked: new Set(), locked: new Set() })).toEqual(["plugins/clover/host.ts: the build read a file that isn't tracked at HEAD"]);
+  });
+
+  test("today's bundled plugins pass: every file the real build reads is tracked at HEAD or in a package bun.lock holds", async () => {
+    const target = hostShipTarget();
+    if (target === undefined) return;
+    const dest = join(mkdtempSync(join(tmpdir(), "lane-m-inputs-real-")), "plugins");
+    const seen: string[] = [];
+    const vet = repoInputVetter(ROOT);
+    // The release's own build, its natives taken from this checkout's install for the host (no download in a test).
+    const built = await buildBundledPlugins(ROOT, dest, target, {
+      build: (folder, o) => buildPluginForShipping(folder, { ...o, dev: true }),
+      vet: (inputs) => { seen.push(...inputs); return vet(inputs); },
+    });
+    expect(built.modules.length).toBeGreaterThan(0);
+    expect(seen.some((p) => p.includes("/node_modules/"))).toBe(true);
+    expect(vet(seen)).toEqual([]);
+    rmSync(join(dest, ".."), { recursive: true, force: true });
+  }, 120_000);
 });

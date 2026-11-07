@@ -12,9 +12,9 @@
 //   - `unshippedPluginDependencies`: what a plugin's package.json needs that nothing ships beside it;
 //   - `builtPluginImportProblems`: the exact check on a release-time-built tree (wired with that build).
 import { spawnSync } from "node:child_process";
-import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
-import { dirname, join, posix } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/manifest/schema";
 import { formatBundledManifest, measureBundledTree, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
 import { buildPluginForShipping, type ShippedPlugin, type ShipTarget } from "../../packages/core/src/registry/ship";
@@ -154,6 +154,65 @@ export type PluginBuilder = (folder: string, o: { target: ShipTarget; out: strin
 /** A built bundled tree: every file (relative to it), its modules and its native addons, paths prefixed `<id>/`. */
 export interface BuiltBundle { files: string[]; modules: BuiltModule[]; natives: ShippedNative[] }
 
+/** Every `name@version` bun.lock holds (its packages' first fields), for the inputs check. */
+export function lockedPackages(lockText: string): Set<string> {
+  // bun.lock is JSON with trailing commas.
+  const lock = JSON.parse(lockText.replace(/,(\s*[\]}])/g, "$1")) as { packages?: Record<string, unknown> };
+  const out = new Set<string>();
+  for (const v of Object.values(lock.packages ?? {})) if (Array.isArray(v) && typeof v[0] === "string") out.add(v[0]);
+  return out;
+}
+
+/**
+ * The files a release build's bundler read that it may not ship, each named with why (none means all are vetted).
+ * The bundler inlines whatever an entry imports, wherever it is: the staging filter limits only what is copied. So
+ * every input (its real path) must be a file tracked at HEAD under `root`, or a file of a node_modules package under
+ * `root` whose package.json name is its folder's and whose `name@version` bun.lock holds. Anything else (an ignored
+ * build output, a file outside the checkout, a package bun.lock doesn't name) is refused.
+ */
+export function unvettedInputs(inputs: readonly string[], o: { root: string; tracked: ReadonlySet<string>; locked: ReadonlySet<string>; read?: (path: string) => string }): string[] {
+  const read = o.read ?? ((path: string) => readFileSync(path, "utf8"));
+  const root = realpathSync(o.root);
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const input of inputs) {
+    let real: string;
+    try {
+      real = realpathSync(input);
+    } catch {
+      problems.push(`${input}: the build read it, and it isn't a file here`);
+      continue;
+    }
+    if (seen.has(real)) continue;
+    seen.add(real);
+    const rel = relative(root, real).split(sep).join("/");
+    if (rel === "" || rel.startsWith("../") || isAbsolute(rel)) { problems.push(`${real}: the build read a file outside the checkout`); continue; }
+    const nm = rel.lastIndexOf("node_modules/");
+    if (nm >= 0) {
+      const after = rel.slice(nm + "node_modules/".length).split("/");
+      const name = after[0]!.startsWith("@") ? after.slice(0, 2).join("/") : after[0]!;
+      const pkgDir = `${rel.slice(0, nm)}node_modules/${name}`;
+      let pkg: { name?: unknown; version?: unknown } = {};
+      try { pkg = JSON.parse(read(join(root, ...pkgDir.split("/"), "package.json"))); } catch { /* named below */ }
+      const id = `${String(pkg.name)}@${String(pkg.version)}`;
+      if (pkg.name !== name || typeof pkg.version !== "string") problems.push(`${rel}: in ${pkgDir}, whose package.json doesn't name ${name} with a version`);
+      else if (!o.locked.has(id)) problems.push(`${rel}: in ${id}, which bun.lock doesn't hold`);
+      continue;
+    }
+    if (!o.tracked.has(rel)) problems.push(`${rel}: the build read a file that isn't tracked at HEAD`);
+  }
+  return problems;
+}
+
+/** The repository's own vetting of a release build's inputs: HEAD's tracked files and bun.lock (unvettedInputs). */
+export function repoInputVetter(root: string): (inputs: readonly string[]) => string[] {
+  const r = spawnSync("git", ["ls-tree", "-r", "-z", "--name-only", "HEAD"], { cwd: root, maxBuffer: 1 << 30 });
+  if (r.status !== 0) throw new Error(`git ls-tree HEAD failed: ${String(r.stderr).trim()}`);
+  const tracked = new Set(String(r.stdout).split("\0").filter(Boolean));
+  const locked = lockedPackages(readFileSync(join(root, "bun.lock"), "utf8"));
+  return (inputs) => unvettedInputs(inputs, { root, tracked, locked });
+}
+
 /**
  * Builds every bundled plugin for `target` into `dest` (`<dest>/<id>`), as installs carry them (the controller's
  * ruling of November 6: bundled plugins ship BUILT). Each top-level plugin under plugins/ is built by lane B's
@@ -161,25 +220,30 @@ export interface BuiltBundle { files: string[]; modules: BuiltModule[]; natives:
  * staging filter, `leftOut`, applies to that source; a dirty plugins/ is refused, and the release needs a fully clean
  * checkout, so the working tree is HEAD), with `bundled: true`. Then the release's own checks on the built tree:
  * every import resolves to what ships (`builtPluginImportProblems`, natives for `target` included) and no package a
- * plugin names goes unshipped (`unshippedPluginDependencies`). Any problem throws, and `dest` is removed.
+ * plugin names goes unshipped (`unshippedPluginDependencies`), and every file the bundler read into a module is
+ * tracked at HEAD or in a package bun.lock holds (`unvettedInputs`). Any problem throws, and `dest` is removed.
  */
-export async function buildBundledPlugins(root: string, dest: string, target: ShipTarget, o: { source?: PluginsSource; build?: PluginBuilder } = {}): Promise<BuiltBundle> {
+export async function buildBundledPlugins(root: string, dest: string, target: ShipTarget, o: { source?: PluginsSource; build?: PluginBuilder; vet?: (inputs: readonly string[]) => string[] } = {}): Promise<BuiltBundle> {
   const source = o.source ?? gitPluginsSource(root);
   const build: PluginBuilder = o.build ?? ((folder, opts) => buildPluginForShipping(folder, opts));
+  const vet = o.vet ?? repoInputVetter(root);
   rmSync(dest, { recursive: true, force: true });
   const committed = new Set(committedPluginEntries(source).map((e) => e.rel));
   const ids = [...new Set([...committed].map((rel) => rel.split("/")[0]!))].sort();
   const out: BuiltBundle = { files: [], modules: [], natives: [] };
+  const inputs = new Set<string>();
   try {
     mkdirSync(dest, { recursive: true });
     for (const id of ids) {
       const built = await build(join(root, BUNDLED_PLUGINS_DIR, id), { target, out: join(dest, id), include: (rel) => committed.has(`${id}/${rel}`), bundled: true });
       out.files.push(...built.files.map((f) => `${id}/${f}`));
-      out.modules.push(...built.modules.map((m) => ({ ...m, file: `${id}/${m.file}` })));
+      out.modules.push(...built.modules.map((m) => ({ file: `${id}/${m.file}`, kind: m.kind, source: m.source })));
+      for (const m of built.modules) for (const i of m.inputs) inputs.add(i);
       out.natives.push(...built.natives.map((n) => ({ ...n, file: `${id}/${n.file}` })));
     }
     out.files.sort();
     const problems = [
+      ...vet([...inputs].sort()),
       ...builtPluginImportProblems(out.modules, out.files, { natives: out.natives, target }),
       ...unshippedPluginDependencies(out.files, (rel) => readFileSync(join(dest, ...rel.split("/")), "utf8")).map((d) => `${d}: a dependency nothing ships`),
     ];

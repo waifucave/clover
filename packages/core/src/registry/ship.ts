@@ -69,6 +69,8 @@ export interface ShippedModule {
   file: string;
   kind: "client" | "host";
   source: string;
+  /** Every file the bundler read into it, absolute (`BuiltPluginModule.inputs`). */
+  inputs: string[];
 }
 
 /** A native addon's binary in the built tree, for `target`. */
@@ -188,7 +190,7 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
           keepExternal: side === "client" ? undefined : (spec, importer) => natives.keep(spec, importer, unit.base),
         });
         written.add(outRel);
-        modules.push({ file: outRel, kind: side === "client" ? "client" : "host", source: built.source });
+        modules.push({ file: outRel, kind: side === "client" ? "client" : "host", source: built.source, inputs: built.inputs });
         const extra = [...built.css, ...built.assets].map((p) => relative(out, p).split(sep).join("/"));
         for (const x of extra) written.add(x);
         return { rel: outRel, css: built.css.map((p) => relative(join(out, ...unit.base.split("/").filter(Boolean)), p).split(sep).join("/")) };
