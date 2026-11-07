@@ -27,6 +27,7 @@
 import { CloverSessionEvent, SessionEvent, type Caller, type SessionKind } from "@waifucave/clover-protocol";
 import type { SessionRecord, TurnEnd } from "../contracts/session-host";
 import { contextTokensOf } from "./compaction";
+import { CORE_ONLY_EVENT_TYPES } from "./durable-host";
 
 export type WireEvent = { type: string; seq: number; sessionId: string; ts: number; [key: string]: unknown };
 
@@ -169,7 +170,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
     case "driver": {
       const acp = opts.kind === "agent" || opts.kind === "coding" ? acpRecordEvent(record.event) : undefined;
       const event = acp ?? record.event;
-      if (!WIRE_EVENT_TYPES.has(event.type) || HOST_EVENT_TYPES.has(event.type)) return undefined;
+      // Core-only records (a grant, a copied grant) never reach a client, whatever the wire's list says.
+      if (CORE_ONLY_EVENT_TYPES.has(event.type) || !WIRE_EVENT_TYPES.has(event.type) || HOST_EVENT_TYPES.has(event.type)) return undefined;
       const out: WireEvent = { ...structuredClone(event), ...envelope, ...(typeof event.threadId === "string" ? {} : { threadId }) };
       if (opts.sealed) for (const field of SEALED_FIELDS[event.type] ?? []) delete out[field];
       return out;
