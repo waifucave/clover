@@ -1314,8 +1314,8 @@ async function smoke(): Promise<void> {
             if (!chainOk) log(`sealed-click: no offset chain for ${frame.url.slice(0, 80)}`);
             // Report how the label renders, so the markup case proves text, not HTML (check 3).
             const labelRaw = await frame.executeJavaScript(
-              `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
-            if (labelRaw !== null && typeof labelRaw === "object") log(`sealed-click: label html=${String((labelRaw as { html?: unknown }).html ?? "")} hasBold=${String((labelRaw as { hasBold?: unknown }).hasBold ?? "")}`);
+              `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null, sealed: typeof window.cloverSealed, btn: typeof document.querySelector('.seal-button') }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
+            if (labelRaw !== null && typeof labelRaw === "object") log(`sealed-click: label html=${String((labelRaw as { html?: unknown }).html ?? "")} hasBold=${String((labelRaw as { hasBold?: unknown }).hasBold ?? "")} sealed=${String((labelRaw as { sealed?: unknown }).sealed ?? "")}`);
             if (buttonRect !== null && chainOk) {
               if (buttonRect.width <= 0 || buttonRect.height <= 0) {
                 log(`sealed-click: button has no size yet, retrying`);
@@ -1325,6 +1325,7 @@ async function smoke(): Promise<void> {
               log(`sealed-click: button rect=${buttonRect.x},${buttonRect.y} ${buttonRect.width}x${buttonRect.height} offset=${offsetX},${offsetY}`);
               const press = (kind: "Down" | "Up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
               log(`sealed-click: press sent at ${centerX},${centerY}`);
+              await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               press("Down");
               press("Up");
               if (doubleClick === true) {
@@ -1336,8 +1337,8 @@ async function smoke(): Promise<void> {
               sealedClicked = true;
               await new Promise((r) => setTimeout(r, 1000));
               const after = await frame.executeJavaScript(
-                `(() => { const s = document.querySelector('.state'); return { state: s ? s.textContent : null, answered: document.body.dataset.answered ?? null }; })()`, true).catch(() => null) as { state: string | null; answered: string | null } | null;
-              if (after !== null && typeof after === "object") log(`sealed-click: after press state=${String((after as { state?: unknown }).state ?? "")} answered=${String((after as { answered?: unknown }).answered ?? "")}`);
+                `(() => { const s = document.querySelector('.state'); return { state: s ? s.textContent : null, answered: document.body.dataset.answered ?? null, presses: (window.__sealedPresses ?? []).slice(0, 4) }; })()`, true).catch(() => null) as { state: string | null; answered: string | null } | null;
+              if (after !== null && typeof after === "object") log(`sealed-click: after press state=${String((after as { state?: unknown }).state ?? "")} answered=${String((after as { answered?: unknown }).answered ?? "")} presses=${JSON.stringify((after as { presses?: unknown }).presses ?? [])}`);
               }
             } else {
               log(`sealed-click: no button rect (button=${buttonRect === null ? "null" : "ok"} chain=${chainOk ? "ok" : "null"})`);
