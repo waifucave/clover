@@ -27,8 +27,17 @@ if (mode === "baseline") {
   }
 } else if (mode === "loopback") {
   for (const sc of LOOPBACK_SCENARIOS) {
-    const r = await runLoopback(sc, { tuning: process.argv[3] !== undefined ? JSON.parse(process.argv[3]) : {} });
+    const r = await runLoopback(sc, { tuning: process.argv[3] !== undefined ? JSON.parse(process.argv[3]) : {}, acks: process.argv[4] === "acks" });
     console.log(`${r.scenario.padEnd(36)} p50 ${f(r.latencyP50, 0)} p95 ${f(r.latencyP95, 0)} max ${f(r.latencyMax, 0)} ms  longest gap ${f(r.longestGapMs, 0)} ms  util ${f(r.utilization * 100, 0)}%  ask ${f(r.askRatio, 2)}  -${r.lowered} +${r.raised}  peak sender backlog ${r.peakBacklog} B, relay queue ${r.peakRelayQueue} B`);
+  }
+} else if (mode === "acks") {
+  // With and without the receiver's acks, one-way 50 ms (a 100 ms round trip), at three socket buffers.
+  for (const sndbufBytes of [0, 64 * 1024, 256 * 1024, 1024 * 1024]) {
+    for (const acks of [false, true]) {
+      const ms: Metrics[] = [];
+      for (const s of SCENARIOS) ms.push(await simulate(s, { sndbufBytes, latencyMs: 50, acks }));
+      console.log(`buffer ${String(sndbufBytes / 1024).padStart(4)} KiB  acks ${String(acks).padEnd(5)}  total ${f(ms.reduce((a, m) => a + m.score, 0)).padStart(6)}  worst p95 ${f(Math.max(...ms.map((m) => m.latencyP95)), 0).padStart(5)} ms  worst max ${f(Math.max(...ms.map((m) => m.latencyMax)), 0).padStart(5)} ms  lagging ${f(ms.reduce((a, m) => a + m.laggingSec, 0))} s  frozen ${f(ms.reduce((a, m) => a + m.frozenSec, 0))} s  mean util ${f((ms.reduce((a, m) => a + m.utilization, 0) / ms.length) * 100, 0)}%  mean fps-share ${f((1 - ms.reduce((a, m) => a + m.droppedShare, 0) / ms.length) * 100, 0)}%`);
+    }
   }
 } else if (mode === "compare") {
   const candidates: Record<string, Partial<StreamTuning>> = JSON.parse(process.argv[3] ?? "{}");

@@ -1,7 +1,7 @@
 // The stream's sender over a real throttled link, in real time: TabStreams writes to a link stream that is a TCP
 // connection on loopback, through a relay that forwards at the scenario's bandwidth (and stops reading when its queue
 // is full, so the sender's kernel buffers fill and `write()` really does wait, as it would on a slow link). The receiver
-// reads frames with `StreamFrameReader` and times them. This measures what the in-memory simulation (`throttle-sim.ts`)
+// reads frames with `encodeStreamAck, StreamFrameReader` and times them. This measures what the in-memory simulation (`throttle-sim.ts`)
 // can't: the slack a real socket adds before backpressure shows. Used by `stream-loopback.test.ts` and
 // `stream-measure.ts loopback`. Nothing here is part of the product.
 import { connect, createServer, type Server, type Socket } from "node:net";
@@ -9,7 +9,7 @@ import type { LinkView } from "@waifucave/clover-protocol";
 import type { Link, LinkPriority, LinkStream } from "../../src/contracts/link-transport";
 import type { AppTabCommand, StreamChunk, TabView } from "../../src/browser/contract";
 import type { AppTabPort } from "../../src/browser/service";
-import { StreamFrameReader, TabStreams, type StreamTuning } from "../../src/browser/stream";
+import { encodeStreamAck, StreamFrameReader, TabStreams, type StreamTuning } from "../../src/browser/stream";
 
 export interface LoopbackScenario {
   name: string;
@@ -51,7 +51,11 @@ class TcpStream implements LinkStream {
   }
   end(): void { this.socket.end(); }
   abort(): void { this.socket.destroy(); }
-  onData(): () => void { return () => undefined; }
+  onData(fn: (b: Uint8Array) => void): () => void {
+    const on = (b: Buffer) => fn(new Uint8Array(b));
+    this.socket.on("data", on);
+    return () => void this.socket.off("data", on);
+  }
   onEnd(fn: (error?: Error) => void): () => void { this.ends.push(fn); return () => undefined; }
 }
 
@@ -71,7 +75,7 @@ class App implements AppTabPort {
 
 const listen = (server: Server): Promise<number> => new Promise((r) => server.listen(0, "127.0.0.1", () => r((server.address() as { port: number }).port)));
 
-export async function runLoopback(scenario: LoopbackScenario, opts: { tuning?: Partial<StreamTuning>; fps?: number; keyRatio?: number } = {}): Promise<LoopbackResult> {
+export async function runLoopback(scenario: LoopbackScenario, opts: { tuning?: Partial<StreamTuning>; fps?: number; keyRatio?: number; acks?: boolean } = {}): Promise<LoopbackResult> {
   const fps = opts.fps ?? 30;
   const keyRatio = opts.keyRatio ?? 5;
   const t0 = Date.now();
@@ -81,7 +85,11 @@ export async function runLoopback(scenario: LoopbackScenario, opts: { tuning?: P
   const receiver = createServer((s) => {
     sockets.push(s);
     s.on("data", (b: Buffer) => {
-      for (const c of reader.push(b)) if (c.kind === "frame") arrivals.push({ capture: c.timestamp / 1000, arrival: Date.now() - t0, bytes: c.data.byteLength });
+      for (const c of reader.push(b)) {
+        if (c.kind !== "frame") continue;
+        arrivals.push({ capture: c.timestamp / 1000, arrival: Date.now() - t0, bytes: c.data.byteLength });
+        if (opts.acks) s.write(encodeStreamAck(c.timestamp));
+      }
     });
     s.on("error", () => undefined);
   });
@@ -94,6 +102,7 @@ export async function runLoopback(scenario: LoopbackScenario, opts: { tuning?: P
     const to = connect(receiverPort, "127.0.0.1");
     sockets.push(to);
     to.on("error", () => from.destroy());
+    to.on("data", (b: Buffer) => from.write(b)); // the acks, back the way the frames came
     from.on("error", () => to.destroy());
     const queue: Buffer[] = [];
     let queued = 0;

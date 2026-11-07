@@ -33,4 +33,15 @@ describe("the stream on a throttled link", () => {
     const m = await simulate({ name: "3 Mbit", durationMs: 30_000, capacityKbps: () => 3000 }, {});
     expect(m.lowered).toBe(0);
   });
+
+  test("with acks and a 100 ms round trip, a big socket buffer no longer holds the picture seconds behind", async () => {
+    for (const buffer of [64 * 1024, 256 * 1024]) {
+      const without = await simulate(by("tight"), { sndbufBytes: buffer, latencyMs: 50 });
+      const withAcks = await simulate(by("tight"), { sndbufBytes: buffer, latencyMs: 50, acks: true });
+      expect(withAcks.frozenSec).toBeLessThan(1);
+      expect(withAcks.latencyP95).toBeLessThan(without.latencyP95);
+      expect(withAcks.laggingSec).toBeLessThan(without.laggingSec);
+      expect(withAcks.utilization).toBeGreaterThan(0.3);
+    }
+  });
 });

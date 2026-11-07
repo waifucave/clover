@@ -9,7 +9,7 @@ import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import type { Link, LinkPriority, LinkStream } from "../../src/contracts/link-transport";
 import type { AppTabCommand, StreamChunk, TabView } from "../../src/browser/contract";
 import type { AppTabPort } from "../../src/browser/service";
-import { decodeStreamFrame, DEFAULT_STREAM_TUNING, STREAM_LINK_LABEL, TabStreams, type StreamTuning } from "../../src/browser/stream";
+import { decodeStreamFrame, encodeStreamAck, DEFAULT_STREAM_TUNING, STREAM_LINK_LABEL, TabStreams, type StreamTuning } from "../../src/browser/stream";
 
 export interface Scenario {
   name: string;
@@ -33,6 +33,8 @@ export interface SimOptions {
   /** How many times larger a keyframe is than the average delta frame. */
   keyRatio?: number;
   seed?: number;
+  /** The receiver acknowledges each frame (the format's acks), over a reverse path of one `latencyMs` delay. */
+  acks?: boolean;
 }
 
 export interface Metrics {
@@ -201,10 +203,16 @@ export async function simulate(scenario: Scenario, opts: SimOptions = {}): Promi
   });
   const capturedAt = new Map<number, number>();
   const arrivals: { capture: number; arrival: number; bytes: number; key: boolean }[] = [];
+  const dueAcks: { at: number; ts: number }[] = [];
+  let reverse: LinkStream | undefined;
   net.endpoint("phone").onStream(STREAM_LINK_LABEL, (stream) => {
+    reverse = stream;
     stream.onData((b) => {
       const c = decodeStreamFrame(b);
-      if (c.kind === "frame") arrivals.push({ capture: capturedAt.get(c.timestamp) ?? 0, arrival: T, bytes: c.data.byteLength, key: c.key });
+      if (c.kind === "frame") {
+        arrivals.push({ capture: capturedAt.get(c.timestamp) ?? 0, arrival: T, bytes: c.data.byteLength, key: c.key });
+        if (opts.acks) dueAcks.push({ at: T + (opts.latencyMs ?? 0), ts: c.timestamp });
+      }
     });
   });
   const maxKbps = scenario.maxKbps ?? DEFAULT_STREAM_TUNING.defaultKbps;
@@ -223,6 +231,7 @@ export async function simulate(scenario: Scenario, opts: SimOptions = {}): Promi
   let samples = 0;
   for (T = 0; T <= scenario.durationMs; T += dt) {
     wire.step(T, dt);
+    while (dueAcks.length > 0 && dueAcks[0]!.at <= T) void reverse?.write(encodeStreamAck(dueAcks.shift()!.ts));
     await tick();
     while (T >= nextFrame) {
       const { key } = app.apply(now());
