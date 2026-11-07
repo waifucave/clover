@@ -346,13 +346,16 @@ async function main(): Promise<void> {
   const strict = createBrowserHost({ ...hostOpts, newId: () => `tab_s${++n}`, screenReader: { override: false }, network: undefined });
   await strict.start();
   await step("R13: a bot's tab reaches no loopback address, by number or by name; a coding session's does; neither reaches the metadata address (its proxy wins over --no-proxy-server)", async () => {
-    const loaded = async (h: BrowserHost, id: string) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), 4000)) === "page";
+    // A refused load ends at once in an error page, so 4 s is plenty to see it stay refused. A load that should work
+    // gets 20 s: the coding session's tab is the first in a new persistent partition, and on a busy Windows runner
+    // that partition's first connection can take longer than 4 s (merge-group run 42377725559: no error, just late).
+    const loaded = async (h: BrowserHost, id: string, ms = 4000) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), ms)) === "page";
     const bot = await strict.open({ id: "tab_s_bot", owner: { kind: "bot", bot: "beta" }, url: `${origin}/page`, place: "headless" });
     const botByNumber = await loaded(strict, bot.id);
     await strict.command(bot.id, { kind: "navigate", url: `http://localhost:${port}/page` }).catch(() => undefined);
     const botByName = await loaded(strict, bot.id);
     const code = await strict.open({ id: "tab_s_code", owner: { kind: "session", session: "sess_fixture" }, url: `http://localhost:${port}/page`, place: "headless" });
-    const codeLoopback = await loaded(strict, code.id);
+    const codeLoopback = await loaded(strict, code.id, 20_000);
     const t0 = Date.now();
     await strict.command(code.id, { kind: "navigate", url: "http://169.254.169.254/latest/meta-data/" }).catch(() => undefined);
     const metadataUrl = await until(async () => { const u = String(await evalIn(strict, code.id, "location.href")); return u.includes("169.254.169.254") || u.startsWith("chrome-error") ? u : undefined; }, 4000);
