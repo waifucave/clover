@@ -3,7 +3,7 @@ import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_U
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1683,6 +1683,30 @@ async function runSupervise(): Promise<void> {
 }
 
 if (import.meta.main) {
+  // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs), before
+  // anything else runs — every subcommand, every self-spawned worker. `build-kind.ts` says why.
+  {
+    const refusal = tlsEnvRefusal(process.env);
+    if (refusal !== undefined) {
+      process.stderr.write(`${refusal}\n`);
+      process.exit(TLS_ENV_REFUSAL_EXIT);
+    }
+  }
+  // verify:sealed-core's probe: one request carrying a dummy key in `Authorization` and `x-api-key` to the URL given,
+  // then `fetch-probe: <status>`. The gate checks the key never shows in this process's output, whatever environment
+  // it ran with (BUN_CONFIG_VERBOSE_FETCH printed request headers, keys included). It never prints the key itself.
+  if (process.argv[2] === "__fetch-probe") {
+    const [url, key] = [process.argv[3] ?? "", process.argv[4] ?? ""];
+    let line: string;
+    try {
+      const r = await fetch(url, { headers: { authorization: `Bearer ${key}`, "x-api-key": key } });
+      line = `fetch-probe: ${r.status}`;
+    } catch (err) {
+      line = `fetch-probe: failed (${(err as Error).name})`;
+    }
+    process.stdout.write(`${line}\n`);
+    process.exit(0);
+  }
   // WS-23: the RUNTIME's workflow worker (COMPILED path) — an embedded chat/dispatch session's Workflow
   // tool spawns `<clover-core> __runtime-workflow-worker --bridge` under the seatbelt
   // (`runtime-sdk/embedded.ts`'s `runtimeWorkflowWorkerCommand`). POSITIONAL, like the probes below

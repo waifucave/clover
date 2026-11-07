@@ -31,3 +31,20 @@ export function noteIgnoredEnvOverride(name: string, log: (line: string) => void
   ignoredOnce.add(name);
   log(`clover-core: ignoring ${name}: a release build runs only the programs it ships or its settings name`);
 }
+
+/** The variables that change whom the core's TLS trusts: turning verification off, or adding certificate authorities.
+ *  With a proxy (`HTTPS_PROXY`, which stays allowed: without a trusted CA it can't read TLS) either would let whoever
+ *  starts the binary read provider keys and sign-in tokens off the wire. */
+export const TLS_TRUST_ENV = ["NODE_TLS_REJECT_UNAUTHORIZED", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR"] as const;
+
+/** Why a dist build refuses to start with this environment, or undefined. `NODE_TLS_REJECT_UNAUTHORIZED` refuses only
+ *  when it turns verification off (`0`); the others whenever set. Dev and test builds never refuse. */
+export function tlsEnvRefusal(env: Record<string, string | undefined>, distBuild: boolean = DIST_BUILD): string | undefined {
+  if (!distBuild) return undefined;
+  const set = TLS_TRUST_ENV.filter((k) => (k === "NODE_TLS_REJECT_UNAUTHORIZED" ? env[k] === "0" : env[k] !== undefined && env[k] !== ""));
+  if (set.length === 0) return undefined;
+  return `clover-core: refusing to start: ${set.join(", ")} ${set.length === 1 ? "is" : "are"} set, which would change whom this process's TLS trusts. A release build takes no certificate authority or verification setting from its environment; unset ${set.length === 1 ? "it" : "them"} (a proxy, HTTPS_PROXY, is fine).`;
+}
+
+/** The exit code of that refusal (`EX_CONFIG`). */
+export const TLS_ENV_REFUSAL_EXIT = 78;

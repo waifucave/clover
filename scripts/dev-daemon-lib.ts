@@ -66,8 +66,8 @@ export function describeDevDaemonPlan(plan: DevDaemonPlan): string[] {
   if (plan.build === undefined) lines.push(`  build    none (--no-build): ${plan.binary} as it is`);
   else {
     lines.push(`  build    (in packages/cli) ${plan.build.command}`);
-    lines.push(`  seal     scripts/seal-bun-doors.ts: Bun's BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT* and NODE_PATH doors closed, then the byte check`);
-    lines.push(`  beside   ${dirname(plan.binary)}/clover-plugin-bun${plan.os === "windows" ? ".exe" : ""}${plan.os === "macos" ? " and clover-process-holder, each signed under its own .dev identifier" : ""} (scripts/bundled-binaries.ts)`);
+    lines.push(`  seal     scripts/seal-bun-doors.ts: Bun's BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH doors closed (not on Windows), then the byte check`);
+    if (plan.os === "macos") lines.push(`  beside   ${dirname(plan.binary)}/clover-process-holder, signed under its own .dev identifier (scripts/bundled-binaries.ts; plugin Bun's dev copy is lane B's step)`);
     lines.push(plan.build.sign
       ? `  sign     codesign as ${DEV_DAEMON_IDENTIFIER} with Clover's team, then the __keychain-ffi-probe, then rename to ${plan.binary}`
       : `  sign     none (the dev binary is unsigned on ${plan.os}); rename to ${plan.binary}`);

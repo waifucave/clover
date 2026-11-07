@@ -7,24 +7,39 @@
 //                                      before main, whatever the arguments
 //   BUN_INSPECT=ws://…?wait=1          opens a debugger port: Runtime.evaluate runs anything in the process
 //   BUN_INSPECT_CONNECT_TO=unix://…    connects the debugger out to a socket of the caller's choosing
+//   BUN_INTERNAL_WEBVIEW_HOST          (macOS) turns the binary into Bun.WebView's host process instead of the core:
+//                                      the sweep found it (it hangs, or crashes, never running main); the core uses
+//                                      no Bun.WebView, so its own spawn of that host (`…=3`) is sealed with it
 //   NODE_PATH                          steers module resolution (the runtime ladder's package rung; that rung is now
 //                                      off in a compiled binary too, runtime-sdk/executable.ts)
 //
 // On macOS the Keychain items trust the signed `clover-core` alone, so any of these hands the user's tokens and
-// provider keys to whoever can start the binary. No Bun flag turns them off, so this build step does, before the
-// binary is signed: every occurrence of each name in Bun's own code is overwritten, same length, with a name NO
-// ENVIRONMENT CAN CARRY. A plain renamed token would only move the door: anyone can read it out of the binary and set
-// it (measured: a capital-letter token worked exactly like BUN_BE_BUN). So the replacement starts with a NUL:
-//   - in Bun's native code the lookup is libc `getenv` (a C string, measured: a NUL in the middle made the prefix
-//     settable) or a comparison of the whole slice against each environment entry's key. As a C string the name is
-//     empty, and `getenv("")` finds nothing (measured on macOS; glibc and musl return NULL for an empty name); as a
-//     slice it holds a NUL, which no key can. A name with `=` would not do: macOS's `getenv` stops the name at `=`.
-//   - in Bun's built-in JavaScript the reads are `process.env.NAME` / `Bun.env.NAME` and quoted lists. A member read
-//     `.NAME` becomes `["\0…"]` and a quoted `"NAME"` becomes `"\0…"` (the escape, so the source stays valid JS, an
-//     assignment target included): a key holding U+0000, which no environment has.
-// The rest of each replacement is capital letters derived from the name, so a rebuild is byte-for-byte the same.
-// The app's own bundle — the module graph Bun embeds in its `.bun` section (`__BUN,__bun` in a Mach-O) — is never
-// touched: the core's own code names some of these variables on purpose (the run home's environment refusals).
+// provider keys to whoever can start the binary. BUN_CONFIG_VERBOSE_FETCH needs no foreign code at all: it prints the
+// core's request headers — `x-api-key`, and with `curl` the `Authorization: Bearer` — to stderr, which daemon.log
+// keeps. No Bun flag turns any of them off, so this build step does, before the binary is signed: every occurrence of
+// each name in Bun's own code is overwritten, same length, with a name the environment cannot carry to the process.
+// A plain renamed token only moves the door (it can be read out of the binary and set: measured), and what makes a
+// name unsettable depends on how the OS hands the environment over, so it is chosen per binary format:
+//
+//   Mach-O (macOS)  `DYLD_` + letters. Bun reads these through libc `getenv`, and Darwin's `getenv` cuts a name at its
+//                   first `=` or NUL, so no spelling is unsettable there (measured: a NUL-led name matched `=1`, and
+//                   one `=<payload>` entry set every sealed name at once). But dyld removes every `DYLD_*` variable
+//                   from a hardened-runtime process's environment before `main` (measured: `DYLD_<token>=…`, `DYLD_=1`,
+//                   `=1`, `=<payload>` all left the core itself). That holds only while the signature has the hardened
+//                   runtime and no `allow-dyld-environment-variables`: `sealFile` signs ad hoc that way, every real
+//                   signature (the release's, the dev daemon's) does too, and verify:sealed-core asserts both.
+//   ELF (Linux)     a NUL, then letters. glibc's and musl's `getenv("")` return NULL, and Bun's own environment map
+//                   splits each entry at its first `=`, so its keys never hold a NUL. verify:sealed-core measures it on
+//                   the Linux runners with `=…` entries through a raw execve. In Bun's built-in JavaScript a member read
+//                   `.NAME` becomes `["\0…"]` and a quoted `"NAME"` becomes `"\0…"`: a key holding U+0000.
+//   PE (Windows)    not sealed. Every Windows process carries `=C:=…` entries, so a NUL-led name could read as set on
+//                   every start, and no Windows store trusts a binary (Credential Manager, DPAPI: any process of the
+//                   user reads them), so there is nothing to protect that a seal could. verify:sealed-core asserts a
+//                   Windows binary is NOT sealed, so a half-seal never ships.
+//
+// The letters derive from the name, so a rebuild is byte-for-byte the same. The app's own bundle — the module graph
+// Bun embeds in its `.bun` section (`__BUN,__bun` in a Mach-O) — is never touched: the core's own code names some of
+// these variables on purpose (the run home's environment refusals).
 //
 // `--check` is the byte check: no sealed name is left outside the module graph. `scripts/verify-sealed-core.ts` then
 // runs the sealed, signed binary with each door set and asserts that nothing foreign runs and no debugger opens.
@@ -34,13 +49,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 /** The names sealed, longest first so a name inside a longer one (BUN_INSPECT in BUN_INSPECT_CONNECT_TO) is never
  *  half-sealed. BUN_INSPECT_NOTIFY and BUN_INSPECT_PRELOAD only matter with a debugger, and are sealed with it. */
-export const SEALED_ENV_NAMES = ["BUN_INSPECT_CONNECT_TO", "BUN_INSPECT_PRELOAD", "BUN_INSPECT_NOTIFY", "BUN_INSPECT", "BUN_OPTIONS", "BUN_BE_BUN", "NODE_PATH"] as const;
+export const SEALED_ENV_NAMES = ["BUN_INTERNAL_WEBVIEW_HOST", "BUN_CONFIG_VERBOSE_FETCH", "BUN_INSPECT_CONNECT_TO", "BUN_INSPECT_PRELOAD", "BUN_INSPECT_NOTIFY", "BUN_INSPECT", "BUN_OPTIONS", "BUN_BE_BUN", "NODE_PATH"] as const;
 
 /** The names Bun must still contain before sealing (so a Bun that renamed one fails the build, not silently). */
-export const REQUIRED_NATIVE_NAMES = ["BUN_BE_BUN", "BUN_OPTIONS", "BUN_INSPECT", "BUN_INSPECT_CONNECT_TO"] as const;
+export const REQUIRED_NATIVE_NAMES = ["BUN_BE_BUN", "BUN_OPTIONS", "BUN_INSPECT", "BUN_INSPECT_CONNECT_TO", "BUN_CONFIG_VERBOSE_FETCH"] as const;
 
 /** Capital letters derived from `name`, `length` long: the visible rest of each replacement. */
 export function sealFiller(name: string, length: number): string {
@@ -60,9 +76,11 @@ export function siteOf(bytes: Uint8Array, at: number, length: number): Site {
   return "native";
 }
 
-/** What an occurrence of `name` becomes, and where it starts (a member read replaces its dot too). */
-export function sealedReplacement(name: string, site: Site): { bytes: Uint8Array; offset: number } {
+/** What an occurrence of `name` becomes in `format`, and where it starts (an ELF member read replaces its dot too). */
+export function sealedReplacement(name: string, site: Site, format: ExecutableFormat = "elf"): { bytes: Uint8Array; offset: number } {
   const enc = new TextEncoder();
+  if (format === "pe") throw new Error("a Windows binary is not sealed (scripts/seal-bun-doors.ts)");
+  if (format === "macho") return { bytes: enc.encode(`DYLD_${sealFiller(name, name.length - 5)}`), offset: 0 };
   if (site === "member") return { bytes: enc.encode(`["\\0${sealFiller(name, name.length - 5)}"]`), offset: -1 };
   if (site === "quoted") return { bytes: enc.encode(`\\0${sealFiller(name, name.length - 2)}`), offset: 0 };
   return { bytes: Uint8Array.of(0, ...enc.encode(sealFiller(name, name.length - 1))), offset: 0 };
@@ -133,20 +151,27 @@ function occurrences(bytes: Uint8Array, needle: Uint8Array, skip: { start: numbe
 
 export interface SealResult { format: ExecutableFormat; sealed: Record<string, number>; alreadySealed: boolean }
 
-/** Seals `bytes` in place. Throws when Bun no longer carries a name it must (a new Bun needs a new audit). */
+/** Is a binary of this format sealed at all? Windows' is not (the header says why). */
+export function sealsFormat(format: ExecutableFormat): boolean {
+  return format !== "pe";
+}
+
+/** Seals `bytes` in place. Throws on a Windows binary, and when Bun no longer carries a name it must (a new Bun needs
+ *  a new audit). */
 export function sealBunDoors(bytes: Uint8Array): SealResult {
   const graph = moduleGraphRange(bytes);
+  if (!sealsFormat(graph.format)) throw new Error("a Windows binary is not sealed (scripts/seal-bun-doors.ts)");
   const enc = new TextEncoder();
   const sealed: Record<string, number> = {};
   for (const name of SEALED_ENV_NAMES) {
     const at = occurrences(bytes, enc.encode(name), graph);
     for (const i of at) {
-      const r = sealedReplacement(name, siteOf(bytes, i, name.length));
+      const r = sealedReplacement(name, siteOf(bytes, i, name.length), graph.format);
       bytes.set(r.bytes, i + r.offset);
     }
     sealed[name] = at.length;
   }
-  const alreadySealed = REQUIRED_NATIVE_NAMES.every((n) => sealed[n] === 0 && occurrences(bytes, sealedReplacement(n, "native").bytes, graph).length > 0);
+  const alreadySealed = REQUIRED_NATIVE_NAMES.every((n) => sealed[n] === 0 && occurrences(bytes, sealedReplacement(n, "native", graph.format).bytes, graph).length > 0);
   if (!alreadySealed) {
     const missing = REQUIRED_NATIVE_NAMES.filter((n) => sealed[n] === 0);
     if (missing.length > 0) throw new Error(`Bun no longer names ${missing.join(", ")} where this step looks: audit the new Bun's doors before shipping it (scripts/seal-bun-doors.ts)`);
@@ -154,32 +179,56 @@ export function sealBunDoors(bytes: Uint8Array): SealResult {
   return { format: graph.format, sealed, alreadySealed };
 }
 
-/** The byte check: every sealed name is gone from outside the module graph, and each required token is there. */
+/** The byte check: every sealed name is gone from outside the module graph, and each required replacement is there.
+ *  A Windows binary must be the opposite: not sealed (its names all there, no replacement). */
 export function sealProblems(bytes: Uint8Array): string[] {
   const graph = moduleGraphRange(bytes);
   const enc = new TextEncoder();
   const problems: string[] = [];
+  if (!sealsFormat(graph.format)) {
+    for (const name of REQUIRED_NATIVE_NAMES) {
+      if (occurrences(bytes, enc.encode(name), graph).length === 0) problems.push(`${name} is missing from a Windows binary, which must not be sealed (no half-seal ships)`);
+    }
+    return problems;
+  }
   for (const name of SEALED_ENV_NAMES) {
     const left = occurrences(bytes, enc.encode(name), graph);
     if (left.length > 0) problems.push(`${name} is still in Bun's code at ${left.map((o) => `0x${o.toString(16)}`).join(", ")}`);
   }
   for (const name of REQUIRED_NATIVE_NAMES) {
-    if (occurrences(bytes, sealedReplacement(name, "native").bytes, graph).length === 0) problems.push(`${name}'s sealed token is missing: the binary was not sealed by this step`);
+    if (occurrences(bytes, sealedReplacement(name, "native", graph.format).bytes, graph).length === 0) problems.push(`${name}'s sealed replacement is missing: the binary was not sealed by this step`);
   }
   return problems;
 }
 
-/** Seals the file at `path`; on macOS a Mach-O is re-signed ad hoc so it runs (a release or the dev daemon signs it
- *  for real afterwards). Returns what was sealed. */
-export function sealFile(path: string, platform: NodeJS.Platform = process.platform): SealResult {
+/** The entitlement that would let `DYLD_*` through to a hardened process, and so open a macOS seal. */
+export const DYLD_ENTITLEMENT = "com.apple.security.cs.allow-dyld-environment-variables";
+
+/** The core's entitlements file, which must never grant `DYLD_ENTITLEMENT`. */
+export const CORE_ENTITLEMENTS = join(dirname(import.meta.dir), "scripts", "clover-core.entitlements");
+
+/** The ad hoc signature a sealed Mach-O gets here: the hardened runtime and the core's entitlements, so the seal holds
+ *  even before a release or the dev daemon signs it for real (both with the hardened runtime too). */
+export function adHocSealSignArgs(path: string): string[] {
+  return ["codesign", "--force", "--sign", "-", "--options", "runtime", "--entitlements", CORE_ENTITLEMENTS, path];
+}
+
+/** Seals the file at `path` (a Windows binary is left as it is). On macOS a Mach-O is re-signed ad hoc with the
+ *  hardened runtime. Returns what was sealed, or undefined for a Windows binary. */
+export function sealFile(path: string, platform: NodeJS.Platform = process.platform): SealResult | undefined {
   const bytes = new Uint8Array(readFileSync(path));
+  if (!sealsFormat(moduleGraphRange(bytes).format)) {
+    const problems = sealProblems(bytes);
+    if (problems.length > 0) throw new Error(problems.join("; "));
+    return undefined;
+  }
+  if (readFileSync(CORE_ENTITLEMENTS, "utf8").includes(DYLD_ENTITLEMENT)) throw new Error(`${CORE_ENTITLEMENTS} grants ${DYLD_ENTITLEMENT}, which would open the macOS seal`);
   const result = sealBunDoors(bytes);
-  if (!result.alreadySealed) {
-    writeFileSync(path, bytes);
-    if (result.format === "macho" && platform === "darwin") {
-      const r = spawnSync("codesign", ["--force", "--sign", "-", path], { encoding: "utf8" });
-      if (r.status !== 0) throw new Error(`codesign (ad hoc) after sealing failed: ${r.stderr.trim()}`);
-    }
+  if (!result.alreadySealed) writeFileSync(path, bytes);
+  if (result.format === "macho" && platform === "darwin") {
+    const args = adHocSealSignArgs(path);
+    const r = spawnSync(args[0]!, args.slice(1), { encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`codesign (ad hoc, hardened runtime) after sealing failed: ${r.stderr.trim()}`);
   }
   const problems = sealProblems(new Uint8Array(readFileSync(path)));
   if (problems.length > 0) throw new Error(`the sealed binary fails the byte check: ${problems.join("; ")}`);
@@ -197,11 +246,11 @@ if (import.meta.main) {
     if (args.includes("--check")) {
       const problems = sealProblems(new Uint8Array(readFileSync(path)));
       for (const p of problems) console.error(`seal-bun-doors: ${p}`);
-      if (problems.length === 0) console.log(`seal-bun-doors: ${path}: sealed (${SEALED_ENV_NAMES.join(", ")})`);
+      if (problems.length === 0) console.log(`seal-bun-doors: ${path}: ${sealsFormat(moduleGraphRange(new Uint8Array(readFileSync(path))).format) ? `sealed (${SEALED_ENV_NAMES.join(", ")})` : "a Windows binary, not sealed, as it must be"}`);
       process.exit(problems.length === 0 ? 0 : 1);
     }
     const r = sealFile(path);
-    console.log(`seal-bun-doors: ${path}: ${r.alreadySealed ? "already sealed" : Object.entries(r.sealed).map(([n, c]) => `${n}×${c}`).join(" ")}`);
+    console.log(`seal-bun-doors: ${path}: ${r === undefined ? "a Windows binary: not sealed" : r.alreadySealed ? "already sealed" : Object.entries(r.sealed).map(([n, c]) => `${n}×${c}`).join(" ")}`);
   } catch (err) {
     console.error(`seal-bun-doors: ${(err as Error).message}`);
     process.exit(1);
