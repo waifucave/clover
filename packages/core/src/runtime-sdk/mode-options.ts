@@ -1,6 +1,7 @@
 import { homedir, tmpdir } from "node:os";
 import { realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { pluginLoadFoldersOf } from "./plugin-load-folders";
 import { pluginLoadDenies } from "../contracts/fence";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
@@ -939,9 +940,12 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
     // #234's check 4, H1: `node_modules` above every folder plugin code loads from (`~/node_modules` among them), by
     // real path: a bare import a plugin doesn't ship walks those, and a file there without an extension skips Clover's
     // load guard.
-    ...pluginLoadDenies([realOrNearest(join(home, "plugins")), realOrNearest(join(sdkHomeFor(home), "plugins"))]),
+    // The development folders and the bundled plugins too (#234's check 5, K3), read live: a folder added now is in the
+    // next call's list, for the write tools, the escape floor and every runner started after it.
+    ...pluginLoadDenies([join(home, "plugins"), join(sdkHomeFor(home), "plugins"), ...pluginLoadFoldersOf(home)].map(realOrNearest)),
   ];
 }
+
 
 /** A path's real path, or its nearest existing ancestor's real path with the rest appended. */
 function realOrNearest(path: string): string {

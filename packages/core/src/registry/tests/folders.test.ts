@@ -200,6 +200,17 @@ describe("PluginFolders", () => {
     ]);
   });
 
+  test("a development folder gets the static checks too: a dependency it doesn't ship, or a reach outside, makes it invalid (#234's check 5, K3)", async () => {
+    const w = world();
+    const dev = join(w.home, "dev", "luna");
+    w.write(dev, { "clover.json": manifest("luna", { description: "dev" }), "client/index.tsx": "import x from \"not-shipped\";\nexport {};\n" });
+    await w.folders.addDevFolder(dev, "cli");
+    expect([w.core.get("luna")?.state, w.core.get("luna")?.reason ?? ""]).toEqual(["invalid", expect.stringContaining("not-shipped")]);
+    w.write(dev, { "client/index.tsx": "export {};\n", "tsconfig.json": JSON.stringify({ extends: "../../outside/base.json" }) });
+    await w.folders.refresh(realpathSync(dev));
+    expect(w.core.get("luna")?.reason ?? "").toContain("outside the plugin");
+  });
+
   test("a development folder loads without asking, replaces the installed plugin with its id, and turns off after 24 hours", async () => {
     let now = 1_000_000;
     const w = world({ now: () => now });

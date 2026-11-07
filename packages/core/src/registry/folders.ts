@@ -96,9 +96,9 @@ export async function readPluginFolder(
   // Loader configs: what their `extends`, `paths` and package maps reach is code; reaching outside the tree makes the
   // whole plugin invalid (#234's review, F2): a plugin never pulls code or config in from elsewhere.
   const loader = folderLoaderReach(folder, entries.map((e) => e.path));
-  // Only for an installed plugin: a bundled one ships with the app and a development folder is the user's own, so
-  // neither asks for an OK, and Clover's own trees extend the repository's shared tsconfig.
-  const judged = opts.bundled !== true && opts.dev !== true;
+  // Every plugin but a bundled one, which ships with the app and extends the repository's shared tsconfig: a development
+  // folder's code runs in plugin processes too (#234's check 5, K3).
+  const judged = opts.bundled !== true;
   const loaderIssues = judged ? loaderOutsideIssues(loader) : [];
   const topIssues = [...tree.top.issues, ...tree.issues.filter((i) => !i.file.startsWith("plugins/")), ...loaderIssues];
   const treeOk = tree.ok && loaderIssues.length === 0;
