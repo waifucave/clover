@@ -306,6 +306,9 @@
     "plugins/clover/plugins/island": {
       "name": "@waifucave/clover-plugin-island",
       "version": "0.0.0",
+      "dependencies": {
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+      },
       "devDependencies": {
         "@happy-dom/global-registrator": "21.0.4",
         "@testing-library/dom": "10.4.2",
