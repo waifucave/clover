@@ -11,25 +11,36 @@ import type { ValidationIssue } from "@waifucave/clover-protocol";
 
 /** The biggest loader config read when following `extends` and `paths`. */
 const LOADER_CONFIG_MAX_BYTES = 1024 * 1024;
+/** The biggest script whose imports are read; a bigger one can't be checked, so the plugin is invalid. */
+const CODE_MAX_BYTES = 16 * 1024 * 1024;
 
 /** `loaderReach` over a folder on disk, given its files (tree paths). */
 export function folderLoaderReach(folder: string, files: readonly string[]): LoaderReach {
-  return loaderReach(files, (path) => {
+  const read = (max: number) => (path: string) => {
     try {
       const abs = join(folder, path);
-      return statSync(abs).size <= LOADER_CONFIG_MAX_BYTES ? readFileSync(abs, "utf8") : undefined;
+      return statSync(abs).size <= max ? readFileSync(abs, "utf8") : undefined;
     } catch {
       return undefined;
     }
-  });
+  };
+  return loaderReach(files, read(LOADER_CONFIG_MAX_BYTES), read(CODE_MAX_BYTES));
 }
 
 /** Reaching outside the tree, as the errors that make a plugin invalid (`loader_outside`). */
 export function loaderOutsideIssues(reach: LoaderReach): ValidationIssue[] {
-  return reach.outside.map((o) => ({
-    severity: "error", refuses: "plugin", code: "loader_outside", file: o.file, path: "",
-    message: `${o.file}'s ${o.field} reaches "${o.target}", outside the plugin; a plugin can't pull in code or config from elsewhere`,
-  }));
+  return [
+    ...reach.outside.map((o): ValidationIssue => ({
+      severity: "error", refuses: "plugin", code: "loader_outside", file: o.file, path: "",
+      message: `${o.file}'s ${o.field} reaches "${o.target}", outside the plugin; a plugin can't pull in code or config from elsewhere`,
+    })),
+    ...reach.missing.map((m): ValidationIssue => ({
+      severity: "error", refuses: "plugin", code: "dependency_missing", file: m.file, path: "",
+      message: m.field === "size"
+        ? `${m.file} is too big for its imports to be checked`
+        : `${m.file}'s ${m.field} names "${m.target}", which the plugin doesn't ship in its own node_modules; a missing dependency would be looked for in the folders above it`,
+    })),
+  ];
 }
 
 export interface LoaderReach {
@@ -37,7 +48,24 @@ export interface LoaderReach {
   inside: string[];
   /** Why the plugin reaches outside its tree: the config file, the field and the target as written. */
   outside: { file: string; field: string; target: string }[];
+  /** Dependencies a script imports or a package.json declares that the plugin doesn't ship (#234's check 4, H1):
+   *  Bun would look for them in the folders above the plugin, where the load guard can't see every file. `field`
+   *  `size`: a script too big to check. */
+  missing: { file: string; field: string; target: string }[];
 }
+
+/** What a plugin may import without shipping it: Clover's shared packages, which the load guard lets in. */
+export const SHARED_PLUGIN_PACKAGES: readonly string[] = ["@waifucave/clover-plugin-sdk", "@waifucave/clover-protocol", "zod"];
+
+const CODE = /\.(?:[mc]?[jt]s|[jt]sx)$/i;
+const loaderOf = (path: string): "js" | "jsx" | "ts" | "tsx" =>
+  /\.tsx$/i.test(path) ? "tsx" : /\.jsx$/i.test(path) ? "jsx" : /\.[mc]?ts$/i.test(path) ? "ts" : "js";
+/** The package a bare specifier names (`dep`, `@scope/dep`), or undefined for none. */
+const packageOf = (spec: string): string | undefined => {
+  const parts = spec.split("/");
+  const name = spec.startsWith("@") ? (parts.length >= 2 ? parts.slice(0, 2).join("/") : undefined) : parts[0];
+  return name === undefined || name === "" || name.includes("..") ? undefined : name;
+};
 
 const TS_CONFIG = /(^|\/)(tsconfig|jsconfig)(\.[^/]*)?\.json$/i;
 const PACKAGE = /(^|\/)package\.json$/i;
@@ -71,10 +99,13 @@ function resolve(dir: string, rel: string): string | undefined {
 const builtin = (spec: string) => spec.startsWith("node:") || spec.startsWith("bun:") || builtinModules.includes(spec.split("/")[0]!) || builtinModules.includes(spec);
 
 /** Follows every loader config among `files` (tree paths). `readText` gives a file's text, or undefined. */
-export function loaderReach(files: readonly string[], readText: (path: string) => string | undefined): LoaderReach {
+export function loaderReach(files: readonly string[], readText: (path: string) => string | undefined, readCode: (path: string) => string | undefined = readText): LoaderReach {
   const have = new Set(files);
   const inside = new Set<string>();
   const outside: LoaderReach["outside"] = [];
+  const missing: LoaderReach["missing"] = [];
+  /** `paths` keys, as patterns: a bare import matching one is the config's alias, not a dependency. */
+  const aliases: RegExp[] = [];
   const seen = new Set<string>();
   const queue = files.filter((f) => TS_CONFIG.test(f));
   const parse = (path: string): Record<string, unknown> | undefined => {
@@ -125,6 +156,7 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     }
     const paths = opts.paths !== null && typeof opts.paths === "object" ? (opts.paths as Record<string, unknown>) : {};
     for (const [key, targets] of Object.entries(paths)) {
+      aliases.push(new RegExp(`^${key.split("*").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`));
       for (const t of Array.isArray(targets) ? targets : []) {
         if (typeof t !== "string") continue;
         // A wildcard target names everything under its prefix.
@@ -190,5 +222,48 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
       else for (const f of files) if (f.startsWith(resolved)) inside.add(f);
     }
   }
-  return { inside: [...inside].sort(), outside };
+  // The dependencies a script imports and a package.json declares (#234's check 4, H1), shipped in the plugin's own
+  // node_modules; an import that isn't a dependency stays inside the plugin.
+  const selfNames = new Set<string>();
+  for (const file of files.filter((f) => PACKAGE.test(f))) {
+    const name = parse(file)?.name;
+    if (typeof name === "string") selfNames.add(name);
+  }
+  const shipped = (fromDir: string, spec: string): boolean => {
+    const name = packageOf(spec);
+    return name !== undefined && (SHARED_PLUGIN_PACKAGES.includes(name) || selfNames.has(name) || dependencyFolder(fromDir, spec) !== undefined);
+  };
+  for (const file of files.filter((f) => CODE.test(f) && !/\.d\.[mc]?ts$/i.test(f))) {
+    const text = readCode(file);
+    if (text === undefined) {
+      missing.push({ file, field: "size", target: "" });
+      continue;
+    }
+    let imports: { path: string }[];
+    try {
+      imports = new Bun.Transpiler({ loader: loaderOf(file) }).scanImports(text);
+    } catch {
+      continue; // it doesn't parse, so it doesn't run
+    }
+    for (const { path: spec } of imports) {
+      if (spec.startsWith("#") || builtin(spec)) continue;
+      if (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("\\") || /^[A-Za-z]:/.test(spec) || /^[a-z][a-z0-9+.-]*:/i.test(spec)) {
+        // A path import stays inside the plugin; a URL or an absolute path never does.
+        if (!spec.startsWith(".") || resolve(dirOf(file), spec) === undefined) outside.push({ file, field: "import", target: spec });
+        continue;
+      }
+      if (aliases.some((a) => a.test(spec))) continue;
+      if (!shipped(dirOf(file), spec)) missing.push({ file, field: "import", target: spec });
+    }
+  }
+  for (const file of files.filter((f) => PACKAGE.test(f) && !f.split("/").includes("node_modules"))) {
+    const pkg = parse(file);
+    if (pkg === undefined) continue;
+    for (const field of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+      const deps = pkg[field];
+      if (deps === null || typeof deps !== "object") continue;
+      for (const name of Object.keys(deps)) if (!shipped(dirOf(file), name)) missing.push({ file, field, target: name });
+    }
+  }
+  return { inside: [...inside].sort(), outside, missing };
 }

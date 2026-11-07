@@ -40,4 +40,29 @@ describe("loaderReach's outside cases", () => {
     // A nested package finds the plugin's top-level node_modules, never one outside it.
     expect(outsideFields({ "pkg/package.json": { imports: { "#a": "dep" } }, "node_modules/dep/index.js": "" })).toEqual([]);
   });
+
+  test("a dependency a script imports or a package.json declares ships in the plugin's own node_modules (check 4, H1)", () => {
+    const missing = (tree: Record<string, unknown>) => reach(tree).missing.map((m) => [m.file, m.field, m.target]);
+    const tree = {
+      "package.json": { name: "me", dependencies: { dep: "1", absent: "1" }, optionalDependencies: { gone: "1" }, devDependencies: { tooling: "1" } },
+      "tsconfig.json": { compilerOptions: { paths: { "lib/*": ["./src/*"] } } }, "src/x.ts": "",
+      "node_modules/dep/package.json": { name: "dep", main: "index" }, "node_modules/dep/index": "",
+      "node_modules/dep/lib.js": "try { require(\"bufferutil\"); } catch {}\nmodule.exports = require(\"./index\");\n",
+      "host/index.ts": [
+        "import type { T } from \"types-only\";", "import a from \"dep\";", "import b from \"dep/lib.js\";", "import { z } from \"zod\";",
+        "import sdk from \"@waifucave/clover-plugin-sdk/args\";", "import fs from \"node:fs\";", "import p from \"path\";", "import { $ } from \"bun\";",
+        "import x from \"lib/x\";", "import self from \"me/thing\";", "import \"./local\";", "const n = await import(\"nowhere\");", "export * from \"also-missing\";",
+      ].join("\n"),
+    };
+    expect(missing(tree)).toEqual([
+      ["node_modules/dep/lib.js", "import", "bufferutil"],
+      ["host/index.ts", "import", "nowhere"], ["host/index.ts", "import", "also-missing"],
+      ["package.json", "dependencies", "absent"], ["package.json", "optionalDependencies", "gone"],
+    ]);
+    // A path import climbing out of the plugin, an absolute one, or a URL reaches outside.
+    expect(reach({ "host/a.ts": "import \"../../outside/noext\";\nimport \"/Users/me/node_modules/evil/index\";\nimport \"file:///x\";\nimport \"./fine\";\n" }).outside.map((o) => o.target))
+      .toEqual(["../../outside/noext", "/Users/me/node_modules/evil/index", "file:///x"]);
+    // A script too big to read can't be checked.
+    expect(loaderReach(["host/big.js"], () => undefined, () => undefined).missing).toEqual([{ file: "host/big.js", field: "size", target: "" }]);
+  });
 });
