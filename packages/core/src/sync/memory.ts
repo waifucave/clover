@@ -602,6 +602,8 @@ export class MemorySync {
         this.#warn(`${bot}:fold:${f.rel}`, `${bot}'s ${f.rel} and ${keep.rel} are one name to other computers: ${f.rel} is kept as ${p.rel}`);
         this.#placeCopy(bot, p, read.data);
         removeMemoryFile(this.#o.home, root, f.rel.split("/"), { exact: true });
+        // The copy is on disk now, though it wasn't when the folder was listed: it isn't a removal.
+        seen.add(p.key);
         changed.push(p.key);
       }
     }
