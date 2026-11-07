@@ -929,6 +929,8 @@ export function projectScopeAllowRulesFor(cwd: string, deps: {
 export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptions): string[] {
   return [
     join(home, "run"), join(home, "runtimes"), homeCacheDir(home), join(home, "plugins"), approvedProjectRulesDir(home),
+    // The dev profile's plugin Bun and its recorded digest (#234's check 6, L2), and a server's core and plugin Bun.
+    join(home, "bin"),
     trustRecordFile(home), join(home, "agents"),
     join(sdkHomeFor(home), "settings.json"), join(sdkHomeFor(home), ".clover.json"),
     join(sdkHomeFor(home), "agents"), join(sdkHomeFor(home), "plugins"),

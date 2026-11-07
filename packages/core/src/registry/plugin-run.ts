@@ -22,8 +22,12 @@
 // The flags go in `BUN_OPTIONS` too, so a `bun` a hook's shell command starts gets them, whatever its cwd (measured on
 // Bun 1.4.4: a plugin folder's `.env` `NODE_OPTIONS=--require <file>` and bunfig `preload` both run without them, and
 // neither does with them). The static check (`loaderReach`) stays as `clover plugin validate`'s early error.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
+import { resolveCloverHome } from "../clover-dir";
+import { resolveCloverProfile } from "../profile";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 
@@ -120,52 +124,115 @@ export interface PluginRunFiles {
 /** True inside a `bun build --compile` binary, whose modules live under `/$bunfs/` (`B:/~BUN/` on Windows). */
 const compiled = () => import.meta.path.startsWith("/$bunfs/") || import.meta.path.includes("~BUN");
 
-/** The plugin Bun's file name (lane M's layout): beside clover-core in `<resources>/daemon/` (in `<home>/bin/` for a
- *  server install), and in `dist/dev/` for the dev daemon run under plain Bun. */
-export const PLUGIN_BUN_NAME = "clover-plugin-bun";
+/** The plugin Bun's file name (`bundled-identities.ts`). */
+export const PLUGIN_BUN_NAME = PLUGIN_BUN_FILE;
 
-/** The repository's `dist/dev/`, where `bun run dev:daemon` puts the dev plugin Bun (from source only). */
-const DEV_DIST = join(import.meta.dir, "..", "..", "..", "..", "dist", "dev");
-
-/** Where plugin code runs (#234's check 5, K1, the controller's ruling; lane M's layout): a Bun of its own,
- *  `clover-plugin-bun`, the core's version, signed under its own identifier (`com.waifucave.clover.plugin-bun`, `.dev`
- *  for dev), so no Keychain item's access list (which names `clover-core` alone) lets a plugin in. Never the compiled
- *  core's own binary, never with `BUN_BE_BUN`, never a `bun` the plugin or the PATH names.
- *  - a compiled core: the one beside it, failing closed without it;
+/** Where plugin code runs (#234's checks 5 and 6, the controller's rulings; lane M's layout): a Bun of its own,
+ *  `clover-plugin-bun`, the core's version, signed under its own identifier, so no Keychain item's access list (which
+ *  names `clover-core` alone) lets plugin code in. Never the core's own binary, never with `BUN_BE_BUN`, never a `bun`
+ *  the plugin or the PATH names.
+ *  - a packaged core (compiled, the dist profile): the one beside it (`<resources>/daemon/`, or `<home>/bin/` for a
+ *    server), signed by Clover's team under `com.waifucave.clover.plugin-bun`;
  *  - from source with a test Keychain service (the test preloads set `CLOVER_KEYCHAIN_SERVICE` to one): the Bun it
  *    runs on, which no access list names;
- *  - from source otherwise (a dev daemon under plain Bun): `dist/dev/clover-plugin-bun`, failing closed without it. */
+ *  - otherwise (the dev daemon, compiled or under plain Bun): `<Clover home>/bin/clover-plugin-bun`, which
+ *    `dev:daemon` makes and whose digest (macOS: its cdhash) it records beside it, inside the home no runner writes.
+ *  Every one is checked (`checkPluginBun`) once per process and again whenever the file changes, and a failed check
+ *  refuses: plugin code doesn't run. */
 export function pluginBun(): string {
-  return pluginBunFor({ compiled: compiled(), execPath: process.execPath, keychainService: process.env.CLOVER_KEYCHAIN_SERVICE });
+  return pluginBunFor({
+    compiled: compiled(), execPath: process.execPath, profile: resolveCloverProfile(), keychainService: process.env.CLOVER_KEYCHAIN_SERVICE,
+    cloverHome: resolveCloverHome(),
+  });
 }
 
 /** Whether a Keychain service is a test one (the test preloads' `…core.test-isolated`). */
 export const isTestKeychainService = (service: string | undefined): boolean => service !== undefined && /(^|[.-])test([.-]|$)/.test(service);
 
-/** `pluginBun`'s rule, for a given binary (tests). */
-export function pluginBunFor(o: { compiled: boolean; execPath: string; keychainService?: string; devDist?: string; exists?: (path: string) => boolean; real?: (path: string) => string }): string {
-  const exists = o.exists ?? ((p: string) => {
-    try {
-      return lstatSync(p).isFile() || lstatSync(p).isSymbolicLink();
-    } catch {
-      return false;
-    }
-  });
-  const real = o.real ?? ((p: string) => realpathSync(p));
-  const file = process.platform === "win32" ? `${PLUGIN_BUN_NAME}.exe` : PLUGIN_BUN_NAME;
+export interface PluginBunOptions {
+  compiled: boolean;
+  execPath: string;
+  profile: "dist" | "dev";
+  keychainService?: string;
+  cloverHome: string;
+  platform?: NodeJS.Platform;
+  /** The macOS requirement a shipped copy must meet (`pluginBunRequirement()` by default; tests pass their own). */
+  requirement?: string;
+}
+
+/** `pluginBun`'s rule for a given process (tests). */
+export function pluginBunFor(o: PluginBunOptions): string {
+  const platform = o.platform ?? process.platform;
   if (!o.compiled && isTestKeychainService(o.keychainService)) return o.execPath;
-  const path = o.compiled ? join(dirname(o.execPath), file) : join(o.devDist ?? DEV_DIST, file);
-  if (!exists(path)) throw new Error(`${PLUGIN_BUN_NAME} isn't at ${path}; plugin code can't run without it`);
-  if (o.compiled) {
-    let same: boolean;
-    try {
-      same = real(path) === real(o.execPath);
-    } catch {
-      same = true;
-    }
-    if (same) throw new Error(`${PLUGIN_BUN_NAME} is the core's own binary; plugin code never runs on it`);
-  }
+  const file = platform === "win32" ? `${PLUGIN_BUN_FILE}.exe` : PLUGIN_BUN_FILE;
+  const shipped = o.compiled && o.profile === "dist";
+  const folder = shipped ? dirname(o.execPath) : join(o.cloverHome, "bin");
+  const path = join(folder, file);
+  checkPluginBun({ path, folder, core: o.execPath, platform, kind: shipped ? "shipped" : "dev", requirement: o.requirement ?? pluginBunRequirement() });
   return path;
+}
+
+/** The checks' results, by what the file and the core were when checked: a check runs once per process and again only
+ *  when either changes (inode, size, times). */
+const checked = new Map<string, string>();
+
+/** Refuses (throws) unless `path` is a plugin Bun Clover made: a plain file (never a link) whose real path sits in
+ *  `folder`, sharing no inode or content with the core, and either signed by Clover's team under the plugin Bun's
+ *  identifier (`shipped`, macOS) or matching the digest `dev:daemon` recorded beside it (`dev`). */
+export function checkPluginBun(o: { path: string; folder: string; core: string; platform: NodeJS.Platform; kind: "shipped" | "dev"; requirement: string }): void {
+  const refuse = (why: string): never => {
+    throw new Error(`${PLUGIN_BUN_FILE} at ${o.path} ${why}; plugin code can't run`);
+  };
+  let st: Stats;
+  try {
+    st = lstatSync(o.path);
+  } catch {
+    return refuse("is missing");
+  }
+  if (st.isSymbolicLink() || !st.isFile()) refuse("isn't a plain file");
+  const coreReal = realpathSync(o.core);
+  const core = statSync(coreReal);
+  const digestFile = `${o.path}.digest`;
+  let digestStat: Stats | undefined;
+  try {
+    digestStat = lstatSync(digestFile);
+  } catch {
+    digestStat = undefined;
+  }
+  const key = JSON.stringify([o, st.ino, st.dev, st.size, st.mtimeMs, st.ctimeMs, core.ino, core.mtimeMs, digestStat?.ino, digestStat?.mtimeMs, digestStat?.ctimeMs]);
+  if (checked.get(o.path) === key) return;
+  checked.delete(o.path);
+  if (dirname(realpathSync(o.path)) !== realpathSync(o.folder)) refuse(`isn't in ${o.folder}`);
+  if (st.ino === core.ino && st.dev === core.dev) refuse("is the core's own binary (a hard link)");
+  if (st.size === core.size && sha256File(o.path) === sha256File(coreReal)) refuse("is a copy of the core's own binary");
+  if (o.kind === "shipped") {
+    if (o.platform === "darwin" && !codesignSatisfies(o.path, o.requirement)) refuse("isn't signed by Clover's team as the plugin Bun");
+  } else {
+    if (digestStat === undefined || digestStat.isSymbolicLink() || !digestStat.isFile()) refuse("has no digest recorded beside it (run `bun run dev:daemon`)");
+    const recorded = readFileSync(digestFile, "utf8").trim();
+    const actual = pluginBunDigest(o.path, o.platform);
+    if (actual === undefined || recorded !== actual) refuse("isn't the copy `dev:daemon` made (its digest doesn't match the one recorded)");
+  }
+  checked.set(o.path, key);
+}
+
+/** A plugin Bun's digest as `dev:daemon` records it: on macOS its cdhash, once its signature verifies (`cdhash:<hex>`);
+ *  elsewhere its SHA-256 (`sha256:<hex>`). Undefined when the signature doesn't verify. */
+export function pluginBunDigest(path: string, platform: NodeJS.Platform = process.platform): string | undefined {
+  if (platform !== "darwin") return `sha256:${sha256File(path)}`;
+  if (spawnSync("/usr/bin/codesign", ["--verify", "--strict", path], { stdio: "ignore" }).status !== 0) return undefined;
+  const shown = spawnSync("/usr/bin/codesign", ["-dvvv", path], { encoding: "utf8" });
+  const m = /^CDHash=([0-9a-f]{40,64})$/m.exec(`${shown.stdout ?? ""}\n${shown.stderr ?? ""}`);
+  return m === null ? undefined : `cdhash:${m[1]}`;
+}
+
+function sha256File(path: string): string {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+/** macOS: whether the signature verifies (`--strict`) and meets `requirement`. */
+function codesignSatisfies(path: string, requirement: string): boolean {
+  return spawnSync("/usr/bin/codesign", ["--verify", "--strict", `-R=${requirement}`, path], { stdio: "ignore" }).status === 0;
 }
 
 /** Whether a command asks for Bun (`bun`, or a path to one): the manifest chooses Bun or not, never which Bun. */

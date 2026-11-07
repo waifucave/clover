@@ -2,13 +2,14 @@
 // each run once as a control without Clover's flags (the outside file runs) and once as Clover runs plugins (it
 // doesn't). Real Bun processes in temp folders; nothing opens a window.
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PLUGIN_BUN_IDENTIFIER } from "../../bundled-identities";
 import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
-import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, pluginBun, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
 
 function world() {
   const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
@@ -181,39 +182,95 @@ describe("a plugin process loads only its own tree", () => {
     expect(realpathSync(join(w.files.bin, "bun"))).toBe(realpathSync(pluginBun()));
   }, 30_000);
 
-  describe("pluginBun: where plugin code runs (K1, lane M's layout)", () => {
-    const core = "/Applications/Clover.app/Contents/Resources/daemon/clover-core";
-    const beside = "/Applications/Clover.app/Contents/Resources/daemon/clover-plugin-bun";
-    const id = (p: string) => p;
-    test("a compiled core: the one beside it, failing closed without it", () => {
-      expect(pluginBunFor({ compiled: true, execPath: core, exists: (p) => p === beside, real: id })).toBe(beside);
-      expect(() => pluginBunFor({ compiled: true, execPath: core, exists: () => false, real: id })).toThrow(/isn't at .*clover-plugin-bun/);
-      // A test service changes nothing for a compiled core.
-      expect(pluginBunFor({ compiled: true, execPath: core, keychainService: "com.waifucave.clover.core.test-isolated", exists: (p) => p === beside, real: id })).toBe(beside);
+  describe("pluginBun: where plugin code runs, and only on a copy Clover made (K1, L1, L2)", () => {
+    const darwin = process.platform === "darwin";
+    // A small signed binary to sign as the plugin Bun (and as a stand-in core); `true` runs anywhere.
+    const tiny = Bun.which("true") ?? "/usr/bin/true";
+    const sign = (path: string, identifier: string) => {
+      if (darwin) expect(Bun.spawnSync(["/usr/bin/codesign", "--force", "--sign", "-", "--identifier", identifier, path]).exitCode).toBe(0);
+    };
+    // Ad-hoc copies can't carry Clover's team: the test's requirement names the identifier alone.
+    const requirement = `identifier "${PLUGIN_BUN_IDENTIFIER.dist}"`;
+    const layout = () => {
+      const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-plugin-bun-")));
+      const daemon = join(base, "Clover.app", "Contents", "Resources", "daemon");
+      mkdirSync(daemon, { recursive: true });
+      const core = join(daemon, "clover-core");
+      writeFileSync(core, readFileSync(tiny));
+      chmodSync(core, 0o755);
+      sign(core, "com.waifucave.clover.core");
+      const home = join(base, "home");
+      mkdirSync(join(home, "bin"), { recursive: true });
+      const shipped = { compiled: true, execPath: core, profile: "dist" as const, cloverHome: home, requirement };
+      const dev = { compiled: true, execPath: core, profile: "dev" as const, cloverHome: home, requirement };
+      return { base, daemon, core, home, shipped, dev, plugin: join(daemon, "clover-plugin-bun"), devPlugin: join(home, "bin", "clover-plugin-bun") };
+    };
+    const good = (path: string) => {
+      writeFileSync(path, readFileSync(tiny));
+      chmodSync(path, 0o755);
+      sign(path, PLUGIN_BUN_IDENTIFIER.dist);
+    };
+
+    test("a shipped copy beside a packaged core, signed as the plugin Bun, is the one", () => {
+      const l = layout();
+      good(l.plugin);
+      expect(pluginBunFor(l.shipped)).toBe(l.plugin);
     });
-    test("from source with a test Keychain service: the Bun it runs on", () => {
-      expect(pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", keychainService: "com.waifucave.clover.core.test-isolated" })).toBe("/usr/local/bin/bun");
-      expect(pluginBun()).toBe(process.execPath); // this suite's preload sets the test service
-    });
-    test("from source otherwise (a dev daemon under plain Bun): dist/dev's, failing closed without it", () => {
-      const dev = "/repo/dist/dev";
-      for (const keychainService of [undefined, "com.waifucave.clover.core.dev", "com.waifucave.clover.core"]) {
-        expect(pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", keychainService, devDist: dev, exists: (p) => p === `${dev}/clover-plugin-bun` })).toBe(`${dev}/clover-plugin-bun`);
-        expect(() => pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", keychainService, devDist: dev, exists: () => false })).toThrow(/isn't at \/repo\/dist\/dev\/clover-plugin-bun/);
+
+    test("every forged shipped copy is refused", () => {
+      const rows: [string, (l: ReturnType<typeof layout>) => void, RegExp][] = [
+        ["missing", () => {}, /is missing/],
+        ["a symlink to another binary", (l) => symlinkSync(tiny, l.plugin), /isn't a plain file/],
+        ["a symlink to the core", (l) => symlinkSync(l.core, l.plugin), /isn't a plain file/],
+        ["a hard link to the core", (l) => linkSync(l.core, l.plugin), /hard link/],
+        ["a byte copy of the core", (l) => { writeFileSync(l.plugin, readFileSync(l.core)); chmodSync(l.plugin, 0o755); }, /copy of the core/],
+        ["a folder in its place", (l) => mkdirSync(l.plugin), /isn't a plain file/],
+        ...(darwin ? [["signed under another identifier", (l: ReturnType<typeof layout>) => { writeFileSync(l.plugin, readFileSync(tiny)); chmodSync(l.plugin, 0o755); sign(l.plugin, "com.example.not-plugin-bun"); }, /isn't signed by Clover's team/] as [string, (l: ReturnType<typeof layout>) => void, RegExp]] : []),
+      ];
+      for (const [name, plant, why] of rows) {
+        const l = layout();
+        plant(l);
+        expect([name, (() => { try { pluginBunFor(l.shipped); return "accepted"; } catch (e) { return why.test((e as Error).message) ? "refused" : (e as Error).message; } })()]).toEqual([name, "refused"]);
       }
     });
-    test("never the compiled core's own execPath, by any name", () => {
-      // The core itself, a link to it, a copy that resolves to it: refused.
-      expect(() => pluginBunFor({ compiled: true, execPath: core, exists: () => true, real: () => core })).toThrow(/the core's own binary/);
-      expect(() => pluginBunFor({ compiled: true, execPath: core, exists: () => true, real: () => { throw new Error("gone"); } })).toThrow(/the core's own binary/);
-      for (const exists of [() => true, (p: string) => p === beside]) {
+
+    test("the dev copy in the Clover home is the one only with the digest dev:daemon recorded, and a swap is refused", () => {
+      const l = layout();
+      good(l.devPlugin);
+      expect(() => pluginBunFor(l.dev)).toThrow(/no digest recorded/);
+      writeFileSync(`${l.devPlugin}.digest`, `${pluginBunDigest(l.devPlugin)}\n`);
+      expect(pluginBunFor(l.dev)).toBe(l.devPlugin);
+      // Swapped for another binary (here the core's bytes, then a re-signed other one): the digest no longer matches.
+      writeFileSync(l.devPlugin, readFileSync(l.core));
+      expect(() => pluginBunFor(l.dev)).toThrow(/copy of the core|digest doesn't match/);
+      writeFileSync(l.devPlugin, readFileSync(tiny));
+      sign(l.devPlugin, "com.example.swapped");
+      if (darwin) expect(() => pluginBunFor(l.dev)).toThrow(/digest doesn't match/);
+      // A recorded digest that is a link isn't one dev:daemon wrote.
+      const m = layout();
+      good(m.devPlugin);
+      writeFileSync(join(m.base, "d"), `${pluginBunDigest(m.devPlugin)}\n`);
+      symlinkSync(join(m.base, "d"), `${m.devPlugin}.digest`);
+      expect(() => pluginBunFor(m.dev)).toThrow(/no digest recorded/);
+      // The dev rule holds for a dev daemon run from source too, and never reaches for the shipped one.
+      expect(() => pluginBunFor({ ...l.dev, compiled: false })).toThrow(/plugin code can't run/);
+    });
+
+    test("from source with a test Keychain service: the Bun it runs on", () => {
+      expect(pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", profile: "dev", cloverHome: "/nowhere", keychainService: "com.waifucave.clover.core.test-isolated" })).toBe("/usr/local/bin/bun");
+      expect(pluginBun()).toBe(process.execPath); // this suite's preload sets the test service
+    });
+
+    test("never the compiled core's own execPath, whatever the profile", () => {
+      for (const profile of ["dist", "dev"] as const) {
+        const l = layout();
         let got: string | undefined;
         try {
-          got = pluginBunFor({ compiled: true, execPath: core, exists, real: id });
+          got = pluginBunFor({ ...(profile === "dist" ? l.shipped : l.dev) });
         } catch {
           got = undefined;
         }
-        expect(got).not.toBe(core);
+        expect(got).not.toBe(l.core);
       }
     });
   });

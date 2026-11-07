@@ -12,8 +12,9 @@
  *       Same safety: no home, Keychain, daemon or launcher.
  *   3c. `<copy> __host-env-lazy-probe`: the activation seam's lazy `require("./host-env/environment")` resolves INSIDE the built binary (the seam stays off; the module loads, nothing is built).
  *   3d. (#234's checks 4 and 5) The release-shaped binary has no `__plugin-run-probe` route (`compile:core` defines `CLOVER_PLUGIN_RUN_PROBE=false`, and the route's code is
- *       not in it). A second build with the define true, beside a `clover-plugin-bun` (a copy of this Bun, ad-hoc signed under its own identifier the way lane M ships it),
- *       runs `<copy> __plugin-run-probe <empty folder>`: a plugin host started the supervisor's way runs on `clover-plugin-bun`, never on clover-core, as Bun (its `Bun.main` is
+ *       not in it). A second build with the define true, with a dev `clover-plugin-bun` in the temp home's bin (a copy of this Bun, ad-hoc signed as
+ *       `com.waifucave.clover.plugin-bun.dev`, its digest recorded beside it as dev:daemon records it), runs `<copy> __plugin-run-probe <empty folder>`: `pluginBun()` accepts that copy, and
+ *       a plugin host started the supervisor's way runs on `clover-plugin-bun`, never on clover-core, as Bun (its `Bun.main` is
  *       the host's entry), without the `BUN_BE_BUN` it was handed, with the load guard preloaded (no `ShadowRealm`), and an outside import is refused and never runs.
  *       Same safety: the scratch folder only.
  *   4. The negative control: the same probe against a copy of the binary whose Worker entry cannot be found must NOT print ok. (Checked without rebuilding: the probe is run with the
@@ -28,6 +29,8 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PLUGIN_BUN_IDENTIFIER as PLUGIN_BUN_IDENTIFIERS } from "../packages/core/src/bundled-identities";
+import { pluginBunDigest } from "../packages/core/src/registry/plugin-run";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DIST_BINARY = join(REPO_ROOT, "dist", "clover-core");
@@ -35,8 +38,8 @@ const ENTITLEMENTS = join(REPO_ROOT, "scripts", "clover-core.entitlements");
 const COMPILE_TIMEOUT_MS = 180_000, PROBE_TIMEOUT_MS = 30_000;
 const CLI_DIR = join(REPO_ROOT, "packages", "cli");
 const BUN_JIT_ENTITLEMENTS = join(REPO_ROOT, "scripts", "bun-jit.entitlements");
-/** The plugin Bun's signing identifier here (lane M's own for the shipped one): never clover-core's. */
-const PLUGIN_BUN_IDENTIFIER = "com.waifucave.clover.plugin-bun";
+/** The plugin Bun's dev signing identifier (`bundled-identities.ts`): never clover-core's. */
+const PLUGIN_BUN_IDENTIFIER = PLUGIN_BUN_IDENTIFIERS.dev;
 /** Strings only the plugin-run probe's code holds: absent from a release-shaped build. */
 const PROBE_MARKERS = ["__plugin-run-probe", "the probe needs an absolute path to an empty scratch folder"];
 export const ENTRY_NAME = "./fd-receiver-worker.ts";
@@ -115,10 +118,15 @@ async function main(): Promise<void> {
     const built = spawnSync("sh", ["-c", probeBuild], { cwd: CLI_DIR, encoding: "utf8", timeout: COMPILE_TIMEOUT_MS, env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ""}` } });
     if (built.status !== 0) throw new Error(`the probe build failed:\n${built.stdout ?? ""}\n${built.stderr ?? ""}`);
     const probeCore = join(probeDir, "clover-core"); chmodSync(probeCore, 0o755); sign(probeCore);
-    const pluginBun = join(probeDir, "clover-plugin-bun");
+    // The dev profile's plugin Bun (the gate runs the core as dev): in the temp home's bin, signed under its own dev
+    // identifier, its digest recorded beside it the way dev:daemon records it (#234's check 6, L2).
+    const pluginBun = join(home, "bin", "clover-plugin-bun"); mkdirSync(dirname(pluginBun), { recursive: true });
     copyFileSync(realpathSync(process.execPath), pluginBun); chmodSync(pluginBun, 0o755);
     const signed = spawnSync("codesign", ["--force", "--sign", "-", "--identifier", PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--entitlements", BUN_JIT_ENTITLEMENTS, pluginBun], { encoding: "utf8" });
     if (signed.status !== 0) throw new Error(`codesign of ${pluginBun} failed: ${(signed.stderr ?? "").trim()}`);
+    const digest = pluginBunDigest(pluginBun);
+    if (digest === undefined) throw new Error(`no digest for ${pluginBun}`);
+    writeFileSync(`${pluginBun}.digest`, `${digest}\n`);
     const pluginScratch = join(scratch, "plugin-run"); mkdirSync(pluginScratch);
     const pluginRun = await runChild(probeCore, ["__plugin-run-probe", pluginScratch], env, scratch);
     const pluginResult = parseProbe(pluginRun.stdout);

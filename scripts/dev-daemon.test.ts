@@ -142,19 +142,23 @@ describe("the dev daemon's plan on each OS", () => {
 });
 
 describe("the dev plugin Bun (#234's check 5)", () => {
-  test("it sits in dist/dev under its own name, signed under its own identifier, never the core's", () => {
-    expect(devPluginBunPath("/repo", "darwin")).toBe("/repo/dist/dev/clover-plugin-bun");
-    expect(devPluginBunPath("/repo", "win32")).toBe(join("/repo", "dist", "dev", "clover-plugin-bun.exe"));
+  test("it sits in the dev Clover home's bin under its own name, signed under its own identifier, never the core's", () => {
+    expect(devPluginBunPath("/u/.clover-dev", "darwin")).toBe("/u/.clover-dev/bin/clover-plugin-bun");
+    expect(devPluginBunPath("/u/.clover-dev", "win32")).toBe(join("/u/.clover-dev", "bin", "clover-plugin-bun.exe"));
     expect(DEV_PLUGIN_BUN_IDENTIFIER).toBe("com.waifucave.clover.plugin-bun.dev");
     expect(DEV_PLUGIN_BUN_IDENTIFIER).not.toBe(DEV_DAEMON_IDENTIFIER);
     const args = devPluginBunSignArgs("/tmp/b", "/repo/scripts/bun-jit.entitlements");
     expect(args).toEqual(["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", "/repo/scripts/bun-jit.entitlements", "/tmp/b"]);
   });
 
-  test("it is made again only when it's missing or the pinned Bun changed", () => {
-    expect(devPluginBunStale({ exists: false, stamp: "a", sourceHash: "a" })).toBe(true);
-    expect(devPluginBunStale({ exists: true, stamp: undefined, sourceHash: "a" })).toBe(true);
-    expect(devPluginBunStale({ exists: true, stamp: "b\n", sourceHash: "a" })).toBe(true);
-    expect(devPluginBunStale({ exists: true, stamp: "a\n", sourceHash: "a" })).toBe(false);
+  test("it is made again when it's missing, the pinned Bun changed, or the copy there was swapped", () => {
+    const ok = { exists: true, stamp: "a\n", sourceHash: "a", recordedDigest: "cdhash:1\n", actualDigest: "cdhash:1" };
+    expect(devPluginBunStale(ok)).toBe(false);
+    expect(devPluginBunStale({ ...ok, exists: false })).toBe(true);
+    expect(devPluginBunStale({ ...ok, stamp: undefined })).toBe(true);
+    expect(devPluginBunStale({ ...ok, stamp: "b\n" })).toBe(true);
+    expect(devPluginBunStale({ ...ok, recordedDigest: undefined })).toBe(true);
+    expect(devPluginBunStale({ ...ok, actualDigest: "cdhash:2" })).toBe(true); // swapped destination
+    expect(devPluginBunStale({ ...ok, actualDigest: undefined })).toBe(true); // its signature no longer verifies
   });
 });
