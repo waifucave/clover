@@ -1426,6 +1426,66 @@
         "additionalProperties": false
       }
     },
+    "session.stageImage": {
+      "doc": "Stages an image for a session's next message, on the computer that holds it, with the app's caps (§6.6 \"attachments\"): the media types the bytes must sniff as, and the size. `session.send` names it by the path given back; a client off this computer (a phone, lane I) names only images staged so, never a file of its own.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "mediaType": {
+            "type": "string",
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/gif",
+              "image/webp",
+              "image/heic",
+              "image/tiff",
+              "image/bmp"
+            ]
+          },
+          "dataBase64": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8126464
+          }
+        },
+        "required": [
+          "id",
+          "mediaType",
+          "dataBase64"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
     "models.list": {
       "doc": "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not, less blocked rows and the rows of a blocked provider (a picker never offers what `session.setModel` refuses). With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
       "owner": "A",
@@ -1966,6 +2026,54 @@
         },
         "required": [
           "session"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "routine.webhookKey": {
+      "doc": "A webhook routine's URL and key, for the user to paste into the service that calls it (§7). The key is shown once; after that only a new one (`rotate`), which replaces it, is shown. Never to a bot, a plugin or a remote client.",
+      "owner": "D",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "rotate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "url",
+          "key"
         ],
         "additionalProperties": false
       }

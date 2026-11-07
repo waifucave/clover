@@ -13,11 +13,16 @@ describe("electron-builder.yml", () => {
     expect(config.productName).toBe("Clover");
   });
 
-  test("builds the unpacked app on every OS, and never signs or publishes", () => {
-    for (const os of ["mac", "win", "linux"]) expect(config[os].target).toEqual([{ target: "dir" }]);
-    expect(config.mac.identity).toBeNull();
-    expect(config.publish).toBeNull();
+  test("`dist` builds the unpacked app on every OS, and never signs or publishes", () => {
+    // The release targets (the dmg and its update zip, the Windows installer) are lane M's release build's
+    // (scripts/release/); `--dir` overrides them for `dist`.
+    expect(pkg.scripts.dist).toContain("--dir");
     expect(pkg.scripts.dist).toContain("--publish never");
+    expect(config.linux.target).toEqual([{ target: "dir" }]);
+    expect(config.mac.identity).toBeNull();
+    expect(config.mac.notarize).toBe(false);
+    // The feed electron-updater reads; nothing uploads to it from a build.
+    expect(config.publish).toEqual({ provider: "github", owner: "waifucave", repo: "clover" });
   });
 
   test("packages only the build output, which has no runtime dependencies", () => {

@@ -137,6 +137,11 @@ describe("devices", () => {
     expect(await refused(await registration(session, device, { signer: other }))).toEqual([403, "bad_signature"]);
     // A statement for another account doesn't register here.
     expect(await refused(await registration(session, device, { account: "someone-else" }))).toEqual([403, "bad_signature"]);
+    // The signature covers the record: the same one with another box key, name, kind or system is refused.
+    const otherBox = (await newDevice()).boxKey;
+    for (const patch of [{ boxKey: otherBox }, { name: "not studio" }, { kind: "server" }, { os: "linux" }]) {
+      expect(await refused(withDevice(patch))).toEqual([403, "bad_signature"]);
+    }
     const stale = Date.now() - LIMITS.statementWindowMs - 1000;
     expect(await refused(await registration(session, device, { t: stale }))).toEqual([400, "bad_time"]);
     expect(await refused({ ...good, t: 1.5 })).toEqual([400, "bad_time"]);
@@ -160,7 +165,10 @@ describe("devices", () => {
 
     // Names count code points: 64 emoji fit. A base64url link key is taken and kept as standard base64.
     const urlKey = btoa(String.fromCharCode(...device.rawPublicKey)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    const created = await call("POST", "/v1/devices", { session, body: withDevice({ publicKey: urlKey, name: "🍀".repeat(64) }) });
+    const record = { ...(good.device as Record<string, string>), publicKey: urlKey, name: "🍀".repeat(64) };
+    const signedT = Date.now();
+    const body = { device: record, t: signedT, sig: await device.sign(registerStatement(session.account, record as unknown as Parameters<typeof registerStatement>[1], signedT)) };
+    const created = await call("POST", "/v1/devices", { session, body });
     expect(created.status).toBe(201);
     expect(((await created.json()) as { device: { publicKey: string } }).device.publicKey).toBe(device.publicKey);
   });
@@ -370,7 +378,10 @@ describe("paths and origins", () => {
 
 describe("the statements", () => {
   test("are lane H's, byte for byte", () => {
-    expect(new TextDecoder().decode(registerStatement("acct", "dev", 1793000000123))).toBe("clover-account-v1 register\nacct\ndev\n1793000000123");
+    // ["clover-account-v2 register", "acct", "dev", "k", "b", "n", "phone", null, 1793000000123] in deterministic CBOR.
+    expect(Buffer.from(registerStatement("acct", { id: "dev", publicKey: "k", boxKey: "b", name: "n", kind: "phone" }, 1793000000123)).toString("hex")).toBe(
+      "89" + "781a" + Buffer.from("clover-account-v2 register").toString("hex") + "6461636374" + "63646576" + "616b" + "6162" + "616e" + "6570686f6e65" + "f6" + "1b000001a17720ca7b",
+    );
     expect(new TextDecoder().decode(mintStatement("acct", "push.waifucave.com", "dev", 1793000000123))).toBe(
       "clover-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123",
     );

@@ -30,7 +30,7 @@ import { createHostPromptQueue } from "../../src/runtime-sdk/prompt-queue";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
 
 /** A raw wire message's `message.content` array, when it has one — the shape both
- *  `real-child.test.ts` and `transport-equivalence.test.ts` already key their own assertions off. */
+ *  `real-child.darwin.test.ts` and `transport-equivalence.test.ts` already key their own assertions off. */
 function contentOf(m: unknown): Array<Record<string, unknown>> | undefined {
   const content = (m as { message?: { content?: unknown } } | undefined)?.message?.content;
   return Array.isArray(content) ? (content as Array<Record<string, unknown>>) : undefined;
@@ -38,7 +38,7 @@ function contentOf(m: unknown): Array<Record<string, unknown>> | undefined {
 
 /** Drives one `winter-test/lanec` turn (a single real `Bash` call) with the given hook config, and
  *  returns every raw SDK message plus every `PreToolUse`/`PostToolUse` callback invocation. Mirrors
- *  `real-child.test.ts`'s `driveChild` — CONSTRUCTED env only, never `process.env` spread, so no
+ *  `real-child.darwin.test.ts`'s `driveChild` — CONSTRUCTED env only, never `process.env` spread, so no
  *  developer home or credential ever reaches the child. */
 async function driveWithHooks(spawn: SpawnClaudeCodeProcess, hooks: Options["hooks"]): Promise<{
   messages: Array<Record<string, unknown>>;

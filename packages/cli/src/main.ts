@@ -1789,6 +1789,13 @@ if (import.meta.main) {
     process.stdout.write(`${r.line}\n${peer.line}\n`);
     process.exit(r.ok && peer.ok ? 0 : 1);
   }
+  // M-M2: the update feed's signature, against the key this binary carries (./verify-feed.ts).
+  if (process.argv[2] === "__verify-feed") {
+    const { runVerifyFeed } = await import("./verify-feed");
+    const r = runVerifyFeed(process.argv[3]);
+    process.stdout.write(`${r.line}\n`);
+    process.exit(r.code);
+  }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
     const result = await runChannelReceiverProbe();

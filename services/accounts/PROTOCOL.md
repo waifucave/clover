@@ -37,14 +37,17 @@ A device's record:
 
 ## Statements
 
-A registration and a mint are signed by the device's link key, Ed25519, over UTF-8 lines joined by `\n`. `sig` is base64url, and `t` is the device's clock in milliseconds:
+A registration and a mint are signed by the device's link key, Ed25519. `sig` is base64url, and `t` is the device's clock in milliseconds.
+
+A registration signs lane H's `clover-account-v2 register` statement: the deterministic CBOR (the core's `links/codec`: shortest heads, definite lengths) of the array
 
 ```
-clover-account-v1 register
-<account: the Supabase user id>
-<device id>
-<t>
+["clover-account-v2 register", <account: the Supabase user id>, id, publicKey, boxKey, name, kind, os or null, t]
 ```
+
+with each device field exactly as the request carries it (`publicKey` in whichever base64 it was sent) and `t` a CBOR unsigned integer. It covers the whole record, so a session holder can't re-send a device's signature with another box key, name or kind.
+
+A mint signs UTF-8 lines joined by `\n`:
 
 ```
 clover-account-v1 mint

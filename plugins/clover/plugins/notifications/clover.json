@@ -5,6 +5,32 @@
   "engines": { "clover": "^1.0.0" },
   "host": { "entry": "host/index.ts", "runtime": "bun" },
   "capabilities": ["bots.read"],
+  "settings": {
+    "needsYou": {
+      "type": "boolean",
+      "title": { "en": "When a bot needs you" },
+      "description": { "en": "An approval or a question waiting for your answer." },
+      "default": true
+    },
+    "agentDone": {
+      "type": "boolean",
+      "title": { "en": "When an agent finishes" },
+      "description": { "en": "An agent a bot started has finished its work." },
+      "default": true
+    },
+    "routineFailed": {
+      "type": "boolean",
+      "title": { "en": "When a routine fails" },
+      "description": { "en": "A routine that ran on its own didn't finish." },
+      "default": true
+    },
+    "sounds": {
+      "type": "boolean",
+      "title": { "en": "Play sounds" },
+      "description": { "en": "Let your computer play its notification sound. Off, the banners show silently." },
+      "default": true
+    }
+  },
   "contributes": {
     "locales": [{ "lang": "en", "file": "locales/en.json" }],
     "notifiers": [

@@ -6,3 +6,4 @@ export * from "./boxes";
 export * from "./client";
 export * from "./channel";
 export * from "./rendezvous";
+export * from "./recovery";

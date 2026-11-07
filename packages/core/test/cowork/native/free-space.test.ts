@@ -8,11 +8,12 @@ import {
 } from "../../../src/cowork/native/free-space";
 import { closeFd, openDirAt, openImageAt, AT_FDCWD } from "../../../src/cowork/volume-fs";
 import { timeMachineVolumeBackup } from "../../../src/cowork/volume-backup";
+import { onDarwin } from "../../helpers/darwin-only";
 
 const GiB = 1024 ** 3, MiB = 1024 ** 2, RESERVE = COWORK_FREE_SPACE_RESERVE_BYTES;
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
-const real = process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
+const real = onDarwin && process.arch === "arm64" ? test : test.skip;
 
 const space = (availableBytes: number, filesystemId = "fsid:test:1"): FilesystemSpace => ({ filesystemId, typeName: "apfs", blockBytes: 4096, totalBytes: 10 ** 13, availableBytes });
 const open: PressureView = { admitsNewWork: () => true };

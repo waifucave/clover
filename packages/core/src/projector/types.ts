@@ -202,7 +202,7 @@ export interface Projector {
    *
    * ── A MID-TURN PUSH IS FOLDED INTO THE RUNNING TURN, OR IS THE NEXT TURN ───────────────────
    *
-   * MEASURED (P8b-38, `test/projector/real-child.test.ts`'s steer measurement against the built
+   * MEASURED (P8b-38, `test/projector/real-child.darwin.test.ts`'s steer measurement against the built
    * binary): up to agent SDK 0.0.43 a push made while a turn runs — a `steer`, a messaging delivery —
    * yields its OWN `result`, because the child queues it as its next envelope. Since 0.0.44 (user ruling
    * 2026-10-04, "fold the message into the running turn") the child FOLDS every pending push into the
