@@ -9,12 +9,15 @@
 //     and `/run/user` (the session's sockets) are empty tmpfs mounts, `/tmp` is a fresh tmpfs, with its own pid, IPC and
 //     UTS namespaces, no capabilities, a new session and dying with the daemon. The network stays the host's.
 //     Without bwrap at a system location the sidecar isn't started (the links say so); it never runs unfenced.
-//   * Windows: no fence yet (the sandbox principal is Bash's, lane OpenCode's); the plain spawn with `sidecarEnv`.
+//   * Windows: until Bash's sandbox principal lands (#207, after C-M2 part 2), when the sidecar moves under it as part
+//     of C-M3: a restricted token at low integrity in a kill-on-close Job Object (fence/windows-sidecar.ts), with
+//     `sidecarEnv`. Links stay on (the controller's ruling: one user's processes have no boundary between them).
 // The binary is the one beside the daemon (`bundledLinkBinary`, after links), never one from the environment in a
 // release build (`linkSidecarBinary`, ipc/device-links.ts).
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { spawnSidecar, type SidecarProcess } from "../links/sidecar-wire";
+import { reducedSidecarSpawn } from "./windows-sidecar";
 
 /** Where bubblewrap may be: system locations only, never the PATH. */
 export const BWRAP_PATHS: readonly string[] = ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"];
@@ -107,6 +110,7 @@ export function fencedSidecarSpawn(o: FencedSidecarOptions = {}): (argv: readonl
       if (bwrap === undefined) throw new SidecarFenceUnavailable("bubblewrap (bwrap) isn't installed, so the link sidecar can't run fenced");
       return spawn([bwrap, ...sidecarBwrapArgs(o.userHome ?? homedir()), "--", binary, ...rest], o.onLog);
     }
+    if (platform === "win32" && o.spawn === undefined) return reducedSidecarSpawn(o.onLog)(argv);
     return spawn(argv, o.onLog);
   };
 }
