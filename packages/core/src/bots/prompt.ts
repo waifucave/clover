@@ -9,55 +9,33 @@
 // `MEMORY.md` is the bot's own file, read by the core, which runs outside the fence: it is read only as a regular
 // file of its own (no link, one name), inside folders that are real folders, and capped, so a bot can't have the core
 // read something else into its prompt.
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { MEMORY_INDEX } from "./memory";
+import { readOwnFile } from "./own-file";
 import { MEMORY_TREE_PATH, type BotPaths } from "./paths";
 
 /** How much of `MEMORY.md` the prompt holds, as Claude Code's memory does: the first 200 lines, at most 25 KB. */
 export const MEMORY_INDEX_MAX_LINES = 200;
 export const MEMORY_INDEX_MAX_BYTES = 25_000;
 
-const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
-
 /** The first `MEMORY_INDEX_MAX_BYTES` of the bot's memory index, or undefined when there is none or it can't be read
- *  safely (a link, a folder swapped for a link, a file with a second name). */
+ *  safely: a link at its name or on the way (one the bot planted toward another bot's memory included), a folder
+ *  swapped for a link, a file with a second name (`readOwnFile`, the fence review). */
 export function readMemoryIndex(paths: BotPaths): { text: string; cut: boolean } | undefined {
-  for (const dir of [paths.root, paths.memory]) {
-    try {
-      const st = lstatSync(dir);
-      if (!st.isDirectory() || st.isSymbolicLink()) return undefined;
-    } catch {
-      return undefined;
-    }
+  // The Clover home, which no bot writes: `<home>/bots/<bot>` is `paths.root`.
+  const home = dirname(dirname(paths.root));
+  const read = readOwnFile(home, join(paths.memory, MEMORY_INDEX), { maxBytes: MEMORY_INDEX_MAX_BYTES + 4 });
+  if (!read.ok) return undefined;
+  let text = read.data.subarray(0, Math.min(read.data.length, MEMORY_INDEX_MAX_BYTES)).toString("utf8");
+  let cut = read.size > MEMORY_INDEX_MAX_BYTES;
+  // A cut through a character leaves a replacement mark at the end; it goes.
+  if (cut) text = text.replace(/\uFFFD+$/, "");
+  const lines = text.split("\n");
+  if (lines.length > MEMORY_INDEX_MAX_LINES) {
+    text = lines.slice(0, MEMORY_INDEX_MAX_LINES).join("\n");
+    cut = true;
   }
-  const file = join(paths.memory, MEMORY_INDEX);
-  let fd: number;
-  try {
-    fd = openSync(file, constants.O_RDONLY | NO_FOLLOW);
-  } catch {
-    return undefined;
-  }
-  try {
-    const st = fstatSync(fd);
-    if (!st.isFile() || st.nlink > 1) return undefined;
-    const buf = Buffer.alloc(Math.min(st.size, MEMORY_INDEX_MAX_BYTES + 4));
-    const n = readSync(fd, buf, 0, buf.length, 0);
-    let text = buf.subarray(0, Math.min(n, MEMORY_INDEX_MAX_BYTES)).toString("utf8");
-    let cut = st.size > MEMORY_INDEX_MAX_BYTES;
-    // A cut through a character leaves a replacement mark at the end; it goes.
-    if (cut) text = text.replace(/�+$/, "");
-    const lines = text.split("\n");
-    if (lines.length > MEMORY_INDEX_MAX_LINES) {
-      text = lines.slice(0, MEMORY_INDEX_MAX_LINES).join("\n");
-      cut = true;
-    }
-    return { text, cut };
-  } catch {
-    return undefined;
-  } finally {
-    closeSync(fd);
-  }
+  return { text, cut };
 }
 
 /** No tag written in the bot's file is a tag in the prompt: any `<` or `</` before a tag-like name, spaces between them
