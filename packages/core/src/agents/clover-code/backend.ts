@@ -185,6 +185,7 @@ async function holdWhilePaused(gate: AgentPauseGate | undefined, signal: AbortSi
 export class CloverCodeBackend implements AgentBackend {
   readonly id = CLOVER_CODE_ID;
   readonly pluginId = "clover/agent-clover-code";
+  readonly name = "Clover's coding agent";
   readonly quirks = CLOVER_CODE_QUIRKS;
   /** Tells the manager to hand this backend the session's in-process bridge (`inProcessBridge`). */
   readonly inProcess = true;

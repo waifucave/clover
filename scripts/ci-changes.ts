@@ -59,7 +59,11 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // the tree and the computers on Linux and Windows (macOS runs them in the core suite): their code, their tests and
   // lane B's conformance suites for them
   tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
-    "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"],
+    "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts",
+    // an agent backend's bare command on PATH (its .exe or .cmd on Windows)
+    "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts",
+    // the bundled agent plugins' manifests, whose bare commands that check is about
+    "plugins/clover/plugins/agent-*/clover.json"],
   // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and
   // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
