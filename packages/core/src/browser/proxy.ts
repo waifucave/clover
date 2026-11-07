@@ -207,7 +207,7 @@ function hostAndPort(text: string, defaultPort: number): { host: string; port: n
 // -----------------------------------------------------------------------------------------------
 
 /** Runs a command and gives its standard output, or throws (a missing tool, a failure). The app passes Node's
- *  `execFile`; the daemon `Bun.spawn` (S7's Linux rule). */
+ *  `execFile`; the daemon spawns through Bun's own spawn (S7's Linux rule). */
 export type RunCommand = (cmd: string, args: string[]) => Promise<string>;
 
 export interface SystemProxyReaderOptions {
