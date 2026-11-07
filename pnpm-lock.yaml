@@ -129,6 +129,9 @@ importers:
       '@waifucave/clover-agent-sdk':
         specifier: 0.0.65
         version: 0.0.65
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
       '@waifucave/clover-protocol':
         specifier: workspace:*
         version: link:../protocol

@@ -10,9 +10,9 @@
 // writes them), so it is the same before and after signing. The reference definition is lane M's
 // `authenticodeDigest` in `scripts/release/srt-win.ts`; this is that function, in core, where the launch checks it.
 //
-// Lane M's CI builds both architectures from sandbox-runtime `v0.0.81` (commit `c40cf14…`) with a static CRT and
-// posts their digests. Until then the pins below are the npm 0.0.81 binaries' digests (the controller's interim
-// values): they let the fence be measured, and lane M's build check replaces them when its static-CRT build lands.
+// Lane M's CI builds both architectures from sandbox-runtime `v0.0.81` (commit `c40cf14…`, plus
+// lane C's per-principal patch) with a static CRT and posts their digests: the pins below are lane M's
+// CI digests (#207 910b7711e, both build pairs byte-identical, no dynamic CRT).
 // Every launch checks the digest and fails closed with exit 3 on a mismatch; once Windows signing exists, the launch
 // also checks that the signature is Clover's (a native check, still to be built).
 import { createHash } from "node:crypto";
@@ -25,13 +25,11 @@ export type SrtWinArch = "x64" | "arm64";
 /**
  * The pinned launcher digests, one per architecture. Shape is load-bearing: lane M's build check parses this exact
  * constant (`parsePins` in `scripts/release/srt-win.ts`), so keep it a frozen object literal with `x64` and `arm64`.
- * x64 is the measured Authenticode digest of the lane-C patched static-CRT build (per-principal records);
- * arm64 is lane M's unpatched static-CRT build and is STALE until lane M's CI rebuilds the patched source —
- * an arm64 launch fails closed (exit 3) until then.
+ * Both are lane M's CI digests of the patched static-CRT build (per-principal records, Addendum 13).
  */
 export const SRT_WIN_PINS = Object.freeze({
-  x64: "df9ba649b3fe26be5d324a8474db83eb04c5c253c412e63e9533747e682ddc92",
-  arm64: "cf562110127e7612084de53782b0307326074d4e1958ca2c5262a974f6bc19c6",
+  x64: "95b2c474943b9cae55a2521a643e9a09aa34847e05c79796316c6ca819b4ae92",
+  arm64: "bcd117665fe9f64494bd535b9508e4808ae99ad0ff6118fb410a7f60bb47abb9",
 });
 
 /** The running process's launcher architecture. Windows on ARM reports `arm64`; everything else `x64`. */

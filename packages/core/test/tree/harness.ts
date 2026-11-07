@@ -32,9 +32,10 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
     if (rel === "") return "/";
     return rel.startsWith("..") ? p : `/${rel.split(sep).join("/")}`;
   };
-  // One ledger for every holder here; the suite's R15 case, which needs one per holder, waits for J-M2.
-  const ledger = opts.ledgers?.[Object.keys(opts.computers)[0] ?? ""] ?? new MemoryAnswerLedger();
-  const answers = { devices: opts.devices ?? NO_DEVICES, ledger, render: opts.render ?? (() => undefined) };
+  // Each holder keeps its own ledger of used answers, the suite's when it names one (R15 checks one answer at each end).
+  const answersFor = (name: string) => ({
+    devices: opts.devices ?? NO_DEVICES, ledger: opts.ledgers?.[name] ?? new MemoryAnswerLedger(), render: opts.render ?? (() => undefined),
+  });
   const computers = new Map<string, TreeComputer>();
   const holders = new Map<string, LocalHolder>();
   let self: string | undefined;
@@ -73,10 +74,10 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
       botsRoot,
       runsBot: (bot) => opts.botComputer(bot) === name,
       level: () => computers.get(name)!.level,
-      answers,
+      answers: answersFor(name),
       ...(fence ? {
         fence: {
-          check: (op) => fence.check(op.op === "move" ? { ...op, path: fromDisk(op.path), to: fromDisk(op.to) } : { ...op, path: fromDisk(op.path) }),
+          check: (op, ctx) => fence.check(op.op === "move" ? { ...op, path: fromDisk(op.path), to: fromDisk(op.to) } : { ...op, path: fromDisk(op.path) }, ctx),
           // The folded check (review B1) compares the fenced set on this disk.
           fencedSet: () => (typeof (fence as Partial<Fence>).fencedSet === "function" ? (fence as Fence).fencedSet().map((i) => ({ ...i, path: toDisk(i.path) })) : []),
         } satisfies Pick<Fence, "check" | "fencedSet">,

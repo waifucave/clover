@@ -14,6 +14,7 @@
 import { win32 } from "node:path";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dlopen, FFIType } from "bun:ffi";
 import { callerPlaces } from "./per-caller";
 import type { CallerPlaces } from "./per-caller";
@@ -523,11 +524,14 @@ function loadKernel32() {
   // addresses with high bits set (same reason as `keychain-ffi.ts`). `ptr` is kept only for
   // memory this process owns (the path string, the OVERLAPPED region).
   const H = FFIType.u64;
+  // Win32 BOOL is a 4-byte int: declared as i32 and tested for nonzero, never as a
+  // 1-byte FFI bool (which would misread the ABI).
+  const B = FFIType.i32;
   return dlopen("kernel32.dll", {
     CreateFileW: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr], returns: H },
-    LockFileEx: { args: [H, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
-    UnlockFileEx: { args: [H, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
-    CloseHandle: { args: [H], returns: FFIType.bool },
+    LockFileEx: { args: [H, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr], returns: B },
+    UnlockFileEx: { args: [H, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr], returns: B },
+    CloseHandle: { args: [H], returns: B },
   }).symbols;
 }
 function K32(): ReturnType<typeof loadKernel32> {
@@ -538,33 +542,54 @@ function K32(): ReturnType<typeof loadKernel32> {
 
 const INVALID_HANDLE_VALUE = 0xffffffffffffffffn;
 const GENERIC_READ_WRITE = 0xc0000000;
-const FILE_SHARE_ALL = 0x7;
+const FILE_SHARE_READ = 0x1;
+const FILE_SHARE_WRITE = 0x2;
+/** No FILE_SHARE_DELETE: while any handle is open, the lock file can be neither deleted nor
+ *  renamed. With DELETE sharing, a contender could remove the held file and lock a fresh file
+ *  at the same path — two holders for one principal. */
+const FILE_SHARE_LOCK = FILE_SHARE_READ | FILE_SHARE_WRITE;
 const OPEN_ALWAYS = 4;
 const FILE_ATTRIBUTE_NORMAL = 0x80;
 /** `LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY`. */
 const LOCK_EXCLUSIVE_IMMEDIATE = 0x3;
 
+/** Well-known SIDs for the leases-dir check: Administrators and SYSTEM. */
+const ADMINISTRATORS_SID = "S-1-5-32-544";
+const SYSTEM_SID = "S-1-5-18";
+
 /** A Windows OS-lock store over a leases dir: `tryLock` opens (creating) `<leases>\<principal>.lock`
- *  with full sharing and takes a 1-byte exclusive, fail-immediate `LockFileEx` on it. The guard
- *  keeps the HANDLE open — the lock IS the open handle — so the caller must hold it for the whole
- *  launch and call `release()` (unlock + close) at the end. When the holder process dies, the OS
- *  closes its handles and the lock frees immediately: no staleness, no PIDs, no takeover. Any
- *  other locker (another process, or another handle in this one) fails immediately while held. */
+ *  with read/write sharing (never delete sharing) and takes a 1-byte exclusive, fail-immediate
+ *  `LockFileEx` on it. The guard keeps the HANDLE open — the lock IS the open handle — so the
+ *  caller must hold it for the whole launch and call `release()` (unlock + close) at the end.
+ *  When the holder process dies, the OS closes its handles and the lock frees immediately: no
+ *  staleness, no PIDs, no takeover. Any other locker (another process, or another handle in this
+ *  one) fails immediately while held.
+ *
+ *  The leases dir itself must be trustworthy: when it sits outside the user's profile (where the
+ *  profile's own ACL no longer protects it), it must carry an owner-only ACL — owned by the user,
+ *  Administrators or SYSTEM, with allow entries for nobody else — and the store refuses to open
+ *  it otherwise, so a squatted or over-shared directory fails closed instead of handing out
+ *  principals nobody owns. */
 export function createWindowsLockStore(leasesDir: string): LeaseStore {
   if (process.platform !== "win32") throw new Error("the Windows lock store runs on Windows only");
   mkdirSync(leasesDir, { recursive: true });
+  const problem = leasesDirAccessProblem(leasesDir, {
+    profileRoot: process.env.USERPROFILE ?? null,
+    security: readLeasesDirSecurity(leasesDir),
+  });
+  if (problem !== null) throw new Error(`refusing untrusted leases dir ${leasesDir}: ${problem}`);
   return {
     tryLock(lockPath: string): PoolLockGuard | null {
       const k = K32();
       const path = Buffer.from(`${lockPath}\0`, "utf16le");
       // `BigInt()` normalises the u64 return either way; INVALID_HANDLE_VALUE never validates.
-      const handle = BigInt(k.CreateFileW(path, GENERIC_READ_WRITE, FILE_SHARE_ALL, null, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, null) as never);
+      const handle = BigInt(k.CreateFileW(path, GENERIC_READ_WRITE, FILE_SHARE_LOCK, null, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, null) as never);
       if (handle === INVALID_HANDLE_VALUE) return null;
       // OVERLAPPED, zeroed: lock 1 byte at offset 0. hEvent NULL + FAIL_IMMEDIATELY never waits.
       const region = new Uint8Array(32);
       let locked = false;
       try {
-        locked = k.LockFileEx(handle, LOCK_EXCLUSIVE_IMMEDIATE, 0, 1, 0, region) as unknown as boolean;
+        locked = (k.LockFileEx(handle, LOCK_EXCLUSIVE_IMMEDIATE, 0, 1, 0, region) as unknown as number) !== 0;
       } catch {
         locked = false;
       }
@@ -589,6 +614,72 @@ export function createWindowsLockStore(leasesDir: string): LeaseStore {
       };
     },
   };
+}
+
+/** The trust inputs for a leases dir: who runs, who owns it, and whom it lets in. */
+export interface LeasesDirSecurity {
+  readonly userSid: string;
+  readonly ownerSid: string;
+  readonly allows: readonly { readonly sid: string; readonly allow: boolean }[];
+}
+
+/** Read the trust inputs for `leasesDir` on Windows (current user SID, owner SID, allow ACEs
+ *  with identities normalised to SIDs); null when they cannot be read. One PowerShell call. */
+export function readLeasesDirSecurity(leasesDir: string): LeasesDirSecurity | null {
+  try {
+    const script = [
+      "$ProgressPreference='SilentlyContinue'",
+      `$p='${leasesDir.replace(/'/g, "''")}'`,
+      "$user=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+      "$a=Get-Acl -LiteralPath $p",
+      "$toSid={param($id) try { (New-Object System.Security.Principal.NTAccount $id).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $id } }",
+      "$owner=& $toSid $a.Owner",
+      "$allows=@($a.Access | ForEach-Object { @{ sid=(& $toSid $_.IdentityReference.Value); allow=($_.AccessControlType.ToString() -eq 'Allow') } })",
+      "@{ userSid=$user; ownerSid=$owner; allows=$allows } | ConvertTo-Json -Compress -Depth 4",
+    ].join("; ");
+    const out = execFileSync("powershell", ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", script], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 5000,
+    }) as string;
+    const o = JSON.parse(out) as { userSid?: unknown; ownerSid?: unknown; allows?: unknown };
+    if (typeof o.userSid !== "string" || typeof o.ownerSid !== "string" || !Array.isArray(o.allows)) return null;
+    const allows: { sid: string; allow: boolean }[] = [];
+    for (const e of o.allows as Record<string, unknown>[]) {
+      if (typeof e !== "object" || e === null || typeof e.sid !== "string" || typeof e.allow !== "boolean") return null;
+      allows.push({ sid: e.sid, allow: e.allow });
+    }
+    return { userSid: o.userSid, ownerSid: o.ownerSid, allows };
+  } catch {
+    return null;
+  }
+}
+
+/** Whether `child` sits at or under `dir` (Windows casing and separators). */
+function isPathUnderDir(child: string, dir: string): boolean {
+  const c = win32.normalize(child).toUpperCase();
+  const d = win32.normalize(dir).toUpperCase();
+  return c === d || c.startsWith(d.endsWith("\\") ? d : `${d}\\`);
+}
+
+/** Why `leasesDir` cannot be trusted, or null when it can. Inside the user's profile the profile's
+ *  own ACL protects it and nothing is checked. Outside, the dir must be owner-only — owned by the
+ *  user, Administrators or SYSTEM, with allow entries for nobody else (inherited or not) — and an
+ *  unreadable ACL refuses too, fail closed. Pure: tests inject every input. */
+export function leasesDirAccessProblem(
+  leasesDir: string,
+  o: { profileRoot?: string | null; security?: LeasesDirSecurity | null },
+): string | null {
+  if (o.profileRoot !== undefined && o.profileRoot !== null && isPathUnderDir(leasesDir, o.profileRoot)) return null;
+  const s = o.security ?? null;
+  if (s === null) return "its access control could not be read";
+  if (s.ownerSid !== s.userSid && s.ownerSid !== ADMINISTRATORS_SID && s.ownerSid !== SYSTEM_SID) {
+    return `it is owned by ${s.ownerSid}, not the user, Administrators or SYSTEM`;
+  }
+  const trusted = new Set([s.ownerSid, ADMINISTRATORS_SID, SYSTEM_SID]);
+  const foreign = s.allows.filter((a) => a.allow && !trusted.has(a.sid)).map((a) => a.sid);
+  if (foreign.length > 0) return `it grants access to ${[...new Set(foreign)].join(", ")}`;
+  return null;
 }
 
 /** `icacls <path> /deny *<sid>:(OI)(CI)F`: the principal can't write the Startup folder or its children.

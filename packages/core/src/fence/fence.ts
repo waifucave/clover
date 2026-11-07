@@ -10,13 +10,13 @@
 import { lstatSync, readdirSync, type BigIntStats } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
+import type { Caller } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, judge, READ_DENIED_KINDS,
-  type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, judge, READ_DENIED_KINDS, fenceContextFor, patternItemAt, windowsAlias,
+  type CallerFence, type Fence, type FenceContext, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../contracts/fence";
 import { canonicalPath } from "./canonical";
-import { callerVerdict, type FenceCaller } from "./per-caller";
 import { foldPath, nonAsciiAlias } from "./fold";
 import { fenceLayout, pendingFenced, type LaidOutKind } from "./layout";
 
@@ -31,6 +31,12 @@ export interface CloverFenceOptions {
   cloverHome: string;
   temp?: string;
   devFolders?: string[];
+  /** The bots whose memory is fenced (`bots/<bot>/memory`, deny `caller` each). */
+  bots?: string[];
+  /** The install folders of the coding agents the user has OK'd (`agent-installs`). */
+  agentInstalls?: string[];
+  /** The app's userData folder (E's); per-OS default under `home` when absent. */
+  userData?: string;
   /** Replaces the layout for some items (tests). */
   layout?: Partial<Record<FencedKind, string[]>>;
   /** The Clover Browser's SOCKS5 filter's loopback ports (lane L's `DaemonBrowser.filterPorts()`): unauthenticated, since
@@ -58,6 +64,9 @@ export class CloverFence implements Fence {
   readonly #canonical: (path: string) => string;
   readonly #listeners = new Listeners<void>();
   readonly #loopbackPorts: () => readonly number[];
+  readonly #bots: string[];
+  readonly #agentInstalls: string[];
+  readonly #userData: string | undefined;
   #devFolders: string[];
 
   constructor(opts: CloverFenceOptions) {
@@ -67,6 +76,9 @@ export class CloverFence implements Fence {
     this.#cloverHome = this.#canonical(opts.cloverHome);
     this.#temp = this.#canonical(opts.temp ?? (this.os === "windows" ? win32.join(opts.home, "AppData", "Local", "Temp") : "/tmp"));
     this.#devFolders = (opts.devFolders ?? []).map((p) => this.#canonical(p));
+    this.#bots = [...(opts.bots ?? [])];
+    this.#agentInstalls = [...(opts.agentInstalls ?? [])];
+    this.#userData = opts.userData;
     this.#layout = opts.layout ?? {};
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
     this.#enforceAhead = opts.enforceAhead ?? true;
@@ -78,8 +90,14 @@ export class CloverFence implements Fence {
     const out: FencedPath[] = [];
     const add = (kind: FencedKind, path: string) =>
       out.push({ kind, path: this.#canonical(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : "write" });
-    for (const [kind, paths] of Object.entries(fenceLayout(this.#cloverHome, this.os)) as [LaidOutKind, string[]][]) {
+    for (const [kind, paths] of Object.entries(fenceLayout(this.#cloverHome, this.os, {
+      home: this.#home, userData: this.#userData, agentInstalls: this.#agentInstalls,
+    })) as [LaidOutKind, string[]][]) {
       for (const p of this.#layout[kind] ?? paths) add(kind, p);
+    }
+    // Bots' memory is per-bot and caller-gated (`deny: "caller"`, judged by pattern in `judge`).
+    for (const bot of this.#bots) {
+      out.push({ kind: "bot-memory", path: this.#canonical(`${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`), deny: "caller", bot });
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
     // Enforced ahead of B's contract naming them (#205's S5: before bots' Bash runs under the fence and before hooks
@@ -133,20 +151,29 @@ export class CloverFence implements Fence {
     } catch { return null; } // more links than the walk follows (`TooManyLinks`): refused
   }
 
-  check(op: FenceOp): FenceVerdict {
+  check(op: FenceOp, ctx?: FenceContext): FenceVerdict {
     const write = op.op === "write" || op.op === "delete" || op.op === "move";
     const all: string[] = [];
     for (const raw of op.op === "move" ? [op.path, op.to] : [op.path]) {
       const forms = this.#forms(raw);
       if (forms === null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+      // A stream suffix or 8.3 short name is refused wherever it is. This runs on the device
+      // form (so `\??\C:\…` still names the drive path it names, #205's check 2) but before
+      // folding (which would resolve the alias to the name it names).
+      if (this.os === "windows") {
+        for (const form of forms) {
+          if (windowsAlias(form) !== undefined) return { allowed: false, reason: "alias", path: raw };
+        }
+      }
       all.push(...forms);
     }
     // The folded item first, so a name that folds onto one (`ſettings`) is refused as that item; then a hard link to
     // one (for a read, to a read-denied one: #205's B2); then a name that isn't ASCII where Clover names things,
     // whatever it folds to (B's contract, #179's F1).
     const { set, back } = this.#folded();
+    const judgeOpts = { os: this.os, cloverHome: this.#cloverHome, ...(ctx === undefined ? {} : { caller: ctx }) };
     for (const p of all) {
-      const v = judge(set, { op: write ? "write" : "read", path: this.#fold(p) });
+      const v = judge(set, { op: write ? "write" : "read", path: this.#fold(p) }, judgeOpts);
       if (!v.allowed) return { allowed: false, reason: v.reason, path: back.get(v.path)?.path ?? v.path };
     }
     for (const p of all) {
@@ -187,6 +214,11 @@ export class CloverFence implements Fence {
   touches(paths: readonly string[]): FencedPath | null {
     const { set, back } = this.#folded();
     for (const raw of paths) for (const form of this.#forms(raw) ?? [this.#cloverHome]) {
+      const pattern = patternItemAt(form, this.#cloverHome, this.os);
+      if (pattern?.kind === "bot-memory") {
+        return { kind: "bot-memory", path: pattern.root, deny: "caller", ...(pattern.folder ? { bot: pattern.folder.replace("--", "/") } : {}) };
+      }
+      if (pattern?.kind === "sessions-runtime") return { kind: "sessions-runtime", path: pattern.root, deny: "read-write" };
       const p = this.#fold(form);
       for (const item of set) {
         if (inside(p, item.path) || inside(item.path, p)) return back.get(item.path) ?? null;
@@ -223,49 +255,32 @@ export class CloverFence implements Fence {
     return { allowed: true };
   }
 
-  policy(): SandboxPolicy {
-    const set = this.fencedSet();
+  policy(ctx?: FenceContext): SandboxPolicy {
+    const set = this.fencedSet().filter((i) => i.deny !== "caller");
+    const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: set.map((i) => i.path),
-      denyRead: set.filter((i) => i.deny === "read-write").map((i) => i.path),
+      denyWrite: [...set.map((i) => i.path), patterns[0]!],
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
       closedDoors: [...CLOSED_DOORS[this.os]],
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES, ...this.#loopbackPorts().flatMap((port) => [`127.0.0.1:${port}`, `[::1]:${port}`])],
       network: "none",
+      ...(ctx?.memoryOf !== undefined ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
     };
   }
 
-  /** The fence as one caller meets it (B's `Fence.forCaller`): the per-caller rules first (`per-caller.ts`: bots'
-   *  memory, the bot driver's state), matched by pattern, then everything else as for any caller. */
-  forCaller(caller: FenceCaller): Fence & { readonly caller: FenceCaller } {
-    const base = this;
-    const verdict = (path: string, write: boolean): FenceVerdict | null => {
-      const v = callerVerdict({ cloverHome: base.#cloverHome, os: base.os, caller, path: base.#canonical(path), write });
-      return v === null ? null : { allowed: false, reason: v.reason as FencedKind, path: v.path };
-    };
+  /** The fence as one caller meets it: the caller's reach for `caller` items, everything else as for any caller. */
+  forCaller(caller: Caller): CallerFence {
+    const context = fenceContextFor(caller);
     return {
-      os: base.os,
-      caller,
-      fencedSet: () => base.fencedSet(),
-      check(op: FenceOp): FenceVerdict {
-        const write = op.op !== "read" && op.op !== "list" && op.op !== "stat";
-        for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) {
-          const v = verdict(p, write);
-          if (v) return v;
-        }
-        return base.check(op);
-      },
-      touches(paths: readonly string[]): FencedPath | null {
-        for (const p of paths) {
-          const v = verdict(p, false) ?? verdict(p, true);
-          if (v && !v.allowed) return { kind: v.reason as FencedKind, path: v.path, deny: "read-write" };
-        }
-        return base.touches(paths);
-      },
-      checkAgentRoot: (root: string) => base.checkAgentRoot(root),
-      policy: () => base.policy(),
-      watch: (fn: () => void) => base.watch(fn),
+      os: this.os,
+      context,
+      fencedSet: () => this.fencedSet(),
+      touches: (paths) => this.touches(paths),
+      checkAgentRoot: (root) => this.checkAgentRoot(root),
+      check: (op) => this.check(op, context),
+      policy: () => this.policy(context),
     };
   }
 
