@@ -8,7 +8,11 @@ import { linesOf, streamPeer } from "./link";
 const LINK_FD = 3;
 const out = createWriteStream("", { fd: LINK_FD });
 const peer = streamPeer(linesOf(createReadStream("", { fd: LINK_FD })), (line) => void out.write(`${line}\n`));
-const mux = new HostMux({ daemon: peer, spawnWorker: bunWorker(process.env.CLOVER_COMPUTER ?? "") });
+// The worker's entry: the bundle the daemon wrote beside the guard (CLOVER_PLUGIN_WORKER), which the guard lets every
+// worker load; from source, the module beside this one.
+const workerEntry = process.env.CLOVER_PLUGIN_WORKER;
+delete process.env.CLOVER_PLUGIN_WORKER;
+const mux = new HostMux({ daemon: peer, spawnWorker: bunWorker(process.env.CLOVER_COMPUTER ?? "", workerEntry === undefined || workerEntry === "" ? undefined : workerEntry) });
 peer.onClose(() => {
   mux.close();
   process.exit(0);

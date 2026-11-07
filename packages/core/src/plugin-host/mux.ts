@@ -145,8 +145,10 @@ export class HostMux {
 
 /** A Bun worker for one plugin, running `worker-main.ts`. */
 export function bunWorker(computer: string, entry = new URL("./worker-main.ts", import.meta.url).href): (x: StartParams) => WorkerHandle {
-  return () => {
-    const worker = new Worker(entry, { workerData: { computer } } as WorkerOptions);
+  return (x) => {
+    // `cloverPluginRoot`: the folder the load guard pins this worker to (a host thread's guard requires it, and drops
+    // it before the worker starts); never another plugin's.
+    const worker = new Worker(entry, { workerData: { computer }, cloverPluginRoot: x.root ?? x.folder } as WorkerOptions);
     const exits: ((reason: string) => void)[] = [];
     worker.addEventListener("error", (e) => {
       for (const fn of exits) fn(`the worker failed: ${(e as ErrorEvent).message ?? "an error"}`);

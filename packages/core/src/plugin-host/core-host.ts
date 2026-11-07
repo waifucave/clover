@@ -32,6 +32,8 @@ import type { StartParams } from "./runtime";
 /** What the core knows of a plugin it may start: its install record and where its built host half is. */
 export interface HostedRecord extends InstallRecord {
   folder: string;
+  /** The top-level plugin's folder (a child's parent's); default `folder`. */
+  root?: string;
   entry: string;
   dataFolder: string;
 }
@@ -407,7 +409,7 @@ export class CorePluginHost implements PluginHost {
     }
     h.process = hostProcessFor(record);
     this.#set(pluginId, h, "starting");
-    const params: StartParams = { pluginId, folder: record.folder, entry: record.entry, runtime: record.runtime ?? "bun", dataFolder: record.dataFolder, process: h.process };
+    const params: StartParams = { pluginId, folder: record.folder, root: record.root ?? record.folder, entry: record.entry, runtime: record.runtime ?? "bun", dataFolder: record.dataFolder, process: h.process };
     try {
       await this.#peerOf(pluginId, h).request("pluginHost.start", params);
     } catch (err) {

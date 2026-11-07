@@ -26,7 +26,10 @@ import type { RpcPeer } from "./link";
 
 export interface StartParams {
   pluginId: string;
+  /** The plugin's own folder, which its entry is in. */
   folder: string;
+  /** Its top-level plugin's folder: the one its worker's load guard holds it to (a child's code may use its tree's). */
+  root?: string;
   entry: string;
   runtime: "bun" | "node";
   dataFolder: string;

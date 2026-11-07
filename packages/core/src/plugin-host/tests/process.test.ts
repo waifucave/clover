@@ -143,3 +143,41 @@ describe("the process's heartbeat", () => {
     }
   });
 });
+
+describe("a guarded plugin-host process (per-worker folders)", () => {
+  test("each worker is held to its own plugin's folder: another plugin's file, or a nested worker claiming the host, is refused", async () => {
+    const { hostProcessLaunch } = await import("../launch");
+    const base = mkdtempSync(join(tmpdir(), "clover-b2-guard-"));
+    const make = (name: string, js: string) => {
+      const folder = join(base, "plugins", name);
+      mkdirSync(join(folder, "host"), { recursive: true });
+      writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
+      writeFileSync(join(folder, "host", "index.js"), js);
+      return folder;
+    };
+    const b = make("bravo", `export const secret = () => "bravo's";\n`);
+    const a = make("alpha2", `
+export const own = async () => (await import("./helper.js")).x;
+export const steal = async () => (await import(${JSON.stringify(join(b, "host", "index.js"))})).secret();
+export const nested = () => new Promise((resolve) => {
+  const w = new Worker(URL.createObjectURL(new Blob([\`import(${JSON.stringify(join(b, "host", "index.js"))}).then(() => postMessage("loaded"), (e) => postMessage("refused: " + e.message));\`])), { env: { CLOVER_PLUGIN_HOST: "1" } });
+  w.onmessage = (e) => { resolve(e.data); w.terminate(); };
+});
+`);
+    writeFileSync(join(a, "host", "helper.js"), "export const x = 41 + 1;\n");
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [] });
+    const p = spawnHostProcess(launch);
+    processes.push(p);
+    const records = new Map<string, HostedRecord>([
+      ["alpha2", { id: "alpha2", source: "local", folder: a, entry: "host/index.js", dataFolder: join(base, "data") }],
+      ["bravo", { id: "bravo", source: "local", folder: b, entry: "host/index.js", dataFolder: join(base, "data") }],
+    ]);
+    const host = new CorePluginHost({ clock: new SystemClock(), computer: "Studio", record: (id) => records.get(id), connect: () => p.peer });
+    expect(await host.invoke({ pluginId: "bravo", handler: "secret", args: null, caller: USER })).toBe("bravo's");
+    expect(await host.invoke({ pluginId: "alpha2", handler: "own", args: null, caller: USER })).toBe(42);
+    const stolen = (await host.invoke({ pluginId: "alpha2", handler: "steal", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
+    expect([stolen.code, stolen.message.includes("outside the plugin's own folder")]).toEqual(["failed", true]);
+    const nested = await host.invoke({ pluginId: "alpha2", handler: "nested", args: null, caller: USER });
+    expect(String(nested)).toContain("refused");
+  }, 60_000);
+});

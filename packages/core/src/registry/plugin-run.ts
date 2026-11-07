@@ -48,14 +48,21 @@ const fail = (why) => { throw new Error("clover: " + why); };
 // What this thread was started with, pinned before any plugin code runs: a worker gets these, never process.env's.
 // Never Bun's "be Bun" switch in a plugin's process, whatever started it (#234's check 5, K2).
 delete process.env.BUN_BE_BUN;
-const rootEnv = process.env.CLOVER_PLUGIN_ROOT;
+// A plugin-host process's own thread (B-M2): it runs Clover's code only, never a plugin's, and starts one worker per
+// plugin, each pinned to that plugin's folder. Only a process's main thread can be one; a worker never is, whatever its
+// environment says, so no plugin code turns its own worker into a host.
+const hostThread = process.env.CLOVER_PLUGIN_HOST === "1" && workerThreads.isMainThread;
+delete process.env.CLOVER_PLUGIN_HOST;
+const rootEnv = hostThread ? undefined : process.env.CLOVER_PLUGIN_ROOT;
 const sharedEnv = process.env.CLOVER_PLUGIN_SHARED ?? "[]";
-if (typeof rootEnv !== "string" || rootEnv === "") fail("a plugin process starts only with its plugin's folder");
-const root = realpathSync(rootEnv);
+if (!hostThread && (typeof rootEnv !== "string" || rootEnv === "")) fail("a plugin process starts only with its plugin's folder");
+if (hostThread) delete process.env.CLOVER_PLUGIN_ROOT;
+const root = hostThread ? undefined : realpathSync(rootEnv);
 const guardFile = fileURLToPath(import.meta.url);
 // The guard's own folder (its run files) loads too: a worker preloads the guard from there.
 const shared = [...JSON.parse(sharedEnv), dirname(guardFile)].map(real);
 const inside = (p, r) => p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
+if (!hostThread) {
 // A node_modules above the plugin's folder is where Bun looks for a dependency the plugin doesn't ship, and a file there
 // without an extension skips onLoad (#234's check 6, L4): this process doesn't start beside one, unless it holds
 // Clover's shared packages.
@@ -99,12 +106,19 @@ Object.defineProperty(process, "dlopen", {
   value: (module, filename, ...rest) => { if (!allowed(filename)) refuse(filename); return dlopen(module, filename, ...rest); },
   writable: false, configurable: false,
 });
-// Every worker runs the guard first, with this thread's plugin folder (never one the plugin set in process.env).
+}
+// Every worker runs the guard first, with this thread's plugin folder (never one the plugin set in process.env). A
+// host thread's worker is one plugin's: the host names its folder (the option cloverPluginRoot), and it is required.
 const guarded = (opts) => {
   const o = opts !== null && typeof opts === "object" ? { ...opts } : {};
+  const named = o.cloverPluginRoot;
+  delete o.cloverPluginRoot;
+  const workerRoot = hostThread ? named : rootEnv;
+  if (typeof workerRoot !== "string" || workerRoot === "") fail("a plugin host's worker starts only with its plugin's folder");
   const own = o.preload === undefined ? [] : [].concat(o.preload);
-  const env = o.env !== null && typeof o.env === "object" ? o.env : process.env;
-  return { ...o, preload: [guardFile, ...own], env: { ...env, CLOVER_PLUGIN_ROOT: rootEnv, CLOVER_PLUGIN_SHARED: sharedEnv } };
+  const env = { ...(o.env !== null && typeof o.env === "object" ? o.env : process.env) };
+  delete env.CLOVER_PLUGIN_HOST;
+  return { ...o, preload: [guardFile, ...own], env: { ...env, CLOVER_PLUGIN_ROOT: workerRoot, CLOVER_PLUGIN_SHARED: sharedEnv } };
 };
 const wrap = (Original) => {
   // A plain function, not a subclass: the original isn't reachable through the wrapper's prototype chain.
