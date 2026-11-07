@@ -20,8 +20,7 @@ import { callerPlaces } from "./per-caller";
 import type { CallerPlaces } from "./per-caller";
 import type { SandboxPolicy } from "../contracts/fence";
 import type { Caller } from "@waifucave/clover-protocol";
-import { fenceContextFor, folderName } from "../contracts/fence";
-import { botSegment } from "../sessions/ids";
+import { fenceContextFor } from "../contracts/fence";
 import { SRT_WIN_PINS, launcherDigest, launcherProblem, srtWinArch, srtWinPath, type SrtWinArch } from "./windows-launcher";
 
 /** The protected copy location for elevated sandbox commands, per user SID.
@@ -955,7 +954,10 @@ export function setupExitMessage(code: number): string | null {
 }
 
 /** The caller's own places, under the Clover home, that Addendum 3 opens: `outputs\<session>`,
- *  `scratch\<bot>`, the owning bot's `bots\<x>` (read) and its `bots\<x>\memory` (read and write). */
+ *  `scratch\<bot>`, `routines\<bot>` and `plugin-data\<id>` (read and write), the owning bot's
+ *  `bots\<x>` (read) and its `bots\<x>\memory` (read and write). Matches `ownFoldersOf` exactly as
+ *  the macOS and Linux sandboxes do; the sessions-runtime store stays denied, even the caller's own
+ *  file (the core reads it for the session, runners never do). */
 export interface WinCallerRules {
   readonly denyRead: string[];
   readonly denyWrite: string[];
@@ -964,13 +966,14 @@ export interface WinCallerRules {
   /** The memory folders no caller may delete or move (an object-only DELETE deny). */
   readonly protectDelete: string[];
   readonly ownMemory: string | null;
-  readonly ownRuntime: string | null;
 }
 
 /** What a caller may reach in the Clover home. The home is default-deny for reads and writes (Addendum 3);
- *  the only allows are the caller's own session output, its bot's scratch, its bot's folder (read) and its
- *  bot's memory (read and write). Every other session's and bot's folder is denied explicitly, so a grant
- *  another session holds can't be read from this one. `entries` is the disk (tests pass a fake). */
+ *  the only allows are the caller's own session output, its bot's scratch and routines, its own plugin
+ *  data, its bot's folder (read) and its bot's memory (read and write). Every other session's and bot's
+ *  folder is denied explicitly, so a grant another session holds can't be read from this one. `entries`
+ *  is the disk (tests pass a fake). The grants mirror `ownFoldersOf` exactly, so `policyAllows` over a
+ *  policy built from them agrees with the fence's `check` (see the equivalence test). */
 export function winCallerRules(o: {
   cloverHome: string;
   caller: Caller;
@@ -978,37 +981,55 @@ export function winCallerRules(o: {
   entries?: (dir: string) => readonly string[];
 }): WinCallerRules {
   const ctx = fenceContextFor(o.caller);
-  const places: CallerPlaces = callerPlaces(o.cloverHome, "windows", ctx);
+  const raw: CallerPlaces = callerPlaces(o.cloverHome, "windows", ctx);
   // `callerPlaces` joins POSIX-style; the Windows fence compares and emits win32 paths.
-  const botsDir = win32.normalize(places.bots);
-  const runtimeDir = win32.normalize(places.runtime);
-  const ownMemoryWin = places.ownMemory === null ? null : win32.normalize(places.ownMemory);
+  const N = (p: string | null): string | null => (p === null ? null : win32.normalize(p));
+  const botsDir = win32.normalize(raw.bots);
+  const runtimeDir = win32.normalize(raw.runtime);
+  const ownBot = N(raw.ownBot);
+  const ownMemory = N(raw.ownMemory);
+  const ownOutputs = N(raw.ownOutputs);
+  const ownScratch = N(raw.ownScratch);
+  const ownRoutines = N(raw.ownRoutines);
+  const ownPluginData = N(raw.ownPluginData);
   const entries = o.entries ?? (() => []);
   const fold = (s: string) => s.toUpperCase();
-  const ownBot = ownMemoryWin === null ? null : win32.dirname(ownMemoryWin);
   const outputs = win32.join(o.cloverHome, "outputs");
   const scratch = win32.join(o.cloverHome, "scratch");
-  // Only a valid single-segment id names an own folder (`..` would climb out): same rule as `folderName`.
-  const ownOutputs = ctx.sessionId !== undefined && folderName(ctx.sessionId) ? win32.join(outputs, ctx.sessionId) : null;
-  const ownScratch = ctx.memoryOf !== undefined ? win32.join(scratch, botSegment(ctx.memoryOf)) : null;
 
   // The home itself: default-deny, both ways.
   const denyRead: string[] = [o.cloverHome];
   const denyWrite: string[] = [o.cloverHome];
   const grantRead: string[] = [];
   const grantWrite: string[] = [];
-  const protectDelete: string[] = [];
+  // Unlinking or renaming an own read-write folder itself, or any folder that holds one, is refused
+  // (policyAllows' rule 2). The ACE writer enforces this list with object-only DELETE denies: closing
+  // this list must close `winAllows` in the equivalence test below, which implements the same order as
+  // `policyAllows` and is the reference the ACEs must match exactly. NOTE for that writer: DELETE is
+  // deliberately left out of each own folder's own grant — denying the folder object itself is what
+  // keeps it (and, through it, everything above it up to the home) from being deleted or moved, while
+  // files strictly inside stay writable.
+  const protect = new Set<string>();
+  const hold = (p: string | null) => {
+    if (p === null) return;
+    let cur: string | null = p;
+    while (cur !== null && fold(cur) !== fold(o.cloverHome)) {
+      protect.add(cur);
+      const parent = win32.dirname(cur);
+      cur = parent === cur ? null : parent;
+    }
+  };
+  for (const p of [ownOutputs, ownScratch, ownRoutines, ownPluginData, ownMemory]) hold(p);
 
   // Every bot folder: write-denied to all; read-denied to all but its own bot. The memory folder itself is
   // never deletable or movable, by its own bot either.
   for (const x of o.bots) {
     const folder = win32.join(botsDir, x);
     const memory = win32.join(folder, "memory");
-    protectDelete.push(memory);
+    protect.add(memory);
     if (ownBot !== null && fold(folder) === fold(ownBot)) {
       denyWrite.push(folder);
       grantRead.push(folder);
-      grantWrite.push(memory);
       continue;
     }
     denyRead.push(folder);
@@ -1024,17 +1045,18 @@ export function winCallerRules(o: {
     const p = win32.join(scratch, name);
     if (ownScratch === null || fold(p) !== fold(ownScratch)) { denyRead.push(p); denyWrite.push(p); }
   }
-  if (ownOutputs !== null) grantWrite.push(ownOutputs);
-  if (ownScratch !== null) grantWrite.push(ownScratch);
-  // The bot driver's state: hidden, its own file readable. Only a valid single-segment
-  // session id names its own file (`<sessionId>.json`); anything else reaches nothing.
+  // The caller's own ways back in (read and write), exactly `ownFoldersOf`: outputs, scratch, routines,
+  // its plugin data, and memory. The bot's own folder reads (above); the runtime store stays denied.
+  for (const p of [ownOutputs, ownScratch, ownRoutines, ownPluginData, ownMemory]) {
+    if (p === null) continue;
+    grantRead.push(p);
+    grantWrite.push(p);
+  }
+  // The bot driver's state: hidden from every runner, its own session included.
   denyRead.push(runtimeDir);
   denyWrite.push(runtimeDir);
-  const ownRuntime = ctx.sessionId !== undefined && folderName(ctx.sessionId)
-    ? win32.join(runtimeDir, `${ctx.sessionId}.json`)
-    : null;
-  if (ownRuntime !== null) grantRead.push(ownRuntime);
-  return { denyRead, denyWrite, grantRead, grantWrite, protectDelete, ownMemory: ownMemoryWin, ownRuntime };
+  const protectDelete: string[] = [...protect];
+  return { denyRead, denyWrite, grantRead, grantWrite, protectDelete, ownMemory };
 }
 
 /** The full per-launch plan: the fence's set (deny ACEs on every fenced item, so Bash can never write the
