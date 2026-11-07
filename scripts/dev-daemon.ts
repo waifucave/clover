@@ -16,7 +16,9 @@
  *                                          what the `clover-dev` wrapper runs, so it gets the pre-start check
  *
  * Build, every OS: `packages/cli`'s own `compile:core`, output redirected to a temp file beside the binary
- * (`dev-daemon-lib.ts`'s `devCompileCommand`), then an atomic rename to `dist/dev/` — never over the running dev
+ * (`dev-daemon-lib.ts`'s `devCompileCommand`), sealed like a release (`seal-bun-doors.ts`: Bun's BUN_BE_BUN,
+ * BUN_OPTIONS, BUN_INSPECT* and NODE_PATH doors closed; without the dist define, so the env overrides of the runtime
+ * ladder still work here), then an atomic rename to `dist/dev/` — never over the running dev
  * daemon's file in place, and never at `dist/clover-core`, which the `verify:*` gates rebuild. Linux and Windows
  * stop there: the binary is unsigned, and its secrets go to the Secret Service or Credential Manager under the dev
  * service, which no partition list guards.
@@ -60,6 +62,7 @@ import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { pluginBunDigest } from "../packages/core/src/registry/plugin-run";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { runScriptLine } from "./build-daemon";
+import { DYLD_ENTITLEMENT, sealFile } from "./seal-bun-doors";
 import { bunPinProblem } from "./bun-pin";
 import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devDaemonPlan, devDaemonRequirement, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
 
@@ -105,6 +108,10 @@ function signForKeychain(tmp: string): void {
   if (facts.teamId !== CLOVER_TEAM_ID || facts.identifier !== DEV_DAEMON_IDENTIFIER || !facts.runtime) {
     die(`the signature is not what the Keychain needs (team ${facts.teamId ?? "none"}, identifier ${facts.identifier ?? "none"}, hardened runtime ${facts.runtime}) — expected team ${CLOVER_TEAM_ID}, ${DEV_DAEMON_IDENTIFIER}`);
   }
+  // The macOS seal (`DYLD_*` names, seal-bun-doors.ts) holds only under the hardened runtime (checked above) and with
+  // no allow-dyld-environment-variables entitlement.
+  const ents = run("codesign", ["-d", "--entitlements", "-", "--xml", tmp]);
+  if (`${ents.stdout}${ents.stderr}`.includes(DYLD_ENTITLEMENT)) die(`the signed dev daemon carries ${DYLD_ENTITLEMENT}, which would open its seal`);
   // The 0.120.0 regression class: bun:ffi under the hardened runtime. Loads the libraries, reads no item.
   const probe = run(tmp, ["__keychain-ffi-probe"]);
   if (probe.status !== 0) die(`the signed binary cannot run bun:ffi (__keychain-ffi-probe exit ${probe.status}): ${probe.stderr.trim().slice(0, 300)}`);
@@ -118,6 +125,12 @@ function build(build: NonNullable<DevDaemonPlan["build"]>, binary: string): void
     console.error(`dev:daemon: compiling (compile:core → ${binary})…`);
     const status = runScriptLine(build.command, CLI_DIR);
     if (status !== 0 || !existsSync(tmp)) die(`compile failed (exit ${status})`);
+    // The same seal as a release (seal-bun-doors.ts), before the signature the dev Keychain items trust.
+    try {
+      sealFile(tmp);
+    } catch (err) {
+      die((err as Error).message);
+    }
     if (build.sign) signForKeychain(tmp);
     renameSync(tmp, binary);
     console.error(`dev:daemon: ${binary}${build.sign ? "" : " (unsigned)"}`);

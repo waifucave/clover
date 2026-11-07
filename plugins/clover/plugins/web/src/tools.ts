@@ -99,6 +99,12 @@ export async function readCapped(res: Response, max: number, signal?: AbortSigna
   return new TextDecoder().decode(all);
 }
 
+/** The page can't open or close its own wrapper: the `<` of any `page` tag, however spelled, becomes `‹` (as core's
+ *  `input.ts` does). Nothing is taken out, so no nesting can rebuild a tag a pass removed. */
+export function defusePage(text: string): string {
+  return text.replace(/<(?=\s*\/?\s*page\b)/gi, "\u2039");
+}
+
 export function webTools(o: WebToolsOptions) {
   const blocked = () => mergeDomainLists(o.blockedDomains?.());
   const search = o.search ?? createExaSearchClient({
@@ -150,7 +156,7 @@ export function webTools(o: WebToolsOptions) {
     }
     const cut = page.length > WEB_FETCH_TEXT_MAX_CHARS;
     const shown = cut ? `${page.slice(0, WEB_FETCH_TEXT_MAX_CHARS)}\n[cut at ${WEB_FETCH_TEXT_MAX_CHARS} characters]` : page;
-    return text([`The text of ${url.toString()}${title ? ` ("${title.replace(/<\s*\/?\s*page\b[^>]*>/gi, "")}")` : ""}, as the page gives it:`, "<page>", shown.replace(/<\s*\/?\s*page\b[^>]*>/gi, ""), "</page>"].join("\n"));
+    return text([`The text of ${url.toString()}${title ? ` ("${defusePage(title)}")` : ""}, as the page gives it:`, "<page>", defusePage(shown), "</page>"].join("\n"));
   }
 
   return {

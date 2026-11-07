@@ -11,6 +11,7 @@ import { CoworkRepository } from "../../src/cowork/repository";
 import { runtimeStateOnline } from "../../src/runtime-state/wiring";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "../../src/cowork/service";
 import { CoworkError, type SourceSelection } from "../../src/cowork/types";
+import { darwinTest } from "../helpers/darwin-only";
 
 class Client {
   events: any[] = []; private decoder = new LineDecoder(); private next = 1;
@@ -417,7 +418,7 @@ describe("Cowork workspace API through a real isolated daemon and Unix RPC", () 
 });
 
 
-test("Mac selection RPCs enforce local authenticated roles, protected roots and disconnect cleanup", async () => {
+darwinTest("Mac selection RPCs enforce local authenticated roles, protected roots and disconnect cleanup", async () => {
   const base = mkdtempSync(join(tmpdir(), "cowork-selection-rpc-")); homes.push(base);
   const source = join(base, "source"), control = join(base, "control"); mkdirSync(source); mkdirSync(control);
   let target = source, scopes = 0;

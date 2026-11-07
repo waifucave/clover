@@ -71,6 +71,13 @@ async function vote(group: string, ...keys: string[]): Promise<void> {
   });
 }
 
+/** As if the lease's holder had stopped renewing: it lapsed a moment ago. */
+async function lapse(group: string): Promise<void> {
+  await runInDurableObject(env.HANDSHAKE.getByName(`group:${group}`), async (_o: HandshakeDO, state) => {
+    state.storage.sql.exec("UPDATE lease SET expires = ? WHERE one = 1", Date.now() - 1);
+  });
+}
+
 /** As if `days` had passed since every change so far. */
 async function age(group: string, days: number): Promise<void> {
   await runInDurableObject(env.HANDSHAKE.getByName(`group:${group}`), async (_o: HandshakeDO, state) => {
@@ -122,14 +129,49 @@ describe("votes", () => {
     expect((await admit(c, group, await signer(), a, [fresh])).votesFrom).toBeGreaterThan(Date.now() + DAY);
   });
 
-  test("a takeover needs a vote; acquiring a free lease doesn't", async () => {
+  test("a takeover needs a vote, and so does every new tenure but the last holder's own", async () => {
     const { group, founder: a, c } = await createdGroup();
     const [b, fresh] = [await signer(), await signer()];
     await admit(c, group, b, a);
     await admit(c, group, fresh, a);
     expect((await refusal(c.group(group, fresh).lease("takeover"))).code).toBe("not_voter");
-    expect((await c.group(group, fresh).lease("acquire")).holder).toBe(fresh.key);
+    // A lease never held: a key that doesn't vote yet can't take it; the founder, voting from the start, takes it alone.
+    expect((await refusal(c.group(group, fresh).lease("acquire"))).code).toBe("not_voter");
+    const first = await c.group(group, a).lease("acquire");
+    expect(first).toMatchObject({ holder: a.key, epoch: 1 });
+    // Released: still not for a non-voter; a voter takes it.
+    await c.group(group, a).lease("release", { epoch: 1 });
+    expect((await refusal(c.group(group, fresh).lease("acquire"))).code).toBe("not_voter");
+    expect(await c.group(group, b).lease("acquire")).toMatchObject({ holder: b.key, epoch: 2 });
+    // Lapsed (the main asleep): the non-voter still can't; the last holder takes its own back; a voter takes it over.
+    await lapse(group);
+    expect((await refusal(c.group(group, fresh).lease("acquire"))).code).toBe("not_voter");
+    expect(await c.group(group, b).lease("acquire")).toMatchObject({ holder: b.key, epoch: 3 });
+    await lapse(group);
+    expect(await c.group(group, a).lease("acquire")).toMatchObject({ holder: a.key, epoch: 4 });
+    // Freed by the holder's removal: the same rule.
+    await c.group(group, a).remove(a.key);
+    expect((await refusal(c.group(group, fresh).lease("acquire"))).code).toBe("not_voter");
+    // Once it votes (its 7 days are past), it may.
+    await vote(group, fresh.key);
+    expect(await c.group(group, fresh).lease("acquire")).toMatchObject({ holder: fresh.key, epoch: 5 });
     expect((await c.group(group, b).lease("takeover")).holder).toBe(b.key);
+  });
+
+  test("a removed last holder, let back in, takes the lease only with a vote", async () => {
+    const { group, founder: a, c } = await createdGroup();
+    const [b, d] = [await signer(), await signer()];
+    await admit(c, group, b, a);
+    await admit(c, group, d, a, [b]);
+    await c.group(group, d).lease("acquire");
+    // d is removed by a quorum while holding it; the lease is free.
+    const when = Date.now();
+    await c.group(group, a).remove(d.key, { t: when, cosigners: await removal(group, d.key, when, [b]) });
+    expect((await c.group(group, a).get()).lease.holder).toBeNull();
+    // Let back in by one admitter (no quorum), d is a member that doesn't vote: no taking its old lease back.
+    await admit(c, group, d, a);
+    expect((await refusal(c.group(group, d).lease("acquire"))).code).toBe("not_voter");
+    expect(await c.group(group, b).lease("acquire")).toMatchObject({ holder: b.key });
   });
 });
 

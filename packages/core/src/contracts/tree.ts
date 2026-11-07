@@ -131,13 +131,10 @@ export function peerTreeDecision(levels: readonly Level[], callLevel: Level, eff
   return d === "allow" ? "allow" : d === "deny" ? "refuse" : d === "review" ? "review" : "answer";
 }
 
-/** `noFollow` until the holder honours it (lane J's #225): refused (`unsupported`), never dropped, since a read that
- *  drops it follows links (#234's review, F1); a value other than true or false is refused (`invalid`). Every door that takes the flag calls this before reading; J's holder
- *  replaces it with the real walk. */
-export function refuseNoFollowUntilHonoured(opts: { noFollow?: unknown }): void {
-  // Only absent or false reads as "follow links"; anything else is refused, never taken as false (#234's check 2).
-  if (opts.noFollow === undefined || opts.noFollow === false) return;
-  if (opts.noFollow === true) throw new ContractError("unsupported", "this computer can't read without following links yet");
+/** `noFollow` is honoured (lane J's #225); a value other than true or false is refused (`invalid`), never read as false
+ *  (#234's check 2). Every door that takes the flag calls this first. */
+export function checkNoFollow(opts: { noFollow?: unknown }): void {
+  if (opts.noFollow === undefined || opts.noFollow === true || opts.noFollow === false) return;
   throw new ContractError("invalid", "noFollow must be true or false");
 }
 

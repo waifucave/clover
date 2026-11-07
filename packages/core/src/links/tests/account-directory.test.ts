@@ -124,8 +124,15 @@ describe("the account channel", () => {
     await waitFor(() => s.hs.accountLeases.size === 1 && [...s.hs.accountLeases.values()][0]!.holder === a.key.id);
     // The push reaches the laptop once its account socket is open, which a slow runner takes a while to do.
     await waitFor(() => b.links.main!.lease.state().holder === a.key.id, 25_000);
-    expect(a.links.main!.lease.canAct()).toBe(true);
+    // The studio acts once the answer to its own request is in. The service grants the lease and pushes it to the
+    // laptop's socket as it answers the studio, so the laptop can read the push before the studio reads its answer (a
+    // slower path to the studio, or a busy runner; with its answer 300 ms late, a sampled check fails most runs). And when the
+    // laptop held the lease first and handed it back (the automatic main is the lower id), the studio's request goes
+    // out after `chooseSelf` returns. So the studio's own view is waited for, not sampled at the laptop's moment.
+    await waitFor(() => a.links.main!.lease.canAct(), 25_000);
+    expect(a.links.main!.lease.state().holder).toBe(a.key.id);
     expect(b.links.main!.lease.canAct()).toBe(false);
+    expect([...s.hs.accountLeases.values()][0]!.holder).toBe(a.key.id);
   }, 45_000);
 
   test("account-less pairs too: the driver publishes to the pair and keeps its socket open, so a dial-now arrives at once", async () => {

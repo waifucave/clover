@@ -133,6 +133,7 @@ describe("the dev daemon's plan on each OS", () => {
     const linux = describeDevDaemonPlan(plan(["--dry-run"], "linux"));
     expect(linux[0]).toBe("dev:daemon: the plan on linux (dry run: nothing is built, signed or started)");
     expect(linux).toContain("  sign     none (the dev binary is unsigned on linux); rename to dist/dev/clover-core");
+    expect(linux.some((l) => l.startsWith("  seal     scripts/seal-bun-doors.ts"))).toBe(true);
     expect(linux).toContain("  run      dist/dev/clover-core daemon run");
     const mac = describeDevDaemonPlan(plan(["--dry-run", "--transition"], "darwin"));
     expect(mac.some((l) => l.startsWith(`  sign     codesign as ${DEV_DAEMON_IDENTIFIER}`))).toBe(true);

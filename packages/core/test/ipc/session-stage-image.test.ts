@@ -22,6 +22,7 @@ import { TokenAuthority } from "../../src/auth/tokens";
 import { STAGED_IMAGE_RETENTION_MS, StageImageRefusal, decodeStrictBase64, imageDimensions, pruneStagedImages, sniffImageMediaType, stageSessionImage, stagedPathsNamedBy } from "../../src/agent/stage-image";
 import { makePng } from "../helpers/png-fixture";
 import { execFileSync } from "node:child_process";
+import { darwinTest } from "../helpers/darwin-only";
 
 /** Minimal raw NDJSON JSON-RPC client — the same per-file copy every test in test/ipc carries. */
 class TestClient {
@@ -272,7 +273,7 @@ describe("session.stageImage (code-mode image input)", () => {
     expect(sniffImageMediaType(new TextEncoder().encode("<svg xmlns='http://www.w3.org/2000/svg'/>"))).toBeUndefined();
   });
 
-  test("imageDimensions reads PNG, JPEG, GIF and WebP headers without decoding", () => {
+  darwinTest("imageDimensions reads PNG, JPEG, GIF and WebP headers without decoding", () => {
     expect(imageDimensions(makePng(640, 480))).toEqual({ width: 640, height: 480 });
     const dir = mkdtempSync(join(tmpdir(), "clover-dims-"));
     try {
@@ -506,7 +507,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
     expect(STAGED_IMAGE_RETENTION_MS).toBe(14 * DAY);
   });
 
-  test("through session.stageImage on a Dispatch session: old unnamed copies go — never the highest-numbered one — an old copy a logged message names stays, fresh ones stay, the number climbs on", async () => {
+  darwinTest("through session.stageImage on a Dispatch session: old unnamed copies go — never the highest-numbered one — an old copy a logged message names stays, fresh ones stay, the number climbs on", async () => {
     const { store, c } = await boot();
     const sid = store.createSession("global", { mode: "dispatch", model: IMAGE_TAG });
     expect((await c.request(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 })).error).toBeUndefined();
@@ -546,7 +547,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
     c.close();
   });
 
-  test("a pruned number is never handed out again — even when the newest copy goes away after the prune", () => {
+  darwinTest("a pruned number is never handed out again — even when the newest copy goes away after the prune", () => {
     const sid = "s_numbers";
     const images = join(tmpBase, `clover-session-${sid}`, "images");
     const first = [1, 2, 3, 4, 5].map(() => stage(sid, () => []));
@@ -562,7 +563,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
     for (const n of [1, 2, 3, 4]) expect(next).not.toBe(join(images, `image_${n}.png`));
   });
 
-  test("a staged copy named by a still-owed (held) message survives however old — what a resume re-pushes", () => {
+  darwinTest("a staged copy named by a still-owed (held) message survives however old — what a resume re-pushes", () => {
     const sid = "s_held";
     const first = stage(sid);
     age(first, 40);
@@ -598,7 +599,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
     for (const p of old) expect(existsSync(p)).toBe(true);
   });
 
-  test("a symlink planted in images/ under a staged-looking name is never followed: neither the link's target nor the link is touched", () => {
+  darwinTest("a symlink planted in images/ under a staged-looking name is never followed: neither the link's target nor the link is touched", () => {
     const sid = "s_link";
     stage(sid);
     const images = join(tmpBase, `clover-session-${sid}`, "images");
@@ -614,7 +615,7 @@ describe("Dispatch's staged copies are let go of after STAGED_IMAGE_RETENTION_MS
     expect(lstatSync(join(images, "image_9.png")).isSymbolicLink()).toBe(true);
   });
 
-  test("the images folder — or the session folder — swapped for a symlink right before the unlink: the delete lands in the session's OWN folder, never elsewhere", () => {
+  darwinTest("the images folder — or the session folder — swapped for a symlink right before the unlink: the delete lands in the session's OWN folder, never elsewhere", () => {
     for (const swap of ["images", "session"] as const) {
       const sid = `s_swap_${swap}`;
       const root = join(tmpBase, `clover-session-${sid}`);

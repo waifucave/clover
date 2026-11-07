@@ -28,4 +28,29 @@ describe("FenceGuard (H-M2's review, check 2)", () => {
     g.observe(lease(3, "studio")); // a late event never moves it back
     expect(g.check(token)).toBe("stale");
   });
+
+  test("with a scope and a holder of its own, it refuses an act without a token outright: a restart doesn't reopen the door (#237's ruling)", () => {
+    // A receiver that just started: its own lease has a holder, and it has seen no token yet.
+    const restarted = new FenceGuard();
+    restarted.observe(lease(3, "studio"));
+    expect(restarted.check(undefined)).toBe("missing");
+    expect(restarted.check(fencingTokenOf(lease(3, "studio")))).toBe("ok");
+    // A lapsed lease (no holder): nobody acts, with the lapsed epoch's token or without one (#237's ruling).
+    const lapsed = new FenceGuard();
+    lapsed.observe(lease(3, null));
+    expect(lapsed.check(undefined)).toBe("lapsed");
+    expect(lapsed.check({ scope: "acct_1", epoch: 3, holder: "studio" })).toBe("lapsed");
+    // No lease of its own at all: nothing to judge against.
+    expect(new FenceGuard().check(undefined)).toBe("ok");
+  });
+
+  test("a computer that leaves its group keeps no view of the old lease (#237's ruling)", () => {
+    const g = new FenceGuard();
+    g.observe(lease(3, "studio"));
+    const token = fencingTokenOf(lease(3, "studio"))!;
+    expect(g.check(token)).toBe("ok");
+    g.observe({ holder: null, epoch: 0, expiresAt: 0 } as Parameters<typeof fencingTokenOf>[0]); // no scope: out of the group
+    expect(g.check(token)).toBe("stale"); // the old group's token no longer passes
+    expect(g.check(undefined)).toBe("ok"); // and nothing is judged against a lease it no longer has
+  });
 });

@@ -155,15 +155,11 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect(await tree.stat("home/Laptop1/data", { as: USER })).toBeNull();
     });
 
-    test("noFollow is refused (unsupported) until the holder honours it, never dropped (#234's review, F1)", async () => {
+    test("noFollow is honoured (lane J's #225): a plain file reached without a link is read, never dropped (#234's review, F1)", async () => {
       const { tree } = setup();
       await tree.write("home/Laptop1/data/a.csv", utf8("x"), { as: USER });
-      // Lane J's #225 replaces this case with the real walk: a plain file reached without a link is read, a link refused.
-      for (const call of [
-        () => tree.stat("home/Laptop1/data/a.csv", { as: USER, noFollow: true }),
-        () => tree.read("home/Laptop1/data/a.csv", { as: USER, noFollow: true }),
-        () => tree.stat("home/Laptop1/data/a.csv", { as: BOT, noFollow: true }),
-      ]) expect(isContractError(await rejection(call()), "unsupported")).toBe(true);
+      expect(await tree.read("home/Laptop1/data/a.csv", { as: USER, noFollow: true })).toEqual(utf8("x"));
+      expect((await tree.stat("home/Laptop1/data/a.csv", { as: USER, noFollow: true }))?.type).toBe("file");
       // Any other value is refused too, never read as false (#234's check 2).
       for (const v of [1, "true", "false", null, 0, {}]) {
         const bad = { as: USER, noFollow: v as unknown as boolean };

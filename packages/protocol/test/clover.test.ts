@@ -646,6 +646,10 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     expect(fenceVerdict(undefined, fence, false)).toBe("stale");
     expect(fenceVerdict(own, undefined, false)).toBe("ok");
     expect(fenceVerdict(own, undefined, true)).toBe("missing");
+    // A lapsed lease (no holder): nobody acts, the old holder's token for the lapsed epoch included (#237's ruling).
+    const lapsed = { ...own, holder: null };
+    expect(fenceVerdict(lapsed, fence, true)).toBe("lapsed");
+    expect(fenceVerdict(lapsed, undefined, false)).toBe("lapsed");
   });
 
   test("F: the plugin list says whether the user already confirmed they're 18 or older", () => {

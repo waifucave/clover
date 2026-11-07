@@ -84,21 +84,21 @@ export function computersApiRoutes(registry: ComputerRegistry, holds?: HoldRoute
 
 export function filesApiRoutes(tree: CoreTree): Record<string, ApiRoute> {
   const as = (ctx: { pluginId: string }): { as: Caller } => ({ as: { kind: "plugin", pluginId: ctx.pluginId } });
-  // `noFollow` goes on to the tree as given, which refuses it until the holder honours it (#234's review, F1), and any
-  // value but true or false: never dropped, never read as false.
   const range = (o: Record<string, unknown>) => ({
     ...(typeof o.offset === "number" ? { offset: o.offset } : {}),
     ...(typeof o.length === "number" ? { length: o.length } : {}),
-    ...(o.noFollow !== undefined ? { noFollow: o.noFollow as boolean } : {}),
   });
+  // `noFollow` (F-M3's review): no link anywhere on the way is followed, for a component that shows a file.
+  // Passed on as given: the tree refuses a value other than true or false, never reads it as false (#234's check 2).
+  const noFollow = (o: Record<string, unknown>) => (o.noFollow !== undefined ? { noFollow: o.noFollow as boolean } : {});
   return {
-    "files.stat": async ([path, o], ctx) => tree.stat(s(path, "path"), { ...as(ctx), ...(opt(o).noFollow !== undefined ? { noFollow: opt(o).noFollow as boolean } : {}) }),
+    "files.stat": async ([path, o], ctx) => tree.stat(s(path, "path"), { ...as(ctx), ...noFollow(opt(o)) }),
     "files.readText": async ([path, o], ctx) => {
-      const d = await tree.readPart(s(path, "path"), { ...as(ctx), ...range(opt(o)), encoding: "utf8" });
+      const d = await tree.readPart(s(path, "path"), { ...as(ctx), ...range(opt(o)), ...noFollow(opt(o)), encoding: "utf8" });
       return d.encoding === "utf8" ? d.text : Buffer.from(d.data, "base64").toString("utf8");
     },
     "files.readBytes": async ([path, o], ctx) => {
-      const d = await tree.readPart(s(path, "path"), { ...as(ctx), ...range(opt(o)), encoding: "base64" });
+      const d = await tree.readPart(s(path, "path"), { ...as(ctx), ...range(opt(o)), ...noFollow(opt(o)), encoding: "base64" });
       return new Uint8Array(Buffer.from(d.encoding === "base64" ? d.data : d.text, d.encoding === "base64" ? "base64" : "utf8"));
     },
     "files.write": async ([path, data], ctx) => {

@@ -70,6 +70,16 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
     }
   });
 
+  // Lane M's door audit: tsconfig.json and package.json are off by Bun's default today; saying so in the script
+  // keeps a Bun that changes its default from turning them on (`bun run verify:sealed-core` checks the binary).
+  test("both compile scripts switch off the cwd tsconfig.json and package.json autoloads too", () => {
+    for (const name of ["compile", "compile:core"]) {
+      const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/))[2]!;
+      expect([name, compile.includes("--no-compile-autoload-tsconfig"), compile.includes("--no-compile-autoload-package-json")]).toEqual([name, true, true]);
+      expect([name, compile.some((t) => t.startsWith("--compile-exec-argv"))]).toEqual([name, false]);
+    }
+  });
+
   test("the worker file imports only the pre-built bundle, and the bundle's source is the daemon package's own Worker entry", () => {
     const importsOf = (file: string): string[] => [...readFileSync(file, "utf8").matchAll(/^import\s+"([^"]+)";$/gm)].map((m) => m[1]!);
     expect(importsOf(WORKER_FILE)).toEqual([`../${WORKER_BUNDLE_REL}`]);

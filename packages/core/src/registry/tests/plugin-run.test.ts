@@ -206,7 +206,8 @@ describe("a plugin process loads only its own tree", () => {
       return { base, daemon, core, home, shipped, dev, plugin: join(daemon, "clover-plugin-bun"), devPlugin: join(home, "bin", "clover-plugin-bun") };
     };
     const good = (path: string) => {
-      writeFileSync(path, readFileSync(tiny));
+      // Off macOS nothing signs it, so a trailing byte keeps it from being the stand-in core's very bytes.
+      writeFileSync(path, darwin ? readFileSync(tiny) : Buffer.concat([readFileSync(tiny), Buffer.from([0])]));
       chmodSync(path, 0o755);
       sign(path, PLUGIN_BUN_IDENTIFIER.dist);
     };

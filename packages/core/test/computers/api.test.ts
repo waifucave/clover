@@ -2,7 +2,7 @@
 // source of computers, and a peer's command let through by the user's signed answer (review N2).
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   callBindingInput, cardAnswerSigningInput, cardHashInput,
@@ -66,10 +66,8 @@ describe("files.* for plugins: the Files panel's data", () => {
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts"], ctx)).toBe("export const a = 1;\n");
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts", { offset: 7, length: 5 }], ctx)).toBe("const");
     expect(isContractError(await rejection(files["files.readText"]!(["home/Laptop1/.clover/run/x"], ctx)), "fenced")).toBe(true);
-    // noFollow reaches the tree, which refuses it until the holder honours it; it is never dropped (#234's review, F1).
-    for (const [name, args] of [["files.stat", ["home/Laptop1/proj/src/a.ts", { noFollow: true }]], ["files.readText", ["home/Laptop1/proj/src/a.ts", { noFollow: true }]], ["files.readBytes", ["home/Laptop1/proj/src/a.ts", { offset: 0, noFollow: true }]]] as const) {
-      expect([name, isContractError(await rejection(files[name]!([...args], ctx)), "unsupported")]).toEqual([name, true]);
-    }
+    // noFollow reaches the tree, which honours it (lane J's #225; the planted-link case is below), and a value other
+    // than true or false is refused, never read as false (#234's check 2).
     for (const v of ["yes", 1, null]) {
       for (const name of ["files.stat", "files.readText", "files.readBytes"] as const) {
         expect([name, v, isContractError(await rejection(files[name]!(["home/Laptop1/proj/src/a.ts", { noFollow: v }], ctx)), "invalid")]).toEqual([name, v, true]);
@@ -81,6 +79,28 @@ describe("files.* for plugins: the Files panel's data", () => {
     writeFileSync(join(laptop.home, "proj", "src", "b.ts"), "x");
     await until(() => JSON.stringify(events).includes("home/Laptop1/proj/src/b.ts"), 3000, "the change");
     stop();
+  });
+
+  test("noFollow reaches the tree: a component showing a file never follows a planted link", async () => {
+    cluster = new Cluster();
+    const studio = await cluster.add("Studio");
+    const laptop = await cluster.add("Laptop1");
+    await cluster.join();
+    mkdirSync(join(laptop.home, "out"), { recursive: true });
+    writeFileSync(join(laptop.home, "out", "plain.md"), "plain");
+    writeFileSync(join(laptop.home, "elsewhere.md"), "elsewhere");
+    symlinkSync(join(laptop.home, "elsewhere.md"), join(laptop.home, "out", "notes.md"), "file");
+    const files = filesApiRoutes(studio.node.tree);
+    const ctx = { pluginId: "clover/shell", caller: { kind: "plugin" as const, pluginId: "clover/shell" } };
+    const nf = { noFollow: true };
+    expect(await files["files.readText"]!(["home/Laptop1/out/plain.md", nf], ctx)).toBe("plain");
+    expect(await files["files.readBytes"]!(["home/Laptop1/out/plain.md", nf], ctx)).toEqual(new Uint8Array(Buffer.from("plain")));
+    expect((await files["files.stat"]!(["home/Laptop1/out/plain.md", nf], ctx)) as { type: string }).toMatchObject({ type: "file" });
+    for (const call of ["files.readText", "files.readBytes", "files.stat"]) {
+      expect(isContractError(await rejection(files[call]!(["home/Laptop1/out/notes.md", nf], ctx)), "refused")).toBe(true);
+    }
+    // Without it, a link inside the home folder is followed as before.
+    expect(await files["files.readText"]!(["home/Laptop1/out/notes.md"], ctx)).toBe("elsewhere");
   });
 });
 

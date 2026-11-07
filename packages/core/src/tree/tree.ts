@@ -13,8 +13,8 @@ import type { FileStat, Level, Os } from "@waifucave/clover-protocol";
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { refuseNoFollowUntilHonoured, splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
-import type { Holder, HolderCall } from "./holder";
+import { checkNoFollow, splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
+import { CLOVER_HOME_NAME, type Holder, type HolderCall } from "./holder";
 import type { TransferResult } from "./transfer";
 import { foldName } from "./names";
 import type { TreeWatchEvent } from "./watch";
@@ -50,6 +50,12 @@ export interface CoreTreeOptions {
   transfer?: (o: { from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall }) => Promise<TransferResult>;
 }
 
+/** A computer's Clover home: where its bots' folders are, less `bots`, or `<home>/.clover` until it says. */
+function cloverHomeOf(c: TreeComputer): string | undefined {
+  if (c.botsRoot !== undefined) return c.botsRoot.replace(/[\\/]+bots[\\/]*$/, "");
+  return c.home === undefined ? undefined : joinReal(c.os, c.home, CLOVER_HOME_NAME);
+}
+
 /** A real path inside `home`, joined the way that computer's OS writes paths. */
 function joinReal(os: Os | undefined, root: string, rest: string): string {
   if (rest === "") return root;
@@ -71,6 +77,12 @@ export class CoreTree implements Tree {
       const c = this.#o.directory.get(parts.name);
       if (!c) throw new ContractError("not_found", `no computer ${parts.name}`);
       if (c.home === undefined) throw new ContractError("computer_offline", `${c.name} hasn't said where its home folder is yet`, { computer: c.name });
+      // `home/<Computer>/.clover/` is that computer's Clover home, wherever it is on its disk.
+      const [first, ...below] = parts.rest.split("/");
+      const cloverHome = cloverHomeOf(c);
+      if (first !== undefined && cloverHome !== undefined && foldName(first, c.os ?? "macos") === CLOVER_HOME_NAME) {
+        return { computer: c.name, path: joinReal(c.os, cloverHome, below.join("/")), area: "home" };
+      }
       return { computer: c.name, path: joinReal(c.os, c.home, parts.rest), area: "home" };
     }
     const bot = pluginIdFromSegment(parts.name);
@@ -91,6 +103,16 @@ export class CoreTree implements Tree {
     const real = norm(realPath);
     const same = (a: string, b: string) => (c.os === "linux" ? a === b : foldName(a, c.os ?? "macos") === foldName(b, c.os ?? "macos"));
     const s = win ? "\\" : "/";
+    // The Clover home first: it is `home/<Computer>/.clover/` wherever it is.
+    const ch = cloverHomeOf(c);
+    if (ch !== undefined) {
+      const clover = norm(ch);
+      if (same(real, clover)) return `home/${c.name}/${CLOVER_HOME_NAME}`;
+      if (real.length > clover.length + 1 && same(real.slice(0, clover.length + 1), clover + s)) {
+        const rest = real.slice(clover.length + 1).split(s);
+        if (!rest.some((x) => x === "" || x === "." || x === "..")) return `home/${c.name}/${CLOVER_HOME_NAME}/${rest.join("/")}`;
+      }
+    }
     if (same(real, home)) return `home/${c.name}`;
     if (real.length <= home.length + 1 || !same(real.slice(0, home.length + 1), home + s)) return null;
     const rest = real.slice(home.length + 1).split(s);
@@ -98,16 +120,18 @@ export class CoreTree implements Tree {
     return `home/${c.name}/${rest.join("/")}`;
   }
 
+  /** `noFollow`: no link anywhere on the way is followed (one is refused), for the user's own file viewers. */
   async stat(path: string, opts: TreeCallOptions & { noFollow?: boolean }): Promise<FileStat | null> {
-    refuseNoFollowUntilHonoured(opts);
+    checkNoFollow(opts);
     const { holder, call } = this.#reach([path], opts);
-    return holder.stat(path, call);
+    return holder.stat(path, { ...call, ...(opts.noFollow ? { noFollow: true } : {}) });
   }
 
+  /** `noFollow`: as `stat`, in the same call: only a plain file reached without a link is read. */
   async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; noFollow?: boolean }): Promise<TreeData> {
-    refuseNoFollowUntilHonoured(opts);
+    checkNoFollow(opts);
     const { holder, call } = this.#reach([path], opts);
-    return holder.read(path, { ...call, ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }) });
+    return holder.read(path, { ...call, ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }), ...(opts.noFollow ? { noFollow: true } : {}) });
   }
 
   async write(path: string, data: TreeData, opts: TreeCallOptions & { executable?: boolean }): Promise<void> {
@@ -201,10 +225,10 @@ export class CoreTree implements Tree {
 
   /** A file's bytes in parts, for the tool layer: `offset` and `length` reach the holder. */
   async readPart(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; offset?: number; length?: number; noFollow?: boolean }): Promise<TreeData> {
-    refuseNoFollowUntilHonoured(opts);
+    checkNoFollow(opts);
     const { holder, call } = this.#reach([path], opts);
     return holder.read(path, {
-      ...call,
+      ...call, ...(opts.noFollow ? { noFollow: true } : {}),
       ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }),
       ...(opts.offset === undefined ? {} : { offset: opts.offset }),
       ...(opts.length === undefined ? {} : { length: opts.length }),

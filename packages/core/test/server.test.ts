@@ -21,6 +21,7 @@ import { readOpenAiApiKey } from "../src/auth/credential-material";
 import { TrustStore } from "../src/agent/trust";
 import { WorkflowRuntime } from "../src/workflows/runtime";
 import { WorkflowStore } from "../src/workflows/store";
+import { darwinTest } from "./helpers/darwin-only";
 
 /** Minimal raw test client speaking NDJSON JSON-RPC. */
 class TestClient {
@@ -456,7 +457,7 @@ describe("daemon IPC", () => {
       };
     }
 
-    test("workflow.run with an inline script launches a run; workflow.get polls it through to completion", async () => {
+    darwinTest("workflow.run with an inline script launches a run; workflow.get polls it through to completion", async () => {
       const srv = await bootWorkflowServer();
       const c = await TestClient.connect(srv.socketPath);
       await c.hello(srv.harnessToken, "wf-tester");
@@ -494,7 +495,7 @@ describe("daemon IPC", () => {
       srv.stop();
     });
 
-    test("workflow.list reports a session's own running runs and stays scoped per-session", async () => {
+    darwinTest("workflow.list reports a session's own running runs and stays scoped per-session", async () => {
       const srv = await bootWorkflowServer();
       const c = await TestClient.connect(srv.socketPath);
       await c.hello(srv.harnessToken, "wf-tester");
@@ -519,7 +520,7 @@ describe("daemon IPC", () => {
       srv.stop();
     });
 
-    test("workflow.stop stops a running run; stopping an unknown or already-stopped runId is a soft no-op (ok:true, stopped:false)", async () => {
+    darwinTest("workflow.stop stops a running run; stopping an unknown or already-stopped runId is a soft no-op (ok:true, stopped:false)", async () => {
       const srv = await bootWorkflowServer();
       const c = await TestClient.connect(srv.socketPath);
       await c.hello(srv.harnessToken, "wf-tester");
@@ -563,7 +564,7 @@ describe("daemon IPC", () => {
       srv.stop();
     });
 
-    test("workflow.run resolves a saved workflow by name via WorkflowStore, trust-gated to the session's own cwd", async () => {
+    darwinTest("workflow.run resolves a saved workflow by name via WorkflowStore, trust-gated to the session's own cwd", async () => {
       const srv = await bootWorkflowServer();
       const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-workflow-rpc-cwd-")));
       mkdirSync(join(cwd, ".clover", "workflows"), { recursive: true });
@@ -747,8 +748,7 @@ describe("daemon IPC", () => {
     c.close();
   });
 
-  test("mcp.list reports a connected MCP server started by the daemon at boot (spawns a real child process)", async () => {
-    if (process.platform !== "darwin") return; // spawns a child process
+  darwinTest("mcp.list reports a connected MCP server started by the daemon at boot (spawns a real child process)", async () => {
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
     const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
@@ -771,8 +771,7 @@ describe("daemon IPC", () => {
     c.close();
   });
 
-  test("mcp.list({cwd}) ensures + surfaces a trusted project's servers (source \"project\"); mcp.list({}) shows only user servers", async () => {
-    if (process.platform !== "darwin") return; // spawns a child process
+  darwinTest("mcp.list({cwd}) ensures + surfaces a trusted project's servers (source \"project\"); mcp.list({}) shows only user servers", async () => {
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
     const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
@@ -815,8 +814,7 @@ describe("daemon IPC", () => {
     c.close();
   });
 
-  test("daemon settings surface batch 3 (item 3a): mcp.disable flips a REAL boot-started server's mcp.list status to disabled, and mcp.enable flips it back", async () => {
-    if (process.platform !== "darwin") return; // spawns a child process
+  darwinTest("daemon settings surface batch 3 (item 3a): mcp.disable flips a REAL boot-started server's mcp.list status to disabled, and mcp.enable flips it back", async () => {
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
     const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
@@ -859,8 +857,7 @@ describe("daemon IPC", () => {
   // process with a "failed" status (a duplicate-name tool registration). WS-24: the manager is a
   // status probe that registers nothing, so the collision cannot arise; kept at the full IPC layer
   // against a real boot-probed server.
-  test("mcp.enable on an ALREADY-RUNNING, never-disabled server does not kill it", async () => {
-    if (process.platform !== "darwin") return; // spawns a child process
+  darwinTest("mcp.enable on an ALREADY-RUNNING, never-disabled server does not kill it", async () => {
     const { FakeProvider } = await import("../src/agent/fake-provider");
     const fixture = join(import.meta.dir, "agent", "mcp", "fake-mcp-server.ts");
     const home = mkdtempSync(join(tmpdir(), "clover-daemon-"));
