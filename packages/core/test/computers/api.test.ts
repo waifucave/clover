@@ -43,7 +43,10 @@ describe("computers.* for plugins", () => {
     expect(await api["computers.holds"]!(["Studio"], PLUGIN)).toMatchObject({ userWorking: true });
     // Another plugin can't release opensky's hold.
     expect(isContractError(await rejection(api["computers.releaseHold"]!([first.hold.id], { ...PLUGIN, pluginId: "other" })), "refused")).toBe(true);
-    await api["computers.releaseHold"]!([first.hold.id], PLUGIN);
+    // The same plugin outside that session (Mirror installs it everywhere) can't release a session's hold either.
+    expect(isContractError(await rejection(api["computers.releaseHold"]!([first.hold.id], PLUGIN)), "refused")).toBe(true);
+    expect(isContractError(await rejection(api["computers.releaseHold"]!([first.hold.id], inSession("s_b"))), "refused")).toBe(true);
+    await api["computers.releaseHold"]!([first.hold.id], inSession("s_a"));
     cluster.net.partition(cluster.get("Laptop1").device);
     expect(await api["computers.takeHold"]!(["Laptop1", { kind: "app", app: "Excel" }], PLUGIN)).toEqual({ held: false, reason: "computer-offline" });
   });
