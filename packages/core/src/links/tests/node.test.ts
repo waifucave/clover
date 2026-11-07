@@ -50,6 +50,34 @@ describe("the daemon's links", () => {
     expect(await link.request<string>("who", null)).toBe("laptop again");
   });
 
+  test("the links register the lease's renew with the update gate, and hand lane J's node the memory hook and the lease", async () => {
+    const net = new MemoryNetwork();
+    const hooks = new Set<() => Promise<void> | void>();
+    const updateGate = { beforeRestart: (fn: () => Promise<void> | void) => (hooks.add(fn), () => void hooks.delete(fn)) };
+    const links = await startDeviceLinks({
+      home: mkdtempSync(join(tmpdir(), "clover-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Studio", os: "macos" },
+      wire: (key) => net.endpoint(key.publicKey), updateGate,
+    });
+    expect(hooks.size).toBe(1);
+    // A lone computer's lease is its own (no record to renew): the hook is a no-op there, never a failure.
+    await Promise.all([...hooks].map((fn) => fn()));
+    expect(typeof computerNodeLinks(links).memoryChanged).toBe("function");
+    // Lane J's node takes the lease too (its fencing token on acts between computers): a lone computer's carries none.
+    const lease = computerNodeLinks(links).lease;
+    expect(lease).not.toBeNull();
+    expect(lease!.self).toBe(links.key.id);
+    expect(lease!.state().scope).toBeUndefined();
+    // Without a main computer here (no group yet), the node is told so: `null`, never left out (lane J's #237).
+    const bare = await startDeviceLinks({
+      home: mkdtempSync(join(tmpdir(), "clover-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Bare", os: "macos" },
+      wire: (key) => net.endpoint(key.publicKey), mainComputer: false,
+    });
+    stops.push(() => bare.close());
+    expect(computerNodeLinks(bare).lease).toBeNull();
+    await links.close();
+    expect(hooks.size).toBe(0);
+  });
+
   test("lane J's computer node gets the transport, the registry and this computer's tree name", async () => {
     const net = new MemoryNetwork();
     const a = await daemon(net, "Studio");
