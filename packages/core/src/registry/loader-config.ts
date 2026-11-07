@@ -46,6 +46,12 @@ const MAX_CONFIGS = 256;
 /** The folder a tree path sits in, with a trailing `/` ("" at the root). */
 const dirOf = (path: string) => path.slice(0, path.lastIndexOf("/") + 1);
 
+/** A wildcard target with `..` after its `*` climbs from wherever the `*` lands: it can reach anywhere. */
+const climbsAfterStar = (target: string) => {
+  const star = target.indexOf("*");
+  return star >= 0 && target.slice(star + 1).replace(/\\/g, "/").split("/").includes("..");
+};
+
 /** `rel` resolved against folder `dir` (both tree paths); undefined when it climbs out of the plugin. */
 function resolve(dir: string, rel: string): string | undefined {
   if (rel.startsWith("/") || /^[A-Za-z]:[\\/]/.test(rel) || rel.startsWith("\\\\")) return undefined;
@@ -120,7 +126,7 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
         // A wildcard target names everything under its prefix.
         const star = t.indexOf("*");
         const prefix = star < 0 ? t : t.slice(0, star);
-        const resolved = resolve(base, prefix === "" ? "." : prefix);
+        const resolved = climbsAfterStar(t) ? undefined : resolve(base, prefix === "" ? "." : prefix);
         if (resolved === undefined) {
           outside.push({ file, field: `compilerOptions.paths.${key}`, target: t });
           continue;
@@ -129,27 +135,35 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
         else for (const f of files) if (f.startsWith(resolved)) inside.add(f);
       }
     }
+    // A path-like `jsxImportSource` is where the JSX runtime loads from (a bare one is a dependency's name).
+    const jsx = opts.jsxImportSource;
+    if (typeof jsx === "string" && (jsx.startsWith(".") || jsx.startsWith("/") || /^[A-Za-z]:/.test(jsx) || jsx.startsWith("\\"))) {
+      const resolved = resolve(dir, jsx);
+      if (resolved === undefined) outside.push({ file, field: "compilerOptions.jsxImportSource", target: jsx });
+      else for (const f of files) if (f === resolved || f.startsWith(`${resolved}/`)) inside.add(f);
+    }
   }
   // package.json `imports` and `exports`: a relative target stays inside the plugin, and counts as code.
   for (const file of files.filter((f) => PACKAGE.test(f))) {
     const pkg = parse(file);
     if (pkg === undefined) continue;
-    const targets: { field: string; target: string }[] = [];
-    const walk = (field: string, v: unknown) => {
-      if (typeof v === "string") targets.push({ field, target: v });
+    // `relative`: a bare target is a file of the package's (main, module, a string browser), not a dependency's name.
+    const targets: { field: string; target: string; relative: boolean }[] = [];
+    const walk = (field: string, v: unknown, relative = false) => {
+      if (typeof v === "string") targets.push({ field, target: v, relative });
       else if (Array.isArray(v)) v.forEach((x) => walk(field, x));
       else if (v !== null && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(`${field}.${k}`, x);
     };
     walk("imports", pkg.imports);
     walk("exports", pkg.exports);
-    walk("main", pkg.main);
-    walk("module", pkg.module);
-    walk("browser", pkg.browser);
-    for (const { field, target } of targets) {
-      if (!target.startsWith(".") && !target.startsWith("/") && !/^[A-Za-z]:/.test(target)) continue; // a dependency's name
+    walk("main", pkg.main, true);
+    walk("module", pkg.module, true);
+    walk("browser", pkg.browser, true);
+    for (const { field, target, relative } of targets) {
+      if (!relative && !target.startsWith(".") && !target.startsWith("/") && !/^[A-Za-z]:/.test(target) && !target.startsWith("\\")) continue; // a dependency's name
       const star = target.indexOf("*");
       const prefix = star < 0 ? target : target.slice(0, star);
-      const resolved = resolve(dirOf(file), prefix === "" ? "." : prefix);
+      const resolved = climbsAfterStar(target) ? undefined : resolve(dirOf(file), prefix === "" ? "." : prefix);
       if (resolved === undefined) outside.push({ file, field, target });
       else if (star < 0) inside.add(resolved);
       else for (const f of files) if (f.startsWith(resolved)) inside.add(f);
