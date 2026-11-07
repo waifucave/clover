@@ -12,8 +12,19 @@
 // named. The registry's load-time build of a TypeScript client entry (`UiPluginView.clientEntry`) and the release's
 // `buildPluginForShipping` both call `buildPluginModule`, so what a development folder runs and what ships come from the
 // same build.
+//
+// What the output may not hold (#271's review):
+// * no path of the computer that built it: `__dirname` and `__filename` in a bundled CommonJS dependency would be
+//   inlined as the dependency's absolute path, so they are defined as the module's own at run time
+//   (`import.meta.dirname`/`filename`; in a client, `/`); the bundler's per-input path comments are removed; and every
+//   file the build writes (modules, stylesheets, assets) is scanned for the strings `forbid` names (the builder's home,
+//   user name and checkout), failing the build if one is there;
+// * no load the scan can't check (`runtimeLoadProblems`): `import()` of anything but a string literal, `require` (or
+//   `__require`, `import.meta.require`) of anything but a literal the module may import, `createRequire` outside the
+//   bundler's own `__require` shim, `process.getBuiltinModule` of `module` or of a computed name, a `Worker`,
+//   `Bun.resolve`/`Bun.resolveSync`, `import.meta.resolve` and `process.dlopen`.
 import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
-import { mkdirSync, renameSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { basename, dirname, extname } from "node:path";
 
@@ -37,6 +48,14 @@ export interface BuildModuleOptions {
   /** Host and program side: a bare import (its specifier and the importing file) to leave as an import, for a package
    *  the caller ships beside the module. Asked once per import the bundler meets. */
   keepExternal?: (spec: string, importer: string) => boolean;
+  /** Strings no output file may hold (the builder's home, user name, checkout): a match fails the build. */
+  forbid?: readonly Forbidden[];
+}
+
+/** A string an output may not hold, and how a problem names it (never the string itself). */
+export interface Forbidden {
+  text: string | RegExp;
+  label: string;
 }
 
 export interface BuiltPluginModule {
@@ -87,7 +106,9 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
       sourcemap: "none",
       throw: false,
       naming: { entry: "[name].[ext]", asset: "[name]-[hash].[ext]", chunk: "[name]-[hash].[ext]" },
-      ...(client ? { external: [...CLIENT_BARE_IMPORTS], define: { "process.env.NODE_ENV": JSON.stringify("production") } } : {}),
+      define: { __dirname: DIRNAME, __filename: FILENAME, ...(client ? { "process.env.NODE_ENV": JSON.stringify("production") } : {}) },
+      banner: client ? `const ${DIRNAME} = "/", ${FILENAME} = "/index.js";` : `const ${DIRNAME} = import.meta.dirname, ${FILENAME} = import.meta.filename;`,
+      ...(client ? { external: [...CLIENT_BARE_IMPORTS] } : {}),
       plugins: client || keepExternal === undefined ? [] : [{
         name: "clover-keep-external",
         setup(build) {
@@ -136,8 +157,73 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
       problems.push(`${name}: imports ${spec}, which the build neither bundled nor ships`);
     }
   }
+  problems.push(...runtimeLoadProblems(source, name, { client, allowed: (spec) => isRuntimeBuiltin(spec) || kept.has(packageOfSpecifier(spec)) }));
+  // A stylesheet carries the same markers as `/* <path> */`.
+  const cssMarkers = new Set(Object.keys((meta as { inputs?: Record<string, unknown> } | undefined)?.inputs ?? {}).map((k) => `/* ${k} */`));
+  for (const f of css) await Bun.write(f, readFileSync(f, "utf8").split("\n").filter((line) => !cssMarkers.has(line)).join("\n"));
+  for (const f of [o.outFile, ...css, ...assets]) problems.push(...forbiddenIn(f === o.outFile ? source : readFileSync(f, "latin1"), basename(f), o.forbid ?? []));
   if (problems.length > 0) throw new PluginBuildError(problems);
   return { file: o.outFile, source, css, assets, imports };
+}
+
+/** What a bundle's CommonJS `__dirname` and `__filename` become: the module's own, at run time. */
+const DIRNAME = "__clover_dirname";
+const FILENAME = "__clover_filename";
+
+/** Each forbidden string in `text`, by its label. */
+export function forbiddenIn(text: string, file: string, forbid: readonly Forbidden[]): string[] {
+  const out: string[] = [];
+  for (const f of forbid) {
+    const hit = typeof f.text === "string" ? f.text !== "" && text.includes(f.text) : f.text.test(text);
+    if (hit) out.push(`${file}: holds ${f.label}, a path of the computer that built it`);
+  }
+  return out;
+}
+
+/** The strings a build on this computer must not leave in what it ships: the home folder, the user's name as a path
+ *  segment, and the given folders (the checkout, the plugin), each as written and with the other slash. */
+export function buildMachineStrings(folders: readonly { path: string; label: string }[], home: string, user: string): Forbidden[] {
+  const out: Forbidden[] = [];
+  const both = (p: string) => [...new Set([p, p.replaceAll("\\", "/"), p.replaceAll("/", "\\")])];
+  for (const { path, label } of [...folders, { path: home, label: "the home folder" }]) {
+    if (path.length < 2) continue;
+    for (const v of both(path)) out.push({ text: v, label });
+  }
+  if (user.length > 0) out.push({ text: new RegExp(`[/\\\\]${user.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[/\\\\]`), label: "the user's name in a path" });
+  return out;
+}
+
+const literal = String.raw`\s*(["'])([^"'\\\n]*)\1\s*\)`;
+
+/** The loads in a module the scan can't check (see the file's header); `allowed` says which literal specifiers
+ *  `require` may name (a client may name none). */
+export function runtimeLoadProblems(source: string, file: string, o: { client: boolean; allowed: (spec: string) => boolean }): string[] {
+  const problems: string[] = [];
+  const count = (re: RegExp) => [...source.matchAll(re)].length;
+  const say = (n: number, what: string) => {
+    if (n > 0) problems.push(`${file}: ${n} ${what}, which can't be checked`);
+  };
+  // import(): a string literal only (its specifier is checked with the static imports).
+  say(count(/(?<![\w$.])import\s*\(/g) - count(new RegExp(String.raw`(?<![\w$.])import\s*\(${literal}`, "g")), "import() of a computed specifier");
+  // require: a literal the module may import; the bundler's own shims are assignments, not calls.
+  const requireCall = String.raw`(?<![\w$.])(?:require|__require|import\.meta\.require)\s*\(`;
+  const literals = [...source.matchAll(new RegExp(requireCall + literal, "g"))];
+  say(count(new RegExp(requireCall, "g")) - literals.length, "require() of a computed specifier");
+  for (const m of literals) {
+    const spec = m[2]!;
+    if (o.client || !o.allowed(spec)) problems.push(`${file}: requires ${spec} at run time, which ${o.client ? "a client module never does" : "the build neither bundled nor ships"}`);
+  }
+  // createRequire: only the bundler's `var __require = createRequire(import.meta.url);` (a Node target's shim).
+  say(count(/(?<![\w$])createRequire\s*\(/g) - count(/var __require = (?:\/\* @__PURE__ \*\/ )?createRequire\(import\.meta\.url\);/g), "createRequire() call(s)");
+  const builtins = [...source.matchAll(new RegExp(String.raw`process\s*\.\s*getBuiltinModule\s*\(${literal}`, "g"))];
+  say(count(/process\s*\.\s*getBuiltinModule\s*\(/g) - builtins.length, "process.getBuiltinModule() of a computed name");
+  for (const m of builtins) if (m[2] === "module" || m[2] === "node:module") problems.push(`${file}: takes node:module through process.getBuiltinModule, a way to load anything`);
+  // A host's Worker loads a file the scan never saw. A client's runs only what the layer's CSP lets a plugin origin
+  // start (its own files, or a blob of code already in the bundle, as Mochi2D's decoder is), so it is the layer's rule.
+  if (!o.client) say(count(/(?<![\w$.])new\s+(?:[\w$]+\s*\.\s*)?Worker\s*\(/g), "Worker(s) started from a path or URL");
+  say(count(/(?<![\w$])Bun\s*\.\s*resolve(?:Sync)?\s*\(/g) + count(/import\.meta\.resolve\s*\(/g), "module resolution call(s)");
+  say(count(/(?<![\w$])process\s*\.\s*dlopen\s*\(/g), "process.dlopen() call(s)");
+  return problems;
 }
 
 /** Where a built module goes for a source entry, as a manifest path (with `/`): the same path with `.js`. */

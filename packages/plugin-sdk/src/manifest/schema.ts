@@ -411,8 +411,10 @@ export const ManifestSchema = z.strictObject({
   contributes: ContributionsSchema.optional(),
   /** Written by Clover's release build (`buildPluginForShipping`, core `registry/ship.ts`), never by hand: `host.entry`,
    *  `client.entry` and each program a `stdio` server or agent backend runs with `bun` or `node` name built ES modules
-   *  of JavaScript, with their dependencies bundled in and a client's CSS listed in `client.css`. The registry loads
-   *  them as they are, and never builds them again. */
+   *  of JavaScript, with their dependencies bundled in and a client's CSS listed in `client.css`. Honoured only in a
+   *  bundled tree (`clover`, `alpha`), whose bytes the signed core's manifest pins; any other plugin that says it is
+   *  refused (`built_not_bundled`). It spares the registry a rebuild, never a check: the registry scans every client
+   *  entry at load, built or not. */
   built: z.literal(true).optional(),
   /** A hint; the OK shows the core's own record (§5.6). */
   generated: z.strictObject({

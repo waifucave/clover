@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_API_VERSION, validateManifest } from "@waifucave/clover-plugin-sdk";
 import { PluginBuildError } from "../build";
@@ -27,22 +27,30 @@ const PLATFORMS: Record<string, { os: string; cpu: string; libc?: string }> = {
   "win32-x64-msvc": { os: "win32", cpu: "x64" },
 };
 
-async function tarball(name: string, files: Record<string, string>): Promise<Uint8Array> {
-  const entries: Record<string, string> = { "package/package.json": json({ name, version: "1.0.0" }) };
+async function tarball(name: string, files: Record<string, string>, pkgJson?: string): Promise<Uint8Array> {
+  const entries: Record<string, string> = { "package/package.json": pkgJson ?? json({ name, version: "1.0.0" }) };
   for (const [k, v] of Object.entries(files)) entries[`package/${k}`] = v;
   return new Bun.Archive(entries, { compress: "gzip" }).bytes();
 }
 const sri = (bytes: Uint8Array) => `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 
 /** A checkout: a lockfile, installed packages (one native among them) and the `demo` plugin with a child. */
-async function checkout(o: { plugin?: Record<string, string>; tamper?: string } = {}) {
+const NATIVE_PKG = () => pkg("fake-native", {
+  dependencies: { "fake-dep": "1.0.0" },
+  optionalDependencies: Object.fromEntries(Object.keys(PLATFORMS).map((p) => [`@fake-native/${p}`, "1.0.0"])),
+});
+const NATIVE_JS = `import { dep } from "fake-dep";\nexport const native = () => dep;\n`;
+
+async function checkout(o: { plugin?: Record<string, string>; tamper?: string; misnamed?: boolean; lock?: Record<string, unknown[]> } = {}) {
   const root = mkdtempSync(join(tmpdir(), "clover-b-ship-"));
   const tarballs = new Map<string, Uint8Array>();
-  const lock: Record<string, unknown[]> = {
-    "fake-native": ["fake-native@1.0.0", "", { dependencies: { "fake-dep": "1.0.0" } }, "sha512-AAAA"],
-    "fake-dep": ["fake-dep@1.0.0", "", {}, "sha512-AAAA"],
-    "fake-lib": ["fake-lib@1.0.0", "", {}, "sha512-AAAA"],
-  };
+  const lock: Record<string, unknown[]> = { "fake-lib": ["fake-lib@1.0.0", "", {}, "sha512-AAAA"], ...o.lock };
+  // The native and its dependency, as the registry serves them: what a release ships, checked against the lockfile.
+  for (const [name, files, pkgJson] of [["fake-native", { "index.js": NATIVE_JS }, NATIVE_PKG()], ["fake-dep", { "index.js": "export const dep = 1;\n" }, pkg("fake-dep")]] as const) {
+    const bytes = await tarball(name, files, o.misnamed && name === "fake-dep" ? pkg("fake-dep", { version: "2.0.0" }) : pkgJson);
+    tarballs.set(`https://registry.npmjs.org/${name}/-/${name}-1.0.0.tgz`, bytes);
+    lock[name] = [`${name}@1.0.0`, "", {}, sri(bytes)];
+  }
   for (const [plat, meta] of Object.entries(PLATFORMS)) {
     const name = `@fake-native/${plat}`;
     const bytes = await tarball(name, { "fake.node": `binary for ${plat}` });
@@ -57,11 +65,8 @@ async function checkout(o: { plugin?: Record<string, string>; tamper?: string } 
     "node_modules/fake-ui/index.js": `export const ui = () => "ui";\n`,
     "node_modules/fake-dep/package.json": pkg("fake-dep"),
     "node_modules/fake-dep/index.js": `export const dep = 1;\n`,
-    "node_modules/fake-native/package.json": pkg("fake-native", {
-      dependencies: { "fake-dep": "1.0.0" },
-      optionalDependencies: Object.fromEntries(Object.keys(PLATFORMS).map((p) => [`@fake-native/${p}`, "1.0.0"])),
-    }),
-    "node_modules/fake-native/index.js": `import { dep } from "fake-dep";\nexport const native = () => dep;\n`,
+    "node_modules/fake-native/package.json": NATIVE_PKG(),
+    "node_modules/fake-native/index.js": NATIVE_JS,
     // The one platform package this checkout has installed: shipped from here, never downloaded.
     "node_modules/@fake-native/linux-arm64-gnu/package.json": json({ name: "@fake-native/linux-arm64-gnu", version: "1.0.0" }),
     "node_modules/@fake-native/linux-arm64-gnu/fake.node": "installed binary for linux-arm64-gnu",
@@ -107,7 +112,7 @@ const read = (dir: string, rel: string) => readFileSync(join(dir, ...rel.split("
 describe("buildPluginForShipping", () => {
   test("builds every entry of the tree, rewrites the manifests, and ships the native's prebuilt binary for the target", async () => {
     const c = await checkout();
-    const r = await buildPluginForShipping(c.plugin, { target: "linux-x64", download: c.download, out: join(c.root, "out") });
+    const r = await buildPluginForShipping(c.plugin, { target: "linux-x64", download: c.download, out: join(c.root, "out"), bundled: true });
     expect(r.dir).toBe(realpathSync(join(c.root, "out")));
     expect(r.files).toEqual([
       "README.md",
@@ -130,8 +135,12 @@ describe("buildPluginForShipping", () => {
       "plugins/kid/package.json",
       "server/main.js",
     ]);
-    // Only the target's prebuilt package came down, checked against the lockfile.
-    expect(c.downloads).toEqual(["https://registry.npmjs.org/@fake-native/linux-x64-gnu/-/linux-x64-gnu-1.0.0.tgz"]);
+    // The native, its dependency and only the target's prebuilt package came down, each checked against the lockfile.
+    expect(c.downloads).toEqual([
+      "https://registry.npmjs.org/fake-native/-/fake-native-1.0.0.tgz",
+      "https://registry.npmjs.org/fake-dep/-/fake-dep-1.0.0.tgz",
+      "https://registry.npmjs.org/@fake-native/linux-x64-gnu/-/linux-x64-gnu-1.0.0.tgz",
+    ]);
     expect(read(r.dir, "node_modules/@fake-native/linux-x64-gnu/fake.node")).toBe("binary for linux-x64-gnu");
     expect(r.natives).toEqual([{ file: "node_modules/@fake-native/linux-x64-gnu/fake.node", package: "fake-native", target: "linux-x64" }]);
 
@@ -141,7 +150,7 @@ describe("buildPluginForShipping", () => {
     expect(top.client).toEqual({ entry: "client/index.js", css: ["client/index.css"] });
     expect(top.contributes.mcpServers.tools.args).toEqual(["--smol", "server/main.js", "--port", "1"]);
     expect(top.contributes.mcpServers.other.args).toEqual(["tool.py"]);
-    expect(validateManifest(read(r.dir, "clover.json"), { folderName: "demo" }).issues.filter((i) => i.severity === "error")).toEqual([]);
+    expect(validateManifest(read(r.dir, "clover.json"), { folderName: "demo", bundled: true }).issues.filter((i) => i.severity === "error")).toEqual([]);
     expect(JSON.parse(read(r.dir, "plugins/kid/clover.json"))).toEqual({ manifest: 1, name: "Kid", client: { entry: "client/index.js" }, built: true });
     expect(JSON.parse(read(r.dir, "package.json"))).toEqual({ name: "@x/demo", version: "1.0.0", license: "MIT", private: true, type: "module", dependencies: { "fake-native": "1.0.0" } });
 
@@ -166,12 +175,26 @@ describe("buildPluginForShipping", () => {
     expect(loaded.start()).toEqual(["lib", 1, "helper"]);
   });
 
-  test("a prebuilt package this checkout has installed ships from here; no download", async () => {
+  test("a release always ships the lockfile's download; only a dev build takes this checkout's installed copy", async () => {
     const c = await checkout();
-    const r = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download });
+    const release = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download, bundled: true });
+    expect(c.downloads.length).toBe(3);
+    expect(read(release.dir, "node_modules/@fake-native/linux-arm64-gnu/fake.node")).toBe("binary for linux-arm64-gnu");
+    expect(JSON.parse(read(release.dir, "clover.json")).built).toBe(true);
+    c.downloads.length = 0;
+    const dev = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download, dev: true });
     expect(c.downloads).toEqual([]);
-    expect(read(r.dir, "node_modules/@fake-native/linux-arm64-gnu/fake.node")).toBe("installed binary for linux-arm64-gnu");
-    expect(r.natives).toEqual([{ file: "node_modules/@fake-native/linux-arm64-gnu/fake.node", package: "fake-native", target: "linux-arm64" }]);
+    expect(read(dev.dir, "node_modules/@fake-native/linux-arm64-gnu/fake.node")).toBe("installed binary for linux-arm64-gnu");
+    expect(dev.natives).toEqual([{ file: "node_modules/@fake-native/linux-arm64-gnu/fake.node", package: "fake-native", target: "linux-arm64" }]);
+    // Only a bundled tree is marked built (#271's L2).
+    expect(JSON.parse(read(dev.dir, "clover.json")).built).toBeUndefined();
+  });
+
+  test("a download whose package isn't the lockfile's exact name and version is refused", async () => {
+    const c = await checkout({ misnamed: true });
+    const e = await buildPluginForShipping(c.plugin, { target: "linux-x64", download: c.download }).catch((x) => x);
+    expect(e).toBeInstanceOf(PluginBuildError);
+    expect(e.message).toContain("fake-dep@1.0.0: its tarball is fake-dep@2.0.0, not the package the lockfile pins");
   });
 
   test("every target takes its own platform's package, glibc's on Linux", async () => {
@@ -197,6 +220,9 @@ describe("buildPluginForShipping", () => {
     const e = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).catch((x) => x);
     expect(e).toBeInstanceOf(PluginBuildError);
     expect(e.problems.some((p: string) => p.startsWith("clover.json: ") && p.includes("not-installed"))).toBe(true);
+    // No folder of the computer that built it in the error (#271's L5).
+    expect(e.message).not.toContain(c.root);
+    expect(e.message).not.toContain(realpathSync(c.root));
   });
 
   test("a file the manifest names that doesn't ship fails the build (the built tree is validated)", async () => {
@@ -219,13 +245,94 @@ describe("buildPluginForShipping", () => {
   });
 
   test("a native built on this computer (a .node of its own) ships only for this computer's target", async () => {
-    const c = await checkout({ plugin: { "host/index.ts": `import { own } from "own-native";\nexport const start = () => own;\n` } });
+    const c = await checkout({ plugin: { "host/index.ts": `import { own } from "own-native";\nexport const start = () => own;\n` }, lock: { "own-native": ["own-native@1.0.0", "", {}, "sha512-AAAA"] } });
     write(c.root, { "node_modules/own-native/package.json": pkg("own-native"), "node_modules/own-native/index.js": "export const own = 1;\n", "node_modules/own-native/build/Release/own.node": "bin" });
     const here = hostShipTarget();
     for (const target of SHIP_TARGETS) {
-      const r = await buildPluginForShipping(c.plugin, { target, download: c.download }).catch((x) => x);
+      const r = await buildPluginForShipping(c.plugin, { target, download: c.download, dev: true }).catch((x) => x);
       if (target === here) expect(r.natives).toEqual([{ file: "node_modules/own-native/build/Release/own.node", package: "own-native", target }]);
       else expect([target, r instanceof PluginBuildError && r.message.includes("built on this computer")]).toEqual([target, true]);
+    }
+    // A release never ships one, whatever the target.
+    const release = await buildPluginForShipping(c.plugin, { target: here ?? "linux-x64", download: c.download }).catch((x) => x);
+    expect(release instanceof PluginBuildError && release.message.includes("built on this computer")).toBe(true);
+  });
+
+  test("a CommonJS dependency's __dirname and __filename are the module's own at run time, never the builder's path", async () => {
+    const c = await checkout({ plugin: { "host/index.ts": `import where from "cjs-where";\nexport const start = () => where;\n` } });
+    write(c.root, {
+      "node_modules/cjs-where/package.json": json({ name: "cjs-where", version: "1.0.0", main: "index.js" }),
+      "node_modules/cjs-where/index.js": `module.exports = { dir: __dirname, file: __filename };\n`,
+    });
+    const r = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download });
+    const host = read(r.dir, "host/index.js");
+    expect(host).not.toContain(c.root);
+    expect(host).not.toContain(realpathSync(c.root));
+    const loaded = await import(join(r.dir, "host", "index.js"));
+    expect(loaded.start()).toEqual({ dir: join(r.dir, "host"), file: join(r.dir, "host", "index.js") });
+  });
+
+  test("a path of the computer that built it, anywhere in what the build writes, fails the build", async () => {
+    const c = await checkout();
+    write(c.plugin, { "host/index.ts": `export const start = () => ${JSON.stringify(join(realpathSync(c.root), "secret"))};\n` });
+    const e = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).catch((x) => x);
+    expect(e).toBeInstanceOf(PluginBuildError);
+    expect(e.message).toContain("index.js: holds the checkout, a path of the computer that built it");
+    write(c.plugin, { "host/index.ts": `export const start = () => "/x/${userInfo().username}/y";\n` });
+    const u = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).catch((x) => x);
+    expect(u.message).toContain("the user's name in a path");
+  });
+
+  test("a load the scan can't check fails the build, in a built module or in JavaScript the folder ships as it is", async () => {
+    const forms: [string, string][] = [
+      ["computed import()", "export const f = (x: string) => import(x);"],
+      ["template import()", "export const f = (x: string) => import(`./${x}.js`);"],
+      ["computed require", "declare const require: (s: string) => unknown;\nexport const f = (x: string) => require(x);"],
+      ["import.meta.require", "export const f = (x: string) => import.meta.require(x);"],
+      ["createRequire", `import { createRequire } from "node:module";\nexport const f = () => createRequire(import.meta.url)("x");`],
+      ["getBuiltinModule", `export const f = () => process.getBuiltinModule("module");`],
+      ["a Worker", `export const f = () => new Worker("./w.js");`],
+      ["Bun.resolveSync", `export const f = () => Bun.resolveSync("x", ".");`],
+      ["a literal require of what isn't shipped", `declare const require: (s: string) => unknown;\nexport const f = () => require("left-pad");`],
+    ];
+    for (const [what, code] of forms) {
+      const c = await checkout({ plugin: { "host/index.ts": `${code}\nexport const start = () => 1;\n` } });
+      const e = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).catch((x) => x);
+      expect([what, e instanceof PluginBuildError && /can't be checked|requires left-pad at run time|takes node:module|Could not resolve: "left-pad"/.test(e.message) ? true : String(e?.message ?? e)]).toEqual([what, true]);
+    }
+    const client = await checkout({ plugin: { "client/index.tsx": `export const load = (url: string) => import(url);\n` } });
+    const ce = await buildPluginForShipping(client.plugin, { target: "linux-arm64", download: client.download }).catch((x) => x);
+    expect(ce instanceof PluginBuildError && ce.message.includes("import() of a computed specifier")).toBe(true);
+    const copied = await checkout({ plugin: { "assets/helper.js": `export const f = (x) => import(x);\n` } });
+    const pe = await buildPluginForShipping(copied.plugin, { target: "linux-arm64", download: copied.download }).catch((x) => x);
+    expect(pe instanceof PluginBuildError && pe.message.includes("assets/helper.js: 1 import() of a computed specifier")).toBe(true);
+    // The bundler's own shims and a literal require of a built-in pass.
+    const ok = await checkout({ plugin: { "host/index.ts": `declare const require: (s: string) => unknown;\nexport const start = () => require("node:path");\n` } });
+    expect((await buildPluginForShipping(ok.plugin, { target: "linux-arm64", download: ok.download })).modules.length).toBe(4);
+  });
+
+  test("programs: bun run, node --import, and a form it can't build refuses rather than ship unbuilt", async () => {
+    const runs = async (args: string[], command = "node", extra: Record<string, string> = {}) => {
+      const c = await checkout({ plugin: { ...extra, "plugins/kid/clover.json": json({ manifest: 1, name: "Kid", contributes: { mcpServers: { s: { type: "stdio", command, args } } } }), "plugins/kid/setup.ts": `globalThis.x = 1;\n`, "plugins/kid/main.ts": `console.log(1);\n` } });
+      return buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).then(
+        (r) => JSON.parse(read(r.dir, "plugins/kid/clover.json")).contributes.mcpServers.s.args,
+        (e) => (e instanceof PluginBuildError ? `refused: ${e.message}` : e),
+      );
+    };
+    expect(await runs(["--import", "setup.ts", "main.ts", "--flag"])).toEqual(["--import", "setup.js", "main.js", "--flag"]);
+    expect(await runs(["run", "main.ts"], "bun")).toEqual(["run", "main.js"]);
+    expect(await runs(["--smol", "--conditions", "x", "./main.ts"], "bun")).toEqual(["--smol", "--conditions", "x", "main.js"]);
+    for (const [args, cmd, why] of [
+      [["x", "some-package"], "bun", "isn't a module of the plugin's"],
+      [["-e", "console.log(1)"], "node", "a flag the release build doesn't know"],
+      [["--weird", "main.ts"], "node", "a flag the release build doesn't know"],
+      [["missing.ts"], "node", "isn't a module of the plugin's"],
+      [["--import", "some-package", "main.ts"], "node", "isn't a module in the plugin"],
+      [["--import=setup.ts", "main.ts"], "node", "two arguments"],
+      [[], "bun", "names no program file"],
+    ] as const) {
+      const r = await runs([...args], cmd);
+      expect([args.join(" "), typeof r === "string" && r.startsWith("refused:") && r.includes(why)]).toEqual([args.join(" "), true]);
     }
   });
 
@@ -259,6 +366,8 @@ describe("untarGz", () => {
     const gz = (...parts: number[][]) => Bun.gzipSync(new Uint8Array([...parts.flat(), ...new Uint8Array(1024)]));
     expect(() => untarGz(gz(header("package/../../evil", "0", "x")), "p")).toThrow("outside its package folder");
     expect(() => untarGz(gz(header("package/link", "2")), "p")).toThrow("isn't a regular file");
+    expect(() => untarGz(gz(header("package/c:evil", "0", "x")), "p")).toThrow("outside its package folder");
+    expect(() => untarGz(gz(header("package/a/x:y", "0", "x")), "p")).toThrow("outside its package folder");
     expect(untarGz(gz(header("package/ok", "0", "y")), "p").map((f) => f.path)).toEqual(["ok"]);
   });
 });
@@ -272,6 +381,7 @@ describe("the bundled plugins", () => {
       const r = await buildPluginForShipping(join(import.meta.dir, "../../../../../plugins", id), {
         target,
         bundled: true,
+        dev: true,
         download: async (url) => {
           throw new Error(`no download in this test: ${url}`);
         },

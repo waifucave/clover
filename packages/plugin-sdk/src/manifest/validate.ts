@@ -371,6 +371,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   }
 
   // A built plugin (`built: true`) names JavaScript modules only: TypeScript would mean the build didn't run.
+  if (top.built === true && opts.bundled !== true) {
+    f.error("plugin", "built_not_bundled", ["built"], "only the plugins Clover ships are built by its release; this plugin can't say it is");
+  }
   if (top.built === true) {
     const js = (p: unknown) => typeof p !== "string" || /\.(?:js|mjs)$/.test(p);
     if (isObject(top.host) && !js(top.host.entry)) f.error("plugin", "built_entry", ["host", "entry"], `a built plugin's host entry is a .js module, not "${String(top.host.entry)}"`);

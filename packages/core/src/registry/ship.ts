@@ -20,11 +20,11 @@
 // the build. Nothing here runs plugin code.
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { basename, dirname, join, posix, relative, sep } from "node:path";
-import { MANIFEST_FILE, parseJsonc, validateTree } from "@waifucave/clover-plugin-sdk";
+import { CLIENT_BARE_IMPORTS, MANIFEST_FILE, parseJsonc, validateTree } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
-import { buildPluginModule, builtModulePath, packageOfSpecifier, PluginBuildError, type BuildSide } from "./build";
+import { buildMachineStrings, buildPluginModule, builtModulePath, forbiddenIn, isRuntimeBuiltin, packageOfSpecifier, PluginBuildError, runtimeLoadProblems, type BuildSide, type Forbidden } from "./build";
 import { folderReader } from "./tree";
 
 /** The platforms a release builds for (the daemon's targets). */
@@ -56,8 +56,12 @@ export interface ShipOptions {
   lockfile?: string;
   /** Downloads a prebuilt package's tarball. Default: `fetch`. */
   download?: (url: string) => Promise<Uint8Array>;
-  /** Validate as a bundled tree (the `clover` plugin's reserved names). */
+  /** A bundled tree (`clover`, `alpha`): validated with the bundled names, its manifests marked `built: true`, and its
+   *  natives' prebuilt packages always downloaded and checked against the lockfile (#271's ruling M2). */
   bundled?: boolean;
+  /** A development build (the dev daemon's stage): a native's platform package may come from this checkout's install,
+   *  when its name and version are the lockfile's. Never for a release. */
+  dev?: boolean;
 }
 
 /** A module of the built tree: its path in it (with `/`), which side runs it, and its text. `host` covers programs. */
@@ -85,7 +89,8 @@ export interface ShippedPlugin {
 }
 
 /** Files and folders that never ship (lane M's release filter, plus sources and loader configs). */
-const LEFT_OUT_DIRS = new Set(["node_modules", ".git", "test", "tests", "__tests__"]);
+/** `gallery` is a part's CI-only story renderer (docs/clover-layout.md "A gallery"), never part of what runs. */
+const LEFT_OUT_DIRS = new Set(["node_modules", ".git", "test", "tests", "__tests__", "gallery"]);
 const LEFT_OUT_FILE = /^(?:tsconfig.*\.json|bunfig\.toml|bun\.lockb?|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|\.DS_Store|\.env.*|.*\.(?:test|spec)\.[cm]?[jt]sx?|.*\.(?:[cm]?ts|tsx|jsx))$/;
 const CODE_FILE = /\.(?:[cm]?[jt]sx?)$/;
 
@@ -107,12 +112,34 @@ export async function buildPluginForShipping(folder: string, o: ShipOptions): Pr
     return await ship(src, out, o);
   } catch (e) {
     rmSync(out, { recursive: true, force: true });
-    throw e;
+    const [, ...checkout] = checkoutRoots(src, o);
+    throw scrubbed(e, [[src, "<plugin>"], [out, "<out>"], ...checkout.map((c) => [c, "<checkout>"] as [string, string]), [homedir(), "~"]]);
   }
 }
 
+/** The folders a build error may not name (#271's L5): the plugin's checkout, the plugin itself, the output. */
+function checkoutRoots(src: string, o: ShipOptions): string[] {
+  let lock: string | undefined;
+  try {
+    lock = dirname(o.lockfile ?? findLockfile(src));
+  } catch {
+    lock = undefined;
+  }
+  return [src, ...(lock === undefined ? [] : [lock])];
+}
+
+/** A build error with every absolute path under `roots` written relative (`<checkout>/…`), so a release log or
+ *  artefact that carries it names no folder of the computer that built it. */
+function scrubbed(e: unknown, roots: readonly (readonly [string, string])[]): unknown {
+  const sorted = roots.flatMap(([r, label]) => [...new Set([r, r.replaceAll("\\", "/")])].map((v) => [v, label] as const)).filter(([r]) => r.length > 1).sort((a, b) => b[0].length - a[0].length);
+  const scrub = (text: string) => sorted.reduce((t, [r, label]) => t.replaceAll(r, label), text);
+  if (e instanceof PluginBuildError) return new PluginBuildError(e.problems.map(scrub));
+  if (e instanceof Error) return new PluginBuildError([scrub(e.message)]);
+  return e;
+}
+
 function prepareOut(out: string | undefined): string {
-  if (out === undefined) return mkdtempSync(join(tmpdir(), "clover-ship-"));
+  if (out === undefined) return realpathSync(mkdtempSync(join(tmpdir(), "clover-ship-")));
   if (existsSync(out) && readdirSync(out).length > 0) throw new PluginBuildError([`${out} isn't empty; the built tree goes in a new folder`]);
   mkdirSync(out, { recursive: true });
   return realpathSync(out);
@@ -131,6 +158,7 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
   const units = readUnits(src);
   const include = o.include ?? (() => true);
   const sides = new Map<string, BuildSide>();
+  const forbid = machineStrings(src, out, o);
   const modules: ShippedModule[] = [];
   const written = new Set<string>();
   const problems: string[] = [];
@@ -156,6 +184,7 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
           entry: join(src, ...rel.split("/")),
           outFile: join(out, ...outRel.split("/")),
           side,
+          forbid,
           keepExternal: side === "client" ? undefined : (spec, importer) => natives.keep(spec, importer, unit.base),
         });
         written.add(outRel);
@@ -181,13 +210,12 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
         m.client = { ...m.client, entry: r.rel.slice(unit.base.length), ...(css.length + r.css.length > 0 ? { css: [...css, ...r.css.filter((c) => !css.includes(c))] } : {}) };
       }
     }
-    for (const prog of programs(m)) {
+    for (const prog of programs(m, unit.base, (rel) => existsSync(join(src, ...rel.split("/"))), problems)) {
       const arg = prog.args[prog.at]!;
-      if (!existsSync(join(src, ...`${unit.base}${arg.replace(/^\.\//, "")}`.split("/")))) continue;
       const r = await build(arg, prog.side);
       if (r) prog.args[prog.at] = r.rel.slice(unit.base.length);
     }
-    m.built = true;
+    if (o.bundled === true) m.built = true;
   }
   if (problems.length > 0) throw new PluginBuildError(problems);
 
@@ -200,11 +228,39 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
     written.add(`${unit.base}${MANIFEST_FILE}`);
   }
   const shippedNatives = await natives.finish(written);
+  // JavaScript the folder ships as it is gets the built modules' checks too (#271's M1).
+  const nativePackages = new Set(shippedNatives.map((n) => n.package));
+  const copiedProblems: string[] = [];
+  for (const rel of [...written].filter((f) => /\.[cm]?js$/.test(f) && !f.split("/").includes("node_modules") && !modules.some((m) => m.file === f)).sort()) {
+    const text = readFileSync(join(out, ...rel.split("/")), "utf8");
+    const allowed = (spec: string) => isRuntimeBuiltin(spec) || (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec) || nativePackages.has(packageOfSpecifier(spec));
+    for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(text)) {
+      if (/^[a-z][a-z0-9+.-]*:/i.test(i.path) && !i.path.startsWith("node:") && !i.path.startsWith("bun:")) copiedProblems.push(`${rel}: imports ${i.path}, a URL`);
+      else if (!i.path.startsWith(".") && !i.path.startsWith("/") && !allowed(i.path)) copiedProblems.push(`${rel}: imports ${i.path}, which nothing in the shipped tree provides`);
+      else if (i.path.startsWith("/")) copiedProblems.push(`${rel}: imports ${i.path}, an absolute path`);
+    }
+    copiedProblems.push(...runtimeLoadProblems(text, rel, { client: false, allowed }), ...forbiddenIn(text, rel, forbid));
+  }
+  if (copiedProblems.length > 0) throw new PluginBuildError(copiedProblems);
   for (const unit of units) writeRunPackage(src, out, unit, natives.dependenciesOf(unit.base), modules.some((x) => x.file.startsWith(unit.base) && (unit.base !== "" || !x.file.startsWith("plugins/"))), written);
 
   await checkBuiltTree(src, out, o.bundled === true);
   const files = listFiles(out);
   return { dir: out, files, modules: modules.sort((a, b) => (a.file < b.file ? -1 : 1)), natives: shippedNatives };
+}
+
+/** What no shipped file may hold: this computer's home folder and user name, the checkout, the plugin's folder and the
+ *  output folder (#271's H1). */
+function machineStrings(src: string, out: string, o: ShipOptions): Forbidden[] {
+  let user = "";
+  try {
+    user = userInfo().username;
+  } catch {
+    user = process.env.USER ?? process.env.USERNAME ?? "";
+  }
+  const folders = [{ path: src, label: "the plugin's folder" }, { path: out, label: "the output folder" }];
+  for (const lock of checkoutRoots(src, o).slice(1)) folders.push({ path: lock, label: "the checkout" });
+  return buildMachineStrings(folders, homedir(), user);
 }
 
 /** The top-level manifest and its children's (one level deep, `plugins/<id>/`), parsed. */
@@ -226,24 +282,81 @@ function readUnits(src: string): Unit[] {
   return units;
 }
 
-/** Programs a manifest runs with `bun` or `node` from a file of the plugin's: a `stdio` server's or an agent
- *  backend's command, with the file as its first argument that isn't a flag. Its `args` array is the manifest's own,
- *  so a rewrite lands in it. */
-function programs(m: Json): { args: string[]; at: number; side: BuildSide }[] {
+/** The flags of `bun` and `node` that take a module of the plugin's (built like the program itself), that take another
+ *  value, and that take none, before the program's file (#271's L4). */
+const MODULE_FLAGS = new Set(["--import", "--require", "-r", "--preload", "--loader", "--experimental-loader"]);
+const VALUE_FLAGS = new Set(["--conditions", "-C", "--input-type", "--title", "--stack-size", "--max-old-space-size", "--env-file", "--config", "-c", "--tsconfig-override", "--define", "-d", "--port", "--inspect-port"]);
+const BOOLEAN_FLAGS = new Set(["--smol", "--bun", "--no-warnings", "--enable-source-maps", "--no-deprecation", "--trace-warnings", "--experimental-strip-types", "--no-experimental-strip-types", "--expose-gc", "--silent", "--no-env-file", "--no-addons"]);
+
+/** Programs a manifest runs with `bun` or `node` from files of the plugin's: a `stdio` server's or an agent backend's
+ *  command. Each names the `args` positions to build: the program's file (`bun file`, `bun run file`, `node file`) and
+ *  every module a flag before it preloads (`node --import x file`). A form this doesn't understand (another `bun`
+ *  subcommand, `-e` code, an unknown flag before the file, a preloaded package rather than a file) fails the build
+ *  rather than ship what it can't build. `args` is the manifest's own, so a rewrite lands in it. */
+function programs(m: Json, base: string, exists: (rel: string) => boolean, problems: string[]): { args: string[]; at: number; side: BuildSide }[] {
   const out: { args: string[]; at: number; side: BuildSide }[] = [];
   const c = isObject(m.contributes) ? m.contributes : {};
-  const entries = [...(isObject(c.mcpServers) ? Object.values(c.mcpServers) : []), ...(Array.isArray(c.agentBackends) ? c.agentBackends : [])];
-  for (const e of entries) {
-    if (!isObject(e) || typeof e.command !== "string" || !Array.isArray(e.args)) continue;
+  const entries = [
+    ...(isObject(c.mcpServers) ? Object.entries(c.mcpServers).map(([k, v]) => [`mcpServers/${k}`, v] as const) : []),
+    ...(Array.isArray(c.agentBackends) ? c.agentBackends.map((v, i) => [`agentBackends/${i}`, v] as const) : []),
+  ];
+  for (const [where, e] of entries) {
+    if (!isObject(e) || typeof e.command !== "string") continue;
     if (e.type !== undefined && e.type !== "stdio") continue;
     const cmd = basename(e.command).toLowerCase().replace(/\.exe$/, "");
     if (cmd !== "bun" && cmd !== "node") continue;
-    const args = e.args as unknown[];
-    const at = args.findIndex((a) => typeof a === "string" && !a.startsWith("-"));
-    if (at < 0) continue;
-    const arg = args[at] as string;
-    if (!CODE_FILE.test(arg) || arg.startsWith("/") || /^[A-Za-z]:/.test(arg) || arg.split("/").includes("..")) continue;
-    out.push({ args: args as string[], at, side: cmd === "node" ? "node" : "bun" });
+    const side: BuildSide = cmd === "node" ? "node" : "bun";
+    const args = (Array.isArray(e.args) ? e.args : []) as unknown[];
+    const fail = (why: string) => problems.push(`${base}${MANIFEST_FILE}: ${where} runs ${cmd} ${args.map(String).join(" ")}: ${why}`);
+    const own = (a: string) => CODE_FILE.test(a) && !a.startsWith("/") && !/^[A-Za-z]:/.test(a) && !a.split("/").includes("..") && exists(`${base}${a.replace(/^\.\//, "")}`);
+    const found: { args: string[]; at: number; side: BuildSide }[] = [];
+    let i = 0;
+    let ok = true;
+    if (cmd === "bun" && args[0] === "run") i = 1;
+    for (; i < args.length; i++) {
+      const a = args[i];
+      if (typeof a !== "string") {
+        ok = false;
+        fail("an argument isn't a string");
+        break;
+      }
+      const [flag, inline] = a.startsWith("--") && a.includes("=") ? [a.slice(0, a.indexOf("=")), a.slice(a.indexOf("=") + 1)] : [a, undefined];
+      if (MODULE_FLAGS.has(flag)) {
+        if (inline !== undefined) {
+          ok = false;
+          fail(`write ${flag} and its module as two arguments`);
+          break;
+        }
+        const v = args[i + 1];
+        if (typeof v !== "string" || !own(v)) {
+          ok = false;
+          fail(`${flag} names ${String(v)}, which isn't a module in the plugin; a shipped program preloads only its own files`);
+          break;
+        }
+        found.push({ args: args as string[], at: i + 1, side });
+        i++;
+        continue;
+      }
+      if (VALUE_FLAGS.has(flag)) {
+        if (inline === undefined) i++;
+        continue;
+      }
+      if (BOOLEAN_FLAGS.has(flag)) continue;
+      if (a.startsWith("-")) {
+        ok = false;
+        fail(`${a} is a flag the release build doesn't know; it can't tell what the program runs`);
+        break;
+      }
+      if (!own(a)) {
+        ok = false;
+        fail(`${a} isn't a module of the plugin's, so the program can't be built`);
+        break;
+      }
+      found.push({ args: args as string[], at: i, side });
+      break; // what follows is the program's own arguments
+    }
+    if (ok && i >= args.length) fail("it names no program file of the plugin's");
+    else if (ok) out.push(...found);
   }
   return out;
 }
@@ -388,29 +501,26 @@ class NativeShipper {
         copyPackage(dir, this.out, `${modules}/${name}`, written);
         return true;
       };
+      const platform = this.platformPackages(use.dir);
+      const wanted = platform.filter((p) => matchesTarget(p.meta, this.o.target));
+      if (platform.length > 0 && wanted.length === 0) throw new PluginBuildError([`${use.base}: ${use.name} has no prebuilt package for ${this.o.target}`]);
+      if (platform.length === 0 && (this.o.dev !== true || this.o.target !== hostShipTarget())) {
+        throw new PluginBuildError([`${use.base}: ${use.name} is a native addon built on this computer, with no prebuilt package the lockfile pins for ${this.o.target}; only a dev build for this computer ships one`]);
+      }
       // The package and what it depends on (not its optional platform packages: only the target's ships, below).
+      // The installed tree says which packages and versions; what ships is, for a release, the lockfile's download of
+      // each, checked against its integrity (#271's ruling M2), and in a dev build the installed copy.
       const queue: [string, string][] = [[use.name, use.dir]];
       while (queue.length > 0) {
         const [name, dir] = queue.shift()!;
-        if (!place(name, dir)) continue;
+        if (!place(name, await this.shippable(name, String(readPackage(dir).version ?? ""), dir))) continue;
         for (const dep of Object.keys((readPackage(dir).dependencies as Json | undefined) ?? {})) {
           const depDir = packageDir(dep, dir);
           if (depDir === undefined) throw new PluginBuildError([`${use.base}: ${name} depends on ${dep}, which isn't installed`]);
           queue.push([dep, depDir]);
         }
       }
-      const platform = this.platformPackages(use.dir);
-      const wanted = platform.filter((p) => matchesTarget(p.meta, this.o.target));
-      if (platform.length > 0) {
-        if (wanted.length === 0) throw new PluginBuildError([`${use.base}: ${use.name} has no prebuilt package for ${this.o.target}`]);
-        for (const p of wanted) {
-          const local = packageDir(p.name, use.dir);
-          const dir = local !== undefined && readPackage(local).version === p.version ? local : await this.fetchPackage(p);
-          place(p.name, dir);
-        }
-      } else if (this.o.target !== hostShipTarget()) {
-        throw new PluginBuildError([`${use.base}: ${use.name} is a native addon built on this computer, with no prebuilt package for ${this.o.target}`]);
-      }
+      for (const p of wanted) place(p.name, await this.shippable(p.name, p.version, this.o.dev === true ? packageDir(p.name, use.dir) : undefined));
       for (const rel of [...written].filter((f) => f.startsWith(`${modules}/`) && f.endsWith(".node")).sort()) {
         if (!shipped.some((s) => s.file === rel)) shipped.push({ file: rel, package: use.name, target: this.o.target });
       }
@@ -440,7 +550,19 @@ class NativeShipper {
   private locked(name: string, version: string): LockedPackage | undefined {
     if (this.lock === undefined) this.lock = readLock(this.lockfile());
     const all = this.lock.get(name) ?? [];
-    return all.find((p) => p.version === version) ?? (all.length === 1 ? all[0] : undefined);
+    return all.find((p) => p.version === version);
+  }
+
+  /** The folder a package ships from: in a dev build the installed copy (`installed`) when its name and version are
+   *  the lockfile's; otherwise, and always for a release, the lockfile's download of exactly that version (L1). */
+  private async shippable(name: string, version: string, installed: string | undefined): Promise<string> {
+    const p = this.locked(name, version);
+    if (p === undefined) throw new PluginBuildError([`${name}@${version} isn't in the lockfile, so it can't be checked`]);
+    if (this.o.dev === true && installed !== undefined) {
+      const pkg = readPackage(installed);
+      if (pkg.name === p.name && pkg.version === p.version) return installed;
+    }
+    return await this.fetchPackage(p);
   }
 
   /** Downloads a package's tarball, checks it against the lockfile's integrity, and unpacks it. */
@@ -460,6 +582,8 @@ class NativeShipper {
       writeFileSync(to, f.bytes, { mode: f.mode & 0o755 });
     }
     if (!existsSync(join(dir, "package.json"))) throw new PluginBuildError([`${p.name}@${p.version}: its tarball holds no package.json`]);
+    const pkg = readPackage(dir);
+    if (pkg.name !== p.name || pkg.version !== p.version) throw new PluginBuildError([`${p.name}@${p.version}: its tarball is ${String(pkg.name)}@${String(pkg.version)}, not the package the lockfile pins`]);
     return dir;
   }
 }
@@ -501,7 +625,7 @@ export function untarGz(gz: Uint8Array, what: string): { path: string; mode: num
     if (type === "5") continue;
     if (type !== "0" && type !== "\0") fail(`holds ${name}, which isn't a regular file`);
     const parts = name.split("/").filter((x) => x !== "" && x !== ".");
-    if (parts.length < 2 || name.startsWith("/") || parts.some((x) => x === ".." || x.includes("\\") || /^[A-Za-z]:/.test(x))) fail(`holds ${name}, outside its package folder`);
+    if (parts.length < 2 || name.startsWith("/") || parts.some((x) => x === ".." || x.includes("\\") || x.includes(":"))) fail(`holds ${name}, outside its package folder`);
     out.push({ path: parts.slice(1).join("/"), mode: header.mode, bytes: body });
   }
   return out;
