@@ -20,10 +20,10 @@ import { sessionHooksFor } from "../../src/runtime-sdk/hooks";
 import { SessionHub } from "../../src/sessions/hub";
 import { SessionStore } from "../../src/sessions/store";
 import type { Settings } from "../../src/settings";
-import { sandboxAvailable } from "../../src/workflows/sandbox";
 import { FakeHelper, FakeHelperError } from "./fake-helper";
+import { darwinTest } from "../helpers/darwin-only";
 
-const macOnly = sandboxAvailable() ? test : test.skip;
+const macOnly = darwinTest;
 const services: ComputerV2Service[] = [];
 afterEach(() => { for (const s of services.splice(0)) s.stop(); });
 

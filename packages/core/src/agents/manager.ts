@@ -43,7 +43,9 @@ import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSou
 import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
+import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths } from "./paths";
+import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
@@ -217,7 +219,12 @@ export class AgentManager {
   async start(req: AgentRequest): Promise<{ sessionId: string; transcript: string }> {
     const backend = this.#o.backends().find((b) => b.id === req.backend);
     if (!backend) throw new ContractError("not_installed", `no agent backend named ${req.backend}`);
-    if (backend.quirks.placement !== "local") throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which comes with K-M3`);
+    // Spec §9.3 "Cloud placement": whether the stdio bridge reaches a cloud session, and what the root folder means
+    // there, are settled before a cloud backend ships, by the agent suite's live gates. Until then it is listed, never
+    // started.
+    if (backend.quirks.placement !== "local") {
+      throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
+    }
     const computer = req.computer ?? this.#o.computer;
     if (computer !== this.#o.computer) {
       throw new ContractError("refused", `placing an agent on ${computer} comes with K-M3; for now an agent runs on ${this.#o.computer}`);
@@ -453,10 +460,17 @@ export class AgentManager {
         env: { [BRIDGE_ENV.token]: e.token, [BRIDGE_ENV.session]: e.id, [BRIDGE_ENV.socket]: this.#o.bridge.socketPath },
         tools: e.bridgeTools,
       },
-      fence: this.#o.fence.policy(),
+      // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
+      // whole, for reads and writes.
+      fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       admitted,
+      // A backend inside the daemon (Clover's coding agent) gets the bridge in-process: its calls check the session's
+      // token is still live, as the socket's do.
+      ...((e.backend as { inProcess?: boolean }).inProcess === true
+        ? { inProcessBridge: await inProcessBridgeServer(this.bridgeHandlers(), { name: e.serverName, sessionId: e.id, live: () => this.#o.tokens.has(e.id) }) }
+        : {}),
     };
     const session = await e.backend.start(spec);
     e.session = session;
@@ -541,6 +555,13 @@ export class AgentManager {
     if (resolved.over) {
       // More paths than Clover checks: refused without a card, never let through unchecked (check 2's minor 1).
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "too-many-paths", paths: raw.paths.length });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // Anything in the Clover home (a bot's memory, its conversations, the runtime's state), as written or through a link:
+    // refused without a card, at every level (the owner's decision, #208's check 2).
+    if (resolved.paths.some((p) => homeReach(this.#o.home, p, e.rootPath) === "inside")) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "clover-home" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }

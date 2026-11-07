@@ -9,6 +9,8 @@
 //   that starts like JSON but isn't one whole object is dropped.
 // * A hook that runs past its limit (default 10 seconds, §5.3) or fails to start is skipped: the shim exits 0 with
 //   nothing, as if the hook weren't there, and says why on stderr.
+// * A hook runs as its own process group (a job object on Windows), ended when it exits or times out, so nothing it
+//   started outlives it.
 //
 // `clover-core hook-shim --timeout <ms> -- <command> [args…]` in the shipped binary; `bun hook-shim.ts …` from source.
 import { spawn } from "node:child_process";
@@ -112,7 +114,7 @@ export function runHook(command: string, args: readonly string[], input: string,
         else if (job) job.terminate(1);
         else child.kill("SIGKILL");
       } catch {
-        child.kill("SIGKILL");
+        // The group is already gone.
       }
     };
     const timer = setTimeout(() => {
@@ -129,6 +131,8 @@ export function runHook(command: string, args: readonly string[], input: string,
     });
     child.on("error", (err) => finish({ code: 0, stdout: "", stderr: `clover hook shim: the hook didn't start (${err.message}); skipped\n` }));
     child.on("close", (code) => {
+      // A hook that exits leaves nothing behind either: what it started in the background goes with it (K-M2 check 2).
+      killAll();
       // Exit 2 is Claude Code's block: a deny, passed on with its reason. Any other failure skips the hook.
       if (code === 2) finish({ code: 2, stdout: "", stderr });
       else if (code === 0) finish({ code: 0, stdout: dropAllow(stdout), stderr });

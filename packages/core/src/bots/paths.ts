@@ -4,7 +4,7 @@
 //
 // | Path                              | What                                   | Who writes it                       |
 // | :-------------------------------- | :------------------------------------- | :---------------------------------- |
-// | `<home>/bots/<bot>/memory/`       | `MEMORY.md` and the memory files       | the bot, with its file tools (§6.5) |
+// | `<home>/bots/<bot>/memory/`       | `MEMORY.md` and the memory files: the tree's `home/memory/` | the bot's own sessions, with Write and Edit (§6.5) |
 // | `<home>/bots/<bot>/agents/`       | its background agents' transcripts     | the core (lane K, §9.3)             |
 // | `<home>/scratch/<bot>/`           | working files, never synced            | the bot                             |
 // | `<home>/user-layers/<bot>.json`   | the user's changes to the bot (§6.1)   | the core only: in the fenced set    |
@@ -22,6 +22,12 @@ export interface BotPaths {
   agents: string;
   scratch: string;
 }
+
+/** Where a bot's memory is in its folder tree (§6.5, the owner's 2026-11-06 decision): `home/memory/`, beside
+ *  `home/<Computer>/`, synced across all the user's computers (lane H), mapped onto `botPaths(…).memory` here (lane J).
+ *  Only the bot's own sessions (its main conversation and side threads) reach it; coding sessions, agents and other
+ *  bots don't (lanes C and B's per-caller fence). */
+export const MEMORY_TREE_PATH = "home/memory";
 
 export function botPaths(home: string, botId: string): BotPaths {
   const seg = botSegment(botId);

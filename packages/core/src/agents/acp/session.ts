@@ -36,12 +36,12 @@ import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
 import type { AgentPermissionOption } from "../../contracts/approval-broker";
 import type { Clock } from "../../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
-import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer, type JsonRpcMessage } from "./jsonrpc";
+import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer, type JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
 import { UserSelections } from "./selections";
 import {
   ACP_PROTOCOL_VERSION, type AgentCaps, type ConfigOption, type StdioMcpServer, at, isAuthRequired, obj, pathsOf, readCaps,
   readConfigOptions, readPermissionOptions, readToolStatus, str, textOf, type Obj, type ToolStatus,
-} from "./types";
+} from "@waifucave/clover-agent-sdk/acp";
 
 /** Where the raw wire goes: the transcript, which skips what is marked `replay`. */
 export type WireTap = (dir: "in" | "out", msg: JsonRpcMessage, replay: boolean) => void;

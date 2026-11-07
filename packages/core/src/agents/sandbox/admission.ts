@@ -8,7 +8,7 @@
 // writer land together, with the S8-style gates that admit them (`spikes/s8-secrets/agent-floor-gates.py`).
 import type { Os } from "@waifucave/clover-protocol";
 import type { SandboxPolicy } from "../../contracts/fence";
-import type { Obj } from "../acp/types";
+import type { Obj } from "@waifucave/clover-agent-sdk/acp";
 import { versionSatisfies } from "../version";
 
 export type SandboxAdmission =

@@ -1078,7 +1078,7 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
  * `* ? [ ]` as a GLOB and render it as a seatbelt REGEX, not a `(subpath …)` — claude always has,
  * and the Clover runtime since agent SDK round 11 (`2a118c6`, `splitDenyPathsByGlobShape`). So under a home or project whose path holds a `[` (a directory named `[wip] app`), a raw deny
  * entry is a character class that misses the literal path and fences NOTHING: measured on both real
- * binaries (`sandbox-glob-escape-measure.e2e.test.ts`) — a sandboxed write into the raw-denied directory
+ * binaries (`sandbox-glob-escape-measure.e2e.darwin.test.ts`) — a sandboxed write into the raw-denied directory
  * lands, into the spelled one it does not. The router's `escapeSandboxGlobPath` spells the one escape that
  * grammar honours (`[` → `[[]`); `*`/`?` have no spelling there and stay raw, which for a DENY is the
  * wider, stricter form. Only the deny lists are spelled: this fence has no allow entries.

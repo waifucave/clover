@@ -210,6 +210,6 @@ describe("the release choice: inputs or an explicit omit", () => {
     }, SIGNING_TIMEOUT_MS);
   });
   test("an omitted bundle gives the daemon nothing to spawn: the default launcher port refuses launcher_missing before spawning anything (core test)", () => {
-    expect(readFileSync(join(REPO, "packages", "core", "test", "cowork", "host-env-assembly.test.ts"), "utf8")).toContain("an omitted bundle");
+    expect(readFileSync(join(REPO, "packages", "core", "test", "cowork", "host-env-assembly.darwin.test.ts"), "utf8")).toContain("an omitted bundle");
   });
 });

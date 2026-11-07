@@ -55,6 +55,10 @@ export const LIMITS = {
   /** The longest an account-channel socket stays open: its token's end, and never past a token's longest life. */
   accountSocketMaxMs: 6 * 60_000,
   lease: { minTtl: 10, maxTtl: 300, defaultTtl: 60 },
+  /** Group recovery: how long an admitted member waits for its vote, and how far back a rollback reaches. */
+  // A key admitted without a quorum votes only once the rollback window has passed, so no key a thief could have
+  // added unchecked ever votes while its admitter's changes can still be undone.
+  recovery: { voteDelayMs: 7 * 24 * 3600_000, rollbackMs: 7 * 24 * 3600_000 },
   /** A short code's slot: seconds it may live (a pairing lasts 10 minutes), and its sealed box's decoded bytes. */
   rendezvous: { maxTtl: 600, maxBox: 4096 },
 } as const;
@@ -98,18 +102,41 @@ export interface MessageView {
 export interface MemberView {
   key: string;
   joinedAt: number;
+  /** Groups: when the member's vote starts (PROTOCOL.md, "Group recovery"); at or before now, it votes. */
+  votesFrom?: number;
+  /** Groups: the member that admitted it; absent for the founder. */
+  admittedBy?: string;
+}
+
+/** The group's recovery key voted in a change: `by` is the member that sent it, `target` the key it changed. */
+export interface RecoveryUse {
+  change: "admit" | "remove" | "recovery";
+  target: string | null;
+  by: string;
+  at: number;
 }
 
 /** What the service sends on a socket. */
 export type ServiceFrame =
   | { t: "hello"; v: 1; scope: "pair"; peer: { online: boolean } }
-  | { t: "hello"; v: 1; scope: "group"; lease: LeaseView; members: MemberView[] }
+  | {
+      t: "hello";
+      v: 1;
+      scope: "group";
+      lease: LeaseView;
+      members: MemberView[];
+      recovery: boolean;
+      /** The last time the recovery key voted, within 7 days, for a member that was offline then. */
+      recoveryUsed?: RecoveryUse;
+    }
   | { t: "hello"; v: 1; scope: "account"; online: string[]; lease: LeaseView }
   | ({ t: "record" } & RecordView)
   | ({ t: "message" } & MessageView)
   | { t: "presence"; online: boolean; device?: string }
   | { t: "lease"; lease: LeaseView }
-  | { t: "members"; members: MemberView[] }
+  | { t: "members"; members: MemberView[]; recovery: boolean }
+  /** The group's recovery key voted in a change: the surviving device shows a card. */
+  | ({ t: "recovery" } & RecoveryUse)
   | { t: "bye"; reason: "replaced" | "ended" | "stale" | "reauth" };
 
 // ---- what gets signed ----
@@ -123,12 +150,27 @@ export function groupStatement(group: string, key: string, t: number): string {
   return [`${PREFIX} group`, group, key, String(t)].join("\n");
 }
 
-export function joinStatement(group: string, key: string, t: number): string {
-  return [`${PREFIX} join`, group, key, String(t)].join("\n");
+/** The joining key's own statement. A join that moves the key out of another group names that group in a fifth
+ *  line, so only the key itself can ask for the move. */
+export function joinStatement(group: string, key: string, t: number, from?: string): string {
+  const lines = [`${PREFIX} join`, group, key, String(t)];
+  if (from !== undefined) lines.push(from);
+  return lines.join("\n");
 }
 
 export function admitStatement(group: string, key: string, t: number): string {
   return [`${PREFIX} admit`, group, key, String(t)].join("\n");
+}
+
+/** A co-signer's vote to remove `key` from a group; `keep` is the admitted keys the rollback leaves in (PROTOCOL.md,
+ *  "Group recovery"), sorted and comma-joined. */
+export function removeStatement(group: string, key: string, t: number, keep: readonly string[] = []): string {
+  return [`${PREFIX} remove`, group, key, String(t), [...keep].sort().join(",")].join("\n");
+}
+
+/** A vote to set (or, with null, clear) a group's recovery key. */
+export function recoveryStatement(group: string, key: string | null, t: number): string {
+  return [`${PREFIX} recovery`, group, key ?? "", String(t)].join("\n");
 }
 
 /** What a signed request's `sig` covers. `bodyHash` is base64url of SHA-256 over the body bytes (or zero bytes). */

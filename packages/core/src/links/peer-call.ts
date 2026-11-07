@@ -25,6 +25,20 @@ export interface PeerCallDeps {
   dispatch(method: string, params: unknown, caller: Extract<Caller, { kind: "peer" }>, role: "remote" | "web"): Promise<unknown>;
   /** Lets a test or lane C swap the signed-answer check (C owns `verifySignedAnswer`). */
   verify?: typeof verifySignedAnswer;
+  /** The lease's fencing token (lease.ts `isStale`): a call stamped with an earlier lease's `fence` is refused. */
+  isStale?(epoch: number, scope?: string): boolean;
+}
+
+/** What a call made for the main computer's bots carries: its lease's (scope, epoch), from `MainLease.fence()`. Lanes B
+ *  and J: the same field on `peer.call`'s params and the tree's calls. */
+export interface CallFence {
+  scope: string;
+  epoch: number;
+}
+
+export function fenceOf(raw: unknown): CallFence | undefined {
+  const f = (raw as { fence?: { scope?: unknown; epoch?: unknown } } | undefined)?.fence;
+  return f && typeof f.scope === "string" && typeof f.epoch === "number" && Number.isInteger(f.epoch) && f.epoch >= 0 ? { scope: f.scope, epoch: f.epoch } : undefined;
 }
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -33,6 +47,9 @@ export async function peerCall(deps: PeerCallDeps, raw: unknown, from: string): 
   const parsed = DEVICES_METHODS.peerCall.params.safeParse(raw);
   if (!parsed.success) throw new ContractError("invalid", "peer.call: bad params");
   const p = parsed.data;
+  // An act of an old main is refused, not just marked late (H-M2's review): the receiver's own fence decides.
+  const fence = fenceOf(raw);
+  if (fence && deps.isStale?.(fence.epoch, fence.scope)) throw new ContractError("not_main", "the call comes from a main computer that has since lost the lease", { fence });
   const verdict = peerCallVerdict(p.method, p.role);
   if (verdict === "refused") throw new ContractError("refused", `${p.method} can't be called from another computer as ${p.role}`);
   if (verdict === "needs-answer") {

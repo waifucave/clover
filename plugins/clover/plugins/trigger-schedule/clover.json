@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": "Schedule trigger",
+  "description": "Runs a routine on a schedule: every 15 minutes, or at the times a cron line names, in the routine's time zone (yours unless the file says another). Runs missed while the computer was off run once when it wakes, unless the routine says to skip them.",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "contributes": {
+    "triggers": [
+      {
+        "type": "schedule",
+        "title": "On a schedule",
+        "fields": {
+          "type": "object",
+          "required": ["schedule"],
+          "properties": {
+            "schedule": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "\"every <N><s|m|h|d>\", or a 5-field cron line \"minute hour day-of-month month day-of-week\"."
+            }
+          }
+        },
+        "handler": "schedule"
+      }
+    ]
+  }
+}
