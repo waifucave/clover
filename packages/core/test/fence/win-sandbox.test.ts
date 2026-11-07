@@ -66,6 +66,9 @@ import {
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
+import { ownFoldersOf, policyAllows } from "../../src/contracts/fence";
+import { fenceContextFor } from "../../src/contracts/fence";
+import type { Caller } from "@waifucave/clover-protocol";
 
 describe("the pinned launcher", () => {
   test("the pin names the controller's tag and commit", () => {
@@ -264,13 +267,18 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     // Memory folders protected from delete/move
     expect(plan.protectDelete).toContain("C:\\Users\\me\\.clover\\bots\\luna\\memory");
     expect(plan.protectDelete).toContain("C:\\Users\\me\\.clover\\bots\\sol\\memory");
-    // Runtime: own file readable, folder denied
-    expect(plan.grantRead).toContain("C:\\Users\\me\\.clover\\sessions-runtime\\s1.json");
+    // Runtime: hidden from every runner, its own session included (no own-file grant)
+    expect(plan.ownMemory).toBe("C:\\Users\\me\\.clover\\bots\\luna\\memory");
+    expect(plan.grantRead).not.toContain("C:\\Users\\me\\.clover\\sessions-runtime\\s1.json");
     expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\sessions-runtime");
     expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\sessions-runtime");
+    // Own routines and own plugin data are granted (a plugin caller would get its own instead)
+    expect(plan.grantRead).toContain("C:\\Users\\me\\.clover\\routines\\luna");
+    expect(plan.grantWrite).toContain("C:\\Users\\me\\.clover\\routines\\luna");
+    expect(plan.grantRead).not.toContain("C:\\Users\\me\\.clover\\plugin-data\\tarot");
   });
 
-  test("a coding session with no bot owns no memory but has its own runtime file", () => {
+  test("a coding session with no bot owns no memory and no runtime grant", () => {
     const entries = (dir: string) => (dir.endsWith("\\outputs") ? ["s9"] : []);
     const plan = winLaunchPlan({
       policy,
@@ -283,9 +291,77 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     // Other bot's folder denied
     expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\bots\\luna");
     expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\bots\\luna");
-    // Non-bot session still has its own runtime file
-    expect(plan.ownRuntime).toBe("C:\\Users\\me\\.clover\\sessions-runtime\\s9.json");
-    expect(plan.grantRead).toContain("C:\\Users\\me\\.clover\\sessions-runtime\\s9.json");
+    // No runtime grant either: the store stays hidden from every runner
+    expect(plan.grantRead).not.toContain("C:\\Users\\me\\.clover\\sessions-runtime\\s9.json");
+    expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\sessions-runtime");
+  });
+
+  test("Windows grants agree with policyAllows, caller by caller", () => {
+    // The Windows ACE lists follow the same reference order as the other OSes' sandboxes: a path matrix
+    // over every caller kind, where the plan's own grants are the only ways back inside the home deny.
+    const wseg = (p: string) => p.toUpperCase().split("\\").filter(Boolean);
+    const wunder = (p: string, r: string, strict = false) => {
+      const a = wseg(p), b = wseg(r);
+      if (a.length < b.length || (strict && a.length === b.length)) return false;
+      return b.every((n, i) => n === a[i]);
+    };
+    const winAllows = (plan: { grantWrite: readonly string[]; grantRead: readonly string[]; denyWrite: readonly string[]; denyRead: readonly string[] }, op: "read" | "write", abs: string): boolean => {
+      const rw = plan.grantWrite;
+      const ro = [...plan.grantWrite, ...plan.grantRead];
+      if (rw.some((g) => wunder(abs, g, true))) return true;
+      if (op === "read" && ro.some((g) => wunder(abs, g))) return true;
+      if (op === "read") return !plan.denyRead.some((d) => wunder(abs, d));
+      return !plan.denyWrite.some((d) => wunder(abs, d));
+    };
+    const callers: Caller[] = [
+      { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
+      { kind: "session", sessionId: "s2", sessionKind: "side-thread", bot: "luna" },
+      { kind: "session", sessionId: "a1", sessionKind: "agent", bot: "luna" },
+      { kind: "session", sessionId: "c1", sessionKind: "coding" },
+      { kind: "session", sessionId: "s9", sessionKind: "bot", bot: "alpha" },
+      { kind: "plugin", pluginId: "tarot" },
+      { kind: "user", client: "app" },
+      { kind: "core" },
+    ];
+    const rels = [
+      "outputs\\s_1\\report.md", "outputs\\s_9\\report.md", "outputs\\s_1",
+      "scratch\\luna\\a.md", "scratch\\sol\\a.md",
+      "routines\\luna\\m.md", "routines\\sol\\m.md", "routines\\luna",
+      "bots\\luna\\agents\\t.json", "bots\\luna\\memory\\MEMORY.md", "bots\\luna", "bots\\luna\\memory",
+      "bots\\sol\\memory\\MEMORY.md", "bots\\newbot\\memory\\n.md",
+      "plugin-data\\tarot\\d.json", "plugin-data\\luna\\d.json",
+      "sessions\\s_1.jsonl", "sessions-runtime\\s_1.json",
+      "settings\\settings.json", "run\\token", "projects\\k\\s.jsonl", "usage\\ledger.jsonl",
+    ];
+    const entries = (dir: string) => {
+      if (dir.endsWith("\\outputs")) return ["s_1", "s_9"];
+      if (dir.endsWith("\\scratch")) return ["luna", "sol"];
+      return [];
+    };
+    for (const caller of callers) {
+      const plan = winLaunchPlan({ policy, cloverHome: home, caller, bots: ["luna", "sol"], entries });
+      const ref: SandboxPolicy = {
+        allowWrite: ["C:\\Users\\me", "C:\\Temp"],
+        denyWrite: [...plan.denyWrite],
+        denyRead: [...plan.denyRead],
+        ...ownFoldersOf(fenceContextFor(caller), home),
+        closedDoors: [],
+        blockedAddresses: [],
+        network: "none",
+      };
+      for (const rel of rels) {
+        const abs = `C:\\Users\\me\\.clover\\${rel}`;
+        for (const op of ["read", "write"] as const) {
+          expect([caller.kind, op, rel, policyAllows(ref, op, abs, "windows")]).toEqual([caller.kind, op, rel, winAllows(plan, op, abs)]);
+        }
+      }
+      // Outside the home the fence has no say: both allow.
+      for (const abs of ["C:\\Users\\me\\project\\x.md", "C:\\Temp\\y.md"]) {
+        for (const op of ["read", "write"] as const) {
+          expect([caller.kind, op, abs, policyAllows(ref, op, abs, "windows")]).toEqual([caller.kind, op, abs, true]);
+        }
+      }
+    }
   });
 
   test("the reset plan removes the profile by SID and fails closed on what's left", () => {

@@ -112,16 +112,22 @@ export class CloverFence implements Fence {
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
     // The kinds that need more than the Clover home: the login places (under the user's home), the browser's
-    // partitions (under userData, plus the dev profile's next to it and a headless session's when lane E passes it),
-    // and the OK'd agent installs.
+    // partitions (always both shipped and dev profiles from the OS app-data folder, so neither app build can read
+    // the other's sign-ins, plus an explicitly passed userData and a headless sessionData when given), and the
+    // OK'd agent installs.
     for (const p of this.#layout["login-start"] ?? loginStartPaths(this.#home, this.#cloverHome, this.os)) add("login-start", p);
-    const devUserData = `${this.#userData.replace(/[\\/]+$/, "")} Dev`;
-    const userData = this.#layout["browser-profiles"] ?? [
+    const appData = this.os === "macos"
+      ? joinHome(this.#home, this.os, "Library", "Application Support")
+      : this.os === "windows"
+        ? joinHome(this.#home, this.os, "AppData", "Roaming")
+        : joinHome(this.#home, this.os, ".config");
+    const browserProfiles = this.#layout["browser-profiles"] ?? [
+      joinHome(appData, this.os, "Clover", "Partitions"),
+      joinHome(appData, this.os, "Clover Dev", "Partitions"),
       joinHome(this.#userData, this.os, "Partitions"),
-      joinHome(devUserData, this.os, "Partitions"),
       ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),
     ];
-    for (const p of userData) add("browser-profiles", p);
+    for (const p of [...new Set(browserProfiles)]) add("browser-profiles", p);
     for (const p of this.#layout["agent-installs"] ?? this.#agentInstalls) add("agent-installs", p);
     // Each bot's memory, `<home>/bots/<bot>/memory/` (deny `caller`: `judge` binds it by pattern to the bot whose id
     // folds equal). The known bots by id, plus the folders on the disk, so an unlisted leftover is still named.
