@@ -35,6 +35,10 @@ describe("ci-changes", () => {
     expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
   });
 
+  test("the merge queue's sweep (its own workflow): the scripts' tests, which run its step against stand-ins", () => {
+    expect(on([".github/workflows/queue-sweep.yml"])).toEqual(["scripts"]);
+  });
+
   test("a service's change: its tests and the typecheck", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
@@ -86,9 +90,17 @@ describe("ci-changes", () => {
 
   test("the link job runs for the sidecar, the links, and the devices and identity under them; the sidecar's change builds the packages too", () => {
     expect(on(["native/link/src/main.rs"])).toEqual(["workspaces", "packages", "link"]);
-    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts"]) expect(on([f]), f).toContain("link");
+    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts",
+      "packages/core/src/contracts/link-transport.ts", "packages/core/src/clock/system-clock.ts", "packages/protocol/src/index.ts"]) expect(on([f]), f).toContain("link");
     expect(on(["packages/core/src/daemon.ts"])).not.toContain("link");
     expect(on(["native/link-sidecar/src/main.rs"])).not.toContain("link");
+  });
+
+  test("every CI step that runs the link tests requires the sidecar, so a missing build fails instead of skipping", () => {
+    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { steps?: Array<{ run?: string; env?: Record<string, string> }> }> }).jobs;
+    const steps = Object.values(jobs).flatMap((j) => j.steps ?? []).filter((s) => /bun test\b.*\bsrc\/links\b/.test(s.run ?? ""));
+    expect(steps.length).toBe(2);
+    for (const s of steps) expect(s.env?.CLOVER_LINK_REQUIRE_BINARY).toBe("1");
   });
 
   test("the services' shared source and the sign-in stub run the core's suite (its account tests import them)", () => {

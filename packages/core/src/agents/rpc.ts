@@ -25,7 +25,8 @@ export interface AgentMethodsOptions {
 export type AgentMethod = (params: unknown, ctx: { caller: Caller }) => Promise<unknown>;
 
 export const BACKEND_NAMES: Readonly<Record<string, string>> = {
-  cursor: "Cursor", antigravity: "Antigravity CLI", "claude-code": "Claude Code", codex: "Codex", grok: "Grok", gemini: "Gemini CLI", deepseek: "DeepSeek Harness",
+  cursor: "Cursor", antigravity: "Antigravity CLI", "claude-code": "Claude Code", codex: "Codex", grok: "Grok", gemini: "Gemini CLI", deepseek: "DeepSeek Harness", devin: "Devin", "devin-cloud": "Devin (cloud)",
+  "clover-code": "Clover's coding agent",
 };
 
 function parse<S extends MethodSpec>(spec: S, raw: unknown): z.output<S["params"]> {
@@ -47,7 +48,9 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
           id: b.id,
           name: o.names?.[b.id] ?? BACKEND_NAMES[b.id] ?? b.id,
           pluginId: b.pluginId,
-          protocol: b.quirks.placement === "cloud" ? "cloud" : "acp",
+          // Devin's cloud is ACP with cloud placement (spec §9.3); a cloud agent with no command to start is a vendor's
+          // own API. Local backends, the in-process ones included, are ACP.
+          protocol: b.quirks.placement === "cloud" && Object.keys(b.quirks.launch.command).length === 0 ? "cloud" : "acp",
           placement: b.quirks.placement,
           computers: [{
             computer: o.computer, installed: d.installed, sandboxed: d.sandboxed, marks: [...marks],

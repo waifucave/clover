@@ -169,7 +169,7 @@ function dottedIPv4(host: string, policy: RadixPolicy): number | null {
  *  the fail-closed property this needs, and it is what makes the mechanism correction a comment fix
  *  rather than a code fix. Checked empirically, not by argument: a 46,598-host mixed-radix corpus
  *  (including the `0172.020.0300.1` shape built specifically to break it) found 0 resolver holes and
- *  0 dial holes. `test/agent/tools/ssrf-resolver-sweep.test.ts` carries the transform that keeps a
+ *  0 dial holes. `test/agent/tools/ssrf-resolver-sweep.darwin.test.ts` carries the transform that keeps a
  *  regression here visible. */
 function ipv4Interpretations(host: string): number[] {
   const found: number[] = [];
@@ -391,7 +391,7 @@ function rawAuthorityHost(raw: string): string | null {
  *  message. The deliberate new refusals are the ambiguous spellings — `http://010.0.0.1/`,
  *  `http://0127.0.0.1/`, `http://010.010.010.010/` — which WHATWG would dial as public addresses but
  *  a resolver handed the same string targets into private space. No legitimate host is spelled that
- *  way, and `test/agent/tools/ssrf-resolver-sweep.test.ts` is the generator-independent gate that
+ *  way, and `test/agent/tools/ssrf-resolver-sweep.darwin.test.ts` is the generator-independent gate that
  *  proves nothing the guard allows resolves — or dials — into private space. */
 /**
  * **The LEXICAL half of `ssrfGuard`, as its own answer** — "does this url TARGET a private,

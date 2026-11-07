@@ -4,10 +4,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RpcError, RpcPeer, type JsonRpcMessage } from "../acp/jsonrpc";
+import { RpcError, RpcPeer, type JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
 import { UserSelections } from "../acp/selections";
 import { MAX_RAW_INPUT_CHARS, capRawInput, onceOnly } from "../acp/session";
-import { isAuthRequired, pathsOf, readCaps, readConfigOptions } from "../acp/types";
+import { isAuthRequired, pathsOf, readCaps, readConfigOptions } from "@waifucave/clover-agent-sdk/acp";
 import { AcpAgentBackend, versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
 import { buildAgentEnv, launchContained, spawnPlan } from "../process/launch";
@@ -26,6 +26,7 @@ import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPath
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
 import { ADMISSIONS, admissionFor } from "../sandbox/admission";
 import { FileAgentOks, agentOksPath } from "../sandbox/oks";
+import { fileToolDenials, homeReach, realPathOf, withHomeDenied } from "../memory";
 
 function pair(opts: { stringIds?: boolean } = {}) {
   const tapped: [string, JsonRpcMessage][] = [];
@@ -495,6 +496,7 @@ describe("the backends' rows", () => {
     const lines: Record<string, string> = {
       cursor: "2026.10.22-27dcf5f", antigravity: "1.4.12", grok: "grok 1.0.70 (f50904eaee6c) [stable]", gemini: "0.46.0",
       "claude-code": "0.100.0", codex: "2.5.0", deepseek: "dsh 0.1.2",
+      devin: "devin 3000.11.234 (92c83011d113)", "devin-cloud": "devin 3000.11.234 (92c83011d113)",
     };
     for (const [id, q] of Object.entries(QUIRKS)) {
       for (const os of ["macos", "linux", "windows"] as const) expect(q.launch.command[os]?.length ?? 0).toBeGreaterThan(0);
@@ -507,5 +509,31 @@ describe("the backends' rows", () => {
     }
     // `agent` is Cursor's and Grok's: neither row resolves that name.
     for (const q of Object.values(QUIRKS)) expect(q.launch.command.macos![0]).not.toBe("agent");
+  });
+});
+
+describe("the Clover home is out of agents' reach", () => {
+  test("the whole home is denied, once; a path in it, as written or through a link, is in reach; one that holds it holds it", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-home-")));
+    try {
+      const home = join(root, ".clover");
+      mkdirSync(join(home, "transcripts", "beta"), { recursive: true });
+      mkdirSync(join(root, "project"));
+      symlinkSync(join(home, "transcripts"), join(root, "project", "link"));
+      const p = withHomeDenied({ allowWrite: [root], denyWrite: ["/a"], denyRead: [], closedDoors: [], blockedAddresses: [], network: "none" }, home);
+      expect(p.denyRead).toEqual([home]);
+      expect(p.denyWrite).toEqual(["/a", home]);
+      expect(withHomeDenied(p, home).denyRead).toEqual([home]);
+      expect(homeReach(home, join(home, "diffs", "s", "1.diff"), root)).toBe("inside");
+      expect(homeReach(home, join(root, ".CLOVER", "x"), root)).toBe("inside");
+      expect(homeReach(home, join(root, "project", "link", "beta", "s.jsonl"), root)).toBe("inside");
+      expect(homeReach(home, "link/beta", join(root, "project"))).toBe("inside");
+      expect(homeReach(home, root, root)).toBe("holds");
+      expect(homeReach(home, join(root, "project", "a.txt"), root)).toBeUndefined();
+      expect(realPathOf(join(root, "project", "link", "new", "file"), root)).toBe(join(home, "transcripts", "new", "file"));
+      expect(fileToolDenials(["/m1"], ["/w"])).toEqual(["Read(//m1)", "Read(//m1/**)", "Edit(//m1)", "Edit(//m1/**)", "Write(//m1)", "Write(//m1/**)", "Glob(//m1)", "Glob(//m1/**)", "Grep(//m1)", "Grep(//m1/**)", "NotebookEdit(//m1)", "NotebookEdit(//m1/**)", "Edit(//w)", "Edit(//w/**)", "Write(//w)", "Write(//w/**)", "NotebookEdit(//w)", "NotebookEdit(//w/**)"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

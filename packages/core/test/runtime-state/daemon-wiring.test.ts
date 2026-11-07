@@ -36,13 +36,21 @@ afterEach(async () => {
 
 /** A daemon on a temp home. `agent: true` also starts the SettingsWatcher — daemon.ts builds it
  *  only when a provider exists, and the hot-reload assertions below need it. */
-async function boot(home: string, opts: { agent?: boolean } = {}): Promise<RunningDaemon> {
+async function boot(home: string, opts: { agent?: boolean; bootOrder?: (step: string) => void } = {}): Promise<RunningDaemon> {
   daemon = await startDaemon({
     home,
     secrets: new FileSecretStore(join(home, "test-secrets")),
     agentProvider: opts.agent ? { provider: new FakeProvider([]), model: "fake-1" } : null,
+    ...(opts.bootOrder !== undefined ? { bootOrderForTests: opts.bootOrder } : {}),
   });
   return daemon;
+}
+
+/** The boot steps in the order they finished, each with whether the socket existed then: the order itself, never two
+ *  clocks compared (Linux stamps a file's ctime from a coarse clock that can trail `Date.now()` by milliseconds). */
+function bootOrder(socketPath: string) {
+  const steps: Array<{ step: string; socketExisted: boolean }> = [];
+  return { steps, record: (step: string) => steps.push({ step, socketExisted: existsSync(socketPath) }) };
 }
 
 /** The runtime state a booted daemon must be carrying, or a failure that names why it is not. */
@@ -108,7 +116,8 @@ const receipted = (messageId: string, agoMs: number) => ({
 describe("daemon wiring — the store opens and recovery runs before the socket exists", () => {
   test("runtime-state.db is created at the current schema and the boot recovery finished before the socket did", async () => {
     await withTempHome(async (home, dirs) => {
-      const d = await boot(home);
+      const order = bootOrder(dirs.socketPath);
+      const d = await boot(home, { bootOrder: order.record });
       const rt = online(d);
 
       expect(existsSync(dirs.runtimeStatePath)).toBe(true);
@@ -118,9 +127,13 @@ describe("daemon wiring — the store opens and recovery runs before the socket 
       // The boot path does NOT re-scan every session log: `SessionStore`'s constructor already ran
       // `recoverAll()` under this same lock, before any socket existed.
       expect(rt.lastRecovery.steps.find((s) => s.step === 1)?.detail).toMatchObject({ indexRecovery: "skipped-already-done" });
-      // The ordering claim, measured rather than asserted by construction: the socket did not exist
-      // until after recovery had finished.
-      expect(new Date(rt.lastRecovery.finishedAt).getTime()).toBeLessThanOrEqual(statSync(dirs.socketPath).ctimeMs);
+      // The ordering claim, measured rather than asserted by construction: recovery had finished, and the socket
+      // did not exist yet, before the socket was bound.
+      const steps = order.steps.map((s) => s.step);
+      expect(steps.indexOf("runtime-state-recovered")).toBeGreaterThanOrEqual(0);
+      expect(steps.indexOf("runtime-state-recovered")).toBeLessThan(steps.indexOf("socket-bound"));
+      expect(order.steps.find((s) => s.step === "runtime-state-recovered")?.socketExisted).toBe(false);
+      expect(order.steps.find((s) => s.step === "socket-bound")?.socketExisted).toBe(true);
     });
   });
 
@@ -160,7 +173,8 @@ describe("daemon wiring — the store opens and recovery runs before the socket 
       });
       seed.close();
 
-      const d = await boot(home);
+      const order = bootOrder(dirs.socketPath);
+      const d = await boot(home, { bootOrder: order.record });
       const rt = online(d);
       const directory = rt.directory;
 
@@ -178,9 +192,12 @@ describe("daemon wiring — the store opens and recovery runs before the socket 
       expect(parked?.status).toBe("unavailable");
       // ⚠️ THE ORDER, NOT THE END STATE (round 2). Asserting the effects after `boot()` returns
       // leaves the whole recovery block free to migrate BELOW `startIpcServer` and stay green,
-      // which is the drift this test exists to pin. The sweep stamps `updatedAt` itself, so the
-      // sibling test's technique applies verbatim: the park is older than the socket.
-      expect(new Date(parked!.updatedAt).getTime()).toBeLessThanOrEqual(statSync(dirs.socketPath).ctimeMs);
+      // which is the drift this test exists to pin. The boot says when the park finished: before the
+      // socket was bound, with no socket on disk yet.
+      const steps = order.steps.map((s) => s.step);
+      expect(steps.indexOf("directory-parked")).toBeGreaterThanOrEqual(0);
+      expect(steps.indexOf("directory-parked")).toBeLessThan(steps.indexOf("socket-bound"));
+      expect(order.steps.find((s) => s.step === "directory-parked")?.socketExisted).toBe(false);
     });
   });
 
