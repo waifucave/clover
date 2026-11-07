@@ -28,7 +28,7 @@ describe("the sidecar's fence: profile and arguments", () => {
     const p = sidecarSeatbeltProfile("/Applications/Clover.app/Contents/Resources/daemon/clover-link", ["/Users/someone"]);
     expect(p).toContain("(deny default)");
     expect(p).not.toContain("(allow network*)"); // IP only: no Unix socket on the disk
-    for (const rule of ["(allow network-outbound (remote ip))", "(allow network-bind (local ip))", "(allow network-inbound (local ip))"]) expect(p).toContain(rule);
+    for (const rule of ["(allow network-outbound (remote ip))", '(allow network-bind (local udp "*:*"))', '(allow network-inbound (local udp "*:*"))']) expect(p).toContain(rule);
     expect(p).not.toMatch(/\(allow file-read-metadata\)/); // scoped, not everywhere
     expect(p).toContain('(literal "/Applications/Clover.app/Contents/Resources/daemon")'); // the steps of its own path
     expect(p).not.toMatch(/allow file-write\* /);
@@ -89,14 +89,26 @@ describe.skipIf(process.platform !== "darwin")("the sidecar's Seatbelt profile, 
     const { createServer } = await import("node:net");
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-uds-")));
     const sock = join(dir, "s.sock");
-    const uds = createServer((c) => c.end("x")).listen(sock);
-    const tcp = createServer((c) => c.end("x")).listen(0, "127.0.0.1");
+    const uds = createServer((c) => { c.on("error", () => {}); c.end("x"); }).listen(sock);
+    const tcp = createServer((c) => { c.on("error", () => {}); c.end("x"); }).listen(0, "127.0.0.1");
     await Promise.all([new Promise((r) => uds.once("listening", r)), new Promise((r) => tcp.once("listening", r))]);
     try {
       const nc = (args: string[], fenced: boolean) => Bun.spawnSync([...(fenced ? [SANDBOX_EXEC, "-p", sidecarSeatbeltProfile("/usr/bin/nc", [])] : []), "/usr/bin/nc", "-w", "2", ...args], { stdin: "ignore", timeout: 8000 }).exitCode;
       expect(nc(["-U", sock], false)).toBe(0);
       expect(nc(["-U", sock], true)).not.toBe(0);
       expect(nc(["127.0.0.1", String((tcp.address() as { port: number }).port)], true)).toBe(0);
+      // Listening is UDP's only: a TCP listener is refused at once; a UDP one takes a datagram.
+      expect(Bun.spawnSync([SANDBOX_EXEC, "-p", sidecarSeatbeltProfile("/usr/bin/nc", []), "/usr/bin/nc", "-l", "127.0.0.1", "0"], { stdin: "ignore", timeout: 5000 }).exitCode).not.toBe(0);
+      const port = 40000 + (process.pid % 20000);
+      const udp = Bun.spawn([SANDBOX_EXEC, "-p", sidecarSeatbeltProfile("/usr/bin/nc", []), "/usr/bin/nc", "-u", "-l", "127.0.0.1", String(port)], { stdin: "ignore", stdout: "pipe" });
+      await Bun.sleep(500);
+      const { createSocket } = await import("node:dgram");
+      const sender = createSocket("udp4");
+      await new Promise<void>((resolve) => sender.send("hello-udp\n", port, "127.0.0.1", () => resolve()));
+      sender.close();
+      await Bun.sleep(300);
+      udp.kill();
+      expect(await new Response(udp.stdout).text()).toContain("hello-udp");
     } finally {
       uds.close();
       tcp.close();

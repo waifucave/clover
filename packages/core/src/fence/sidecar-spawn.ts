@@ -57,7 +57,7 @@ function ancestors(path: string): string[] {
 
 /** The Seatbelt profile the sidecar runs under on macOS. `hidden` (the user's home and the Clover home, wherever they
  *  are) can't even be listed or stat'ed, whatever the rules before say; only the binary itself, wherever it is, is read.
- *  The network is IP only: outbound to remote IP addresses, binding and taking inbound on local ones, and the one
+ *  The network is IP only: outbound to remote IP addresses, binding and taking inbound on local UDP (QUIC), and the one
  *  Unix socket name lookup needs (mDNSResponder's); no other Unix socket, so nothing on the disk the user's processes
  *  listen on can be reached. Metadata reads only for the system's folders and the steps of its own path. */
 export function sidecarSeatbeltProfile(binary: string, hidden: readonly string[] = [homedir()]): string {
@@ -75,8 +75,9 @@ export function sidecarSeatbeltProfile(binary: string, hidden: readonly string[]
     "(allow sysctl-read)",
     "(allow system-socket)",
     "(allow network-outbound (remote ip))",
-    "(allow network-bind (local ip))",
-    "(allow network-inbound (local ip))",
+    // Listening is QUIC's only: UDP. No TCP listener can be opened (measured on macOS 26: `nc -l` refused, `nc -u -l` taking).
+    "(allow network-bind (local udp \"*:*\"))",
+    "(allow network-inbound (local udp \"*:*\"))",
     "(allow network-outbound (literal \"/private/var/run/mDNSResponder\"))",
     `(allow mach-lookup ${SIDECAR_MACH_SERVICES.map((n) => `(global-name ${sbplString(n)})`).join(" ")})`,
     "(allow ipc-posix-shm-read-data (ipc-posix-name \"apple.shm.notification_center\"))",

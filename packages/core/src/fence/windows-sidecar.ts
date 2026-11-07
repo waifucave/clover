@@ -140,13 +140,14 @@ function userSidString(own: bigint): string {
   }
 }
 
-/** The default DACL the sidecar's own objects (its process, its threads) are made with: the user, SYSTEM and RESTRICTED.
+/** The default DACL the sidecar's own objects (its process, its threads) are made with: the user and SYSTEM (the user's
+ *  SID is in the restricting list, so the sidecar reaches its own objects through it).
  *  An elevated token's default DACL names only Administrators and SYSTEM, which the restricting check doesn't take, so
  *  the child couldn't open its own process and died initialising (measured on the Windows VM). */
 function setDefaultDacl(token: bigint, own: bigint): void {
   const { a, k } = win!;
   const sd = new BigUint64Array(1);
-  if (!a.ConvertStringSecurityDescriptorToSecurityDescriptorW(w16(`D:(A;;GA;;;${userSidString(own)})(A;;GA;;;SY)(A;;GA;;;RC)`), 1, sd, null)) fail("ConvertStringSecurityDescriptorToSecurityDescriptorW");
+  if (!a.ConvertStringSecurityDescriptorToSecurityDescriptorW(w16(`D:(A;;GA;;;${userSidString(own)})(A;;GA;;;SY)`), 1, sd, null)) fail("ConvertStringSecurityDescriptorToSecurityDescriptorW");
   try {
     const present = new Uint32Array(1), dacl = new BigUint64Array(1), defaulted = new Uint32Array(1);
     if (!a.GetSecurityDescriptorDacl(sd[0]!, present, dacl, defaulted) || !present[0]) fail("GetSecurityDescriptorDacl");
@@ -311,10 +312,13 @@ export async function startReducedSidecar(argv: readonly string[], onLog?: (line
     const cmd = w16(windowsCommandLine(argv));
     const env = windowsEnvBlock(sidecarEnv());
     // Inheritable for exactly the creation, with nothing awaited in between (the handle list limits it to the child).
-    for (const h of ends) k.SetHandleInformation(h, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    for (const h of ends) if (!k.SetHandleInformation(h, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) fail("SetHandleInformation(inherit)");
     const ok = a.CreateProcessAsUserW(token, app, cmd, null, null, 1,
       CREATE_SUSPENDED | CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT, env, null, si, pi);
-    for (const h of ends) k.SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0);
+    for (const h of ends) {
+      // The ends close right after this; a failure here only leaves them inheritable for that moment.
+      if (!k.SetHandleInformation(h, HANDLE_FLAG_INHERIT, 0)) onLog?.(`the link sidecar's pipe end stayed inheritable until closed (error ${k.GetLastError()})`);
+    }
     k.DeleteProcThreadAttributeList(attrs);
     if (!ok) fail("CreateProcessAsUserW");
     const hProcess = pi.readBigUInt64LE(0), hThread = pi.readBigUInt64LE(8), pid = pi.readUInt32LE(16);
