@@ -112,7 +112,11 @@ export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "tas
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
-export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant"]);
+export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant", "session_grant_copied"]);
+
+/** What a copied `session_grant` becomes in this computer's log (review N7, H-M3): a record of another computer's grant,
+ *  which grants nothing here (`SessionGrants` reads only `session_grant`) and, core-only, is never sent to clients. */
+export const COPIED_GRANT_EVENT_TYPE = "session_grant_copied";
 
 /** The result a tool call gets when a restart or a takeover finds it with none (§3.1, §6.4). */
 export function interruptedCallOutput(ranOn?: string): string {
@@ -642,6 +646,67 @@ export class DurableSessionHost implements SessionHost {
   /** Whether a driver is attached (an open session) rather than dormant. */
   isAttached(id: string): boolean {
     return this.#sessions.get(id)?.driver !== undefined;
+  }
+
+  /** The next seq the session's log expects (its length; 0 for a session this computer doesn't know): lane H's
+   *  `SessionRecordSink.head`, where records copied from the computer running it go on. */
+  head(id: string): number {
+    const s = this.#sessions.get(id);
+    return s === undefined ? 0 : this.#logOf(s).length;
+  }
+
+  /** Records copied from the computer running the session (lane H's `SessionRecordSync`), appended to this computer's
+   *  log in seq order (`SessionRecordSink.ingest`):
+   *  * a session not known here is opened dormant from `view`, with no driver and no record of its own;
+   *  * a record already held (its seq below the head) is skipped, so a repeat is harmless; one past the head is a gap
+   *    and nothing is taken (the sync asks for the history first);
+   *  * a copied `session_grant` is kept as `session_grant_copied`, which grants nothing here and never reaches clients;
+   *  * `late` (from an earlier lease) marks each record it appends;
+   *  * no driver ever runs, and nothing is sent on (taps aren't told: the copy isn't this computer's to sync).
+   *  A session this computer runs (it holds its driver) takes no copies. A known session's runner follows `view`. */
+  ingest(view: SessionView, records: SessionRecord[], opts: { from: string; late: boolean }): void {
+    let s = this.#sessions.get(view.id);
+    if (s?.driver !== undefined) throw new ContractError("refused", `this computer runs session ${view.id}; its records aren't copied here from ${opts.from}`);
+    const log = s === undefined ? undefined : this.#logOf(s);
+    let next = log?.length ?? 0;
+    // Checked whole before anything is written: a gap or another session's record takes nothing.
+    for (const r of records) {
+      if (r.sessionId !== view.id) throw new ContractError("invalid", `a record of ${r.sessionId} was copied as ${view.id}'s`);
+      if (r.seq < next) continue;
+      if (r.seq > next) throw new ContractError("invalid", `session ${view.id}: a gap before seq ${r.seq} (this computer holds up to ${next - 1}); the history comes first`);
+      next++;
+    }
+    if (s === undefined) {
+      const meta: SessionMeta = {
+        meta: SESSION_META_VERSION, id: view.id, kind: view.kind, startedAt: view.startedAt, computer: view.computer,
+        ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
+      };
+      for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (view[k] !== undefined) meta[k] = view[k];
+      writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
+      const file = new SessionLogFile(sessionLogPath(this.#home, meta.bot, meta.id), meta.id, this.#warn);
+      file.load();
+      s = this.#hosted(meta, file);
+      this.#sessions.set(meta.id, s);
+    } else if (view.computer !== s.meta.computer) this.#patchMeta(s, { computer: view.computer });
+    const hosted = s;
+    const target = this.#logOf(hosted);
+    let changed = false;
+    for (const r of records) {
+      if (r.seq < target.length) continue;
+      let copy = structuredClone(r) as SessionRecord & { late?: true };
+      if (copy.type === "driver" && copy.event.type === "session_grant") copy = { ...copy, event: { ...copy.event, type: COPIED_GRANT_EVENT_TYPE } };
+      if (opts.late) copy.late = true;
+      target.append(copy, { durable: copy.type !== "driver" });
+      hosted.subscribers.emit(structuredClone(copy));
+      if (copy.type === "status") {
+        hosted.view = { ...hosted.view, status: copy.status, ...(copy.failure === undefined ? {} : { failure: copy.failure }) };
+        changed = true;
+      }
+      if (copy.type === "driver" && trackQuestion(hosted.questions, copy.event)) changed = true;
+      hosted.view = { ...hosted.view, updatedAt: copy.ts };
+    }
+    if (isEnded(hosted.view.status) && hosted.meta.ended === undefined) this.#markEnded(hosted);
+    if (changed || records.length > 0) this.#emitView(hosted);
   }
 
   /** How many records the session's log holds. */
