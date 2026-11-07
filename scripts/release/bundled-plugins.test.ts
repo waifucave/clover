@@ -402,6 +402,11 @@ describe("what the bundler read: every input tracked at HEAD or in a package bun
     expect(err).toContain("its tarball is left-pad@1.3.0");
     expect(err).not.toContain("tok-123");
     expect(sent).toEqual([{ Authorization: "Bearer tok-123" }]);
+    // Never over plain http.
+    const plain = lockEntries(lockFor({ "@waifucave/x@1.0.0": good }, "http://npm.pkg.github.com/download/@waifucave/x/1.0.0/abc"));
+    const leaked: Array<Record<string, string>> = [];
+    await expect(lockedPackageFiles(plain, { token: "tok-123", download: async (_u, h) => { leaked.push(h); return good; } })("@waifucave/x@1.0.0")).rejects.toThrow("the token goes only over https");
+    expect(leaked).toEqual([]);
     // npm's registry gets no token.
     const npm: Array<Record<string, string>> = [];
     await lockedPackageFiles(entries, { token: "tok-123", download: async (_u, h) => { npm.push(h); return good; } })("left-pad@1.3.0");

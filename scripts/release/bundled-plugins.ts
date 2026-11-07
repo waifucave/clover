@@ -206,7 +206,10 @@ export function lockedPackageFiles(entries: ReadonlyMap<string, LockEntry>, o: {
     const name = id.slice(0, at), version = id.slice(at + 1);
     const url = tarballUrl(name, version, entry.registry);
     const headers: Record<string, string> = {};
-    if (new URL(url).host === "npm.pkg.github.com") {
+    const where = new URL(url);
+    if (where.host === "npm.pkg.github.com") {
+      // The token goes only over TLS, to GitHub Packages' own host.
+      if (where.protocol !== "https:") throw new Error(`${id}: bun.lock names GitHub Packages over ${where.protocol}, and the token goes only over https`);
       if (o.token === undefined || o.token === "") throw new Error(`${id} comes from GitHub Packages, which needs NODE_AUTH_TOKEN (a GitHub token with read:packages) to download`);
       headers.Authorization = `Bearer ${o.token}`;
     }
