@@ -12,23 +12,24 @@
 // the holder reads them (`holder.ts`).
 import type { Os } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
+import { foldName as contractFold, foldPath as contractFoldPath } from "../contracts/fence";
 
 /** This computer's OS, in the protocol's words. */
 export function hostOs(platform: NodeJS.Platform = process.platform): Os {
   return platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
 }
 
-/** One name, folded: Unicode NFC, then case (upper then lower, so the Kelvin sign and the long s fold too). On
- *  Windows the trailing dots and spaces Win32 drops are dropped as well (`.clover.` opens `.clover`). */
+/** One name, folded: lane B's shared fold (`contracts/fence.ts`), the one the fence itself uses: Unicode NFC, then case
+ *  (upper then lower, so the Kelvin sign and the long s fold too), and on Windows the trailing dots and spaces Win32
+ *  drops (`.clover.` opens `.clover`). */
 export function foldName(name: string, os: Os): string {
-  const s = name.normalize("NFC").toUpperCase().toLowerCase().normalize("NFC");
-  return os === "windows" ? s.replace(/[. ]+$/, "") : s;
+  return contractFold(name, os);
 }
 
-/** A whole path folded, segment by segment, with `/` between: what the holder compares fenced items by. A Windows
- *  path's `\` becomes `/` first, so `C:\Users\me` and the fence's `C:/Users/me` meet. */
+/** A whole path folded, segment by segment, with `/` between (lane B's `foldPath`): what the holder compares fenced
+ *  items by. A Windows path's `\` becomes `/` first, so `C:\Users\me` and the fence's `C:/Users/me` meet. */
 export function foldPath(path: string, os: Os): string {
-  return path.replace(/\\/g, "/").split("/").map((seg) => (seg === "" ? seg : foldName(seg, os))).join("/");
+  return contractFoldPath(path, os);
 }
 
 /** Whether two names may be the same entry on that OS's disk. */

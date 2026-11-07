@@ -145,6 +145,13 @@ describe("a fenced name in another case (review B1)", () => {
     expect(await code(t.write("home/Laptop1/.clover/levels/COMPUTER.JSON", utf8("{}"), { as: BOT }))).toBe("fenced");
     await t.write("home/Laptop1/stage/x.json", utf8("{}"), { as: BOT });
     expect(await code(t.move("home/Laptop1/stage", "home/Laptop1/.clover/CONNECTORS", { as: BOT }))).toBe("fenced");
+    // The long s and the Kelvin sign fold too, and a name that isn't ASCII where Clover names things under its home is
+    // refused (lane B's `nonAsciiAlias`): its top level, and a folder that holds a fenced item.
+    expect(await code(t.write("home/Laptop1/.clover/\u017Fettings/settings.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/secrets.\u212Aey", utf8("x"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/caf\u00E9/clover.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/.clover/plugins-state/caf\u00E9.json", utf8("{}"), { as: BOT }))).toBe("fenced");
+    expect(await code(t.write("home/Laptop1/caf\u00E9.txt", utf8("ok"), { as: BOT }))).toBe("ok");
     // A bot on Laptop1 itself, through its own tree.
     expect(await code(laptop.node.tree.write("home/Laptop1/.clover/Settings/settings.json", utf8('{"evil":1}'), { as: BOT }))).toBe("fenced");
     expect(existsSync(join(ch, "rules", "allow.json"))).toBe(false);
@@ -184,6 +191,11 @@ describe("hard links (review S4)", () => {
     expect(await code(studio.node.tree.write("home/Laptop1/innocent.json", { encoding: "utf8", text: '{"allow":["*"]}' }, { as: BOT }))).toBe("refused");
     expect(await code(studio.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
     expect(await code(laptop.node.tree.read("home/Laptop1/innocent.json", { as: BOT }))).toBe("refused");
+    // Nor through grep, nor any other content read (check 2's N1).
+    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), '{"note":"only-in-the-fenced-file"}');
+    const found = await studio.node.tree.grep("only-in-the-fenced-file", { as: BOT, path: "home/Laptop1" });
+    expect(found.map((m) => m.path)).not.toContain("home/Laptop1/innocent.json");
+    writeFileSync(join(laptop.cloverHome, "rules", "allow.json"), "{}");
     expect(readFileSync(join(laptop.cloverHome, "rules", "allow.json"), "utf8")).toBe("{}");
     // The user's own call isn't fenced.
     expect(await laptop.node.tree.read("home/Laptop1/innocent.json", { as: { kind: "user", client: "app" } })).toEqual({ encoding: "utf8", text: "{}" });
@@ -406,7 +418,7 @@ describe("moves between computers take the direct path (review S1)", () => {
     expect(existsSync(join(studio.home, "proj"))).toBe(false);
   });
 
-  test("one signed answer per holder for the whole move, bound to its from and to", async () => {
+  test("one card for the whole move: one signed answer that both holders check against their own card", async () => {
     const phone = await makePhone();
     cluster = new Cluster();
     const studio = await cluster.add("Studio", { answers: () => answersFor(phone) });
@@ -415,16 +427,17 @@ describe("moves between computers take the direct path (review S1)", () => {
     await cluster.join();
     mkdirSync(join(studio.home, "proj"));
     writeFileSync(join(studio.home, "proj", "a.txt"), "a");
-    const wrong = await phone.approve("Laptop1", "tree.move", { from: "home/Studio/proj", to: "home/Laptop1/elsewhere" });
-    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: wrong }))).toBe("refused");
-    // The call carries the stricter of both levels, so Studio, the source, asks too: one answer for each holder,
-    // each for the same whole move.
-    const binding = { from: "home/Studio/proj", to: "home/Laptop1/proj" };
-    const atLaptop = await phone.approve("Laptop1", "tree.move", binding);
-    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: atLaptop }))).toBe("refused");
+    const whole = { operation: "move", from: "home/Studio/proj", to: "home/Laptop1/proj", source: "Studio", destination: "Laptop1" };
+    // An answer for another operation, or for one holder's own call, doesn't carry it.
+    const elsewhere = await phone.approve("Laptop1", "tree.transfer", { ...whole, to: "home/Laptop1/elsewhere" });
+    const wrongTo = await rejection(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: elsewhere }));
+    expect(isContractError(wrongTo, "refused")).toBe(true);
+    expect((wrongTo as { detail?: { verdict?: string } }).detail?.verdict).toBe("unbound");
+    const perHolder = await phone.approve("Laptop1", "tree.move", { from: whole.from, to: whole.to });
+    expect(await code(studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: perHolder }))).toBe("refused");
     expect(existsSync(join(laptop.home, "proj"))).toBe(false);
-    const both = [await phone.approve("Laptop1", "tree.move", binding), await phone.approve("Studio", "tree.move", binding)];
-    await studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answers: both });
+    // The call carries the stricter of both levels, so both holders ask; one answer, bound to the whole move, for both.
+    await studio.node.tree.move("home/Studio/proj", "home/Laptop1/proj", { as: BOT, answer: await phone.approve("Laptop1", "tree.transfer", whole) });
     expect(readFileSync(join(laptop.home, "proj", "a.txt"), "utf8")).toBe("a");
     expect(existsSync(join(studio.home, "proj"))).toBe(false);
   });

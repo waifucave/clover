@@ -19,23 +19,25 @@
 //   fence. A folder swapped for a link mid-call therefore can't lead into the fence. (Bun has no `openat`, so the walk
 //   itself can still race a swap between two folders; see the report.)
 // * Links that leave the area answer "refused" when read (`readlink`), and are never followed out of it.
-// * A peer's write, remove or move is judged at the stricter of this computer's level and the call's
-//   (`peerTreeDecision`, review N2); where that level would ask, only the user's signed answer bound to exactly that
-//   call lets it through. Reads, lists, glob and grep are fenced but never asked about.
-import { constants as FS, promises as fsp, type Dirent, type Stats } from "node:fs";
-import { createHash } from "node:crypto";
+// * A peer's write, remove or move is judged at the stricter of this computer's level and the call's (review N2;
+//   `judge.ts`, R1): at `ask-risky` this computer's reviewer passes what isn't risky, and where the level asks, only the
+//   user's signed answer bound to exactly that call lets it through; the refusal carries this computer's card for the
+//   calling computer to show. Reads, lists, glob and grep are fenced but never asked about.
+import { constants as FS, promises as fsp, realpathSync, type Dirent, type Stats } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import {
   DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment,
   type Caller, type FileStat, type Level, type Os, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
-import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../contracts/approval-broker";
+import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { fenceContextFor, judge as fenceJudge, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
-import { peerTreeDecision, splitTreePath, treeCallBinding, type TreeChange, type TreeData } from "../contracts/tree";
+import { fenceContextFor, judge as fenceJudge, nonAsciiAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
+import { splitTreePath, treeCallBinding, type TreeChange, type TreeData, type TreeReviewer } from "../contracts/tree";
+import { atOps, type AtOps } from "./at";
 import { checkSegment, foldName, foldPath, hostOs, mayBeShortName } from "./names";
 import { FolderWatches, type TreeWatchEvent } from "./watch";
+import { judgePeer } from "./judge";
 
 /** Who a call is for, and what a peer's change carries (review N2). */
 export interface HolderCall {
@@ -44,6 +46,9 @@ export interface HolderCall {
   level?: Level;
   /** A peer's change only: the user's signed answer bound to this call. */
   answer?: SignedCardAnswer;
+  /** In-process only, never from the link: the change is part of a call already judged (an MCP call's files), so it
+   *  isn't judged again. The fence still applies. */
+  approved?: boolean;
 }
 
 /** The most one read returns, and the most one write carries: bigger files move in parts (`offset`, `length`). */
@@ -86,6 +91,9 @@ export interface LocalHolderOptions {
   os?: Os;
   /** This computer's fence. Calls for the user and the core never ask it. */
   fence?: Pick<Fence, "check" | "fencedSet">;
+  /** The Clover home, where a fenced caller may make no name that isn't ASCII (B-M1's contract review): a name the
+   *  disk folds where no fold here does can't reach a fenced item. */
+  cloverHome?: string;
   /** This computer's level, which a peer's change is judged at. */
   level?: () => Level;
   /** What checks a peer's signed answer: the paired devices, this computer's ledger of used card ids, and its own
@@ -93,6 +101,8 @@ export interface LocalHolderOptions {
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   /** This computer's folder watches (one set per computer). */
   watches?: FolderWatches;
+  /** This computer's reviewer for a peer's change at `ask-risky` (R1; lane C's): B-M1's `TreeReviewer`. */
+  reviewer?: TreeReviewer;
 }
 
 interface Located {
@@ -114,7 +124,6 @@ interface Resolved {
   st?: Stats;
 }
 
-const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const NO_DEVICES: AnswerDevices = { get: () => undefined, verifyAnswer: async () => false };
 const NEVER: AnswerLedger = { claim: () => false };
 
@@ -138,6 +147,7 @@ export function diskError(err: unknown, what: string): ContractError {
 export class LocalHolder implements Holder {
   readonly os: Os;
   readonly #o: LocalHolderOptions;
+  #cloverHomeReal: string | undefined;
   readonly #answers: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   readonly watches: FolderWatches;
 
@@ -201,8 +211,9 @@ export class LocalHolder implements Holder {
   }
 
   /** Judges a whole operation once, with one binding (the direct path's move or copy; review S1). */
-  async judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
-    await this.#judge(call, change, effect);
+  /** `boundTo`: the computer one card for an operation on several binds (`judge.ts`). */
+  async judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move", boundTo?: string): Promise<void> {
+    await this.#judge(call, change, effect, boundTo);
   }
 
   /** The real path a tree path names here, without touching the disk (for bookkeeping and `Tree.resolve`). */
@@ -252,7 +263,7 @@ export class LocalHolder implements Holder {
     if (bytes.length > TREE_IO_MAX) throw new ContractError("invalid", `${path}: a write carries at most ${TREE_IO_MAX} bytes`);
     const r = await this.#resolve(path, { follow: true, create: true });
     this.#fenced({ op: "write", path: r.real }, call);
-    await this.#judge(call, treeCallBinding("tree.write", { path, data }), "edit");
+    if (!call.approved) await this.#judge(call, treeCallBinding("tree.write", { path, data }), "edit");
     if (r.st?.isDirectory()) throw new ContractError("invalid", `${path} is a folder`);
     await this.#mkdirs(r.root, dirname(r.real), path);
     // Truncated only once the open file is checked (a hard link to a fenced item is refused untouched).
@@ -321,6 +332,12 @@ export class LocalHolder implements Holder {
     this.#fenced({ op: "delete", path: r.real }, call);
     await this.#judge(call, treeCallBinding("tree.remove", call.recursive === undefined ? { path } : { path, recursive: call.recursive }), "delete");
     if (!r.exists) throw new ContractError("not_found", `${path} doesn't exist`);
+    // Anchored to each folder on the way where libc allows (`at.ts`, review minor 6).
+    const at = this.#at();
+    if (at) {
+      at.remove(r.root, this.#rel(r.root, r.real), { dir: r.st?.isDirectory() === true, recursive: call.recursive === true }, path);
+      return;
+    }
     try {
       if (r.st?.isDirectory()) {
         if (call.recursive) await fsp.rm(r.real, { recursive: true, force: false });
@@ -348,9 +365,18 @@ export class LocalHolder implements Holder {
       throw new ContractError("invalid", `${to} is inside ${from}`);
     }
     await this.#mkdirs(dst.root, dirname(dst.real), to);
+    const at = this.#at();
     try {
-      await fsp.rename(src.real, dst.real);
+      if (at) at.rename(src.root, this.#rel(src.root, src.real), dst.root, this.#rel(dst.root, dst.real), from);
+      else await fsp.rename(src.real, dst.real);
     } catch (e) {
+      if ((e as { code?: string }).code === "invalid" && at) {
+        // Another disk: copied, then removed, as below.
+        await fsp.cp(src.real, dst.real, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
+        at.remove(src.root, this.#rel(src.root, src.real), { dir: src.st?.isDirectory() === true, recursive: true }, from);
+        return;
+      }
+      if (at) throw e;
       if ((e as NodeJS.ErrnoException).code !== "EXDEV") throw diskError(e, from);
       await fsp.cp(src.real, dst.real, { recursive: true, verbatimSymlinks: true, errorOnExist: true, force: false });
       await fsp.rm(src.real, { recursive: true, force: false });
@@ -438,9 +464,9 @@ export class LocalHolder implements Holder {
     for (const rel of files) {
       const real = rel === "" ? r.real : join(r.real, rel);
       if (!this.#mayRead(real, call)) continue;
-      const st = await fsp.lstat(real).catch(() => null);
-      if (!st?.isFile() || st.size > GREP_FILE_MAX) continue;
-      const bytes = await fsp.readFile(real).catch(() => null);
+      // The same checked open as `read` (check 2's N1): no link followed, the opened file's identity compared, and a
+      // file with other names (hard links) skipped for anyone the fence judges.
+      const bytes = await this.#contents(real, r.root, call, GREP_FILE_MAX);
       if (!bytes || bytes.subarray(0, 8192).includes(0)) continue;
       const lines = bytes.toString("utf8").split("\n");
       const path = rel === "" ? base : `${base}/${rel.split(sep).join("/")}`;
@@ -609,8 +635,58 @@ export class LocalHolder implements Holder {
   }
 
   /** Makes the folders from the deepest one that exists down to `dir`, each made inside the area. */
+  /** A file's bytes for a content search, read the way `read` opens a file (`#openChecked`), or null to skip it: not
+   *  a regular file, larger than `max`, another name of a file (hard links) for a fenced caller, or not what the
+   *  path named by the time it was opened. */
+  async #contents(real: string, root: string, call: HolderCall, max: number): Promise<Buffer | null> {
+    const nofollow = this.os === "windows" ? 0 : FS.O_NOFOLLOW ?? 0;
+    const fh = await fsp.open(real, FS.O_RDONLY | nofollow).catch(() => null);
+    if (!fh) return null;
+    try {
+      const opened = await fh.stat({ bigint: true });
+      if (!opened.isFile() || opened.size > BigInt(max)) return null;
+      if (opened.nlink > 1n && call.as.kind !== "user" && call.as.kind !== "core") return null;
+      const now = await fsp.realpath(real).catch(() => null);
+      if (!now) return null;
+      try {
+        this.#landsInside(now, root, real);
+      } catch {
+        return null;
+      }
+      if (!this.#mayRead(now, call)) return null;
+      const again = await fsp.stat(now, { bigint: true }).catch(() => null);
+      if (!again || again.dev !== opened.dev || again.ino !== opened.ino) return null;
+      const buf = Buffer.alloc(Number(opened.size));
+      let off = 0;
+      while (off < buf.length) {
+        const { bytesRead } = await fh.read(buf, off, buf.length - off, off);
+        if (bytesRead === 0) break;
+        off += bytesRead;
+      }
+      return buf.subarray(0, off);
+    } finally {
+      await fh.close();
+    }
+  }
+
+  /** The anchored changes, on macOS and Linux. */
+  #at(): AtOps | null {
+    return this.os === "windows" ? null : atOps();
+  }
+
+  /** `real`'s names below `root`. */
+  #rel(root: string, real: string): string[] {
+    const r = relative(root, real);
+    return r === "" ? [] : r.split(sep);
+  }
+
   async #mkdirs(root: string, dir: string, path: string): Promise<void> {
     this.#landsInside(dir, root, path);
+    const at = this.#at();
+    if (at) {
+      at.mkdirs(root, this.#rel(root, dir), path);
+      return;
+    }
     const missing: string[] = [];
     let p = dir;
     for (;;) {
@@ -660,6 +736,9 @@ export class LocalHolder implements Holder {
   #fenced(op: FenceOp, call: HolderCall): void {
     const as = call.as;
     if (as.kind === "user" || as.kind === "core") return;
+    if (op.op === "write" || op.op === "delete" || op.op === "move") {
+      for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) this.#asciiUnderCloverHome(p);
+    }
     const verdict = this.#check(op, as);
     if (!verdict.allowed) {
       throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer: this.#o.name(), reason: verdict.reason });
@@ -669,6 +748,24 @@ export class LocalHolder implements Holder {
   #mayRead(real: string, call: HolderCall): boolean {
     if (call.as.kind === "user" || call.as.kind === "core") return true;
     return this.#check({ op: "read", path: real }, call.as).allowed;
+  }
+
+  /** Lane B's second wall (`nonAsciiAlias`): a name that isn't ASCII where Clover names things under its home (its top
+   *  level, and any folder there that holds a fenced item) is refused, whatever a disk might fold it to. A bot's memory
+   *  notes and a plugin's assets may have any name. */
+  #asciiUnderCloverHome(real: string): void {
+    if (!this.#o.cloverHome) return;
+    // The home's real path, as the paths it is compared with are (`/var` is `/private/var` on a Mac).
+    this.#cloverHomeReal ??= (() => {
+      try {
+        return realpathSync.native(this.#o.cloverHome!);
+      } catch {
+        return this.#o.cloverHome!;
+      }
+    })();
+    if (nonAsciiAlias(real, this.#o.fence?.fencedSet() ?? [], this.#cloverHomeReal, this.os)) {
+      throw new ContractError("fenced", `names Clover keeps under its home are ASCII; ${basename(real)} isn't`, { computer: this.#o.name(), reason: "clover-home" });
+    }
   }
 
   /** The fence's verdict, as is and folded (review B1): refused when either refuses. */
@@ -687,19 +784,18 @@ export class LocalHolder implements Holder {
     return { ...folded, path: item?.path ?? folded.path };
   }
 
-  /** A peer's change: allowed, refused, or let through by the user's signed answer bound to exactly it (N2). */
-  async #judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
+  /** A peer's change, at the stricter of this computer's level and the call's (`judge.ts`, R1): the reviewer passes
+   *  what isn't risky at `ask-risky`; the rest needs the user's signed answer bound to exactly it (N2). */
+  async #judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move", boundTo?: string): Promise<void> {
     if (call.as.kind !== "peer") return;
     if (call.level === undefined) throw new ContractError("invalid", "a peer's change says its level");
-    const self = this.#o.name();
-    const decision = peerTreeDecision([this.#o.level?.() ?? DEFAULT_LEVEL], call.level, effect);
-    if (decision === "allow") return;
-    if (decision === "refuse") throw new ContractError("refused", `${self} doesn't let another computer change files at its level`);
-    if (!call.answer) throw new ContractError("refused", "this change needs the user's answer, signed and bound to it");
-    const verdict = await verifySignedAnswer(call.answer, {
-      self, method: change.method, params: change.params, now: this.#o.clock.now(), sha256, ...this.#answers,
+    await judgePeer({
+      ...(boundTo === undefined ? {} : { boundTo }),
+      computer: this.#o.name(), ownLevel: this.#o.level?.(), callLevel: call.level, effect,
+      method: change.method, params: change.params, as: call.as, now: this.#o.clock.now(), answers: this.#answers,
+      ...(call.answer ? { answer: call.answer } : {}),
+      ...(this.#o.reviewer ? { reviewer: (c: { computer: string; as: Caller }) => this.#o.reviewer!({ ...change, computer: c.computer, as: c.as }) } : {}),
     });
-    if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this change (${verdict})`);
   }
 
   #treePath(path: string): string {
@@ -709,7 +805,7 @@ export class LocalHolder implements Holder {
   async #statOf(treePath: string, real: string, st: Stats): Promise<FileStat> {
     const type = st.isFile() ? "file" : st.isDirectory() ? "dir" : st.isSymbolicLink() ? "symlink" : "other";
     let executable = false;
-    if (type === "file") executable = this.os === "windows" ? await windowsExecutable(real) : (st.mode & 0o111) !== 0;
+    if (type === "file") executable = this.os === "windows" ? await windowsExecutable(real, st.nlink > 1) : (st.mode & 0o111) !== 0;
     return { path: treePath, type, size: type === "file" ? st.size : 0, modifiedAt: Math.max(0, Math.floor(st.mtimeMs)), executable };
   }
 }
@@ -717,9 +813,11 @@ export class LocalHolder implements Holder {
 const WINDOWS_EXEC = /\.(exe|com|bat|cmd|ps1)$/i;
 
 /** Windows keeps no x bit. A file counts as executable by its extension, or by a `#!` line, as Git for Windows reads
- *  a script. */
-async function windowsExecutable(real: string): Promise<boolean> {
+ *  a script. A file with other names (hard links) is judged by its extension alone, so not even two of its bytes are
+ *  read through this name (check 2's N1). */
+async function windowsExecutable(real: string, linked = false): Promise<boolean> {
   if (WINDOWS_EXEC.test(real)) return true;
+  if (linked) return false;
   const fh = await fsp.open(real, FS.O_RDONLY).catch(() => null);
   if (!fh) return false;
   try {
