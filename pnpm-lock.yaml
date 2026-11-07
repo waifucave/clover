@@ -1106,8 +1106,8 @@ importers:
   plugins/clover/plugins/web:
     dependencies:
       '@waifucave/clover-web':
-        specifier: 0.0.67
-        version: 0.0.67
+        specifier: 0.0.69
+        version: 0.0.69
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -2324,10 +2324,6 @@ packages:
   '@waifucave/clover-provider-runtime@0.0.69':
     resolution: {integrity: sha512-23ax0zUeZsd+qjlEwUT5Z3Cswt0uXIIcbNPeLE/Hjq4OlFVB/yS4uZJ7vYrknhJ0TsHuDfBf7gmTIjGB2nTaqw==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.69/d4d28dceba07a8b8a7221e47ec00f96584a41512}
     engines: {node: '>=18'}
-
-  '@waifucave/clover-web@0.0.67':
-    resolution: {integrity: sha512-msGvuxf0jc/R7jasuqvreNTQ7o90BDMaF3/Knrcrys+nD5E0z38lUJf94NPf3B9fZioBxZuyOdG5fASLXuDp0w==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.67/d2280f7a9e4775444d77e3cbc0a9865094018fb5}
-    engines: {bun: '>=1.3', node: '>=20'}
 
   '@waifucave/clover-web@0.0.69':
     resolution: {integrity: sha512-MieuSu0EvURXUHR+cEkUBYT22i3qhmocCQoWnLLOPSC+iZrCBjtvY+S2HKYgwDHx2RFEooMPP4cvmmtLI9TJOA==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.69/4474c70be3e64ec76f6052f7606a54b776722d95}
@@ -5139,8 +5135,6 @@ snapshots:
   '@waifucave/clover-provider-runtime@0.0.69':
     dependencies:
       '@waifucave/clover-provider-catalog': 0.0.69
-
-  '@waifucave/clover-web@0.0.67': {}
 
   '@waifucave/clover-web@0.0.69': {}
 

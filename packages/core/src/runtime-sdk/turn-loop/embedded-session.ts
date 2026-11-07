@@ -14,7 +14,8 @@ export interface EmbeddedSessionDeps {
   profile?: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
   spawn: SpawnClaudeCodeProcess;
-  /** Fills what a real model needs into a session's options (the daemon's); a `winter-test/*` model needs nothing. */
+  /** Fills what a real model needs (the daemon's); a `winter-test/*` model needs nothing. It is handed a view, not the
+   *  session's options: only the model's keys come back (`fillProvider`, `PROVIDER_FILL_KEYS`). */
   provider?(model: string, options: Options): void | Promise<void>;
   /** Extra environment for the runtime (never secrets). */
   env?: Record<string, string>;
@@ -48,9 +49,39 @@ export function embeddedSessionOptions(deps: Pick<EmbeddedSessionDeps, "home" | 
   };
 }
 
-/** The daemon's provider fill, after the caller's options are complete; a `winter-test/*` model skips it. */
+/** The keys a provider fill may set: the model's own (which model, where it's served and how it's signed in), nothing
+ *  that changes what the session may do. */
+export const PROVIDER_FILL_KEYS = [
+  "model", "fallbackModel", "provider", "modelProviders", "onCredentialResolve",
+  "contextWindowTokens", "maxOutputTokens", "thinking", "maxThinkingTokens", "providerStallTimeoutMs",
+] as const satisfies readonly (keyof Options)[];
+
+type FillKey = (typeof PROVIDER_FILL_KEYS)[number];
+
+/** What a provider fill is handed: the model's keys (`PROVIDER_FILL_KEYS`) to set, and the session's folder and
+ *  environment to read (frozen). */
+export type ProviderFillView = Pick<Options, FillKey> & { readonly cwd?: string; readonly env?: Readonly<Record<string, string>> };
+
+/** The daemon's provider fill, after the caller's options are complete; a `winter-test/*` model skips it. The fill never
+ *  sees the rest of the options: it gets a view with the model's keys (`PROVIDER_FILL_KEYS`) and a frozen copy of the
+ *  folder and environment, and only those keys come back. A fill that sets anything else on the view (the hooks, the
+ *  approval check, the permission mode, the sandbox, tools, MCP servers, plugins, folders, host messaging), or changes
+ *  the environment, is refused, and the session doesn't start. */
 export async function fillProvider(deps: Pick<EmbeddedSessionDeps, "provider">, options: Options): Promise<void> {
   const model = options.model;
-  if (model === undefined || testProviderNameFor(model) !== undefined) return;
-  await deps.provider?.(model, options);
+  if (model === undefined || testProviderNameFor(model) !== undefined || deps.provider === undefined) return;
+  const view: Record<string, unknown> = {};
+  for (const k of PROVIDER_FILL_KEYS) if (options[k] !== undefined) view[k] = options[k];
+  const env = Object.freeze({ ...(options.env ?? {}) });
+  if (options.cwd !== undefined) view.cwd = options.cwd;
+  view.env = env;
+  await deps.provider(model, view as Options);
+  const allowed = new Set<string>(PROVIDER_FILL_KEYS);
+  const refused = Object.keys(view).filter((k) => !allowed.has(k) && !(k === "cwd" && view.cwd === options.cwd) && !(k === "env" && view.env === env));
+  if (refused.length > 0) throw new Error(`the provider fill for ${model} tried to set ${refused.join(", ")}; it may only set the model's own keys (${PROVIDER_FILL_KEYS.join(", ")})`);
+  const o = options as Record<string, unknown>;
+  for (const k of PROVIDER_FILL_KEYS) {
+    if (view[k] === undefined) delete o[k];
+    else o[k] = view[k];
+  }
 }
