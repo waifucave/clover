@@ -532,7 +532,13 @@ export class AgentManager {
           { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
           { label: "Folder", value: sealedText(e.root, 4000) },
         ] },
-        detail: { type: "rows", rows: [{ label: "Why", value: sealedText(reason, 4000) }] },
+        detail: { type: "rows", rows: [
+          { label: "Why", value: sealedText(reason, 4000) },
+          // Every environment name it gets, from this computer's (by name) and set for it: a pattern can't tell every
+          // secret, so the user sees them all (#233's review).
+          { label: "Gets from your environment", value: sealedText(e.backend.quirks.launch.envAllow.join(", ") || "nothing", 4000) },
+          { label: "Sets in its environment", value: sealedText(Object.keys(e.backend.quirks.launch.envSet).join(", ") || "nothing", 4000) },
+        ] },
       },
     }, signal ? { signal } : {});
     if (!decision.allowed) {

@@ -11,7 +11,7 @@ import { RegistryCore } from "../../registry/core";
 import { PluginFolders } from "../../registry/folders";
 import { fileRegistryStore } from "../../registry/state";
 import type { Contribution, PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
-import { ContributedBackendCache, contributedBackends, readQuirksFile } from "../plugin-backends";
+import { ContributedBackendCache, RESERVED_BACKEND_IDS, contributedBackends, looksLikeSecret, readQuirksFile } from "../plugin-backends";
 import { BUNDLED_PLUGINS_DIR, bundledBackends } from "../testing/bundled-backends";
 
 const temps: string[] = [];
@@ -96,6 +96,86 @@ describe("agent backends from plugins", () => {
     expect(() => readQuirksFile(folder, "bad.json")).toThrow(/doesn't hold a backend's quirks/);
     writeFileSync(join(folder, "extra.json"), JSON.stringify({ ...QUIRKS_OF("grok"), quirks: { ...QUIRKS_OF("grok").quirks, sneaky: true } }));
     expect(() => readQuirksFile(folder, "extra.json")).toThrow(/doesn't hold a backend's quirks/);
+  });
+
+  test("no plugin takes a core id or a bundled one's; among other plugins the first claim wins; each refusal is logged", () => {
+    const root = mkdtempSync(join(tmpdir(), "clover-k-ids-"));
+    temps.push(root);
+    const folder = join(root, "p");
+    mkdirSync(folder);
+    writeFileSync(join(folder, "quirks.json"), JSON.stringify(QUIRKS_OF("cursor")));
+    const rec = (by: string, hash: string) => ({ folder, treeHash: hash.repeat(64), provenance: { by, at: 1 } as PluginRecord["provenance"] });
+    const records: Record<string, Partial<PluginRecord>> = {
+      "someone/agents": rec("found", "a"), "clover/agent-cursor": rec("bundled", "b"), "first/agents": rec("found", "c"), "second/agents": rec("found", "d"),
+    };
+    const entry = (pluginId: string, id: string, n: number): Contribution => ({
+      point: "agentBackends", pluginId, ref: `agentBackends/${n}`, entryId: id, state: "active",
+      value: { id, name: `${pluginId}'s ${id}`, protocol: "acp", command: "/opt/evil/bin/agent", args: ["acp"], quirks: "quirks.json" },
+    });
+    // The reviewer's probe: a third party contributes `cursor` and `clover-code`, listed before Clover's own.
+    const entries: Contribution[] = [
+      entry("someone/agents", "cursor", 0), entry("someone/agents", "clover-code", 1), entry("someone/agents", "clover", 2),
+      { ...entry("clover/agent-cursor", "cursor", 0), value: { id: "cursor", name: "Cursor", protocol: "acp", command: "cursor-agent", args: ["acp"], quirks: "quirks.json" } },
+      entry("first/agents", "thing", 0), entry("second/agents", "thing", 0),
+    ];
+    const registry = { entries: () => entries, get: (id: string) => records[id] as PluginRecord | undefined } as unknown as Pick<PluginRegistry, "entries" | "get">;
+    const lines: string[] = [];
+    const got = contributedBackends(registry, (l) => lines.push(l));
+    expect(got.map((c) => [c.id, c.pluginId])).toEqual([["cursor", "clover/agent-cursor"], ["thing", "first/agents"]]);
+    expect([...RESERVED_BACKEND_IDS].every((id) => !got.some((c) => c.id === id))).toBe(true);
+    expect(lines.filter((l) => l.includes("someone/agents"))).toHaveLength(3);
+    expect(lines.join("\n")).toContain("second/agents's backend thing isn't offered: first/agents claimed that id first");
+    // As the manager finds a backend: the core's own `clover-code` comes after the plugins' and is the only one.
+    const core = { id: "clover-code", core: true };
+    const offered = [...got.map((c) => ({ id: c.id, pluginId: c.pluginId })), core];
+    expect(offered.find((b) => b.id === "clover-code")).toBe(core);
+    expect(offered.find((b) => b.id === "cursor")).toMatchObject({ pluginId: "clover/agent-cursor" });
+    // The cache builds each kept entry once, and a refused duplicate never rebuilds it.
+    let built = 0;
+    const cache = new ContributedBackendCache((c) => ({ id: c.id, pluginId: c.pluginId, n: ++built }) as never);
+    const first = cache.backends(registry);
+    const again = cache.backends(registry);
+    expect(again[0]).toBe(first[0]);
+    expect(again[1]).toBe(first[1]);
+    expect(built).toBe(2);
+  });
+
+  test("another plugin's backend counts as acting without asking, and may not ask for a secret-looking name", () => {
+    expect(["OPENAI_API_KEY", "GH_TOKEN", "MY_SECRET_X", "db_password", "AWS_CREDENTIALS", "x_secret"].every(looksLikeSecret)).toBe(true);
+    expect(["PATH", "HOME", "LANG", "KEYBOARD", "TOKENIZERS_PARALLELISM"].some(looksLikeSecret)).toBe(false);
+    const root = mkdtempSync(join(tmpdir(), "clover-k-marks-"));
+    temps.push(root);
+    const plain = join(root, "plain");
+    const greedy = join(root, "greedy");
+    mkdirSync(plain);
+    mkdirSync(greedy);
+    const grok = QUIRKS_OF("grok");
+    writeFileSync(join(plain, "quirks.json"), JSON.stringify({ ...grok, quirks: { ...grok.quirks, marks: [] } }));
+    writeFileSync(join(greedy, "quirks.json"), JSON.stringify({ ...grok, quirks: { ...grok.quirks, launch: { ...grok.quirks.launch, envAllow: ["PATH", "OPENAI_API_KEY"] } } }));
+    const records: Record<string, Partial<PluginRecord>> = {
+      "someone/plain": { folder: plain, treeHash: "a".repeat(64), provenance: { by: "found", at: 1 } as PluginRecord["provenance"] },
+      "someone/greedy": { folder: greedy, treeHash: "b".repeat(64), provenance: { by: "found", at: 1 } as PluginRecord["provenance"] },
+      "clover/agent-devin": { folder: join(BUNDLED_PLUGINS_DIR, "agent-devin"), treeHash: "c".repeat(64), provenance: { by: "bundled", at: 1 } as PluginRecord["provenance"] },
+    };
+    const entries: Contribution[] = [
+      { point: "agentBackends", pluginId: "someone/plain", ref: "agentBackends/0", entryId: "plain", state: "active", value: { id: "plain", name: "Plain", protocol: "acp", command: "plain", quirks: "quirks.json" } },
+      { point: "agentBackends", pluginId: "someone/greedy", ref: "agentBackends/0", entryId: "greedy", state: "active", value: { id: "greedy", name: "Greedy", protocol: "acp", command: "greedy", quirks: "quirks.json" } },
+      { point: "agentBackends", pluginId: "clover/agent-devin", ref: "agentBackends/0", entryId: "devin", state: "active", value: { id: "devin", name: "Devin", protocol: "acp", command: "devin", args: ["acp"], quirks: "quirks.json" } },
+    ];
+    const registry = { entries: () => entries, get: (id: string) => records[id] as PluginRecord | undefined } as unknown as Pick<PluginRegistry, "entries" | "get">;
+    const lines: string[] = [];
+    const got = contributedBackends(registry, (l) => lines.push(l));
+    // Its file says it asks before acting; it is taken as one that doesn't (read-only then needs a read-only mode).
+    expect(got.find((c) => c.id === "plain")!.quirks.marks).toContain("unasked-actions");
+    expect(got.find((c) => c.id === "plain")!.file.quirks.marks).toEqual([]);
+    // A secret-looking name from the daemon's environment: refused, and said why.
+    expect(got.some((c) => c.id === "greedy")).toBe(false);
+    expect(lines.join("\n")).toContain("OPENAI_API_KEY");
+    // Clover's own Devin row keeps its measured marks and the login it needs.
+    const devin = got.find((c) => c.id === "devin")!;
+    expect(devin.bundled).toBe(true);
+    expect(devin.quirks.launch.envAllow).toContain("WINDSURF_API_KEY");
+    expect(devin.quirks.marks).toEqual(devin.file.quirks.marks);
   });
 
   test("only Clover's own plugin for an id is bundled; a broken entry is left out with its reason; a backend is built once per tree", () => {
