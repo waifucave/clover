@@ -30,14 +30,20 @@ export interface SecretStore {
 // daemon's and the CLI's — always used the profile's REAL service: a hand-started daemon on a temp home probed
 // `com.waifucave.clover.core[.dev]` and raised one Keychain prompt per item another binary created. No `CLOVER_HOME`
 // still means "assert nothing" (the real service), exactly as before.
-export const DEFAULT_SECRET_SERVICE = keychainService(resolveCloverProfile(), explicitCloverHome());
+//
+// LAZY (#243): resolved at the first store's construction, not at import, so nothing about the Keychain (its warning
+// for an overridden service included) runs before main.ts's startup checks have had their say.
+let defaultService: string | undefined;
+export function defaultSecretService(): string {
+  defaultService ??= keychainService(resolveCloverProfile(), explicitCloverHome());
+  return defaultService;
+}
 
 function explicitCloverHome(): string | undefined {
   const home = process.env.CLOVER_HOME;
   return home !== undefined && home.length > 0 ? home : undefined;
 }
 
-const SERVICE = DEFAULT_SECRET_SERVICE;
 
 /** `app-token-acl.ts`'s `APP_TOKEN_SHADOW_SUFFIX`, spelled here so this module stays free of the FFI. */
 export const MIGRATION_SHADOW_SUFFIX = ".migrating";
@@ -64,7 +70,7 @@ export function defaultSecretsBackend(): Pick<typeof Bun.secrets, "get" | "set" 
 /** Production store: the OS's secret store, on macOS the login keychain by path (`defaultSecretsBackend`). */
 export class KeychainSecretStore implements SecretStore {
   /** `backend`/`service` exist for tests only (a recording fake, or a throwaway keychain — never the real one). */
-  constructor(private readonly backend: Pick<typeof Bun.secrets, "get" | "set" | "delete"> = defaultSecretsBackend(), private readonly service: string = SERVICE) {}
+  constructor(private readonly backend: Pick<typeof Bun.secrets, "get" | "set" | "delete"> = defaultSecretsBackend(), private readonly service: string = defaultSecretService()) {}
   async get(name: string): Promise<string | null> {
     return (await this.backend.get({ service: this.service, name })) ?? null;
   }

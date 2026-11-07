@@ -160,12 +160,13 @@ async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<stri
   }
 }
 
-/** `--version`, `__ffi-probe`, `bridge` and `__verify-feed` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
+/** `--version`, `__ffi-probe`, `bridge` and `__verify-feed` from the host binary, on a temp home. None reads a Keychain
+ *  item, and a release refuses a test's keychain variables at startup (startup-guard.ts), so none is set. */
 async function smoke(binary: string, version: string): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-smoke-"));
   try {
-    const env: NodeJS.ProcessEnv = { ...process.env, CLOVER_HOME: home, CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test.build-daemon" };
-    delete env.CLOVER_PROFILE;
+    const env: NodeJS.ProcessEnv = { ...process.env, CLOVER_HOME: home };
+    for (const k of ["CLOVER_PROFILE", "CLOVER_KEYCHAIN_SERVICE", "CLOVER_TEST_KEYCHAIN", "WINTER_TEST_KEYCHAIN"]) delete env[k];
     const r = spawnSync(binary, ["--version"], { env, encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim();
     if (r.status !== 0 || out !== `clover ${version}`) {
