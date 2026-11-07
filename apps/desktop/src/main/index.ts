@@ -1341,6 +1341,9 @@ async function smoke(): Promise<void> {
               }
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
+              // Hover first so the input router establishes the target before the press (OOPIF subframes).
+              void win.webContents.sendInputEvent({ type: "mouseMove", x: centerX, y: centerY });
+              await new Promise((r) => setTimeout(r, 120));
               press("Down");
               press("Up");
               if (doubleClick === true) {
