@@ -1,7 +1,9 @@
 # Clover's desktop app, packaged by electron-builder (lane M owns this file). `bun run dist` builds the unsigned,
-# unpacked app on each OS (CI's app job). `scripts/build-packages.ts` builds the Linux packages (deb, rpm, AppImage)
-# with the daemon and its link sidecar inside; the dmg and the Windows installer come with E-M1's app, signing and
-# updates in M2.
+# unpacked app on each OS (CI's app job; `--dir` overrides the targets below). The releases: the Linux packages (deb,
+# rpm, AppImage) from `scripts/build-packages.ts`, the dmg and its update zip, and the Windows installer from
+# `scripts/release/build.ts`, each with the daemon and its link sidecar inside. Signing, notarization and the update
+# channel come from the release scripts' flags (scripts/release/lib.ts); nothing here holds a secret, and nothing is
+# ever published from a build (`--publish never`): publishing is the owner's step (scripts/release/publish.ts).
 appId: com.waifucave.clover
 productName: Clover
 copyright: Copyright © 2026 waifucave
@@ -14,8 +16,10 @@ files:
   - package.json
 asar: true
 # The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it, and its link sidecar,
-# clover-link (native/link), beside it, where the daemon starts that: scripts/build-packages.ts stages the package
-# target's two binaries in out/daemon first. A plain `bun run dist` has neither, and packages the app alone.
+# clover-link (native/link), beside it, where the daemon starts that, and the binaries that run code not the core's own
+# (scripts/bundled-binaries.ts): clover-plugin-bun, plain Bun for plugins, and on macOS lane A's clover-process-holder.
+# scripts/build-packages.ts and scripts/release/build.ts stage them in out/daemon first. A plain `bun run dist` has
+# none, and packages the app alone.
 extraResources:
   - from: out/daemon
     to: daemon
@@ -24,23 +28,51 @@ extraResources:
       - clover-core.exe
       - clover-link
       - clover-link.exe
+      - clover-plugin-bun
+      - clover-plugin-bun.exe
+      - clover-process-holder
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
 npmRebuild: false
 nodeGypRebuild: false
 buildDependenciesFromSource: false
-publish: null
+# The update feed (scripts/release/lib.ts): electron-updater's GitHub provider over this public repository's releases,
+# which the Homebrew cask and winget download from too. The channel is the release build's `-c.publish.channel`; for
+# a full release the release build copies its update files to the beta names too, so beta users take stable releases
+# (electron-builder writes only the channel it is given).
+publish:
+  provider: github
+  owner: waifucave
+  repo: clover
 mac:
+  # The dmg to install, and the zip electron-updater updates from. Apple silicon only (spec §3.1).
   target:
-    - target: dir
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
   category: public.app-category.productivity
-  # Unsigned: macOS signing and notarization are M2.
+  artifactName: Clover-${version}-mac.${ext}
+  # Unsigned unless the release signs it: `scripts/release/build.ts --sign` names the Developer ID identity and turns
+  # notarization on (with notarytool's stored profile, APPLE_KEYCHAIN_PROFILE). The hardened runtime is on for both.
   identity: null
+  notarize: false
+  hardenedRuntime: true
+  entitlements: ../../packaging/macos/entitlements.mac.plist
+  entitlementsInherit: ../../packaging/macos/entitlements.mac.plist
+  # The daemon, the link sidecar, plugin Bun and the process holder are signed by the release build itself, each with
+  # its own identifier and entitlements (scripts/release/lib.ts, RESOURCE_BINARIES), before the app is sealed over them.
+  signIgnore:
+    - Contents/Resources/daemon/
   # A menu-bar app (spec §3.1: the pair is always on, with no window until the user opens one): no Dock icon.
   extendInfo:
     LSUIElement: true
 win:
+  # The per-user installer, x64 only. Unsigned at first (spec §13): with a certificate (electron-builder's
+  # WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD, at the owner's release) `scripts/release/build.ts --sign` signs the app and
+  # the daemon and sidecar beside it, and sets the publisher electron-updater checks each update against.
   target:
-    - target: dir
+    - target: nsis
+      arch: x64
 linux:
   target:
     - target: dir
@@ -114,9 +146,14 @@ rpm:
 # (spec §3.1, §4).
 appImage:
   artifactName: Clover-${version}-${arch}.AppImage
+# The release's names, which the Homebrew cask and winget point at (packaging/clover.rb.tmpl, packaging/winget/).
+# (The zip takes the mac section's artifactName.)
+dmg:
+  artifactName: Clover-${version}.${ext}
 # The Windows installer, once E-M1's app is there to package: per user, so its uninstall hook
 # (packaging/windows/installer.nsh) runs as the user.
 nsis:
+  artifactName: Clover-Setup-${version}.${ext}
   oneClick: true
   perMachine: false
   include: ../../packaging/windows/installer.nsh

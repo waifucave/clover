@@ -56,6 +56,7 @@ jobs:
       daemon: ${{ steps.areas.outputs.daemon }}
       app: ${{ steps.areas.outputs.app }}
       packages: ${{ steps.areas.outputs.packages }}
+      installers: ${{ steps.areas.outputs.installers }}
       gallery: ${{ steps.areas.outputs.gallery }}
       typecheck: ${{ steps.areas.outputs.typecheck }}
       lockfiles: ${{ steps.areas.outputs.lockfiles }}
@@ -129,8 +130,9 @@ jobs:
   #    a private D-Bus session with a gnome-keyring of their own, so the harness's throwaway Secret Service store never
   #    meets a real keyring.
   #  - the daemon binary, `clover-core`, built for the machine's own target (`scripts/build-daemon.ts`: packages/cli's
-  #    compile:core with the target set), then run once with `--version` on a temp home: it prints and exits, so no
-  #    daemon starts. Unsigned on every OS; signing is M2's.
+  #    compile:core with the target set, the dist define and the seal), then run once with `--version` on a temp home:
+  #    it prints and exits, so no daemon starts. Then verify:sealed-core runs it with every door to foreign code set.
+  #    Unsigned on every OS but for the gate's own ad hoc hardened-runtime copy on macOS; signing is the release's.
   #  - the app (apps/desktop), built and packaged unsigned and unpacked by electron-builder (`bun run build:app`), then
   #    the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
   #    Linux runs it under xvfb, with unprivileged user namespaces allowed again for Chromium's sandbox (Ubuntu 24.04's
@@ -180,8 +182,18 @@ jobs:
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
       - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
+        id: daemon-build
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
         run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
+
+      # The compiled core runs only its own code (scripts/verify-sealed-core.ts): the binary just built, sealed by
+      # build-daemon (scripts/seal-bun-doors.ts), is run with every door Bun has — BUN_BE_BUN, BUN_OPTIONS' preloads,
+      # BUN_INSPECT and its connect-out, NODE_PATH and a planted node_modules on the runtime ladder, the working
+      # folder's bunfig/.env/tsconfig/package.json, argv — and no payload may run and no debugger may open. On macOS
+      # it is signed first as a release signs it (hardened runtime, ad hoc here) and DYLD_INSERT_LIBRARIES is tried.
+      - name: Daemon · verify:sealed-core
+        if: ${{ !cancelled() && steps.daemon-build.outcome == 'success' }}
+        run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/clover-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
 
       # The built daemon and app are kept only from a push to main or a manual run: nothing in a pull request or a
       # merge group downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
@@ -327,9 +339,66 @@ jobs:
           CLOVER_HOME="$(mktemp -d)" clover --version
           test -x /opt/Clover/resources/daemon/clover-link
           test -f /etc/apparmor.d/clover
+          test "$(cat /opt/Clover/resources/daemon/install.json)" = '{"kind":"package"}'
           sudo apt-get remove -y -qq "$name"
+          test ! -e /opt/Clover/resources/daemon/install.json
           test ! -e /usr/bin/clover
           test ! -e /etc/apparmor.d/clover
+
+  # The macOS and Windows installers (plan §4 M-M2): the release build itself, unsigned (scripts/release/build.ts), so
+  # each PR that touches them shows they still build: the dmg and its update zip on Apple silicon, the NSIS installer
+  # on Windows, each with its update files and the daemon's own (clover-core-<version>-<target> and its update file),
+  # every one checked against the files it names. Nothing is signed, uploaded or published.
+  installers:
+    name: installers · ${{ matrix.os }} (${{ matrix.what }})
+    needs: changes
+    if: needs.changes.outputs.installers == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: mac, runner: macos-latest, what: "dmg, zip" }
+          - { os: win, runner: windows-latest, what: NSIS }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link -> target
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the installers (unsigned) and check them
+        shell: bash
+        run: |
+          bun scripts/release/build.ts --channel latest
+          ls -l apps/desktop/out/dist
+
+      # The daemon's release file answers `--version` in the environment a server's self-update gives it
+      # (packages/cli/src/self-update.ts's versionEnv): PATH alone, and on Windows SystemRoot and windir too.
+      - name: The daemon's release file answers --version as its self-update runs it
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bin=$(ls apps/desktop/out/dist/clover-core-"$version"-*)
+          extra=()
+          if [ "$RUNNER_OS" = Windows ]; then extra=(SystemRoot="${SYSTEMROOT:-$SystemRoot}" windir="${WINDIR:-$windir}"); fi
+          said=$(env -i PATH="$PATH" "${extra[@]}" "$bin" --version)
+          echo "$bin --version: $said"
+          test "$said" = "clover $version"
 
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
@@ -412,6 +481,7 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
@@ -614,6 +684,7 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
       - name: verify:workflow
@@ -869,7 +940,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, scripts, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, installers, tree, link, gallery, typecheck, lockfiles, test-extension, macos, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

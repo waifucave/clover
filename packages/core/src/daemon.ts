@@ -1,3 +1,4 @@
+import { missingProcessHolder } from "./build-kind";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -66,6 +67,9 @@ import { ApprovedProjectRules } from "./agent/approved-project-rules";
 import { sdkGlobalConfigPath, sdkHomeFor, sdkSettingsPath, trustRecordFile } from "./agent/paths";
 import { forgetSdkFile, liveSdkGlobalConfig, liveSdkSettings, readSdkGlobalConfigDetailed, readSdkSettingsDetailed } from "./sdk-files";
 import { ApprovalBroker } from "./agent/approvals";
+import { UpdateGate } from "./update/gate";
+import { acceptUpdateExit, updateHandlers, type SelfUpdate } from "./update/service";
+import { readInstallMarker } from "./update/install-marker";
 import { ElicitationBroker } from "./runtime-sdk/url-elicitation";
 import { QuestionBroker } from "./agent/questions";
 import { createPersistedChildren, type AgentRegistry } from "./agent/bg-agent-registry";
@@ -257,6 +261,12 @@ export interface RunningDaemon {
    * child) off this rather than off a mirror it built itself.
    */
   clover: CloverSessionDrivers;
+  /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
+   *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
+  updateGate: UpdateGate;
+  /** M-M2: a server install's own update (`clover-core daemon run` sets it), which `update.status` and `update.apply`
+   *  then serve. */
+  setSelfUpdate(self: SelfUpdate): void;
   /** Dispatch's children tracker (`agent/dispatch-children.ts`) — the SAME instance the `sessions`
    *  capability server's `session_spawn` and every driver's turn-settled hook reach. */
   dispatchChildren: DispatchChildren | undefined;
@@ -646,6 +656,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `tools.json`, …). One line when any exist — never touched, only named (`clover doctor` repeats it).
   const deadLegacyLine = describeDeadLegacyFiles(findDeadLegacyFiles(home), home);
   if (deadLegacyLine !== undefined) console.error(deadLegacyLine);
+  // Lane A's F8 process holder ships beside a compiled macOS core (scripts/bundled-binaries.ts); without it a bot's
+  // commands fall back to process-group tracking, which a packaged build never does (its package gate). Said loudly.
+  {
+    const holder = missingProcessHolder();
+    if (holder !== undefined) console.error(`error: ${holder} is missing beside this clover-core: a bot's commands fall back to process-group tracking, and what they leave running (setsid, double forks) can outlive a pause. Reinstall Clover.`);
+  }
 
 
   // WS-25 §7 B: the app reads `harness-token`/`remote-token` without a Keychain prompt once their access
@@ -2179,6 +2195,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     },
   };
   const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
+    // M-M2: no new turn while the update gate closes for a restart (`updateGate` is set further down, before any turn).
+    updateClosing: () => updateGate.closed,
     home: cloverHome,
     // WS-21: every incarnation's run home, when the linked router applies them (see `runHomeDeps`).
     ...(runHomeDeps === undefined ? {} : { runHome: runHomeDeps }),
@@ -2362,6 +2380,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(bgAgents?.list(sid) ?? []).map((a) => ({ threadId: a.threadId, parentThreadId: "main", status: a.status === "running" ? "running" as const : "completed" as const, ...(a.status === "running" ? {} : { stopReason: a.status }) })),
     ],
   };
+  // M-M2: the update's idle gate (src/update/gate.ts). The daemon's own work is here; K's runners, routines, live Bash
+  // runners and the bots add theirs through `RunningDaemon.updateGate`.
+  const updateGate = new UpdateGate();
+  updateGate.register({ name: "turns", count: () => signals.activeTurnCount() });
+  updateGate.register({
+    name: "agents",
+    // Every session's, not only the live drivers': a background agent outlives its parent's turn and driver.
+    count: () => bgAgents?.runningCount?.()
+      ?? cloverDrivers.list().reduce((n, d) => n + (bgAgents?.list(d.sessionId) ?? []).filter((a) => a.status === "running").length, 0),
+  });
+  updateGate.register({ name: "approvals", count: () => approvalBroker.pendingCount() });
+  updateGate.register({ name: "questions", count: () => questions.pendingCount() });
+  updateGate.register({ name: "elicitations", count: () => elicitationBroker.pendingCount() });
+  updateGate.register({ name: "workflows", count: () => workflowRuntime?.runningCount() ?? 0 });
   const childrenRpc = createChildrenRpc({
     registry: () => bgAgents,
     facetFor: (sid) => { const backend = runtime?.records.get(sid)?.backendSessionId; return backend === undefined || runtimeSdk === undefined ? undefined : attachedFacetFor(runtimeSdk, backend); },
@@ -3121,6 +3153,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
+  let selfUpdate: SelfUpdate | undefined;
   cloverServer = createCloverServer({
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
@@ -3129,6 +3162,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
+    acceptUpdateExit: () => acceptUpdateExit(updateGate),
+    handlers: updateHandlers({
+      gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
+      channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
+    }),
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,
@@ -3346,6 +3384,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sessions: store,
     buildSessionCapabilities,
     clover: cloverDrivers,
+    updateGate,
+    setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
     wakes: computerUseRuntime.wakes,
     // The HOLDER, read through a closure — never `settings` captured by value, which would freeze

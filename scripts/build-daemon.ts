@@ -6,19 +6,32 @@
 //   bun run build:daemon --target linux-x64[,…] | --all   cross-compile (Bun fetches the other targets' runtimes)
 //   bun run build:daemon --smoke                          also run the host binary's `--version` on a temp home, its
 //                                                         `__ffi-probe` (bun:ffi, and the bridge's peer-pid check) and
-//                                                         `bridge` (an MCP initialize, K-M1's dispatch)
+//                                                         `bridge` (an MCP initialize, K-M1's dispatch), and
+//                                                         `__verify-feed` (the update feed's check refuses a bad file)
 //   bun run build:daemon --dry-run                        print the commands, build nothing
+//
+// Every `bun build` step gets `--define __CLOVER_DIST__=true` (packages/core/src/build-kind.ts: a dist build ignores
+// the environment's choice of programs to run), and the compiled binary is sealed (scripts/seal-bun-doors.ts: Bun's
+// BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH made unsettable on macOS and Linux,
+// then the byte check; a Windows binary is left unsealed) before anything signs it.
+//
+// Beside it go the binaries that run code not the core's own (scripts/bundled-binaries.ts): `clover-plugin-bun`, the
+// pinned Bun's release build for the target (checked against its pinned SHA-256), and on macOS `clover-process-holder`,
+// built from the installed agent runtime's source. Each is signed ad hoc under its own identifier here.
 //
 // Output: dist/daemon/<target>/clover-core (clover-core.exe on Windows), with its size and SHA-256 printed. The
 // binary is unsigned on every OS: the dev daemon signs its own copy on macOS (scripts/dev-daemon.ts), and release
 // signing is M2's. `--smoke` never starts a daemon: `--version` prints and exits before anything else runs.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DIST_BUILD_DEFINE } from "../packages/core/src/build-kind";
 import { bunPinProblem, thisBunFirst } from "./bun-pin";
+import { bundledFiles, buildHolder, HOLDER_FILE, stagePluginBun } from "./bundled-binaries";
+import { sealFile } from "./seal-bun-doors";
 
 export type DaemonTarget = "darwin-arm64" | "linux-x64" | "linux-arm64" | "windows-x64";
 
@@ -48,6 +61,10 @@ export function daemonOutput(target: DaemonTarget): string {
 }
 
 const COMPILE = "bun build --compile";
+/** A release's TLS trusts the OS's certificate store (Bun's bundled roots plus what the OS trusts: a corporate CA its
+ *  IT installs there), never a CA from the environment (`build-kind.ts`'s refusal). Adding to the OS store takes the
+ *  user's authentication on macOS and root on Linux. Baked into the binary's execArgv, so nothing at run time sets it. */
+export const DIST_EXEC_ARGV = "--compile-exec-argv=--use-system-ca";
 const COMPILE_CORE_OUTFILE = "--outfile ../../dist/clover-core";
 
 /**
@@ -60,8 +77,9 @@ export function daemonCompileCommand(compileCoreScript: string, target: DaemonTa
   if (compileCoreScript.split(COMPILE).length !== 2) throw new Error(`compile:core no longer has exactly one \`${COMPILE}\` — update scripts/build-daemon.ts`);
   if (compileCoreScript.split(COMPILE_CORE_OUTFILE).length !== 2) throw new Error(`compile:core no longer writes ${COMPILE_CORE_OUTFILE} — update scripts/build-daemon.ts`);
   return compileCoreScript
-    .replace(COMPILE, `${COMPILE} --target=${DAEMON_TARGETS[target]}`)
-    .replace(COMPILE_CORE_OUTFILE, `--outfile ../../${daemonOutput(target)}`);
+    .replace(COMPILE, `${COMPILE} --target=${DAEMON_TARGETS[target]} ${DIST_EXEC_ARGV}`)
+    .replace(COMPILE_CORE_OUTFILE, `--outfile ../../${daemonOutput(target)}`)
+    .replaceAll("bun build ", `bun build --define ${DIST_BUILD_DEFINE} `);
 }
 
 export interface BuildDaemonArgs {
@@ -147,7 +165,7 @@ async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<stri
   }
 }
 
-/** `--version`, `__ffi-probe` and `bridge` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
+/** `--version`, `__ffi-probe`, `bridge` and `__verify-feed` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
 async function smoke(binary: string, version: string): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-smoke-"));
   try {
@@ -167,6 +185,16 @@ async function smoke(binary: string, version: string): Promise<void> {
     }
     for (const line of ffiOut.split("\n")) console.log(`build:daemon: smoke: ${line}`);
     console.log(`build:daemon: smoke: ${await smokeBridge(binary, env)}`);
+    // The update feed's check is in the binary, and refuses a file whose signature isn't the feed key's.
+    const feed = join(home, "latest.yml");
+    writeFileSync(feed, "version: 0.0.0\nfiles: []\n");
+    writeFileSync(`${feed}.sig`, Buffer.alloc(64).toString("base64"));
+    const verified = spawnSync(binary, ["__verify-feed", feed], { env, encoding: "utf8", timeout: 60_000 });
+    const verifiedOut = (verified.stdout ?? "").trim();
+    if (verified.status !== 1 || !/^feed: refused \((no key|bad signature)\)$/.test(verifiedOut)) {
+      throw new Error(`${binary} __verify-feed: exit ${verified.status ?? verified.signal}, printed ${JSON.stringify(verifiedOut)} (expected a refusal)`);
+    }
+    console.log(`build:daemon: smoke: ${verifiedOut} for a file the feed key didn't sign`);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -203,6 +231,27 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     const status = runScriptLine(command, cliDir);
     if (status !== 0 || !existsSync(output)) {
       console.error(`build:daemon: ${target}: the compile failed (exit ${status})`);
+      return 1;
+    }
+    // The seal (seal-bun-doors.ts): Bun's own doors to foreign code, closed before anything signs the binary.
+    try {
+      const sealed = sealFile(output);
+      console.log(`build:daemon: ${target}: ${sealed === undefined ? "not sealed (Windows: no store there trusts a binary, scripts/seal-bun-doors.ts)" : `sealed ${Object.entries(sealed.sealed).map(([n, c]) => `${n}×${c}`).join(" ")}`}`);
+    } catch (err) {
+      console.error(`build:daemon: ${target}: ${(err as Error).message}`);
+      return 1;
+    }
+    // The binaries that ship beside the core (scripts/bundled-binaries.ts): plain Bun for plugins, and on macOS lane
+    // A's process holder, each under its own identifier.
+    try {
+      await stagePluginBun(target, join(dirname(output), bundledFiles(target)[0]!));
+      if (target === "darwin-arm64") {
+        if (process.platform !== "darwin") throw new Error(`${HOLDER_FILE} builds on macOS only`);
+        buildHolder(root, join(dirname(output), HOLDER_FILE));
+      }
+      console.log(`build:daemon: ${target}: beside it ${bundledFiles(target).join(", ")}`);
+    } catch (err) {
+      console.error(`build:daemon: ${target}: ${(err as Error).message}`);
       return 1;
     }
     console.log(`build:daemon: ${target}: ${daemonOutput(target)} (${(statSync(output).size / 1_048_576).toFixed(1)} MB, sha256 ${sha256(output)})`);

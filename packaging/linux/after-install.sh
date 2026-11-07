@@ -20,6 +20,11 @@ else
     ln -sf "$CLI" '/usr/bin/clover'
 fi
 
+# The install marker (packages/core/src/update/install-marker.ts): this daemon updates through apt or dnf, never
+# itself. A user's home is out of reach here (root, outside every session), so it sits beside the binary, where the
+# daemon reads it first.
+printf '{"kind":"package"}\n' > "$(dirname "$CLI")/install.json" || true
+
 # The SUID Chromium sandbox helper only where the kernel has no working user namespaces.
 if ! { [[ -L /proc/self/ns/user ]] && unshare --user true; }; then
     chmod 4755 '/opt/${sanitizedProductName}/chrome-sandbox' || true

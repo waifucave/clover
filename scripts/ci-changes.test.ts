@@ -31,8 +31,18 @@ describe("ci-changes", () => {
   });
 
   test("the packages: packaging/ and the app's builder config build and open the Linux packages; an app change does too", () => {
-    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "scripts"]);
-    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
+    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "installers", "scripts"]);
+    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "installers", "typecheck", "scripts"]);
+  });
+
+  test("the installers' release build runs for what makes them, never for code, CI's own files or a lockfile alone", () => {
+    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json", "scripts/build-packages.ts", "packages/update-feed/src/index.ts"]) {
+      expect(areasFor([f]).installers).toBe(true);
+    }
+    for (const f of ["bun.lock", ".bun-version", ".github/workflows/ci.yml", "packages/core/src/daemon.ts", "apps/desktop/src/main/index.ts", "packages/cli/src/main.ts"]) {
+      expect(areasFor([f]).installers).toBe(false);
+    }
+    expect(areasFor(undefined).installers).toBe(true);
   });
 
   test("the merge queue's sweep (its own workflow): the scripts' tests, which run its step against stand-ins", () => {
@@ -90,9 +100,17 @@ describe("ci-changes", () => {
 
   test("the link job runs for the sidecar, the links, and the devices and identity under them; the sidecar's change builds the packages too", () => {
     expect(on(["native/link/src/main.rs"])).toEqual(["workspaces", "packages", "link"]);
-    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts"]) expect(on([f]), f).toContain("link");
+    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts",
+      "packages/core/src/contracts/link-transport.ts", "packages/core/src/clock/system-clock.ts", "packages/protocol/src/index.ts"]) expect(on([f]), f).toContain("link");
     expect(on(["packages/core/src/daemon.ts"])).not.toContain("link");
     expect(on(["native/link-sidecar/src/main.rs"])).not.toContain("link");
+  });
+
+  test("every CI step that runs the link tests requires the sidecar, so a missing build fails instead of skipping", () => {
+    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { steps?: Array<{ run?: string; env?: Record<string, string> }> }> }).jobs;
+    const steps = Object.values(jobs).flatMap((j) => j.steps ?? []).filter((s) => /bun test\b.*\bsrc\/links\b/.test(s.run ?? ""));
+    expect(steps.length).toBe(2);
+    for (const s of steps) expect(s.env?.CLOVER_LINK_REQUIRE_BINARY).toBe("1");
   });
 
   test("the services' shared source and the sign-in stub run the core's suite (its account tests import them)", () => {
@@ -115,9 +133,9 @@ describe("ci-changes", () => {
     expect(on(["Package.swift"])).toContain("swift");
   });
 
-  test("CI itself runs every area; the toolchain, the root manifest or a lockfile every area but the Swift kits; so does no diff", () => {
-    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES);
-    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f]), f).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift"));
+  test("CI itself runs every area but the installers; the toolchain, the root manifest or a lockfile every area but the Swift kits and the installers; so does no diff", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "installers"));
+    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f]), f).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift" && a !== "installers"));
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
   });
 

@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 export type CiArea =
-  | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
+  | "workspaces" | "daemon" | "app" | "packages" | "installers" | "gallery" | "typecheck" | "lockfiles"
   | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
@@ -22,18 +22,23 @@ export const CI_GLOBAL: readonly Pattern[] = [
   "pnpm-workspace.yaml", "tsconfig.base.json", "bunfig.toml",
 ];
 
-const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packages/plugin-sdk/"];
+// The update feed's check is in the daemon's binary (packages/cli's `__verify-feed`) and, after E-M1, the app's updater.
+const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packages/plugin-sdk/", "packages/update-feed/"];
 
 /** What each area's jobs read. */
 export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // every workspace package's own tests, on all four machines
   workspaces: ["packages/", "apps/", "plugins/", "services/", "native/", "examples/", "spikes/", "scripts/workspaces.ts", "scripts/with-private-secret-service.sh"],
-  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts"],
+  daemon: [...CORE, "packages/cli/", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/verify-sealed-core.ts", "scripts/clover-core.entitlements"],
   // the app, and what it loads: Clover's own plugins and the plugin SDK's UI API (E-M1)
   app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
   // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon and the
   // link sidecar they carry (the job installs the deb and runs its `clover`)
-  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", ...CORE, "packages/cli/", "native/link/"],
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/release/", ...CORE, "packages/cli/", "native/link/"],
+  // the macOS and Windows installers (the unsigned release build: dmg, zip, NSIS), on macOS and Windows machines: only
+  // what makes them, so a code change alone doesn't spend a macOS job on them (the app and daemon jobs build those)
+  installers: ["apps/desktop/electron-builder.yml", "apps/desktop/package.json", "packaging/", "scripts/release/", "scripts/build-daemon.ts",
+    "scripts/seal-bun-doors.ts", "scripts/build-packages.ts", "packages/update-feed/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],
@@ -59,9 +64,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // lane B's conformance suites for them
   tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
     "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"],
-  // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and the
-  // devices and identity the link's handshake and pairing use
-  link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/"],
+  // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and
+  // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
+  link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
+    "packages/core/src/contracts/", "packages/core/src/clock/", "packages/protocol/"],
 };
 
 /** The CI_GLOBAL changes that still run the Swift kits: CI's own definition, not the toolchain or the lockfiles. */
@@ -90,12 +96,20 @@ export function matches(path: string, pattern: Pattern): boolean {
   return path === pattern;
 }
 
+/** Areas CI_GLOBAL turns on only through these of its files: the Swift kits through CI's own definition, and the
+ *  installers' release build (a macOS and a Windows machine for a quarter of an hour) through none, so a change keeps
+ *  to three macOS jobs. A push to main still runs every area. */
+export const NARROW_GLOBAL: Readonly<Partial<Record<CiArea, readonly Pattern[]>>> = { swift: SWIFT_GLOBAL, installers: [] };
+
 /** The areas `changed` needs. `undefined` (no diff to go on) runs every area. */
 export function areasFor(changed: readonly string[] | undefined): Record<CiArea, boolean> {
   if (changed === undefined) return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, true])) as Record<CiArea, boolean>;
   const touches = (patterns: readonly Pattern[]): boolean => changed.some((p) => patterns.some((g) => matches(p, g)));
   const all = touches(CI_GLOBAL);
-  return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, a === "swift" ? touches(SWIFT_GLOBAL) || touches(CI_AREAS.swift) : all || touches(CI_AREAS[a])])) as Record<CiArea, boolean>;
+  return Object.fromEntries(CI_AREA_NAMES.map((a) => {
+    const narrow = NARROW_GLOBAL[a];
+    return [a, (narrow === undefined ? all : touches(narrow)) || touches(CI_AREAS[a])];
+  })) as Record<CiArea, boolean>;
 }
 
 function changedSince(base: string): string[] | undefined {
