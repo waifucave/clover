@@ -103,7 +103,22 @@ function Build-Launcher {
     # Static CRT: no VCRUNTIME140/MSVCP140 prerequisite on the target machine (S2).
     # /BREPRO: deterministic output — the Authenticode digest must be identical on every
     # rebuild of the same source, or the pinned digest could never match lane M's CI build.
-    $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/BREPRO"
+    # And independent of where the build runs: the checkout's and cargo home's paths are remapped
+    # (panic messages carry source paths), and no PDB is made, so no PDB path is written into the
+    # image (/DEBUG:NONE). CARGO_ENCODED_RUSTFLAGS, one flag per 0x1f: a path with a space stays
+    # one flag (RUSTFLAGS splits on spaces).
+    $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $HOME ".cargo" }
+    $flags = @(
+      "-Ctarget-feature=+crt-static",
+      "-Clink-arg=/BREPRO",
+      "-Clink-arg=/DEBUG:NONE",
+      "-Cdebuginfo=0",
+      "--remap-path-prefix=$srcDir=/srt",
+      "--remap-path-prefix=$cargoHome=/cargo"
+    )
+    Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
+    $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]0x1f
+    $env:CARGO_INCREMENTAL = "0"
     # The source pins its toolchain (rust-toolchain.toml, found from here upwards); rustup installs it if missing.
     rustup toolchain install
     if ($LASTEXITCODE -ne 0) { throw "build-srt-win: rustup could not install the source's toolchain" }

@@ -372,7 +372,9 @@ describe("srt-win.exe, Bash's fence launcher on Windows (scripts/release/srt-win
     const script = read("scripts/build-srt-win.ps1");
     expect(script).toContain(`[string]$Commit = "${SRT_WIN_SOURCE.commit}"`);
     expect(script).toContain(`[string]$Tag = "${SRT_WIN_SOURCE.tag}"`);
-    expect(script).toContain('$env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/BREPRO"');
+    // A static CRT and a reproducible link wherever it runs: paths remapped, no PDB, one flag per 0x1f.
+    for (const flag of ['"-Ctarget-feature=+crt-static"', '"-Clink-arg=/BREPRO"', '"-Clink-arg=/DEBUG:NONE"', '"--remap-path-prefix=$srcDir=/srt"', '"--remap-path-prefix=$cargoHome=/cargo"']) expect(script).toContain(flag);
+    expect(script).toContain("$env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]0x1f");
     // The patches are the crate's: applied in its folder of the checkout, where they apply.
     expect(script).toContain("git apply --check --directory=vendor/srt-win-src $p.FullName");
     expect(parseSrtWinArgs(["--arch", "x64,arm64", "--print"])).toEqual({ arches: ["x64", "arm64"], print: true, dryRun: false });
