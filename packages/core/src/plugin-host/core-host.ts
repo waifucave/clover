@@ -44,6 +44,8 @@ export interface CorePluginHostOptions {
   /** The link to a plugin-host process (made, or reused, by the caller): `own` is per plugin. */
   connect(process: HostProcess, pluginId: string): RpcPeer;
   invocations?: InvocationTable;
+  /** A worker's log lines (`pluginHost.log`), for `logs/plugins/<id>.log`; only for a plugin on that link. */
+  log?(pluginId: string, lines: readonly string[]): void;
 }
 
 interface Call {
@@ -111,6 +113,9 @@ export class CorePluginHost implements PluginHost {
         deliver: (p, subscription, value) => peer.notify("pluginHost.deliver", { pluginId: p, subscription, value }),
       });
       for (const [method, fn] of Object.entries(channel.methods)) peer.handle(method, (params) => fn(params, { caller: { kind: "core" } }));
+      peer.handle("pluginHost.log", (x: { pluginId: string; lines: string[] }) => {
+        if (this.#hosted.get(x.pluginId)?.peer === peer && Array.isArray(x.lines)) this.#o.log?.(x.pluginId, x.lines.map((l) => String(l).slice(0, 4000)).slice(0, 500));
+      });
       peer.handle("pluginHost.chunk", (x: { callId: string; seq: number; value?: unknown }) => this.#streams.get(x.callId)?.(x));
       peer.handle("pluginHost.state", (x: { pluginId: string; state: string; reason?: string }) => {
         if (x.state === "crashed" || x.state === "heartbeat-missed") this.crash(x.pluginId, x.reason ?? (x.state === "crashed" ? "the worker crashed" : "it missed the heartbeat for 30 seconds"));

@@ -130,6 +130,32 @@ export function loopbackPeers(): [RpcPeer, RpcPeer] {
   return [a, b];
 }
 
+/** An end over a message port (a worker's `self`, or its `Worker` from the parent): structured clone carries the
+ *  values, bytes included. */
+export function portPeer(port: { postMessage(m: unknown): void; addEventListener(type: "message", fn: (e: { data: unknown }) => void): void }): RpcPeer {
+  const peer = new Peer((m) => port.postMessage(m));
+  port.addEventListener("message", (e) => {
+    const m = e.data as Message;
+    if (typeof m === "object" && m !== null && typeof (m as { kind?: unknown }).kind === "string") peer.receive(m);
+  });
+  return peer;
+}
+
+/** The lines of a byte stream (a pipe's), as text. */
+export async function* linesOf(chunks: AsyncIterable<Uint8Array | string>): AsyncGenerator<string> {
+  const decoder = new TextDecoder();
+  let buffered = "";
+  for await (const chunk of chunks) {
+    buffered += typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true });
+    let at: number;
+    while ((at = buffered.indexOf("\n")) >= 0) {
+      yield buffered.slice(0, at);
+      buffered = buffered.slice(at + 1);
+    }
+  }
+  if (buffered !== "") yield buffered;
+}
+
 /** An end over a line stream (NDJSON JSON-RPC 2.0): the plugin-host process's stdio. `write` takes one line. Values
  *  are JSON: bytes cross as `{ "$bytes": "<base64>" }`, restored on the other side. */
 export function streamPeer(lines: AsyncIterable<string>, write: (line: string) => void): RpcPeer {
