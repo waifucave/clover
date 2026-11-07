@@ -527,22 +527,27 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   // mint bound (a part's channel, its document's own frame; the fallback's `own`, its window's main frame). The app
   // signs it out of doors and takes the core's answer, with the gate first (B3, B4).
   handle("clover:sealed-answer", (event, a) => {
-    const f = event.senderFrame;
-    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
-    const token = str(a.token, 128);
-    const option = str(a.option, 64);
-    const ch = Array.isArray(a.children) && a.children.every((c: unknown) => typeof c === "string") ? a.children as readonly string[] : undefined;
-    if (token === undefined) throw new LayerError("bad sealed answer");
-    // The token in the message must be the one in the sender's own URL (B4): a frame holding another frame's token
-    // can't answer with it, and a plugin can't guess a fallback's `own` token and answer from its own page.
-    const urlToken = new URL(f.url).searchParams.get("token");
-    if (urlToken === null || urlToken !== token) throw new LayerError("bad sealed answer");
-    // The sender's own key, the binding the mint held: the page's own parent (a part's channel) or its own main frame
-    // (the fallback's `own`).
-    const key = f.parent !== null && !f.parent.detached
-      ? `p:${f.parent.processId}:${f.parent.routingId}`
-      : `m:${f.processId}:${f.routingId}`;
-    return hooks.sealedAnswer(token, option, key, ch);
+    try {
+      const f = event.senderFrame;
+      if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+      const token = str(a.token, 128);
+      const option = str(a.option, 64);
+      const ch = Array.isArray(a.children) && a.children.every((c: unknown) => typeof c === "string") ? a.children as readonly string[] : undefined;
+      if (token === undefined) throw new LayerError("bad sealed answer");
+      // The token in the message must be the one in the sender's own URL (B4): a frame holding another frame's token
+      // can't answer with it, and a plugin can't guess a fallback's `own` token and answer from its own page.
+      const urlToken = new URL(f.url).searchParams.get("token");
+      if (urlToken === null || urlToken !== token) throw new LayerError("bad sealed answer");
+      // The sender's own key, the binding the mint held: the page's own parent (a part's channel) or its own main frame
+      // (the fallback's `own`).
+      const key = f.parent !== null && !f.parent.detached
+        ? `p:${f.parent.processId}:${f.parent.routingId}`
+        : `m:${f.processId}:${f.routingId}`;
+      return hooks.sealedAnswer(token, option, key, ch);
+    } catch (err) {
+      if (err instanceof LayerError) log(`sealed: answer refused at handler (${err.message})`);
+      throw err;
+    }
   });
   // A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
   // a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its

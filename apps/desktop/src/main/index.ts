@@ -1244,16 +1244,6 @@ async function smoke(): Promise<void> {
             (element === undefined || f.url.includes(element) || (element !== undefined && f.url.includes(encodeURIComponent(element)))));
           if (frame !== undefined) {
             log(`sealed-click: frame found ${frame.url.slice(0, 80)}`);
-            // Real input reaches out-of-process frames only in a shown window: a hidden window's main frame takes
-            // the press while its layer frames never hear it (the E2E's own finding on every OS: root presses, clover
-            // none — the browser has no compositor surface to route into the child process). The smoke run shows the
-            // main window without focusing it once its sealed frame is there, so the press routes and IOv2 sees the
-            // button. Headless otherwise stays hidden (no Dock, no tray, no focus); under CI's virtual display no
-            // human screen is touched.
-            if (!win.isVisible()) {
-              win.showInactive();
-              log(`sealed-click: main window shown for the press`);
-            }
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
             if (cover === true) {
               await frame.executeJavaScript(`(() => {
@@ -1274,9 +1264,8 @@ async function smoke(): Promise<void> {
               })()`, true).catch(() => undefined);
             }
             // Let the IntersectionObserver register the visibility change (trackVisibility, delay 200 ms), and the
-            // button's own 500 ms visible + 400 ms open gates pass before the press. The window was just shown above,
-            // so visibility starts counting here.
-            await new Promise((r) => setTimeout(r, 1200));
+            // button's own 500 ms visible + 400 ms open gates pass before the press.
+            await new Promise((r) => setTimeout(r, 800));
             const buttonRaw = await frame.executeJavaScript(
               `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
             const buttonRect = buttonRaw !== null && typeof buttonRaw === "object" && typeof (buttonRaw as { x?: unknown }).x === "number" ? buttonRaw as { x: number; y: number; width: number; height: number } : null;
@@ -1370,6 +1359,11 @@ async function smoke(): Promise<void> {
                 await dispatch("mousePressed");
                 await dispatch("mouseReleased");
               }
+              if (cdp) {
+                try {
+                  win.webContents.debugger.detach();
+                } catch { /* quitting soon anyway */ }
+              }
               sealedClicked = true;
               await new Promise((r) => setTimeout(r, 1000));
               const after = await frame.executeJavaScript(
@@ -1433,6 +1427,11 @@ async function smoke(): Promise<void> {
           if (w.isDestroyed()) break;
           await fbDispatch("mousePressed");
           await fbDispatch("mouseReleased");
+          if (fbCdp) {
+            try {
+              w.webContents.debugger.detach();
+            } catch { /* quitting soon anyway */ }
+          }
           sealedClicked = true;
           await new Promise((r) => setTimeout(r, 1000));
           const fbAfter = await frame.executeJavaScript(

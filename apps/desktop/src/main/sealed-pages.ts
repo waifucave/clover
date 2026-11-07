@@ -184,7 +184,7 @@ export function ownCardPage(input: {
     if (b2 === null) return;
     e.preventDefault();
     void b.answer(b2.dataset.option).then((r) => {
-      if (r !== null && typeof r === "object" && (r as { accepted?: unknown }).accepted === true) document.body.dataset.answered = "yes";
+      if (r !== null && typeof r === "object" && r.accepted === true) document.body.dataset.answered = "yes";
     });
   }, { capture: true });
 })();`;

@@ -139,7 +139,9 @@ async function runApp(opts: {
   app.stdout?.on("data", (d) => (output += d));
   app.stderr?.on("data", (d) => (output += d));
   const card = opts.card ?? CARD;
-  const fake = await startFakeDaemon({ home: h, ui: registry.plugins, cards: [{ card }], prove: app.pid, events: [{ jsonrpc: "2.0", method: "core.event", params: { type: "card_pending", card: CARD } }], ...(opts.acting !== undefined ? { acting: opts.acting } : {}) });
+  // Lane B's event envelope carries the shared-clock time the event happened: the app ignores a `core.event`
+  // without it (E-M3's own local finding).
+  const fake = await startFakeDaemon({ home: h, ui: registry.plugins, cards: [{ card }], prove: app.pid, events: [{ jsonrpc: "2.0", method: "core.event", params: { type: "card_pending", ts: Date.now(), card: CARD } }], ...(opts.acting !== undefined ? { acting: opts.acting } : {}) });
   fakes.push(fake);
   const until = async (check: () => boolean, ms: number, what: string) => {
     const end = Date.now() + ms;
@@ -151,7 +153,7 @@ async function runApp(opts: {
   const events = () => readCalls(h).map((c) => (c.event === "request" ? `request ${String(c.method)}` : c.event));
   // Wait for the app to connect to the daemon, then tell it about the card (the plugin layer hears card_requested).
   await until(() => events().includes("request plugin.ui"), 40_000, "the app connected to the daemon");
-  fake.write([{ jsonrpc: "2.0", method: "core.event", params: { type: "card_requested", card } }]);
+  fake.write([{ jsonrpc: "2.0", method: "core.event", params: { type: "card_requested", ts: Date.now(), card } }]);
   const code = await new Promise<number | null>((resolve) => app.on("exit", (code) => resolve(code)));
   await fake.close();
   return { home: h, output, status: code };

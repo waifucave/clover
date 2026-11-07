@@ -102,4 +102,29 @@ describe("the app's own fallback card page", () => {
     expect(p).toContain('data-token="' + TOKEN + '"');
     expect(p).toContain("b.answer(b2.dataset.option)");
   });
+
+  test("the page's inline script parses: plain script alone, never the author's types (a `as` or `: string` in it kills the page's own listeners at parse)", () => {
+    const pages = [
+      buttonPage({ cardId: "card_x", token: TOKEN, option: "allow_once", label: "Allow", kind: "approve" }),
+      buttonPage({ cardId: "card_x", token: TOKEN, option: "deny", label: "Deny", kind: "deny" }),
+      ownCardPage({
+        cardId: "card_own",
+        token: TOKEN,
+        origin: "user",
+        issuedAt: 0,
+        expiresAt: null,
+        fields: { title: { type: "text", text: "Run a command?" } },
+        options: [
+          { id: "allow_once", kind: "approve", label: "Allow" },
+          { id: "deny", kind: "deny", label: "Deny" },
+        ],
+      }),
+    ];
+    expect(pages.length).toBeGreaterThan(0);
+    for (const p of pages) {
+      const script = p.match(/<script>([\s\S]*)<\/script>/);
+      expect(script, "a sealed page with answers carries its script").not.toBeNull();
+      expect(() => new Function(script![1]!), "the inline script parses as plain script").not.toThrow();
+    }
+  });
 });

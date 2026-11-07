@@ -158,12 +158,12 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         authed.add(s);
         layerOf.set(s, params.pluginId as string);
         void sendInitialEvents(s);
-        return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "plugin", pluginId: params.pluginId }, device: "dev_fake", features: [] });
+        return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "plugin", pluginId: params.pluginId }, device: "devfake0000000001", features: [] });
       }
       if (params.role !== "app" || params.token !== token) return fail(-32001, "unauthorized");
       authed.add(s);
       void sendInitialEvents(s);
-      return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "user", via: "app" }, device: "dev_fake", features: [] });
+      return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "user", via: "app" }, device: "devfake0000000001", features: [] });
     }
     // A layer's calls: what the fake knows a layer may ask (the terminal's, events), answered as that plugin.
     const layer = layerOf.get(s);
