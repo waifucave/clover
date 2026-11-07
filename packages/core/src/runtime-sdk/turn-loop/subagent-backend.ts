@@ -25,6 +25,7 @@ import type { AgentPauseGate } from "../../agents/manager";
 import { embeddedSessionOptions, fillProvider, type EmbeddedSessionDeps } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { BOT_SANDBOX, isUnknownTask } from "./driver";
+import { inProcessSandboxReady, notAvailableHere } from "../../agents/sandbox/in-process";
 import { TASK_NOTIFICATION_FRAME } from "./input";
 import { createHostPromptQueue, type HostPromptQueue } from "../prompt-queue";
 import { cloverSessions } from "../sessions";
@@ -64,6 +65,9 @@ export interface InProcessBackendDeps extends EmbeddedSessionDeps {
   /** Folders the delegation may never read or write, beside the fence: the delegating bot's memory folder (the owner's
    *  decision of November 6: delegated agents don't get the memory and can't reach `home/memory`). */
   privateFoldersFor?(spec: AgentStartSpec): readonly string[];
+  /** Whether the embedded runtime's sandbox can run here (lane K's `inProcessSandboxReady`: macOS with Seatbelt); a
+   *  test seam. Where it can't, the backend says it isn't available, with the reason (`detect`). */
+  sandboxReady?: () => boolean;
   /** Test seam. */
   query?: typeof sdkQuery;
   pluginId?: string;
@@ -403,7 +407,10 @@ export function inProcessAgentBackend(deps: InProcessBackendDeps): AgentBackend 
     inProcess: true,
     pluginId: deps.pluginId ?? "clover",
     quirks: IN_PROCESS_QUIRKS,
+    // Its commands run in the embedded runtime's sandbox, which is macOS's Seatbelt for now: elsewhere it isn't available,
+    // with lane K's reason, whoever asks (lane K's manager or a direct caller).
     async detect(): Promise<AgentDetection> {
+      if (!(deps.sandboxReady ?? inProcessSandboxReady)()) return notAvailableHere(IN_PROCESS_BACKEND_ID);
       return { installed: true, identityOk: true, versionOk: true, sandboxed: true };
     },
     async start(spec: AgentStartSpec): Promise<AgentSession> {
