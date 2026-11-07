@@ -1168,6 +1168,8 @@ async function smoke(): Promise<void> {
   let frames: Probed[] = [];
   let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
   let sealedClicked = false;
+  // Item 10: a packaged run makes the sealed test paths fully inert. Said once, whatever vars it started with.
+  let sealedProbeRefused = false;
   type WebFact = { mount: string; url: string; visible: boolean; text: string };
   let webFacts: WebFact[] = [];
   const probeWeb = async (): Promise<WebFact[]> => Promise.all(webViews.list().map(async (v) => {
@@ -1256,7 +1258,14 @@ async function smoke(): Promise<void> {
     // themselves, not the shell's composer (which a sealed run never needs).
     if (!sealedClicked) {
       const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
-      if (spec !== undefined) {
+      // Test-only on every axis (item 10): a packaged run makes the whole probe and cover-script block inert — no
+      // reads, no cover script, no press. Said once.
+      const probeAllowed = spec === undefined || sealedInputAllowed({ packaged: app.isPackaged, headless });
+      if (!probeAllowed && !sealedProbeRefused) {
+        sealedProbeRefused = true;
+        log(`sealed-click: probe refused (packaged app)`);
+      }
+      if (spec !== undefined && probeAllowed) {
         try {
           const {
             cardId, element, cover, opacity, doubleClick,
@@ -1365,22 +1374,17 @@ async function smoke(): Promise<void> {
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
-              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. Test-only
-              // on every axis (B1): a packaged app never attaches the debugger, whatever env vars it started with.
-              const inputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. (The
+              // outer gate above already refused packaged runs the whole block.)
               let cdp = false;
-              if (inputAllowed) {
-                try {
-                  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
-                  cdp = win.webContents.debugger.isAttached();
-                } catch { /* fall back to sendInputEvent */ }
-              }
-              const dispatch = !inputAllowed
-                ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
-                : cdp
-                  ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
-                  : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
-              log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
+              try {
+                if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
+                cdp = win.webContents.debugger.isAttached();
+              } catch { /* fall back to sendInputEvent */ }
+              const dispatch = cdp
+                ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+                : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+              log(`sealed-click: input via ${cdp ? "cdp" : "sendInputEvent"}`);
               await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
               await dispatch("mousePressed");
@@ -1421,8 +1425,14 @@ async function smoke(): Promise<void> {
     }
     // The fallback card: if no sealed frame was clicked and the fallback run is enabled, click the fallback window's
     // Approve button so its answer rides `card.answer` to the fake daemon (unpackaged runs only). Gated on the
-    // fallback window itself, not the shell.
-    if (!sealedClicked && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") {
+    // fallback window itself, not the shell. Test-only on every axis like the part path above (item 10).
+    const fallbackSpec = process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+    const fallbackAllowed = !fallbackSpec || sealedInputAllowed({ packaged: app.isPackaged, headless });
+    if (fallbackSpec && !fallbackAllowed && !sealedProbeRefused) {
+      sealedProbeRefused = true;
+      log(`sealed-click: fallback probe refused (packaged app)`);
+    }
+    if (!sealedClicked && fallbackSpec && fallbackAllowed) {
       for (const w of BrowserWindow.getAllWindows()) {
         if (w === win || w.isDestroyed()) continue;
         if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
@@ -1442,20 +1452,16 @@ async function smoke(): Promise<void> {
           // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
           // does not reach the page here. Test-only on every axis (B1): a packaged app never attaches the debugger,
           // whatever env vars it started with.
-          const fbInputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+          // CDP input like the part path above (the outer gate already refused packaged runs the whole block).
           let fbCdp = false;
-          if (fbInputAllowed) {
-            try {
-              if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
-              fbCdp = w.webContents.debugger.isAttached();
-            } catch { /* fall back to sendInputEvent */ }
-          }
-          const fbDispatch = !fbInputAllowed
-            ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
-            : fbCdp
-              ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
-              : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
-          log(`sealed-click: fallback input via ${!fbInputAllowed ? "refused" : fbCdp ? "cdp" : "sendInputEvent"}`);
+          try {
+            if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
+            fbCdp = w.webContents.debugger.isAttached();
+          } catch { /* fall back to sendInputEvent */ }
+          const fbDispatch = fbCdp
+            ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+            : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+          log(`sealed-click: fallback input via ${fbCdp ? "cdp" : "sendInputEvent"}`);
           await fbDispatch("mouseMoved");
           await new Promise((r) => setTimeout(r, 1300));
           if (w.isDestroyed()) break;
