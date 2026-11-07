@@ -90,11 +90,20 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     const url = new URL(request.url);
     // Minted URLs are `clover-sealed://card/<cardId>/<element>?token=…` (parts and the fallback alike); the token's
     // single use is the real gate.
-    if (url.host !== "card") return notFound();
+    if (url.host !== "card") {
+      log(`sealed: refusing ${request.url.slice(0, 80)} (bad host)`);
+      return notFound();
+    }
     const token = url.searchParams.get("token");
-    if (token === null || token === "" || token.length > 128) return forbidden();
+    if (token === null || token === "" || token.length > 128) {
+      log(`sealed: refusing ${request.url.slice(0, 80)} (bad token)`);
+      return forbidden();
+    }
     const serving = runtime.serveSeal(token);
-    if (serving === undefined) return forbidden();
+    if (serving === undefined) {
+      log(`sealed: refusing token ${token.slice(0, 16)}… (no channel)`);
+      return forbidden();
+    }
     return new Response(serving.html, { headers: serving.headers });
   });
 
@@ -199,7 +208,10 @@ export function guardContents(wc: WebContents, log: (line: string) => void): voi
   wc.on("will-frame-navigate", (e) => {
     if (e.isMainFrame) {
       // A fallback card's own window is a main frame on the sealed scheme; every other main frame stays on the core.
-      if (!e.url.startsWith(`${CORE_SCHEME}://app/`) && !e.url.startsWith(`${SEALED_SCHEME}://`)) e.preventDefault();
+      if (!e.url.startsWith(`${CORE_SCHEME}://app/`) && !e.url.startsWith(`${SEALED_SCHEME}://`)) {
+        log(`layers: a window tried to leave for ${e.url.slice(0, 120)}`);
+        e.preventDefault();
+      }
       return;
     }
     // A sealed frame is an iframe on the sealed scheme inside a plugin's layer document; every other subframe stays
