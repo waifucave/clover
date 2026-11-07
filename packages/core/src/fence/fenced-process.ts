@@ -17,7 +17,7 @@ import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote, unixSocketFilter } from "./linux-bwrap";
 import { gitTemplateDir, globalHooksPathDirs, loginStartDirs, loginStartSafeFiles, loginStartUnsafeFiles, selfUpdateFiles } from "./layout";
 import { supervisorArch } from "./linux-supervisor";
-import { revertWatchedGitChanges, watchedGitChanges } from "./git-config";
+import { parseGitConfigWatched, revertWatchedGitChanges, watchedGitChanges } from "./git-config";
 import { macFenceProfile } from "./macos-profile";
 import { callerPlaces } from "./per-caller";
 import { runCommand, type FencedRun, type FencedRunResult, type FencedSpawner } from "./spawn";
@@ -259,8 +259,11 @@ function chainIsClean(path: string): boolean {
 /** Reverts risky git keys a sandboxed command added or changed (spec item 1116): only the watched keys are
  *  touched, other edits stay, and nothing is written through a planted link or into a planted folder. A file that
  *  appeared with watched keys set has those lines dropped (an empty file left behind sets nothing). The fixed
- *  file is written to a temp file and renamed over, but only when the file hasn't changed since it was read —
- *  a concurrent writer's bytes are never clobbered. Returns the report line, or null. */
+ *  file is re-parsed through git's own parser before it lands: if any watched change survives (a layout git
+ *  accepts that the line parser misses), the file's pre-run bytes are written back instead — or the appeared
+ *  file removed — and the report says "not reverted". The write uses git's lockfile protocol (`config.lock`,
+ *  created exclusively, re-read, written, renamed over) with a retry; on final failure the same fallback
+ *  applies. A file that changed since it was read is never clobbered. Returns the report line, or null. */
 export function revertPlantedGitKeys(before: Map<string, string | null>): string | null {
   const notes: string[] = [];
   for (const [p, prev] of before) {
@@ -274,27 +277,94 @@ export function revertPlantedGitKeys(before: Map<string, string | null>): string
     }
     try {
       const fixed = revertWatchedGitChanges(cur ?? "", changed);
-      // Compare-and-swap: re-read, and only replace an unchanged file.
+      // Re-verify through git's own parser: the built-in line parser can miss layouts git itself accepts
+      // (case tricks, continuations, subsection spellings). Anything surviving means the revert lied.
+      const remaining = watchedGitChanges(prev, fixed);
+      if (remaining.length > 0) {
+        restorePreRun(p, prev);
+        notes.push(`${p}: could not revert risky git keys (${remaining.map((c) => c.dotted).join(", ")}): not reverted`);
+        continue;
+      }
+      // Compare-and-swap: only replace a file that hasn't changed since it was read.
       if (readIfFile(p) !== cur) {
         notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): changed under us, not clobbered`);
         continue;
       }
-      const dir = dirname(p);
-      const tmp = join(dir, `.clover-revert-${randomBytes(4).toString("hex")}`);
-      let fd = -1;
-      try {
-        fd = openSync(tmp, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
-        writeFileSync(fd, fixed, { encoding: "utf8" });
-      } finally { if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } } }
-      try {
-        renameSync(tmp, p);
-      } finally { try { unlinkSync(tmp); } catch { /* renamed or never made */ } }
+      const written = writeLocked(p, fixed, cur);
+      if (written === "changed") {
+        notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): changed under us, not clobbered`);
+        continue;
+      }
+      if (written !== "ok") {
+        restorePreRun(p, prev);
+        notes.push(`${p}: could not revert risky git keys (${changed.map((c) => c.dotted).join(", ")}): not reverted`);
+        continue;
+      }
       notes.push(`${p}: reverted risky git keys (${changed.map((c) => c.dotted).join(", ")})`);
     } catch {
       notes.push(`${p}: kept risky git keys (${changed.map((c) => c.dotted).join(", ")}): could not revert`);
     }
   }
   return notes.length === 0 ? null : `clover: the run set risky git keys; ${notes.join("; ")}\n`;
+}
+
+/** Writes `content` over `p` with git's lockfile protocol: `p.lock` is created exclusively (git's own
+ *  lockfile name, so a concurrent git respects it too), the live file is re-read against `expect` (a
+ *  concurrent writer's bytes are never clobbered), the content is written to the lock, and the lock is
+ *  renamed over. Retries a contested lock; returns whether it landed. */
+function writeLocked(p: string, content: string, expect: string | null): "ok" | "changed" | "locked" | "error" {
+  const lock = `${p}.lock`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let fd = -1;
+    try {
+      fd = openSync(lock, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === "EEXIST") continue; // contested: retry
+      return "error";
+    }
+    try {
+      if (readIfFile(p) !== expect) return "changed"; // the lock is unlinked below
+      writeFileSync(fd, content, { encoding: "utf8" });
+    } catch {
+      return "error";
+    } finally {
+      if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } }
+    }
+    try {
+      renameSync(lock, p);
+      return "ok";
+    } catch {
+      return "error";
+    } finally {
+      try { unlinkSync(lock); } catch { /* renamed over */ }
+    }
+  }
+  return "locked";
+}
+
+/** The Addendum 10 fallback: put the file's pre-run bytes back (or remove a file that appeared), best
+ *  effort, without clobber checks — leaving a half-reverted risky key is worse than restoring. */
+function restorePreRun(p: string, prev: string | null): void {
+  try {
+    if (prev === null) {
+      // A file that appeared: remove it (missing counts as reverted — nothing for git to read).
+      try {
+        const st = lstatSync(p);
+        if (!st.isSymbolicLink() && st.isFile()) unlinkSync(p);
+      } catch { /* gone or a link: leave it */ }
+      return;
+    }
+    const lock = `${p}.lock`;
+    let fd = -1;
+    try {
+      fd = openSync(lock, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+      writeFileSync(fd, prev, { encoding: "utf8" });
+    } catch { return; }
+    finally { if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } } }
+    try { renameSync(lock, p); }
+    catch { /* best effort */ }
+    finally { try { unlinkSync(lock); } catch { /* renamed */ } }
+  } catch { /* best effort */ }
 }
 
 /** Every git config a repo root could plant risky keys in: its own config, its per-worktree config, its
@@ -331,10 +401,11 @@ export function repoConfigFiles(repoRoot: string): string[] {
   return out;
 }
 
-/** The git configs a sandboxed command could plant risky keys in: the global ones, the session repo's, and any
- *  repo made during the run one level under the cwd (deeper nesting is a documented miss: the supervisor and the
- *  belt still cover planted hooks, and the fence judges every tool call). Missing files are watched too: a file
- *  that appears is reverted when it carries a watched key. */
+/** The git configs a sandboxed command could plant risky keys in: the global ones, the session repo's, any
+ *  repo made during the run one level under the cwd, and the files those configs' pre-existing `include.path`
+ *  and `includeIf.*.path` entries point at (a planted key in an included file reads the same). Deeper nesting
+ *  is a documented miss: the supervisor and the belt still cover planted hooks, and the fence judges every
+ *  tool call. Missing files are watched too: a file that appears is reverted when it carries a watched key. */
 function watchedConfigFiles(home: string, cwd: string): string[] {
   const out = new Set([join(home, ".gitconfig"), join(home, ".config", "git", "config")]);
   const under = (p: string, root: string) => p === root || p.startsWith(root.endsWith("/") ? root : `${root}/`);
@@ -356,7 +427,44 @@ function watchedConfigFiles(home: string, cwd: string): string[] {
     if (at === home) break;
     at = dirname(at);
   }
+  // One level of pre-existing includes: each watched file that exists contributes the files its own
+  // include.path / includeIf entries name. Planted entries added during the run are reverted, not followed —
+  // only the pre-run bytes are read here.
+  for (const p of [...out]) {
+    for (const t of includeTargets(readIfFile(p), dirname(p), home)) {
+      if (!out.has(t)) out.add(t);
+    }
+  }
   return [...out];
+}
+
+/** The files a config's own `include.path` and `includeIf.*.path` entries name, resolved the way git reads
+ *  them: a leading `~/` grows from the home, an absolute path stands, a relative path grows from the config's
+ *  own folder. Glob patterns are expanded where the platform can; an unresolvable entry resolves null. */
+export function includeTargets(text: string | null, baseDir: string, home: string): string[] {
+  if (text === null) return [];
+  const out: string[] = [];
+  for (const k of parseGitConfigWatched(text)) {
+    const dot = k.dotted.toLowerCase();
+    const isInclude = dot === "include.path" || (dot.startsWith("includeif.") && dot.endsWith(".path"));
+    if (!isInclude) continue;
+    const raw = k.value.trim();
+    if (raw === "") continue;
+    const abs = raw.startsWith("~/") ? join(home, raw.slice(2)) : raw.startsWith("/") ? raw : join(baseDir, raw);
+    if (/[*?\[\]{}]/.test(abs)) {
+      // A glob: expand it where the platform can, otherwise skip (never guess).
+      try {
+        const slash = abs.lastIndexOf("/");
+        const dir = slash < 0 ? "." : abs.slice(0, slash) || "/";
+        const pat = slash < 0 ? abs : abs.slice(slash + 1);
+        const g = new Bun.Glob(pat);
+        for (const m of g.scanSync({ cwd: dir, absolute: true })) out.push(m);
+      } catch { /* unexpandable: skip */ }
+      continue;
+    }
+    out.push(abs);
+  }
+  return [...new Set(out)];
 }
 /** Makes `target` and any missing parents, refusing a link anywhere on the way down (like `makeBotFolders`):
  *  a planted link never redirects the creation. An existing non-folder is left alone (the read-only bind still

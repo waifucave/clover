@@ -9,7 +9,7 @@
 // the fenced process maps that to a refusal. A command that prints the marker and exits 127 only refuses itself.
 // Usage: `shim <bwrap> <bwrap args...>`, with the supervised folders as JSON in `CLOVER_SUPERVISED_FILES` and
 // bwrap's seccomp filter on fd 3.
-import { openSupervisorLib, supervise } from "./linux-supervisor";
+import { openSupervisorLib, supervise, supervisorSelfRefusal } from "./linux-supervisor";
 import { SupervisorState, type SupervisorRequest } from "./linux-supervisor-worker";
 
 /** The shim's closed marker (stderr) and exit code: the fenced process refuses the run on both together. */
@@ -29,6 +29,8 @@ async function main(): Promise<number> {
   };
   const lib = openSupervisorLib();
   if (lib === null) return closed("no ffi or libc");
+  const refusal = supervisorSelfRefusal();
+  if (refusal !== null) return closed(`the supervisor ${refusal}`);
   // The worker installs the filter and spawns under it; this thread supervises. Fds 0-2 are runCommand's pipes
   // and fd 3 bwrap's seccomp filter: this thread never touches a trapped call, so spawning it is safe.
   let worker: Worker | null = null;

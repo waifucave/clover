@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
-import { fencedSpawner, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys } from "../../src/fence/fenced-process";
+import { fencedSpawner, includeTargets, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../src/fence/linux-bwrap";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
@@ -385,10 +385,60 @@ describe("the session's own repo", () => {
       const note = revertPlantedGitKeys(before);
       expect(note).toMatch(/core\.hookspath/);
       expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Luna\n[core]\n");
-      // No temp strays in the folder.
+      // No temp strays in the folder: git's lockfile is renamed over, never left behind.
       expect(readdirSync(root)).toEqual(["config"]);
       // An unchanged file is left alone (null note).
       expect(revertPlantedGitKeys(new Map([[cfg, readFileSync(cfg, "utf8")]]))).toBeNull();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("revertPlantedGitKeys falls back to the pre-run bytes when git still sees the key (not reverted)", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    try {
+      const cfg = join(root, "config");
+      const prev = "[user]\n\tname = Luna\n[core]\n\teditor = vim\n";
+      writeFileSync(cfg, prev);
+      const before = new Map([[cfg, prev]]);
+      // A valueless hooksPath: git reads boolean true, the line revert cannot drop it.
+      writeFileSync(cfg, `${prev}\thooksPath\n`);
+      const note = revertPlantedGitKeys(before);
+      expect(note).toMatch(/not reverted/);
+      expect(note).toMatch(/core\.hookspath/);
+      // The pre-run bytes are back, byte for byte.
+      expect(readFileSync(cfg, "utf8")).toBe(prev);
+      expect(readdirSync(root)).toEqual(["config"]); // no lockfile stray
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("revertPlantedGitKeys removes an appeared file it cannot cleanly revert", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-revert-")));
+    try {
+      const cfg = join(root, "config");
+      const before = new Map([[cfg, null]]);
+      writeFileSync(cfg, "[core]\n\thooksPath\n");
+      const note = revertPlantedGitKeys(before);
+      expect(note).toMatch(/not reverted/);
+      expect(existsSync(cfg)).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("includeTargets resolves include.path and includeIf paths the way git reads them", () => {
+    const home = join(tmpdir(), "fake-home");
+    const base = join(home, ".config", "git");
+    expect(includeTargets(["[include]", "\tpath = ~/extra.inc", '[includeIf "gitdir:~/work/"]', "\tpath = ./local.inc"].join("\n"), base, home))
+      .toEqual([join(home, "extra.inc"), join(base, "local.inc")]);
+    expect(includeTargets(["[include]", "\tpath = /abs/other.inc"].join("\n"), base, home)).toEqual(["/abs/other.inc"]);
+    expect(includeTargets("[user]\n\tname = Luna\n", base, home)).toEqual([]);
+    expect(includeTargets(null, base, home)).toEqual([]);
+  });
+
+  test("includeTargets expands globs where the platform can", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-inc-")));
+    try {
+      writeFileSync(join(root, "a.inc"), "[user]\n");
+      writeFileSync(join(root, "b.inc"), "[user]\n");
+      const got = includeTargets(`[include]\n\tpath = ${root}/*.inc\n`, root, root);
+      expect(got.sort()).toEqual([join(root, "a.inc"), join(root, "b.inc")]);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -663,6 +713,33 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       expect(ok(await w.run(`echo x >> '${b("luna", "memory", "MEMORY.md")}'`, who))).toBe(false);
     }
     expect(readFileSync(b("luna", "memory", "MEMORY.md"), "utf8")).toBe("luna'smore\nside\n");
+  }, 90_000);
+
+  test("a read-only bound login file cannot be renamed away (EBUSY), and openat2 is performed", async () => {
+    if (here !== "linux" || process.arch !== "x64") return; // the Linux supervisor's answers
+    const w = world();
+    const own = { caller: botCaller("luna", "s1") };
+    // The setup pre-creates .bashrc empty and binds it read-only. A performed rename must report EBUSY —
+    // the kernel's own answer for a mountpoint — rather than moving the real file or answering EACCES.
+    const bashrc = join(w.home, ".bashrc"), moved = join(w.home, "moved-bashrc");
+    const r = await w.run(`mv '${bashrc}' '${moved}'`, own);
+    expect(r.kind === "exited" && r.code !== 0).toBe(true);
+    expect(r.kind === "exited" && r.stderr).toMatch(/busy/i);
+    expect(existsSync(bashrc)).toBe(true);
+    expect(existsSync(moved)).toBe(false);
+    // openat2 (SYS 437 on x64) is never continued: its flags live in the target's memory, so every openat2
+    // is performed. Creates, reads and plant refusals all work through it.
+    if (!ok(await w.run(`command -v python3`, own))) return; // no python in the sandbox: skip
+    const o2 = (script: string) => `python3 - <<'PYEOF'\nimport ctypes, os\nlibc = ctypes.CDLL("libc.so.6", use_errno=True)\nclass How(ctypes.Structure):\n    _fields_ = [("flags", ctypes.c_uint64), ("mode", ctypes.c_uint64), ("resolve", ctypes.c_uint64)]\ndef o2(path, flags, mode=0o644):\n    how = How(flags=flags, mode=mode, resolve=0)\n    fd = libc.syscall(437, -100, os.fsencode(path), ctypes.byref(how), ctypes.sizeof(how))\n    if fd < 0:\n        raise OSError(ctypes.get_errno(), os.strerror(ctypes.get_errno()))\n    return fd\n${script}\nPYEOF`;
+    const created = join(w.home, "project", "o2.txt");
+    expect(ok(await w.run(o2(`fd = o2("${created}", os.O_WRONLY | os.O_CREAT | os.O_TRUNC)\nos.write(fd, b"via-openat2\\n")\nos.close(fd)`), own))).toBe(true);
+    expect(readFileSync(created, "utf8")).toBe("via-openat2\n");
+    // A read through openat2 works the same way (performed, not continued).
+    const rd = await w.run(o2(`fd = o2("${created}", os.O_RDONLY)\nprint(os.read(fd, 100).decode(), end="")`), own);
+    expect(rd.kind === "exited" && rd.code === 0 && rd.stdout).toBe("via-openat2\n");
+    // And a plant through openat2 is refused, like any other write.
+    expect(ok(await w.run(o2(`o2("${bashrc}", os.O_WRONLY | os.O_CREAT)`), own))).toBe(false);
+    expect(readFileSync(bashrc, "utf8")).toBe("");
   }, 90_000);
 
   test("git config guard: a risky key set through git config or a direct edit is reverted", async () => {

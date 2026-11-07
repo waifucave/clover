@@ -122,9 +122,9 @@ export function parseGitConfigWithGit(text: string): Map<string, string[]> | nul
     for (const rec of (r.stdout as Buffer).toString("utf8").split("\0")) {
       if (rec === "") continue;
       const nl = rec.indexOf("\n");
-      if (nl < 0) return null; // not git's shape: fall back
-      const key = rec.slice(0, nl);
-      const value = rec.slice(nl + 1);
+      // A valueless key (`hooksPath` alone under `[core]`) is boolean true; git emits the bare key.
+      const key = nl < 0 ? rec : rec.slice(0, nl);
+      const value = nl < 0 ? "true" : rec.slice(nl + 1);
       const s = splitDotted(key);
       if (!watched(s, value)) continue;
       const dotted = s.sub === null ? `${s.section}.${s.name}` : `${s.section}.${s.sub}.${s.name}`;

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, openParentDir, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, splitParent, supervisorArch, trapTable, type SupervisorLib } from "../../src/fence/linux-supervisor";
+import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, mntIdOf, openParentDir, openProcPid, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, selfIds, splitParent, supervisorArch, supervisorSelfRefusal, targetIds, trapTable, type SupervisorLib } from "../../src/fence/linux-supervisor";
 import { parseGitConfigWatched, parseGitConfigWithGit, revertWatchedGitChanges, watchedGitChanges } from "../../src/fence/git-config";
 
 describe("the supervisor's filter and decisions", () => {
@@ -82,25 +82,68 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
     if (l === null) throw new Error("no supervisor lib on this machine");
     return l;
   };
-  test("resolveBase opens the cwd, a dir fd, and the root; refuse the rest", () => {
+  test("resolveBase opens the cwd, a dir fd, and the root from the pinned proc handle; refuse the rest", () => {
     const l = lib();
-    const me = process.pid;
-    const cwd = resolveBase(l, me, false, -100);
-    expect(cwd.err).toBe(0);
-    expect(cwd.fd).toBeGreaterThanOrEqual(0);
-    closeSync(cwd.fd);
-    const root = resolveBase(l, me, true, -100);
-    expect(root.err).toBe(0);
-    closeSync(root.fd);
-    expect(resolveBase(l, me, false, 999999).fd).toBe(-1); // no such fd
-    expect(resolveBase(l, 1 << 30, false, -100).fd).toBe(-1); // no such pid
-    // A non-directory fd is ENOTDIR, not a base.
-    const f = openSync(__filename, "r");
+    const proc = openProcPid(l, process.pid);
+    expect(proc.err).toBe(0);
     try {
-      const bad = resolveBase(l, me, false, f);
-      expect(bad.fd).toBe(-1);
-      expect(bad.err).toBe(20);
-    } finally { closeSync(f); }
+      const cwd = resolveBase(l, proc.fd, false, -100);
+      expect(cwd.err).toBe(0);
+      expect(cwd.fd).toBeGreaterThanOrEqual(0);
+      closeSync(cwd.fd);
+      const root = resolveBase(l, proc.fd, true, -100);
+      expect(root.err).toBe(0);
+      closeSync(root.fd);
+      expect(resolveBase(l, proc.fd, false, 999999).fd).toBe(-1); // no such fd
+      // A non-directory fd is ENOTDIR, not a base.
+      const f = openSync(__filename, "r");
+      try {
+        const bad = resolveBase(l, proc.fd, false, f);
+        expect(bad.fd).toBe(-1);
+        expect(bad.err).toBe(20);
+      } finally { closeSync(f); }
+    } finally { closeSync(proc.fd); }
+    // A recycled pid pins nothing.
+    expect(openProcPid(l, 1 << 30).fd).toBe(-1); // no such pid
+  });
+
+  test("openProcPid pins /proc/pid; mount ids tell mounts apart", () => {
+    const l = lib();
+    const proc = openProcPid(l, process.pid);
+    expect(proc.fd).toBeGreaterThanOrEqual(0);
+    const self = mntIdOf(proc.fd);
+    expect(self).not.toBeNull();
+    closeSync(proc.fd);
+    const a = openSync("/", "r");
+    const b = openSync("/", "r");
+    try {
+      // The same directory through two fds shares its mount id.
+      expect(mntIdOf(a)).toBe(mntIdOf(b));
+    } finally { closeSync(a); closeSync(b); }
+  });
+
+  test("credentials: the target's real, effective and filesystem uids; the supervisor refuses root and caps", () => {
+    const t = targetIds(process.pid);
+    expect(t).not.toBeNull();
+    expect(t!.ruid).toBe(process.getuid?.() ?? t!.ruid);
+    const self = selfIds();
+    expect(self).not.toBeNull();
+    expect(self).toMatchObject({ ruid: t!.ruid, euid: t!.euid, fsuid: t!.fsuid });
+    // Unprivileged here: no refusal. (A root run refuses — measured on the VM as root would fail closed.)
+    if (process.geteuid?.() !== 0) expect(supervisorSelfRefusal()).toBeNull();
+  });
+
+  test("trap tables: legacy rename/renameat/link carry no flags word; renameat2/linkat do", () => {
+    const x64 = trapTable("x64")!;
+    expect(x64.find((t) => t.nr === 316)).toMatchObject({ flagsAt: 4 }); // renameat2
+    expect(x64.find((t) => t.nr === 265)).toMatchObject({ flagsAt: 4 }); // linkat
+    expect(x64.find((t) => t.nr === 264)?.flagsAt).toBeUndefined(); // renameat: no flags
+    expect(x64.find((t) => t.nr === 38)?.flagsAt).toBeUndefined(); // rename: no flags
+    expect(x64.find((t) => t.nr === 86)?.flagsAt).toBeUndefined(); // link: no flags
+    const arm = trapTable("arm64")!;
+    expect(arm.find((t) => t.nr === 382)).toMatchObject({ flagsAt: 4 }); // renameat2
+    expect(arm.find((t) => t.nr === 37)).toMatchObject({ flagsAt: 4 }); // linkat
+    expect(arm.find((t) => t.nr === 38)?.flagsAt).toBeUndefined(); // renameat: no flags
   });
 
   test("openParentDir resolves with the kernel: links refused, escapes pinned, identity stable", () => {
@@ -142,6 +185,37 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       expect(matchSupervised(wb.parentFd, "f.txt", [join(root, "a", "other")])).toBe(false);
       expect(matchSupervised(wb.parentFd, "f.txt", [join(root, "nope", "f.txt")])).toBe(false);
       try { closeSync(wb.parentFd); } catch { /* pinned */ }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("mount ids catch a same-filesystem self-bind the device check misses (the EBUSY guard's primitive)", () => {
+    // Needs mount privileges (a private mount namespace): skip where unavailable.
+    if (Bun.spawnSync(["unshare", "-rm", "true"]).exitCode !== 0) return;
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "selfbind-")));
+    const f = join(root, "f");
+    writeFileSync(f, "x");
+    // The inner probe runs in the private namespace: it self-binds the file, compares the mount ids the
+    // guard compares, shows the devices are equal (a dev+ino check would miss it), and shows the kernel
+    // itself reports EBUSY for the rename there.
+    const inner = join(root, "probe.ts");
+    writeFileSync(inner, [
+      `import { openSync, closeSync, lstatSync, renameSync } from "node:fs";`,
+      `import { mntIdOf } from ${JSON.stringify(new URL("../../src/fence/linux-supervisor.ts", import.meta.url).pathname)};`,
+      `const dir = process.argv[2]!, file = process.argv[3]!;`,
+      `const pd = openSync(dir, "r"), fd = openSync(file, "r");`,
+      `let renameErr: string | null = null;`,
+      `try { renameSync(file, file + ".moved"); } catch (e) { renameErr = (e as NodeJS.ErrnoException)?.code ?? String(e); }`,
+      `console.log(JSON.stringify({ pm: mntIdOf(pd), fm: mntIdOf(fd),`,
+      `  pdev: Number(lstatSync(dir).dev), fdev: Number(lstatSync(file).dev), renameErr }));`,
+      `closeSync(pd); closeSync(fd);`,
+    ].join("\n"));
+    try {
+      const r = Bun.spawnSync(["unshare", "-rm", "bash", "-c", `mount --bind '${f}' '${f}' && '${process.execPath}' '${inner}' '${root}' '${f}'`]);
+      if (r.exitCode !== 0) return; // no mount privileges after all: skip
+      const got = JSON.parse(r.stdout.toString()) as { pm: number; fm: number; pdev: number; fdev: number; renameErr: string };
+      expect(got.pdev).toBe(got.fdev); // same file, same filesystem: the device check misses it
+      expect(got.pm).not.toBe(got.fm); // ...but the mount ids differ: the guard answers EBUSY
+      expect(got.renameErr).toBe("EBUSY"); // the kernel agrees, in-namespace
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -241,10 +315,25 @@ describe("the git-config guard", () => {
     expect(revertWatchedGitChanges(before, [])).toBe(before);
   });
 
+  test("re-verify catches what the line parser misses: a valueless hooksPath git accepts", () => {
+    const before = ["[user]", "\tname = Luna", "[core]", "\teditor = vim"].join("\n");
+    // No `=`: git reads this as boolean true, the built-in line parser sees no key at all.
+    const after = `${before}\n\thooksPath`;
+    const changes = watchedGitChanges(before, after);
+    expect(changes.map((c) => c.dotted)).toEqual(["core.hookspath"]);
+    // The line revert cannot see the valueless line, so it comes back unchanged...
+    const fixed = revertWatchedGitChanges(after, changes);
+    expect(fixed).toContain("hooksPath");
+    // ...and the re-verify through git still sees the change: the revert must not claim success.
+    expect(watchedGitChanges(before, fixed).map((c) => c.dotted)).toEqual(["core.hookspath"]);
+  });
+
   test("git itself parses the configs: case, quotes and subsections canonicalize the same way", () => {
     const parsed = parseGitConfigWithGit(["[CORE]", "\tHooksPath = /tmp/evil", '[filter "lfs"]', "\tclean = x"].join("\n"));
     expect(parsed?.get("core.hookspath")).toEqual(["/tmp/evil"]);
     expect(parsed?.get("filter.lfs.clean")).toEqual(["x"]);
+    // A valueless key is boolean true, not a parse failure.
+    expect(parseGitConfigWithGit("[core]\n\thooksPath\n")).toEqual(new Map([["core.hookspath", ["true"]]]));
     // Malformed files fall back to the built-in parser (null here).
     expect(parseGitConfigWithGit("[core]\n\tok = 1\n[bad\n")).toBeNull();
     // Detection through git: an uppercase section and a quoted !-alias both count.
