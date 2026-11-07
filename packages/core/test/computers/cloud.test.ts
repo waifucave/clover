@@ -139,7 +139,8 @@ describe("cloud computers", () => {
     expect(mains).toEqual(["Cloud1"]);
     expect(cloud.get("Cloud1")).toMatchObject({ state: "paired", device: "device-vm-1" });
     // A token works once.
-    expect(await door.consume(token, "device-vm-2")).toBeNull();
+    expect(await door.consume(token, "device-vm-2")).toEqual({ refused: "wrong-device" });
+    expect(await door.consume(token, "device-vm-1")).toEqual({ refused: "used" });
     // Nothing more to do for the same folder.
     expect(await cloud.reconcile([folder()])).toEqual(NONE);
   });
@@ -223,13 +224,21 @@ describe("cloud computers", () => {
     const tokens = new PairingTokens({ clock: { now: () => now }, ttlMs: 1000 });
     const t = tokens.mint("Cloud2", "g:1");
     now = 2000;
-    expect(tokens.consume(t, "g:1")).toBeNull();
+    expect(tokens.consume(t, "g:1", "d1")).toEqual({ refused: "expired" });
     const t2 = tokens.mint("Cloud2", "g:1");
     const t3 = tokens.mint("Cloud2", "g:1");
-    expect(tokens.consume(t2, "g:1")).toBeNull(); // a newer token replaces it
-    expect(tokens.consume(t3, "g:2")).toBeNull(); // another main's tenure: spent, and refused
+    expect(tokens.consume(t2, "g:1", "d1")).toEqual({ refused: "unknown" }); // a newer token replaces it
+    expect(tokens.consume(t3, "g:2", "d1")).toEqual({ refused: "expired" }); // another main's tenure
+    expect(tokens.consume("short", "g:1", "d1")).toEqual({ refused: "unknown" });
     const t4 = tokens.mint("Cloud2", "g:2");
-    expect(tokens.consume(t4, "g:2")).toBe("Cloud2");
+    expect(tokens.consume(t4, "g:2", "d1", "Cloud3")).toEqual({ refused: "wrong-computer" });
+    expect(tokens.consume(t4, "g:2", "d1", "Cloud2")).toEqual({ computer: "Cloud2" });
+    expect(tokens.consume(t4, "g:2", "d1", "Cloud2")).toEqual({ refused: "used" });
+    expect(tokens.consume(t4, "g:2", "d2")).toEqual({ refused: "wrong-device" });
+    expect(tokens.waiting("Cloud2", "g:2")).toBe(false);
+    // A spent token's hash goes once it would have expired.
+    now += 2 * 60 * 60 * 1000;
+    expect(tokens.consume(t4, "g:2", "d1")).toEqual({ refused: "unknown" });
     // A label is the folder's id, `/` written `--`, and never longer than the clouds take.
     expect(cloudLabelOf("luna/computer-a")).toBe("luna--computer-a");
     expect(cloudLabelOf(`${"a".repeat(40)}/${"b".repeat(40)}`)).toMatch(/^h-[0-9a-f]{40}$/);
@@ -271,7 +280,7 @@ describe("only the lease's holder acts (#254, B1)", () => {
     authority.lose();
     expect(await cloud.reconcile([])).toEqual(NONE);
     expect((await cloud.delete("Cloud1").catch((e) => e)).code).toBe("not_main");
-    expect(await cloud.door(() => []).consume("x".repeat(43), "device-1")).toBeNull();
+    expect(await cloud.door(() => []).consume("x".repeat(43), "device-1")).toEqual({ refused: "unknown" });
     expect(cards.length).toBe(asked);
   });
 });
@@ -364,7 +373,7 @@ describe("pairing tokens (#254, should-fix 1)", () => {
     expect(provider.calls.filter((c) => !c.startsWith("list")).slice(-2)).toEqual(["delete srv-2 computer-hetzner-2", "create Cloud2 cx22 fsn1 computer-hetzner-2"]);
     const fresh = tokenIn(provider.userData.at(-1)!)!;
     expect(fresh).not.toBe(late);
-    expect(await again.cloud.door(() => []).consume(late, "device-vm-2")).toBeNull();
+    expect(await again.cloud.door(() => []).consume(late, "device-vm-2")).toEqual({ refused: "unknown" });
     expect(await again.cloud.door(() => [folder({ folder: "computer-hetzner-2", name: "Cloud2", makeMain: "no" })]).consume(fresh, "device-vm-2")).toEqual({ computer: "Cloud2" });
     // Cloud1 paired: never asked to pair again.
     expect(again.cards.filter((c) => c.kind === "cloud-repair").map((c) => (c as { name: string }).name)).toEqual(["Cloud2"]);

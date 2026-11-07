@@ -128,7 +128,7 @@ export interface CloudState {
   /** Labels of VMs whose folder went and that the user chose to keep, or whose folder said `keep`. */
   kept: string[];
   /** Pairing tokens, by hash: never the token itself. */
-  tokens: { hash: string; computer: string; expiresAt: number; tenure: string }[];
+  tokens: { hash: string; computer: string; expiresAt: number; tenure: string; usedAt?: number; device?: string }[];
   /** Server ids of duplicate VMs the user chose to keep: not asked about again. */
   keptDuplicates: string[];
 }
@@ -193,30 +193,49 @@ export class PairingTokens {
     return token;
   }
 
-  /** The computer a token was made for, once, under the same tenure; null for an unknown, used, expired or another
-   *  tenure's token. */
-  consume(token: string, tenure = ""): string | null {
-    if (typeof token !== "string" || token.length < 32 || token.length > 128) return null;
+  /** The computer a token was made for, once, under the same tenure, bound to the device that presented it; else
+   *  why not. A spent token's hash stays, marked used with its device, until it would have expired, so presenting it
+   *  again says `used` (the same device) or `wrong-device` (another one). `computer`, when given, is the name the VM
+   *  presents (its `/etc/clover/name`): another one says `wrong-computer`. Another tenure's token is `expired`. */
+  consume(token: string, tenure = "", device = "", computer?: string): { computer: string } | { refused: CloudPairingRefusal } {
+    if (typeof token !== "string" || token.length < 32 || token.length > 128) return { refused: "unknown" };
     const s = this.#state();
+    const now = this.#clock.now();
+    const before = s.tokens.length;
+    s.tokens = s.tokens.filter((t) => t.usedAt === undefined || t.expiresAt >= now);
     const h = hash(token);
-    const i = s.tokens.findIndex((t) => equal(t.hash, h));
-    if (i < 0) return null;
-    const [t] = s.tokens.splice(i, 1);
-    this.#save();
-    return t!.expiresAt >= this.#clock.now() && t!.tenure === tenure ? t!.computer : null;
+    const t = s.tokens.find((x) => equal(x.hash, h));
+    const done = (r: { computer: string } | { refused: CloudPairingRefusal }) => {
+      if (s.tokens.length !== before || "computer" in r) this.#save();
+      return r;
+    };
+    if (!t) return done({ refused: "unknown" });
+    if (t.usedAt !== undefined) return done({ refused: t.device === device ? "used" : "wrong-device" });
+    if (t.expiresAt < now || t.tenure !== tenure) return done({ refused: "expired" });
+    if (computer !== undefined && computer !== t.computer) return done({ refused: "wrong-computer" });
+    t.usedAt = now;
+    t.device = device;
+    return done({ computer: t.computer });
   }
 
-  /** Whether `computer` has a token still good under `tenure`. */
+  /** Whether `computer` has a token still good under `tenure`, not used yet. */
   waiting(computer: string, tenure = ""): boolean {
     const now = this.#clock.now();
-    return this.#state().tokens.some((t) => t.computer === computer && t.expiresAt >= now && t.tenure === tenure);
+    return this.#state().tokens.some((t) => t.computer === computer && t.usedAt === undefined && t.expiresAt >= now && t.tenure === tenure);
   }
 }
 
+/** Why the pairing door refused a token, for the door's log (never with the token): `used` (this device presented it
+ *  before), `wrong-device` (another device already used it), `expired` (past its hour, or minted under another main's
+ *  lease), `wrong-computer` (the VM presented another computer's name, or this main has no such VM), `unknown` (no
+ *  such token here, malformed, or this computer isn't the main one). */
+export type CloudPairingRefusal = "used" | "expired" | "wrong-device" | "wrong-computer" | "unknown";
+
 /** What lane H's authenticated pairing door calls when a device presents a cloud computer's token: the computer it
- *  was made for, bound to that device, once; null when the token doesn't hold. */
+ *  was made for, bound to that device, once; else a typed refusal. `computer` is the name the VM presents, when it
+ *  does (its `/etc/clover/name`). */
 export interface CloudPairingDoor {
-  consume(token: string, device: string): Promise<{ computer: string } | null>;
+  consume(token: string, device: string, computer?: string): Promise<{ computer: string } | { refused: CloudPairingRefusal }>;
 }
 
 export interface CloudComputersOptions {
@@ -406,13 +425,17 @@ export class CloudComputers {
    *  computer, unless its folder said `no`. */
   door(folders: () => readonly CloudFolder[]): CloudPairingDoor {
     return {
-      consume: async (token, device) => {
+      consume: async (token, device, computer) => {
         const tenure = this.#o.authority.tenure();
-        if (!this.#o.authority.canAct() || tenure === undefined) return null;
-        const name = this.pairing.consume(token, tenure);
-        if (!name) return null;
+        if (!this.#o.authority.canAct() || tenure === undefined) {
+          this.#o.log?.("cloud pairing: a token was presented to a computer that isn't the main one");
+          return { refused: "unknown" };
+        }
+        const r = this.pairing.consume(token, tenure, device, computer);
+        if ("refused" in r) return r;
+        const name = r.computer;
         const vm = this.#state.vms.find((v) => v.name === name);
-        if (!vm) return null;
+        if (!vm) return { refused: "wrong-computer" };
         vm.state = "paired";
         vm.device = device;
         this.#save();
