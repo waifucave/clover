@@ -40,7 +40,6 @@
 // LOGGING. One line, from `describeLoginShellPath`: the source, the shell, and the directories it
 // ADDED. PATH entries are directory names; no other environment value and none of the shell's own
 // output is ever logged.
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 
@@ -136,48 +135,66 @@ function shellInvocation(env: Record<string, string | undefined>): { shell: stri
   return { shell, args: ["-l", "-c", `${sourceRc}${printPath}`] };
 }
 
-/** The real runner: its own process group, stdin ignored, stdout capped. Resolves the moment the END
- *  marker arrives — a background job an rc file started can inherit the pipe and hold it open long
- *  after the shell itself is done, so waiting for `close` would turn a good answer into a timeout —
- *  and on the deadline at the latest, when the whole group is SIGKILLed. */
+/** After the shell exits, how long its last output may take to come through a pipe something else still holds. */
+const EXIT_GRACE_MS = 2_000;
+
+/** The real runner: its own process group, stdin ignored, stdout capped. Its stdout is read chunk by chunk
+ *  straight off the pipe (`Bun.spawn`'s reader, no stream layer between) and resolves the moment the END marker
+ *  is in — a background job an rc file started can inherit the pipe and hold it open long after the shell itself
+ *  is done, so nothing here waits for the pipe's end: once the shell has exited, its output gets
+ *  `EXIT_GRACE_MS` to arrive, then its exit decides. On the deadline at the latest the whole group is SIGKILLed. */
 export const spawnShellRunner: ShellRunner = (shell, args, timeoutMs, env) =>
   new Promise<ShellRunResult>((resolve) => {
     let settled = false;
-    let closed = false;
-    const done = (r: ShellRunResult): void => {
-      if (settled) return;
-      settled = true;
-      resolve(r);
-    };
-    let child: ReturnType<typeof spawn>;
+    let proc: ReturnType<typeof Bun.spawn<"ignore", "pipe", "ignore">>;
     try {
-      child = spawn(shell, args, { stdio: ["ignore", "pipe", "ignore"], detached: true, env: env as NodeJS.ProcessEnv });
+      proc = Bun.spawn([shell, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore", detached: true, env: env as Record<string, string> });
     } catch (err) {
       resolve({ kind: "error", reason: err instanceof Error ? err.message : String(err) });
       return;
     }
     const killGroup = (): void => {
-      try { if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL"); } catch { /* already gone */ }
-      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      try { process.kill(-proc.pid, "SIGKILL"); } catch { /* already gone */ }
+      try { proc.kill("SIGKILL"); } catch { /* already gone */ }
+    };
+    const reader = proc.stdout.getReader();
+    const done = (r: ShellRunResult): void => {
+      if (settled) return;
+      settled = true;
+      // Our end of the pipe is let go; a job still holding the other end is reaped at the deadline.
+      reader.cancel().catch(() => {});
+      resolve(r);
     };
     // Kept armed after an early answer too: whatever the probe left running in its own group is
     // reaped at the deadline rather than outliving it.
-    const timer = setTimeout(() => { if (!closed) killGroup(); done({ kind: "timeout" }); }, timeoutMs);
+    const timer = setTimeout(() => { killGroup(); done({ kind: "timeout" }); }, timeoutMs);
     timer.unref?.();
     let stdout = "";
-    child.stdout?.on("data", (d: Buffer) => {
-      if (stdout.length < MAX_STDOUT_BYTES) stdout += d.toString("utf8");
-      if (parseMarkedPath(stdout) !== undefined) done({ kind: "ok", stdout });
-    });
-    child.on("error", (err) => { clearTimeout(timer); done({ kind: "error", reason: err.message }); });
-    child.on("close", (code, signal) => {
-      closed = true;
-      clearTimeout(timer);
+    const decoder = new TextDecoder();
+    let ended = false;
+    const read = (async () => {
+      try {
+        for (;;) {
+          const { value, done: eof } = await reader.read();
+          if (eof) break;
+          if (stdout.length < MAX_STDOUT_BYTES) stdout += decoder.decode(value, { stream: true });
+          if (parseMarkedPath(stdout) !== undefined) { done({ kind: "ok", stdout }); return; }
+        }
+      } catch { /* cancelled, or the pipe failed */ }
+      ended = true;
+    })();
+    void proc.exited.then(async (code) => {
+      // The shell is gone; its last bytes are in the pipe even while a background job holds it open.
+      let grace: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([read, new Promise<void>((r) => { grace = setTimeout(r, EXIT_GRACE_MS); })]);
+      clearTimeout(grace);
+      if (ended) clearTimeout(timer); // nothing of it is left: no group to reap at the deadline
+      if (settled) return;
       if (code === 0) done({ kind: "ok", stdout });
       // A non-zero exit with the markers already printed still carries a usable PATH (an rc file
       // whose LAST command failed is common); the caller parses and decides.
       else if (parseMarkedPath(stdout) !== undefined) done({ kind: "ok", stdout });
-      else done({ kind: "error", reason: signal ? `killed by ${signal}` : `exit ${code}` });
+      else done({ kind: "error", reason: proc.signalCode ? `killed by ${proc.signalCode}` : `exit ${code}` });
     });
   });
 

@@ -292,4 +292,46 @@ describe("SettingsWatcher", () => {
     expect(applied[1][1]).toEqual({ v: 3 }); // latest contents, not { v: 2 }
     expect(maxConcurrent).toBe(1); // apply never overlapped another
   });
+
+  test("an edit made before the watch has armed (no event) is caught up: applied once, without a second write", async () => {
+    let fileContents = { reviewer: { enabled: false } } as any;
+    const applied: any[] = [];
+    const w = new SettingsWatcher({
+      path: "/x",
+      load: () => fileContents,
+      apply: (p, n) => { applied.push([p, n]); },
+      debounceMs: 5,
+      watch: () => ({ close() {} }), // a stream not armed yet: it never fires
+    });
+    fileContents = { reviewer: { enabled: true } }; // written right after boot loaded the old one
+    w.start({ reviewer: { enabled: false } } as any);
+    await Bun.sleep(30);
+    expect(applied).toEqual([[{ reviewer: { enabled: false } }, { reviewer: { enabled: true } }]]);
+    w.stop();
+  });
+
+  test("the catch-up does nothing when the file is what start was given, or after an event already came", async () => {
+    let applied = 0;
+    let fire = () => {};
+    const same = new SettingsWatcher({ path: "/x", load: () => ({ a: 1 }) as any, apply: () => { applied++; }, debounceMs: 5, watch: () => ({ close() {} }) });
+    same.start({ a: 1 } as any);
+    await Bun.sleep(30);
+    expect(applied).toBe(0);
+    same.stop();
+    const evented = new SettingsWatcher({ path: "/x", load: () => ({ a: 2 }) as any, apply: () => { applied++; }, debounceMs: 5, watch: (_p, cb) => { fire = cb; return { close() {} }; } });
+    evented.start({ a: 1 } as any);
+    fire();
+    await Bun.sleep(30);
+    expect(applied).toBe(1); // the event's reload only
+    evented.stop();
+  });
+
+  test("stop() before the catch-up runs cancels it", async () => {
+    let applied = 0;
+    const w = new SettingsWatcher({ path: "/x", load: () => ({ a: 2 }) as any, apply: () => { applied++; }, watch: () => ({ close() {} }) });
+    w.start({ a: 1 } as any);
+    w.stop();
+    await Bun.sleep(30);
+    expect(applied).toBe(0);
+  });
 });

@@ -1,6 +1,6 @@
 // The real-OS-store half runs in CI (every OS; Linux inside scripts/with-private-secret-service.sh), or when a
-// developer asks with CLOVER_SECRET_STORE_TESTS=1: on a developer's Mac it would write to the login Keychain, which
-// a test there leaves alone (plan §9).
+// developer asks with CLOVER_SECRET_STORE_TESTS=1. On macOS it is this test process's throwaway keychain file, never
+// the login keychain.
 import { describe, expect, test } from "bun:test";
 import { assertThrowawayService, createThrowawaySecretStore, REAL_SECRET_SERVICES, secretBackend, TEST_SERVICE_PREFIX, throwawaySecretStoreAvailable } from "../src/secrets";
 
@@ -31,7 +31,8 @@ describe("throwaway secret stores", () => {
     const other = createThrowawaySecretStore();
     try {
       expect(store.service.startsWith(TEST_SERVICE_PREFIX)).toBe(true);
-      expect(store.env).toEqual({ CLOVER_KEYCHAIN_SERVICE: store.service });
+      expect(store.env.CLOVER_KEYCHAIN_SERVICE).toBe(store.service);
+      if (store.backend === "keychain") expect(store.env.CLOVER_TEST_KEYCHAIN).toBe(process.env.CLOVER_TEST_KEYCHAIN!);
       expect(await store.get("probe")).toBeNull();
       await store.set("probe", "not-a-real-secret");
       expect(await store.get("probe")).toBe("not-a-real-secret");
@@ -40,6 +41,6 @@ describe("throwaway secret stores", () => {
       await store.dispose();
       await other.dispose();
     }
-    expect(await Bun.secrets.get({ service: store.service, name: "probe" })).toBeNull();
+    expect(await store.get("probe")).toBeNull();
   });
 });

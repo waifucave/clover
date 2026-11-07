@@ -13,6 +13,7 @@ import {
   Timestamp, TreePath,
 } from "./common";
 import { canonicalJson } from "./approvals";
+import { STAGE_IMAGE_B64_MAX_LENGTH, STAGE_IMAGE_MEDIA_TYPES } from "./methods";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 // -------------------------------------------------------------------------------------------------
@@ -34,7 +35,10 @@ export const BotView = z.object({
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
-  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout"])),
+  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"])),
+  /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
+   *  #260). Only the person sets it, in the user layer (`bot.setUserLayer`, theirs alone); it is never a plugin's. */
+  lan: z.boolean().optional(),
   state: BotState,
   /** The computer running its main conversation (the main, or the takeover computer). */
   computer: ComputerName.optional(),
@@ -53,6 +57,10 @@ export const UserLayerPatch = z.object({
   avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional() }).nullable().optional(),
   theme: utf16(256).nullable().optional(),
   layout: utf16(4096).nullable().optional(),
+  /** The bot's LAN setting (lane L's `lanBots`): written only by the person, through their own app or terminal, or a
+   *  sealed card a plugin's request becomes. A bot, a session or a plugin never sets it: `bot.setUserLayer` is the
+   *  user's alone, and a plugin's `bot` entry has no such field. */
+  lan: z.boolean().nullable().optional(),
 });
 export type UserLayerPatch = z.infer<typeof UserLayerPatch>;
 
@@ -191,6 +199,26 @@ export type MemoryEntry = z.infer<typeof MemoryEntry>;
 
 const SessionParams = z.object({ id: SessionId });
 
+/** A model as a picker lists it (`models.list`). */
+export const ModelListing = z.object({
+  /** The qualified catalog id `session.setModel` takes. */
+  id: utf16(200, 1),
+  name: Text,
+  /** The provider entry, its name as the plugin's manifest gives it (in the user's locale), and the plugin that
+   *  contributes it. */
+  provider: utf16(128, 1),
+  providerName: Text,
+  plugin: AnyPluginId,
+  /** Its reasoning-effort levels, in order; empty when it has none. */
+  efforts: z.array(utf16(32, 1)).max(16),
+  defaultEffort: utf16(32, 1).optional(),
+  /** Whether it takes images (so a picker can say an attachment won't go). */
+  images: z.boolean(),
+  /** Whether its provider is signed in; a model whose provider isn't can't run a turn yet. */
+  signedIn: z.boolean(),
+});
+export type ModelListing = z.infer<typeof ModelListing>;
+
 export const SESSIONS_METHODS = {
   botList: defineMethod({
     name: "bot.list", owner: "D", roles: ["app", "cli", "remote", "web", "layer"], capability: "bots.read",
@@ -284,6 +312,23 @@ export const SESSIONS_METHODS = {
     result: Ok,
     doc: "Switches an agent's or coding session's model mid-session; a bot's model is its user layer (§6.3).",
   }),
+  sessionStageImage: defineMethod({
+    name: "session.stageImage", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,
+    params: z.object({
+      id: SessionId,
+      mediaType: z.enum(STAGE_IMAGE_MEDIA_TYPES),
+      /** Strict base64, at most `STAGE_IMAGE_B64_MAX_LENGTH` (the app's cap: one request line's worth). */
+      dataBase64: z.string().min(1).max(STAGE_IMAGE_B64_MAX_LENGTH),
+    }),
+    result: z.object({ path: utf16(4096, 1) }),
+    doc: "Stages an image for a session's next message, on the computer that holds it, with the app's caps (§6.6 \"attachments\"): the media types the bytes must sniff as, and the size. `session.send` names it by the path given back; a client off this computer (a phone, lane I) names only images staged so, never a file of its own.",
+  }),
+  modelsList: defineMethod({
+    name: "models.list", owner: "A", roles: ["app", "cli", "remote"],
+    params: z.object({ session: SessionId.optional() }),
+    result: z.object({ models: z.array(ModelListing).max(10_000), default: utf16(200).optional() }),
+    doc: "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not, less blocked rows and the rows of a blocked provider (a picker never offers what `session.setModel` refuses). With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
+  }),
   sessionCompact: defineMethod({
     name: "session.compact", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: SessionParams, result: Ok,
@@ -314,6 +359,12 @@ export const SESSIONS_METHODS = {
     name: "routine.runNow", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: utf16(128, 1) }), result: z.object({ session: SessionId }),
     doc: "Runs a routine now, in a side thread on its computer.",
+  }),
+  routineWebhookKey: defineMethod({
+    name: "routine.webhookKey", owner: "D", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: utf16(128, 1), rotate: z.boolean().optional() }),
+    result: z.object({ url: utf16(4096, 1), key: utf16(256, 1) }),
+    doc: "A webhook routine's URL and key, for the user to paste into the service that calls it (§7). The key is shown once; after that only a new one (`rotate`), which replaces it, is shown. Never to a bot, a plugin or a remote client.",
   }),
   archiveList: defineMethod({
     name: "archive.list", owner: "D", roles: ["app", "cli"],
@@ -375,6 +426,9 @@ export const AgentFinishedEvent = sessionEvent("agent_finished", {
 /** A routine run's short result, posted into the bot's main conversation (§7). */
 export const RoutineResultEvent = sessionEvent("routine_result", {
   routine: utf16(128), name: utf16(200), sideThread: SessionId, text: utf16(100_000),
+  /** The run didn't finish well: an error, a timeout, a refusal, or it was stopped or cut off (lane G's notifier shows
+   *  only these when the user asks for routine failures). */
+  failed: z.boolean(),
 });
 /** A labelled note: a plugin's (`conversation.post`), a `turn.start` hook's, or the core's (servers added between
  *  compactions, §6.1). */
@@ -460,7 +514,7 @@ export const SESSIONS_EVENTS = {
   }),
   routineResult: defineEvent({
     type: "routine_result", owner: "D", roles: READERS, capability: "conversation.read", scope: "session", schema: RoutineResultEvent,
-    fixture: { type: "routine_result", seq: 15, sessionId: "s_alpha", ts: 1781270003000, routine: "r_morning", name: "Morning brief", sideThread: "s_side_9", text: "3 new issues, no failed deploys." },
+    fixture: { type: "routine_result", seq: 15, sessionId: "s_alpha", ts: 1781270003000, routine: "r_morning", name: "Morning brief", sideThread: "s_side_9", text: "3 new issues, no failed deploys.", failed: false },
     doc: "A routine run's result in the main conversation.",
   }),
   note: defineEvent({

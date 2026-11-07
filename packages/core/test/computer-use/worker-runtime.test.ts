@@ -123,7 +123,7 @@ describe("the automation runtime", () => {
     const r = await run("r1", [
       "print(typeof process, typeof Bun, typeof fetch, typeof require)",
       // Review I2: shadowing a NAME stops nothing a script can reach another way. In-process (no sandbox here)
-      // these three succeed; worker-process.test.ts proves that inside the real worker they are useless — an
+      // these three succeed; worker-process.darwin.test.ts proves that inside the real worker they are useless — an
       // empty environment, every read outside the allowlist denied, no network, no Keychain.
       "print(typeof this.process, typeof (0, Function)('return process')(), typeof (await import('node:fs')).readFileSync)",
       "print({ a: [1, 2] }, 3n, undefined, new Error('boom'))",

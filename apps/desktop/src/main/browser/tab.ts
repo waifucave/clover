@@ -20,8 +20,11 @@ export const FRESH_MS = 250;
 /** A tab asked for a frame that gives none in this long has stalled. A slow machine's full repaint can take over a
  *  second (the linux-arm64 runner drew about 2 frames a second). */
 export const STALL_MS = 3000;
-/** A new or resized tab's first frame can take longer still (seconds on that runner). */
-export const FIRST_FRAME_MS = 5000;
+/** A new or resized tab's first frame can take longer still: seconds on that runner, and over 5 s on a loaded Linux
+ *  runner once (#193's merge-queue run). The tab is asked again every `REPAINT_EVERY_MS` until then. */
+export const FIRST_FRAME_MS = 15_000;
+/** How often a tab that hasn't answered is asked to repaint again (and the compositor for its copy). */
+export const REPAINT_EVERY_MS = 1_000;
 
 export interface TabEnv {
   computer: string;
@@ -166,6 +169,7 @@ export class OffscreenTab extends BrowserTab {
   readonly frames = new FrameStore();
   /** A frame at the current size has come since the tab was made or resized. */
   private drawn = false;
+  private streamFps = 0;
 
   private constructor(id: string, owner: TabOwner, window: BrowserWindow, env: TabEnv) {
     super(id, owner, "offscreen", window.webContents, env);
@@ -213,14 +217,30 @@ export class OffscreenTab extends BrowserTab {
       this.frames.clear();
       this.drawn = false;
     }
-    if (place === "resting") {
-      this.contents.stopPainting();
-    } else {
-      if (!this.contents.isPainting()) this.contents.startPainting();
-      this.contents.setFrameRate(place === "shown" ? WATCHED_FPS : BOT_FPS);
-      this.contents.invalidate();
-    }
+    this.applyRate();
+    if (place !== "resting") this.contents.invalidate();
     this.changed();
+  }
+
+  /** While the tab streams to another device (`stream.ts`) it paints at least this fast, even resting; 0 when no
+   *  stream runs, and the tab is back at its place's own rate. */
+  setStreamRate(fps: number): void {
+    this.streamFps = fps;
+    this.applyRate();
+    if (fps > 0 && !this.contents.isDestroyed()) this.contents.invalidate();
+  }
+
+  /** The place's rate (resting: none; a bot's: 10 fps; watched: 60), raised to a stream's while one runs. */
+  private applyRate(): void {
+    if (this.contents.isDestroyed()) return;
+    const own = this.place === "resting" ? 0 : this.place === "shown" ? WATCHED_FPS : BOT_FPS;
+    const fps = Math.max(own, this.streamFps);
+    if (fps === 0) {
+      this.contents.stopPainting();
+      return;
+    }
+    if (!this.contents.isPainting()) this.contents.startPainting();
+    this.contents.setFrameRate(fps);
   }
 
   protected async picture(): Promise<{ image: NativeImage; contentAgeMs: number } | undefined> {
@@ -230,10 +250,18 @@ export class OffscreenTab extends BrowserTab {
     // A still page sends no frames, so an old frame can still be the page as it is; ask for a fresh one to be sure.
     if (painting) {
       if (newest !== undefined && now - newest.at < FRESH_MS) return { image: newest.image, contentAgeMs: now - newest.at };
-      const next = this.frames.next(this.drawn ? STALL_MS : FIRST_FRAME_MS);
-      this.contents.invalidate();
-      const frame = await next;
-      if (frame !== undefined) return { image: frame.image, contentAgeMs: Date.now() - frame.at };
+      // Asked again every second, with the compositor's copy tried between (a repaint request can be lost while a
+      // loaded machine catches up), until the tab has had its time.
+      const deadline = now + (this.drawn ? STALL_MS : FIRST_FRAME_MS);
+      while (Date.now() < deadline && !this.contents.isDestroyed()) {
+        const next = this.frames.next(Math.min(REPAINT_EVERY_MS, Math.max(1, deadline - Date.now())));
+        this.contents.invalidate();
+        const frame = await next;
+        if (frame !== undefined) return { image: frame.image, contentAgeMs: Date.now() - frame.at };
+        const copy = await withTimeout(this.contents.capturePage(), REPAINT_EVERY_MS).catch(() => undefined);
+        if (copy !== undefined && this.fits(copy)) return { image: copy, contentAgeMs: 0 };
+      }
+      return undefined;
     }
     // Painting stopped (a resting tab), or no frame came: the compositor's own copy (about one frame's wait).
     try {
@@ -249,7 +277,7 @@ export class OffscreenTab extends BrowserTab {
     this.contents.startPainting();
     this.contents.invalidate();
     const frame = await next;
-    if (this.place === "resting" && !this.contents.isDestroyed()) this.contents.stopPainting();
+    if (!this.contents.isDestroyed()) this.applyRate(); // resting again (unless a stream started meanwhile)
     return frame !== undefined ? { image: frame.image, contentAgeMs: Date.now() - frame.at } : undefined;
   }
 

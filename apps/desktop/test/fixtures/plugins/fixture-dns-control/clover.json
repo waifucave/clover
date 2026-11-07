@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "id": "fixture-dns-control",
+  "name": "Fixture DNS probe, the positive control",
+  "description": "S9's DNS-prefetch probe for the app's tests, served without its allowlist (the positive control).",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "app.surface", "id": "dns-control", "component": "DnsProbe", "window": { "type": "window" } }]
+  }
+}

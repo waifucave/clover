@@ -63,7 +63,7 @@ export function isBrowserUrlAllowed(url: string): boolean {
 export const TabOwner = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("bot"), bot: BotId }),
   z.object({ kind: z.literal("session"), session: SessionId }),
-  z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
+  z.object({ kind: z.literal("plugin"), plugin: AnyPluginId }),
   z.object({ kind: z.literal("user") }),
 ]);
 export type TabOwner = z.infer<typeof TabOwner>;
@@ -176,8 +176,19 @@ export const BROWSER_METHODS = {
     doc: "One DevTools call on a tab's own debugger, if its domain is allowed.",
   }),
   browserStream: defineMethod({
-    name: "browser.stream", owner: "L", roles: ["app", "remote", "peer"],
-    params: z.object({ id: utf16(128, 1), on: z.boolean(), maxKbps: z.number().int().min(50).max(50_000).optional() }),
+    /** Another device's view of a tab, as video. The core's wiring takes the viewer's device from the authenticated
+     *  link the call came on, never from these params, and refuses the app role: the app shows its own tabs through
+     *  the browser view. `codecs` says what the viewer decodes (iOS decodes H.264, never VP8; lane I's receivers):
+     *  H.264 where the sending computer has a hardware encoder, VP8 otherwise, software H.264 only when the viewer
+     *  names H.264 and not VP8, and whole JPEG pictures where no video encoder suits. The answer's `stream` is the
+     *  link stream's `meta.stream` (the frame format: `packages/core/src/browser/stream.ts`). */
+    name: "browser.stream", owner: "L", roles: ["remote", "peer"], capability: "browser",
+    params: z.object({
+      id: utf16(128, 1),
+      on: z.boolean(),
+      maxKbps: z.number().int().min(50).max(50_000).optional(),
+      codecs: z.array(z.enum(["h264", "vp8", "jpeg"])).min(1).max(3).optional(),
+    }),
     result: z.object({ stream: utf16(128).optional() }),
     doc: "Streams a tab to another device as video on a link stream of its own (S7 edit 3).",
   }),

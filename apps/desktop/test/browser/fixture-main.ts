@@ -4,6 +4,7 @@
 // throws past itself, so one failure doesn't hide the rest.
 import { app, BrowserWindow, clipboard, session, webContents, type BaseWindow } from "electron";
 import { createServer } from "node:http";
+import { connect as netConnect, createServer as createNetServer } from "node:net";
 import { writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { BROWSER_WEBRTC_POLICY, createBrowserHost, isBrowserContents, isBrowserTab, PERSON_POLICY, type BrowserHost, type TabView } from "../../src/main/browser/index";
@@ -32,6 +33,8 @@ const steps: Step[] = [];
 const reports: AppTabEvent[] = [];
 const holds: string[] = [];
 const menus: { selectionText: string; canCopy: boolean }[] = [];
+const netLogs: string[] = [];
+const netLog = (line: string): void => { if (netLogs.length < 200) netLogs.push(line); };
 
 async function step(name: string, f: () => Promise<{ ok: boolean; detail?: unknown }>): Promise<void> {
   const t0 = Date.now();
@@ -116,7 +119,7 @@ async function main(): Promise<void> {
     },
     // The fixture's pages are on loopback, which a bot's tab may not reach (R13): these hosts let bot "alpha" reach
     // its own machine, as the person's tabs may. The step below runs a host with the real policies.
-    network: { policyFor: () => PERSON_POLICY },
+    network: { policyFor: () => PERSON_POLICY, log: netLog },
   };
   const host = createBrowserHost({ ...hostOpts, screenReader: { override: false } });
   await host.start();
@@ -343,16 +346,19 @@ async function main(): Promise<void> {
 
   // R13 with the real policies, under `--no-proxy-server` as the app runs (lane E): every tab's fixed proxy, the
   // network filter, still wins.
-  const strict = createBrowserHost({ ...hostOpts, newId: () => `tab_s${++n}`, screenReader: { override: false }, network: undefined });
+  const strict = createBrowserHost({ ...hostOpts, newId: () => `tab_s${++n}`, screenReader: { override: false }, network: { log: netLog } });
   await strict.start();
   await step("R13: a bot's tab reaches no loopback address, by number or by name; a coding session's does; neither reaches the metadata address (its proxy wins over --no-proxy-server)", async () => {
-    const loaded = async (h: BrowserHost, id: string) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), 4000)) === "page";
+    // A refused load ends at once in an error page, so 4 s is plenty to see it stay refused. A load that should work
+    // gets 20 s: the coding session's tab is the first in a new persistent partition, and on a busy Windows runner
+    // that partition's first connection can take longer than 4 s (merge-group run 42377725559: no error, just late).
+    const loaded = async (h: BrowserHost, id: string, ms = 4000) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), ms)) === "page";
     const bot = await strict.open({ id: "tab_s_bot", owner: { kind: "bot", bot: "beta" }, url: `${origin}/page`, place: "headless" });
     const botByNumber = await loaded(strict, bot.id);
     await strict.command(bot.id, { kind: "navigate", url: `http://localhost:${port}/page` }).catch(() => undefined);
     const botByName = await loaded(strict, bot.id);
     const code = await strict.open({ id: "tab_s_code", owner: { kind: "session", session: "sess_fixture" }, url: `http://localhost:${port}/page`, place: "headless" });
-    const codeLoopback = await loaded(strict, code.id);
+    const codeLoopback = await loaded(strict, code.id, 20_000);
     const t0 = Date.now();
     await strict.command(code.id, { kind: "navigate", url: "http://169.254.169.254/latest/meta-data/" }).catch(() => undefined);
     const metadataUrl = await until(async () => { const u = String(await evalIn(strict, code.id, "location.href")); return u.includes("169.254.169.254") || u.startsWith("chrome-error") ? u : undefined; }, 4000);
@@ -362,11 +368,112 @@ async function main(): Promise<void> {
     return { ok, detail: { botByNumber, botByName, codeLoopback, metadataUrl, metadataPage, refusedFast } };
   });
 
+  // R14: the proxy setting, chained behind the filter, under `--no-proxy-server`. A local HTTP proxy plays the
+  // person's proxy; "proxied.test" resolves (in the filter) to a public address, which only the proxy can reach (it
+  // joins it to the fixture's server), and "nas.test" to a LAN address. No connection leaves this machine: a direct
+  // dial to either address goes to a closed loopback port.
+  const PUBLIC = "93.184.216.34";
+  const LAN = "192.168.77.7";
+  const asked: string[] = [];
+  const proxyServer = createNetServer((client) => {
+    client.on("error", () => undefined);
+    let head = "";
+    client.on("data", function onData(chunk: Buffer) {
+      head += chunk.toString("latin1");
+      const end = head.indexOf("\r\n\r\n");
+      if (end < 0) return;
+      client.removeListener("data", onData);
+      const target = /^CONNECT (\S+) HTTP/.exec(head)?.[1] ?? "";
+      asked.push(target);
+      const ip = target.slice(0, target.lastIndexOf(":"));
+      if (ip !== PUBLIC && ip !== LAN) {
+        client.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+        return;
+      }
+      const up = netConnect(port, "127.0.0.1", () => {
+        client.write("HTTP/1.1 200 Connection established\r\n\r\n");
+        const rest = head.slice(end + 4);
+        if (rest.length > 0) up.write(Buffer.from(rest, "latin1"));
+        up.pipe(client);
+        client.pipe(up);
+      });
+      up.on("error", () => client.destroy());
+    });
+  });
+  await new Promise<void>((r) => proxyServer.listen(0, "127.0.0.1", () => r()));
+  const proxyPort = (proxyServer.address() as AddressInfo).port;
+  const direct: string[] = [];
+  const proxied = createBrowserHost({
+    ...hostOpts, newId: () => `tab_p${++n}`, screenReader: { override: false },
+    network: {
+      log: netLog,
+      lookup: async (h: string) => (h === "proxied.test" ? [PUBLIC] : h === "nas.test" ? [LAN] : h === "localhost" ? ["127.0.0.1"] : []),
+      dial: (p: number, ip: string) => {
+        if (ip === PUBLIC || ip === LAN) {
+          direct.push(`${ip}:${p}`);
+          return netConnect(1, "127.0.0.1");
+        }
+        return netConnect({ port: p, host: ip });
+      },
+    },
+  });
+  await proxied.start();
+  // As above: 20 s for a load that should work, 4 s to see a refused one stay refused.
+  const loadedP = async (id: string, ms = 4000) => (await until(() => evalIn(proxied, id, "window.__t ? 'page' : undefined"), ms)) === "page";
+  const go = async (id: string, url: string, ms = 4000) => { await proxied.command(id, { kind: "navigate", url }).catch(() => undefined); return loadedP(id, ms); };
+  let gamma: TabView | undefined;
+
+  await step("R14: with an explicit proxy, a bot's tab loads a public name through it, the proxy asked for the checked address and never the name (under --no-proxy-server); the LAN and loopback stay refused", async () => {
+    await proxied.configure({ proxy: { mode: "explicit", url: `http://127.0.0.1:${proxyPort}` }, lanBots: [] });
+    gamma = await proxied.open({ id: "tab_p_gamma", owner: { kind: "bot", bot: "gamma" }, url: `http://proxied.test:${port}/page`, place: "headless" });
+    const viaProxy = await loadedP(gamma.id, 20_000);
+    const askedPublic = asked.includes(`${PUBLIC}:${port}`);
+    const askedName = asked.some((a) => a.startsWith("proxied.test"));
+    const lan = await go(gamma.id, `http://nas.test:${port}/page`);
+    const loop = await go(gamma.id, `http://localhost:${port}/page`);
+    const ok = viaProxy && askedPublic && !askedName && !lan && !loop && !asked.some((a) => a.startsWith(LAN)) && direct.length === 0;
+    return { ok, detail: { viaProxy, asked: [...asked], lan, loop, direct: [...direct] } };
+  });
+
+  await step("the bot's LAN setting: its tabs reach the LAN (through the proxy), still never loopback or the metadata address", async () => {
+    if (gamma === undefined) return { ok: false, detail: "no tab" };
+    await proxied.configure({ proxy: { mode: "explicit", url: `http://127.0.0.1:${proxyPort}` }, lanBots: ["gamma"] });
+    const lan = await go(gamma.id, `http://nas.test:${port}/page`, 20_000);
+    const askedLan = asked.includes(`${LAN}:${port}`);
+    const loop = await go(gamma.id, `http://localhost:${port}/page`);
+    const meta = await go(gamma.id, "http://169.254.169.254/latest/meta-data/");
+    const ok = lan && askedLan && !loop && !meta && direct.length === 0;
+    return { ok, detail: { lan, askedLan, loop, meta, asked: [...asked], direct: [...direct] } };
+  });
+
+  await step("the proxy setting off: the next connection goes direct (the public address is never reached here), and the proxy is asked nothing more", async () => {
+    if (gamma === undefined) return { ok: false, detail: "no tab" };
+    await proxied.configure({ proxy: { mode: "off" }, lanBots: [] });
+    const before = asked.length;
+    const loaded = await go(gamma.id, `http://proxied.test:${port}/page?off`);
+    const ok = !loaded && asked.length === before && direct.some((d) => d.startsWith(PUBLIC));
+    return { ok, detail: { loaded, asked: [...asked], direct: [...direct] } };
+  });
+
+  await step("the filter takes connections only from the app's own network process: one from another process (this main process) is closed unanswered, and its ports are listed for lane C", async () => {
+    const ports = proxied.filterPorts;
+    const answered = await Promise.all(ports.slice(0, 3).map((p) => new Promise<string>((resolve) => {
+      const s = netConnect(p, "127.0.0.1", () => s.write(Buffer.from([5, 1, 0])));
+      const t = setTimeout(() => { s.destroy(); resolve("no answer"); }, 4000);
+      s.on("data", (d: Buffer) => { clearTimeout(t); s.destroy(); resolve(`answered ${[...d].join(",")}`); });
+      s.on("close", () => { clearTimeout(t); resolve("closed"); });
+      s.on("error", () => { clearTimeout(t); resolve("closed"); });
+    })));
+    return { ok: ports.length >= 3 && answered.every((a) => a === "closed"), detail: { ports, answered } };
+  });
+
+  proxied.shutdown();
+  proxyServer.close();
   strict.shutdown();
   reader.shutdown();
   host.shutdown();
   server.close();
-  writeFileSync(out, JSON.stringify({ platform: process.platform, electron: process.versions.electron, steps, reports: reports.length, holds }, null, 2));
+  writeFileSync(out, JSON.stringify({ platform: process.platform, electron: process.versions.electron, steps, reports: reports.length, holds, netLogs }, null, 2));
 }
 
 app.on("window-all-closed", () => undefined);

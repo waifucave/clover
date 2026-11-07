@@ -253,6 +253,9 @@ export interface CloverSessionDeps {
    * no live child is HELD, not pushed), so it can never be what spawns one.
    */
   beforeTurn?: () => Promise<void>;
+  /** M-M2: true while the update gate closes for a restart. `deliver` (which `beforeTurn` doesn't gate) defers a
+   *  delivery then, and releases it once the gate reopens; a restart that goes ahead ends the session first. */
+  updateClosing?: () => boolean;
   /** Checked by `open()` just before it spawns the runtime child: an error here refuses the open and spawns
    *  nothing (the driver table's `beginShutdown` — no child is started into a daemon that is stopping). */
   spawnRefusal?: () => Error | undefined;
@@ -576,6 +579,8 @@ class CloverSessionImpl implements CloverSession {
   /** Messaging deliveries that arrived while a clear or a stop settle was in progress: run, in order, the
    *  moment both have ended (`releaseDeliveries`). The sink is synchronous, so it cannot wait itself. */
   private readonly deferredDeliveries: string[] = [];
+  /** M-M2: the recheck of a delivery deferred while the update gate was closing. */
+  private updateRecheck: unknown;
   static readonly STOP_SETTLE_MAX_MS = 2_000;
   private readonly held: string[] = [];
   private endedReason: string | undefined;
@@ -676,8 +681,9 @@ class CloverSessionImpl implements CloverSession {
   deliver(text: string): void {
     // A TaskStop in progress (its clear or its settle): deferred, in order, until it is done — a push now
     // could be dropped by the clear, or closed in the log for one that was (`clearing`).
-    if (this.stateValue !== "ended" && (this.clearing !== undefined || this.stopSettled !== undefined || this.deferredDeliveries.length > 0)) {
+    if (this.stateValue !== "ended" && (this.clearing !== undefined || this.stopSettled !== undefined || this.deferredDeliveries.length > 0 || this.updateHeld())) {
       this.deferredDeliveries.push(text);
+      this.armUpdateRecheck();
       return;
     }
     this.deliverNow(text);
@@ -698,9 +704,24 @@ class CloverSessionImpl implements CloverSession {
   }
 
   private releaseDeliveries(): void {
-    while (this.clearing === undefined && this.stopSettled === undefined && this.deferredDeliveries.length > 0) {
+    while (this.clearing === undefined && this.stopSettled === undefined && !this.updateHeld() && this.deferredDeliveries.length > 0) {
       this.deliverNow(this.deferredDeliveries.shift()!);
     }
+    this.armUpdateRecheck();
+  }
+
+  /** M-M2: no delivery starts a turn while the update gate is closing for a restart. */
+  private updateHeld(): boolean {
+    return this.deps.updateClosing?.() === true;
+  }
+
+  /** While deliveries wait on the update gate, look again every second; released once it reopens. */
+  private armUpdateRecheck(): void {
+    if (this.updateRecheck !== undefined || this.deferredDeliveries.length === 0 || !this.updateHeld()) return;
+    this.updateRecheck = this.timers.set(() => {
+      this.updateRecheck = undefined;
+      this.releaseDeliveries();
+    }, 1_000);
   }
 
   private deliverNow(text: string): void {

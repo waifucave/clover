@@ -5,8 +5,9 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RpcError, RpcPeer } from "../acp/jsonrpc";
-import { BridgeEndpoint, type BridgeHandlers } from "../bridge/endpoint";
+import { RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
+import { bridgeCloverParts, type BridgeHandlers } from "../bridge/handlers";
+import { serveClover } from "../testing/clover-endpoint";
 import { BRIDGE_MAIN_PATH } from "../bridge/main";
 import { peerPidOf } from "../bridge/peer";
 import { BRIDGE_ENV } from "../bridge/server";
@@ -42,8 +43,8 @@ function endpointWith(handlers: Partial<BridgeHandlers>, tokens: BridgeTokens, n
     glossary: async () => ({ results: [{ name: "pdf", kind: "skill", description: "Read PDFs" }], loaded: [] }),
     ...handlers,
   };
-  const ep = new BridgeEndpoint({ socketPath: sockPath(name), tokens, handlers: full, device: "d".repeat(16), serverVersion: "test" });
-  ep.listen();
+  // Lane C's Clover server, serving the bridge role as the daemon does.
+  const ep = serveClover(sockPath(name), bridgeCloverParts(tokens, full));
   return { ep, sent };
 }
 
@@ -139,7 +140,9 @@ describe.skipIf(!posix)("the bridge process", () => {
     expect((early as RpcError).code).toBe(-32010);
     const b = await conn();
     const wrong = await b.peer.request("protocol.hello", { protocolVersion: 1, role: "app", token: "x".repeat(20), clientName: "t" }).catch((e: unknown) => e);
-    expect((wrong as RpcError).message).toContain("only the bridge role");
+    expect(wrong).toBeInstanceOf(RpcError);
+    const after = await b.peer.request("bridge.tools", {}).catch((e: unknown) => e);
+    expect(after).toBeInstanceOf(RpcError);
     a.sock.end();
     b.sock.end();
     ep.close();

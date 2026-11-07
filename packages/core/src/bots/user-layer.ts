@@ -8,9 +8,11 @@
 import { UserLayerPatch, type Text } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { readJson, removeFileDurably, writeJsonAtomic } from "../sessions/atomic-file";
-import { userLayerFile } from "./paths";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+import { userLayerFile, userLayersDir } from "./paths";
 
-export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout"] as const;
+export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"] as const;
 export type UserLayerField = (typeof USER_LAYER_FIELDS)[number];
 
 export interface UserLayer {
@@ -22,6 +24,9 @@ export interface UserLayer {
   avatar?: { file: string; format: string; portrait?: string };
   theme?: string;
   layout?: string;
+  /** The bot's browser tabs may reach the LAN (lane L's `lanBots`). The person's alone: in the user layer, which only
+   *  the user writes, and never in a plugin's `bot` entry. */
+  lan?: boolean;
 }
 
 /** A model the layer names is a qualified catalog id (`<provider>/<model>`, §5.9); the catalogs live in the model
@@ -104,6 +109,30 @@ export class UserLayerStore {
     else writeJsonAtomic(path, { userLayer: 1, bot: botId, fields: next } satisfies StoredLayer);
     this.#cache.set(botId, next);
     return structuredClone(next);
+  }
+
+  /** Turns the LAN switch off, keeping the rest (its plugin was removed: LAN access never carries over to whatever
+   *  plugin later takes the id). True when it was on. */
+  clearLan(botId: string): boolean {
+    if (this.get(botId).lan === undefined) return false;
+    this.set(botId, { lan: null });
+    return true;
+  }
+
+  /** The bots with a stored layer whose LAN switch is on. */
+  lanStored(): string[] {
+    let names: string[];
+    try {
+      names = readdirSync(userLayersDir(this.#home)).filter((n) => n.endsWith(".json"));
+    } catch {
+      return [];
+    }
+    const out: string[] = [];
+    for (const n of names) {
+      const stored = readJson(join(userLayersDir(this.#home), n)) as Partial<StoredLayer> | undefined;
+      if (typeof stored?.bot === "string" && stored.fields?.lan === true) out.push(stored.bot);
+    }
+    return out;
   }
 
   /** Reset: every field back to the plugin's. */
