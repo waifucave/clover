@@ -1,14 +1,13 @@
 // The daemon integration, on a real daemon in a temp home: lane H's links, lane J's computer node and lane D's bot side
 // start over the links once the socket is bound; `device.*`, `main.*` and `bot.*` answer over the Clover socket; the
 // main computer is the lease's (a computer that doesn't hold it is never `isMain`, so what runs on the main alone runs
-// on one computer); and the stop closes them all, leaving no socket and no sidecar behind.
+// on one computer); and the stop closes them all, leaving no socket behind (the sidecar's child:
+// src/links/tests/daemon-sidecar.test.ts, which the link job runs with the sidecar built).
 //
 // Fakes only where each part's own lane uses them: H's in-memory network and local handshake, D's plugin registry and
 // session drivers. The second computer is built from the same assembly the daemon uses (`startDaemonLinks`,
-// `startDaemonParts`), since one process runs one daemon. The sidecar test runs the real `clover-link` on loopback
-// (no relay, nothing published) when it is built, as lane H's sidecar tests do.
+// `startDaemonParts`), since one process runs one daemon.
 import { afterEach, describe, expect, test } from "bun:test";
-import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -176,15 +175,6 @@ describe("the daemon's Clover parts, booted", () => {
   }, 30_000);
 });
 
-const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../native/link/target/release/clover-link");
-const built = existsSync(BIN) && process.platform !== "win32";
-
-/** This process's children running `clover-link`. */
-function sidecarChildren(): number[] {
-  const out = execFileSync("ps", ["-A", "-o", "pid=,ppid=,comm="], { encoding: "utf8" });
-  return out.split("\n").map((l) => l.trim().split(/\s+/)).filter((f) => f.length >= 3 && Number(f[1]) === process.pid && f.slice(2).join(" ").endsWith("clover-link")).map((f) => Number(f[0]));
-}
-
 describe("the daemon's Clover parts at the edges", () => {
   test("a secret store locked at boot: the daemon answers at once, and the links start once the store unlocks", async () => {
     const net = new MemoryNetwork();
@@ -236,23 +226,5 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(took).toBeGreaterThanOrEqual(4_500);
     expect(took).toBeLessThan(10_000);
     expect(existsSync(socket)).toBe(false);
-  }, 30_000);
-});
-
-describe.skipIf(!built)("the daemon's sidecar", () => {
-  test("the stop ends the link sidecar it started: no child is left behind", async () => {
-    const home = temp("clover-int-home-");
-    daemon = await startDaemon({
-      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
-      // Loopback only, no relay, nothing published: nothing leaves the machine.
-      links: { binary: BIN, sidecar: { relay: "disabled", n0Lookup: false, bind: "127.0.0.1:0" }, handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
-      parts: { userHome: temp("clover-int-user-"), bots: await fakeBots() },
-    });
-    await daemon.cloverParts.ready;
-    expect(daemon.cloverParts.node()).toBeDefined();
-    expect(sidecarChildren()).toEqual([daemon.cloverParts.links()!.sidecarPid()!]); // the Clover server's `linkPid`
-    await daemon.stop();
-    daemon = undefined;
-    await waitFor("the sidecar to exit", () => sidecarChildren().length === 0, 10_000);
   }, 30_000);
 });
