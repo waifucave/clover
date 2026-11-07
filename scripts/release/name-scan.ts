@@ -4,16 +4,16 @@
 // see these (a built app never enters the repo), and the leaks that happened before lived exactly here (absolute build
 // paths in a Mach-O's debug stabs, 0.2.001).
 //
-// It is the Winter release's gate (scripts/release.ts §11b), reused: the patterns live OUTSIDE this repo, in the
-// owner's local-only guard (`~/norma-private/git-hooks/name-guard.sh`, or CLOVER_NAME_GUARD), because a tracked list
-// would publish the very strings it keeps out; the walk is release-lib.ts's `nameScanPlan`, with its partition
+// It is the predecessor app's release gate (scripts/release.ts §11b), reused: the patterns live OUTSIDE this repo, in
+// the owner's local-only guard (`~/norma-private/git-hooks/name-guard.sh`, or CLOVER_NAME_GUARD), because a tracked
+// list would publish the very strings it keeps out; the walk is release-lib.ts's `nameScanPlan`, with its partition
 // asserted against the filesystem (every regular file under exactly one of the scanned targets or an exclusion) so a
-// bug in it can't under-scan a release; and any hit fails the release. A signed release FAILS CLOSED without the
-// guard. An unsigned build (CI's) scans when the guard is there and says it skipped when it isn't.
+// bug in it can't under-scan a release; and any hit fails the release. A signed release FAILS CLOSED without the guard.
+// An unsigned build (CI's) scans when the guard is there and says it skipped when it isn't.
 //
 // Exclusions: none yet. Widening the list is a security decision, not a build fix (release-lib.ts's
-// NAME_SCAN_EXCLUSIONS says why the Winter app has its one); a Chromium locale pack colliding here is investigated and
-// named in CLOVER_NAME_SCAN_EXCLUSIONS below with the file it matched, never appended to blind.
+// NAME_SCAN_EXCLUSIONS says why the predecessor app has its one); a Chromium locale pack colliding here is
+// investigated and named in CLOVER_NAME_SCAN_EXCLUSIONS below with the file it matched, never appended to blind.
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -64,8 +64,8 @@ export function runNameScan(outDir: string, opts: { required: boolean; guard?: s
   const scanned = countFiles(plan.targets);
   const skipped = plan.excluded.length === 0 ? 0 : countFiles(plan.excluded);
   if (scanned + skipped !== total) throw new Error(`the identity scan's partition is wrong (${scanned} scanned + ${skipped} excluded ≠ ${total} files): refusing a gate that may not cover the release`);
-  // The guard's own output goes straight to the terminal, as the Winter release's does: never into an error message
-  // or anything this process keeps.
+  // The guard's own output goes straight to the terminal, as the earlier app's release does: never into an error
+  // message or anything this process keeps.
   const r = spawnSync("bash", [guard, "artifacts", ...plan.targets], { stdio: opts.quiet ? "ignore" : "inherit" });
   if (r.status !== 0) throw new Error(`the identity scan found a hit in the built release (the guard exited ${r.status ?? "on a signal"}; it named the file above)`);
   return { ran: true, targets: plan.targets.map((t) => relative(outDir, t) || "."), scanned, total };

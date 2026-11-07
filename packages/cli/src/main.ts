@@ -1,9 +1,8 @@
 import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, healFromOld, oldBinary, SelfUpdater, superviseTarget, updateWatched } from "./self-update";
 import { daemonBunVersion, ensurePluginBun, serverPluginBun } from "./plugin-bun-install";
 import { ensureServerPlugins, PluginsLock, recoverServerPlugins, serverPluginsDir, stageServerPlugins } from "./plugins-install";
-import { migrateEarlierLayout, parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
+import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
 import { join, resolve } from "node:path";
-import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
 import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
@@ -1990,7 +1989,8 @@ if (import.meta.main) {
         console.error("server install: this account's profile folder could not be read from the registry (ProfileList), so its logon task can't be written");
         process.exit(1);
       }
-      if (profile.toLowerCase() !== homedir().toLowerCase()) console.log(`server install: this account logs on with its profile at ${profile}, not ${homedir()}: the logon task uses ${profile}`);
+      const note = profileNote(profile);
+      if (note !== undefined) console.log(note);
     }
     mkdirSync(base.logsDir, { recursive: true });
     const deps = {

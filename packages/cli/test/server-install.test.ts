@@ -5,7 +5,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readInstallMarker, removeInstallMarker, writeInstallMarker, type LoginSpec } from "@waifucave/clover-core";
-import { earlierLayoutFiles, insideApp, migrateEarlierLayout, parseServerArgs, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
+import { earlierLayoutFiles, insideApp, migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
 import { serverPluginBun, type PluginBunResult } from "../src/plugin-bun-install";
 import { serverPluginsDir, type PluginsResult } from "../src/plugins-install";
 
@@ -235,5 +235,12 @@ describe("one step from the earlier layout", () => {
     expect(existsSync(serverBinary(spec.home, "win32"))).toBe(false);
     expect(readInstallMarker(spec.home)).toBeUndefined();
     expect(s.plugin).toEqual([]);
+  });
+});
+
+describe("the logon profile note", () => {
+  test("says nothing when the logon profile is this process's home (any case), and names both when it isn't", () => {
+    expect(profileNote("C:\\Users\\Ann", "c:\\users\\ann")).toBeUndefined();
+    expect(profileNote("D:\\Profiles\\Ann", "C:\\Users\\Ann")).toBe("server install: this account logs on with its profile at D:\\Profiles\\Ann, not C:\\Users\\Ann: the logon task uses D:\\Profiles\\Ann");
   });
 });

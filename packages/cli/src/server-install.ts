@@ -25,6 +25,14 @@ import { serverPluginsDir, type PluginsResult } from "./plugins-install";
 
 export const SERVER_USAGE = "usage: clover-core server install [--channel latest|beta] | server uninstall";
 
+/**
+ * What server install says when the account logs on (Windows) with a profile other than this process's home: a
+ * profile moved, or a session with another environment. Undefined when they are the same folder.
+ */
+export function profileNote(profile: string, home: string = homedir()): string | undefined {
+  return profile.toLowerCase() === home.toLowerCase() ? undefined : `server install: this account logs on with its profile at ${profile}, not ${home}: the logon task uses ${profile}`;
+}
+
 /** Where a server install keeps its binary: `<home>/bin/daemon/`, with plain Bun for plugins beside it and the bundled
  *  plugins in `<home>/bin/plugins`. */
 export function serverBinary(home: string, os: LoginSpec["os"]): string {
