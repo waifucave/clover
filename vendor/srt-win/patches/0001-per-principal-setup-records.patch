@@ -12,6 +12,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -89,8 +90,14 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/user.rs    |  16 +++-
  4 files changed, 381 insertions(+), 43 deletions(-)
 
+ src/cli.rs     | 122 +++++++++++++++++++-----
+ src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
+ src/reg.rs     |  37 ++++++++
+ src/user.rs    |  16 +++-
+ 4 files changed, 377 insertions(+), 43 deletions(-)
+
 diff --git a/src/cli.rs b/src/cli.rs
-index 8e616e2..af847f3 100644
+index 8e616e2..b3f1b88 100644
 --- a/src/cli.rs
 +++ b/src/cli.rs
 @@ -157,6 +157,13 @@ enum Cmd {
@@ -159,7 +166,7 @@ index 8e616e2..af847f3 100644
 -    let setup = install::read_setup().ok().flatten();
 +    // Gated: a foreign caller's status read fails closed here, so the
 +    // combined `status` never leaks another owner's install state.
-+    let setup = install::authorized_setup_for(for_user).ok().flatten();
++    let setup = install::authorized_setup_for(for_user).ok();
      let name = setup
          .as_ref()
          .map(|s| s.sandbox_user.as_str())
@@ -285,7 +292,7 @@ index 8e616e2..af847f3 100644
              held_by,
              deny_write,
              env,
-@@ -2753,9 +2812,12 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -2753,9 +2812,8 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              // Credential + setup read happens FIRST so the
              // exit-15 fast-fail (not provisioned / stale cred)
              // fires before any WFP/ACL work.
@@ -293,15 +300,11 @@ index 8e616e2..af847f3 100644
 -                let s = install::read_setup()?
 -                    .ok_or_else(|| anyhow!("sandbox user not provisioned"))?;
 +            let (cred, sb_sid) = match install::authorized_cred_for(for_user.as_deref()).and_then(|c| {
-+                let s = install::authorized_setup_for(for_user.as_deref())?
-+                    .ok_or_else(|| match &for_user {
-+                        Some(u) => anyhow!("sandbox user '{u}' not provisioned"),
-+                        None => anyhow!("sandbox user not provisioned"),
-+                    })?;
++                let s = install::authorized_setup_for(for_user.as_deref())?;
                  Ok((c, s.sandbox_user_sid))
              }) {
                  Ok(v) => v,
-@@ -3387,7 +3449,7 @@ mod tests {
+@@ -3387,7 +3445,7 @@ mod tests {
          assert!(matches!(
              with.cmd,
              Cmd::User {
@@ -310,7 +313,7 @@ index 8e616e2..af847f3 100644
              }
          ));
          // Standalone shape: no sentinel.
-@@ -3396,7 +3458,7 @@ mod tests {
+@@ -3396,7 +3454,7 @@ mod tests {
          assert!(matches!(
              without.cmd,
              Cmd::User {
@@ -319,7 +322,7 @@ index 8e616e2..af847f3 100644
              }
          ));
          // The sentinel is NOT a clap flag — without the strip, it
-@@ -3405,6 +3467,28 @@ mod tests {
+@@ -3405,6 +3463,28 @@ mod tests {
          assert!(
              Cli::try_parse_from(["srt-win.exe", SRT_WIN_DISPATCH_ARG1, "user", "status",]).is_err()
          );
