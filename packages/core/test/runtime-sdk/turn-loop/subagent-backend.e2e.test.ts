@@ -321,8 +321,12 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
         const next = await session.prompt({ text: `CALL Read {"file_path":${JSON.stringify(join(root, "README"))}}` });
         expect([early, next.stopReason]).toEqual([early, "end_turn"]);
         // Cancelled before it started, the turn left nothing, and the new one answers its own prompt. Cancelled mid-call,
-        // the test model takes its unfinished list up again in the new turn: that call then runs to its end, uncut.
-        expect(next.text).toContain(early ? "read me" : "[exit 0]");
+        // the test model takes its unfinished list up again in the new turn. Either way the new turn's last call ran
+        // to its own result, never interrupted (what that result is depends on the OS: off macOS, Bash is refused for
+        // want of the sandbox).
+        const results = JSON.parse(next.text) as { content: string }[];
+        expect([early, results.at(-1)?.content]).not.toEqual([early, "[interrupted]"]);
+        if (early) expect(next.text).toContain("read me");
         expect(session.state()).toBe("idle");
       } finally {
         await session.stop();
