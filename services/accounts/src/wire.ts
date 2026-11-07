@@ -3,11 +3,59 @@
 
 import { utf8 } from "../../shared/encoding";
 
-export const registerStatement = (account: string, device: string, t: number): Uint8Array =>
-  utf8(["clover-account-v1 register", account, device, String(t)].join("\n"));
+/** The fields of a registration the device signs, each as the request carries it. */
+export interface RegisterFields {
+  id: string;
+  publicKey: string;
+  boxKey: string;
+  name: string;
+  kind: string;
+  os?: string;
+}
+
+/**
+ * A registration's statement: lane H's `clover-account-v2 register`, the deterministic CBOR array (the core's
+ * links/codec) of the account, every field of the device as sent (`os` null when absent) and `t`. Binding the
+ * box key and the record means a session holder can't re-send a device's signature with another box key.
+ */
+export const registerStatement = (account: string, d: RegisterFields, t: number): Uint8Array =>
+  cborArray(["clover-account-v2 register", account, d.id, d.publicKey, d.boxKey, d.name, d.kind, d.os ?? null, t]);
 
 export const mintStatement = (account: string, audience: string, device: string, t: number): Uint8Array =>
   utf8(["clover-account-v1 mint", account, audience, device, String(t)].join("\n"));
+
+/**
+ * The deterministic CBOR (RFC 8949, shortest heads) of an array of text strings, nulls and non-negative safe
+ * integers: the subset a statement uses, encoded as the core's links/codec encodes it.
+ */
+export function cborArray(items: readonly (string | number | null)[]): Uint8Array {
+  const out: number[] = [];
+  const head = (major: number, n: number) => {
+    const m = major << 5;
+    if (n < 24) out.push(m | n);
+    else if (n < 0x100) out.push(m | 24, n);
+    else if (n < 0x10000) out.push(m | 25, n >> 8, n & 0xff);
+    else if (n < 0x100000000) out.push(m | 26, (n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff);
+    else {
+      const big = BigInt(n);
+      out.push(m | 27);
+      for (let shift = 56n; shift >= 0n; shift -= 8n) out.push(Number((big >> shift) & 0xffn));
+    }
+  };
+  head(4, items.length);
+  for (const item of items) {
+    if (item === null) out.push(0xf6);
+    else if (typeof item === "number") {
+      if (!Number.isSafeInteger(item) || item < 0) throw new RangeError("a statement's numbers are non-negative integers");
+      head(0, item);
+    } else {
+      const bytes = utf8(item); // TextEncoder writes a lone surrogate as U+FFFD, as toWellFormed() does in the core
+      head(3, bytes.length);
+      for (const b of bytes) out.push(b);
+    }
+  }
+  return Uint8Array.from(out);
+}
 
 /** The device kinds and systems of the protocol's `DeviceKind` and `Os` (packages/protocol). */
 export const DEVICE_KINDS = ["desktop", "server", "cloud", "phone", "browser"] as const;

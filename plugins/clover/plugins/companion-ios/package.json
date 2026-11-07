@@ -1,0 +1,20 @@
+{
+  "name": "@waifucave/clover-plugin-companion-ios",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "clover/companion-ios: the computer's side of the iPhone app's pairing. The phone pairs as a device of its own and speaks the core's remote protocol over its link; this plugin only shows the pairing.",
+  "type": "module",
+  "exports": {
+    ".": "./host/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@waifucave/clover-plugin-sdk": "workspace:*",
+    "typescript": "5.9.3"
+  }
+}

@@ -22,9 +22,10 @@ import { bundledBackends } from "../testing/bundled-backends";
 const ROWS = bundledBackends();
 const QUIRKS = Object.fromEntries(Object.entries(ROWS).map(([id, r]) => [id, r.quirks]));
 import { waitFor } from "./world";
+import { onDarwin } from "../../../test/helpers/darwin-only";
 
 setDefaultTimeout(120_000);
-const live = process.env["CLOVER_K_LIVE"] === "1" && process.platform === "darwin";
+const live = process.env["CLOVER_K_LIVE"] === "1" && onDarwin;
 const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-live-")));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 

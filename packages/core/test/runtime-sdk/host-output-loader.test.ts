@@ -4,6 +4,7 @@ import { chmodSync,copyFileSync,linkSync,mkdtempSync,mkdirSync,readFileSync,real
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOST_OUTPUT_IMPLEMENTATION_ID,HostOutputUnavailable,loadBundledHostOutputFactory,loadFixtureHostOutputFactory,createFixtureLazyHostOutputFactory } from "../../src/runtime-sdk/host-output-loader";
+import { darwinTest } from "../helpers/darwin-only";
 const roots:string[]=[];afterEach(()=>{for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true})});
 function fixture(){
   const root=realpathSync(mkdtempSync(join(tmpdir(),"clover-output-loader-")));roots.push(root);
@@ -114,7 +115,7 @@ test("transient cooldown caps work, shares callers, and permits recovery after p
   expect(checks).toBe(7);expect((await create()).stdoutFd).toBe(3);expect(checks).toBe(8);
   expect(logs.length).toBe(1);expect(logs[0]).toContain("codesign-timeout");
 });
-test("real unsigned fixture codesign fails asynchronously and remains retryable",async()=>{
+darwinTest("real unsigned fixture codesign fails asynchronously and remains retryable",async()=>{
   const f=fixture();let mapped=false;const logs:string[]=[];
   const create=createFixtureLazyHostOutputFactory({corePath:f.core,loadAddon:()=>{mapped=true;return f.native},log:line=>logs.push(line),now:()=>0});
   let ticked=false;const tick=new Promise<void>(resolve=>setTimeout(()=>{ticked=true;resolve()},0));

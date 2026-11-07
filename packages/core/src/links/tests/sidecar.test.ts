@@ -1,7 +1,8 @@
 // The link over real iroh: two `clover-link` sidecars on loopback (no relay, nothing leaves the machine), the
 // transport on top, and pairing through the pair ALPN. Runs when the sidecar is built: `CLOVER_LINK_BIN`, or
-// native/link's release build (the link workflow builds it; locally `cargo build --release` in native/link). The
-// restart's bookkeeping also runs against a fake sidecar process, which needs no build.
+// native/link's release build (CI's link job builds it, and sets CLOVER_LINK_REQUIRE_BINARY=1 so a missing one
+// fails; locally `cargo build --release` in native/link). The restart's bookkeeping also runs against a fake sidecar
+// process, which needs no build.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +23,8 @@ import { CLOSE_LOST, RESET_CONN_LOST, type WireConn, WireOffline, type WireStrea
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
 const built = existsSync(BIN);
+// CI builds the sidecar before these run, and says so: there a missing binary fails the file instead of skipping it.
+if (!built && process.env.CLOVER_LINK_REQUIRE_BINARY === "1") throw new Error(`CLOVER_LINK_REQUIRE_BINARY=1, but there is no clover-link at ${BIN}`);
 const clock = new SystemClock();
 let stops: (() => unknown)[] = [];
 afterEach(async () => {
@@ -223,15 +226,13 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     })();
 
     // Nothing is read: the writer is held back after QUIC's stream window and a window on each side of each pipe.
-    await Bun.sleep(1500);
-    const held = written;
-    await Bun.sleep(400);
-    expect(written).toBe(held);
-    expect(held).toBeGreaterThanOrEqual(W);
-    // QUIC's stream window (1.25 MB), plus a window read into the reader's side and one queued in the writer's.
-    expect(held).toBeLessThanOrEqual(1_250_000 + 3 * W + chunk);
+    // What is guaranteed is that bound, never how far the writer gets by a given moment (a loaded runner may be slow to
+    // fill it): so every sample over a while stays within it, and the windows on both sides with it. No lower bound on
+    // a sample.
+    const ahead = 1_250_000 + 3 * W + chunk;
     const bound = async () => {
       const [sa, sb] = await Promise.all([a.wire.stats(), b.wire.stats()]);
+      expect(written - got).toBeLessThanOrEqual(ahead);
       expect(sa.core.queuedWrites).toBeLessThanOrEqual(chunk);
       expect(sa.core.unackedWrites).toBeLessThanOrEqual(W);
       expect(sa.sidecar.queuedWrites).toBeLessThanOrEqual(W);
@@ -240,9 +241,19 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
       expect(sb.core.unconsumed).toBeLessThanOrEqual(W);
       return { sa, sb };
     };
-    const { sb } = await bound();
-    // The reader's whole window waits on the core's side, none of it past it.
-    expect(sb.sidecar.unconsumed + sb.core.unconsumed).toBeGreaterThan(0);
+    const end = Date.now() + 1_500;
+    while (Date.now() < end) {
+      await bound();
+      await Bun.sleep(50);
+    }
+    // Something did reach the reader, which waits on the core's side (waited for: when depends on the runner).
+    for (const until = Date.now() + 15_000; ; await Bun.sleep(25)) {
+      const { sb } = await bound();
+      if (sb.sidecar.unconsumed + sb.core.unconsumed > 0) break;
+      if (Date.now() > until) throw new Error("nothing reached the reader's side");
+    }
+    expect(got).toBe(0);
+    expect(written).toBeLessThanOrEqual(ahead);
 
     // Then it reads, slowly, and the bounds hold all the way.
     reading = true;
