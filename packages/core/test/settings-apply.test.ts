@@ -74,39 +74,39 @@ describe("makeApply", () => {
   test("computerUse disable drain exceeds drainTimeoutMs: teardown still called once, a warning is logged, test completes fast", async () => {
     const teardown = mock(() => {});
     const warnings: string[] = [];
+    let sleeps = 0;
     const apply = makeApply(
       baseDeps({
         computerInFlight: () => true, // never clears
         teardownComputer: teardown,
         drainTimeoutMs: 40,
         drainIntervalMs: 5,
-        sleep: (_ms: number) => Promise.resolve(), // fast injected clock — no real waiting
+        sleep: (_ms: number) => { sleeps += 1; return Promise.resolve(); }, // fast injected clock — no real waiting
         log: (msg) => warnings.push(msg),
       }),
     );
-    const start = Date.now();
     await apply({ computerUse: { enabled: true } } as any, { computerUse: { enabled: false } } as any);
     expect(teardown).toHaveBeenCalledTimes(1);
     expect(warnings.length).toBe(1);
-    expect(Date.now() - start).toBeLessThan(100); // never actually waited real ms, despite drainTimeoutMs
+    expect(sleeps).toBe(Math.ceil(40 / 5)); // the cap is an iteration count over the injected sleep, not wall-clock
 
     // Same assertion with the PRODUCTION default drainTimeoutMs (10000ms) — the cap is expressed
     // as an iteration count over the injected sleep, not a real-time deadline, so a fast sleep
     // keeps this near-instant even at the real default cap (proves the drain cap doesn't secretly
     // depend on wall-clock time).
     const teardown2 = mock(() => {});
+    let sleeps2 = 0;
     const apply2 = makeApply(
       baseDeps({
         computerInFlight: () => true,
         teardownComputer: teardown2,
-        sleep: (_ms: number) => Promise.resolve(),
+        sleep: (_ms: number) => { sleeps2 += 1; return Promise.resolve(); },
         log: () => {},
       }),
     );
-    const start2 = Date.now();
     await apply2({ computerUse: { enabled: true } } as any, { computerUse: { enabled: false } } as any);
     expect(teardown2).toHaveBeenCalledTimes(1);
-    expect(Date.now() - start2).toBeLessThan(500);
+    expect(sleeps2).toBe(Math.ceil(10_000 / 50)); // production defaults: bounded tick count, no real waiting
   });
 
   test("lsp false→true registers, true→false tears down + stopAll", async () => {
@@ -207,21 +207,22 @@ describe("makeApply", () => {
 
   test("CU and LSP flips are independent: a stalled CU drain does not block the LSP re-wire", async () => {
     const registerLsp = mock(() => {});
+    let sleeps3 = 0;
     const apply = makeApply(
       baseDeps({
         computerInFlight: () => true, // CU disable never clears within the drain window
         drainTimeoutMs: 30,
         drainIntervalMs: 5,
+        sleep: (_ms: number) => { sleeps3 += 1; return Promise.resolve(); },
         registerLsp,
       }),
     );
-    const start = Date.now();
     await apply(
       { computerUse: { enabled: true }, lsp: { enabled: false } } as any,
       { computerUse: { enabled: false }, lsp: { enabled: true } } as any,
     );
     expect(registerLsp).toHaveBeenCalledTimes(1);
-    expect(Date.now() - start).toBeLessThan(500); // bounded by the small drainTimeoutMs, not a real hang
+    expect(sleeps3).toBe(Math.ceil(30 / 5)); // bounded by the small drainTimeoutMs tick count, not a real hang
   });
 
   // Whole-branch review F1: one flag's diff throwing must NEITHER reject the aggregate apply NOR
@@ -344,9 +345,8 @@ describe("makeApply", () => {
       let resolveMigrate!: () => void;
       const migrateMemory = mock(() => new Promise<void>((resolve) => { resolveMigrate = resolve; }));
       const apply = makeApply(baseDeps({ migrateMemory }));
-      const start = Date.now();
+      // apply() settling at all, while migrateMemory's promise is still pending, is the "did not wait" signal
       await apply({ memory: { enabled: false } } as any, { memory: { enabled: true } } as any);
-      expect(Date.now() - start).toBeLessThan(100); // did not wait on migrateMemory's never-resolved promise
       expect(migrateMemory).toHaveBeenCalledTimes(1);
       resolveMigrate(); // let the still-pending promise settle so it doesn't leak into the next test
     });

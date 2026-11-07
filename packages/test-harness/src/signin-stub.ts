@@ -9,6 +9,10 @@
 //   POST /auth/v1/logout                           revokes the session's refresh tokens
 //   POST /auth/v1/admin/users                      creates a user (service key only)
 //   GET  /auth/v1/settings                         the enabled providers
+// and, outside the auth API, the stand-in for waifucave's email sign-in page (`emailSignInUrl`):
+//   GET  /signin?redirect_to&code_challenge&code_challenge_method   a form: email and password
+//   POST /signin                                   checks them and sends the browser to `redirect_to` with a PKCE
+//                                                  code, as the OAuth hop does (or with `error=access_denied` on Cancel)
 // Access tokens are HS256 JWTs signed with this stub's own random secret (the project's `jwt_secret` shape), valid
 // for `accessTokenTtlSeconds` (default 3600, the project's `jwt_expiry`). Nothing here is a real account or key.
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
@@ -26,6 +30,8 @@ export interface StubUser {
 export interface SignInStub {
   /** The project URL a client is given (`createClient(url, anonKey)`). */
   url: string;
+  /** The email sign-in page (`AccountConfig.emailSignInUrl`): a form that sends the browser back with a PKCE code. */
+  emailSignInUrl: string;
   anonKey: string;
   serviceRoleKey: string;
   /** The HS256 secret access tokens are signed with, so a test can verify one. */
@@ -64,6 +70,22 @@ export function verifyHs256(token: string, secret: string): Record<string, unkno
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined;
   try {
     return JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Text for an HTML attribute or element. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/** Where a sign-in may send the browser back to: the loopback, as a project's redirect allowlist would hold it. */
+function loopbackRedirect(raw: string | null): URL | undefined {
+  if (raw === null) return undefined;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "http:" && (u.hostname === "127.0.0.1" || u.hostname === "localhost") ? u : undefined;
   } catch {
     return undefined;
   }
@@ -152,11 +174,67 @@ export function startSignInStub(opts: { accessTokenTtlSeconds?: number } = {}): 
     }
   };
 
+  /** A PKCE code for `user`, good for five minutes and one exchange. */
+  const newCode = (user: StubUser, provider: StubProvider, challenge: string, method: "s256" | "plain"): string => {
+    const code = randomUUID();
+    codes.set(code, { code, userId: user.id, challenge, method, provider, expiresAt: now() + 300 });
+    return code;
+  };
+
+  const page = (status: number, title: string, inner: string): Response =>
+    new Response(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title></head><body>${inner}</body></html>`, {
+      status,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+
+  const signInForm = (status: number, fields: { redirectTo: string; challenge: string; method: string; email?: string }, error?: string): Response =>
+    page(status, "Sign in to waifucave", [
+      "<h1>Sign in to waifucave</h1>",
+      error === undefined ? "" : `<p role="alert">${escapeHtml(error)}</p>`,
+      `<form method="post" action="/signin">`,
+      `<input type="hidden" name="redirect_to" value="${escapeHtml(fields.redirectTo)}">`,
+      `<input type="hidden" name="code_challenge" value="${escapeHtml(fields.challenge)}">`,
+      `<input type="hidden" name="code_challenge_method" value="${escapeHtml(fields.method)}">`,
+      `<label>Email <input type="email" name="email" autocomplete="username" value="${escapeHtml(fields.email ?? "")}" required></label>`,
+      `<label>Password <input type="password" name="password" autocomplete="current-password" required></label>`,
+      `<button type="submit" name="action" value="signin">Sign in</button>`,
+      `<button type="submit" name="action" value="cancel" formnovalidate>Cancel</button>`,
+      "</form>",
+    ].join(""));
+
+  // The email sign-in page, a browser's page (no project key): GET shows the form for the PKCE challenge the client
+  // sent, POST checks the email and password and sends the browser back with a code, or with `error` on Cancel.
+  const signInPage = async (req: Request, url: URL): Promise<Response> => {
+    let params: URLSearchParams;
+    if (req.method === "GET") params = url.searchParams;
+    else if (req.method === "POST") params = new URLSearchParams(await req.text());
+    else return new Response(null, { status: 405, headers: { allow: "GET, POST" } });
+    const redirectTo = loopbackRedirect(params.get("redirect_to"));
+    if (redirectTo === undefined) return page(400, "Sign-in failed", "<p>This sign-in link has no loopback redirect_to.</p>");
+    const challenge = params.get("code_challenge");
+    const method = (params.get("code_challenge_method") ?? "s256").toLowerCase();
+    if (challenge === null || challenge === "" || (method !== "s256" && method !== "plain")) return page(400, "Sign-in failed", "<p>This sign-in link has no PKCE code_challenge.</p>");
+    const fields = { redirectTo: redirectTo.toString(), challenge, method };
+    if (req.method === "GET") return signInForm(200, fields);
+    const back = new URL(redirectTo);
+    if (params.get("action") === "cancel") {
+      back.searchParams.set("error", "access_denied");
+      back.searchParams.set("error_description", "The sign-in was cancelled");
+      return new Response(null, { status: 302, headers: { location: back.toString() } });
+    }
+    const email = (params.get("email") ?? "").toLowerCase();
+    const user = users.find((u) => u.email === email);
+    if (user === undefined || user.password === undefined || user.password !== params.get("password")) return signInForm(401, { ...fields, email }, "Wrong email or password.");
+    back.searchParams.set("code", newCode(user, "email", challenge, method));
+    return new Response(null, { status: 302, headers: { location: back.toString() } });
+  };
+
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch: async (req) => {
       const url = new URL(req.url);
+      if (url.pathname === "/signin") return signInPage(req, url);
       if (!url.pathname.startsWith("/auth/v1/")) return json(404, { message: "no route" });
       const route = url.pathname.slice("/auth/v1".length);
       // The project's gateway wants the anon or service key on every request but the browser's authorize hop.
@@ -197,7 +275,7 @@ export function startSignInStub(opts: { accessTokenTtlSeconds?: number } = {}): 
           const derived = code.method === "s256" ? createHash("sha256").update(verifier).digest("base64url") : verifier;
           if (derived !== code.challenge) return fail(400, "bad_code_verifier", "code challenge does not match previously saved code verifier");
           const user = users.find((u) => u.id === code.userId)!;
-          return issue(user, "oauth");
+          return issue(user, code.provider === "email" ? "password" : "oauth");
         }
         return fail(400, "unsupported_grant_type", `unsupported grant_type ${grant ?? "(none)"}`);
       }
@@ -210,10 +288,8 @@ export function startSignInStub(opts: { accessTokenTtlSeconds?: number } = {}): 
         const challenge = url.searchParams.get("code_challenge");
         const method = (url.searchParams.get("code_challenge_method") ?? "s256").toLowerCase();
         if (challenge === null || (method !== "s256" && method !== "plain")) return fail(400, "validation_failed", "PKCE code_challenge is required");
-        const code = randomUUID();
-        codes.set(code, { code, userId: user.id, challenge, method, provider, expiresAt: now() + 300 });
         const target = new URL(redirectTo);
-        target.searchParams.set("code", code);
+        target.searchParams.set("code", newCode(user, provider, challenge, method));
         return new Response(null, { status: 302, headers: { location: target.toString() } });
       }
       if (route === "/user" && req.method === "GET") {
@@ -249,6 +325,7 @@ export function startSignInStub(opts: { accessTokenTtlSeconds?: number } = {}): 
 
   return {
     url,
+    emailSignInUrl: `${url}/signin`,
     anonKey,
     serviceRoleKey,
     jwtSecret,
