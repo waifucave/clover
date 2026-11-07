@@ -37,9 +37,9 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
         expect([name, step[step.indexOf("--target") + 1], step[step.indexOf("--outfile") + 1]]).toEqual([name, "bun", bundle]);
       }
       // Step 3: the compile, whose extra entrypoints are the plain-path Worker files.
-      expect([name, compile.slice(0, 3), compile.filter((t) => t.startsWith("src/"))]).toEqual([
+      expect([name, compile.slice(0, 4), compile.filter((t) => t.startsWith("src/"))]).toEqual([
         name,
-        ["bun", "build", "--compile"],
+        ["bun", "build", "--compile", "--no-macros"],
         ["src/main.ts", `src/${basename(COMPILED_EMBEDDED_WORKER_ENTRY)}`, `src/${basename(COMPILED_FD_RECEIVER_WORKER_ENTRY)}`],
       ]);
     }
@@ -96,9 +96,9 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
         const r = spawnSync(process.execPath, args, { cwd: CLI_DIR, encoding: "utf8", timeout: 60_000 });
         return { code: r.status, stderr: r.stderr ?? "" };
       };
-      const pre = run(["build", WORKER_SOURCE_REL, "--target", "bun", "--outfile", WORKER_BUNDLE_REL]);
+      const pre = run(["build", "--no-macros", WORKER_SOURCE_REL, "--target", "bun", "--outfile", WORKER_BUNDLE_REL]);
       expect([pre.code, pre.stderr.includes("error")]).toEqual([0, false]);
-      const both = run(["build", "src/main.ts", `src/${basename(COMPILED_EMBEDDED_WORKER_ENTRY)}`, "--target", "bun", "--outdir", out]);
+      const both = run(["build", "--no-macros", "src/main.ts", `src/${basename(COMPILED_EMBEDDED_WORKER_ENTRY)}`, "--target", "bun", "--outdir", out]);
       expect([both.code, both.stderr.includes("error")]).toEqual([0, false]);
       const load = run([join(out, basename(COMPILED_EMBEDDED_WORKER_ENTRY).replace(/\.ts$/, ".js"))]);
       expect([load.code, load.stderr.trim()]).toEqual([0, ""]);
@@ -129,7 +129,7 @@ describe("compile:core carries the skills it seeds (the managed copy of computer
       const entry = join(out, "entry.ts");
       writeFileSync(entry, `import { seedBuiltinSkills } from ${JSON.stringify(SEED_MODULE)};\nconsole.log(JSON.stringify(seedBuiltinSkills(process.argv[2]!)));\n`);
       const bin = join(out, "seeder");
-      const build = spawnSync(process.execPath, ["build", "--compile", "--no-compile-autoload-bunfig", "--no-compile-autoload-dotenv", entry, "--outfile", bin], { cwd: CLI_DIR, encoding: "utf8", timeout: 100_000 });
+      const build = spawnSync(process.execPath, ["build", "--compile", "--no-macros", "--no-compile-autoload-bunfig", "--no-compile-autoload-dotenv", entry, "--outfile", bin], { cwd: CLI_DIR, encoding: "utf8", timeout: 100_000 });
       expect([build.status, (build.stderr ?? "").includes("error")]).toEqual([0, false]);
       const home = join(out, "home");
       const run = spawnSync(bin, [home], { cwd: elsewhere, encoding: "utf8", timeout: 30_000 });

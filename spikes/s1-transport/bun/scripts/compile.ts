@@ -37,10 +37,12 @@ for (const entry of entries) {
   const outfile = `out/${entry}${process.platform === "win32" ? ".exe" : ""}`;
   const t = performance.now();
   const result = await Bun.build({
-    ...{ macros: false },
     entrypoints: [`src/${entry}.ts`],
     compile: { outfile },
     plugins: [staticDatachannelBinding],
+    // Macros off (bun-types has no field for it, hence the spread): a `with { type: "macro" }` import would run in
+    // this process. LAST, so nothing after it turns them back on.
+    ...{ macros: false },
   });
   if (!result.success) {
     for (const log of result.logs) console.error(log);

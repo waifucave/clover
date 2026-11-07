@@ -68,8 +68,6 @@ async function buildFlavor(flavor: Flavor, outRoot: string): Promise<string> {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, "icons"), { recursive: true });
   const built = await Bun.build({
-    // Macros off: a `with { type: "macro" }` import would run in this build process (bun-types has no field for it).
-    ...{ macros: false },
     entrypoints: [join(ROOT, "src", "background.ts"), join(ROOT, "src", "popup.ts")],
     outdir: out,
     target: "browser",
@@ -81,6 +79,9 @@ async function buildFlavor(flavor: Flavor, outRoot: string): Promise<string> {
       __OPENSKY_HOST_NAME__: JSON.stringify(OPENSKY_HOST_NAME[flavor]),
       __WINTER_PRODUCT_NAME__: JSON.stringify(PRODUCT_NAMES[flavor]),
     },
+    // Macros off: a `with { type: "macro" }` import would run in this build process (bun-types has no field for it).
+    // LAST, so nothing after it turns them back on.
+    ...{ macros: false },
   });
   if (!built.success) throw new Error(`bundling failed:\n${built.logs.map((l) => String(l)).join("\n")}`);
   for (const file of ["background.js", "popup.js"]) {

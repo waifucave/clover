@@ -235,7 +235,7 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
   for (const rel of [...written].filter((f) => /\.[cm]?js$/.test(f) && !f.split("/").includes("node_modules") && !modules.some((m) => m.file === f)).sort()) {
     const text = readFileSync(join(out, ...rel.split("/")), "utf8");
     const allowed = (spec: string) => isRuntimeBuiltin(spec) || (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec) || nativePackages.has(packageOfSpecifier(spec));
-    for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(text)) {
+    for (const i of new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(text)) {
       if (/^[a-z][a-z0-9+.-]*:/i.test(i.path) && !i.path.startsWith("node:") && !i.path.startsWith("bun:")) copiedProblems.push(`${rel}: imports ${i.path}, a URL`);
       else if (!i.path.startsWith(".") && !i.path.startsWith("/") && !allowed(i.path)) copiedProblems.push(`${rel}: imports ${i.path}, which nothing in the shipped tree provides`);
       else if (i.path.startsWith("/")) copiedProblems.push(`${rel}: imports ${i.path}, an absolute path`);

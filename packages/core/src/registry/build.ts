@@ -97,11 +97,6 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
     result = await Bun.build({
       entrypoints: [o.entry],
       root: dirname(o.entry),
-      // NO MACROS. A plugin file importing `with { type: "macro" }` would run that function in THIS process at build
-      // time and inline what it returns (a file it read, the builder's environment): plugin code running in the
-      // builder, which can be the daemon. Off, such an import fails the build ("Macros are disabled"). bun-types has
-      // no field for it, hence the spread; Bun refuses macros from node_modules on its own.
-      ...{ macros: false },
       metafile: true,
       outdir,
       target: client ? "browser" : o.side === "node" ? "node" : "bun",
@@ -125,6 +120,12 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
           });
         },
       }],
+      // NO MACROS. A plugin file importing `with { type: "macro" }` would run that function in THIS process at build
+      // time and inline what it returns (a file it read, the builder's environment): plugin code running in the
+      // builder, which can be the daemon. Off, such an import fails the build ("Macros are disabled"). bun-types has
+      // no field for it, hence the spread; Bun refuses macros from node_modules on its own.
+      // LAST, so nothing after it turns them back on.
+      ...{ macros: false },
     });
   } catch (e) {
     throw new PluginBuildError([`${o.entry}: ${e instanceof Error ? e.message : String(e)}`]);
@@ -150,7 +151,7 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
   const markers = new Set(Object.keys((meta as { inputs?: Record<string, unknown> } | undefined)?.inputs ?? {}).map((k) => `// ${k}`));
   const source = (await Bun.file(o.outFile).text()).split("\n").filter((line) => !markers.has(line)).join("\n");
   await Bun.write(o.outFile, source);
-  const imports = [...new Set(new Bun.Transpiler({ loader: "js" }).scanImports(source).map((i) => i.path))].sort();
+  const imports = [...new Set(new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source).map((i) => i.path))].sort();
   const problems: string[] = [];
   const name = basename(o.outFile);
   for (const spec of imports) {

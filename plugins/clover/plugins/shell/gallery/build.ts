@@ -44,8 +44,6 @@ export async function buildGallery(outdir = join(here, "dist"), options: { produ
   rmSync(outdir, { recursive: true, force: true });
   mkdirSync(outdir, { recursive: true });
   const result = await Bun.build({
-    // Macros off: a plugin file's `with { type: "macro" }` import would run in this process (bun-types has no field for it).
-    ...{ macros: false },
     entrypoints: [join(here, "main.tsx")],
     outdir,
     target: "browser",
@@ -54,6 +52,9 @@ export async function buildGallery(outdir = join(here, "dist"), options: { produ
     naming: "[name].[ext]",
     define: { "process.env.NODE_ENV": JSON.stringify(production ? "production" : "development") },
     plugins: [oneReact],
+    // Macros off: a plugin file's `with { type: "macro" }` import would run in this process (bun-types has no field for it).
+    // LAST, so nothing after it turns them back on.
+    ...{ macros: false },
   });
   if (!result.success) throw new AggregateError(result.logs, "the gallery did not build");
   writeFileSync(join(outdir, "index.html"), HTML);

@@ -41,7 +41,7 @@ writeFileSync(join(out, "pair", "app", "package.json"), JSON.stringify({ name: "
 if (process.argv.includes("--daemon")) {
   const exe = process.platform === "win32" ? ".exe" : "";
   const target = join(out, "pair", `clover-core-s7${exe}`);
-  const p = Bun.spawnSync(["bun", "build", "--compile", join(ROOT, "src", "pair", "daemon.ts"), "--outfile", target], { stdout: "inherit", stderr: "inherit" });
+  const p = Bun.spawnSync(["bun", "build", "--compile", "--no-macros", join(ROOT, "src", "pair", "daemon.ts"), "--outfile", target], { stdout: "inherit", stderr: "inherit" });
   if (p.exitCode !== 0) throw new Error("daemon compile failed");
   console.log(`built ${target}`);
 }

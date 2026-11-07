@@ -69,13 +69,14 @@ export function miniflareOptions(config: WranglerConfig, script: string, opts: {
 /** Bundles a Worker entry for workerd: one ES module, the `cloudflare:` built-ins left to the runtime. */
 export async function bundleWorker(entry: string): Promise<string> {
   const result = await Bun.build({
-    // Macros off: a `with { type: "macro" }` import would run in this process (bun-types has no field for it).
-    ...{ macros: false },
     entrypoints: [entry],
     target: "browser",
     format: "esm",
     conditions: ["workerd", "worker", "browser"],
     external: ["cloudflare:*"],
+    // Macros off: a `with { type: "macro" }` import would run in this process (bun-types has no field for it).
+    // LAST, so nothing after it turns them back on.
+    ...{ macros: false },
   });
   if (!result.success || result.outputs[0] === undefined) {
     throw new Error(`bundling ${entry} failed:\n${result.logs.map((l) => String(l)).join("\n")}`);
