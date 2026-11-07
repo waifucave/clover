@@ -22,7 +22,8 @@ export const CI_GLOBAL: readonly Pattern[] = [
   "pnpm-workspace.yaml", "tsconfig.base.json", "bunfig.toml",
 ];
 
-const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packages/plugin-sdk/"];
+// The update feed's check is in the daemon's binary (packages/cli's `__verify-feed`) and, after E-M1, the app's updater.
+const CORE: readonly Pattern[] = ["packages/core/", "packages/protocol/", "packages/plugin-sdk/", "packages/update-feed/"];
 
 /** What each area's jobs read. */
 export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
@@ -59,9 +60,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // lane B's conformance suites for them
   tree: ["packages/core/src/computers/", "packages/core/src/tree/", "packages/core/test/computers/", "packages/core/test/tree/",
     "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"],
-  // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and the
-  // devices and identity the link's handshake and pairing use
-  link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/"],
+  // the link sidecar (clover-link) built on every OS, and the core's link tests over it: the sidecar, the links, and
+  // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
+  link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
+    "packages/core/src/contracts/", "packages/core/src/clock/", "packages/protocol/"],
 };
 
 /** The CI_GLOBAL changes that still run the Swift kits: CI's own definition, not the toolchain or the lockfiles. */

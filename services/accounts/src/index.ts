@@ -23,7 +23,7 @@ import type { Env } from "./env";
 import { memorySigner, NotConfigured, signerFor } from "./keys";
 import { sessionOf } from "./session";
 import { verifyEd25519 } from "./verify";
-import { ACCOUNT_RE, DEVICE_ID_RE, DEVICE_KINDS, deviceIdFor, LIMITS, OSES, registerStatement, SIG_RE } from "./wire";
+import { ACCOUNT_RE, DEVICE_ID_RE, DEVICE_KINDS, deviceIdFor, LIMITS, OSES, type RegisterFields, registerStatement, SIG_RE } from "./wire";
 
 export { AccountDO } from "./account-do";
 export { KeysDO } from "./keys";
@@ -115,7 +115,7 @@ function standardB64(bytes: Uint8Array): string {
 }
 
 /** The device in a registration, checked: its id is its key's (lane B's deviceIdFor), its box key 32 bytes. */
-async function deviceInput(value: unknown): Promise<{ input: DeviceInput; key: Uint8Array } | { error: string }> {
+async function deviceInput(value: unknown): Promise<{ input: DeviceInput; key: Uint8Array; signed: RegisterFields } | { error: string }> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { error: "bad_request" };
   const d = value as Record<string, unknown>;
   const key = linkKey(d.publicKey);
@@ -140,7 +140,9 @@ async function deviceInput(value: unknown): Promise<{ input: DeviceInput; key: U
     kind: d.kind as DeviceInput["kind"],
     ...(d.os !== undefined ? { os: d.os as NonNullable<DeviceInput["os"]> } : {}),
   };
-  return { input, key };
+  // The statement covers the fields as sent; the record keeps the link key in standard base64.
+  const signed: RegisterFields = { id: d.id, publicKey: d.publicKey as string, boxKey: d.boxKey as string, name, kind: d.kind as string, ...(d.os !== undefined ? { os: d.os as string } : {}) };
+  return { input, key, signed };
 }
 
 async function register(request: Request, env: Env, account: string): Promise<Response> {
@@ -152,7 +154,7 @@ async function register(request: Request, env: Env, account: string): Promise<Re
   const { t, sig } = body;
   if (typeof sig !== "string" || !SIG_RE.test(sig)) return errorResponse(400, "bad_request");
   if (!withinWindow(t, now)) return errorResponse(400, "bad_time");
-  if (!(await verifyEd25519(checked.key, fromB64u(sig), registerStatement(account, checked.input.id, t)))) return errorResponse(403, "bad_signature");
+  if (!(await verifyEd25519(checked.key, fromB64u(sig), registerStatement(account, checked.signed, t)))) return errorResponse(403, "bad_signature");
   return answer(await accountObject(env, account).register(checked.input, t, now));
 }
 
