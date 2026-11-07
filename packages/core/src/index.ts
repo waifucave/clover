@@ -38,11 +38,12 @@ export {
   installerTargetSid, psEncodedArgs, knownFolderArgs,
   sessionGrantArgs, sessionGrantInput, sessionRevokeArgs, sessionForgetArgs, sessionRestoreArgs,
   installMarkerPath, formatInstallMarker, parseInstallMarker, markerAllowsSetup, markerAllowsRemove,
-  principalLeasePath, parsePrincipalLease, formatPrincipalLease, leaseLaunchGate,
-  sandboxLeasesDir, acquirePoolLease, releasePoolLease, processStartTimeMs,
+  poolLockPath, createWindowsLockStore,
+  sandboxLeasesDir, acquirePoolLease,
   minimalChildEnv, userStatusArgs,
   poolPrincipalName, poolSublayerGuid, sandboxPool, SANDBOX_POOL_SIZE,
   type SrtUserStatus, type SrtWfpStatus, type SandboxStatus, type SandboxStep, type WinCallerRules, type SrtWinArch,
+  type PoolLockGuard, type LeaseStore,
 } from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";

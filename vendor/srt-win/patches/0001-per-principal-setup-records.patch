@@ -6,6 +6,8 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -58,6 +60,18 @@ is unchanged.
  src/reg.rs     |  37 +++++++
  src/user.rs    |  16 ++-
  4 files changed, 416 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 125 ++++++++++++++++++----
+ src/install.rs | 281 ++++++++++++++++++++++++++++++++++++++++++++++---
+ src/reg.rs     |  37 +++++++
+ src/user.rs    |  16 ++-
+ 4 files changed, 416 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 125 ++++++++++++++++++----
+ src/install.rs | 274 ++++++++++++++++++++++++++++++++++++++++++++++---
+ src/reg.rs     |  37 +++++++
+ src/user.rs    |  16 ++-
+ 4 files changed, 409 insertions(+), 43 deletions(-)
 
 diff --git a/src/cli.rs b/src/cli.rs
 index 8e616e2..992f5f0 100644
@@ -325,10 +339,10 @@ index 8e616e2..992f5f0 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..2c0f969 100644
+index ba0ac37..92f7117 100644
 --- a/src/install.rs
 +++ b/src/install.rs
-@@ -49,19 +49,116 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
+@@ -49,19 +49,109 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
      })
  }
  
@@ -426,32 +440,25 @@ index ba0ac37..2c0f969 100644
 +/// memberships are honoured: an unelevated admin is NOT exempt.
 +pub(crate) fn caller_is_admin() -> bool {
 +    use windows::core::BOOL;
-+    use windows::Win32::Foundation::CloseHandle;
-+    use windows::Win32::Security::{CheckTokenMembership, TOKEN_QUERY};
-+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
++    use windows::Win32::Security::CheckTokenMembership;
 +    unsafe {
-+        let mut tok = Default::default();
-+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut tok).is_err() {
-+            return false;
-+        }
++        // None = the calling thread's effective token, which honours deny-only
++        // group memberships (an unelevated admin is NOT exempt). A primary token
++        // from OpenProcessToken always fails here (impersonation level), so the
++        // old code never exempted any admin.
 +        let psid = match crate::sid::LocalPsid::from_string("S-1-5-32-544") {
 +            Ok(s) => s,
-+            Err(_) => {
-+                let _ = CloseHandle(tok);
-+                return false;
-+            }
++            Err(_) => return false,
 +        };
 +        let mut member = BOOL::from(false);
-+        let ok = CheckTokenMembership(Some(tok), psid.as_psid(), &mut member).is_ok() && member.as_bool();
-+        let _ = CloseHandle(tok);
-+        ok
++        CheckTokenMembership(None, psid.as_psid(), &mut member).is_ok() && member.as_bool()
 +    }
 +}
 +
  #[derive(Debug, Clone)]
  pub struct SetupInfo {
      pub sandbox_user: String,
-@@ -69,6 +166,10 @@ pub struct SetupInfo {
+@@ -69,6 +159,10 @@ pub struct SetupInfo {
      pub sandbox_group_sid: String,
      pub marker_version: u32,
      pub created_at_unix: u64,
@@ -462,7 +469,7 @@ index ba0ac37..2c0f969 100644
  }
  
  /// Guard the one piece of install state that must stay on the
-@@ -151,7 +252,12 @@ pub fn provision_machine_store(sandbox_group_sid: &str) -> Result<std::path::Pat
+@@ -151,7 +245,12 @@ pub fn provision_machine_store(sandbox_group_sid: &str) -> Result<std::path::Pat
  /// HKLM\SOFTWARE). `MarkerVersion` is written LAST: registry writes
  /// are not transactional across values, so the marker is the commit
  /// point a crashed install never reaches.
@@ -476,7 +483,7 @@ index ba0ac37..2c0f969 100644
      let blob = dpapi::protect_machine(u.password.as_bytes())?;
      let (base, _) = crate::reg::Key::create(crate::reg::BASE, None)?;
      // A --force re-install under a DIFFERENT sandbox-user name must
-@@ -191,6 +297,41 @@ pub fn write_setup(u: &user::ProvisionedUser) -> Result<()> {
+@@ -191,6 +290,41 @@ pub fn write_setup(u: &user::ProvisionedUser) -> Result<()> {
              .unwrap_or(0),
      )?;
      base.set_dword("MarkerVersion", SETUP_VERSION)?;
@@ -518,7 +525,7 @@ index ba0ac37..2c0f969 100644
      Ok(())
  }
  
-@@ -359,9 +500,49 @@ pub fn read_setup() -> Result<Option<SetupInfo>> {
+@@ -359,9 +493,49 @@ pub fn read_setup() -> Result<Option<SetupInfo>> {
          sandbox_group_sid,
          marker_version,
          created_at_unix: base.get_qword("CreatedAt")?.unwrap_or(0),
@@ -568,7 +575,7 @@ index ba0ac37..2c0f969 100644
  /// Registry value (MULTI_SZ): one `<sublayer guid>=<mode>` line per
  /// sublayer whose filters an install wrote; an uninstall removes the line.
  const LOOPBACK_MODES_VALUE: &str = "LoopbackModes";
-@@ -535,8 +716,13 @@ impl Drop for SandboxCred {
+@@ -535,8 +709,13 @@ impl Drop for SandboxCred {
  /// is DENY'd on it (and on the store directory) and so cannot call
  /// this to learn its own password.
  pub fn read_cred() -> Result<SandboxCred> {
@@ -584,7 +591,7 @@ index ba0ac37..2c0f969 100644
      let pw = String::from_utf8(dpapi::unprotect(&blob)?).context("password is not UTF-8")?;
      Ok(SandboxCred {
          user: info.sandbox_user,
-@@ -548,11 +734,20 @@ pub fn read_cred() -> Result<SandboxCred> {
+@@ -548,11 +727,20 @@ pub fn read_cred() -> Result<SandboxCred> {
  /// means the install is incomplete; the repair is the elevated
  /// re-run either way.
  pub(crate) fn read_cred_blob() -> Result<Vec<u8>> {
@@ -607,7 +614,7 @@ index ba0ac37..2c0f969 100644
          )
      })?;
      key.get_binary("Blob")?.ok_or_else(|| {
-@@ -616,13 +811,13 @@ pub fn trust_ca(der: &crate::cert_store::CertDer, cred: &SandboxCred, sb_sid: &s
+@@ -616,13 +804,13 @@ pub fn trust_ca(der: &crate::cert_store::CertDer, cred: &SandboxCred, sb_sid: &s
  /// removal left failed entries recorded ([`clear_ambient_denies`]'s
  /// retry contract — `status` surfaces them and a later
  /// uninstall/install retries), the base key and `AmbientDenies`
@@ -627,7 +634,7 @@ index ba0ac37..2c0f969 100644
      crate::reg::delete_subtree(crate::reg::CA_SUBKEY)?;
      if let Some(base) = crate::reg::Key::open(crate::reg::BASE, true)? {
          for v in [
-@@ -636,6 +831,56 @@ pub fn clear_setup() -> Result<()> {
+@@ -636,6 +824,56 @@ pub fn clear_setup() -> Result<()> {
              crate::reg::delete_value(&base, v)?;
          }
      }
@@ -684,7 +691,7 @@ index ba0ac37..2c0f969 100644
      Ok(())
  }
  
-@@ -703,3 +948,5 @@ mod tests {
+@@ -703,3 +941,5 @@ mod tests {
          }
      }
  }
