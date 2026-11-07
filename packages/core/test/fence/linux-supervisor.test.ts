@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, splitComps, supervisorArch, trapTable, walkToParent, type SupervisorLib } from "../../src/fence/linux-supervisor";
+import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, openParentDir, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, splitParent, supervisorArch, trapTable, type SupervisorLib } from "../../src/fence/linux-supervisor";
 import { parseGitConfigWatched, parseGitConfigWithGit, revertWatchedGitChanges, watchedGitChanges } from "../../src/fence/git-config";
 
 describe("the supervisor's filter and decisions", () => {
@@ -58,10 +58,13 @@ describe("the supervisor's filter and decisions", () => {
     expect(foldName("a")).not.toBe(foldName("b"));
   });
 
-  test("splitComps drops empties and keeps dot-dots for the walk to pin", () => {
-    expect(splitComps("/a//b/c")).toEqual(["a", "b", "c"]);
-    expect(splitComps("a/./b")).toEqual(["a", ".", "b"]);
-    expect(splitComps("../x")).toEqual(["..", "x"]);
+  test("splitParent separates the final name; trailing slashes don't make empty names", () => {
+    expect(splitParent("/a/b/c")).toEqual({ dir: "/a/b", name: "c" });
+    expect(splitParent("a/b")).toEqual({ dir: "a", name: "b" });
+    expect(splitParent("x")).toEqual({ dir: "", name: "x" });
+    expect(splitParent("/x")).toEqual({ dir: "/", name: "x" });
+    expect(splitParent("a/b/")).toEqual({ dir: "a", name: "b" });
+    expect(splitParent("/")).toEqual({ dir: "/", name: "" });
   });
 
   test("trap tables cover every mutating path syscall once", () => {
@@ -100,41 +103,39 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
     } finally { closeSync(f); }
   });
 
-  test("walkToParent walks, pins, and refuses links", () => {
+  test("openParentDir resolves with the kernel: links refused, escapes pinned, identity stable", () => {
     const l = lib();
     const root = realpathSync(mkdtempSync(join(tmpdir(), "walk-")));
     try {
       mkdirSync(join(root, "a", "b"), { recursive: true });
       writeFileSync(join(root, "a", "f.txt"), "x");
       symlinkSync(join(root, "a"), join(root, "slink"));
-      const freshBase = () => openSync(root, 0o200000); // O_RDONLY|O_DIRECTORY; each walk consumes its base
-      try {
-        const w = walkToParent(l, freshBase(), ["a", "b", "c"]);
-        if (!("parentFd" in w)) throw new Error(`walk failed: ${JSON.stringify(w)}`);
-        expect(w.name).toBe("c");
-        const id = parentIdentity(w.parentFd);
-        if (id === null) throw new Error("no identity for a walked-open dir");
-        const st = lstatSync(join(root, "a", "b"));
-        expect({ dev: BigInt(st.dev), ino: BigInt(st.ino) }).toEqual(id);
-        // Name with a slash never survives the split: components walk one level each.
-        const w2 = walkToParent(l, freshBase(), ["a", "f.txt"]);
-        if (!("parentFd" in w2)) throw new Error("walk failed");
-        expect(matchSupervised(w2.parentFd, w2.name, [join(root, "a", "f.txt")])).toBe(true);
-        expect(matchSupervised(w2.parentFd, w2.name, [join(root, "a", "other")])).toBe(false);
-        expect(matchSupervised(w2.parentFd, w2.name, [join(root, "nope", "f.txt")])).toBe(false);
-        try { closeSync(w.parentFd); } catch { /* pinned */ }
-        try { closeSync(w2.parentFd); } catch { /* pinned */ }
-        // Through a link: refused, never followed (O_DIRECTORY|O_NOFOLLOW on a link reports ENOTDIR).
-        const wl = walkToParent(l, freshBase(), ["slink", "b", "c"]);
-        expect(wl).toEqual({ errno: 20 });
-        // Dot-dot stays under the base's root (the walk pins it, as the kernel does).
-        const wd = walkToParent(l, freshBase(), ["a", "..", "a", "x"]);
-        if (!("parentFd" in wd)) throw new Error("walk failed");
-        expect(wd.name).toBe("x");
-        try { closeSync(wd.parentFd); } catch { /* pinned */ }
-        // Empty path is ENOENT, as the kernel.
-        expect(walkToParent(l, freshBase(), [])).toEqual({ errno: 2 });
-      } finally { /* each base is consumed by its walk */ }
+      const freshBase = () => openSync(root, 0o200000); // O_RDONLY|O_DIRECTORY; each open consumes its base
+      // A plain subdir opens; its identity matches lstat.
+      const w = openParentDir(l, freshBase(), "a/b", false);
+      if (!("parentFd" in w)) throw new Error(`open failed: ${JSON.stringify(w)}`);
+      const id = parentIdentity(w.parentFd);
+      if (id === null) throw new Error("no identity for a kernel-opened dir");
+      const st = lstatSync(join(root, "a", "b"));
+      expect({ dev: BigInt(st.dev), ino: BigInt(st.ino) }).toEqual(id);
+      try { closeSync(w.parentFd); } catch { /* pinned */ }
+      // Through a link: refused with ELOOP, never followed.
+      expect(openParentDir(l, freshBase(), "slink/b", false)).toEqual({ errno: 40 });
+      // Dot-dot above the base is refused (BENEATH), not escaped.
+      const wd = openParentDir(l, freshBase(), "a/../../..", false);
+      expect("errno" in wd).toBe(true);
+      // An absolute path stays under an absolute base (IN_ROOT).
+      const wa = openParentDir(l, freshBase(), `${root}/a`, true);
+      if (!("parentFd" in wa)) throw new Error("absolute open failed");
+      expect(parentIdentity(wa.parentFd)).toEqual(id);
+      try { closeSync(wa.parentFd); } catch { /* pinned */ }
+      // Identity matching against a supervised list.
+      const wb = openParentDir(l, freshBase(), "a", false);
+      if (!("parentFd" in wb)) throw new Error("open failed");
+      expect(matchSupervised(wb.parentFd, "f.txt", [join(root, "a", "f.txt")])).toBe(true);
+      expect(matchSupervised(wb.parentFd, "f.txt", [join(root, "a", "other")])).toBe(false);
+      expect(matchSupervised(wb.parentFd, "f.txt", [join(root, "nope", "f.txt")])).toBe(false);
+      try { closeSync(wb.parentFd); } catch { /* pinned */ }
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 

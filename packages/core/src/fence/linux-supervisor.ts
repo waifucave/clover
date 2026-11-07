@@ -118,10 +118,35 @@ export function foldName(s: string): string {
   return s.normalize("NFC").toUpperCase().toLowerCase();
 }
 
-/** Splits a raw path into its components, dropping empties. `..` stays: the walk resolves it under the target's
- *  root, where it cannot escape (the root pins it, as the kernel does). */
-export function splitComps(path: string): string[] {
-  return path.split("/").filter((c) => c !== "");
+/** Splits a raw path into parent and final name, dropping trailing slashes (the kernel ignores them except to
+ *  require a directory, which it reports itself). Never empty-names a real final component. */
+export function splitParent(path: string): { dir: string; name: string } {
+  const absolute = path.startsWith("/");
+  const t = path.replace(/\/+$/, "");
+  if (t === "" || t === "/") return { dir: absolute ? "/" : "", name: "" };
+  const i = t.lastIndexOf("/");
+  if (i < 0) return { dir: "", name: t };
+  if (i === 0) return { dir: "/", name: t.slice(1) };
+  return { dir: t.slice(0, i), name: t.slice(i + 1) };
+}
+
+/** Opens the directory holding the final component, letting the KERNEL resolve the path: `openat2` with
+ *  IN_ROOT (absolute paths stay under the target's root), BENEATH (relative paths stay under the base) and
+ *  NO_SYMLINKS (no link is ever traversed). Mounts apply exactly as for the target's own calls — unlike a
+ *  userspace walk, this cannot disagree with the kernel about what is mounted where. Returns the open parent
+ *  (caller closes it) or the kernel's errno. Consumes the base either way. */
+export function openParentDir(lib: SupervisorLib, baseFd: number, dir: string, absolute: boolean): { parentFd: number } | { errno: number } {
+  if (dir === "") return { parentFd: baseFd };
+  const RESOLVE_NO_SYMLINKS = 0x04, RESOLVE_BENEATH = 0x08, RESOLVE_IN_ROOT = 0x10;
+  const resolve = (absolute ? RESOLVE_IN_ROOT : 0) | RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS;
+  const how = Buffer.alloc(24);
+  how.writeBigUInt64LE(BigInt(O_PATH | O_DIRECTORY), 0);
+  how.writeBigUInt64LE(0n, 8);
+  how.writeBigUInt64LE(BigInt(resolve), 16);
+  const fd = Number(lib.openat2(baseFd, bufOf(dir), ffiPtr(how), 24));
+  try { closeSync(baseFd); } catch { /* consumed */ }
+  if (fd < 0) return { errno: errNo(lib) };
+  return { parentFd: fd };
 }
 
 /** Dir fds arrive as unsigned 64-bit words: AT_FDCWD (-100) reads as 2^64-100, past Number's exact range.
@@ -201,21 +226,19 @@ function errnoOf(e: unknown): number {
   return 13; // fail closed everywhere else
 }
 
-/** Walks every component but the last under `baseFd`, refusing links and non-directories, and returns the open
- *  parent plus the untouched final name. The walk uses only our own fds: a thread rewriting the target's
- *  pointers, names on disk, or mounts mid-walk cannot redirect it. The base is consumed (closed, or returned as
- *  the parent when there are no components to walk); the caller closes the returned parent. Returns the
- *  kernel's errno on failure. */
-export function walkToParent(lib: SupervisorLib, baseFd: number, comps: string[]): { parentFd: number; name: string } | { errno: number } {
-  if (comps.length === 0) { try { closeSync(baseFd); } catch { /* gone */ } return { errno: 2 }; } // ENOENT, as the kernel
-  let cur = baseFd;
-  for (let i = 0; i < comps.length - 1; i++) {
-    const nfd = Number(lib.openat(cur, bufOf(comps[i]!), O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0));
-    try { closeSync(cur); } catch { /* gone */ }
-    if (nfd < 0) return { errno: errNo(lib) };
-    cur = nfd;
-  }
-  return { parentFd: cur, name: comps[comps.length - 1]! };
+/** Walks one trapped path to its open parent: resolves the base (cwd, dirfd or root — all magic links, no
+ *  traversal), then lets the kernel resolve every component but the last (`openParentDir`). The path string was
+ *  read ONCE from the target; nothing the target does afterwards (rewriting pointers, swapping links, moving
+ *  mounts) redirects it. The base is consumed; the caller closes the returned parent. */
+function walkOne(lib: SupervisorLib, pid: number, dirfd: number, path: string, absolute: boolean): { parentFd: number; name: string } | { errno: number } {
+  const { dir, name } = splitParent(path);
+  if (name === "") return { errno: 2 }; // ENOENT, as the kernel for an empty final component
+  const base = resolveBase(lib, pid, absolute, dirfd);
+  if (base.fd < 0) return { errno: base.err };
+  if (dir === "" && !absolute) return { parentFd: base.fd, name };
+  const w = openParentDir(lib, base.fd, absolute ? (dir.startsWith("/") ? dir : `/${dir}`) : dir, absolute);
+  if ("errno" in w) return w;
+  return { parentFd: w.parentFd, name };
 }
 
 /** A NUL-terminated scratch Buffer for an FFI path argument. */
@@ -270,6 +293,7 @@ export function openSupervisorLib(): {
   symlinkat(target: unknown, newdirfd: number, newpath: unknown): number;
   renameat2(olddirfd: number, oldpath: unknown, newdirfd: number, newpath: unknown, flags: number): number;
   fchmodat(dirfd: number, path: unknown, mode: number, flags: number): number;
+  openat2(dirfd: number, path: unknown, how: unknown, size: number): number | bigint;
   process_vm_readv(pid: number, local: unknown, liovcnt: number, remote: unknown, riovcnt: number, flags: number): number | bigint;
   __errno_location(): unknown;
   getpid(): number;
@@ -286,6 +310,7 @@ export function openSupervisorLib(): {
     symlinkat: { args: ["ptr", "i32", "ptr"], returns: "i32" },
     renameat2: { args: ["i32", "ptr", "i32", "ptr", "u32"], returns: "i32" },
     fchmodat: { args: ["i32", "ptr", "u32", "u32"], returns: "i32" },
+    openat2: { args: ["i32", "ptr", "ptr", "u64"], returns: "i64" },
     process_vm_readv: { args: ["i32", "ptr", "u64", "ptr", "u64", "u64"], returns: "i64" },
     __errno_location: { args: [], returns: "ptr" },
     getpid: { args: [], returns: "i32" },
@@ -394,17 +419,6 @@ export function lstatFinal(lib: SupervisorLib, parentFd: number, name: string): 
     return { kind: "other" };
   } catch (e) { return { errno: errnoOf(e) }; }
   finally { try { closeSync(fd); } catch { /* inspected */ } }
-}
-
-/** Walks one trapped path to its parent: resolves the base (cwd, dirfd or root — never the target's strings
- *  past the single read), walks every component but the last refusing links, and returns the open parent with
- *  the untouched final name. The caller closes the parent. */
-function walkOne(lib: SupervisorLib, pid: number, dirfd: number, path: string, absolute: boolean): { parentFd: number; name: string } | { errno: number } {
-  const comps = splitComps(absolute ? path.slice(1) : path);
-  const base = resolveBase(lib, pid, absolute, dirfd);
-  if (base.fd < 0) return { errno: base.err };
-  if (comps.length === 0) { try { closeSync(base.fd); } catch { /* gone */ } return { errno: 2 }; } // ENOENT, as the kernel
-  return walkToParent(lib, base.fd, comps);
 }
 
 /** Performs an open-like call (open/openat/openat2/creat) with write intent: walks, refuses supervised finals
