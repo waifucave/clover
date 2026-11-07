@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SystemClock } from "../../src/clock/system-clock";
@@ -38,6 +38,27 @@ describe("the daemon's links (H-M1 wiring)", () => {
     expect(d.links).toBeNull();
     expect(lines[0]).toMatch(/runs without links/);
     expect(linkSidecarBinary({ CLOVER_LINK_BIN: "/nonexistent/clover-link" })).toBeNull();
+  });
+
+  test("the sidecar: beside the daemon (its links resolved); CLOVER_LINK_BIN only in a dev or test build", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-bin-")));
+    const name = process.platform === "win32" ? "clover-link.exe" : "clover-link";
+    writeFileSync(join(dir, name), "");
+    writeFileSync(join(dir, "clover-core"), "");
+    const elsewhere = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-c-other-"))), name);
+    writeFileSync(elsewhere, "");
+    expect(linkSidecarBinary({ CLOVER_LINK_BIN: elsewhere }, join(dir, "clover-core"), false)).toBe(elsewhere);
+    const lines: string[] = [];
+    expect(linkSidecarBinary({ CLOVER_LINK_BIN: elsewhere }, join(dir, "clover-core"), true, (l) => lines.push(l))).toBe(join(dir, name));
+    expect(lines.join("\n")).toMatch(/ignoring CLOVER_LINK_BIN/);
+    if (process.platform !== "win32") {
+      // A link to the daemon in a folder the user can write: the sidecar is the one beside the real binary.
+      const linkDir = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-link-")));
+      symlinkSync(join(dir, "clover-core"), join(linkDir, "clover-core"));
+      writeFileSync(join(linkDir, name), "");
+      expect(linkSidecarBinary({}, join(linkDir, "clover-core"), true)).toBe(join(dir, name));
+    }
+    expect(linkSidecarBinary({}, join(realpathSync(mkdtempSync(join(tmpdir(), "clover-c-none-"))), "clover-core"), true)).toBeNull();
   });
 
   test("the device key goes in the real store; the devices methods mount; a sensitive change outside the terminal is refused", async () => {
