@@ -2,14 +2,14 @@
 // each run once as a control without Clover's flags (the outside file runs) and once as Clover runs plugins (it
 // doesn't). Real Bun processes in temp folders; nothing opens a window.
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PLUGIN_BUN_IDENTIFIER } from "../../bundled-identities";
 import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
-import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
 
 function world() {
   const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
@@ -254,6 +254,22 @@ describe("a plugin process loads only its own tree", () => {
       expect(() => pluginBunFor(m.dev)).toThrow(/no digest recorded/);
       // The dev rule holds for a dev daemon run from source too, and never reaches for the shipped one.
       expect(() => pluginBunFor({ ...l.dev, compiled: false })).toThrow(/plugin code can't run/);
+    });
+
+    test("on Windows every launch re-hashes, and a copy changed since it was first accepted is refused, whatever its times", () => {
+      const l = layout();
+      good(l.plugin);
+      const win = { ...l.shipped, platform: "win32" as const };
+      // (The file name here is the POSIX one: the folder layout is what's under test, not the `.exe`.)
+      const at = (o: typeof win) => checkPluginBun({ path: l.plugin, folder: l.daemon, core: o.execPath, platform: "win32", kind: "shipped", requirement });
+      at(win);
+      at(win);
+      const { atime, mtime } = statSync(l.plugin);
+      const bytes = readFileSync(l.plugin);
+      bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
+      writeFileSync(l.plugin, bytes);
+      utimesSync(l.plugin, atime, mtime); // times put back, as NTFS lets a user do with its ChangeTime too
+      expect(() => at(win)).toThrow(/changed since this process first accepted it/);
     });
 
     test("from source with a test Keychain service: the Bun it runs on", () => {

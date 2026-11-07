@@ -185,6 +185,9 @@ export function pluginBunFor(o: PluginBunOptions): string {
 /** The checks' results, by what the file and the core were when checked: a check runs once per process and again only
  *  when either changes (inode, size, times). */
 const checked = new Map<string, string>();
+/** Windows: each plugin Bun's SHA-256 as first accepted in this process; a later launch re-hashes it and refuses a
+ *  change, since there the times can't be trusted to show one. */
+const acceptedOnWindows = new Map<string, string>();
 
 /** Refuses (throws) unless `path` is a plugin Bun Clover made: a plain file (never a link) whose real path sits in
  *  `folder`, sharing no inode or content with the core, and either signed by Clover's team under the plugin Bun's
@@ -210,11 +213,17 @@ export function checkPluginBun(o: { path: string; folder: string; core: string; 
     digestStat = undefined;
   }
   const key = JSON.stringify([o, st.ino, st.dev, st.size, st.mtimeMs, st.ctimeMs, core.ino, core.mtimeMs, digestStat?.ino, digestStat?.mtimeMs, digestStat?.ctimeMs]);
-  if (checked.get(o.path) === key) return;
+  // On Windows a user can set a file's NTFS ChangeTime, so the times don't prove it unchanged: there every launch checks
+  // again, hashing the file (the dev copy's digest, the shipped copy against the core's), with no cache.
+  if (o.platform !== "win32" && checked.get(o.path) === key) return;
   checked.delete(o.path);
   if (dirname(realpathSync(o.path)) !== realpathSync(o.folder)) refuse(`isn't in ${o.folder}`);
   if (st.ino === core.ino && st.dev === core.dev) refuse("is the core's own binary (a hard link)");
   if (st.size === core.size && sha256File(o.path) === sha256File(coreReal)) refuse("is a copy of the core's own binary");
+  // A shipped copy's signature is checked on macOS only: on Linux and Windows a shipped plugin Bun has no signature
+  // check, which is acceptable because no secret there is tied to a code identity (the Secret Service and the
+  // Credential Manager don't admit a process by its signature), so a swapped binary gains no secret the user's own
+  // processes couldn't already reach. The file checks above still hold there.
   if (o.kind === "shipped") {
     if (o.platform === "darwin" && !codesignSatisfies(o.path, o.requirement)) refuse("isn't signed by Clover's team as the plugin Bun");
   } else {
@@ -223,7 +232,12 @@ export function checkPluginBun(o: { path: string; folder: string; core: string; 
     const actual = pluginBunDigest(o.path, o.platform);
     if (actual === undefined || recorded !== actual) refuse("isn't the copy `dev:daemon` made (its digest doesn't match the one recorded)");
   }
-  checked.set(o.path, key);
+  if (o.platform === "win32") {
+    const hash = sha256File(o.path);
+    const first = acceptedOnWindows.get(o.path);
+    if (first !== undefined && first !== hash) refuse("changed since this process first accepted it");
+    acceptedOnWindows.set(o.path, hash);
+  } else checked.set(o.path, key);
 }
 
 /** A plugin Bun's digest as `dev:daemon` records it: on macOS its cdhash, once its signature verifies (`cdhash:<hex>`);
