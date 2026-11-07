@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { doors, envNamesIn } from "./verify-sealed-core";
+import { doors, envNamesIn, refusalDoors } from "./verify-sealed-core";
+import { TLS_TRUST_ENV } from "../packages/core/src/build-kind";
 import { SEALED_ENV_NAMES } from "./seal-bun-doors";
 
 /** An ELF64 with one native string run and a `.bun` graph. */
@@ -49,5 +50,16 @@ describe("verify:sealed-core", () => {
       expect(all.some((d) => d.name.startsWith(`${name}'s macOS replacement DYLD_`) && d.os?.join() === "darwin")).toBe(true);
       expect(all.some((d) => d.name === `${name}'s Linux replacement's letters` && d.os?.join() === "linux")).toBe(true);
     }
+  });
+  test("every TLS variable is tried alone and duplicated with the refused value first and last; macOS tries a planted HOME", () => {
+    const all = refusalDoors();
+    for (const name of TLS_TRUST_ENV) {
+      const bad = name === "NODE_TLS_REJECT_UNAUTHORIZED" ? `${name}=0` : `${name}=$CA`;
+      const dupes = all.filter((d) => d.raw?.length === 2 && d.raw.every((e) => e.startsWith(`${name}=`)));
+      expect(dupes.map((d) => d.raw!.indexOf(name === "SSL_CERT_DIR" ? `${name}=$CADIR` : bad)).sort()).toEqual([0, 1]);
+      for (const d of dupes) expect(d.os).toEqual(["darwin", "linux"]);
+      expect(all.some((d) => d.env !== undefined && name in d.env && d.raw === undefined)).toBe(true);
+    }
+    expect(all.some((d) => d.env?.HOME === "$PLANTED_HOME" && d.os?.join() === "darwin")).toBe(true);
   });
 });

@@ -1,0 +1,74 @@
+// What a release build checks before anything else runs (packages/cli/src/main.ts, first thing): the environment it
+// was started with can't choose whom its TLS trusts (build-kind.ts's `tlsEnvRefusal`), and on macOS can't choose its
+// keychains. Both refuse with exit 78 (`EX_CONFIG`).
+//
+// HOME on macOS (#243 check 2, measured read-only with `security`): the Security framework takes the user's keychain
+// search list and the user trust settings from `$HOME/Library/Keychains`. `Bun.secrets` and the core's own keychain
+// calls (auth/keychain-ffi.ts) name no keychain — they search the user's list — so whoever starts the binary with a
+// planted HOME would choose the keychains the core reads (an attacker's look-alike items ahead of the real login
+// keychain) and the trust `--use-system-ca` honours. Neither API lets the core pin the real login keychain, so the
+// guard is this refusal: a set HOME must be the account's own home (`getpwuid(getuid())->pw_dir`, compared by real
+// path). An unset HOME is fine: Security then uses the password database's home itself.
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { DIST_BUILD } from "./build-kind";
+
+/** The process's environment exactly as it was handed over (every entry, duplicates and `=`-led ones included), or
+ *  undefined where it can't be read (Windows). macOS: `_NSGetEnviron()` through bun:ffi; Linux: /proc/self/environ. */
+export function rawEnvironment(platform: NodeJS.Platform = process.platform): string[] | undefined {
+  try {
+    if (platform === "linux") {
+      if (!existsSync("/proc/self/environ")) return undefined;
+      return readFileSync("/proc/self/environ", "latin1").split("\0").filter((e) => e !== "");
+    }
+    if (platform === "darwin") {
+      const { dlopen, FFIType, read, CString } = require("bun:ffi") as typeof import("bun:ffi");
+      const lib = dlopen("/usr/lib/libSystem.B.dylib", { _NSGetEnviron: { args: [], returns: FFIType.ptr } });
+      try {
+        const envp = read.ptr(lib.symbols._NSGetEnviron()!, 0);
+        const out: string[] = [];
+        for (let i = 0; i < 100_000; i++) {
+          const p = read.ptr(envp as never, i * 8);
+          if (!p) break;
+          out.push(new CString(p as never).toString());
+        }
+        return out;
+      } finally {
+        lib.close();
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+/** The account's own home from the password database (`getpwuid(getuid())->pw_dir`), never from HOME. macOS only. */
+export function accountHome(): string | undefined {
+  try {
+    const { dlopen, FFIType, read, CString } = require("bun:ffi") as typeof import("bun:ffi");
+    const lib = dlopen("/usr/lib/libSystem.B.dylib", { getuid: { args: [], returns: FFIType.u32 }, getpwuid: { args: [FFIType.u32], returns: FFIType.ptr } });
+    try {
+      const pw = lib.symbols.getpwuid(lib.symbols.getuid());
+      if (!pw) return undefined;
+      // `struct passwd`'s pw_dir on Darwin (64-bit): after pw_name, pw_passwd, pw_uid, pw_gid, pw_change, pw_class,
+      // pw_gecos — offset 48 (offsetof, measured).
+      const dir = read.ptr(pw, 48);
+      return dir ? new CString(dir as never).toString() : undefined;
+    } finally {
+      lib.close();
+    }
+  } catch {
+    return undefined;
+  }
+}
+
+/** Why a macOS release refuses this HOME, or undefined: set, and not the account's own home by real path. */
+export function homeRefusal(o: { platform?: NodeJS.Platform; distBuild?: boolean; home?: string | undefined; account?: () => string | undefined; real?: (p: string) => string } = {}): string | undefined {
+  if ((o.platform ?? process.platform) !== "darwin" || !(o.distBuild ?? DIST_BUILD)) return undefined;
+  const home = "home" in o ? o.home : process.env.HOME;
+  if (home === undefined) return undefined;
+  const account = (o.account ?? accountHome)();
+  const real = o.real ?? ((p: string) => { try { return realpathSync(p); } catch { return p; } });
+  if (account !== undefined && home !== "" && real(home) === real(account)) return undefined;
+  return `clover-core: refusing to start: HOME is ${JSON.stringify(home)}, not this account's home${account === undefined ? " (which could not be read)" : ` (${account})`}. On macOS HOME chooses the keychains and trust settings this process reads; start it with HOME unset or set to the account's home.`;
+}
