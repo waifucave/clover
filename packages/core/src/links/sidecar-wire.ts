@@ -25,7 +25,7 @@ import type { NatMapping } from "./dial-policy";
 import { FrameReader, MAX_FRAME } from "./frames";
 import { bundledLinkBinary } from "./sidecar-binary";
 import {
-  ALPN_LINK, ALPN_PAIR, CLOSE_LOST, CLOSE_NORMAL, RESET_CONN_LOST,
+  ALPN_LINK, ALPN_PAIR, CLOSE_LOST, CLOSE_NORMAL, RESET_CONN_LOST, STREAM_WINDOW,
   type DialOptions, type DialTarget, type PathInfo, type WireClose, type WireConn, type WireEndpoint, type WireStream, WireOffline,
 } from "./wire";
 
@@ -35,7 +35,14 @@ const T_CREDIT = 2;
 
 /** What one stream may hold in flight across the pipe each way: written and not yet taken by QUIC, or read from QUIC
  *  and not yet taken by the core's reader. */
-export const STREAM_WINDOW = 2 * 1024 * 1024;
+export { STREAM_WINDOW } from "./wire";
+/** The smallest window a stream may be given; the sidecar holds the same floor. */
+export const MIN_STREAM_WINDOW = 16 * 1024;
+/** An incoming stream's window until its reader says otherwise (`setWindow`, once the transport read its header): a
+ *  live stream's, so a live stream's first bytes don't run ahead before its header is read. A stream's reader that
+ *  wants more widens it (the transport does for every stream it reads, by its priority). */
+export const INCOMING_STREAM_WINDOW = 64 * 1024;
+const clampWindow = (n: number): number => Math.max(MIN_STREAM_WINDOW, Math.min(STREAM_WINDOW, Math.floor(n)));
 /** Writes go over in pieces of at most this, so credit comes back while a big write is still going. */
 const PIECE = 256 * 1024;
 /** The restart backoff (§8.3): doubling from half a second, at most 30 s. */
@@ -341,13 +348,14 @@ export class SidecarWire implements WireEndpoint {
   }
 
   /** @internal */
-  newStream(conn: SidecarConn, priority: number): SidecarStream {
+  newStream(conn: SidecarConn, priority: number, window = STREAM_WINDOW): SidecarStream {
     const id = this.#nextStream;
     this.#nextStream += 2;
-    const s = new SidecarStream(this, id, priority, conn, conn.gen);
+    const w = clampWindow(window);
+    const s = new SidecarStream(this, id, priority, conn, conn.gen, w);
     this.#streams.set(id, s);
     conn.streams.add(s);
-    this.sendJson({ op: "open", conn: conn.num, stream: id, priority }, conn.gen);
+    this.sendJson({ op: "open", conn: conn.num, stream: id, priority, ...(w < STREAM_WINDOW ? { window: w } : {}) }, conn.gen);
     return s;
   }
 
@@ -565,7 +573,7 @@ export class SidecarWire implements WireEndpoint {
           this.#send({ op: "reset", stream: m.stream, code: RESET_CONN_LOST });
           return;
         }
-        const s = new SidecarStream(this, m.stream as number, 0, conn, conn.gen);
+        const s = new SidecarStream(this, m.stream as number, 0, conn, conn.gen, INCOMING_STREAM_WINDOW);
         this.#streams.set(s.num, s);
         conn.streams.add(s);
         conn.incoming(s);
@@ -680,13 +688,13 @@ class SidecarConn implements WireConn {
     return this.#paths.add(fn);
   }
 
-  openStream(priority: number): WireStream {
+  openStream(priority: number, opts: { window?: number } = {}): WireStream {
     if (this.#ended || this.gen !== this.#wire.gen) {
       const s = new SidecarStream(this.#wire, -1, priority, undefined, this.gen);
       s.receiveReset(RESET_CONN_LOST);
       return s;
     }
-    return this.#wire.newStream(this, priority);
+    return this.#wire.newStream(this, priority, opts.window);
   }
 
   onStream(fn: (s: WireStream) => void): Unsubscribe {
@@ -754,13 +762,34 @@ class SidecarStream implements WireStream {
   #finDelivered = false;
   #resetCode: number | undefined;
   #forgotten = false;
+  /** This stream's window each way: the wire's, or a live stream's (`setWindow`, or the opener's `window`). */
+  #window: number;
 
-  constructor(wire: SidecarWire, num: number, priority: number, conn: SidecarConn | undefined, gen: number) {
+  constructor(wire: SidecarWire, num: number, priority: number, conn: SidecarConn | undefined, gen: number, window = STREAM_WINDOW) {
     this.#wire = wire;
     this.num = num;
     this.priority = priority;
     this.#conn = conn;
     this.#gen = gen;
+    this.#window = window;
+  }
+
+  get window(): number {
+    return this.#window;
+  }
+
+  setWindow(bytes: number): void {
+    const w = clampWindow(bytes);
+    if (w === this.#window || this.#resetCode !== undefined) return;
+    this.#window = w;
+    // The sidecar gives the difference as credit, or takes back what is beyond the window, so no more than the window
+    // is read ahead of this core.
+    this.#wire.sendJson({ op: "window", stream: this.num, window: w }, this.#gen);
+    // Credit owed that a narrower window's cadence would have sent already goes now.
+    if (this.#owed >= this.#window / 4) {
+      this.#wire.sendCredit(this.num, this.#owed, this.#gen);
+      this.#owed = 0;
+    }
   }
 
   get queuedBytes(): number {
@@ -779,10 +808,12 @@ class SidecarStream implements WireStream {
     if (this.#resetCode !== undefined) return Promise.reject(new WireOffline(this.#resetCode === RESET_CONN_LOST ? "the connection was lost" : "the stream was reset"));
     if (this.#finished) return Promise.reject(new Error("the stream is finished"));
     if (chunk.byteLength === 0) return Promise.resolve();
+    // Pieces no bigger than the window, so a live stream's one piece never overshoots it.
+    const piece = Math.min(PIECE, this.#window);
     return new Promise<void>((resolve, reject) => {
-      for (let at = 0; at < chunk.byteLength; at += PIECE) {
-        const bytes = chunk.subarray(at, Math.min(at + PIECE, chunk.byteLength));
-        this.#queue.push(at + PIECE >= chunk.byteLength ? { bytes, resolve, reject } : { bytes });
+      for (let at = 0; at < chunk.byteLength; at += piece) {
+        const bytes = chunk.subarray(at, Math.min(at + piece, chunk.byteLength));
+        this.#queue.push(at + piece >= chunk.byteLength ? { bytes, resolve, reject } : { bytes });
         this.#queuedBytes += bytes.byteLength;
       }
       this.#pump();
@@ -859,7 +890,7 @@ class SidecarStream implements WireStream {
   #pump(): void {
     while (this.#queueHead < this.#queue.length && this.#resetCode === undefined) {
       const p = this.#queue[this.#queueHead]!;
-      if (this.#unacked > 0 && this.#unacked + p.bytes.byteLength > STREAM_WINDOW) break;
+      if (this.#unacked > 0 && this.#unacked + p.bytes.byteLength > this.#window) break;
       this.#queue[this.#queueHead++] = undefined as unknown as Piece;
       this.#queuedBytes -= p.bytes.byteLength;
       if (!this.#wire.sendData(this.num, p.bytes, this.#gen)) {
@@ -922,7 +953,7 @@ class SidecarStream implements WireStream {
     this.#unconsumed = Math.max(0, this.#unconsumed - n);
     if (this.#gotFin) return;
     this.#owed += n;
-    if (this.#owed >= STREAM_WINDOW / 4) {
+    if (this.#owed >= this.#window / 4) {
       this.#wire.sendCredit(this.num, this.#owed, this.#gen);
       this.#owed = 0;
     }

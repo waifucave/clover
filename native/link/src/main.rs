@@ -72,6 +72,11 @@ const RESET_ABORTED: u32 = 1;
 const RESET_CONN_LOST: u32 = 3;
 /// A stream's window across the pipe when `init` names none (the core's `STREAM_WINDOW`).
 const DEFAULT_WINDOW: usize = 2 * 1024 * 1024;
+/// The smallest window a stream may be given (`open`'s or `window`'s): one read's worth of a live stream.
+const MIN_WINDOW: usize = 16 * 1024;
+/// An incoming stream's window until the core reads its header and says (`window`): a live stream's (the core's
+/// `INCOMING_STREAM_WINDOW`), so a live stream's first bytes don't run ahead of its reader.
+const INCOMING_WINDOW: usize = 64 * 1024;
 /// The most read from QUIC at once for the core.
 const READ_CHUNK: usize = 64 * 1024;
 /// QUIC's per-stream receive window: noq's own 1.25 MB, and no more. noq 1.4.0's receive assembler keeps each
@@ -106,6 +111,9 @@ struct StreamEntry {
     queued: Arc<AtomicUsize>,
     /// Bytes the core will still take of this stream's incoming data.
     credit: Arc<Semaphore>,
+    /// This stream's window across the pipe, each way: `init`'s, or smaller for a live stream (`open`'s `window`, or
+    /// the core's `window` op once it read the stream's header), so neither side buffers more of it than that.
+    window: Arc<AtomicUsize>,
     /// The core's reset (with its code), to each task: it doesn't wait behind queued writes. Dropping them, as a
     /// closed connection does, ends both tasks too.
     stop: Option<oneshot::Sender<u32>>,
@@ -349,7 +357,8 @@ impl Sidecar {
         tokio::spawn(async move {
             while let Ok((send, recv)) = c.accept_bi().await {
                 let sid = me.next_stream.fetch_add(2, Ordering::Relaxed);
-                let halves = me.register(sid, id).await;
+                // An incoming stream starts with a live stream's window; the core widens it once it read the header.
+                let halves = me.register(sid, id, INCOMING_WINDOW.min(me.window)).await;
                 // The core hears of the stream before its first bytes.
                 emit(&me.out, json!({ "ev": "stream", "conn": id, "stream": sid }));
                 me.run_stream(sid, send, recv, halves);
@@ -389,16 +398,19 @@ impl Sidecar {
     }
 
     /// A stream's entry, registered before its QUIC stream is open so the core's writes queue in order.
-    async fn register(&self, sid: u64, conn: u64) -> StreamHalves {
+    async fn register(&self, sid: u64, conn: u64, window: usize) -> StreamHalves {
         let (cmds, rx) = mpsc::unbounded_channel::<StreamCmd>();
         let (stop_tx, stop) = oneshot::channel();
         let (reset_tx, reset) = oneshot::channel();
         let queued = Arc::new(AtomicUsize::new(0));
-        let credit = Arc::new(Semaphore::new(self.window));
+        let credit = Arc::new(Semaphore::new(window));
         let live = Arc::new(AtomicU8::new(2));
         self.streams.lock().await.insert(
             sid,
-            StreamEntry { conn, cmds, queued: queued.clone(), credit: credit.clone(), stop: Some(stop_tx), reset: Some(reset_tx) },
+            StreamEntry {
+                conn, cmds, queued: queued.clone(), credit: credit.clone(), window: Arc::new(AtomicUsize::new(window)),
+                stop: Some(stop_tx), reset: Some(reset_tx),
+            },
         );
         StreamHalves { rx, stop, reset, queued, credit, live }
     }
@@ -478,9 +490,10 @@ impl Sidecar {
                 let conn = self.conns.lock().await.get(&cid).cloned();
                 let sid = m["stream"].as_u64().unwrap_or(0);
                 let priority = m["priority"].as_i64().unwrap_or(0) as i32;
+                let window = self.stream_window(&m);
                 match conn {
                     Some(c) => {
-                        let halves = self.register(sid, cid).await;
+                        let halves = self.register(sid, cid, window).await;
                         let me = self.clone();
                         tokio::spawn(async move {
                             match c.open_bi().await {
@@ -496,6 +509,24 @@ impl Sidecar {
                         });
                     }
                     None => emit(&self.out, json!({ "ev": "reset", "stream": sid, "code": RESET_CONN_LOST })),
+                }
+            }
+            "window" => {
+                // The core read an incoming stream's header and set its window: a wider one gives the difference as
+                // credit, a narrower one takes back what credit is beyond it, so no more than the window is read from
+                // QUIC ahead of the core.
+                let sid = m["stream"].as_u64().unwrap_or(0);
+                let window = self.stream_window(&m);
+                if let Some(s) = self.streams.lock().await.get(&sid) {
+                    let old = s.window.swap(window, Ordering::AcqRel);
+                    if window > old {
+                        s.credit.add_permits(window - old);
+                    } else {
+                        let avail = s.credit.available_permits();
+                        if avail > window {
+                            s.credit.forget_permits(avail - window);
+                        }
+                    }
                 }
             }
             "finish" => {
@@ -554,7 +585,7 @@ impl Sidecar {
                 let (streams, queued, unconsumed) = {
                     let s = self.streams.lock().await;
                     let queued: usize = s.values().map(|e| e.queued.load(Ordering::Relaxed)).sum();
-                    let unconsumed: usize = s.values().map(|e| self.window.saturating_sub(e.credit.available_permits())).sum();
+                    let unconsumed: usize = s.values().map(|e| e.window.load(Ordering::Acquire).saturating_sub(e.credit.available_permits())).sum();
                     (s.len(), queued, unconsumed)
                 };
                 let conns: Vec<Value> = {
@@ -580,7 +611,7 @@ impl Sidecar {
         let mut streams = self.streams.lock().await;
         let Some(s) = streams.get_mut(&sid) else { return };
         let queued = s.queued.fetch_add(bytes.len(), Ordering::AcqRel) + bytes.len();
-        if queued > self.window + MAX_FRAME {
+        if queued > s.window.load(Ordering::Acquire) + MAX_FRAME {
             // The core wrote past the window: end the stream rather than buffer without bound.
             s.queued.fetch_sub(bytes.len(), Ordering::AcqRel);
             s.reset(RESET_ABORTED);
@@ -594,8 +625,15 @@ impl Sidecar {
     /// The core took `n` more bytes of a stream: this side may read that many more from QUIC.
     async fn credit(&self, sid: u64, n: usize) {
         if let Some(s) = self.streams.lock().await.get(&sid) {
-            s.credit.add_permits(n.min(self.window));
+            // Never more than the stream's window held as credit.
+            let window = s.window.load(Ordering::Acquire);
+            s.credit.add_permits(n.min(window.saturating_sub(s.credit.available_permits())));
         }
+    }
+
+    /// A stream's window from an op's `window`: within [MIN_WINDOW, init's window]; init's when it names none.
+    fn stream_window(&self, m: &Value) -> usize {
+        m["window"].as_u64().map(|w| (w as usize).clamp(MIN_WINDOW, self.window)).unwrap_or(self.window)
     }
 
     fn run_stream(self: &Arc<Self>, sid: u64, mut send: SendStream, mut recv: RecvStream, h: StreamHalves) {
