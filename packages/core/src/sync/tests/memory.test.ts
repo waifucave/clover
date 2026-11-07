@@ -12,7 +12,7 @@ import { SystemClock } from "../../clock/system-clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { BoxKey } from "../../identity/box-key";
 import { fromUtf8, toBase64 } from "../../identity/bytes";
-import { type ClusterDevice, makeLinkCluster } from "../../links/testing";
+import { type ClusterDevice, makeDeviceKey, makeLinkCluster, recordFor } from "../../links/testing";
 import { MAIL_MAX_PIECE, MemoryMailRelay, type SyncMailbox } from "../mailbox";
 import { keyCommit, keyStatement } from "../memory-keys";
 import { COUNTER_STEP, type MemoryEntry, type MemoryLimits, MemorySync, type PushResult, type SkipReason, versionStatement } from "../memory";
@@ -455,7 +455,7 @@ describe("#232's review: poisoned keys, pinned vectors, a revoked writer's entri
     expect(Math.max(...w.at("Laptop").sync.keys().map((k) => k.epoch))).toBeLessThan(10);
   });
 
-  test("B2 and S5: counters past the step, and a time ahead of the shared clock, are skipped; the rest is taken", async () => {
+  test("B2, C1 and S5: another writer's counter past the step, and a time ahead of the shared clock, are skipped; the rest is taken", async () => {
     const w = await world(["Studio", "Laptop", "Server"]);
     await w.linkAll();
     w.at("Studio").write("MEMORY.md", "kept\n");
@@ -466,13 +466,46 @@ describe("#232's review: poisoned keys, pinned vectors, a revoked writer's entri
       return { ...v, sig: toBase64(server.d.key.sign(versionStatement(BOT, v))) };
     };
     const r = await push(server, w.at("Laptop"), [
-      signed("MEMORY.md", { [server.d.id]: COUNTER_STEP + 10 }),
+      // The studio's counter, raised past what the studio itself signed: skipped.
       signed("MEMORY.md", { [server.d.id]: 1, [w.at("Studio").d.id]: COUNTER_STEP + 10 }),
       signed("MEMORY.md", { [server.d.id]: 2 }, DAY + 3_600_000),
+      // Its own counter is its own (C1): only the cap holds it. A removal loses to the studio's concurrent edit.
+      signed("MEMORY.md", { [server.d.id]: COUNTER_STEP + 10 }),
       signed("gone.md", { [server.d.id]: 3 }),
     ]);
-    expect(r).toMatchObject({ ok: true, took: 1, skipped: [{ rel: "MEMORY.md", reason: "counters" }, { rel: "MEMORY.md", reason: "counters" }, { rel: "MEMORY.md", reason: "ahead" }] });
+    expect(r).toMatchObject({ ok: true, took: 2, skipped: [{ rel: "MEMORY.md", reason: "counters" }, { rel: "MEMORY.md", reason: "ahead" }] });
     expect(w.at("Laptop").read("MEMORY.md")).toBe("kept\n");
+  });
+
+  test("C2: epochs count per creator, kids never repeat, and a revoked creator's keys leave the ring", async () => {
+    const w = await world(["Studio", "Laptop", "Server"]);
+    await w.linkAll();
+    w.at("Studio").write("MEMORY.md", "one\n");
+    await waitFor(() => w.at("Laptop").read("MEMORY.md") === "one\n" && w.at("Server").read("MEMORY.md") === "one\n");
+    const [studio, laptop, server] = ["Studio", "Laptop", "Server"].map((n) => w.at(n).d);
+    const own = () => w.at("Laptop").sync.keys().filter((k) => k.creator === laptop!.id).map((k) => k.epoch);
+    const before = Math.max(0, ...own());
+    // Rotations on the laptop: each kid new, each epoch its own newest + 1.
+    const kids = new Set<string>();
+    for (let i = 0; i < 5; i++) {
+      const spare = await makeDeviceKey();
+      await w.at("Laptop").d.registry.add(recordFor(spare, `Spare${i}`), { via: "terminal" });
+      await w.at("Laptop").d.registry.revoke(spare.id);
+      await waitFor(() => Math.max(0, ...own()) >= before + i + 1);
+    }
+    await waitFor(() => Math.max(0, ...own()) >= before + 5);
+    for (const k of w.at("Laptop").sync.keys()) {
+      expect(kids.has(k.kid)).toBe(false);
+      kids.add(k.kid);
+    }
+    expect(Math.max(...own())).toBe(before + 5);
+    // The server's keys the laptop holds go at its revoke.
+    await w.at("Laptop").d.registry.revoke(server!.id);
+    expect(w.at("Laptop").sync.keys().some((k) => k.creator === server!.id)).toBe(false);
+    // And memory still flows between the two left.
+    w.at("Studio").write("MEMORY.md", "two\n");
+    await waitFor(() => w.at("Laptop").read("MEMORY.md") === "two\n");
+    void studio;
   });
 
   test("B4: mail at the full per-file cap and a full page goes in pieces the relay takes; one it refuses goes again", async () => {

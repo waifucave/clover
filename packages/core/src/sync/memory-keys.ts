@@ -1,7 +1,8 @@
 // The content keys a bot's memory travels under (H-M3, item 4 of the brief): what one computer sends another, over a
 // link or as mail a relay keeps, is sealed under a content key only the user's current computers hold.
 //
-// * **A key** is 32 random bytes, named `<epoch>.<creator>`, with the computers it was made for (`members`): every
+// * **A key** is 32 random bytes, named `<epoch>.<creator>.<random>` (never the same kid twice), with the computers it
+//   was made for (`members`): every
 //   computer of the user that ran the core, wasn't revoked and was known to its creator then. Its bytes live in the
 //   secret store as a device item (never synced, never on disk in the clear); what's known about it is in
 //   `<home>/sync/memory-keys.json`.
@@ -15,8 +16,11 @@
 //   computer can make a key in another's name or claim another's next kid.
 // * **Sharing:** a key goes only to a member, over the link or sealed to it in mail, and is taken only from a member
 //   that names this computer as one too, only for the kids a push's checked entries use. A key whose members include a
-//   revoked device is dropped; an epoch may run at most `EPOCH_STEP` past the newest this computer knows; and each
-//   creator keeps at most `PER_CREATOR` keys here (its oldest go first), so no one computer can fill the ring.
+//   revoked device is dropped, and a revoked creator's keys leave the ring altogether.
+// * **Epochs count per creator** (#232's check 2, C2): a computer's next key is its own newest + 1, and another's key is
+//   taken only within `EPOCH_STEP` of the newest this computer holds from that creator, so no computer can push
+//   another's epochs anywhere. Each creator keeps at most `PER_CREATOR` keys here (its oldest go first), so no one
+//   computer can fill the ring.
 // * What a revoked device already holds can't be clawed back: the memory it had, and keys it had, stay with it. It gets
 //   nothing new: its links are cut, no mail is addressed to it, and nothing is sealed under a key it holds.
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
@@ -43,7 +47,8 @@ export interface SharedContentKey extends ContentKeyInfo {
   key: string;
 }
 
-const KID_RE = /^([1-9][0-9]{0,9})\.([a-z0-9]{16,64})$/;
+/** `<epoch>.<creator>`, with `.<random>` on every kid made now. */
+const KID_RE = /^([1-9][0-9]{0,9})\.([a-z0-9]{16,64})(\.[A-Za-z0-9_-]{8,22})?$/;
 const DEVICE_RE = /^[a-z0-9]{16,64}$/;
 const HEX64_RE = /^[0-9a-f]{64}$/;
 export const MAX_MEMBERS = 64;
@@ -86,6 +91,8 @@ export class ContentKeyRing {
       const v = await o.store.get(refOf(info.kid));
       const raw = v ? fromBase64(v.value.reveal()) : null;
       if (!raw || raw.length !== 32 || commitOf(raw) !== info.commit) continue;
+      // A creator revoked while this computer was off: its keys are gone (C2).
+      if (o.registry.get(info.creator)?.revokedAt !== undefined) continue;
       ring.#keys.set(info.kid, info);
       ring.#bytes.set(info.kid, raw);
     }
@@ -121,17 +128,30 @@ export class ContentKeyRing {
   }
 
   async #make(): Promise<ContentKeyInfo> {
-    const epoch = Math.min(MAX_EPOCH, this.#highest() + 1);
+    const epoch = Math.min(MAX_EPOCH, this.#highestOf(this.#self) + 1);
     const members = [this.#self, ...this.#registry.list().filter((d) => d.runsCore && d.revokedAt === undefined && d.id !== this.#self).map((d) => d.id)].slice(0, MAX_MEMBERS);
     const bytes = own(randomBytes(32));
-    const unsigned = { kid: `${epoch}.${this.#self}`, epoch, creator: this.#self, members, createdAt: this.#now(), commit: commitOf(bytes) };
+    const unsigned = { kid: `${epoch}.${this.#self}.${toBase64Url(randomBytes(9))}`, epoch, creator: this.#self, members, createdAt: this.#now(), commit: commitOf(bytes) };
     const info: ContentKeyInfo = { ...unsigned, sig: toBase64(this.#sign(keyStatement(unsigned))) };
     await this.#add(info, bytes);
     return info;
   }
 
-  #highest(): number {
-    return Math.max(0, ...[...this.#keys.values()].map((k) => k.epoch));
+  /** The newest epoch this computer holds from `creator`. */
+  #highestOf(creator: string): number {
+    return Math.max(0, ...[...this.#keys.values()].filter((k) => k.creator === creator).map((k) => k.epoch));
+  }
+
+  /** A device was revoked: every key it made leaves the ring (its bytes stay in the store, unused). */
+  forgetCreator(creator: string): void {
+    let gone = false;
+    for (const k of [...this.#keys.values()]) {
+      if (k.creator !== creator) continue;
+      this.#keys.delete(k.kid);
+      this.#bytes.delete(k.kid);
+      gone = true;
+    }
+    if (gone) writeJsonAtomic(this.#file, { v: 2, keys: [...this.#keys.values()] });
   }
 
   /** The keys `peer` is a member of, with their bytes, for sharing over a sealed path. */
@@ -158,7 +178,7 @@ export class ContentKeyRing {
       if (commitOf(bytes) !== info.commit) continue;
       if (!info.members.includes(this.#self) || !info.members.includes(from) || !info.members.includes(info.creator)) continue;
       if (info.members.some((m) => this.#registry.get(m)?.revokedAt !== undefined)) continue;
-      if (info.epoch > this.#highest() + EPOCH_STEP) continue;
+      if (info.epoch > this.#highestOf(info.creator) + EPOCH_STEP) continue;
       const creator = this.#registry.get(info.creator);
       if (!creator || creator.revokedAt !== undefined || !creator.runsCore) continue;
       const sig = fromBase64(info.sig);

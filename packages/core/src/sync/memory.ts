@@ -18,9 +18,12 @@
 //   taken on its word. A push is taken only from such a computer too, and mail only when its sender's signature checks.
 //   An entry refused for its writer is skipped and the rest taken, so a revoked writer's earlier versions that another
 //   computer passes on never hold up the others (they are dropped, as unsynced edits of a lost device are).
-// * **Counters and times are bounded** (#232's review): each counter at most `COUNTER_STEP` past the highest this
-//   computer has seen of that writer, all well under `MAX_COUNTER`, and no time ahead of the shared clock by more than
-//   `MAX_AHEAD_MS`, so no vector or stamp can pin a file.
+// * **Counters and times are bounded** (#232's review, B2 and its check 2's C1): in a version, every counter but its
+//   signer's own runs at most `COUNTER_STEP` past the highest that counter's writer has itself signed (as this computer
+//   has seen it); a revoked writer's counter isn't held to it, and every counter stays at most `MAX_COUNTER`. So no
+//   member can raise another writer's counter past what that writer signed, and whatever gap a member leaves closes at
+//   the writer's next version, or at the member's revoke. No time runs ahead of the shared clock by more than
+//   `MAX_AHEAD_MS`.
 // * **Live:** each change goes to every linked computer as `sync.push` on the stream `memory:<bot>`, and each computer
 //   passes on what it takes, so a change crosses computers that aren't linked to each other directly. When a link
 //   comes up, each side asks the other for its heads and pulls what it lacks (`sync.heads`, `sync.pull`).
@@ -157,6 +160,8 @@ export class MemorySync {
   readonly #ring: ContentKeyRing;
   readonly #offs: Unsubscribe[] = [];
   readonly #state = new Map<string, Map<string, Tracked>>();
+  /** Per bot, the highest counter each writer has itself signed (`#signedCounters`). */
+  readonly #signed = new Map<string, Vv>();
   /** Box keys account-less peers told this computer over their links. */
   readonly #peerBoxKeys: Record<string, string>;
   /** Files changed and not yet pushed, per bot: the key, and the computer the change came from (not pushed back). */
@@ -359,7 +364,10 @@ export class MemorySync {
     // A revoked device's keys are never used again: a new key at once (the brief, item 4).
     if (this.#o.registry.watch) {
       this.#offs.push(this.#o.registry.watch((c) => {
-        if (c.type === "revoked") void this.#ring.rotate().catch((e: unknown) => this.#log(`rotating the content key: ${errText(e)}`));
+        if (c.type !== "revoked") return;
+        // Its keys leave the ring (C2), and a new key goes out for the rest.
+        this.#ring.forgetCreator(c.id);
+        void this.#ring.rotate().catch((e: unknown) => this.#log(`rotating the content key: ${errText(e)}`));
       }));
     }
   }
@@ -388,7 +396,7 @@ export class MemorySync {
     if (raw.length > this.#limits.pushEntries) return { ok: false, reason: "too_many", detail: `more than ${this.#limits.pushEntries} entries` };
     // Every entry is checked before any is taken: first what needs no key (its path, its writer and signature, its
     // counters and time), then the keys its kids name, then its content.
-    const seen = this.#seenCounters(bot);
+    const seen = this.#signedCounters(bot);
     const skipped: { rel: string; reason: SkipReason }[] = [];
     const signed: { key: string; names: string[]; v: MemoryVersion; e: MemoryEntry }[] = [];
     for (const e of raw as MemoryEntry[]) {
@@ -441,6 +449,7 @@ export class MemorySync {
         continue;
       }
       if (r === "old") continue;
+      this.#noteSigned(bot, c.v);
       took++;
       if (r === "conflict") conflicts++;
       // What this computer now holds goes on to the others; back to the sender too when it isn't what the sender sent
@@ -475,7 +484,10 @@ export class MemorySync {
     if (!sig || !(await this.#o.registry.verify(e.by, versionStatement(bot, v), sig))) return { skip: "not_writer" };
     // Counters within a step of what this computer has seen of each writer (B2), so no one can push a file's vector to
     // where nobody can write past it; and no time ahead of the shared clock, which would win every conflict (S5).
-    for (const [w, n] of Object.entries(e.vv)) if (n > (seen[w] ?? 0) + COUNTER_STEP) return { skip: "counters" };
+    for (const [w, n] of Object.entries(e.vv)) {
+      if (w === e.by || this.#o.registry.get(w)?.revokedAt !== undefined) continue;
+      if (n > (seen[w] ?? 0) + COUNTER_STEP) return { skip: "counters" };
+    }
     if (e.ts > this.#o.now() + MAX_AHEAD_MS) return { skip: "ahead" };
     return { key: p.key, names: p.names, v, e };
   }
@@ -493,12 +505,19 @@ export class MemorySync {
     return { key: c.key, names: c.names, v, data };
   }
 
-  /** The highest counter this computer has seen of each writer in a bot's memory. */
-  #seenCounters(bot: string): Vv {
-    const out: Vv = {};
-    for (const t of this.#files(bot).values()) for (const [w, n] of Object.entries(t.ctx)) if (n > (out[w] ?? 0)) out[w] = n;
-    return out;
+  /** The highest counter each writer has itself signed in a bot's memory, as this computer has seen it: the counter
+   *  named for the signer in each version it took or made (C1). */
+  #signedCounters(bot: string): Vv {
+    this.#files(bot);
+    return this.#signed.get(bot)!;
   }
+
+  #noteSigned(bot: string, v: MemoryVersion): void {
+    const signed = this.#signedCounters(bot);
+    const n = v.vv[v.by] ?? 0;
+    if (n > (signed[v.by] ?? 0)) signed[v.by] = n;
+  }
+
 
   /** Puts one checked version in place. */
   #apply(bot: string, key: string, names: string[], r: MemoryVersion, data: Bytes | undefined): Applied {
@@ -633,6 +652,7 @@ export class MemorySync {
     const unsigned = { rel, vv, ts: this.#o.now(), by: this.#o.self, hash, size };
     const v: MemoryVersion = { ...unsigned, sig: toBase64(this.#o.key.sign(versionStatement(bot, { ...unsigned, sig: "" }))) };
     files.set(key, { cur: v, ctx: vv, ...(mtimeMs !== undefined ? { mtimeMs } : {}) });
+    this.#noteSigned(bot, v);
   }
 
   // ---- sending ----
@@ -849,20 +869,24 @@ export class MemorySync {
     let m = this.#state.get(bot);
     if (m) return m;
     m = new Map();
-    const saved = readJson(this.#stateFile(bot)) as { files?: unknown } | undefined;
+    const saved = readJson(this.#stateFile(bot)) as { files?: unknown; signed?: unknown } | undefined;
+    const signed: Vv = isVv(saved?.signed) ? { ...saved.signed } : {};
     if (saved && Array.isArray(saved.files)) {
       for (const f of saved.files as { key?: unknown; cur?: MemoryVersion; ctx?: unknown; mtimeMs?: unknown }[]) {
         if (typeof f.key !== "string" || !f.cur || !isVv(f.cur.vv) || !isVv(f.ctx)) continue;
         m.set(f.key, { cur: f.cur, ctx: f.ctx as Vv, ...(typeof f.mtimeMs === "number" ? { mtimeMs: f.mtimeMs } : {}) });
+        const n = f.cur.vv[f.cur.by] ?? 0;
+        if (n > (signed[f.cur.by] ?? 0)) signed[f.cur.by] = n;
       }
     }
     this.#state.set(bot, m);
+    this.#signed.set(bot, signed);
     return m;
   }
 
   #save(bot: string): void {
     const files = [...this.#files(bot)].map(([key, t]) => ({ key, ...t }));
-    writeJsonAtomic(this.#stateFile(bot), { v: 1, bot, files });
+    writeJsonAtomic(this.#stateFile(bot), { v: 1, bot, files, signed: this.#signedCounters(bot) });
   }
 
   #stateFile(bot: string): string {
