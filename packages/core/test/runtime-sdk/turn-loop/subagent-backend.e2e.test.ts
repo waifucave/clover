@@ -8,7 +8,8 @@ import { join } from "node:path";
 import type { AgentEvent, AgentPermissionAsk, AgentStartSpec } from "../../../src/contracts/agent-backend";
 import { isContractError } from "../../../src/contracts/common";
 import { query as sdkQuery } from "@waifucave/clover-agent-sdk";
-import { inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
+import { IN_PROCESS_BACKEND_ID, inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
+import { inProcessSandboxReady, notAvailableHere } from "../../../src/agents/sandbox/in-process";
 import { BOT_SANDBOX } from "../../../src/runtime-sdk/turn-loop/driver";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
@@ -34,7 +35,9 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   test("a prompt runs in the root; a write asks the host first; events and usage arrive", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");
-    const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN });
+    // It runs no command (a Write and its ask), so it runs anywhere the embedded runtime does; the seam says the sandbox
+    // is ready, which off macOS it isn't (the test below covers that).
+    const backend = inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, sandboxReady: () => true });
     expect((await backend.detect()).installed).toBe(true);
     const session = await backend.start(spec(root, "winter-test/calls"));
     const asks: AgentPermissionAsk[] = [];
@@ -135,6 +138,19 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       await session.stop();
     }
   }, 60_000);
+
+  test("detect: available only where the embedded runtime's sandbox runs (lane K's check), whoever asks", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const deps = { home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN };
+    // Where the sandbox can't run, a direct caller learns it is not available, with lane K's reason.
+    const off = await inProcessAgentBackend({ ...deps, sandboxReady: () => false }).detect();
+    expect(off).toEqual(notAvailableHere(IN_PROCESS_BACKEND_ID));
+    expect(off.installed).toBe(false);
+    expect(off.reason).toContain("macOS-only for now");
+    expect((await inProcessAgentBackend({ ...deps, sandboxReady: () => true }).detect()).installed).toBe(true);
+    // By default it reads lane K's check itself.
+    expect((await inProcessAgentBackend(deps).detect()).installed).toBe(inProcessSandboxReady());
+  });
 
   test("a missing root is refused (not_found), never created, as lane K's clover-code refuses it", async () => {
     const home = temp("clover-a3-sub-home-");
@@ -253,4 +269,68 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       await session.stop();
     }
   }, 60_000);
+
+  test("a cancel that comes before the runtime has taken the prompt up still ends the turn cancelled, and none of its calls run", async () => {
+    // The interrupt then finds no turn to stop: the turn's own first messages send it again (a slow runner's flake),
+    // and its prompt and calls are refused at the hooks whatever the interrupt does.
+    for (const model of ["winter-test/hang", "winter-test/calls"]) {
+      const home = temp("clover-a3-sub-home-");
+      const root = temp("clover-a3-sub-root-");
+      await Bun.write(join(root, "README"), "read me");
+      const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => model, pauseGateFor: () => OPEN }).start(spec(root, model));
+      const asks: AgentPermissionAsk[] = [];
+      session.onPermission(async (ask) => { asks.push(ask); return { outcome: "selected", optionId: "allow" }; });
+      const events: AgentEvent[] = [];
+      session.onEvent((e) => events.push(e));
+      try {
+        const marker = join(root, "ran");
+        const p = session.prompt({ text: [`CALL Read {"file_path":${JSON.stringify(join(root, "README"))}}`, `CALL Glob {"pattern":"*"}`, `CALL Bash {"command":"touch ${marker}"}`].join("\n") });
+        await session.cancel();
+        const hung = Bun.sleep(15_000).then(() => ({ stopReason: "still running 15 s after the cancel" }));
+        expect([model, (await Promise.race([p, hung])).stopReason]).toEqual([model, "cancelled"]);
+        expect(session.state()).toBe("idle");
+        // No call ran, the read-only ones included, and none was asked about.
+        expect(events.filter((e) => e.type === "tool_call_update" && e.status === "completed")).toEqual([]);
+        expect(existsSync(marker)).toBe(false);
+        expect(asks).toEqual([]);
+      } finally {
+        await session.stop();
+      }
+    }
+  }, 60_000);
+
+  test("a prompt right after a cancelled turn's end runs to its own end: nothing of the cancel reaches it", async () => {
+    // Cancelled before the runtime took the prompt up, and cancelled while a call runs (the turn's later messages send
+    // the interrupt again until its end); either way the next prompt goes the moment the cancelled turn's end is seen.
+    for (const early of [true, false]) {
+      const home = temp("clover-a3-sub-home-");
+      const root = temp("clover-a3-sub-root-");
+      await Bun.write(join(root, "README"), "read me");
+      const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN }).start(spec(root, "winter-test/calls"));
+      session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+      const events: AgentEvent[] = [];
+      session.onEvent((e) => events.push(e));
+      try {
+        const first = session.prompt({ text: [`CALL Bash {"command":"sleep 3"}`, `CALL Bash {"command":"sleep 3"}`].join("\n") });
+        if (!early) {
+          const t0 = Date.now();
+          while (!events.some((e) => e.type === "tool_call") && Date.now() - t0 < 20_000) await Bun.sleep(20);
+        }
+        await session.cancel();
+        expect((await first).stopReason).toBe("cancelled");
+        const next = await session.prompt({ text: `CALL Read {"file_path":${JSON.stringify(join(root, "README"))}}` });
+        expect([early, next.stopReason]).toEqual([early, "end_turn"]);
+        // Cancelled before it started, the turn left nothing, and the new one answers its own prompt. Cancelled mid-call,
+        // the test model takes its unfinished list up again in the new turn. Either way the new turn's last call ran
+        // to its own result, never interrupted (what that result is depends on the OS: off macOS, Bash is refused for
+        // want of the sandbox).
+        const results = JSON.parse(next.text) as { content: string }[];
+        expect([early, results.at(-1)?.content]).not.toEqual([early, "[interrupted]"]);
+        if (early) expect(next.text).toContain("read me");
+        expect(session.state()).toBe("idle");
+      } finally {
+        await session.stop();
+      }
+    }
+  }, 90_000);
 });

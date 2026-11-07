@@ -370,6 +370,16 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     f.error("plugin", "helper_bin", ["helper", "bin"], "a helper names its program for at least one platform");
   }
 
+  // A built plugin (`built: true`) names JavaScript modules only: TypeScript would mean the build didn't run.
+  if (top.built === true && opts.bundled !== true) {
+    f.error("plugin", "built_not_bundled", ["built"], "only the plugins Clover ships are built by its release; this plugin can't say it is");
+  }
+  if (top.built === true) {
+    const js = (p: unknown) => typeof p !== "string" || /\.(?:js|mjs)$/.test(p);
+    if (isObject(top.host) && !js(top.host.entry)) f.error("plugin", "built_entry", ["host", "entry"], `a built plugin's host entry is a .js module, not "${String(top.host.entry)}"`);
+    if (isObject(top.client) && !js(top.client.entry)) f.error("plugin", "built_entry", ["client", "entry"], `a built plugin's client entry is a .js module, not "${String(top.client.entry)}"`);
+  }
+
   // Paths stay inside the folder (§5.9), lexically.
   const refusedPaths = new Set<string>();
   for (const p of collectPaths(raw)) {
