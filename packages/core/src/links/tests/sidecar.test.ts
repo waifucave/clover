@@ -223,15 +223,13 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     })();
 
     // Nothing is read: the writer is held back after QUIC's stream window and a window on each side of each pipe.
-    await Bun.sleep(1500);
-    const held = written;
-    await Bun.sleep(400);
-    expect(written).toBe(held);
-    expect(held).toBeGreaterThanOrEqual(W);
-    // QUIC's stream window (1.25 MB), plus a window read into the reader's side and one queued in the writer's.
-    expect(held).toBeLessThanOrEqual(1_250_000 + 3 * W + chunk);
+    // What is guaranteed is that bound, never how far the writer gets by a given moment (a loaded runner may be slow to
+    // fill it): so every sample over a while stays within it, and the windows on both sides with it. No lower bound on
+    // a sample.
+    const ahead = 1_250_000 + 3 * W + chunk;
     const bound = async () => {
       const [sa, sb] = await Promise.all([a.wire.stats(), b.wire.stats()]);
+      expect(written - got).toBeLessThanOrEqual(ahead);
       expect(sa.core.queuedWrites).toBeLessThanOrEqual(chunk);
       expect(sa.core.unackedWrites).toBeLessThanOrEqual(W);
       expect(sa.sidecar.queuedWrites).toBeLessThanOrEqual(W);
@@ -240,9 +238,19 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
       expect(sb.core.unconsumed).toBeLessThanOrEqual(W);
       return { sa, sb };
     };
-    const { sb } = await bound();
-    // The reader's whole window waits on the core's side, none of it past it.
-    expect(sb.sidecar.unconsumed + sb.core.unconsumed).toBeGreaterThan(0);
+    const end = Date.now() + 1_500;
+    while (Date.now() < end) {
+      await bound();
+      await Bun.sleep(50);
+    }
+    // Something did reach the reader, which waits on the core's side (waited for: when depends on the runner).
+    for (const until = Date.now() + 15_000; ; await Bun.sleep(25)) {
+      const { sb } = await bound();
+      if (sb.sidecar.unconsumed + sb.core.unconsumed > 0) break;
+      if (Date.now() > until) throw new Error("nothing reached the reader's side");
+    }
+    expect(got).toBe(0);
+    expect(written).toBeLessThanOrEqual(ahead);
 
     // Then it reads, slowly, and the bounds hold all the way.
     reading = true;
