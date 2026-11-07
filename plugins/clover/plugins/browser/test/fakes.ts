@@ -100,7 +100,7 @@ export class FakeBrowser implements BrowserApi {
       .map((t) => ({ ...t }));
   }
 
-  async open(opts: { owner: TabOwner; url?: string; show?: boolean; computer?: string }): Promise<TabView> {
+  async open(opts: { owner: TabOwner; url?: string; show?: { view: string; viewport: Viewport }; computer?: string }): Promise<TabView> {
     this.record("open", [opts]);
     const t = tabView(`tab_${++this.seq}`, opts.owner, { url: opts.url ?? "about:blank", title: opts.url === undefined ? "" : "Opened" });
     this.tabsList.push(t);
