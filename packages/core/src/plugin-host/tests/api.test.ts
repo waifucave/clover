@@ -20,7 +20,7 @@ import { fileSyncedStores, memorySyncedStores, pluginDataFolder, storageApi, Syn
 import { InvocationTable } from "../invocations";
 
 const API = "^1.0.0";
-const manifest = (m: Partial<Manifest> & { name?: string } = {}): Manifest => ({ manifest: 1, name: "P", engines: { clover: API }, ...m }) as Manifest;
+const manifest = (m: Partial<Manifest> = {}): Manifest => ({ manifest: 1, name: "P", engines: { clover: API }, ...m }) as Manifest;
 
 /** `luna` declares `luna.cards` from its host; `tarot` fills it with two cards and has a command; `quiet` has nothing. */
 function plugins(extra: FakePluginInput[] = []): FakePluginInput[] {
@@ -84,6 +84,7 @@ function routerWith(reg: FakePluginRegistry, handlers: ApiHandlers[] = []) {
 const call = (router: ReturnType<typeof createApiRouter>, pluginId: string, path: string, args: unknown[] = [], o: { process?: "shared" | "clover" | "own"; caller?: Caller } = {}) =>
   router({ pluginId, process: o.process ?? "shared", path, args, caller: o.caller ?? asPlugin(pluginId) });
 
+const failure = (p: Promise<unknown>): Promise<ContractError> => p.then(() => { throw new Error("it didn't fail"); }, (e: ContractError) => e);
 const code = async (p: Promise<unknown>) => {
   try {
     await p;
@@ -101,7 +102,7 @@ describe("the router: the one capability gate", () => {
     expect(await code(call(r, "luna", "points.__proto__"))).toBe("refused");
     expect(await code(call(r, "ghost", "conversation.list"))).toBe("not_installed");
     reg.setStopped("luna", "crashed 3 times");
-    const e = await call(r, "luna", "conversation.list").catch((x) => x);
+    const e = await failure(call(r, "luna", "conversation.list"));
     expect(e.code).toBe("plugin_stopped");
     expect(e.message).toContain("crashed 3 times");
   });
@@ -109,7 +110,7 @@ describe("the router: the one capability gate", () => {
   test("a call needs the capability its OK lists; without it the call doesn't exist for the plugin", async () => {
     const r = routerWith(registry(), [{ "conversation.list": (ctx) => `listed for ${ctx.pluginId}` }]);
     expect(await call(r, "luna", "conversation.list")).toBe("listed for luna");
-    const e = await call(r, "quiet", "conversation.list").catch((x) => x);
+    const e = await failure(call(r, "quiet", "conversation.list"));
     expect([e.code, e.message]).toEqual(["refused", "conversation.list needs the capability conversation.read, which this plugin's OK doesn't list"]);
   });
 
@@ -135,7 +136,7 @@ describe("the router: the one capability gate", () => {
     expect(await code(call(r, "luna", "net.fetch", ["https://evil.example/"]))).toBe("refused");
     expect(await code(call(r, "luna", "net.fetch", ["not a url"]))).toBe("invalid");
     const bare = routerWith(registry());
-    const e = await call(bare, "luna", "storage.synced.keys").catch((x) => x);
+    const e = await failure(call(bare, "luna", "storage.synced.keys"));
     expect([e.code, e.message]).toEqual(["refused", "storage.synced.keys is not served on this computer"]);
   });
 
@@ -282,7 +283,7 @@ describe("settings", () => {
     const user = { caller: { kind: "user", client: "app" } as Caller };
     expect(await m["plugin.settings.set"]!({ id: "luna", key: "token", value: "sekrit" }, user)).toEqual({ applied: true });
     expect(secrets).toEqual([{ ref: { owner: { kind: "plugin", pluginId: "luna" }, name: "token" } as never, value: "sekrit" }]);
-    const views = ((await m["plugin.settings.get"]!({ id: "luna" }, user)) as { settings: { key: string; value?: unknown; set: boolean }[] }).settings;
+    const views = ((await m["plugin.settings.get"]!({ id: "luna" }, user)) as { settings: Record<string, unknown>[] }).settings;
     expect(views.find((v) => v.key === "token")).toEqual({ key: "token", type: "secret", title: "Token", scope: "account", required: false, set: true });
     expect(views.find((v) => v.key === "greeting")).toEqual({ key: "greeting", type: "string", title: "Greeting", scope: "account", required: false, value: "hi", set: false });
     expect(JSON.stringify(views)).not.toContain("sekrit");
@@ -383,5 +384,24 @@ describe("the caller (R7) and the pipe", () => {
     await api({ pluginId: "tarot", callId: "a5", call: "storage.synced.watch", args: [{ [LISTENER_ARG]: true }] }, ctx);
     ch.closeAll();
     expect(ch.watches).toBe(0);
+  });
+});
+
+describe("the process check in front of the gate (S4)", () => {
+  test("a third-party worker presenting a clover id is refused before the gate; clover's own process passes", async () => {
+    const { pluginApiRouter } = await import("../index");
+    const reg = registry([{ id: "clover", source: "bundled", manifest: manifest({ id: "clover", name: "Clover", host: { entry: "host/index.js" } } as Partial<Manifest>) }]);
+    const r = pluginApiRouter({
+      registry: reg,
+      handlers: [{ "storage.synced.keys": () => ["k"] }],
+      recordOf: (id) => {
+        const rec = reg.get(id);
+        return rec === undefined ? undefined : { id, source: rec.source };
+      },
+    });
+    expect(await call(r, "clover", "storage.synced.keys", [], { process: "clover" })).toEqual(["k"]);
+    expect(await code(call(r, "clover", "storage.synced.keys", [], { process: "shared" }))).toBe("refused");
+    expect(await code(call(r, "luna", "storage.synced.keys", [], { process: "clover" }))).toBe("refused");
+    expect(await call(r, "luna", "storage.synced.keys", [], { process: "shared" })).toEqual(["k"]);
   });
 });
