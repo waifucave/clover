@@ -15,7 +15,7 @@ import { DeviceKey } from "../../identity/device-key";
 import { FrameReader, MAX_FRAME } from "../frames";
 import { bundledLinkBinary } from "../sidecar-binary";
 import { PairingService } from "../pairing";
-import { followRegistry, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, STREAM_WINDOW } from "../sidecar-wire";
+import { followRegistry, pipeWriter, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, STREAM_WINDOW } from "../sidecar-wire";
 import { type DeviceLinks, startDeviceLinks } from "../node";
 import { CloverLinkTransport } from "../transport";
 import { CLOSE_LOST, RESET_CONN_LOST, type WireConn, WireOffline, type WireStream } from "../wire";
@@ -508,6 +508,25 @@ describe("the link sidecar's binary", () => {
     });
     stops.push(() => wire.close());
     expect(argv).toEqual([[bundledLinkBinary()]]);
+  });
+});
+
+describe("the sidecar's stdin", () => {
+  test("a write to a process that just died never throws, nor leaves a rejection behind (EPIPE, as Windows answers it later)", async () => {
+    let unhandled = 0;
+    const count = () => void unhandled++;
+    process.on("unhandledRejection", count);
+    try {
+      const epipe = () => Object.assign(new Error("EPIPE: broken pipe, write"), { code: "EPIPE" });
+      const later = pipeWriter({ write: () => Promise.reject(epipe()), flush: () => Promise.reject(epipe()) });
+      const now = pipeWriter({ write: () => { throw epipe(); }, flush: () => 0 });
+      later(new Uint8Array(4));
+      now(new Uint8Array(4));
+      await Bun.sleep(20);
+      expect(unhandled).toBe(0);
+    } finally {
+      process.off("unhandledRejection", count);
+    }
   });
 });
 

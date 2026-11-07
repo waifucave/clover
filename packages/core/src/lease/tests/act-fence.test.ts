@@ -73,8 +73,13 @@ describe("acts between computers carry the lease's fencing token", () => {
     await mc.get("Studio")!.coordinator.chooseSelf();
     await waitFor(() => service.record.holder === id("Studio") && mc.get("Studio")!.lease.canAct()
       && names.every((n) => mc.get(n)!.lease.state().holder === id("Studio")));
+    // The studio's tenure: epoch 1, or 2 when the automatic main (the computer with the lowest id) took the lease at
+    // start before the user's choice reached it, and handed it back (one tenure each, never a double takeover).
+    const e0 = service.record.epoch;
+    if (process.env.LANE_H_DEBUG) console.log("DIAG", e0, JSON.stringify(service.log), names.map((n) => `${n}=${id(n).slice(0, 6)}`).join(" "));
+    expect(e0 === 1 || e0 === 2).toBe(true);
     const old = token("Studio")!;
-    expect(old).toMatchObject({ scope: "memory", epoch: 1, holder: id("Studio") });
+    expect(old).toMatchObject({ scope: "memory", epoch: e0, holder: id("Studio") });
     // The main's acts are taken while it holds the lease.
     expect(await act("Studio", "Laptop", old)).toBe("done");
     expect(await act("Studio", "Server", old)).toBe("done");
@@ -83,10 +88,13 @@ describe("acts between computers carry the lease's fencing token", () => {
     const studioKey = c.devices.get("Studio")!.key.publicKey;
     c.net.partition(studioKey);
     service.cutOff(id("Studio"), true);
-    await waitFor(() => service.record.holder !== null && service.record.holder !== id("Studio") && service.record.epoch === 2);
+    await waitFor(() => service.record.holder !== null && service.record.holder !== id("Studio") && service.record.epoch > e0);
     const taker = names.find((n) => id(n) === service.record.holder)!;
     const other = taker === "Laptop" ? "Server" : "Laptop";
-    await waitFor(() => [taker, other].every((n) => mc.get(n)!.lease.state().epoch === 2 && mc.get(n)!.lease.state().holder === id(taker)));
+    const e1 = service.record.epoch;
+    // One takeover: a single new tenure, which stays.
+    expect(e1).toBe(e0 + 1);
+    await waitFor(() => [taker, other].every((n) => mc.get(n)!.lease.state().epoch === e1 && mc.get(n)!.lease.state().holder === id(taker)));
 
     // Its links come back, the handshake still out of its reach: whatever it sends is refused at both.
     c.net.heal(studioKey);
@@ -97,8 +105,9 @@ describe("acts between computers carry the lease's fencing token", () => {
       // receiver has taken one for this scope.
       expect(String(await act("Studio", to, token("Studio")))).toMatch(/^not_main: refused: (stale|missing)$/);
     }
-    // The new holder's acts are taken.
+    // The new holder's acts are taken, and its tenure is still the one new epoch.
     expect(await act(taker, other, token(taker))).toBe("done");
+    expect(service.record).toMatchObject({ holder: id(taker), epoch: e1 });
   }, 30_000);
 
   test("a lease held locally, with no record, carries no token", async () => {
