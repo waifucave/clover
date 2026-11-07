@@ -6,10 +6,10 @@
 // * A computer that is off answers `computer_offline` at once, before anything is sent.
 // * A call for another computer carries the calling computer's level for it, the stricter of the computers it touches
 //   (§9.1 "Approvals follow the files"), and the holder judges it at the stricter of that and its own (review N2).
-// * A move between two computers takes the direct path (`transfer.ts`; edit J8, review S1): the destination's holder
-//   takes the files straight from the source's, each judging the whole move once, and the source lets go of what it
-//   sent only once the files are in place.
-import type { FileStat, Level, Os, SignedCardAnswer } from "@waifucave/clover-protocol";
+// * A move between two computers, and any copy, takes the direct path (`transfer.ts`; edit J8, review S1): the
+//   destination's holder takes the files straight from the source's, each judging the whole operation once, and for a
+//   move the source lets go of what it sent only once the files are in place.
+import type { FileStat, Level, Os } from "@waifucave/clover-protocol";
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, type Unsubscribe } from "../contracts/common";
@@ -45,18 +45,9 @@ export interface CoreTreeOptions {
   holder(computer: string): Holder;
   /** Which computer runs `bot` (its `bots/<bot>/` lives there). */
   botComputer(bot: string): string | undefined;
-  /** The direct path between holders (`transfer.ts`), for a move between computers: `call` carries no answer; each
-   *  holder's comes in `answers`. */
-  transfer?: (o: {
-    from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall;
-    answers: { source?: SignedCardAnswer; destination?: SignedCardAnswer };
-  }) => Promise<TransferResult>;
-}
-
-/** The answer whose card binds `computer`, as `key`. */
-function pick<K extends string>(answers: readonly SignedCardAnswer[], computer: string, key: K): Partial<Record<K, SignedCardAnswer>> {
-  const a = answers.find((x) => x.card.binds?.computer === computer);
-  return (a ? { [key]: a } : {}) as Partial<Record<K, SignedCardAnswer>>;
+  /** The direct path between holders (`transfer.ts`), for a move between computers or any copy, with the one signed
+   *  answer for the whole operation that both holders check (ruling R15). */
+  transfer?: (o: { from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall }) => Promise<TransferResult>;
 }
 
 /** A real path inside `home`, joined the way that computer's OS writes paths. */
@@ -134,7 +125,7 @@ export class CoreTree implements Tree {
 
   /** A move between computers is judged by both holders, each at the stricter of its level and the call's, so it may
    *  need the user's answer at each: `answer` and `answers` go to the holder whose card each binds. */
-  async move(from: string, to: string, opts: TreeCallOptions & { answers?: readonly SignedCardAnswer[] }): Promise<void> {
+  async move(from: string, to: string, opts: TreeCallOptions): Promise<void> {
     const src = this.resolve(from);
     const dst = this.resolve(to);
     if (src.computer === dst.computer) {
@@ -142,15 +133,21 @@ export class CoreTree implements Tree {
       await holder.move(from, to, call);
       return;
     }
+    await this.#direct(true, from, to, opts);
+  }
+
+  /** Copies a file or a folder, on one computer or between two, by the direct path: the files never pass through
+   *  this computer unless it holds one end. */
+  async copy(from: string, to: string, opts: TreeCallOptions): Promise<void> {
+    await this.#direct(false, from, to, opts);
+  }
+
+  async #direct(move: boolean, from: string, to: string, opts: TreeCallOptions): Promise<void> {
+    const src = this.resolve(from);
+    const dst = this.resolve(to);
     const { call } = this.#reach([from, to], opts);
     if (!this.#o.transfer) throw new ContractError("invalid", "this tree has no direct path between computers");
-    const { answer: _one, ...plain } = call;
-    const given = [...(opts.answer ? [opts.answer] : []), ...(opts.answers ?? [])];
-    const answers = {
-      ...pick(given, src.computer, "source"),
-      ...pick(given, dst.computer, "destination"),
-    };
-    const r = await this.#o.transfer({ from, to, move: true, source: src.computer, destination: dst.computer, call: plain, answers });
+    const r = await this.#o.transfer({ from, to, move, source: src.computer, destination: dst.computer, call });
     if (r.kept > 0) {
       throw new ContractError("conflict", `${to} has the files; ${r.kept} of them changed at ${from} while they moved, so they stay there too`, { kept: r.kept });
     }
