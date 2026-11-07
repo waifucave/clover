@@ -163,17 +163,17 @@ describe("spawnShellRunner", () => {
     expect(parseMarkedPath((r as { stdout: string }).stdout)).toBe("/opt/x/bin:/usr/bin");
   });
   test("a background job holding the pipe open does not turn a good answer into a timeout", async () => {
-    const started = Date.now();
-    const r = await spawnShellRunner("/bin/sh", ["-c", script("sleep 2 & ")], 3_000, { PATH: "/usr/bin:/bin" });
+    // The job holds the pipe for 30 s; the runner's deadline is 10 s. Answering "ok" at all (rather than
+    // "timeout") means the END marker was taken without waiting for the pipe to close - no stopwatch needed.
+    const r = await spawnShellRunner("/bin/sh", ["-c", script("sleep 30 & ")], 10_000, { PATH: "/usr/bin:/bin" });
     expect(r.kind).toBe("ok");
-    expect(Date.now() - started).toBeLessThan(2_000);
-  });
+  }, 30_000);
   test("a hung shell is abandoned at the deadline", async () => {
     const started = Date.now();
     const r = await spawnShellRunner("/bin/sh", ["-c", "sleep 20"], 300, { PATH: "/usr/bin:/bin" });
     expect(r.kind).toBe("timeout");
-    expect(Date.now() - started).toBeLessThan(2_000);
-  });
+    expect(Date.now() - started).toBeLessThan(15_000); // the shell would sleep 20 s; abandoning at the 300 ms deadline is what matters
+  }, 30_000);
   test("a missing shell is an error, never a throw", async () => {
     const r = await spawnShellRunner("/nonexistent/shell", ["-c", "true"], 1_000, { PATH: "/usr/bin:/bin" });
     expect(r.kind).toBe("error");

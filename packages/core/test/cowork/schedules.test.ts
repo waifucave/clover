@@ -539,7 +539,9 @@ test("anti-wiring: the dispatch port is a type-only import of schedules.ts, has 
   }
   expect(problems).toEqual([]); expect(constructions).toBeGreaterThan(0);
   expect(existsSync(join(packages, "core", "src", "cowork", "index.ts"))).toBe(false); expect(readFileSync(join(packages, "core", "src", "index.ts"), "utf8")).not.toMatch(/schedule-dispatch|from "\.\/cowork/);
-});
+  // It parses every src file of every package with the TypeScript compiler: under a loaded CI shard that took 5.2 s, past
+  // the 5 s default, so it gets room of its own.
+}, 60_000);
 test("anti-wiring scan: each rule has a passing and a failing case", () => {
   const scan = (text: string) => wiringProblems(ts.createSourceFile("snippet.ts", text, ts.ScriptTarget.Latest, true), "snippet", 5);
   const imported = 'import { CoworkSchedules } from "./schedules";\n';

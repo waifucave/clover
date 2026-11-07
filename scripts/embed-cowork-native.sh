@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The body of the "Embed Cowork native" build phase in apple/Winter/project.yml, in its own file so it is tested standalone
-# (scripts/embed-cowork-native.test.ts), like embed-computer-helper.sh beside it. release.ts builds the inputs first
+# (scripts/embed-cowork-native.darwin.test.ts), like embed-computer-helper.sh beside it. release.ts builds the inputs first
 # (scripts/build-cowork-native.ts) and gates the result (checkCoworkNativeBundle in scripts/cowork-native-lib.ts). The feature stays OFF in the daemon:
 # shipping the pair activates nothing.
 #

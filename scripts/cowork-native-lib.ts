@@ -1,7 +1,7 @@
 // N2 S2: the pure half of the Cowork native pair's build, signing and checks — the launcher (`winter-cowork-launcher`, Swift,
 // apple/Cowork/WinterCoworkLauncher) and the VM worker (`winter-cowork-worker`, C, S3). Shared by
 // `scripts/embed-cowork-native.sh` (the Embed phase of project.yml), the release gate in `release.ts`, `dev:cowork-native` and `verify:cowork-native`.
-// Unit-tested in `embed-cowork-native.test.ts`. The feature is OFF in the daemon: shipping the pair activates nothing.
+// Unit-tested in `embed-cowork-native.darwin.test.ts`. The feature is OFF in the daemon: shipping the pair activates nothing.
 //
 // Both binaries are nested tools the daemon spawns itself (never through LaunchServices), signed with the app's identity, the
 // hardened runtime and a STATED designated requirement. The launcher carries NO entitlements. The worker carries exactly

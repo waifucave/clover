@@ -164,7 +164,7 @@ interface Harness {
  *  does — giving this file direct in-process access to `broker` (needed for the capability-call
  *  round-trip, spec v1 has no wire method for it) while every lease/renew/release/advertise/
  *  revoke/respond operation below still goes over the REAL unix socket via TestClient. */
-async function buildHarness(opts: { expiryMs?: number; heartbeatMs?: number; callTimeoutMs?: number } = {}): Promise<Harness> {
+async function buildHarness(opts: { expiryMs?: number; heartbeatMs?: number; callTimeoutMs?: number; now?: () => number } = {}): Promise<Harness> {
   const home = mkdtempSync(join(tmpdir(), "clover-e2e-peripheral-"));
   const store = new SessionStore(home);
   const hub = new SessionHub(store);
@@ -180,6 +180,7 @@ async function buildHarness(opts: { expiryMs?: number; heartbeatMs?: number; cal
     heartbeatMs: opts.heartbeatMs,
     expiryMs: opts.expiryMs,
     callTimeoutMs: opts.callTimeoutMs,
+    ...(opts.now ? { now: opts.now } : {}),
     policy: buildLeasePolicy({ store, approvals, hub }),
     // Byte-identical to daemon.ts's emitTransient: lease_granted/lease_lost fan out to the
     // requester's session AND are pushed directly to the provider connection (which is rarely
@@ -503,11 +504,15 @@ describe("2f Task 7: peripheral lease end-to-end gate", () => {
   // settings-override convention, just passed directly to the broker instead of via settings.json.
   // -----------------------------------------------------------------------------------------
   describe("chain B: renew keeps a lease alive; no renewal lets it expire (short override)", () => {
+    // Deterministic (C-M2): the broker's clock is this test's, and the test runs the expiry sweep itself
+    // (`broker.sweep(now)`) instead of waiting out the real 1000ms tick, so CI load can't make a renew land late.
+    // The wire stays real: every lease, renew, release and lease_lost goes over the unix socket.
     let harness: Harness;
     let provider: TestClient;
+    let now = 1_000_000;
 
     beforeAll(async () => {
-      harness = await buildHarness({ expiryMs: 150, heartbeatMs: 20 });
+      harness = await buildHarness({ expiryMs: 150, heartbeatMs: 20, now: () => now });
       provider = await TestClient.connect(harness.socketPath);
       await provider.hello(harness.harnessToken, "e2e-expiry-provider");
       await provider.request(METHODS.peripheralAdvertise, { classes: [{ class: "noop", tccGranted: true }] });
@@ -515,7 +520,7 @@ describe("2f Task 7: peripheral lease end-to-end gate", () => {
 
     afterAll(() => { provider.close(); harness.stop(); });
 
-    test("renew on a heartbeat cadence keeps the lease alive past its ORIGINAL expiry, surviving a real expiry-sweep tick", async () => {
+    test("renew on a heartbeat cadence keeps the lease alive past its ORIGINAL expiry, through expiry sweeps", async () => {
       const c = await TestClient.connect(harness.socketPath);
       await c.hello(harness.harnessToken, "renew-heartbeat-leaser");
       const { result: created } = await c.request(METHODS.sessionCreate, { scope: "global", approvalPolicy: "auto" });
@@ -525,18 +530,17 @@ describe("2f Task 7: peripheral lease end-to-end gate", () => {
       const { leaseId, token, expiresAt: originalExpiresAt } = grant.result;
       expect(leaseId).toBeTruthy();
 
-      // The broker's expiry sweep runs on a FIXED 1000ms cadence anchored at grant time
-      // (see PeripheralBroker.armSweep) — well past this lease's 150ms expiryMs override. A real
-      // client renews on its heartbeat (20ms override here) to keep expiresAt ahead of that sweep;
-      // looping past 1000ms proves survival across an ACTUAL sweep tick, not just a wall-clock gap.
-      const heartbeatDeadline = Date.now() + 1300;
-      while (Date.now() < heartbeatDeadline) {
-        await sleep(20);
+      // 65 heartbeats of 20ms (1.3 s of the broker's time), each renewed, with a sweep after each: well past the
+      // original 150ms expiry and past a sweep that would have expired it.
+      for (let i = 0; i < 65; i++) {
+        now += 20;
         const renew = await c.request(METHODS.peripheralRenew, { sessionId: created.sessionId, leaseId, token });
         expect(renew.result).toMatchObject({ ok: true });
+        harness.broker.sweep(now);
       }
 
-      expect(Date.now()).toBeGreaterThan(originalExpiresAt); // the ORIGINAL 150ms expiry is long past
+      expect(now).toBeGreaterThan(originalExpiresAt); // the ORIGINAL 150ms expiry is long past
+      await sleep(50); // a lease_lost, had there been one, would have reached the client by now
       expect(c.notifications.some((n) => n.params?.type === "lease_lost" && n.params.leaseId === leaseId)).toBe(false);
 
       const release = await c.request(METHODS.peripheralRelease, { sessionId: created.sessionId, leaseId, token });
@@ -544,24 +548,25 @@ describe("2f Task 7: peripheral lease end-to-end gate", () => {
       c.close();
     });
 
-    test("no renewal: the lease is lost with reason expired within the override window", async () => {
+    test("no renewal: the lease is lost with reason expired at the first sweep after its expiry", async () => {
       const c = await TestClient.connect(harness.socketPath);
       await c.hello(harness.harnessToken, "no-renew-leaser");
       const { result: created } = await c.request(METHODS.sessionCreate, { scope: "global", approvalPolicy: "auto" });
       await c.request(METHODS.sessionAttach, { sessionId: created.sessionId, fromSeq: 0 });
 
-      const grantedAt = Date.now();
       const grant = await c.request(METHODS.peripheralLease, { sessionId: created.sessionId, class: "noop" });
       const { leaseId } = grant.result;
       expect(leaseId).toBeTruthy();
 
+      now += 149;
+      harness.broker.sweep(now); // not yet
+      await sleep(50);
+      expect(c.notifications.some((n) => n.params?.type === "lease_lost" && n.params.leaseId === leaseId)).toBe(false);
+      now += 2;
+      harness.broker.sweep(now); // past its 150ms expiry
       const lost = await c.waitForNotification((n) => n.method === METHODS.event && n.params.type === "lease_lost", 3000);
       expect(lost.params.leaseId).toBe(leaseId);
       expect(lost.params.reason).toBe("expired");
-      // "within the override window": the 150ms expiry plus at most one 1000ms sweep tick — well
-      // under this generous outer bound (guards against the sweep silently never firing).
-      expect(Date.now() - grantedAt).toBeLessThan(2500);
-
       c.close();
     });
   });
