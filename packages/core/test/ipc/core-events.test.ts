@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Caller, CloverRole } from "@waifucave/clover-protocol";
-import { sendCoreEvent } from "../../src/ipc/core-events";
+import { OWNER_SCOPED_EVENTS, sendCoreEvent } from "../../src/ipc/core-events";
 import type { CloverConn } from "../../src/ipc/clover";
 import { approvalCoreEvents } from "../../src/approvals/core-events";
 import { CloverApprovalBroker } from "../../src/approvals/broker";
@@ -53,6 +53,22 @@ describe("the core.event sender", () => {
     expect(lines).toEqual(['[core.event] not a core event, not sent: "made_up"', "[core.event] a card_resolved event didn't parse; not sent"]);
     expect(sendCoreEvent(r, { type: "card_resolved", id: "card_0a1b2c3d", outcome: "denied" })).toBe(1);
     expect(app.got).toEqual([["core.event", { type: "card_resolved", ts: 77, id: "card_0a1b2c3d", outcome: "denied" }]]);
+  });
+
+  test("an owner-scoped event is refused without a `to`; a plugin never learns which device answered a card", () => {
+    const lines: string[] = [];
+    const app = conn("app", ["computers", "browser", "approvals"]);
+    const layer = conn("layer", ["approvals"], { caller: { kind: "plugin", pluginId: "luna" } });
+    const r = { connections: () => [app.c, layer.c], log: (l: string) => lines.push(l), pluginCapabilities: () => ["approvals"] };
+    const out = { type: "terminal_output", ts: 1, terminalId: "t1", data: "hi" };
+    expect(sendCoreEvent(r, out)).toBe(0);
+    expect(lines).toEqual(["[core.event] a terminal_output event belongs to its owner and came with no `to`; not sent"]);
+    for (const t of ["terminal_output", "tab_changed", "tab_closed", "cdp_event", "tool_output", "tree_changed"]) expect(OWNER_SCOPED_EVENTS.has(t)).toBe(true);
+    expect(sendCoreEvent(r, { type: "tab_closed", ts: 1 } as never, {})).toBe(0);
+    const answered = { ...resolved, device: "f".repeat(32) };
+    expect(sendCoreEvent(r, answered)).toBe(2);
+    expect(app.got.at(-1)).toEqual(["core.event", answered]);
+    expect(layer.got.at(-1)).toEqual(["core.event", resolved]);
   });
 
   test("only the connections the caller names", () => {

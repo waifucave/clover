@@ -183,7 +183,8 @@ export interface CloverServer {
   hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   /** A paired phone's or browser's hello on its link (lane H's `mountRemoteClients`, through `linkClientServer`): no
    *  local process to probe, since the link proved the device. The token must be the one the core minted for that
-   *  device and role; the caller is the user on that device. Never reachable from the socket. */
+   *  device and role, and that token is spent by the check (one hello per mint). The caller is the user on that
+   *  device. `end` closes the link's stream (`endConnections`). Never reachable from the socket. */
   linkHello(connId: number, params: unknown, link: { device: string; role: "remote" | "web" }, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
@@ -192,6 +193,8 @@ export interface CloverServer {
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
+  /** Closes every connection `match` picks that the server can close itself (a link's, through its `end`); how many. */
+  endConnections(match: (conn: CloverConn) => boolean): number;
   /** Sends a daemon-wide event as `core.event` to the connections that may have it (`ipc/core-events.ts`): its role,
    *  its subscribed areas, a plugin's capability, and `opts.to`. How many it went to. */
   coreEvent(event: CoreEventInput, opts?: CoreEventOptions): number;
@@ -208,6 +211,8 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const pipePeers = os === "win32" ? new WindowsPipePeers(deps.endpoint) : null;
   const spentAnswers = new Set<string>();
   const conns = new Map<number, CloverConn>();
+  /** How the server closes a connection it can close itself (a link's stream), by connection id. */
+  const ends = new Map<number, () => void>();
   let requestSeq = 0;
   const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
   const beatTimeout = deps.heartbeat?.timeoutMs ?? 15_000;
@@ -418,14 +423,22 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       return r;
     },
 
-    async linkHello(connId, params, link, write) {
+    async linkHello(connId, params, link, write, end) {
       const h = parseHello(params);
-      if (h.role !== link.role || h.device !== link.device) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "a link's hello is its device's, in its role");
-      const binding = await deps.tokens.verify(h);
+      let binding: Awaited<ReturnType<CloverTokens["verify"]>>;
+      try {
+        if (h.role !== link.role || h.device !== link.device) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "a link's hello is its device's, in its role");
+        binding = await deps.tokens.verify(h);
+      } finally {
+        // One hello per minted token: spent by the check whatever it found, so the table never grows per connection.
+        deps.tokens.revoke(h.token);
+      }
       if (isRefusal(binding)) throw new CloverRpcError(binding.code, binding.message);
       if (binding.role !== link.role || !("device" in binding) || binding.device !== link.device) throw new CloverRpcError(ERR_UNAUTHORIZED, "the token is for another device or role");
       const caller: Caller = { kind: "user", client: link.role === "remote" ? "ios" : "web", device: link.device };
-      return register(connId, h, caller, write, {});
+      const r = register(connId, h, caller, write, {});
+      if (end) ends.set(connId, end);
+      return r;
     },
 
     async handle(conn, method, params) {
@@ -460,6 +473,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       if (conn === null) return;
       stopBeat(conn.connId);
       conns.delete(conn.connId);
+      ends.delete(conn.connId);
       for (const stop of conn.follows.values()) { try { stop(); } catch { /* the session is gone */ } }
       conn.follows.clear();
       const b = bridged.get(conn.connId);
@@ -478,6 +492,18 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     connections() { return [...conns.values()]; },
+
+    endConnections(match) {
+      let n = 0;
+      for (const [connId, end] of [...ends]) {
+        const conn = conns.get(connId);
+        if (conn === undefined || !match(conn)) continue;
+        ends.delete(connId);
+        try { end(); } catch { /* already gone */ }
+        n++;
+      }
+      return n;
+    },
 
     coreEvent(event, opts) {
       return sendCoreEvent({

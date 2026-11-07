@@ -92,10 +92,55 @@ describe("remote clients over links, on the Clover server", () => {
     await expect(s.linkHello(5, hello(tokens.mint({ role: "remote", device: phone }), "remote", phone), { device: phone, role: "remote" }, () => {})).rejects.toMatchObject({ code: ERR.INVALID_REQUEST });
   });
 
-  test("the door's server refuses a hello that didn't come from a link the door made", async () => {
-    const { server: s } = server();
-    const door = linkClientServer(s);
-    await expect(door.hello({ device: "p".repeat(32) }, 1, { role: "remote" }, () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
-    await expect(door.hello({ device: "p".repeat(32), link: true }, 1, { role: "app" }, () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+  test("the door's server: the device from the door's socket, the role from the registry, never the hello", async () => {
+    const { tokens, server: s } = server();
+    const phone = "p".repeat(32), laptop = "l".repeat(32);
+    const devices = new Map<string, { kind: string; revokedAt?: number }>([[phone, { kind: "phone" }], [laptop, { kind: "desktop" }], ["r".repeat(32), { kind: "phone", revokedAt: 1 }]]);
+    const door = linkClientServer(s, { get: (id) => devices.get(id) as never });
+    const hello = (role: string, device: string) => ({ protocolVersion: CLOVER_PROTOCOL_VERSION, role, device, clientName: "x", token: tokens.mint({ role: "remote", device: phone }) });
+    await expect(door.hello({ device: phone }, 1, hello("remote", phone), () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED }); // no link mark
+    await expect(door.hello({ device: laptop, link: true }, 2, hello("remote", laptop), () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED }); // a computer
+    await expect(door.hello({ device: "r".repeat(32), link: true }, 3, hello("remote", "r".repeat(32)), () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED }); // revoked
+    await expect(door.hello({ device: phone, link: true }, 4, hello("web", phone), () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED }); // the hello's role isn't the registry's
+    expect((await door.hello({ device: phone, link: true }, 5, hello("remote", phone), () => {})).conn.role).toBe("remote");
+  });
+
+  test("each minted token is spent by its hello, and the server closes a link connection itself", async () => {
+    const { tokens, server: s } = server();
+    const phone = "p".repeat(32);
+    const size = () => (tokens as unknown as { minted: Map<string, unknown> }).minted.size;
+    let ended = 0;
+    for (let i = 0; i < 5; i++) {
+      const token = tokens.mint({ role: "remote", device: phone });
+      const p = { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "remote", device: phone, token, clientName: "x" };
+      await s.linkHello(10 + i, p, { device: phone, role: "remote" }, () => {}, () => { ended++; });
+      await expect(s.linkHello(100 + i, p, { device: phone, role: "remote" }, () => {})).rejects.toMatchObject({ code: ERR_UNAUTHORIZED }); // spent
+    }
+    // A refused hello spends its token too.
+    await expect(s.linkHello(200, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "web", device: phone, token: tokens.mint({ role: "remote", device: phone }), clientName: "x" }, { device: phone, role: "remote" }, () => {})).rejects.toBeDefined();
+    expect(size()).toBe(0);
+    expect(s.endConnections((c) => c.caller.kind === "user" && c.caller.device === phone)).toBe(5);
+    expect(ended).toBe(5);
+  });
+
+  test("revoking a device drops the tokens still minted for it and closes its connections", async () => {
+    const { tokens, server: s } = server();
+    const phone = "p".repeat(32), other = "o".repeat(32);
+    let fire!: (c: { type: "revoked"; id: string }) => void;
+    const off = mountCloverRemoteClients({
+      transport: { onStream: () => () => {} }, server: s, tokens,
+      registry: { get: () => undefined, watch: (fn) => { fire = fn as never; return () => {}; } },
+    });
+    stops.push(off);
+    const size = () => (tokens as unknown as { minted: Map<string, unknown> }).minted.size;
+    tokens.mint({ role: "remote", device: phone });
+    tokens.mint({ role: "web", device: phone });
+    tokens.mint({ role: "remote", device: other });
+    let ended = false;
+    await s.linkHello(1, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "remote", device: phone, token: tokens.mint({ role: "remote", device: phone }), clientName: "x" }, { device: phone, role: "remote" }, () => {}, () => { ended = true; });
+    expect(size()).toBe(3);
+    fire({ type: "revoked", id: phone });
+    expect(size()).toBe(1);
+    expect(ended).toBe(true);
   });
 });

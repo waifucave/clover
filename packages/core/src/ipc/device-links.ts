@@ -24,7 +24,6 @@ import { mountPeerCall } from "../links/peer-call";
 import { watchNetwork } from "../platform/network-watch";
 import { laneMethodHandlers, type CloverHandler } from "./clover";
 import { mountCloverRemoteClients, type CloverRemoteClientsOptions } from "./link-clients";
-import type { RemoteTokens } from "../links/remote-clients";
 
 /** Until C-M3's broker: no card can be raised, so a change that needs one is refused. */
 export const refuseUntilBroker: CardOpener = async () => ({ allowed: Promise.resolve(false) });
@@ -55,7 +54,7 @@ export interface DaemonLinksInput {
   /** Runs a peer's call as that peer, under the role's allow list (`CloverServer.dispatch`). */
   dispatch(method: string, params: unknown, caller: Extract<Caller, { kind: "peer" }>, role: Extract<CloverRole, "remote" | "web">): Promise<unknown>;
   /** The Clover server and its tokens, for paired phones' and browsers' connections over their links. */
-  clients?: { server: CloverRemoteClientsOptions["server"]; tokens: RemoteTokens };
+  clients?: { server: CloverRemoteClientsOptions["server"]; tokens: CloverRemoteClientsOptions["tokens"] };
   /** The Clover server's lane handlers, filled in once the links are up. */
   handlers: Record<string, CloverHandler>;
   /** Test seams: the wire and where peers are (no sidecar), and the network watch. */
