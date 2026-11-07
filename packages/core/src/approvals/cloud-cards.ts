@@ -60,12 +60,26 @@ const yesNo = (t: { yes: string; no: string }): NonNullable<ApprovalRequest["opt
   { id: "approve", kind: "approve", label: t.yes }, { id: "deny", kind: "deny", label: t.no },
 ];
 
-/** `key: value` lines in a code field, the values' hiding characters out. */
+/** The longest value a card line shows; a provider's longer string is cut and marked. */
+export const CLOUD_VALUE_MAX = 120;
+
+/** `key: value` lines in a code field: the values' hiding characters (newlines included) out, so no value makes a
+ *  line of its own, and each cut at `CLOUD_VALUE_MAX`. */
 function details(lines: readonly (readonly [string, string | undefined])[]): { type: "code"; code: string } {
-  return { type: "code", code: lines.filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${plainOf(v!)}`).join("\n") };
+  const value = (v: string) => { const plain = plainOf(v); return plain.length > CLOUD_VALUE_MAX ? `${plain.slice(0, CLOUD_VALUE_MAX - 1)}…` : plain; };
+  return { type: "code", code: lines.filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${value(v!)}`).join("\n") };
 }
 
-const pairedText = (p: boolean | undefined) => (p === undefined ? "not known" : p ? "yes" : "no");
+/** Whether each VM's device is paired: Clover's own fact, in a text field from this table, never next to a
+ *  provider's string. */
+export const CLOUD_PAIRED_TEXT: Record<string, string> = {
+  "yes-yes": "This one's device is paired, and so is the one kept.",
+  "yes-no": "This one's device is paired; the one kept's isn't.",
+  "no-yes": "This one's device isn't paired; the one kept's is.",
+  "no-no": "Neither one's device is paired.",
+};
+const pairedKey = (p: boolean | undefined) => (p === undefined ? "unknown" : p ? "yes" : "no");
+const PAIRED_UNKNOWN = "Clover doesn't know whether these devices are paired.";
 
 /** The broker's request for one cloud card. `origin`: what started it (the reconcile is the daemon's own by default).
  *  It waits for the person whatever started it (`waitsForUser`): a cloud card is never denied by a timeout, since a
@@ -95,19 +109,21 @@ export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "r
       } };
     }
     case "cloud-duplicate": {
+      // Each provider string on its own line; whether each device is paired is Clover's, in its own text field.
       const vms = details([
-        ["folder", card.name],
-        ["this one", `${card.provider} ${card.serverId}${card.region ? ` (${card.region})` : ""}, device paired: ${pairedText(card.paired)}`],
-        ["the one kept", card.keeper === undefined ? "not known"
-          : `${card.provider} ${card.keeper.serverId}${card.keeper.region ? ` (${card.keeper.region})` : ""}, device paired: ${pairedText(card.keeper.paired)}`],
+        ["folder", card.name], ["provider", card.provider],
+        ["this one", card.serverId], ["this one's region", card.region || undefined],
+        ["the one kept", card.keeper?.serverId ?? "not known"], ["the one kept's region", card.keeper?.region || undefined],
       ]);
-      if (card.deletable === true) {
-        const t = CLOUD_CARD_TEXT["cloud-duplicate"];
-        return { ...base, change: "computer-delete", options: yesNo(t), fields: { title: title(t.title), what: title(t.what), detail: vms } };
-      }
-      // Nothing to delete: one button, which answers no.
-      const t = CLOUD_CARD_TEXT["cloud-duplicate-report"];
-      return { ...base, change: "computer-delete", options: [{ id: "ok", kind: "deny", label: t.ok }], fields: { title: title(t.title), what: title(t.what), detail: vms } };
+      const paired = CLOUD_PAIRED_TEXT[`${pairedKey(card.paired)}-${pairedKey(card.keeper?.paired)}`] ?? PAIRED_UNKNOWN;
+      const deletable = card.deletable === true;
+      const t = deletable ? CLOUD_CARD_TEXT["cloud-duplicate"] : CLOUD_CARD_TEXT["cloud-duplicate-report"];
+      return {
+        ...base, change: "computer-delete",
+        // Nothing to delete unless the kept VM ranks strictly above: then one button, which answers no.
+        options: deletable ? yesNo(CLOUD_CARD_TEXT["cloud-duplicate"]) : [{ id: "ok", kind: "deny", label: CLOUD_CARD_TEXT["cloud-duplicate-report"].ok }],
+        fields: { title: title(t.title), what: title(t.what), reason: title(paired), detail: vms },
+      };
     }
     case "cloud-repair": {
       const t = CLOUD_CARD_TEXT[card.why === "token-expired" ? "cloud-repair-token-expired" : "cloud-repair-main-changed"];
@@ -129,14 +145,26 @@ export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "r
  *    most once a day per server), never reading it as "keep". */
 export type CloudCardOutcome = "approved" | "declined" | "stale" | "unanswered";
 
-interface OpenCloudCard { card: CloudCardRequest; close: (why: "stale" | "unanswered") => void }
+/** What a card is about, for `stale` and for one open card per kind and subject: a duplicate's server, the folder a
+ *  create or make-main card is for, else the computer by provider and name. */
+export function cloudCardSubject(card: CloudCardRequest): string {
+  switch (card.kind) {
+    case "cloud-duplicate": return `server:${card.provider}/${card.serverId}`;
+    case "cloud-create": return `folder:${card.folder}`;
+    case "cloud-make-main": return `folder:${card.name}`;
+    default: return `computer:${card.provider}/${card.name}`;
+  }
+}
+
+interface OpenCloudCard { card: CloudCardRequest; subject: string; outcome: Promise<CloudCardOutcome>; close: (why: "stale" | "unanswered") => void }
 
 /** The cloud cards through the broker, each waiting for the person until it is answered or closed as stale. */
 export class CloudCardDesk {
   readonly #broker: Pick<ApprovalBroker, "request">;
   readonly #origin: TurnOrigin;
   readonly #maxWaitMs: number | undefined;
-  readonly #open = new Set<OpenCloudCard>();
+  /** Open cards by kind and subject: one each. */
+  readonly #open = new Map<string, OpenCloudCard>();
 
   constructor(broker: Pick<ApprovalBroker, "request">, o: { origin?: TurnOrigin; maxWaitMs?: number } = {}) {
     this.#broker = broker;
@@ -144,22 +172,32 @@ export class CloudCardDesk {
     this.#maxWaitMs = o.maxWaitMs;
   }
 
-  /** Raises the card and waits for how it ends. */
-  async ask(card: CloudCardRequest): Promise<CloudCardOutcome> {
+  /** Raises the card and waits for how it ends; the same kind and subject asked again while open gets the open one.
+   *  Only the person's answer (`by: "card"`) is approved or declined: a card ended any other way (withdrawn, cancelled,
+   *  denied by anything but the person) is `unanswered`, never a no. */
+  ask(card: CloudCardRequest): Promise<CloudCardOutcome> {
+    const subject = cloudCardSubject(card);
+    const key = `${card.kind}|${subject}`;
+    const open = this.#open.get(key);
+    if (open !== undefined) return open.outcome;
     const ac = new AbortController();
     let closed: "stale" | "unanswered" | undefined;
-    const entry: OpenCloudCard = { card, close: (why) => { closed ??= why; ac.abort(); } };
-    this.#open.add(entry);
     const timer = this.#maxWaitMs === undefined ? undefined : setTimeout(() => entry.close("unanswered"), this.#maxWaitMs);
     (timer as { unref?: () => void } | undefined)?.unref?.();
-    try {
-      const d = await this.#broker.request(cloudCardRequest(card, this.#origin), { signal: ac.signal });
-      if (closed !== undefined) return closed;
-      return d.allowed ? "approved" : "declined";
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-      this.#open.delete(entry);
-    }
+    const outcome = (async (): Promise<CloudCardOutcome> => {
+      try {
+        const d = await this.#broker.request(cloudCardRequest(card, this.#origin), { signal: ac.signal });
+        if (closed !== undefined) return closed;
+        if (d.by !== "card") return "unanswered";
+        return d.allowed ? "approved" : "declined";
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        this.#open.delete(key);
+      }
+    })();
+    const entry: OpenCloudCard = { card, subject, outcome, close: (why) => { closed ??= why; ac.abort(); } };
+    this.#open.set(key, entry);
+    return outcome;
   }
 
   /** J's `confirm`: true only when the person approved the card. */
@@ -167,16 +205,17 @@ export class CloudCardDesk {
     return (await this.ask(card)) === "approved";
   }
 
-  /** Closes, as `stale`, every open card `gone` picks (its VM no longer exists, its folder was removed); how many. */
-  stale(gone: (card: CloudCardRequest) => boolean): number {
+  /** Closes, as `stale`, every open card about `subject` (`cloudCardSubject`: the server that's gone, the folder that
+   *  was removed, the computer); how many. */
+  stale(subject: string): number {
     let n = 0;
-    for (const e of [...this.#open]) if (gone(e.card)) { e.close("stale"); n++; }
+    for (const e of [...this.#open.values()]) if (e.subject === subject) { e.close("stale"); n++; }
     return n;
   }
 
   /** The cards waiting for the person now. */
   pending(): CloudCardRequest[] {
-    return [...this.#open].map((e) => e.card);
+    return [...this.#open.values()].map((e) => e.card);
   }
 }
 

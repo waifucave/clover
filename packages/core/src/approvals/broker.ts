@@ -230,7 +230,8 @@ export class CloverApprovalBroker implements ApprovalBroker {
 
   #showCard(req: ApprovalRequest, signal: AbortSignal | undefined): Promise<ApprovalDecision> {
     const issuedAt = this.#clock.now();
-    const expires = (req as CloverApprovalRequest).waitsForUser === true ? false : cardExpires(req.kind, req.origin); // rule 6
+    // rule 6; `waitsForUser` holds only for a sensitive change (the cloud cards): a plugin's `confirm` always expires.
+    const expires = req.kind === "change" && (req as CloverApprovalRequest).waitsForUser === true ? false : cardExpires(req.kind, req.origin);
     const once = ALWAYS_CARD_KINDS.includes(req.kind);
     const options = once || !this.#rememberable(req)
       ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)
