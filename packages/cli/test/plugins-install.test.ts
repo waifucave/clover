@@ -1,7 +1,9 @@
 // The bundled plugins on a server (src/plugins-install.ts), against a fake release served from memory with a throwaway
 // key, on a temp home: the install of exactly the tree the core's manifest names, then left in place; a tarball that
-// isn't that tree, a tampered tarball or update file, a tarball another version names, and a core with no manifest,
-// each refused with the folder untouched; a swap keeping `.old`. Nothing reaches the network or a real home.
+// isn't that tree, a tampered tarball or update file, a tarball another version names, the wrong tag or channel, and a
+// core with no manifest, each refused with the folder untouched; a swap keeping `.old`; the start's local recovery from
+// `.new` or `.old`; the back-off; one lock, and no swap once the gate committed. Nothing reaches the network or a
+// real home.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -9,12 +11,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatBundledManifest } from "@waifucave/clover-core";
 import { formatCoreFeed, generateFeedKey, packTarball, pluginsFeedFile, pluginsTarballFile, signFeed, type TarballFile } from "@waifucave/clover-update-feed";
-import { ensureServerPlugins, manifestSha256, serverPluginsDir, stageServerPlugins, swapPluginsIn, treeManifestSha256 } from "../src/plugins-install";
+import { ensureServerPlugins, fetchBackoffFile, manifestSha256, PluginsLock, recoverServerPlugins, serverPluginsDir, stageServerPlugins, swapPluginsIn, treeManifestSha256 } from "../src/plugins-install";
 import type { Fetcher } from "../src/self-update";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const TARGET = "linux-x64" as const;
-const RELEASES = "https://api.github.com/repos/waifucave/clover/releases?per_page=30";
+const tagUrl = (version: string) => `https://api.github.com/repos/waifucave/clover/releases/tags/v${version}`;
 
 const TREE: TarballFile[] = [
   { path: "clover/clover.json", bytes: enc(`{"id":"clover"}`), executable: false },
@@ -29,7 +31,7 @@ function coreManifestSha(files: readonly TarballFile[]): string {
   return createHash("sha256").update(formatBundledManifest({ files: m })).digest("hex");
 }
 
-interface Release { tag: string; version: string; tree?: TarballFile[]; spoil?: "tarball" | "feed signature"; names?: string }
+interface Release { tag: string; version: string; tree?: TarballFile[]; spoil?: "tarball" | "feed signature"; names?: string; prerelease?: boolean; tagName?: string }
 
 function github(key: { privateKey: string }, releases: Release[]) {
   const files = new Map<string, Uint8Array>();
@@ -48,9 +50,11 @@ function github(key: { privateKey: string }, releases: Release[]) {
     }
     put(tarName, served);
     put(`${tarName}.sig`, enc(signFeed(tarName, signed, key.privateKey)));
-    return { tag_name: r.tag, draft: false, prerelease: false, assets };
+    const release = { tag_name: r.tagName ?? r.tag, draft: false, prerelease: r.prerelease ?? false, assets };
+    files.set(tagUrl(r.tag.slice(1)), enc(JSON.stringify(release)));
+    return release;
   });
-  files.set(RELEASES, enc(JSON.stringify(list)));
+  void list;
   const asked: string[] = [];
   const fetch: Fetcher = async (u, opts) => {
     asked.push(u);
@@ -66,8 +70,13 @@ function server(releases: Release[]) {
   const gh = github(key, releases);
   const lines: string[] = [];
   const dir = serverPluginsDir(home);
-  const deps = (version: string, sha: string | undefined) => ({ dir, version, manifestSha256: sha, target: TARGET, channel: "latest" as const, publicKey: key.publicKey, fetch: gh.fetch, log: (l: string) => lines.push(l) });
-  return { home, dir, deps, gh, lines };
+  let committed = false;
+  let now = 1_000_000;
+  const deps = (version: string, sha: string | undefined) => ({
+    dir, home, version, manifestSha256: sha, target: TARGET, channel: "latest" as const, publicKey: key.publicKey, fetch: gh.fetch,
+    committed: () => committed, now: () => now, log: (l: string) => lines.push(l),
+  });
+  return { home, dir, deps, gh, lines, commit: () => { committed = true; }, advance: (ms: number) => { now += ms; } };
 }
 
 describe("the bundled plugins on a server", () => {
@@ -117,7 +126,7 @@ describe("the bundled plugins on a server", () => {
     const names = server([{ tag: "v1.2.3", version: "1.2.3", names: "clover-plugins-1.2.2-linux-x64.tar.gz" }]);
     expect((await ensureServerPlugins(names.deps("1.2.3", sha))).kind).toBe("refused");
     const none = server([{ tag: "v1.2.2", version: "1.2.2" }]);
-    expect(await ensureServerPlugins(none.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "no release carries clover-plugins-1.2.3-linux-x64.tar.gz" });
+    expect(await ensureServerPlugins(none.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "release v1.2.3 could not be read" });
     for (const s of [tampered, feed, names, none]) expect(existsSync(s.dir)).toBe(false);
   });
 
@@ -142,5 +151,89 @@ describe("the bundled plugins on a server", () => {
   test("manifestSha256 is the hash of the manifest's one text form", () => {
     const m = { files: { "a/b": { sha256: "0".repeat(64), size: 1 } } };
     expect(manifestSha256(m)).toBe(createHash("sha256").update(formatBundledManifest(m)).digest("hex"));
+  });
+});
+
+describe("the release is the core's own tag, on its channel", () => {
+  test("only releases/tags/v<version> is asked, and a beta or a mislabelled tag is refused on latest", async () => {
+    const sha = coreManifestSha(TREE);
+    const ok = server([{ tag: "v1.2.3", version: "1.2.3" }]);
+    expect((await ensureServerPlugins(ok.deps("1.2.3", sha))).kind).toBe("installed");
+    expect(ok.gh.asked[0]).toBe(tagUrl("1.2.3"));
+    expect(ok.gh.asked.some((u) => u.includes("per_page"))).toBe(false);
+    const beta = server([{ tag: "v1.2.3", version: "1.2.3", prerelease: true }]);
+    expect(await ensureServerPlugins(beta.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "release v1.2.3 is a beta, and this server takes latest" });
+    const other = server([{ tag: "v1.2.3", version: "1.2.3", tagName: "v1.2.4" }]);
+    expect(await ensureServerPlugins(other.deps("1.2.3", sha))).toEqual({ kind: "refused", why: "release v1.2.3 is not a published release of that tag" });
+  });
+});
+
+describe("the start: local copies first, a back-off, one lock", () => {
+  /** A folder at `path` holding `files`. */
+  const write = (path: string, files: readonly TarballFile[]) => {
+    for (const f of files) { mkdirSync(join(path, f.path, ".."), { recursive: true }); writeFileSync(join(path, f.path), f.bytes); }
+  };
+  const OLD_TREE = [{ path: "clover/clover.json", bytes: enc(`{"id":"clover","old":true}`), executable: false }];
+
+  test("a power cut mid-swap: .new (the update's) or .old (a rollback's) that measures to the manifest is taken back, no download", () => {
+    const s = server([]);
+    write(`${s.dir}.new`, TREE);
+    expect(recoverServerPlugins({ dir: s.dir, manifestSha256: coreManifestSha(TREE), watching: true, log: () => {} })).toEqual({ kind: "recovered", from: ".new" });
+    expect(treeManifestSha256(s.dir)).toBe(coreManifestSha(TREE));
+    const r = server([]);
+    write(r.dir, TREE);
+    write(`${r.dir}.old`, OLD_TREE);
+    expect(recoverServerPlugins({ dir: r.dir, manifestSha256: coreManifestSha(OLD_TREE), watching: false, log: () => {} })).toEqual({ kind: "recovered", from: ".old" });
+    expect(treeManifestSha256(r.dir)).toBe(coreManifestSha(OLD_TREE));
+    expect(r.gh.asked).toEqual([]);
+  });
+
+  test("while an update is watched, .old (the rollback's copy) is never taken or removed; nothing matching: nothing done", () => {
+    const s = server([]);
+    write(s.dir, OLD_TREE);
+    write(`${s.dir}.old`, TREE);
+    expect(recoverServerPlugins({ dir: s.dir, manifestSha256: coreManifestSha(TREE), watching: true, log: () => {} })).toBeUndefined();
+    expect(treeManifestSha256(`${s.dir}.old`)).toBe(coreManifestSha(TREE));
+    expect(recoverServerPlugins({ dir: s.dir, manifestSha256: coreManifestSha([]), watching: false, log: () => {} })).toBeUndefined();
+  });
+
+  test("a failing refetch backs off (kept in a marker), doubling, and a success clears it", async () => {
+    const s = server([{ tag: "v1.2.3", version: "1.2.3", spoil: "tarball" }]);
+    const sha = coreManifestSha(TREE);
+    expect((await ensureServerPlugins(s.deps("1.2.3", sha))).kind).toBe("refused");
+    const first = JSON.parse(readFileSync(fetchBackoffFile(s.home), "utf8"));
+    expect(first.failures).toBe(1);
+    const asked = s.gh.asked.length;
+    const waiting = await ensureServerPlugins(s.deps("1.2.3", sha));
+    expect(waiting.kind === "refused" && waiting.why).toContain("tried again after");
+    expect(s.gh.asked.length).toBe(asked);
+    s.advance(first.until - 1_000_000 + 1);
+    await ensureServerPlugins(s.deps("1.2.3", sha));
+    expect(JSON.parse(readFileSync(fetchBackoffFile(s.home), "utf8")).failures).toBe(2);
+    write(s.dir, TREE);
+    expect(await ensureServerPlugins(s.deps("1.2.3", sha))).toEqual({ kind: "in place" });
+    expect(existsSync(fetchBackoffFile(s.home))).toBe(false);
+  });
+
+  test("the refetch stages in .fetch, never a self-update's .new, and never swaps once the gate committed", async () => {
+    const s = server([{ tag: "v1.2.3", version: "1.2.3" }]);
+    write(`${s.dir}.new`, OLD_TREE);
+    s.commit();
+    expect(await ensureServerPlugins(s.deps("1.2.3", coreManifestSha(TREE)))).toEqual({ kind: "refused", why: "an update's restart is under way; the folder is left to it" });
+    expect(existsSync(s.dir)).toBe(false);
+    expect(existsSync(`${s.dir}.fetch`)).toBe(false);
+    expect(treeManifestSha256(`${s.dir}.new`)).toBe(coreManifestSha(OLD_TREE));
+  });
+
+  test("one lock: what runs in it runs one at a time, in order, and a failure doesn't stop the next", async () => {
+    const lock = new PluginsLock();
+    const seen: string[] = [];
+    const a = lock.run(async () => { seen.push("a start"); await Bun.sleep(20); seen.push("a end"); });
+    const b = lock.run(async () => { seen.push("b"); throw new Error("b failed"); });
+    const c = lock.run(() => { seen.push("c"); return 3; });
+    await a;
+    await expect(b).rejects.toThrow("b failed");
+    expect(await c).toBe(3);
+    expect(seen).toEqual(["a start", "a end", "b", "c"]);
   });
 });

@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
 import { UpdateGate, UPDATE_RESTART_EXIT_CODE } from "@waifucave/clover-core";
 import { beginUpdatedBoot, bootWasGood, coreTargetOf, isNewer, MAX_FEED_BYTES, pluginsDirOf, readCapped, rolledBack, runBundledManifest, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
-import { treeManifestSha256 } from "../src/plugins-install";
+import { recoverServerPlugins, treeManifestSha256 } from "../src/plugins-install";
+import { realOps, type DurableOps } from "../src/durable";
 
 const posix = test.if(process.platform !== "win32");
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -70,7 +71,7 @@ function pluginsTree(dir: string, version: string): string {
  *  version's tree is staged (or refused). */
 interface PluginsOpt { says?: string | "none" | undefined; refuse?: string }
 
-function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number; plugins?: PluginsOpt }) {
+function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number; plugins?: PluginsOpt; ops?: DurableOps }) {
   const home = mkdtempSync(join(tmpdir(), "clover-self-update-"));
   const binDir = opts.plugins === undefined ? join(home, "bin") : join(home, "bin", "daemon");
   mkdirSync(binDir, { recursive: true });
@@ -102,6 +103,7 @@ function server(opts: { version?: string; channel?: "latest" | "beta"; releases:
     ...(opts.reopenAfterMs !== undefined ? { reopenAfterMs: opts.reopenAfterMs } : {}),
     exit: (code) => { exited.push(code); },
     log: (l) => lines.push(l),
+    ...(opts.ops === undefined ? {} : { ops: opts.ops }),
     ...(opts.plugins === undefined ? {} : {
       runManifest: async () => ("says" in opts.plugins! ? opts.plugins!.says : nextSha),
       plugins: {
@@ -409,5 +411,90 @@ describe("a server's daemon updating itself", () => {
     expect(await runBundledManifest(answer("none", 'echo "bundled-manifest: 0 files, sha256 none"'))).toBe("none");
     expect(await runBundledManifest(answer("odd", 'echo "bundled-manifest: refused (two)"; exit 1'))).toBeUndefined();
     expect(await runBundledManifest(answer("hang", "sleep 30"), 300)).toBeUndefined();
+  });
+
+  /** Every step a swap takes, with `look` run before each one and once after the last: a power cut can fall between
+   *  any two steps (each one atomic on its own), so what `look` sees is what a restart after a cut would find. */
+  const watched = (look: (step: string) => void): { ops: DurableOps; steps: string[] } => {
+    const steps: string[] = [];
+    const wrap = <A extends unknown[]>(name: string, fn: (...a: A) => void) => (...a: A) => { look(`before ${name}`); steps.push(name); fn(...a); };
+    return { steps, ops: { rename: wrap("rename", realOps.rename), link: wrap("link", realOps.link), rm: wrap("rm", realOps.rm), syncFile: realOps.syncFile, syncDir: wrap("syncDir", realOps.syncDir) } };
+  };
+
+  posix("a power cut at any step of the swap leaves a whole binary at bin, and plugins a start can recover", async () => {
+    const seen: string[] = [];
+    let s!: ReturnType<typeof server>;
+    let oldSha = "";
+    const look = (step: string) => {
+      const bin = existsSync(s.bin) ? readFileSync(s.bin, "utf8") : "missing";
+      seen.push(`${step}: bin ${bin === versionScript("1.2.3") ? "old" : bin === versionScript("1.3.0") ? "new" : bin}`);
+      const tree = treeManifestSha256(s.pluginsDir);
+      const recoverable = tree === oldSha || tree === s.nextSha || treeManifestSha256(`${s.pluginsDir}.new`) === s.nextSha || treeManifestSha256(`${s.pluginsDir}.old`) === oldSha;
+      if (!recoverable) seen.push(`${step}: plugins unrecoverable`);
+    };
+    const w = watched(look);
+    s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {}, ops: w.ops });
+    oldSha = treeManifestSha256(s.pluginsDir)!;
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    look("after the last step");
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(w.steps).toEqual(["rm", "link", "syncDir", "rename", "syncDir", "rm", "rename", "rename", "syncDir"]);
+    expect(seen.filter((l) => !/: bin (old|new)$/.test(l))).toEqual([]);
+    // A cut between the plugins' two renames: the folder is gone, `.new` is the new tree, and the start's recovery
+    // (an update watched: `.new` only) takes it back.
+    rmSync(s.pluginsDir, { recursive: true, force: true });
+    rmSync(`${s.pluginsDir}.new`, { recursive: true, force: true });
+    pluginsTree(`${s.pluginsDir}.new`, "1.3.0");
+    expect(recoverServerPlugins({ dir: s.pluginsDir, manifestSha256: s.nextSha, watching: true, log: () => {} })).toEqual({ kind: "recovered", from: ".new" });
+    expect(treeManifestSha256(s.pluginsDir)).toBe(s.nextSha);
+  });
+
+  posix("a power cut at any step of a rollback leaves a whole binary, and the version is recorded before the first", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    const seen: string[] = [];
+    const w = watched((step) => {
+      const bin = existsSync(s.bin) ? readFileSync(s.bin, "utf8") : "missing";
+      if (bin !== versionScript("1.2.3") && bin !== versionScript("1.3.0")) seen.push(`${step}: bin ${bin}`);
+      if (!rolledBack(s.home).includes("1.3.0")) seen.push(`${step}: not yet recorded`);
+    });
+    expect(beginUpdatedBoot(s.home, s.bin, () => {}, w.ops)).toBe("rolled-back");
+    expect(seen).toEqual([]);
+    expect(w.steps.slice(0, 4)).toEqual(["rm", "link", "syncDir", "rename"]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+  });
+
+  posix("a swap step that fails puts everything back: the old binary at bin, the old plugins, no restart", async () => {
+    let renames = 0;
+    const failing: DurableOps = { ...realOps, rename: (a, b) => { renames++; if (renames === 3) throw new Error("injected: the disk refused"); realOps.rename(a, b); } };
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {}, ops: failing });
+    const before = treeManifestSha256(s.pluginsDir);
+    await s.updater.check();
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    expect(s.exited).toEqual([]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(before);
+    expect(s.lines.at(-1)).toContain("injected: the disk refused");
+  });
+
+  test("restartWhenIdle: at the next idle moment the gate closes and commits, the daemon drains and exits to restart", async () => {
+    let busy = 1;
+    const s = server({ releases: [], busy: () => busy });
+    s.updater.restartWhenIdle("the bundled plugins were fetched again");
+    await Bun.sleep(20);
+    expect(s.exited).toEqual([]);
+    busy = 0;
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.gate.committed).toBe(true);
+    expect(s.did).toContain("drained");
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(s.lines.at(-1)).toContain("the bundled plugins were fetched again");
   });
 });

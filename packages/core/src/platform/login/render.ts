@@ -38,6 +38,9 @@ export interface LoginSpec {
   readonly winUser?: string;
   /** The app, on a computer that runs it: its executable (macOS: the `.app` bundle). */
   readonly app?: { readonly bin: string };
+  /** Windows, a server install: the binary the logon task falls back to when `bin` is missing or won't start
+   *  (`<bin>.old`: a self-update's swap is two renames there, and a power cut between them leaves no `bin`). */
+  readonly fallbackBin?: string;
 }
 
 /** The daemon's restart-loop subcommand; the login unit runs `<bin> supervise`. */
@@ -299,14 +302,24 @@ ${triggers}
  *  second start ignored. With login start off the trigger stays but is disabled, so `schtasks /Run`
  *  still starts the daemon. */
 export function renderSchtasksXml(spec: LoginSpec, loginOn = true): string {
+  const fallback = spec.fallbackBin === undefined ? undefined : schtasksFallback(spec.bin, spec.fallbackBin);
   return renderTask({
     description: `${spec.profile === "dev" ? "Clover (dev)" : "Clover"} daemon (clover-core supervise)`,
     uri: schtasksTaskName(spec.profile),
     user: spec.winUser,
     logon: loginOn ? "on" : "off",
-    command: spec.bin,
-    args: SUPERVISE_ARGS[0],
+    command: fallback?.command ?? spec.bin,
+    args: fallback?.args ?? SUPERVISE_ARGS[0],
   });
+}
+
+/** The logon task's command with a fallback: `cmd.exe` runs `<bin> supervise`, and when that fails to start (no
+ *  file, a damaged one) or ends in an error, `<fallback> supervise` if it exists. A path with a `"` or `%` is refused:
+ *  cmd.exe couldn't quote it safely. */
+export function schtasksFallback(bin: string, fallback: string): { command: string; args: string } {
+  for (const p of [bin, fallback]) if (/["%^&|<>\r\n]/.test(p)) throw new Error(`${p}: a path cmd.exe can't quote`);
+  const run = `"${bin}" ${SUPERVISE_ARGS[0]} || if exist "${fallback}" "${fallback}" ${SUPERVISE_ARGS[0]}`;
+  return { command: "%SystemRoot%\\System32\\cmd.exe", args: `/d /s /c "${run}"` };
 }
 
 /** The app's on-demand task (no trigger), which the daemon starts with `schtasks /Run`, so the app is

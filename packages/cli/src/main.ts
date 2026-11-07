@@ -1,7 +1,7 @@
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater } from "./self-update";
+import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater, updateWatched } from "./self-update";
 import { daemonBunVersion, ensurePluginBun, serverPluginBun } from "./plugin-bun-install";
-import { ensureServerPlugins, serverPluginsDir, stageServerPlugins } from "./plugins-install";
-import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
+import { ensureServerPlugins, PluginsLock, recoverServerPlugins, serverPluginsDir, stageServerPlugins } from "./plugins-install";
+import { migrateEarlierLayout, parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
@@ -1993,7 +1993,7 @@ if (import.meta.main) {
       plugins: async (dir: string, channel: "latest" | "beta") => {
         const target = coreTargetOf(process.platform, process.arch);
         if (target === undefined) return { kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` };
-        return ensureServerPlugins({ dir, version: CORE_VERSION, manifestSha256: await ownManifestSha256(), target, channel, log: (line) => console.log(line) });
+        return ensureServerPlugins({ dir, home: base.home, version: CORE_VERSION, manifestSha256: await ownManifestSha256(), target, channel, committed: () => false, log: (line) => console.log(line) });
       },
     };
     process.exit(parsed.action === "install" ? await serverInstall(deps, parsed.channel) : await serverUninstall(deps));
@@ -2010,7 +2010,32 @@ if (import.meta.main) {
     // LANE C — M-M2's boot-count hook (self-update.ts), first, before anything else the daemon does (the log file
     // included), so a crash anywhere in the start counts: after a server's daemon swapped in its update, this counts
     // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.
-    if (beginUpdatedBoot(resolveCloverHome(), process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
+    // A server (`<home>/install.json` says server) first leaves the earlier layout if it still runs from there
+    // (server-install.ts's one migration step), then knows its binary as `<home>/bin/daemon/clover-core`.
+    const bootHome = resolveCloverHome();
+    const bootOs = currentDaemonPlatform();
+    const bootTarget = coreTargetOf(process.platform, process.arch);
+    const bootMarker = readInstallMarker(bootHome, process.execPath);
+    const isServer = updatesItself(bootMarker) && bootTarget !== undefined;
+    if (isServer) {
+      const migrated = await migrateEarlierLayout({
+        home: bootHome, os: bootOs, execPath: process.execPath, log: (line) => console.error(line),
+        reRegister: async (bin) => {
+          const base = currentLoginSpec();
+          const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+          return (await loginEnable({ ...base, bin, fallbackBin: `${bin}.old`, ...(winUser ? { winUser } : {}) }, liveLoginOsDeps())).registered;
+        },
+      });
+      if (migrated.kind === "restart") process.exit(UPDATE_RESTART_EXIT_CODE);
+      if (migrated.kind === "failed") console.error(`server: leaving the earlier layout failed, so this daemon doesn't update itself: ${migrated.why}`);
+    }
+    const sameFile = (a: string, b: string) => { try { return realpathSync(a) === realpathSync(b); } catch { return false; } };
+    const serverBin = isServer && sameFile(process.execPath, serverBinary(bootHome, bootOs)) ? serverBinary(bootHome, bootOs) : undefined;
+    if (beginUpdatedBoot(bootHome, serverBin ?? process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
+    // The bundled plugins' local recovery, before anything reads the folder: a folder that isn't this core's
+    // manifest's tree takes `.new` or `.old` back when either is (plugins-install.ts), with no download.
+    const ownSha = serverBin === undefined ? undefined : await ownManifestSha256();
+    if (serverBin !== undefined) recoverServerPlugins({ dir: serverPluginsDir(bootHome), manifestSha256: ownSha, watching: updateWatched(bootHome), log: (line) => console.error(line) });
     // Whole-branch review: register the shutdown handlers HERE, not (only) in daemon.ts. daemon.ts's
     // SIGTERM/SIGINT handlers live under `if (import.meta.main)`, which is FALSE for the compiled
     // binary and this CLI entry (main.ts is `import.meta.main`, daemon.ts is not) — so without this
@@ -2050,16 +2075,18 @@ if (import.meta.main) {
     // hands back is what releases the lock (→ unlinks the socket). `process.exit(0)` on the same
     // line would kill the process mid-drain and leave the stale socket this handler exists to avoid.
     // M-M2: a start that ran GOOD_BOOT_MS, or stopped cleanly, is a good one (self-update.ts's `bootWasGood`).
-    const home = resolveCloverHome();
-    const goodBoot = setTimeout(() => bootWasGood(home, process.execPath), GOOD_BOOT_MS);
+    const home = bootHome;
+    const goodBoot = setTimeout(() => bootWasGood(home, serverBin ?? process.execPath), GOOD_BOOT_MS);
     goodBoot.unref?.();
-    const shutdown = async () => { await daemon.stop(); bootWasGood(home, process.execPath); process.exit(0); };
+    const shutdown = async () => { await daemon.stop(); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
-    const target = coreTargetOf(process.platform, process.arch);
-    const marker = readInstallMarker(home, process.execPath);
-    if (updatesItself(marker) && target !== undefined && process.execPath === serverBinary(home, currentDaemonPlatform())) {
+    const target = bootTarget;
+    const marker = bootMarker;
+    if (serverBin !== undefined && target !== undefined) {
+      // One lock for everything that touches `<home>/bin/plugins` (plugins-install.ts).
+      const pluginsLock = new PluginsLock();
       const self = new SelfUpdater({
-        home, bin: process.execPath, version: CORE_VERSION, target, channel: marker?.channel ?? "latest",
+        home, bin: serverBin, version: CORE_VERSION, target, channel: marker?.channel ?? "latest",
         gate: daemon.updateGate, restartCode: UPDATE_RESTART_EXIT_CODE,
         drain: async () => { clearTimeout(goodBoot); await daemon.stop(); },
         exit: (code) => process.exit(code),
@@ -2067,20 +2094,28 @@ if (import.meta.main) {
         // The bundled plugins update with the daemon: each version's tarball, against the new binary's manifest.
         plugins: {
           dir: serverPluginsDir(home),
+          lock: pluginsLock,
           stage: (version, manifestSha256) => stageServerPlugins({ dir: serverPluginsDir(home), version, manifestSha256, target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) }),
         },
       });
       daemon.setSelfUpdate(self);
-      self.start();
       // Plain Bun for plugins follows the daemon's Bun: after a self-update that moved Bun (or a rollback), the
       // matching one is fetched (or put back from `.old`) at this start (plugin-bun-install.ts).
       void ensurePluginBun({ path: serverPluginBun(home, process.platform), bunVersion: daemonBunVersion(), target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) })
         .then((r) => { if (r.kind === "refused") console.error(`update: plain Bun for plugins: ${r.why}`); });
-      // So do the bundled plugins: a folder that isn't this core's manifest's tree (a rollback that found no `.old`, a
-      // folder someone changed) is fetched again at this start. The registry trusts only files that match anyway.
-      void ownManifestSha256()
-        .then((manifestSha256) => ensureServerPlugins({ dir: serverPluginsDir(home), version: CORE_VERSION, manifestSha256, target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) }))
-        .then((r) => { if (r.kind === "refused") console.error(`update: the bundled plugins: ${r.why}`); });
+      // So do the bundled plugins: a folder that isn't this core's manifest's tree and that no local copy could
+      // replace (above) is fetched again, in the plugins lock, never swapped once the gate committed a restart. The
+      // registry reads bundled plugins at its start, so a folder fetched now is taken by a restart at the next idle
+      // moment. The self-update starts only once this settled.
+      void pluginsLock.run(() => ensureServerPlugins({
+        dir: serverPluginsDir(home), home, version: CORE_VERSION, manifestSha256: ownSha, target, channel: marker?.channel ?? "latest",
+        committed: () => daemon.updateGate.committed, log: (line) => console.error(line),
+      }))
+        .then((r) => {
+          if (r.kind === "refused") console.error(`update: the bundled plugins: ${r.why}`);
+          if (r.kind === "installed") self.restartWhenIdle("the bundled plugins were fetched again, and the registry reads them at its start");
+        }, (err: unknown) => console.error(`update: the bundled plugins: ${err instanceof Error ? err.message : String(err)}`))
+        .finally(() => self.start());
     }
     // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
     // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app

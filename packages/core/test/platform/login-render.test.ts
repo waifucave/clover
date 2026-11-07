@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, renderAppSystemdUnit, renderAppSchtasksXml,
   renderXdgAutostart, loginLabel, loginUnitPath, parkedPlistPath, appUnitPath, xdgAutostartPath,
-  systemdUnitName, schtasksTaskName, appTaskName, appUnitName, systemdArg, type LoginSpec,
+  systemdUnitName, schtasksTaskName, appTaskName, appUnitName, systemdArg, schtasksFallback, type LoginSpec,
 } from "../../src/platform/login/render";
 
 const base = (over: Partial<LoginSpec> = {}): LoginSpec => ({
@@ -136,4 +136,15 @@ describe("login-start paths with control characters (review M4)", () => {
     expect(() => renderXdgAutostart({ ...base, app: { bin: "/opt/a\nExec=/bin/evil" } } as never)).toThrow(/control character/);
     expect(() => renderLaunchdPlist({ ...base, os: "darwin", home: "/Users/me/.clo\u0007ver" } as never)).toThrow(/control character/);
   });
+});
+
+test("a server's logon task (Windows) falls back to <bin>.old through cmd.exe when the binary is missing or won't start", () => {
+  const bin = "C:\\Users\\a\\.clover\\bin\\daemon\\clover-core.exe";
+  const xml = renderSchtasksXml({ os: "win32", bin, home: "C:\\Users\\a\\.clover", logsDir: "C:\\Users\\a\\.clover\\logs", profile: "dist", winUser: "S-1-5-21-1", fallbackBin: `${bin}.old` });
+  expect(xml).toContain("<Command>%SystemRoot%\\System32\\cmd.exe</Command>");
+  expect(xml).toContain(`<Arguments>/d /s /c &quot;&quot;${bin}&quot; supervise || if exist &quot;${bin}.old&quot; &quot;${bin}.old&quot; supervise&quot;</Arguments>`);
+  // Without a fallback (the app's daemon, which the app updates), the binary itself, as before.
+  expect(renderSchtasksXml({ os: "win32", bin, home: "h", logsDir: "l", profile: "dist" })).toContain(`<Command>${bin}</Command>`);
+  expect(() => schtasksFallback('C:\\a"b\\clover-core.exe', "x")).toThrow("can't quote");
+  expect(() => schtasksFallback("C:\\%TEMP%\\clover-core.exe", "x")).toThrow("can't quote");
 });

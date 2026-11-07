@@ -1,11 +1,11 @@
 // `clover-core server install|uninstall` (src/server-install.ts) against a temp home, a recording runner and lane C's
 // login start faked: never launchctl, systemctl, loginctl or schtasks for real.
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readInstallMarker, removeInstallMarker, writeInstallMarker, type LoginSpec } from "@waifucave/clover-core";
-import { earlierLayoutFiles, insideApp, parseServerArgs, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
+import { earlierLayoutFiles, insideApp, migrateEarlierLayout, parseServerArgs, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
 import { serverPluginBun, type PluginBunResult } from "../src/plugin-bun-install";
 import { serverPluginsDir, type PluginsResult } from "../src/plugins-install";
 
@@ -164,5 +164,65 @@ describe("clover-core server install and uninstall", () => {
   test("a login start the OS didn't register fails the install", async () => {
     const s = setup("darwin", { registered: false });
     expect(await serverInstall(s.deps, "latest")).toBe(1);
+  });
+
+  test("Windows: the logon task falls back to .old when the binary is missing or won't start", async () => {
+    const s = setup("win32");
+    expect(await serverInstall(s.deps, "latest")).toBe(0);
+    const bin = serverBinary(s.home, "win32");
+    expect(s.enabled.map((e) => e.fallbackBin)).toEqual([`${bin}.old`]);
+    const posix = setup("linux");
+    await serverInstall(posix.deps, "latest");
+    expect(posix.enabled[0]!.fallbackBin).toBeUndefined();
+  });
+});
+
+describe("one step from the earlier layout", () => {
+  const earlierServer = () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "clover-server-migrate-")));
+    mkdirSync(join(home, "bin"));
+    const [oldBin, , , , oldBun] = earlierLayoutFiles(home, "linux");
+    writeFileSync(oldBin!, "the daemon", { mode: 0o755 });
+    writeFileSync(oldBun!, "plain bun", { mode: 0o755 });
+    return { home, oldBin: oldBin!, oldBun: oldBun! };
+  };
+  const lines: string[] = [];
+
+  test.if(process.platform !== "win32")("macOS and Linux: copied into bin/daemon, plain Bun moved beside it, the old path a link to it; then a restart", async () => {
+    const e = earlierServer();
+    const r = await migrateEarlierLayout({ home: e.home, os: "linux", execPath: e.oldBin, reRegister: async () => { throw new Error("not on POSIX"); }, log: (l) => lines.push(l) });
+    expect(r).toEqual({ kind: "restart" });
+    const bin = serverBinary(e.home, "linux");
+    expect(readFileSync(bin, "utf8")).toBe("the daemon");
+    expect(readFileSync(join(e.home, "bin", "daemon", "clover-plugin-bun"), "utf8")).toBe("plain bun");
+    expect(lstatSync(e.oldBin).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(e.oldBin)).toBe(join("daemon", "clover-core"));
+    expect(realpathSync(e.oldBin)).toBe(bin);
+    // The restarted daemon runs from the new layout: nothing more to do, and the link the login unit runs through stays.
+    writeFileSync(`${e.oldBin}.old`, "an old one");
+    expect(await migrateEarlierLayout({ home: e.home, os: "linux", execPath: bin, reRegister: async () => true, log: () => {} })).toEqual({ kind: "not needed" });
+    expect(existsSync(`${e.oldBin}.old`)).toBe(false);
+    expect(lstatSync(e.oldBin).isSymbolicLink()).toBe(true);
+  });
+
+  test("Windows: copied, and the logon task registered again for the new path; the next logon starts it", async () => {
+    const e = earlierServer();
+    const registered: string[] = [];
+    const r = await migrateEarlierLayout({ home: e.home, os: "win32", execPath: e.oldBin.replace(/clover-core$/, "clover-core.exe"), reRegister: async (b) => { registered.push(b); return true; }, log: () => {} });
+    // (The earlier Windows layout's binary is clover-core.exe: this one isn't, so nothing is to be done.)
+    expect(r).toEqual({ kind: "not needed" });
+    const exe = earlierLayoutFiles(e.home, "win32")[0]!;
+    writeFileSync(exe, "the daemon");
+    expect(await migrateEarlierLayout({ home: e.home, os: "win32", execPath: exe, reRegister: async (b) => { registered.push(b); return true; }, log: () => {} })).toEqual({ kind: "next logon" });
+    expect(registered).toEqual([serverBinary(e.home, "win32")]);
+    expect(readFileSync(serverBinary(e.home, "win32"), "utf8")).toBe("the daemon");
+  });
+
+  test("a daemon that isn't a server's earlier binary has nothing to move", async () => {
+    const e = earlierServer();
+    const elsewhere = join(e.home, "elsewhere");
+    writeFileSync(elsewhere, "x");
+    expect(await migrateEarlierLayout({ home: e.home, os: "linux", execPath: elsewhere, reRegister: async () => true, log: () => {} })).toEqual({ kind: "not needed" });
+    expect(existsSync(serverBinary(e.home, "linux"))).toBe(false);
   });
 });

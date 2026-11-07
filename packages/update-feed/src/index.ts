@@ -186,10 +186,13 @@ const BLOCK = 512;
 export const MAX_TARBALL_BYTES = 512 * 1024 * 1024;
 export const MAX_TARBALL_FILES = 100_000;
 
-/** Whether `path` is a plain relative path: `/`-separated, no empty, `.` or `..` segment, no backslash, colon or NUL. */
+/** Whether `path` is a plain relative path every OS can hold: `/`-separated, no empty, `.` or `..` segment, no
+ *  backslash, colon or NUL, no Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`, `LPT0`-`LPT9`, with any
+ *  extension, in any case) and no segment ending in a dot or a space (which Windows drops). */
 export function plainRelativePath(path: string): boolean {
   if (path === "" || /[\\:\0]/.test(path)) return false;
-  return path.split("/").every((s) => s !== "" && s !== "." && s !== "..");
+  return path.split("/").every((s) => s !== "" && s !== "." && s !== ".."
+    && !/^(?:con|prn|aux|nul|com[0-9\u00b9\u00b2\u00b3]|lpt[0-9\u00b9\u00b2\u00b3])(?:\..*)?$/i.test(s) && !/[. ]$/.test(s));
 }
 
 function octal(n: number, width: number): string {
@@ -288,7 +291,8 @@ export function unpackTarball(gz: Uint8Array): TarballFile[] {
     const size = num(h, 124, 12);
     const mode = num(h, 100, 8);
     if (at + BLOCK + size > tar.length) throw new Error(`${path} runs past the end of the tarball`);
-    out.push({ path, bytes: tar.slice(at + BLOCK, at + BLOCK + size), executable: (mode & 0o111) !== 0 });
+    // A view into the unpacked archive, not a copy: the peak is the archive once, not twice.
+    out.push({ path, bytes: tar.subarray(at + BLOCK, at + BLOCK + size), executable: (mode & 0o111) !== 0 });
     at += BLOCK + Math.ceil(size / BLOCK) * BLOCK;
   }
   return out;

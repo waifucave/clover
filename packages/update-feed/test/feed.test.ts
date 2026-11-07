@@ -138,3 +138,10 @@ test("the tarball: packed the same way every time, read back strictly", async ()
   expect(() => unpackTarball(new Uint8Array(gzipSync(Buffer.concat([Buffer.from(header("a/x", "0", 4096)), Buffer.alloc(512)]))))).toThrow();
   expect(() => unpackTarball(enc("not gzip"))).toThrow("not a gzip stream");
 });
+
+test("a tarball path every OS can hold: no Windows device name, no trailing dot or space", async () => {
+  const { plainRelativePath, packTarball } = await import("../src/index");
+  for (const p of ["a/CON", "a/nul.txt", "COM1/x", "a/lpt9.js", "a/x.", "a/x ", "a/com¹"]) expect(plainRelativePath(p)).toBe(false);
+  for (const p of ["a/console.js", "a/null.js", "a/com10", "a/.env.example", "clover/clover.json"]) expect(plainRelativePath(p)).toBe(true);
+  expect(() => packTarball([{ path: "a/AUX.json", bytes: new Uint8Array(), executable: false }])).toThrow("plain relative path");
+});

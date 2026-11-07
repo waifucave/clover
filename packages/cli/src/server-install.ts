@@ -14,9 +14,10 @@
 // `uninstall` stops the daemon cleanly, removes the login start, turns lingering off again if install turned it on,
 // and removes the marker, the binaries and the bundled plugins. A home with the earlier layout (`<home>/bin/clover-core`
 // and plugin Bun beside it) has those removed at install and uninstall. On Windows the binary running the uninstall can't delete itself, and says so.
-import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { InstallChannel, InstallMarker, LoginOsDeps, LoginSpec, Runner } from "@waifucave/clover-core";
+import { syncDir, syncFile } from "./durable";
 import { serverPluginBun, type PluginBunResult } from "./plugin-bun-install";
 import { serverPluginsDir, type PluginsResult } from "./plugins-install";
 
@@ -102,7 +103,9 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
     copyFileSync(spec.bin, bin);
     if (spec.os !== "win32") chmodSync(bin, 0o755);
   }
-  const served: LoginSpec = { ...spec, bin };
+  // Windows: the logon task falls back to `.old` when the binary is missing or won't start (self-update.ts's
+  // replaceBinary: two renames there).
+  const served: LoginSpec = { ...spec, bin, ...(spec.os === "win32" ? { fallbackBin: `${bin}.old` } : {}) };
   // Plain Bun for plugins beside it (`pluginBun()` fails closed without it): from the release, checked as the daemon's
   // own update is. A server that can't have it isn't installed.
   const bun = await d.pluginBun(serverPluginBun(spec.home, spec.os), channel);
@@ -175,4 +178,71 @@ export async function serverUninstall(d: ServerDeps): Promise<number> {
   }
   d.log(`server uninstall: the daemon ${stopped}; login start and the marker removed${kept === undefined ? "" : `; ${kept} is in use and stays (delete it once this process ends)`}`);
   return 0;
+}
+
+export type MigrationResult = { kind: "not needed" } | { kind: "restart" } | { kind: "next logon" } | { kind: "failed"; why: string };
+
+/**
+ * One step from the earlier layout (`<home>/bin/clover-core`, which no release shipped, but dev and test servers run):
+ * when a server's daemon starts from that path, it copies itself to `<home>/bin/daemon/clover-core` (written, flushed,
+ * renamed in place), moves plain Bun beside it, and points the old path at the new one:
+ *   - macOS and Linux: the old path becomes a symlink to `daemon/clover-core` (one atomic rename), so the login unit,
+ *     which runs `<home>/bin/clover-core supervise`, starts the new layout; the caller then exits with the restart
+ *     code, and `supervise` starts it at once;
+ *   - Windows (a running binary can't be replaced, and a symlink needs a privilege): the logon task is registered
+ *     again for the new path (with its `.old` fallback); this daemon keeps running, and the next logon starts the new
+ *     layout, whose start removes the old files.
+ * Never throws.
+ */
+export async function migrateEarlierLayout(o: {
+  home: string;
+  os: LoginSpec["os"];
+  execPath: string;
+  /** Registers the login start again for `bin` (Windows; `loginEnable`). */
+  reRegister(bin: string): Promise<boolean>;
+  log(line: string): void;
+}): Promise<MigrationResult> {
+  const earlier = earlierLayoutFiles(o.home, o.os);
+  const oldBin = earlier[0]!;
+  const real = (p: string) => { try { return realpathSync(p); } catch { return undefined; } };
+  try {
+    if (real(o.execPath) === undefined || real(o.execPath) !== real(oldBin) || lstatSync(oldBin).isSymbolicLink()) {
+      // The new layout: what the earlier one left (but the symlink the login unit runs through) goes.
+      if (real(o.execPath) === real(serverBinary(o.home, o.os))) {
+        for (const f of earlier.slice(1)) {
+          try { rmSync(f, { force: true }); } catch { /* in use (Windows) */ }
+        }
+        if (o.os === "win32") {
+          try { rmSync(oldBin, { force: true }); } catch { /* still running somewhere */ }
+        }
+      }
+      return { kind: "not needed" };
+    }
+    const bin = serverBinary(o.home, o.os);
+    mkdirSync(dirname(bin), { recursive: true });
+    const staged = `${bin}.new`;
+    rmSync(staged, { force: true });
+    copyFileSync(oldBin, staged);
+    if (o.os !== "win32") chmodSync(staged, 0o755);
+    syncFile(staged);
+    renameSync(staged, bin);
+    syncDir(dirname(bin));
+    const oldBun = earlier[4]!, bun = serverPluginBun(o.home, o.os);
+    if (existsSync(oldBun) && !existsSync(bun)) renameSync(oldBun, bun);
+    syncDir(dirname(bin));
+    if (o.os === "win32") {
+      if (!(await o.reRegister(bin))) return { kind: "failed", why: "the logon task could not be registered for the new layout" };
+      o.log(`server: moved to ${bin}; the next logon starts it there`);
+      return { kind: "next logon" };
+    }
+    const link = `${oldBin}.migrate`;
+    rmSync(link, { force: true });
+    symlinkSync(join("daemon", basename(bin)), link);
+    renameSync(link, oldBin);
+    syncDir(dirname(oldBin));
+    o.log(`server: moved to ${bin} (${oldBin} now points there); restarting into it`);
+    return { kind: "restart" };
+  } catch (err) {
+    return { kind: "failed", why: err instanceof Error ? err.message : String(err) };
+  }
 }
