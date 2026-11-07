@@ -443,7 +443,7 @@ export interface ShippedNative { file: string; package: string; target: string }
  *  reached through another name (`const r = require; r("x")`). */
 export function scanModule(source: string): { specifiers: string[]; computed: number } {
   const specifiers = new Set<string>();
-  for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(source)) specifiers.add(i.path);
+  for (const i of new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source)) specifiers.add(i.path);
   // A bundle calls an external through `__require` (= import.meta.require), which the transpiler doesn't see.
   for (const m of source.matchAll(/(?<![\w$])(?:__require|import\.meta\.require)\s*\(\s*(["'])([^"'\\]+)\1\s*\)/g)) specifiers.add(m[2]!);
   let computed = 0;

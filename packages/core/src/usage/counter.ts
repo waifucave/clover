@@ -12,7 +12,7 @@
 // turn that ended while the daemon was going down is still counted, once (the ledger's dedupe keys).
 import type { SessionRecord } from "../contracts/session-host";
 import type { Unsubscribe } from "../contracts/common";
-import type { DurableSessionHost } from "../sessions/durable-host";
+import { isCopiedRecord, type DurableSessionHost } from "../sessions/durable-host";
 import type { LedgerRowInput, UsageLedger } from "./ledger";
 
 export interface TurnUsageEvent {
@@ -105,7 +105,8 @@ export class CloverUsageCounter {
 
   #count(record: SessionRecord, info: SessionInfo): void {
     try {
-      const rows = this.#rowsFor(record, info);
+      // A copy from the computer that ran the turn (sessions' `ingest`) is counted there; only the cursor moves here.
+      const rows = isCopiedRecord(record) ? [] : this.#rowsFor(record, info);
       // The cursor moves at a turn's end, so a catch-up never starts inside a turn.
       const cursor = record.type === "turn_ended" ? { session: record.sessionId, seq: record.seq, ts: record.ts } : undefined;
       if (rows.length === 0 && cursor === undefined) return;

@@ -43,7 +43,7 @@ async function main(){
  case 'ssh':ok=run(bash,['--noprofile','--norc','-c','ssh -V']).status===0;break;
  case 'node':ok=run(node,['-e','process.exit(0)']).status===0;break;
  case 'bun':ok=run(bun,['-e','process.exit(0)']).status===0;break;
- case 'build':fs.writeFileSync(p.join(work,'input.js'),'export default 42');ok=run(bun,['build','input.js','--outfile','output.js']).status===0;break;
+ case 'build':fs.writeFileSync(p.join(work,'input.js'),'export default 42');ok=run(bun,['build','--no-macros','input.js','--outfile','output.js']).status===0;break;
  case 'loopback-network':case 'metadata-network':
   await new Promise(resolve=>{const s=net.connect({host:test==='loopback-network'?'127.0.0.1':'169.254.169.254',port:test==='loopback-network'?Number(port):80});s.setTimeout(1200);s.on('connect',()=>{ok=false;s.destroy();resolve()});s.on('error',()=>{ok=true;resolve()});s.on('timeout',()=>{ok=true;s.destroy();resolve()})});break;
  case 'scheduler-cli':ok=run('schtasks.exe',['/Create','/TN','com.waifucave.clover.spike.escape','/SC','ONCE','/ST','23:59','/TR','cmd.exe /c exit 0','/F']).status!==0;break;
