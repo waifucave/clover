@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ConversationActions, ConversationFormat, DeviceRef, SharedTime } from "./types";
 
 /** What every message is drawn with besides its own item: data and the host's callbacks only, as a
@@ -14,6 +15,8 @@ export interface MessageContext {
   /** The bot's main conversation has a turn running. */
   turnLive: boolean;
   actions: ConversationActions;
+  /** A file's preview (`file.preview`): a plugin's for the file's type where one fills it, else `standard`. */
+  preview?: (path: string, standard: ReactNode) => ReactNode;
 }
 
 /** What each `conversation.message` entry gets (lane B's catalog, B-M0): the bot, the session, the item

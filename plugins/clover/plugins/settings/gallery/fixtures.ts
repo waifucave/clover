@@ -5,12 +5,33 @@ export const VALUES: SettingsValues = {
   account: { name: "Sam", main: "Studio" },
   appearance: { theme: "system", textSize: "default" },
   language: { id: "en-US", name: "English (United States)" },
-  notifications: { needsYou: true, agentDone: true, routineFailed: true, sounds: false },
+  // What the notifier plugins declare (each its own settings, §5.1): desktop notifications', as asked of its lane.
+  notifiers: [
+    {
+      pluginId: "clover/notifications",
+      name: "Desktop notifications",
+      fields: [
+        { key: "needsYou", type: "boolean", title: "When a bot needs you", description: "An approval or a question is waiting.", value: true, set: false, required: false },
+        { key: "agentDone", type: "boolean", title: "When a background agent finishes", value: true, set: false, required: false },
+        { key: "routineFailed", type: "boolean", title: "When a routine fails", value: true, set: false, required: false },
+        { key: "sounds", type: "boolean", title: "Sounds", value: false, set: false, required: false },
+      ],
+    },
+    { pluginId: "clover/push", name: "Phone notifications", fields: [] },
+  ],
   plugins: [
     { id: "clover", name: "Clover", source: "Bundled", state: "running", enabled: true, oks: ["Reads your bots and conversations", "Answers cards", "Uses your computers' files"] },
     { id: "tarot-panel", name: "Tarot panel", source: "From the plugin index", state: "running", enabled: true, oks: ["Reads conversations"] },
-    { id: "weather-routine", name: "Weather routine", source: "From the plugin index", state: "found", enabled: false, oks: ["Reaches api.weather.example"] },
-    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", state: "stopped", enabled: true, reason: "Stopped after three crashes in two minutes", oks: [] },
+    {
+      id: "weather-routine", name: "Weather routine", source: "From the plugin index", state: "found", enabled: false, oks: ["Reaches api.weather.example"],
+      settings: [
+        { key: "city", type: "string", title: "City", value: "Lisbon", set: true, required: true },
+        { key: "units", type: "enum", title: "Units", value: "metric", set: false, required: false, options: [{ value: "metric", title: "Celsius" }, { value: "imperial", title: "Fahrenheit" }] },
+        { key: "hour", type: "number", title: "Hour of the forecast", value: 7, set: false, required: false, min: 0, max: 23 },
+        { key: "apiKey", type: "secret", title: "API key", set: true, required: true },
+      ],
+    },
+    { id: "story-mode", name: "Story mode", source: "From a folder: home/Laptop/code/story-mode", state: "stopped", enabled: true, adult: true, reason: "Stopped after three crashes in two minutes", oks: [] },
   ],
   themes: [
     { id: "clover", name: "Clover" },

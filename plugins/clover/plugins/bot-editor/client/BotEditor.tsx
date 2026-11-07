@@ -142,7 +142,7 @@ export function BotEditor(props: BotEditorProps) {
                       role="radio"
                       aria-checked={on}
                       className="cl-bot-editor__avatar"
-                      onClick={() => onChange({ avatar: { file: a.file, format: a.format, ...(a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })}
+                      onClick={() => onChange({ avatar: { file: a.file, format: a.format, ...(a.portrait ? { portrait: a.portrait } : a.portraitUrl ? { portrait: a.portraitUrl } : {}) } })}
                     >
                       {a.portraitUrl ? <img className="cl-bot-editor__avatar-face" src={a.portraitUrl} alt="" /> : <span className="cl-bot-editor__avatar-face" aria-hidden="true">{initial(a.name)}</span>}
                       <span className="cl-bot-editor__avatar-name">{a.name}</span>

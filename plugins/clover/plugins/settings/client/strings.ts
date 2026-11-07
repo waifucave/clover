@@ -1,98 +1,338 @@
-// Every string the settings window shows, for the move to `clover.` keys (plan, F-M3).
+// Every string the settings window shows.
 import type { PluginState, SettingsSection } from "./types";
 
+import en from "../locales/en.json" with { type: "json" };
+import { translator } from "../../shell/runtime/strings";
+
+/** This part's words: `clover.settings.` keys, English in `locales/en.json`, the user's language through the app's tables. */
+const t = translator(en.strings);
+
 export const S = {
-  title: "Settings",
-  close: "Close settings",
-  search: "Find a setting",
-  sections: "Sections",
+  /** What a capability lets a plugin do, in plain words (the capability's own name when it has none). */
+  okWord: (capability: string) => {
+    const key = `clover.settings.ok.${capability}`;
+    const text = t(key);
+    return text === key ? capability : text;
+  },
+  okCall: (plugin: string) => t("clover.settings.okCall", { plugin }),
+  okHost: (host: string) => t("clover.settings.okHost", { host }),
+  source: (source: string) => t(`clover.settings.source.${source}`),
+  levelName: (level: string) => t(`clover.settings.level.${level}`),
+  get title() {
+    return t("clover.settings.title");
+  },
+  get close() {
+    return t("clover.settings.close");
+  },
+  get search() {
+    return t("clover.settings.search");
+  },
+  get sections() {
+    return t("clover.settings.sections");
+  },
   section: {
-    account: "Account",
-    devices: "Devices",
-    appearance: "Appearance",
-    notifications: "Notifications",
-    plugins: "Plugins",
-    levels: "Levels",
-    bots: "Bots",
+    get account() {
+      return t("clover.settings.section.account");
+    },
+    get devices() {
+      return t("clover.settings.section.devices");
+    },
+    get appearance() {
+      return t("clover.settings.section.appearance");
+    },
+    get notifications() {
+      return t("clover.settings.section.notifications");
+    },
+    get plugins() {
+      return t("clover.settings.section.plugins");
+    },
+    get levels() {
+      return t("clover.settings.section.levels");
+    },
+    get bots() {
+      return t("clover.settings.section.bots");
+    },
   } satisfies Record<SettingsSection, string>,
-  later: "Nothing to set here yet.",
-  laterDetail: "This page fills in with a later milestone.",
-  noMatch: "No setting matches",
+  get later() {
+    return t("clover.settings.later");
+  },
+  get laterDetail() {
+    return t("clover.settings.laterDetail");
+  },
+  get noMatch() {
+    return t("clover.settings.noMatch");
+  },
   // Account.
-  name: "Your name",
-  nameDetail: "What your bots call you.",
-  main: "Main computer",
-  mainDetail: "The computer that runs your bots when it's on.",
+  get name() {
+    return t("clover.settings.name");
+  },
+  get nameDetail() {
+    return t("clover.settings.nameDetail");
+  },
+  get main() {
+    return t("clover.settings.main");
+  },
+  get mainDetail() {
+    return t("clover.settings.mainDetail");
+  },
   // Devices.
-  devices: "Paired devices",
-  devicesDetail: "Every device sees every bot. The main computer runs them. Removing a device, adding one or choosing another main computer asks you on a card first.",
-  thisDevice: "This device",
-  mainDevice: "Main",
-  remove: (name: string) => `Remove ${name}`,
-  makeMain: (name: string) => `Make ${name} the main computer`,
-  makeMainLabel: "Make main",
-  pairTitle: "Pair a device",
-  pairDetail: "Show a code here and enter it on the other device, or enter the code another device shows. No account needed.",
-  pairBegin: "Show a code",
-  pairJoinLabel: "Code from another device",
-  pairJoin: "Join",
-  pairCodeNote: "Enter this code on the other device:",
-  pairWords: "Check that both devices show these four words:",
-  pairConfirm: "They match",
-  pairConfirming: "Waiting for your OK",
-  pairCancel: "Cancel",
-  pairExpired: "The code expired. Show a new one to try again.",
-  pairFailed: (reason: string) => (reason ? `The pairing didn't finish: ${reason}` : "The pairing didn't finish."),
-  pairClose: "OK",
-  removeLabel: "Remove",
+  get devices() {
+    return t("clover.settings.devices");
+  },
+  get devicesDetail() {
+    return t("clover.settings.devicesDetail");
+  },
+  get thisDevice() {
+    return t("clover.settings.thisDevice");
+  },
+  get mainDevice() {
+    return t("clover.settings.mainDevice");
+  },
+  remove: (name: string) => t("clover.settings.remove", { name }),
+  makeMain: (name: string) => t("clover.settings.makeMain", { name }),
+  get makeMainLabel() {
+    return t("clover.settings.makeMainLabel");
+  },
+  get pairTitle() {
+    return t("clover.settings.pairTitle");
+  },
+  get pairDetail() {
+    return t("clover.settings.pairDetail");
+  },
+  get pairBegin() {
+    return t("clover.settings.pairBegin");
+  },
+  get pairJoinLabel() {
+    return t("clover.settings.pairJoinLabel");
+  },
+  get pairJoin() {
+    return t("clover.settings.pairJoin");
+  },
+  get pairCodeNote() {
+    return t("clover.settings.pairCodeNote");
+  },
+  get pairWords() {
+    return t("clover.settings.pairWords");
+  },
+  get pairConfirm() {
+    return t("clover.settings.pairConfirm");
+  },
+  get pairConfirming() {
+    return t("clover.settings.pairConfirming");
+  },
+  get pairCancel() {
+    return t("clover.settings.pairCancel");
+  },
+  get pairExpired() {
+    return t("clover.settings.pairExpired");
+  },
+  pairFailed: (reason: string) => (reason ? t("clover.settings.pairFailedWhy", { reason }) : t("clover.settings.pairFailed")),
+  get pairClose() {
+    return t("clover.settings.pairClose");
+  },
+  get removeLabel() {
+    return t("clover.settings.removeLabel");
+  },
   // Appearance.
-  theme: "Light or dark",
-  themeDetail: "Or follow the system.",
-  themes: { light: "Light", dark: "Dark", system: "System" } as const,
-  themePlugin: "Theme",
-  themePluginDetail: "Themes are plugins: install one and it shows here.",
-  textSize: "Text size",
-  textSizes: { small: "Small", default: "Default", large: "Large" } as const,
-  language: "Language",
-  languageDetail: "For the app, the cards and the bots' replies to you.",
-  change: "Change",
-  // Notifications.
-  notifyNeedsYou: "When a bot needs you",
-  notifyNeedsYouDetail: "An approval or a question is waiting.",
-  notifyAgentDone: "When a background agent finishes",
-  notifyRoutineFailed: "When a routine fails",
-  notifySounds: "Sounds",
+  get theme() {
+    return t("clover.settings.theme");
+  },
+  get themeDetail() {
+    return t("clover.settings.themeDetail");
+  },
+  themes: {
+    get light() {
+      return t("clover.settings.themes.light");
+    },
+    get dark() {
+      return t("clover.settings.themes.dark");
+    },
+    get system() {
+      return t("clover.settings.themes.system");
+    },
+  } as const,
+  get themePlugin() {
+    return t("clover.settings.themePlugin");
+  },
+  get themePluginDetail() {
+    return t("clover.settings.themePluginDetail");
+  },
+  get textSize() {
+    return t("clover.settings.textSize");
+  },
+  textSizes: {
+    get small() {
+      return t("clover.settings.textSizes.small");
+    },
+    get default() {
+      return t("clover.settings.textSizes.default");
+    },
+    get large() {
+      return t("clover.settings.textSizes.large");
+    },
+  } as const,
+  get language() {
+    return t("clover.settings.language");
+  },
+  get languageDetail() {
+    return t("clover.settings.languageDetail");
+  },
+  get change() {
+    return t("clover.settings.change");
+  },
+  // Notifications: each notifier plugin's own settings.
+  get noNotifiers() {
+    return t("clover.settings.noNotifiers");
+  },
+  get notifiersDetail() {
+    return t("clover.settings.notifiersDetail");
+  },
+  get notifierNoSettings() {
+    return t("clover.settings.notifierNoSettings");
+  },
+  // The 18+ gate (§5.7).
+  get adult() {
+    return t("clover.settings.adult");
+  },
+  get gateTitle() {
+    return t("clover.settings.gateTitle");
+  },
+  gateText: (name: string) => t("clover.settings.gateText", { name }),
+  get gateCancel() {
+    return t("clover.settings.gateCancel");
+  },
+  get gateConfirm() {
+    return t("clover.settings.gateConfirm");
+  },
+  // A plugin's declared settings.
+  get pluginSettings() {
+    return t("clover.settings.pluginSettings");
+  },
+  settingsOf: (name: string) => t("clover.settings.settingsOf", { name }),
+  get settingNumber() {
+    return t("clover.settings.settingNumber");
+  },
+  settingMin: (min: number) => t("clover.settings.settingMin", { min }),
+  settingMax: (max: number) => t("clover.settings.settingMax", { max }),
+  get settingChoose() {
+    return t("clover.settings.settingChoose");
+  },
+  get settingRequired() {
+    return t("clover.settings.settingRequired");
+  },
+  get defaultPending() {
+    return t("clover.settings.defaultPending");
+  },
+  get secretStored() {
+    return t("clover.settings.secretStored");
+  },
+  get secretNone() {
+    return t("clover.settings.secretNone");
+  },
+  secretRemove: (name: string) => t("clover.settings.secretRemove", { name }),
+  get save() {
+    return t("clover.settings.save");
+  },
+  // Notifications (what the section is about, for the search box).
+  get notifyNeedsYou() {
+    return t("clover.settings.notifyNeedsYou");
+  },
+  get notifyNeedsYouDetail() {
+    return t("clover.settings.notifyNeedsYouDetail");
+  },
+  get notifyAgentDone() {
+    return t("clover.settings.notifyAgentDone");
+  },
+  get notifyRoutineFailed() {
+    return t("clover.settings.notifyRoutineFailed");
+  },
+  get notifySounds() {
+    return t("clover.settings.notifySounds");
+  },
   // Plugins.
-  plugins: "Installed plugins",
-  pluginsDetail: "Each runs with only the OKs you gave it. Turn one off to stop everything it adds.",
+  get plugins() {
+    return t("clover.settings.plugins");
+  },
+  get pluginsDetail() {
+    return t("clover.settings.pluginsDetail");
+  },
   pluginState: {
-    found: "Waits for your OK",
-    refused: "Refused",
-    invalid: "Invalid",
-    off: "Off",
-    waiting: "Waiting",
-    running: "On",
-    stopped: "Stopped after an error",
-    blocked: "Blocked",
+    get found() {
+      return t("clover.settings.pluginState.found");
+    },
+    get refused() {
+      return t("clover.settings.pluginState.refused");
+    },
+    get invalid() {
+      return t("clover.settings.pluginState.invalid");
+    },
+    get off() {
+      return t("clover.settings.pluginState.off");
+    },
+    get waiting() {
+      return t("clover.settings.pluginState.waiting");
+    },
+    get running() {
+      return t("clover.settings.pluginState.running");
+    },
+    get stopped() {
+      return t("clover.settings.pluginState.stopped");
+    },
+    get blocked() {
+      return t("clover.settings.pluginState.blocked");
+    },
   } satisfies Record<PluginState, string>,
-  pluginOks: (oks: string[]) => (oks.length === 0 ? "Asks for nothing" : oks.join(" · ")),
-  pluginLogs: "Logs",
-  back: "Back",
-  noLogs: "Nothing logged yet.",
-  botsTitle: "Your bots",
-  botsDetail: "Each bot's name, instructions, model, voice, avatar and look. What you change here sits over the bot's plugin, and Reset takes it back.",
-  edit: "Edit",
-  editBot: (name: string) => `Edit ${name}`,
-  pluginLogsFor: (name: string) => `${name}'s logs`,
-  pluginManager: "Open the plugin manager",
+  pluginOks: (oks: string[]) => (oks.length === 0 ? t("clover.settings.asksNothing") : oks.join(t("clover.settings.listSeparator"))),
+  get pluginLogs() {
+    return t("clover.settings.pluginLogs");
+  },
+  get reviewOk() {
+    return t("clover.settings.reviewOk");
+  },
+  reviewOkFor: (name: string) => t("clover.settings.reviewOkFor", { name }),
+  get pluginBuiltIn() {
+    return t("clover.settings.pluginBuiltIn");
+  },
+  get back() {
+    return t("clover.settings.back");
+  },
+  get noLogs() {
+    return t("clover.settings.noLogs");
+  },
+  get botsTitle() {
+    return t("clover.settings.botsTitle");
+  },
+  get botsDetail() {
+    return t("clover.settings.botsDetail");
+  },
+  get edit() {
+    return t("clover.settings.edit");
+  },
+  editBot: (name: string) => t("clover.settings.editBot", { name }),
+  pluginLogsFor: (name: string) => t("clover.settings.pluginLogsFor", { name }),
+  get pluginManager() {
+    return t("clover.settings.pluginManager");
+  },
   // Levels.
-  levels: "Each computer's level",
-  levelsDetail: "What its bots may do without asking you first. A change raises a card for you to answer.",
-  levelFor: (computer: string) => `${computer}'s level`,
-  levelAsked: (label: string) => `${label} asked for`,
+  get levels() {
+    return t("clover.settings.levels");
+  },
+  get levelsDetail() {
+    return t("clover.settings.levelsDetail");
+  },
+  levelFor: (computer: string) => t("clover.settings.levelFor", { computer }),
+  levelAsked: (label: string) => t("clover.settings.levelAsked", { label }),
   // The language chooser.
-  chooseLanguage: "Language",
-  searchLanguages: "Find a language",
-  closeLanguages: "Close the language list",
-  noLanguage: "No language matches",
+  get chooseLanguage() {
+    return t("clover.settings.chooseLanguage");
+  },
+  get searchLanguages() {
+    return t("clover.settings.searchLanguages");
+  },
+  get closeLanguages() {
+    return t("clover.settings.closeLanguages");
+  },
+  get noLanguage() {
+    return t("clover.settings.noLanguage");
+  },
 };

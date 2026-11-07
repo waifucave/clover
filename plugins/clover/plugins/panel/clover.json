@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "Panel",
-  "description": "The column beside the conversation: a coding session's (its agents, where it runs, context, connectors, outputs and changes) and a bot's slim one (its agents and tasks, context and outputs).",
+  "description": "The column beside the conversation: a coding session's (its agents, where it runs, context, connectors, outputs and changes) and a bot's slim one (its agents and tasks, context and outputs), and one of those outputs opened in the right panel.",
   "engines": {
     "clover": "^1.0.0"
   },
@@ -13,9 +13,16 @@
   },
   "capabilities": [
     "conversation.read",
-    "computers.read"
+    "computers.read",
+    "files"
   ],
   "contributes": {
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      }
+    ],
     "ui": [
       {
         "spot": "panel",
@@ -34,6 +41,30 @@
         "spot": "bot.side",
         "id": "bot-column",
         "component": "BotColumn"
+      },
+      {
+        "spot": "panel",
+        "id": "output",
+        "key": "output",
+        "title": "Output",
+        "component": "OutputEntry",
+        "declares": {
+          "file.preview": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "mediaType": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "A file's preview, keyed by its media type (`image/png`, or a pattern such as `model/*`): a plugin's, in its own sealed part, handed the path only once the tree's no-follow check says it is a plain file."
+          }
+        }
       }
     ]
   }

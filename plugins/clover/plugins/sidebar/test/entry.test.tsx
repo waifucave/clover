@@ -17,13 +17,17 @@ const SESSIONS = [
   s("s_alpha", { kind: "bot", bot: "alpha", status: "prompting" }),
   s("s_luna", { kind: "bot", bot: "luna", needsYou: { cards: 1, questions: 0 } }),
   s("agent-1", { parent: "s_alpha", bot: "alpha", backend: "Codex", title: "Fix the dates", status: "prompting" }),
-  s("code-1", { kind: "coding", root: "home/Studio/projects/clover", title: "The panels", backend: "Codex" }),
+  s("code-1", { kind: "coding", root: "home/Studio/projects/clover", title: "The panels", backend: "Codex", ...({ branch: "lane/f-m3", changes: 12 } as object) }),
   s("code-2", { kind: "coding", root: "home/Studio/projects/clover", title: "The docs", status: "failed" }),
   s("code-3", { kind: "coding", root: "home/Laptop/code/tarot", title: "Spreads" }),
 ];
 
 async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" } }, opts: { entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
-  const core = fakeCore({ "account.status": () => ({ signedIn: true, user: { id: "u1", name: "Sam" } }) });
+  const core = fakeCore({
+    "account.status": () => ({ signedIn: true, user: { id: "u1", name: "Sam" } }),
+    "agent.backends": () => ({ backends: [{ id: "codex", name: "Codex", pluginId: "codex", protocol: "acp", placement: "local", computers: [{ computer: "Laptop", installed: false, marks: [] }, { computer: "Studio", installed: true, marks: [] }] }] as never }),
+    "agent.start": () => ({ session: "code-new" }),
+  });
   const api = fakeApi({
     bots: { list: async () => BOTS, get: async (id) => BOTS.find((b) => b.id === id)!, watch: () => () => undefined },
     conversation: { list: async () => SESSIONS },
@@ -46,7 +50,7 @@ async function mount(route: ShellRoute = { route: "bot", params: { bot: "alpha" 
     </UiRuntimeProvider>,
   );
   await act(() => settle());
-  return { routes };
+  return { routes, core };
 }
 
 describe("the sidebar entry", () => {
@@ -93,6 +97,15 @@ describe("the sidebar entry", () => {
     expect(screen.getByRole("button", { name: "Fold tarot" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Spreads/ }));
     expect(routes).toEqual([{ route: "agent", params: { session: "code-3" } }]);
+  });
+
+  test("a project's + starts a coding session there (lane K's agent.start) and opens it; rows show their branch", async () => {
+    const { routes, core } = await mount({ route: "agent", params: { session: "code-1" } });
+    expect(screen.getByLabelText(/lane\/f-m3/).textContent).toContain("12");
+    fireEvent.click(screen.getByRole("button", { name: /New session in clover/ }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "agent.start").map((c) => c.params)).toEqual([{ backend: "codex", computer: "Studio", root: "home/Studio/projects/clover" }]);
+    expect(routes).toEqual([{ route: "agent", params: { session: "code-new" } }]);
   });
 
   test("a plugin that fills `sidebar.bot` for a bot draws its row", async () => {

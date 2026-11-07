@@ -12,7 +12,6 @@ import {
   FileText,
   Folder,
   GitBranch,
-  GitPullRequest,
   Globe,
   Image,
   Laptop,
@@ -52,5 +51,4 @@ export const IconPage = icon(FileText, 16);
 export const IconFile = icon(File, 16);
 export const IconImage = icon(Image, 16);
 export const IconDiffRow = icon(FileDiff, 16);
-export const IconPullRequest = icon(GitPullRequest, 16);
 export const IconAgent = icon(Bot, 16);

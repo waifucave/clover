@@ -52,7 +52,7 @@ interface Shown {
   listing?: true;
 }
 
-export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, onSearch, matches }: FilesPanelProps) {
+export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, preview, onSearch, matches }: FilesPanelProps) {
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(initialOpen ?? []));
   const [current, setCurrent] = useState<string | undefined>(undefined);
@@ -177,8 +177,9 @@ export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, o
           <div className="cl-files__file">
             <div className="cl-files__path">
               <ShowHidden text={open.path} />
-              {hasHidden(open.text) && <span className="cl-files__warning">{S.hiddenWarning}</span>}
+              {!preview && hasHidden(open.text) && <span className="cl-files__warning">{S.hiddenWarning}</span>}
             </div>
+            {preview ?? (
             <pre className="cl-files__code" aria-label={S.viewer(open.path)} tabIndex={0}>
               {lines.map((line, i) => (
                 <span key={i} className="cl-files__line">
@@ -190,6 +191,7 @@ export function FilesPanel({ root, listing, onList, initialOpen, onOpen, open, o
                 </span>
               ))}
             </pre>
+            )}
           </div>
         ) : (
           <div className="cl-files__empty">

@@ -122,6 +122,47 @@
   text-decoration: underline;
 }
 
+/* The PTY's output (ansi.ts): the eight hues as the theme's colours, so a theme dresses the terminal too. */
+.cl-term__run[data-fg="red"] {
+  color: var(--clover-color-danger);
+}
+
+.cl-term__run[data-fg="green"] {
+  color: var(--clover-color-success);
+}
+
+.cl-term__run[data-fg="yellow"] {
+  color: var(--clover-color-attention-text);
+}
+
+.cl-term__run[data-fg="blue"],
+.cl-term__run[data-fg="magenta"],
+.cl-term__run[data-fg="cyan"] {
+  color: var(--clover-color-accent-text);
+}
+
+.cl-term__run[data-fg="black"],
+.cl-term__run[data-dim] {
+  color: var(--clover-color-text-muted);
+}
+
+.cl-term__run[data-bold] {
+  font-weight: var(--clover-font-weight-semibold);
+}
+
+.cl-term__run[data-italic] {
+  font-style: italic;
+}
+
+.cl-term__run[data-underline] {
+  text-decoration: underline;
+}
+
+.cl-term__run[data-inverse] {
+  background: var(--clover-color-text);
+  color: var(--clover-color-surface);
+}
+
 .cl-term__cursor {
   display: inline-block;
   width: 0.6em;

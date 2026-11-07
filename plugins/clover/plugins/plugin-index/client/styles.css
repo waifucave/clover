@@ -3,6 +3,7 @@
    name with its badges, where it comes from, and the action at the end. */
 
 .cl-plugin-index {
+  position: relative;
   box-sizing: border-box;
   flex: 1 1 auto;
   min-height: 0;
@@ -241,4 +242,43 @@
   .cl-plugin-index * {
     transition: none;
   }
+}
+
+/* The 18+ gate: over the page, a small raised box with Cancel first and the confirmation as the primary action. */
+.cl-plugin-index__gate {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--clover-color-surface);
+}
+
+.cl-plugin-index__gate-box {
+  max-width: 420px;
+  padding: var(--clover-space-xl);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-large);
+  background: var(--clover-color-raised);
+}
+
+.cl-plugin-index__gate-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-l);
+}
+
+.cl-plugin-index__secondary {
+  height: 28px;
+  padding: 0 var(--clover-space-m);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-selected);
+  color: var(--clover-color-text);
+  cursor: pointer;
+}
+
+.cl-plugin-index__secondary:hover {
+  background: var(--clover-color-hover);
 }

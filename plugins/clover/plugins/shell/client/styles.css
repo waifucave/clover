@@ -139,9 +139,12 @@ button.cl-window__title:hover {
   min-height: 0;
 }
 
-/* Main content starts below the bar, except the bot tab's conversation, which runs up under it and keeps
-   its own content below it with `--cl-inset-top`. */
+/* Main content starts below the bar, except a bot's or an agent's tab, whose conversation runs up under it and keeps
+   its own content below it with `--cl-inset-top`. The inset is set here and inherited, and the tab is found with a
+   descendant `:has()`, so both hold whatever elements the runtime's `<Spot>` wraps an entry in (review S5). A bot tab
+   in the panel has no bar over it, and the panel is outside this, so it gets no inset. */
 .cl-window__content {
+  --cl-inset-top: 0px;
   box-sizing: border-box;
   display: flex;
   flex: 1 1 auto;
@@ -151,8 +154,64 @@ button.cl-window__title:hover {
   padding-top: var(--clover-plugin-clover-bar-height);
 }
 
-.cl-window__content:has(> .cl-bot-tab) {
+.cl-window__content:has(.cl-bot-tab) {
+  --cl-inset-top: var(--clover-plugin-clover-bar-height);
   padding-top: 0;
+}
+
+/* Cards with no session: a strip under the bar, in the flow, above the tab. The tab under it starts below it, so the
+   bar's inset is the strip's alone. Nothing lies over a card, fades or moves it. */
+.cl-cards {
+  box-sizing: border-box;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-s);
+  max-height: 50%;
+  overflow-y: auto;
+  padding: calc(var(--clover-plugin-clover-bar-height) + var(--clover-space-m)) var(--clover-space-xl) var(--clover-space-m);
+  border-bottom: 1px solid var(--clover-color-hairline-raised);
+}
+
+.cl-window__main:has(> .cl-cards) .cl-window__content,
+.cl-window__main:has(> .cl-cards) .cl-window__content:has(.cl-bot-tab) {
+  --cl-inset-top: 0px;
+  padding-top: 0;
+}
+
+.cl-window__main:has(> .cl-cards) .cl-window__side {
+  padding-top: var(--clover-space-m);
+}
+
+.cl-cards__card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--clover-space-m);
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-surface);
+}
+
+.cl-cards__title {
+  font-weight: 600;
+}
+
+.cl-cards__field:empty {
+  display: none;
+}
+
+.cl-cards__field {
+  margin-top: var(--clover-space-xs);
+}
+
+.cl-cards__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
+  margin-top: var(--clover-space-m);
 }
 
 /* The session column scrolls under the bar too: its cards start 12 px below it. */
@@ -228,24 +287,15 @@ button.cl-window__title:hover {
   min-height: 0;
 }
 
-/* In main, the conversation runs up under the bar. A bot tab in the panel has no bar over it, and a stage takes the
-   top in its place. */
-.cl-window__content > .cl-bot-tab > .cl-bot-tab__conversation,
-.cl-window__content > .cl-agent-tab > .cl-bot-tab > .cl-bot-tab__conversation {
-  --cl-inset-top: var(--clover-plugin-clover-bar-height);
-}
-
-.cl-bot-tab:has(> .cl-bot-tab__stage) > .cl-bot-tab__conversation {
+/* A stage takes the top in the conversation's place: it starts below the bar (when there is one over it), and the
+   conversation under it needs no inset. */
+.cl-bot-tab:has(.cl-bot-tab__stage) .cl-bot-tab__conversation {
   --cl-inset-top: 0px;
 }
 
 .cl-bot-tab__stage {
   flex: none;
-  padding-top: var(--clover-plugin-clover-bar-height);
-}
-
-.cl-window__content:has(> .cl-agent-tab) {
-  padding-top: 0;
+  padding-top: var(--cl-inset-top, 0px);
 }
 
 /* The status bar, when a plugin fills it: a thin row under the main column. */
@@ -545,4 +595,172 @@ button.cl-window__title:hover {
   .cl-window * {
     transition: none;
   }
+}
+
+/* The command palette: a raised box in the dialog layer, its search on top, each row a command (or a place) with its
+   shortcut. The row the keyboard is on is the selected colour; focus shows as the OS focus ring. */
+.cl-palette {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: 70vh;
+  overflow: hidden;
+  border: 1px solid var(--clover-color-hairline-raised);
+  border-radius: var(--clover-radius-medium);
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-control);
+}
+
+.cl-palette__search {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--clover-space-m);
+  border: none;
+  border-bottom: 1px solid var(--clover-color-hairline);
+  background: transparent;
+  color: var(--clover-color-text);
+  font: inherit;
+  font-size: var(--clover-font-size-body);
+}
+
+.cl-palette__search:focus-visible,
+.cl-palette__input:focus-visible,
+.cl-palette__button:focus-visible {
+  outline: 2px solid var(--clover-color-focus);
+  outline-offset: -2px;
+}
+
+.cl-palette__list {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: var(--clover-space-xs);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.cl-palette__row {
+  display: flex;
+  align-items: center;
+  gap: var(--clover-space-m);
+  padding: var(--clover-space-s) var(--clover-space-m);
+  border-radius: var(--clover-radius-small);
+  cursor: pointer;
+}
+
+.cl-palette__row[data-active] {
+  background: var(--clover-color-selected);
+}
+
+.cl-palette__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cl-palette__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cl-palette__detail,
+.cl-palette__empty,
+.cl-palette__status {
+  color: var(--clover-color-text-muted);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-palette__empty,
+.cl-palette__status {
+  margin: 0;
+  padding: var(--clover-space-s) var(--clover-space-m);
+}
+
+.cl-palette__status[data-tone="error"],
+.cl-palette__error {
+  color: var(--clover-color-danger);
+}
+
+.cl-palette__keys {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--clover-space-xs);
+}
+
+.cl-palette__kbd {
+  padding: 0 var(--clover-space-xs);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-small);
+  color: var(--clover-color-text-secondary);
+  font-family: var(--clover-font-sans);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-palette__button {
+  height: 24px;
+  padding: 0 var(--clover-space-s);
+  border: none;
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-control);
+  color: var(--clover-color-text);
+  font: inherit;
+  font-size: var(--clover-font-size-label);
+  cursor: pointer;
+}
+
+.cl-palette__button:hover {
+  background: var(--clover-color-hover);
+}
+
+.cl-palette__button--primary,
+.cl-palette__button--primary:hover {
+  background: var(--clover-color-accent-fill);
+  color: var(--clover-color-accent-contrast);
+}
+
+.cl-palette__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-s);
+  padding: var(--clover-space-m);
+}
+
+.cl-palette__form-title {
+  margin: 0;
+  font-weight: var(--clover-font-weight-regular);
+}
+
+.cl-palette__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--clover-space-xs);
+}
+
+.cl-palette__field-name {
+  color: var(--clover-color-text-secondary);
+  font-size: var(--clover-font-size-label);
+}
+
+.cl-palette__input {
+  padding: var(--clover-space-xs) var(--clover-space-s);
+  border: 1px solid var(--clover-color-hairline);
+  border-radius: var(--clover-radius-small);
+  background: var(--clover-color-surface);
+  color: var(--clover-color-text);
+  font: inherit;
+}
+
+.cl-palette__error {
+  margin: 0;
+}
+
+.cl-palette__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--clover-space-s);
 }

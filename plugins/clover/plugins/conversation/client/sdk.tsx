@@ -10,4 +10,4 @@ import { uiFor } from "../../shell/runtime/ui";
 
 export { SEALED_FIELDS, type SealedField, type SealedRenderers, type UiRuntime } from "../../shell/runtime/ui";
 
-export const { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, useSpotEntries, UiRuntimeProvider } = uiFor(React);
+export const { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, useSpotEntries, useMenu, UiRuntimeProvider } = uiFor(React);

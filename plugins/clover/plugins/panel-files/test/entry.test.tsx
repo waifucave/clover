@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { fakeApi, fakeFiles, settle } from "../../shell/runtime/testkit";
 import type { FileStat, SessionView } from "../../shell/runtime/types";
+import { SPOT_DECLS } from "../../shell/runtime/catalog";
+import type { EntryComponent } from "../../shell/runtime/types";
 import { runtimeWith } from "../../shell/runtime/ui";
 import { FilesEntry, inside } from "../client/entry";
 import { UiRuntimeProvider } from "../client/sdk";
@@ -53,6 +55,67 @@ describe("the files entry", () => {
     expect(listed.sort()).toEqual([ROOT, `${ROOT}/docs`].sort());
     unmount();
     expect(stopped).toBe(true);
+  });
+
+  test("an image opens as its preview, read in one no-follow call; a type a plugin previews goes to its sealed part", async () => {
+    const calls: [string, string, unknown][] = [];
+    const seen: unknown[] = [];
+    const Preview: EntryComponent = ({ props }) => {
+      seen.push(props);
+      return <div data-testid="json-preview">tree</div>;
+    };
+    const api = fakeApi({
+      conversation: { get: async () => CODE },
+      files: fakeFiles({
+        list: async (path) => (path === ROOT ? [stat(`${ROOT}/logo.png`, "file"), stat(`${ROOT}/package.json`, "file")] : []),
+        stat: async (p, o?: unknown) => (calls.push(["stat", p, o]), stat(p, "file")),
+        readText: async (p, o?: unknown) => (calls.push(["readText", p, o]), "{}"),
+        readBytes: async (p, o?: unknown) => (calls.push(["readBytes", p, o]), new Uint8Array([137, 80])),
+        grep: async () => ({ matches: [], truncated: false }),
+      }),
+    });
+    render(
+      <UiRuntimeProvider
+        runtime={runtimeWith({
+          api: () => api,
+          spot: (n) => SPOT_DECLS[n],
+          entries: [{ pluginId: "json-view", id: "preview", spot: "file.preview", key: "application/json", component: "Preview", source: "installed", enabledAt: 1 }],
+          component: (_p, n) => (n === "Preview" ? Preview : undefined),
+        })}
+      >
+        <FilesEntry props={{ session: "code-1" }} />
+      </UiRuntimeProvider>,
+    );
+    await act(() => settle());
+    fireEvent.click(screen.getByRole("treeitem", { name: "logo.png" }));
+    await act(() => settle());
+    expect(calls).toEqual([["readBytes", `${ROOT}/logo.png`, { noFollow: true }]]);
+    expect(screen.getByRole("img", { name: "logo.png" })).toBeTruthy();
+    calls.length = 0;
+    fireEvent.click(screen.getByRole("treeitem", { name: "package.json" }));
+    await act(() => settle());
+    expect(calls.filter((c) => c[0] === "stat")).toEqual([["stat", `${ROOT}/package.json`, { noFollow: true }]]);
+    expect(seen.at(-1)).toEqual({ path: `${ROOT}/package.json`, mediaType: "application/json" });
+    expect(screen.getByTestId("json-preview").closest("[data-clover-frame]")).toBeTruthy();
+  });
+
+  test("a file the conversation named opens when it is in the folder; one outside never does", async () => {
+    const read: string[] = [];
+    const api = fakeApi({
+      conversation: { get: async () => CODE },
+      files: fakeFiles({ list: async () => [], readText: async (p) => (read.push(p), "body"), grep: async () => ({ matches: [], truncated: false }) }),
+    });
+    const at = (reveal: string) => (
+      <UiRuntimeProvider runtime={runtimeWith({ api: () => api })}>
+        <FilesEntry props={{ session: "code-1", reveal }} />
+      </UiRuntimeProvider>
+    );
+    const { rerender } = render(at(`${ROOT}/README.md`));
+    await act(() => settle());
+    expect(screen.getByLabelText(`Contents of ${ROOT}/README.md`).textContent).toContain("body");
+    rerender(at("home/Studio/secrets.txt"));
+    await act(() => settle());
+    expect(read).toEqual([`${ROOT}/README.md`]);
   });
 
   test("`inside` keeps to the folder", () => {

@@ -26,6 +26,36 @@ export interface SettingsPlugin {
   reason?: string;
   /** What it may do, each an OK the user gave it, in plain words. */
   oks: string[];
+  /** The settings its manifest declares (§5.1 "Settings"), with their values. */
+  settings?: SettingField[];
+  /** Its manifest says it may contain adult content (§5.7): it stays off until the user confirms they're 18 or older. */
+  adult?: boolean;
+}
+
+/** One setting a plugin's manifest declares (lane B's `PluginSettingView`, with the manifest's options and limits). A
+ *  `secret` field never carries its value: only whether one is stored. */
+export interface SettingField {
+  key: string;
+  type: "string" | "number" | "boolean" | "enum" | "color" | "secret";
+  title: string;
+  description?: string;
+  /** The value in effect: the user's, else the default. */
+  value?: unknown;
+  /** The user set it; for a secret, a value is stored. */
+  set: boolean;
+  required: boolean;
+  /** A changed default waits for the user's OK. */
+  defaultPending?: boolean;
+  options?: { value: string; title: string }[];
+  min?: number;
+  max?: number;
+}
+
+/** A plugin's settings, under its name. */
+export interface PluginSettingsGroup {
+  pluginId: string;
+  name: string;
+  fields: SettingField[];
 }
 
 export interface SettingsDevice {
@@ -49,9 +79,12 @@ export interface SettingsComputerLevel {
 
 export interface SettingsValues {
   account: { name: string; main: string };
+  /** Light, dark or the system's, and the text size: the user's UI choices (`ui.settings`). */
   appearance: { theme: "light" | "dark" | "system"; textSize: "small" | "default" | "large" };
   language: { id: string; name: string };
-  notifications: { needsYou: boolean; agentDone: boolean; routineFailed: boolean; sounds: boolean };
+  /** The plugins that notify (`notifiers`: desktop notifications, the phone's push), each with the settings it
+   *  declares: when to notify, and with sound. A notifier's choices are its own settings, which it reads. */
+  notifiers: PluginSettingsGroup[];
   plugins: SettingsPlugin[];
   /** The installed themes (spec §5.5: a theme is a plugin). */
   themes: { id: string; name: string }[];
@@ -62,6 +95,8 @@ export interface SettingsValues {
   devices: SettingsDevice[];
   /** The bots, for the Bots page: each opens in the bot editor. */
   bots?: { id: string; name: string }[];
+  /** The user has confirmed they're 18 or older (§5.7; `plugin.list`'s `adultConfirmed`). */
+  adultConfirmed?: boolean;
 }
 
 /** A section a plugin adds (`settings.section`): its title, and what its page draws. */
@@ -84,6 +119,12 @@ export interface SettingsModalProps {
   onChange: (path: string, value: unknown) => void;
   onOpenLanguage: () => void;
   onOpenPluginManager?: () => void;
+  /** A found plugin's OK, reviewed on a sealed card (§5.1, §5.5): loading it is a sensitive change. */
+  onReviewOk?: (id: string) => void;
+  /** The user confirms they're 18 or older (`plugin.confirmAdult`), before an adult plugin is switched on (§5.7). */
+  onConfirmAdult?: () => Promise<void>;
+  /** Change one of a plugin's declared settings (`plugin.settings.set`); `null` goes back to the default. */
+  onPluginSetting?: (pluginId: string, key: string, value: unknown) => void;
   /** A plugin's logs (spec §5.8). */
   onOpenPluginLogs?: (id: string) => void;
   /** Ask to change a computer's level: always a sealed card (spec §5.5). */

@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import type { ArchivedSessionView } from "../../shell/runtime/types";
 import { Archive } from "./Archive";
+import { S } from "./strings";
 import { Spot, useCore } from "./sdk";
 
 export interface ArchiveEntryProps {
@@ -18,7 +19,12 @@ const PAGE = 50;
 
 /** Who speaks in an old session: the previous app's assistant. Its name stays out of Clover's code (the rename's residue
  *  rule), so the archive says "before Clover" and names the speaker plainly. */
-export const OLD_APP = { id: "archive", name: "Assistant" };
+export const OLD_APP = {
+  id: "archive",
+  get name() {
+    return S.speaker;
+  },
+};
 
 export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
   const core = useCore();

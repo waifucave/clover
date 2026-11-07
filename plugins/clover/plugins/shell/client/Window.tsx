@@ -24,6 +24,8 @@ export interface WindowProps {
   sidebar: ReactNode;
   /** The open tab's name: a bot's, an agent's or a session's. */
   title: string;
+  /** What the bar shows for the title, when it is more than its text: a bot's `bot.header`, which a plugin can fill. */
+  heading?: ReactNode;
   /** Opens the tab's menu (rename, fork, archive…) when the host has one. */
   onTitleMenu?: () => void;
   /** The panel toggles, at the title bar's end. */
@@ -41,6 +43,8 @@ export interface WindowProps {
    *  in the panel, or one raised from a dialog (Settings asking for a level change or to remove a device).
    *  No dialog opens while one does, and an open one closes through `onCloseDialog`. */
   cardPending?: boolean;
+  /** The cards with no session (`WaitingCards`), in a strip under the bar. */
+  cards?: ReactNode;
   /** Closes the dialog: on Escape, and when a card arrives or is already waiting. */
   onCloseDialog?: () => void;
   /** The `status` bar at the bottom of the main column, when anything fills it (the inherited tiles, §12). */
@@ -98,7 +102,7 @@ function DialogLayer({ children, onClose }: { children: ReactNode; onClose?: () 
   );
 }
 
-export function Window({ sidebar, title, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status }: WindowProps) {
+export function Window({ sidebar, title, heading, onTitleMenu, toggles, children, side, panel, dialog, cardPending = false, onCloseDialog, translucent = false, status, cards }: WindowProps) {
   // A dialog asked for while a card waits stays shut, and one open when a card arrives closes; either way
   // the bar says so until the card is answered.
   const [held, setHeld] = useState(false);
@@ -126,7 +130,7 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
             </button>
           ) : (
             <h1 className="cl-window__title">
-              <span className="cl-window__title-text">{title}</span>
+              <span className="cl-window__title-text">{heading ?? title}</span>
             </h1>
           )}
           <span className="cl-window__note" role="status">
@@ -138,6 +142,7 @@ export function Window({ sidebar, title, onTitleMenu, toggles, children, side, p
             </div>
           )}
         </header>
+        {cards}
         <div className="cl-window__body">
           <div className="cl-window__content">{children}</div>
           {side && <aside className="cl-window__side">{side}</aside>}

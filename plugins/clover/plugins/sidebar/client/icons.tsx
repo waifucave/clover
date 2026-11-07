@@ -15,7 +15,6 @@ import {
   Grid2x2,
   Link,
   MessagesSquare,
-  Ellipsis,
   PanelLeft,
   Pause,
   Plus,
@@ -23,7 +22,6 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  Shapes,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -39,9 +37,7 @@ export const IconCode = icon(CodeXml, 16);
 export const IconPlus = icon(Plus, 18);
 export const IconPlusSmall = icon(Plus, 16);
 export const IconSearch = icon(Search, 18);
-export const IconOutputs = icon(Shapes, 18);
 export const IconPlugins = icon(Puzzle, 18);
-export const IconMore = icon(Ellipsis, 18);
 export const IconChevronDown = icon(ChevronDown, 14);
 export const IconChevronRight = icon(ChevronRight, 14);
 export const IconBranch = icon(GitBranch, 14);

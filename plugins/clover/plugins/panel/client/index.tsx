@@ -3,6 +3,7 @@
 // `SessionView` takes mocked props. The panel host and its toggles are the shell's, which declares `panel`. It imports
 // no CSS: `client.css` lists the stylesheet (lane B).
 export { BotColumn, SessionColumn, type ColumnProps } from "./entry";
+export { OutputEntry, type OutputEntryProps } from "./output";
 export { SessionView } from "./SessionView";
 export { TOKENS } from "./tokens";
 export type * from "./types";

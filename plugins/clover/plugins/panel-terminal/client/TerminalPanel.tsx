@@ -51,7 +51,7 @@ export function TerminalTabs({ tabs, active, onSelect, onNew, onClose }: Termina
   );
 }
 
-export function TerminalPanel({ tabs, active, chunks, onInput, onPaste, onEvent, platform = currentPlatform() }: TerminalPanelProps) {
+export function TerminalPanel({ tabs, active, chunks, lines, onInput, onPaste, onEvent, platform = currentPlatform() }: TerminalPanelProps) {
   const screen = useRef<HTMLPreElement>(null);
   const hintId = useId();
   const tab = tabs.find((t) => t.id === active);
@@ -59,7 +59,7 @@ export function TerminalPanel({ tabs, active, chunks, onInput, onPaste, onEvent,
   useLayoutEffect(() => {
     const el = screen.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [chunks]);
+  }, [chunks, lines]);
   return (
     <div className="cl-term">
       <pre
@@ -94,11 +94,31 @@ export function TerminalPanel({ tabs, active, chunks, onInput, onPaste, onEvent,
           if (onPaste && text.length > 0) onPaste(text);
         }}
       >
-        {chunks.map((c, i) => (
-          <span key={i} className="cl-term__chunk" data-style={c.style}>
-            {c.text}
-          </span>
-        ))}
+        {lines
+          ? lines.map((line, i) => (
+              <span key={i} className="cl-term__line">
+                {line.map((r, j) => (
+                  <span
+                    key={j}
+                    className="cl-term__run"
+                    data-fg={r.fg}
+                    data-bold={r.bold}
+                    data-dim={r.dim}
+                    data-italic={r.italic}
+                    data-underline={r.underline}
+                    data-inverse={r.inverse}
+                  >
+                    {r.text}
+                  </span>
+                ))}
+                {i < lines.length - 1 ? "\n" : ""}
+              </span>
+            ))
+          : chunks.map((c, i) => (
+              <span key={i} className="cl-term__chunk" data-style={c.style}>
+                {c.text}
+              </span>
+            ))}
         {tab?.exited ? (
           <span className="cl-term__chunk" data-style="dim">
             {`\n${S.exited(tab.exited.code)}\n`}

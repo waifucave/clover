@@ -16,6 +16,12 @@
     "conversation.read"
   ],
   "contributes": {
+    "locales": [
+      {
+        "lang": "en",
+        "file": "locales/en.json"
+      }
+    ],
     "ui": [
       {
         "spot": "panel",
@@ -25,6 +31,23 @@
         "component": "FilesEntry",
         "when": {
           "session": "coding"
+        },
+        "declares": {
+          "file.preview": {
+            "shape": "keyed",
+            "props": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "mediaType": {
+                  "type": "string"
+                }
+              }
+            },
+            "doc": "A file's preview, keyed by its media type (`image/png`, or a pattern such as `model/*`): a plugin's, in its own sealed part, handed the path only once the tree's no-follow check says it is a plain file."
+          }
         }
       }
     ]
