@@ -6,18 +6,22 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import {
-  LEVELS, UNATTENDED_CARD_TIMEOUT_MS, callBindingInput, cardAnswerSigningInput, cardHashInput, type Card, type CardAnswerProof,
-  type Level, type SignedCardAnswer,
+  LEVELS, TreeTransferParams, UNATTENDED_CARD_TIMEOUT_MS, callBindingInput, cardAnswerSigningInput, cardHashInput, type Card,
+  type CardAnswerProof, type Level, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
 import {
-  ACTION_EFFECTS, DECISION_RANK, acpOutcomeFor, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel, verifySignedAnswer,
-  type CallCardRenderer,
+  ACTION_EFFECTS, CALL_CARD_METHODS, DECISION_RANK, acpOutcomeFor, bindsComputer, cardMetaOf, deviceProofVerifier, levelDecision, strictestLevel,
+  verifySignedAnswer, type CallCardRenderer,
   type AgentPermissionOption, type AnswerOrigin, type ApprovalDecision, type ApprovalEvent, type ApprovalRequest,
 } from "../approval-broker";
 import { type FakeApprovalBroker, MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock, flush } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
+import { transferBinding, transferChange } from "../tree";
+
+/** SHA-256 of R15's pinned call (`tree.transfer`, a move of home/Laptop1/proj to home/Studio/proj). */
+const TRANSFER_VECTOR_SHA256 = "a5b927c08f4cf12445673e2d2f18a2649c7c3e751f45bf15b0b71a87bc1851f5";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -413,6 +417,50 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(await verifySignedAnswer(good, check())).toBe("ok");
       expect(await verifySignedAnswer(good, check())).toBe("used");
     });
+
+    test("R15: one answer for a move between computers binds both ends, and each end takes it once (#179's review, F2)", async () => {
+      const clock = new FakeClock();
+      const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
+      const phone = await makeFakeDevice();
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+      // The exact call, pinned: lane J's holders build it with `transferChange` (#177).
+      const call = transferChange(true, "home/Laptop1/proj", "home/Studio/proj", "Laptop1", "Studio");
+      expect(call).toEqual({ method: "tree.transfer", params: { operation: "move", from: "home/Laptop1/proj", to: "home/Studio/proj", source: "Laptop1", destination: "Studio" } });
+      expect(TreeTransferParams.safeParse(call.params).success).toBe(true);
+      expect(callBindingInput(call.method, call.params)).toBe(
+        '{"method":"tree.transfer","params":{"destination":"Studio","from":"home/Laptop1/proj","operation":"move","source":"Laptop1","to":"home/Studio/proj"}}');
+      expect(sha256(callBindingInput(call.method, call.params))).toBe(TRANSFER_VECTOR_SHA256);
+      const binds = transferBinding(call.params as TreeTransferParams, sha256);
+      expect(binds).toEqual({ computer: "Studio", source: "Laptop1", method: "tree.transfer", params: TRANSFER_VECTOR_SHA256 });
+      const options = [{ id: "approve", kind: "approve" as const, label: "Move" }, { id: "deny", kind: "deny" as const, label: "Keep" }];
+      // Each holder's own card: the title and the binding come from the params, never from which end renders it.
+      const render: CallCardRenderer = (c) => {
+        if (c.method !== "tree.transfer") return undefined;
+        const p = c.params as TreeTransferParams;
+        return { kind: "tool", fields: { title: { type: "text", text: `Move ${p.from} to ${p.to}` } }, options, binds: transferBinding(p, sha256) };
+      };
+      const content = render({ computer: "Laptop1", ...call })!;
+      const unhashed = { id: "card_r15000000000000000000000a", computer: "Laptop1", origin: "user" as const, issuedAt: clock.now(), expiresAt: null, ...content };
+      const card = { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card;
+      const at = clock.now();
+      const one: SignedCardAnswer = { card, option: "approve", device: phone.id, at, signature: toBase64(await phone.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: "approve", at })))) };
+      const source = new MemoryAnswerLedger();
+      const destination = new MemoryAnswerLedger();
+      const at_ = (self: string, ledger: MemoryAnswerLedger, params: unknown = call.params) =>
+        ({ self, method: call.method, params, now: clock.now(), sha256, devices: registry, ledger, render });
+      expect(await verifySignedAnswer(one, at_("Studio", destination))).toBe("ok");
+      expect(await verifySignedAnswer(one, at_("Laptop1", source))).toBe("ok");
+      expect(await verifySignedAnswer(one, at_("Studio", destination))).toBe("used");
+      expect(await verifySignedAnswer(one, at_("Laptop1", source))).toBe("used");
+      // A third computer, a copy, or other ends bind nothing.
+      expect(await verifySignedAnswer(one, at_("Desk", new MemoryAnswerLedger()))).toBe("unbound");
+      expect(await verifySignedAnswer(one, at_("Studio", new MemoryAnswerLedger(), { ...call.params, operation: "copy" }))).toBe("unbound");
+      expect(await verifySignedAnswer(one, at_("Studio", new MemoryAnswerLedger(), { ...call.params, source: "Desk" }))).toBe("unbound");
+      // A binding with a source binds only a transfer; a transfer's binding without its source binds neither end.
+      expect(bindsComputer({ ...binds, method: "tree.move" }, "tree.move", call.params, "Laptop1")).toBe(false);
+      expect(bindsComputer({ computer: "Studio", method: "tree.transfer", params: binds.params }, "tree.transfer", call.params, "Studio")).toBe(false);
+      expect(bindsComputer(binds, "tree.transfer", call.params, "Laptop1")).toBe(true);
+    });
   });
 
   describe("rule 8: an agent never gets an always", () => {
@@ -430,6 +478,27 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       const onlyAlways = all.filter((o) => o.kind.endsWith("always") || o.kind === "reject_once");
       expect(acpOutcomeFor({ allowed: true, by: "card" }, onlyAlways)).toEqual({ outcome: "selected", optionId: "r" });
       expect(acpOutcomeFor({ allowed: true, by: "card" }, all.filter((o) => o.kind.endsWith("always")))).toEqual({ outcome: "cancelled" });
+    });
+  });
+}
+
+/** The receiver's card tables (J-M2's review): every call another computer's signed answer may lift
+ *  (`CALL_CARD_METHODS`) has its card, which binds exactly that call, so R1 and R15 never fail closed for want of one.
+ *  `tests/approval-broker.test.ts` runs it against the fake's table; lane C runs it against its sealed card tables. */
+export function runCallCardTableConformance(make: (sha256: (text: string) => string) => CallCardRenderer): void {
+  const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+  describe("CallCardRenderer: the card tables", () => {
+    test("each call an answer may lift renders a card that binds exactly it", () => {
+      const render = make(sha256);
+      for (const { method, params } of CALL_CARD_METHODS) {
+        const card = render({ computer: "Studio", method, params });
+        expect([method, card !== undefined]).toEqual([method, true]);
+        expect([method, card!.options.some((o) => o.kind === "approve")]).toEqual([method, true]);
+        const self = method === "tree.transfer" ? (params as { destination: string }).destination : "Studio";
+        expect([method, card!.binds !== undefined && bindsComputer(card!.binds, method, params, self)]).toEqual([method, true]);
+        expect(card!.binds!.params).toBe(sha256(callBindingInput(method, params)));
+      }
+      expect(CALL_CARD_METHODS.map((m) => m.method)).toEqual(expect.arrayContaining(["tree.transfer", "terminal.open", "mcp.mirror", "computer.setLevel"]));
     });
   });
 }

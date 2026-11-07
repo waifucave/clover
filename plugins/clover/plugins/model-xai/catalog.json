@@ -1,0 +1,871 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-responses",
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-responses",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "upstream drives this vendor through a bespoke executor Winter does not represent, so no extracted row cross-checks these values; no live gate case has run",
+        "audit OQ-2: x.ai/legal/* returned HTTP 403 on 2026-09-06, so the acceptable-use and terms pages were never rendered — the api-key admission does not depend on them, but no terms clause has been read"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://docs.x.ai/docs/overview — xAI's own developer overview, retrieved 2026-09-06: `\"base_url\": \"https://api.x.ai/v1\"` with `Authorization: Bearer $XAI_API_KEY`, driven through the OpenAI client. Audit §2.1/§2.5 records the same base and that this key path is token-priced, distinct from the subscription OAuth flow.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "xai/grok-4.20-0309-non-reasoning",
+      "providerId": "xai",
+      "upstreamId": "grok-4.20-0309-non-reasoning",
+      "displayName": "Grok 4.20 Non-Reasoning",
+      "aliases": [
+        "grok-4.20-non-reasoning",
+        "grok-4.20-non-reasoning-latest",
+        "grok-4.20-beta-non-reasoning",
+        "grok-4.20-beta-latest-non-reasoning",
+        "grok-4.20-experimental-beta-0304-non-reasoning",
+        "grok-4.20-experimental-beta-non-reasoning-latest",
+        "grok-4.20-beta-0309-non-reasoning",
+        "grok-4.20-non-reasoning-gv2"
+      ],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-non-reasoning — model page context window 1,000,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-non-reasoning — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-non-reasoning — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-non-reasoning — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-non-reasoning — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-non-reasoning — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-non-reasoning — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/pricing — current global Standard Text API price table for grok-4.20-0309-non-reasoning; it charges the listed long-context rate for every token after the prompt reaches 200K and applies a 10% US-regional premium. This catalog records the standard short-context rate (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/models (read 2026-09-27): \"\"features\":{\"functionCalling\":true,\"structuredOutputs\":true}\" — this model's features object omits the reasoning/reasoningEffortOptions keys present on reasoning models like grok-4.3; model name itself is 'non-reasoning'",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "grok-4.20-0309-non-reasoning",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "xai/grok-4.20-0309-reasoning",
+      "providerId": "xai",
+      "upstreamId": "grok-4.20-0309-reasoning",
+      "displayName": "Grok 4.20 Reasoning",
+      "aliases": [
+        "grok-4.20-reasoning-latest",
+        "grok-4.20",
+        "grok-4.20-reasoning",
+        "grok-4.20-0309",
+        "grok-4.20-beta-0309-reasoning",
+        "grok-4.20-beta",
+        "grok-4.20-beta-0309",
+        "grok-4.20-beta-latest",
+        "grok-4.20-beta-latest-reasoning",
+        "grok-4.20-beta-reasoning",
+        "grok-4.20-experimental-beta-0304-reasoning",
+        "grok-4.20-experimental-beta-0304",
+        "grok-4.20-experimental-beta-reasoning-latest",
+        "grok-4.20-experimental-beta-latest",
+        "grok-4.20-reasoning-gv2"
+      ],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page context window 1,000,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/models/grok-4.20 — model page states Reasoning or configurable reasoning",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/pricing — current global Standard Text API price table for grok-4.20-0309-reasoning; it charges the listed long-context rate for every token after the prompt reaches 200K and applies a 10% US-regional premium. This catalog records the standard short-context rate (retrieved 2026-09-19).",
+        "confidence": "declared",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "grok-4.20-0309-reasoning",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "xai/grok-4.20-multi-agent-0309",
+      "providerId": "xai",
+      "upstreamId": "grok-4.20-multi-agent-0309",
+      "displayName": "Grok 4.20 Multi-Agent Beta",
+      "aliases": [
+        "grok-4.20-multi-agent",
+        "grok-4.20-multi-agent-latest",
+        "grok-4.20-multi-agent-beta-latest",
+        "grok-4.20-multi-agent-experimental-beta-0304",
+        "grok-4.20-multi-agent-experimental-beta-latest",
+        "grok-4.20-multi-agent-beta-0309"
+      ],
+      "endpoints": [
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-multi-agent-0309 — model page context window 1,000,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-multi-agent-0309 — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-multi-agent-0309 — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/model-capabilities/text/multi-agent — multi-agent limitations: client-side/custom function calling unsupported; built-in server tools only",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/model-capabilities/text/multi-agent — client-side/custom function tools unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-multi-agent-0309 — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.20-multi-agent-0309 — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/model-capabilities/text/multi-agent — reasoning.effort low/medium selects 4 agents, high/xhigh selects 16; previous_response_id supports multi-turn",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "continuation": "opaque-provider-state"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/pricing — grok-4.20-multi-agent-0309 Standard global short-context rate (<200k prompt tokens): $1.25 input, $0.20 cached input, $2.50 output per 1M; >=200k the entire request is charged $2.50/$0.40/$5.00. US-regional 1.1x applies only to models currently on that endpoint, listed as grok-4.7 and grok-4.6; not this model (re-read 2026-09-25, WS-23).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T17:09:48Z"
+      },
+      "unsupportedParameters": [
+        "max_output_tokens",
+        "tools"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "grok-4.20-multi-agent-0309",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "xai/grok-4.3",
+      "providerId": "xai",
+      "upstreamId": "grok-4.3",
+      "displayName": "Grok 4.3",
+      "aliases": [
+        "grok-4.3-latest"
+      ],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page context window 1,000,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/models/grok-4.3 — model page states Reasoning or configurable reasoning",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "low"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/pricing — grok-4.3 Standard global short-context rate: $1.25 input/$2.5 output/$0.2 cached per million; long-context threshold 200K. US-regional 1.1x applies only to models currently on that endpoint, listed as grok-4.7 and grok-4.6; not grok-4.3.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "grok-4.3",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "xai/grok-4.5",
+      "providerId": "xai",
+      "upstreamId": "grok-4.5",
+      "displayName": "Grok 4.5",
+      "aliases": [
+        "grok-4.5-latest",
+        "grok-build-latest"
+      ],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 500000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.5 — model page context window 500,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.5 — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.5 — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.5 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.5 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.5 — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.5 — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/model-capabilities/text/reasoning — grok-4.5 supports reasoning_effort low, medium, high; default high; reasoning cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.3
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/pricing — grok-4.5 global short-context <200k prompt tokens: $2 input, $0.3 cached input, $6 output per 1M; >=200k entire request is charged long-context rates of $4/$0.6/$12; US regional endpoint adds 10%",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "grok-4.5",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "xai/grok-4.6",
+      "providerId": "xai",
+      "upstreamId": "grok-4.6",
+      "displayName": "Grok 4.6",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 500000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.6 — model page context window 500,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.6 — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.6 — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.6 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.6 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.6 — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.6 — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/model-capabilities/text/reasoning — grok-4.6 supports reasoning_effort low, medium, high, xhigh; default high; reasoning cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/docs/models — Text API pricing table, headers \"Model | Context | Input / 1M tokens | Cached input / 1M tokens | Output / 1M tokens\": grok-4.6 (<200k prompt tokens) row reads $2.00 input / $0.50 cached input / $6.00 output per 1M tokens (retrieved 2026-09-07; ADDED in P6.6 Task 1b fix r1, I-1 — the cached-input column was on the page at authoring and was missed). The table also lists a >=200k tier at $4.00 input / $1.00 cached input / $12.00 output; `ModelPricing` carries one rate per direction, so the STANDARD (<200k) tier is recorded and the estimator UNDER-counts long-context turns on this row — same disclosed gap as openai/gpt-6-astra's long-context tier.",
+        "confidence": "declared",
+        "observedAt": "2026-09-07T00:00:00Z"
+      },
+      "unsupportedParameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "grok-4.6",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "xai/grok-4.7",
+      "providerId": "xai",
+      "upstreamId": "grok-4.7",
+      "displayName": "Grok 4.7",
+      "aliases": [],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 500000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.7 — model page context window 500,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.7 — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.7 — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.7 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.7 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.7 — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-4.7 — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/model-capabilities/text/reasoning — grok-4.7 supports reasoning_effort low, medium, high, xhigh; default high; reasoning cannot be disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ],
+        "continuation": "opaque-provider-state",
+        "defaultEffort": "high",
+        "readableState": {
+          "value": "summary",
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/model-capabilities/text/reasoning — \"For `grok-4.7`, we expose summarizations of the model's internal reasoning\" (Summarized Reasoning Content); https://docs.x.ai/developers/rest-api-reference/inference/responses — the example reasoning output item carries `summary: [{ type: \"summary_text\", … }]`",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T17:09:48Z"
+        },
+        "summaryRequest": {
+          "value": {
+            "field": "reasoning.summary",
+            "values": [
+              "detailed",
+              "auto",
+              "concise"
+            ]
+          },
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/rest-api-reference/inference/responses — `reasoning.summary`: \"Possible values are `auto`, `concise` and `detailed`. Only included for compatibility. The model shall always return `detailed`.\" `detailed` is listed FIRST because the adapter sends the first value, and it is the one the model returns regardless",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T17:09:48Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 6,
+          "cacheReadPerMTokUsd": 0.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/pricing — grok-4.7 global short-context <200k prompt tokens: $2 input, $0.5 cached input, $6 output per 1M; >=200k entire request is charged long-context rates of $4/$1/$12; US regional endpoint adds 10%",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "unsupportedParameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "grok-4.7",
+      "modelFamily": "grok"
+    },
+    {
+      "key": "xai/grok-build-0.1",
+      "providerId": "xai",
+      "upstreamId": "grok-build-0.1",
+      "displayName": "Grok Build 0.1",
+      "aliases": [
+        "grok-code-fast-1",
+        "grok-code-fast",
+        "grok-code-fast-1-0825"
+      ],
+      "endpoints": [
+        "chat",
+        "responses"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page context window 256,000 tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page Modalities: Text, Image input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page Modalities: Text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page Function calling capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page Structured outputs capability",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page lists Cached tokens input rate; prompt caching available",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.x.ai/developers/models/grok-build-0.1 — model page states Reasoning or configurable reasoning",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "opaque-provider-state"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1,
+          "outputPerMTokUsd": 2,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://docs.x.ai/developers/pricing — grok-build-0.1 Standard global short-context rate: $1 input/$2 output/$0.2 cached per million; long-context threshold 200K. US-regional 1.1x applies only to models currently on that endpoint, listed as grok-4.7 and grok-4.6; not grok-build-0.1.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "grok-build-0.1",
+      "modelFamily": "grok"
+    }
+  ]
+}

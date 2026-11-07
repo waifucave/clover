@@ -18,7 +18,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import type { AgentEvent, AgentQuirks } from "../../contracts/agent-backend";
 import type { AgentStep } from "../../contracts/fakes/agent-backend";
-import { RpcPeer, RpcError } from "../acp/jsonrpc";
+import { RpcPeer, RpcError } from "@waifucave/clover-agent-sdk/acp";
 
 /** B's steps, plus two only a real process can play. */
 export type FakeAcpStep =

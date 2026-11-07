@@ -4,29 +4,30 @@
 // rules (CLDR's categories, `other` required). A missing string falls back from a regional language to its base
 // (`pt-BR` to `pt`), then to English, then to any language its plugin has.
 import { z } from "zod";
+import { utf16 } from "@waifucave/clover-protocol";
 import { LangTag } from "../manifest/fields";
 
 export const PLURAL_CATEGORIES = ["zero", "one", "two", "few", "many", "other"] as const;
 
 export const LocaleStringSchema = z.union([
-  z.string().max(20_000),
+  utf16(20_000),
   z.strictObject({
-    zero: z.string().max(20_000).optional(),
-    one: z.string().max(20_000).optional(),
-    two: z.string().max(20_000).optional(),
-    few: z.string().max(20_000).optional(),
-    many: z.string().max(20_000).optional(),
-    other: z.string().max(20_000),
+    zero: utf16(20_000).optional(),
+    one: utf16(20_000).optional(),
+    two: utf16(20_000).optional(),
+    few: utf16(20_000).optional(),
+    many: utf16(20_000).optional(),
+    other: utf16(20_000),
   }),
 ]);
 
 export const LOCALE_KEY_RE = /^[a-z][a-z0-9-]*(\.[A-Za-z0-9_-]+)+$/;
 
 export const LocaleSchema = z.strictObject({
-  $schema: z.string().max(2048).optional(),
+  $schema: utf16(2048).optional(),
   locale: z.literal(1),
   lang: LangTag,
-  strings: z.record(z.string().min(3).max(256).regex(LOCALE_KEY_RE), LocaleStringSchema),
+  strings: z.record(utf16(256, 3).regex(LOCALE_KEY_RE), LocaleStringSchema),
 });
 export type Locale = z.infer<typeof LocaleSchema>;
 

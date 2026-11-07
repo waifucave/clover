@@ -25,8 +25,8 @@
 // the user's own can share it. The bridge's methods land here too: `SendMessage` from an agent folds into its bot's
 // conversation (§9.3), and only into another session of the same bot.
 import { randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
+import { extname, join } from "node:path";
 import type { Level, SealedValue, SessionView, TurnOrigin } from "@waifucave/clover-protocol";
 import type { AgentBackend, AgentPermissionAnswer, AgentPermissionAsk, AgentSession } from "../contracts/agent-backend";
 import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcomeFor } from "../contracts/approval-broker";
@@ -37,11 +37,15 @@ import type { SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
 import { BridgeTokens } from "./bridge/tokens";
-import type { BridgeHandlers } from "./bridge/endpoint";
+import type { BridgeHandlers } from "./bridge/handlers";
 import { BRIDGE_ENV } from "./bridge/server";
-import { BRIDGE_OWN_TOOLS, NO_PLUGIN_TOOLS, bridgeInstructions, type BridgeToolSource } from "./bridge/tools";
+import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSource } from "./bridge/tools";
 import { AgentDriver } from "./driver";
+import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
+import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
+import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths } from "./paths";
+import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
@@ -54,7 +58,7 @@ export interface AgentManagerOptions {
   host: SessionHost;
   approvals: ApprovalBroker;
   tree: Pick<Tree, "resolve">;
-  fence: Pick<Fence, "checkAgentRoot" | "policy">;
+  fence: Pick<Fence, "checkAgentRoot" | "policy" | "touches">;
   /** The backends the plugins contribute (`agentBackends`); read at each start. */
   backends: () => readonly AgentBackend[];
   tokens: BridgeTokens;
@@ -64,12 +68,31 @@ export interface AgentManagerOptions {
   clock: Clock;
   pluginTools?: BridgeToolSource;
   glossary?: BridgeHandlers["glossary"];
+  /** The user's OKs for agents with no admitted sandbox (sandbox/oks.ts): `FileAgentOks` in the daemon. */
+  oks?: AgentOks;
+  /** The plugins' skills, agent definitions and hooks per session (B-M2's registry); none until then. */
+  pluginParts?: PluginPartsSource;
   /** A computer's level (§9.1), for an agent that acts without asking; read-only when it isn't known. */
   levelOf?: (computer: string) => Level | undefined;
+  /** The pause switch (lane D's gate, `mayAct()`): while it says no, a delegated agent is held (`#hold`). */
+  pause?: AgentPauseGate;
   /** Tests only: start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK. */
   startUnsandboxedForTests?: boolean;
   log?: (line: string) => void;
 }
+
+/** The pause switch as lane K reads it (the owner's ruling: it pauses everything, background agents included). `watch`
+ *  says when it may have moved; without it, a held agent looks again every second. */
+export interface AgentPauseGate {
+  mayAct(): boolean;
+  watch?(fn: () => void): () => void;
+}
+
+/** A bridge token this close to its expiry is renewed at the next turn. */
+const TOKEN_RENEW_MARGIN_MS = 60 * 60_000;
+
+/** How often a held agent looks at the switch when the gate can't say it moved. */
+const PAUSE_POLL_MS = 1_000;
 
 /** Lane K's side of lane D's hooks, in #176's shapes: `BotToolsDeps.agents`, `SessionsMethodsDeps.setAgentModel` and
  *  `BotServiceOptions.reattach`. */
@@ -118,8 +141,14 @@ interface Entry {
   unwatch?: () => void;
   /** The bot's copy (`agent.json`) and the daemon's own (records.ts). */
   record: AgentRecordFile;
+  parts?: PluginParts;
   daemon: DaemonAgentRecord;
   session?: AgentSession;
+  /** Holds waiting for the pause switch. */
+  held: number;
+  /** Aborted when the session ends or the daemon closes: a held call never runs after that. */
+  gone: AbortController;
+  resumedAt?: number;
 }
 
 /** The bridge's server name starts with this; a random suffix follows, new for each session. */
@@ -129,9 +158,30 @@ const MAX_CARD_CODE = 60_000;
 export class AgentManager {
   readonly #o: AgentManagerOptions;
   readonly #entries = new Map<string, Entry>();
+  readonly #oks: AgentOks;
+
+  readonly #unpause: (() => void) | undefined;
 
   constructor(opts: AgentManagerOptions) {
     this.#o = opts;
+    this.#oks = opts.oks ?? new MemoryAgentOks();
+    // The ruling (K-M2 review 4): the moment the switch says paused, a busy agent that acts without asking is cancelled,
+    // since Clover can't hold what it isn't asked about. Without `watch`, it is cancelled at its next tool call.
+    this.#unpause = opts.pause?.watch?.(() => {
+      if (opts.pause!.mayAct()) return;
+      for (const e of this.#entries.values()) this.#cancelForPause(e);
+    });
+  }
+
+  #cancelForPause(e: Entry, toolCallId?: string): void {
+    if (!e.backend.quirks.marks.includes("unasked-actions") || !e.session || !e.driver.busy()) return;
+    e.transcript.call({ ts: this.#o.clock.now(), type: "paused", cancelled: true, ...(toolCallId ? { toolCallId } : {}) });
+    void e.session.cancel();
+  }
+
+  /** A session's sandbox setup folder, inside the fenced run folder. */
+  setupDir(sessionId: string): string {
+    return join(this.#o.home, "run", "agents", sessionId);
   }
 
   #serverNameFor(): string {
@@ -157,14 +207,24 @@ export class AgentManager {
     return {
       tap: (dir, msg, replay) => e.transcript.wire(dir, msg, replay, this.#o.clock.now()),
       stderr: (chunk) => e.transcript.stderr(chunk),
-      launched: (pid) => this.#o.tokens.bind(sessionId, pid),
+      launched: (pid, contains) => this.#o.tokens.bind(sessionId, pid, contains),
+      // A leaked copy of the token is useless once the agent is gone (S5 edit 4).
+      // Only the token bound to this process: a renewed one (a restart under a new token) stays.
+      exited: (pid) => this.#o.tokens.revokeBoundTo(sessionId, pid),
+      setupDir: this.setupDir(sessionId),
+      ...(e.parts ? { parts: e.parts } : {}),
     };
   }
 
   async start(req: AgentRequest): Promise<{ sessionId: string; transcript: string }> {
     const backend = this.#o.backends().find((b) => b.id === req.backend);
     if (!backend) throw new ContractError("not_installed", `no agent backend named ${req.backend}`);
-    if (backend.quirks.placement !== "local") throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which comes with K-M3`);
+    // Spec §9.3 "Cloud placement": whether the stdio bridge reaches a cloud session, and what the root folder means
+    // there, are settled before a cloud backend ships, by the agent suite's live gates. Until then it is listed, never
+    // started.
+    if (backend.quirks.placement !== "local") {
+      throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
+    }
     const computer = req.computer ?? this.#o.computer;
     if (computer !== this.#o.computer) {
       throw new ContractError("refused", `placing an agent on ${computer} comes with K-M3; for now an agent runs on ${this.#o.computer}`);
@@ -252,7 +312,7 @@ export class AgentManager {
     transcript.redact(token);
     const entry = {
       id, backend, transcript, record, daemon, token, rootPath, computer: daemon.computer, root: daemon.root,
-      serverName: this.#serverNameFor(), bridgeTools: BRIDGE_OWN_TOOLS.map((t) => t.name),
+      held: 0, gone: new AbortController(), serverName: this.#serverNameFor(), bridgeTools: bridgeOwnTools(daemon.bot).map((t) => t.name),
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
@@ -261,9 +321,19 @@ export class AgentManager {
       start: () => this.#startAgent(entry, reattach),
       promptOf: (input) => promptOf(input),
       redact: (v) => transcript.redacted(v),
+      // A paused agent is sent no new prompt until the switch is back.
+      beforeTurn: async (session) => {
+        // A turn withdrawn while held ends `interrupted` (the driver checks its signal next).
+        await this.#hold(entry).catch(() => {});
+        const renewed = await this.#renewIfOld(entry, session);
+        await this.#applyLevel(entry, renewed ?? session);
+        return renewed;
+      },
       ended: () => {
+        entry.gone.abort();
         this.#o.tokens.revoke(id);
         entry.unwatch?.();
+        rmSync(this.setupDir(id), { recursive: true, force: true });
         // Every way a session ends takes its cards with it (rule 7, review 3).
         this.#o.approvals.cancelSession(id);
         if (this.#entries.get(id) === entry) {
@@ -281,29 +351,102 @@ export class AgentManager {
     return e.level ?? this.#o.levelOf?.(e.computer) ?? "read-only";
   }
 
+  /** While paused (the owner's ruling), waits until the switch is back, or the turn is withdrawn. A held agent isn't
+   *  stalled. */
+  async #hold(e: Entry): Promise<void> {
+    const gate = this.#o.pause;
+    if (e.gone.signal.aborted) throw new ContractError("closed", "this agent's session has ended");
+    if (!gate || gate.mayAct()) return;
+    const signals = [e.driver.currentSignal(), e.gone.signal].filter((x): x is AbortSignal => x !== undefined);
+    e.held++;
+    try {
+      await new Promise<void>((resolve) => {
+        let timer: ReturnType<Clock["setTimeout"]> | undefined;
+        const done = () => {
+          off?.();
+          if (timer !== undefined) this.#o.clock.clearTimeout(timer);
+          for (const sig of signals) sig.removeEventListener("abort", done);
+          resolve();
+        };
+        const check = () => {
+          if (gate.mayAct()) done();
+          else if (!gate.watch) timer = this.#o.clock.setTimeout(check, PAUSE_POLL_MS);
+        };
+        const off = gate.watch?.(check);
+        for (const sig of signals) sig.addEventListener("abort", done, { once: true });
+        if (signals.some((sig) => sig.aborted)) return done();
+        check();
+      });
+    } finally {
+      e.held--;
+      // The stall window starts again from the resume.
+      e.resumedAt = this.#o.clock.now();
+    }
+    if (signals.some((sig) => sig.aborted)) throw new ContractError("cancelled", "withdrawn while the bots were paused");
+  }
+
+  /** A held bridge call goes on only if its session and token are still live after the hold (review 1). */
+  async #holdForBridge(id: string): Promise<Entry> {
+    const e = this.#entries.get(id);
+    if (!e) throw new ContractError("closed", "this agent's session has ended");
+    await this.#hold(e);
+    if (this.#entries.get(id) !== e || !this.#o.tokens.has(id)) throw new ContractError("closed", "this agent's session has ended");
+    return e;
+  }
+
+  /** A session that outlives its bridge token (12 hours) would lose its bridge: at the turn boundary before the
+   *  token's last hour, the agent is restarted under a new token, with an honest `resume` or a `load` whose replay is
+   *  dropped (K-M2 review 12). An agent that can't reattach keeps its token until it expires. */
+  async #renewIfOld(e: Entry, session: AgentSession): Promise<AgentSession | undefined> {
+    const age = this.#o.tokens.ageOf(e.id);
+    if (age === undefined || age < this.#o.tokens.ttlMs - TOKEN_RENEW_MARGIN_MS) return undefined;
+    const q = e.backend.quirks.sessions;
+    if (!q.load.supported && !(q.resume.supported && !q.resume.replays)) return undefined;
+    const agentSessionId = e.daemon.agentSessionId ?? session.agentSessionId;
+    e.unwatch?.();
+    await session.stop();
+    // The old process's exit revokes the old token; the new one is minted after it.
+    await new Promise((r) => setTimeout(r, 0));
+    e.token = this.#o.tokens.mint(e.id);
+    e.transcript.redact(e.token);
+    e.transcript.call({ ts: this.#o.clock.now(), type: "token-renewed" });
+    return this.#startAgent(e, { agentSessionId });
+  }
+
+  /** At each turn, the computer's level as it is now (check 2's minor 5): an agent that acts without asking goes into
+   *  its read-only mode when the level dropped to read-only since it started, and back when it rose again. */
+  async #applyLevel(e: Entry, session: AgentSession): Promise<void> {
+    if (!e.backend.quirks.marks.includes("unasked-actions")) return;
+    const readOnly = this.#levelOf(e) === "read-only";
+    const s = session as { setReadOnly?: (on: boolean) => Promise<void> };
+    if (s.setReadOnly) return s.setReadOnly(readOnly);
+    if (readOnly) throw new ContractError("refused", `${e.backend.id} acts without asking and can't be held at read-only, so this turn wasn't sent`);
+  }
+
   /** Before an agent launches: an agent that isn't sandboxed, or is outside its tested versions, needs the user's OK. */
-  async #admit(e: Entry): Promise<void> {
+  async #admit(e: Entry): Promise<NonNullable<AcpStartSpec["admitted"]>> {
     const d = await e.backend.detect();
     if (!d.installed) throw new ContractError("not_installed", d.reason ?? `${e.backend.id} isn't installed on this computer`);
     if (!d.identityOk) throw new ContractError("refused", d.reason ?? `${e.backend.id}'s program isn't its publisher's`);
     const why: string[] = [];
-    if (!d.sandboxed) why.push("it has no sandbox Clover can count on here");
+    if (!d.sandboxed) {
+      const detail = d.versionOk ? d.reason?.replace(/^no sandbox: /, "") : undefined;
+      why.push(`it has no sandbox Clover can count on here${detail ? ` (${detail})` : ""}`);
+    }
     if (!d.versionOk) why.push(`its version ${d.version ?? "(unknown)"} is outside the versions Clover was tested with`);
-    if (why.length === 0) return;
-    await this.#requireOk(e, d.version ?? "unknown", why.join("; "));
-  }
-
-  /** The user's OK for an agent `#admit` doesn't let through. Its card comes with K-M2; until then the agent isn't
-   *  started (fail closed), except in tests. */
-  async #requireOk(e: Entry, _version: string, reason: string): Promise<void> {
-    if (this.#o.startUnsandboxedForTests === true) return;
-    throw new ContractError("refused", `${e.backend.id} wasn't started: ${reason}, and Clover can't ask for your OK to run it that way yet`);
+    const admitted = { path: d.path ?? "", ...(d.version === undefined ? {} : { version: d.version }) };
+    if (why.length === 0) return admitted;
+    // The OK is for this program: its real path and its file's hash (K-M2 review 5).
+    const sha256 = (await programHash(admitted.path)) ?? "";
+    await this.#requireOk(e, { version: d.version ?? "unknown", path: admitted.path, sha256 }, why.join("; "), d.sandboxed);
+    return { ...admitted, ...(sha256 ? { sha256 } : {}) };
   }
 
   async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
-    await this.#admit(e);
+    const admitted = await this.#admit(e);
+    e.parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
-    e.bridgeTools = [...BRIDGE_OWN_TOOLS.map((t) => t.name), ...tools.map((t) => t.name)];
+    e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
     const spec: AcpStartSpec = {
       sessionId: e.id,
       root: e.rootPath,
@@ -317,9 +460,17 @@ export class AgentManager {
         env: { [BRIDGE_ENV.token]: e.token, [BRIDGE_ENV.session]: e.id, [BRIDGE_ENV.socket]: this.#o.bridge.socketPath },
         tools: e.bridgeTools,
       },
-      fence: this.#o.fence.policy(),
+      // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
+      // whole, for reads and writes.
+      fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
+      admitted,
+      // A backend inside the daemon (Clover's coding agent) gets the bridge in-process: its calls check the session's
+      // token is still live, as the socket's do.
+      ...((e.backend as { inProcess?: boolean }).inProcess === true
+        ? { inProcessBridge: await inProcessBridgeServer(this.bridgeHandlers(), { name: e.serverName, sessionId: e.id, live: () => this.#o.tokens.has(e.id) }) }
+        : {}),
     };
     const session = await e.backend.start(spec);
     e.session = session;
@@ -330,12 +481,20 @@ export class AgentManager {
     e.record = { ...e.record, agentSessionId: session.agentSessionId };
     e.transcript.writeRecord(e.record);
     session.onPermission((ask) => this.#permission(e, ask));
+    // An agent that acts without asking can't be held at a call it never asks about: paused, its turn is cancelled at
+    // its next tool call instead, and the next turn waits for the switch.
+    if (e.backend.quirks.marks.includes("unasked-actions")) {
+      session.onEvent((ev) => {
+        if (ev.type !== "tool_call" || !this.#o.pause || this.#o.pause.mayAct()) return;
+        this.#cancelForPause(e, ev.id);
+      });
+    }
     const s = session as { openCalls?: () => { id: string; kind: string; startedAtWall: number }[]; waitingOnUser?: () => boolean };
     e.unwatch = this.#o.watchdog.watch({
       pid: pid ?? 0,
-      lastProgressAt: () => session.lastProgressAt(),
+      lastProgressAt: () => Math.max(session.lastProgressAt(), e.resumedAt ?? 0),
       busy: () => e.driver.busy(),
-      waitingOnUser: () => s.waitingOnUser?.() ?? false,
+      waitingOnUser: () => e.held > 0 || (s.waitingOnUser?.() ?? false),
       runningCommands: () => (s.openCalls?.() ?? []).filter((c) => c.kind === "execute"),
     }, () => {
       this.#o.log?.(`agents: ${e.id} made no progress for 10 minutes; stopping it`);
@@ -344,11 +503,72 @@ export class AgentManager {
     return session;
   }
 
+  /** The OK for an agent `#admit` doesn't let through (no admitted sandbox, or a version outside the tested ones):
+   *  asked once per backend, version and computer, as a change card. Tests may skip it. */
+  async #requireOk(e: Entry, program: { version: string; path: string; sha256: string }, reason: string, sandboxed: boolean): Promise<void> {
+    if (this.#o.startUnsandboxedForTests === true) return;
+    const { version } = program;
+    const key = { backend: e.backend.id, computer: e.computer, ...program };
+    if (this.#oks.has(key)) return;
+    const signal = e.driver.currentSignal();
+    const decision = await this.#o.approvals.request({
+      kind: "change",
+      change: "agent-unsandboxed",
+      session: e.id,
+      ...(e.bot === undefined ? {} : { bot: e.bot }),
+      origin: e.driver.currentOrigin() ?? "agent",
+      computers: [e.computer],
+      effect: "other",
+      fields: {
+        title: { type: "text", text: sandboxed ? "Start an agent Clover hasn't tested?" : "Start an agent without a sandbox?" },
+        what: { type: "text", text: sandboxed
+          ? "This version of the agent is outside the ones Clover was tested with, so its sandbox may not hold. While it runs, it could read Clover's logins and approve its own cards."
+          : "This agent has no sandbox Clover can count on here. While it runs, it could read Clover's logins and approve its own cards." },
+        computer: { type: "text", text: e.computer },
+        source: { type: "rows", rows: [
+          { label: "Agent", value: sealedText(e.backend.id, 4000) },
+          { label: "Version", value: sealedText(version, 4000) },
+          { label: "Program", value: sealedText(program.path, 4000) },
+          { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
+          { label: "Folder", value: sealedText(e.root, 4000) },
+        ] },
+        detail: { type: "rows", rows: [{ label: "Why", value: sealedText(reason, 4000) }] },
+      },
+    }, signal ? { signal } : {});
+    if (!decision.allowed) {
+      throw new ContractError("refused", `${e.backend.id} wasn't started: ${reason}, and the OK to run it that way was ${decision.by === "expired" ? "not given in time" : decision.by === "card" ? "refused" : "withdrawn"}`);
+    }
+    this.#oks.grant(key, { ...(decision.cardId === undefined ? {} : { cardId: decision.cardId }), at: this.#o.clock.now() });
+  }
+
   async #permission(e: Entry, raw: AgentPermissionAsk): Promise<AgentPermissionAnswer> {
     const origin = e.driver.currentOrigin() ?? "agent";
     const signal = e.driver.currentSignal();
+    // Paused: the agent waits here, its call unanswered, until the switch is back (a withdrawn turn cancels it).
+    try {
+      await this.#hold(e);
+    } catch {
+      return { outcome: "cancelled" };
+    }
     // The token never reaches a card, and the fence sees each path as it really is (reviews 8 and 9).
-    const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths: agentPaths(raw.paths, e.rootPath) };
+    const resolved = agentPaths(raw.paths, e.rootPath);
+    if (resolved.over) {
+      // More paths than Clover checks: refused without a card, never let through unchecked (check 2's minor 1).
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "too-many-paths", paths: raw.paths.length });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // Anything in the Clover home (a bot's memory, its conversations, the runtime's state), as written or through a link:
+    // refused without a card, at every level (the owner's decision, #208's check 2).
+    if (resolved.paths.some((p) => homeReach(this.#o.home, p, e.rootPath) === "inside")) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "clover-home" });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // Every path goes to the broker; the card lists the fenced ones first.
+    const fenced = resolved.paths.filter((p) => this.#o.fence.touches([p]) !== null);
+    const paths = fenced.length === 0 ? resolved.paths : [...fenced, ...resolved.paths.filter((p) => !fenced.includes(p))];
+    const ask: AgentPermissionAsk = { ...e.transcript.redacted(raw), options: raw.options, paths };
     const req: ApprovalRequest = {
       kind: "agent-permission",
       session: e.id,
@@ -430,9 +650,11 @@ export class AgentManager {
   /** The daemon is closing: every agent's process ends and its token goes, and the daemon's records stay, so the
    *  next daemon reattaches the sessions the host restores. */
   async close(): Promise<void> {
+    this.#unpause?.();
     const entries = [...this.#entries.values()];
     this.#entries.clear();
     await Promise.all(entries.map(async (e) => {
+      e.gone.abort();
       e.unwatch?.();
       this.#o.tokens.revoke(e.id);
       this.#o.approvals.cancelSession(e.id);
@@ -457,10 +679,26 @@ export class AgentManager {
         const plugin = await source.tools(id).catch(() => []);
         const own = await source.instructions?.(id).catch(() => "");
         const essentials = bridgeInstructions({ ...(e?.bot === undefined ? {} : { bot: e.bot }), serverName: e?.serverName ?? BRIDGE_SERVER_PREFIX });
-        return { tools: [...BRIDGE_OWN_TOOLS, ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
+        return { tools: [...bridgeOwnTools(e?.bot), ...plugin], instructions: own ? `${essentials}\n\n${own}` : essentials };
       },
-      call: (id, c) => source.call(id, c),
-      sendMessage: (id, m) => this.agentMessage(id, m.text, m.to),
+      call: async (id, c) => {
+        let e: Entry;
+        try {
+          e = await this.#holdForBridge(id);
+        } catch (err) {
+          const why = err instanceof Error ? err.message : String(err);
+          return { content: [{ type: "text", text: `Not run: ${why}.` }], isError: true };
+        }
+        const signal = e.driver.currentSignal();
+        return source.call(id, c, {
+          computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
+          ...(e.bot === undefined ? {} : { bot: e.bot }), ...(e.level === undefined ? {} : { level: e.level }), ...(signal ? { signal } : {}),
+        });
+      },
+      sendMessage: async (id, m) => {
+        await this.#holdForBridge(id);
+        return this.agentMessage(id, m.text, m.to);
+      },
       glossary: (id, q) => (this.#o.glossary ? this.#o.glossary(id, q) : Promise.resolve({ results: [], loaded: [] })),
     };
   }
@@ -488,9 +726,11 @@ export function effectOf(toolKind: string): ActionEffect {
 }
 
 /** The key a card's "always" saves as Clover's own rule (S5 edit 5): a command exactly, or an MCP tool, each under the
- *  agent's backend, so an agent's rule never covers a bot's own tool of the same name, or the reverse (review 4). */
+ *  agent's backend, so an agent's rule never covers a bot's own tool of the same name, or the reverse (review 4), and
+ *  each written so no two calls share a key (check 2's minor 2). */
 export function ruleKeyOf(backend: string, ask: AgentPermissionAsk): string | undefined {
-  if (ask.mcp) return `Agent(${backend}):mcp__${ask.mcp.server}__${ask.mcp.tool}`;
+  // The server and tool as a JSON pair: `mcp__a__b__c` could be server `a__b` and tool `c`, or `a` and `b__c`.
+  if (ask.mcp) return `Agent(${backend}):mcp(${JSON.stringify([ask.mcp.server, ask.mcp.tool])})`;
   const command = (ask.rawInput as { command?: unknown } | undefined)?.command;
   if (ask.toolKind === "execute" && typeof command === "string" && command.length > 0 && command.length <= 2000) return `Agent(${backend}):Bash(${command})`;
   return undefined;
@@ -525,7 +765,11 @@ function cardFields(e: Entry, ask: AgentPermissionAsk): ApprovalRequest["fields"
     ] },
     detail: { type: "rows", rows: [{ label: "The agent's title", value: sealedText(ask.title, 4000) }] },
   };
-  if (ask.paths.length > 0) fields["paths"] = { type: "list", items: ask.paths.slice(0, 200).map((p) => sealedText(p, 4000)) };
+  if (ask.paths.length > 0) {
+    const shown = ask.paths.slice(0, 200).map((p) => sealedText(p, 4000));
+    if (ask.paths.length > shown.length) shown.push(`… and ${ask.paths.length - shown.length} more`);
+    fields["paths"] = { type: "list", items: shown };
+  }
   return fields as ApprovalRequest["fields"];
 }
 

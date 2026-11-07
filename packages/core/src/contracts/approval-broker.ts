@@ -38,7 +38,8 @@
 import {
   type Card, type CardAnswerProof, type CardFieldName, type CardKind, type CardMeta, type CardOption, type CardOutcome,
   type ChangeSubject, type CloverRole, type DeviceKind, type Level, LEVELS, type SealedValue, type SignedCardAnswer,
-  type CardContent, type TurnOrigin, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput, cardHashInput, isUserTurn,
+  type CallBinding, type CardContent, type TurnOrigin, TREE_TRANSFER, answerTimeOk, callBindingInput, cardAnswerSigningInput, cardContentInput,
+  cardHashInput, isUserTurn,
 } from "@waifucave/clover-protocol";
 import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
@@ -299,11 +300,41 @@ export interface AnswerLedger {
 export type SignedAnswerVerdict = "ok" | "bad-hash" | "unbound" | "mismatch" | "not-approve" | "bad-device" | "bad-time" | "bad-signature" | "used";
 
 /** The receiver's own card for a call (review N1, part 2): what its built-in tables say for this method and params,
- *  binding exactly this call; undefined when it shows no card for that call, which then takes no signed answer. */
+ *  binding exactly this call; undefined when it shows no card for that call, which then takes no signed answer. For
+ *  `tree.transfer` the binding comes from the params (`transferBinding`), never from `computer`, so the source and
+ *  the destination rebuild the same card (R15). */
 export type CallCardRenderer = (call: { computer: string; method: string; params: unknown }) => CardContent | undefined;
 
+/** The calls another computer's signed answer may lift (R1, R15; J-M2's review), each with a sample call. A receiver's
+ *  `CallCardRenderer` (lane C's sealed card tables, C-M3) must render each, binding exactly that call, or the feature
+ *  fails closed with `mismatch` and never works; the approval-broker suite's card-table case checks it. */
+export const CALL_CARD_METHODS: readonly { method: string; params: unknown }[] = [
+  { method: "tree.write", params: { path: "home/Studio/notes.md", data: { encoding: "utf8", text: "x" } } },
+  { method: "tree.remove", params: { path: "home/Studio/old.log" } },
+  { method: "tree.move", params: { from: "home/Studio/a", to: "home/Studio/b" } },
+  { method: "tree.mkdir", params: { path: "home/Studio/new" } },
+  { method: "tree.symlink", params: { path: "home/Studio/link", target: "a" } },
+  { method: "tree.transfer", params: { operation: "move", from: "home/Laptop1/p", to: "home/Studio/p", source: "Laptop1", destination: "Studio" } },
+  { method: "terminal.open", params: { cwd: "home/Studio/p", cols: 80, rows: 24 } },
+  { method: "mcp.mirror", params: { server: "github", config: {} } },
+  { method: "computer.setLevel", params: { level: "automatic" } },
+  { method: "tool.run", params: { tool: "mcp__github__create_issue", input: {} } },
+];
+
+/** Whether a card's binding names this computer for this call: the one that runs it; for `tree.transfer` (R15) either
+ *  end, where the params name the same two computers as the binding (`destination` is `computer`, `source` is
+ *  `source`). A `source` on any other method binds nothing. */
+export function bindsComputer(b: CallBinding, method: string, params: unknown, self: string): boolean {
+  if (b.method !== method) return false;
+  if (method !== TREE_TRANSFER) return b.source === undefined && b.computer === self;
+  const p = (params ?? {}) as { source?: unknown; destination?: unknown };
+  if (b.source === undefined || b.source === b.computer || p.source !== b.source || p.destination !== b.computer) return false;
+  return self === b.computer || self === b.source;
+}
+
 /** How a receiver takes a signed answer as proof for a call (`peer.call`, `tool.run`, a peer's `tree.*` write) or a
- *  raise (`setLevel`): it recomputes the card's hash; checks the card binds exactly this computer, method and params;
+ *  raise (`setLevel`): it recomputes the card's hash; checks the card binds exactly this computer, method and params
+ *  (`bindsComputer`: both ends of a `tree.transfer`, each with its own ledger, so each takes the one answer once);
  *  rebuilds its own card for that call (`render`) and refuses one that says anything else (`mismatch`), so a card
  *  that reads "Show the weather" can't bind a level raise; then checks the option is an approve option, that the
  *  device may answer cards (`mayAnswerCards`), the time, and the answer key's signature, and claims the card id in its
@@ -315,7 +346,7 @@ export async function verifySignedAnswer(
   const { card } = s;
   if (c.sha256(cardHashInput(card)) !== card.hash) return "bad-hash";
   const b = card.binds;
-  if (!b || b.computer !== c.self || b.method !== c.method || b.params !== c.sha256(callBindingInput(c.method, c.params))) return "unbound";
+  if (!b || !bindsComputer(b, c.method, c.params, c.self) || b.params !== c.sha256(callBindingInput(c.method, c.params))) return "unbound";
   const mine = c.render({ computer: c.self, method: c.method, params: c.params });
   if (mine === undefined || cardContentInput(mine) !== cardContentInput(card)) return "mismatch";
   if (card.options.find((o) => o.id === s.option)?.kind !== "approve") return "not-approve";

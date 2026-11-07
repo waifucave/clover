@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "NanoGPT",
+  "description": "NanoGPT's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "nanogpt",
+        "name": "NanoGPT",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your NanoGPT API key. Clover keeps it in your credential store and adds it to NanoGPT's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://nano-gpt.com/api/v1"
+        }
+      }
+    ]
+  }
+}

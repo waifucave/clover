@@ -55,6 +55,18 @@ export function runLinkTransportConformance(make: LinkTransportFactory): void {
       expect(isContractError(await rejection(link.request("nope", {})), "not_found")).toBe(true);
     });
 
+    test("a refusal's detail reaches the caller whole, so an answer can still lift it (R1, R15; J-M2's review)", async () => {
+      const net = make();
+      const detail = { needsAnswer: true, computer: "Studio", method: "tree.transfer", card: { id: "card_abcdef", nested: [1, { two: 2 }] } };
+      net.endpoint("b").handle("tree.receive", () => {
+        throw new ContractError("refused", "this move needs the user's answer", detail);
+      });
+      const link = await net.endpoint("a").connect("b");
+      const err = await rejection(link.request("tree.receive", {}));
+      expect(isContractError(err, "refused")).toBe(true);
+      expect((err as ContractError).detail).toEqual(detail);
+    });
+
     test("a cut path fails fast: dialling, new requests and requests in flight all answer offline", async () => {
       const net = make();
       const a = net.endpoint("a");

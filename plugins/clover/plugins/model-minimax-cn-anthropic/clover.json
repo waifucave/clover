@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "MiniMax China (Anthropic dialect)",
+  "description": "MiniMax China (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "minimax-cn-anthropic",
+        "name": "MiniMax China (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your MiniMax China (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to MiniMax China (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.minimax.cn/anthropic"
+        }
+      }
+    ]
+  }
+}

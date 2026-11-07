@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Groq",
+  "description": "Groq's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "groq",
+        "name": "Groq",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Groq API key. Clover keeps it in your credential store and adds it to Groq's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.groq.com/openai/v1"
+        }
+      }
+    ]
+  }
+}

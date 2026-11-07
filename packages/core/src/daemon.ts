@@ -118,6 +118,8 @@ import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDG
 import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
+import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
+import type { ProviderRefresher } from "./runtime-sdk/host-credentials";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -406,6 +408,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   home?: string;
   secrets?: SecretStore;
   server?: Partial<Pick<IpcServerOptions, "helloTimeoutMs" | "maxConnections" | "preAuthMaxLine">>;
+  /** A-M2: lane B's plugin registry and plugin host, which the model plugins load through (`startModelPlugins`).
+   *  Absent (today, until B-M1's registry and B-M2's host): sessions use the SDK's compiled catalog. */
+  modelPluginHost?: Pick<StartModelPluginsOptions, "registry" | "host" | "pluginSecrets">;
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
@@ -2160,6 +2165,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ?? (opts.secrets !== undefined ? createMemoryMcpOAuthStore() : daemonMcpOAuthStore(keychainService(profile, cloverHome)));
   const daemonOAuthStore = (): McpOAuthStore => oauthStoreForThisDaemon;
   const sessionMcpOAuthStore: McpOAuthStore = oauthStoreForThisDaemon;
+  // Per provider account, its renewal: the sessions' credential broker and the model plugins' keys share them.
+  const credentialRefreshers: Readonly<Record<string, ProviderRefresher>> = {
+    // The ref is spelled EXACTLY as the internal jobs' (`providers/internal-provider.ts`: no `service`),
+    // because `refreshOauthMaterial`'s own single-flight is keyed on (service, account, token URL): the
+    // titler renewing codex and a session asking for newer material then share ONE grant in this process.
+    [CREDENTIAL_MATERIAL_NAMES.codexOauth]: async (account: string) => {
+      await refreshOauthMaterial({ store: credentialStoreOverSecretStore(secrets), ref: { kind: "keychain", account }, tokenUrl: CODEX.tokenUrl, clientId: CODEX.clientId });
+    },
+    [ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME]: async () => {
+      const result = await consoleBroker.refreshBearer();
+      if (!result.ok) throw new Error("console_bearer_refresh_failed");
+    },
+  };
   const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
     home: cloverHome,
     // WS-21: every incarnation's run home, when the linked router applies them (see `runHomeDeps`).
@@ -2252,19 +2270,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     mcpOAuthStore: sessionMcpOAuthStore,
     // Review r1 (i): the enabled plugins' http/sse servers join the MCP sign-in allowlist (live per incarnation).
     pluginMcpServers: () => pluginMcpServersFor(pluginStore.list().filter((p) => !p.disabled).map((p) => p.installPath)),
-    credentialRefreshers: {
-      // The ref is spelled EXACTLY as the internal jobs' (`providers/internal-provider.ts`: no `service`),
-      // because `refreshOauthMaterial`'s own single-flight is keyed on (service, account, token URL): the
-      // titler renewing codex and a session asking for newer material then share ONE grant in this process.
-      [CREDENTIAL_MATERIAL_NAMES.codexOauth]: async (account: string) => {
-        await refreshOauthMaterial({ store: credentialStoreOverSecretStore(secrets), ref: { kind: "keychain", account }, tokenUrl: CODEX.tokenUrl, clientId: CODEX.clientId });
-      },
-      [ANTHROPIC_CONSOLE_CREDENTIAL_SECRET_NAME]: async () => {
-        const result = await consoleBroker.refreshBearer();
-        if (!result.ok) throw new Error("console_bearer_refresh_failed");
-      },
-    },
+    credentialRefreshers,
   });
+  // A-M2: the model plugins, when the daemon was handed lane B's plugin registry and plugin host (B-M1/B-M2; none
+  // until then, and the SDK's compiled catalog, which the bundled model plugins are generated from, serves the same
+  // providers). Every session created from here on runs on them; their keys come from the same keychain slots and
+  // refreshers the sessions' broker uses. A failure leaves the compiled catalog in place, logged.
+  let modelPlugins: StartedModelPlugins | undefined;
+  if (opts.modelPluginHost !== undefined) {
+    try {
+      modelPlugins = await startModelPlugins({ ...opts.modelPluginHost, home: cloverHome, secrets, refreshers: credentialRefreshers, log: (line) => console.error(line) });
+    } catch (err) {
+      console.error(`[model-plugins] not started: ${err instanceof Error ? err.name : typeof err}; sessions use the SDK's compiled catalog`);
+    }
+  }
   // Wiring 1: fills the forward reference `planBridge`'s `setPolicy` closes over (declared above,
   // before `cloverDrivers` existed) — see that block's own comment for why the cycle is broken here.
   cloverDriversForPlanBridge = cloverDrivers;
@@ -3333,6 +3352,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // this at boot and make every hot-reload assertion above it a lie.
     settings: () => settings,
     stop() {
+      modelPlugins?.stop(); // A-M2: the compiled catalog back, the registry watch let go
       // The app is told to quit (`app.quit`, written now; no wait for it), and the pair starts nothing
       // more: no app start from here on, and this run's app token goes.
       stopping = true;

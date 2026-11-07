@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Mistral",
+  "description": "Mistral's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "mistral",
+        "name": "Mistral",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Mistral API key. Clover keeps it in your credential store and adds it to Mistral's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.mistral.ai/v1"
+        }
+      }
+    ]
+  }
+}

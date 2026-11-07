@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Api.airforce",
+  "description": "Api.airforce's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "api-airforce",
+        "name": "Api.airforce",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Api.airforce API key. Clover keeps it in your credential store and adds it to Api.airforce's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.airforce/v1"
+        }
+      }
+    ]
+  }
+}

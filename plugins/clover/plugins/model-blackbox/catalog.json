@@ -1,0 +1,949 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.blackbox.ai/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/blackbox/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://blackbox.ai — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.blackbox.ai/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "blackbox/claude-fable-5",
+      "providerId": "blackbox",
+      "upstreamId": "claude-fable-5",
+      "displayName": "Claude Fable 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#claude-fable-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1000000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 10,
+          "outputPerMTokUsd": 50,
+          "cacheReadPerMTokUsd": 1,
+          "cacheWritePerMTokUsd": 12.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 10 input / 50 output / 1 cached input per 1M tokens — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-fable-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "blackbox/claude-opus-4.8",
+      "providerId": "blackbox",
+      "upstreamId": "claude-opus-4.8",
+      "displayName": "Claude Opus 4.8",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#claude-opus-4.8 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1000000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 25,
+          "cacheReadPerMTokUsd": 0.5,
+          "cacheWritePerMTokUsd": 6.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 5 input / 25 output / 0.5 cached input per 1M tokens; tiers: Regional/US and EU rates run ~10% higher; a 'fast' tier is available at input $10/output $50 per 1M (cacheRead $1, cacheWrite $12.5). (the smallest-context standard tier is stored) — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-opus-4.8",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "blackbox/claude-sonnet-4.6",
+      "providerId": "blackbox",
+      "upstreamId": "claude-sonnet-4.6",
+      "displayName": "Claude Sonnet 4.6",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#claude-sonnet-4.6 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1000000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.3,
+          "cacheWritePerMTokUsd": 3.75
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 3 input / 15 output / 0.3 cached input per 1M tokens — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-4.6",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "blackbox/claude-sonnet-5",
+      "providerId": "blackbox",
+      "upstreamId": "claude-sonnet-5",
+      "displayName": "Claude Sonnet 5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#claude-sonnet-5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1000000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2,
+          "outputPerMTokUsd": 10,
+          "cacheReadPerMTokUsd": 0.2,
+          "cacheWritePerMTokUsd": 2.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 2 input / 10 output / 0.2 cached input per 1M tokens — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "claude-sonnet-5",
+      "modelFamily": "claude"
+    },
+    {
+      "key": "blackbox/deepseek-v4-flash",
+      "providerId": "blackbox",
+      "upstreamId": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#deepseek-v4-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1000000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 384000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":384000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.13,
+          "outputPerMTokUsd": 0.26,
+          "cacheReadPerMTokUsd": 0.028
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 0.13 input / 0.26 output / 0.028 cached input per 1M tokens — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "blackbox/gpt-5.3-codex",
+      "providerId": "blackbox",
+      "upstreamId": "gpt-5.3-codex",
+      "displayName": "GPT-5.3 Codex",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#gpt-5.3-codex — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":400000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.75,
+          "outputPerMTokUsd": 14,
+          "cacheReadPerMTokUsd": 0.175
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 1.75 input / 14 output / 0.175 cached input per 1M tokens; tiers: A 'fast' tier is priced at input $3.50/output $28 per 1M (cacheRead $0.35); a 'priority' service tier matches the fast rate. (the smallest-context standard tier is stored) — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.3-codex",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "blackbox/gpt-5.4",
+      "providerId": "blackbox",
+      "upstreamId": "gpt-5.4",
+      "displayName": "GPT-5.4",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#gpt-5.4 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1050000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2.5,
+          "outputPerMTokUsd": 15,
+          "cacheReadPerMTokUsd": 0.25
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 2.5 input / 15 output / 0.25 cached input per 1M tokens; tiers: Tiered by prompt length: at/above 272000 tokens, input rises to $5/1M and output to $22.5/1M (regional US: $5.5/$16.5 base, $11/$24.75 above 272000). A 'fast' tier and 'flex'/'priority' service tiers exist at other rates. (the smallest-context standard tier is stored) — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.4",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "blackbox/gpt-5.4-nano",
+      "providerId": "blackbox",
+      "upstreamId": "gpt-5.4-nano",
+      "displayName": "GPT-5.4 Nano",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#gpt-5.4-nano — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 400000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":400000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.2,
+          "outputPerMTokUsd": 1.25,
+          "cacheReadPerMTokUsd": 0.02
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 0.2 input / 1.25 output / 0.02 cached input per 1M tokens; tiers: A 'flex' service tier is priced lower (input $0.10/output $0.625 per 1M). (the smallest-context standard tier is stored) — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.4-nano",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "blackbox/gpt-5.4-pro",
+      "providerId": "blackbox",
+      "upstreamId": "gpt-5.4-pro",
+      "displayName": "GPT-5.4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#gpt-5.4-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1050000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1050000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 30,
+          "outputPerMTokUsd": 180
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 30 input / 180 output per 1M tokens; tiers: At/above 272000 tokens, input rises to $60/1M and output to $270/1M. A 'flex' service tier is priced at input $15/output $90 per 1M. (the smallest-context standard tier is stored) — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.4-pro",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "blackbox/gpt-5.5",
+      "providerId": "blackbox",
+      "upstreamId": "gpt-5.5",
+      "displayName": "GPT-5.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#gpt-5.5 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1000000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"max_tokens\":128000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 5,
+          "outputPerMTokUsd": 30,
+          "cacheReadPerMTokUsd": 0.5
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 5 input / 30 output / 0.5 cached input per 1M tokens; tiers: At/above 272000 tokens, input rises to $10/1M and output to $45/1M. A 'fast' tier is priced at input $12.5/output $75 per 1M. (the smallest-context standard tier is stored) — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-5.5",
+      "modelFamily": "gpt"
+    },
+    {
+      "key": "blackbox/grok-4.3",
+      "providerId": "blackbox",
+      "upstreamId": "grok-4.3",
+      "displayName": "Grok 4.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"input_modalities\":[\"text\",\"image\",\"pdf\"]\" — Row's stored value is ['text'] only. Page also lists 'pdf' as an input modality, but pdf is not in the catalog's allowed modality set, so it is omitted from the reported value and noted here.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/blackbox/index.ts#grok-4.3 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"tags\":[...,\"tool-use\",...], \"supported_parameters\":[...,\"tools\",\"tool_choice\",...]\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"context_window\":1000000\" — Embedded model-catalog JSON on the /models page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"\"supports_thinking\":true ... \"supported_parameters\":[...,\"reasoning\",\"include_reasoning\",...]\" — Page states the model supports thinking and accepts a 'reasoning'/'include_reasoning' field; no literal effort values are enumerated.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.25,
+          "outputPerMTokUsd": 2.5,
+          "cacheReadPerMTokUsd": 0.2
+        },
+        "source": "official-doc",
+        "sourceRef": "https://www.blackbox.ai/models (read 2026-09-27): \"pricing given as USD per-token fractions in the page JSON, e.g. \"input\":\"0.000002\" = $2/1M tokens\" — USD 1.25 input / 2.5 output / 0.2 cached input per 1M tokens; tiers: At/above 200001 tokens, input rises to $2.5/1M and output to $5/1M. A 'priority' service tier is $2.5/1M input, $5/1M output ($5/$10 above 200001 tokens). (the smallest-context standard tier is stored) — Converted from per-token USD fractions in the page's model JSON (value*1,000,000).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "grok-4.3",
+      "modelFamily": "grok"
+    }
+  ]
+}

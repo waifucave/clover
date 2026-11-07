@@ -35,6 +35,10 @@ describe("ci-changes", () => {
     expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
   });
 
+  test("the merge queue's sweep (its own workflow): the scripts' tests, which run its step against stand-ins", () => {
+    expect(on([".github/workflows/queue-sweep.yml"])).toEqual(["scripts"]);
+  });
+
   test("a service's change: its tests and the typecheck", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
@@ -49,17 +53,23 @@ describe("ci-changes", () => {
         return wanted && mac ? [id] : [];
       });
     };
-    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos", "swift"]);
-    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos", "swift"]);
+    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos"]);
+    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos"]);
+    expect(macJobs([".github/workflows/ci.yml"])).toEqual(["machine", "macos", "swift"]);
     expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
-    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
+    // An apple/ change: the Swift kits, and the scripts' tests on Linux, never the macos job (its scripts step runs only
+    // the scripts' own macOS tests, for a change to scripts/).
+    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["swift"]);
+    expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).not.toContain("scriptsmac");
+    expect(macJobs(["scripts/embed-runtimes.sh"])).toEqual(["macos"]);
+    expect(on(["scripts/embed-runtimes.sh"])).toEqual(expect.arrayContaining(["scripts", "scriptsmac"]));
     expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
   });
 
   test("the core: its own, the CLI's and the scripts' tests, the daemon, the packages that carry it, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
-    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
+    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "verify"]);
     expect(core).not.toContain("app");
   });
 
@@ -78,16 +88,36 @@ describe("ci-changes", () => {
     expect(on(["packages/core/src/contracts/tests/secret-store.test.ts"])).not.toContain("tree");
   });
 
+  test("the link job runs for the sidecar, the links, and the devices and identity under them; the sidecar's change builds the packages too", () => {
+    expect(on(["native/link/src/main.rs"])).toEqual(["workspaces", "packages", "link"]);
+    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts"]) expect(on([f]), f).toContain("link");
+    expect(on(["packages/core/src/daemon.ts"])).not.toContain("link");
+    expect(on(["native/link-sidecar/src/main.rs"])).not.toContain("link");
+  });
+
+  test("the services' shared source and the sign-in stub run the core's suite (its account tests import them)", () => {
+    expect(on(["services/shared/account-token.ts"])).toContain("core");
+    expect(on(["packages/test-harness/src/signin-stub.ts"])).toContain("core");
+    expect(on(["packages/test-harness/src/workers.ts"])).not.toContain("core");
+  });
+
   test("the Swift kits run for apple/, the protocol's generated fixtures and the core, and not for the rest of the protocol or the CLI", () => {
     expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["scripts", "swift"]);
     expect(on(["apple/WinterProtocol/Tests/WinterProtocolTests/Fixtures/x.json"])).toEqual(["scripts", "codegen", "swift"]);
     expect(on(["packages/protocol/generated/fixtures/x.json"])).toContain("swift");
     expect(on(["packages/protocol/src/methods.ts"])).not.toContain("swift");
     expect(on(["packages/cli/src/main.ts"])).not.toContain("swift");
+    // Only apple/, the root Package.swift, the generated fixtures and CI's own definition run the Swift kits: not the
+    // core (main's push run still covers WinterKit's daemon tests), not the toolchain or a lockfile.
+    expect(on(["packages/core/src/daemon.ts"])).not.toContain("swift");
+    for (const g of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([g]), g).not.toContain("swift");
+    expect(on(["scripts/ci-changes.ts"])).toContain("swift");
+    expect(on(["Package.swift"])).toContain("swift");
   });
 
-  test("CI itself, the toolchain, the root manifest or a lockfile run every area; so does no diff", () => {
-    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES);
+  test("CI itself runs every area; the toolchain, the root manifest or a lockfile every area but the Swift kits; so does no diff", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES);
+    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f]), f).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift"));
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
   });
 

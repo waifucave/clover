@@ -23,6 +23,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { closeSync, constants, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, writeSync, type BigIntStats } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { utf16 } from "@waifucave/clover-protocol";
 import { ExportIoError, hashDescriptor, listDirectoryAt, openAt, openDirectoryNoFollow, stampDescriptor } from "./export-io";
 import { EXPORT_MANIFEST_MAX_BYTES } from "./exports";
 import { CoworkLifecycleError, canonicalJson, lifecycleFail, sha256Hex } from "./storage-lifecycle";
@@ -35,7 +36,7 @@ export const DEFAULT_BUNDLE_LIMITS: BundleLimits = Object.freeze({ files: 50_000
 
 const Digest = z.string().regex(/^[a-f0-9]{64}$/);
 const Id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/);
-const Entry = z.object({ path: z.string().min(1).max(4096), bytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), sha256: Digest }).strict();
+const Entry = z.object({ path: utf16(4096, 1), bytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER), sha256: Digest }).strict();
 export type BundleFileEntry = z.infer<typeof Entry>;
 export const BundleIntegrity = z.object({ formatVersion: z.literal(1), kind: z.literal("cowork-workspace-export-integrity"), exportId: Id, manifestDigest: Digest,
   files: z.array(Entry).max(DEFAULT_BUNDLE_LIMITS.files + 3) }).strict();

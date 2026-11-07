@@ -15,14 +15,15 @@
 // the OS can't (Linux, and Windows without either), the owner accepted the risk: "any desktop may answer; a
 // compromised plugin on a Windows or Linux computer could approve actions on other computers". A server, a cloud
 // computer and a browser never sign: their only key is the core's, or they may answer no card (`mayAnswerCards`).
-import type { AnswerKeyHolder, DeviceKind, Os } from "@waifucave/clover-protocol";
+import type { AnswerKeyAlg, AnswerKeyHolder, DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "./common";
 
 export interface DeviceRecord {
   id: string;
   name: string;
   kind: DeviceKind;
-  os?: Os;
+  /** A computer's OS, or a phone's `ios`. */
+  os?: DeviceOs;
   /** Runs clover-core: a computer in the tree that can take over (§6.4, §9.1). */
   runsCore: boolean;
   /** Its folder-tree name, for a device that runs clover-core. */
@@ -30,9 +31,15 @@ export interface DeviceRecord {
   hasDisplay?: boolean;
   /** Its Ed25519 public key, raw 32 bytes, base64: the core's link key on a computer. */
   publicKey: string;
-  /** A desktop's answer key: its app's Ed25519 key, apart from the core's, and how the OS holds it. A phone answers
-   *  with its own key (`publicKey`) unless it names one here. */
-  answerKey?: { publicKey: string; held: AnswerKeyHolder };
+  /** A desktop's answer key: its app's key, apart from the core's, how the OS holds it, and its algorithm (`alg`,
+   *  `ed25519` when absent): `p256` for a key in the Secure Enclave, Windows Hello or a TPM (raw uncompressed point,
+   *  65 bytes, base64), `ed25519` for one in software. Verification picks the algorithm from here, and the statement
+   *  the app signs to register the key covers `alg` as it covers `held`, so a record can't be relabelled. A phone
+   *  answers with its own key (`publicKey`) unless it names one here. */
+  answerKey?: { publicKey: string; held: AnswerKeyHolder; alg?: AnswerKeyAlg };
+  /** Its X25519 box key, raw 32 bytes as base64url (H-M1's ask), which account-scope boxes are sealed to (lane I's);
+   *  absent until the device has published one. A revoked device's is never used. */
+  boxKey?: string;
   addedAt: number;
   /** How it was added, from the core's own record. */
   addedBy: PairingProof["via"];
@@ -79,6 +86,29 @@ export function answerKeyOf(d: Pick<DeviceRecord, "kind" | "publicKey" | "answer
   if (d.kind === "phone") return d.answerKey?.publicKey ?? d.publicKey;
   if (d.kind === "desktop") return d.answerKey?.publicKey;
   return undefined;
+}
+
+/** The algorithm of the key `answerKeyOf` gives: the answer key's (`ed25519` when absent); a phone's own key is Ed25519. */
+export function answerKeyAlgOf(d: Pick<DeviceRecord, "answerKey">): AnswerKeyAlg {
+  return d.answerKey?.alg ?? "ed25519";
+}
+
+/** Checks a card-answer signature with the key's own algorithm (lanes H and I): Ed25519, or ECDSA P-256 over SHA-256
+ *  with an `r‖s` signature. False for anything that doesn't verify or won't import. */
+export async function verifyKeySignature(alg: AnswerKeyAlg, publicKey: Uint8Array, data: Uint8Array, signature: Uint8Array): Promise<boolean> {
+  try {
+    const raw = publicKey as Uint8Array<ArrayBuffer>;
+    const sig = signature as Uint8Array<ArrayBuffer>;
+    const msg = data as Uint8Array<ArrayBuffer>;
+    if (alg === "p256") {
+      const k = await crypto.subtle.importKey("raw", raw, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+      return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, k, sig, msg);
+    }
+    const k = await crypto.subtle.importKey("raw", raw, { name: "Ed25519" }, false, ["verify"]);
+    return await crypto.subtle.verify({ name: "Ed25519" }, k, sig, msg);
+  } catch {
+    return false;
+  }
 }
 
 /** Whether a device may answer another computer's card with a signature (the owner's decision on N1). */

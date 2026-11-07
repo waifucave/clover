@@ -1,0 +1,775 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions",
+      "openai-responses"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://api.moonshot.cn/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://platform.kimi.com/docs/api/overview — Moonshot's China platform API overview, retrieved 2026-09-25: OpenAI Chat Completions and Responses at `https://api.moonshot.cn/v1`, Anthropic Messages at `https://api.moonshot.cn/anthropic`; billed in CNY (https://platform.kimi.com/docs/pricing/chat).",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "moonshot-cn/kimi-k2.6",
+      "providerId": "moonshot-cn",
+      "upstreamId": "kimi-k2.6",
+      "displayName": "Kimi K2.6 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — K2.7 Code, HighSpeed, and K2.6 have 256K-token (262144) context windows",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — lists all four IDs as understanding images and video, alongside text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — examples generate text responses; no generated image/audio/video claim",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — K2.7 Code multi-step tool calling documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat — K2 price table has cache-hit input pricing; no cache-write fee listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/api/models-overview — K2.7 Code thinking is always on; K2.6 supports enabled/disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "current-tool-loop",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): `thinking.keep`: \"`null` (default, ignores historical turns' thinking)\"; \"Within a single task (the multi-step reasoning produced during one tool-call loop), keep all of the reasoning content from the context (the `reasoning_content` field) and send it back with the request\". The adapter sends no `thinking.keep`, so earlier turns' reasoning is accepted and ignored.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart (read 2026-10-29; the same line is in the K2.6 quickstart): \"we recommend keeping the `reasoning_content` from the assistant message in the current turn's tool call within the context; omitting it does not cause an error, but may degrade reasoning continuity and tool-call quality\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-cn/kimi-k2.6"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): `thinking.keep`: \"`null` (default, ignores historical turns' thinking)\"; \"Within a single task (the multi-step reasoning produced during one tool-call loop), keep all of the reasoning content from the context (the `reasoning_content` field) and send it back with the request\". The adapter sends no `thinking.keep`, so earlier turns' reasoning is accepted and ignored. Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.9685,
+          "outputPerMTokUsd": 4.023,
+          "cacheReadPerMTokUsd": 0.1639
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/ — kimi-k2.6 CN homepage price per MTok: CNY 6.5 input, 27 output, 1.1 cache hit; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [
+        "reasoning_effort"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.6",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "moonshot-cn/kimi-k2.7-code",
+      "providerId": "moonshot-cn",
+      "upstreamId": "kimi-k2.7-code",
+      "displayName": "Kimi K2.7 Code (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — K2.7 Code, HighSpeed, and K2.6 have 256K-token (262144) context windows",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — lists all four IDs as understanding images and video, alongside text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — examples generate text responses; no generated image/audio/video claim",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — K2.7 Code multi-step tool calling documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat — K2 price table has cache-hit input pricing; no cache-write fee listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/api/models-overview — K2.7 Code thinking is always on; K2.6 supports enabled/disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"For `kimi-k2.7-code`, Preserved Thinking is always on and cannot be turned off ... you must therefore (not optionally) keep the `reasoning_content` of historical assistant messages in `messages` as-is\"; the -highspeed variant \"is the same model with identical thinking behavior\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart (read 2026-10-29; the same line is in the K2.6 quickstart): \"we recommend keeping the `reasoning_content` from the assistant message in the current turn's tool call within the context; omitting it does not cause an error, but may degrade reasoning continuity and tool-call quality\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-cn/kimi-k2.7-code"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"For `kimi-k2.7-code`, Preserved Thinking is always on and cannot be turned off ... you must therefore (not optionally) keep the `reasoning_content` of historical assistant messages in `messages` as-is\"; the -highspeed variant \"is the same model with identical thinking behavior\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.9685,
+          "outputPerMTokUsd": 4.023,
+          "cacheReadPerMTokUsd": 0.1937
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/ — kimi-k2.7-code CN homepage price per MTok: CNY 6.5 input, 27 output, 1.3 cache hit; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [
+        "reasoning_effort"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.7-code",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "moonshot-cn/kimi-k2.7-code-highspeed",
+      "providerId": "moonshot-cn",
+      "upstreamId": "kimi-k2.7-code-highspeed",
+      "displayName": "Kimi K2.7 Code HighSpeed (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — K2.7 Code, HighSpeed, and K2.6 have 256K-token (262144) context windows",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — lists all four IDs as understanding images and video, alongside text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — examples generate text responses; no generated image/audio/video claim",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — K2.7 Code multi-step tool calling documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat — K2 price table has cache-hit input pricing; no cache-write fee listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/api/models-overview — K2.7 Code thinking is always on; K2.6 supports enabled/disabled",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"For `kimi-k2.7-code`, Preserved Thinking is always on and cannot be turned off ... you must therefore (not optionally) keep the `reasoning_content` of historical assistant messages in `messages` as-is\"; the -highspeed variant \"is the same model with identical thinking behavior\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "toolLoopRequirement": {
+          "value": "silent-degradation",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart (read 2026-10-29; the same line is in the K2.6 quickstart): \"we recommend keeping the `reasoning_content` from the assistant message in the current turn's tool call within the context; omitting it does not cause an error, but may degrade reasoning continuity and tool-call quality\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-cn/kimi-k2.7-code-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"For `kimi-k2.7-code`, Preserved Thinking is always on and cannot be turned off ... you must therefore (not optionally) keep the `reasoning_content` of historical assistant messages in `messages` as-is\"; the -highspeed variant \"is the same model with identical thinking behavior\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "unsupportedParameters": [
+        "reasoning_effort"
+      ],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.937,
+          "outputPerMTokUsd": 8.046,
+          "cacheReadPerMTokUsd": 0.3874
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/pricing/chat (read 2026-09-27): \"kimi-k2.7-code-highspeed, 1M tokens, ¥2.60 (cache hit), ¥13.00 (cache miss), ¥54.00 (output), 262,144 tokens\" — CNY 13.0 input / 54.0 output / 2.6 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — input=cache-miss price, cacheRead=cache-hit price; confirmed by two independent fetches of this page. A third fetch attempt returned half these figures (¥6.50/¥27.00/¥1.30) and was flagged by that agent itself as likely reading the wrong table row — reporting the majority (2-of-3) figures here bu...",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2.7-code-highspeed",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "moonshot-cn/kimi-k3",
+      "providerId": "moonshot-cn",
+      "upstreamId": "kimi-k3",
+      "displayName": "Kimi K3 (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 has a 1M-token (1048576) context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 max_completion_tokens can be set up to 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — lists all four IDs as understanding images and video, alongside text",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — examples generate text responses; no generated image/audio/video claim",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 custom tools / tool_choice examples",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 response_format json_schema strict example",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/context-caching — K3 supports cache writes and reads (5m and 1h TTL)",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T08:45:47Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-quickstart — K3 always thinks",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T08:45:47Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-reasoning-effort (read 2026-10-29): \"K3 requires the complete assistant message returned by the API to be passed back to `messages` as-is, including `reasoning_content` and `tool_calls`\"; https://platform.kimi.ai/docs/guide/use-thinking-models: K3.1 Pro \"always reasons with Preserved Thinking always on\"; \"For K3.1 Pro and K3, this is required in multi-turn conversations and tool-call loops.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-cn/kimi-k3"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/guide/use-reasoning-effort (read 2026-10-29): \"K3 requires the complete assistant message returned by the API to be passed back to `messages` as-is, including `reasoning_content` and `tool_calls`\"; https://platform.kimi.ai/docs/guide/use-thinking-models: K3.1 Pro \"always reasons with Preserved Thinking always on\"; \"For K3.1 Pro and K3, this is required in multi-turn conversations and tool-call loops.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2.98,
+          "outputPerMTokUsd": 14.9,
+          "cacheReadPerMTokUsd": 0.298,
+          "cacheWritePerMTokUsd": 2.98
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/ — kimi-k3 CN homepage price per MTok: CNY 20 input, 100 output, 2 cache hit, 20 cache write; USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:16:25Z"
+      },
+      "unsupportedParameters": [
+        "thinking"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "moonshot-cn/kimi-k3.1-pro",
+      "providerId": "moonshot-cn",
+      "upstreamId": "kimi-k3.1-pro",
+      "displayName": "Kimi K3.1 Pro (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/pricing/chat — \"All K3 series models support a 1,048,576-token context window\" (CN: \"K3 系列模型均支持 1,048,576 tokens 上下文窗口\"); the table lists `kimi-k3.1-pro`.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/guide/kimi-k3-1-pro-quickstart — \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — \"The `kimi-k3.1-pro`, `kimi-k3`, ... models can also understand video content\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart documents image (base64 / ms:// file) and video (`video_url` ms://) input",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — examples generate text responses; no generated image/audio/video claim",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — \"Custom tools and `tool_choice`\" weather-agent loop with `tools` / `tool_choice=\\\"required\\\"`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — \"Use `json_schema` with `strict: true` to constrain the final `message.content`\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/context-caching — \"`kimi-k3.1-pro` and `kimi-k3` support Cache Write\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart: \"Context caching is automatic for regular model requests\" (5m default / 1h TTL)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-reasoning-effort — \"Kimi K3.1 Pro always reasons and configures reasoning effort with the top-level `reasoning_effort` request field. It supports \\\"low\\\", \\\"high\\\", and \\\"max\\\", with \\\"max\\\" as the default.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-reasoning-effort (read 2026-10-29): \"K3 requires the complete assistant message returned by the API to be passed back to `messages` as-is, including `reasoning_content` and `tool_calls`\"; https://platform.kimi.ai/docs/guide/use-thinking-models: K3.1 Pro \"always reasons with Preserved Thinking always on\"; \"For K3.1 Pro and K3, this is required in multi-turn conversations and tool-call loops.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-cn/kimi-k3.1-pro"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/guide/use-reasoning-effort (read 2026-10-29): \"K3 requires the complete assistant message returned by the API to be passed back to `messages` as-is, including `reasoning_content` and `tool_calls`\"; https://platform.kimi.ai/docs/guide/use-thinking-models: K3.1 Pro \"always reasons with Preserved Thinking always on\"; \"For K3.1 Pro and K3, this is required in multi-turn conversations and tool-call loops.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.937,
+          "outputPerMTokUsd": 10.132,
+          "cacheReadPerMTokUsd": 0.1937,
+          "cacheWritePerMTokUsd": 1.937
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/pricing/chat (read 2026-10-29) — K3 系列模型 table, `kimi-k3.1-pro`: 输入 ¥13.00 / MTok, 输出 ¥68.00 / MTok, 缓存命中 ¥1.30 / MTok, 缓存写入（5min）¥13.00 / MTok (1h ¥26.00); USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k3.1-pro",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "moonshot-cn/kimi-k3.1-pro-highspeed",
+      "providerId": "moonshot-cn",
+      "upstreamId": "kimi-k3.1-pro-highspeed",
+      "displayName": "Kimi K3.1 Pro Highspeed (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/pricing/chat — \"All K3 series models support a 1,048,576-token context window\" (CN: \"K3 系列模型均支持 1,048,576 tokens 上下文窗口\"); the table lists `kimi-k3.1-pro-highspeed`.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/guide/kimi-k3-1-pro-quickstart — \"`max_completion_tokens` defaults to 131072 and can be set up to 1048576\" (stated for K3.1 Pro)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/use-kimi-vision-model — \"The `kimi-k3.1-pro`, `kimi-k3`, ... models can also understand video content\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart documents image (base64 / ms:// file) and video (`video_url` ms://) input — stated for kimi-k3.1-pro; the Highspeed variant has \"same intelligence\" and Kimi Code lists k3.1-pro-highspeed with \"Image, video\" input (https://www.kimi.com/code/docs/en/kimi-code/models.html)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — examples generate text responses; no generated image/audio/video claim",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — \"Custom tools and `tool_choice`\" weather-agent loop with `tools` / `tool_choice=\\\"required\\\"`",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — native function/tool use documented",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart — \"Use `json_schema` with `strict: true` to constrain the final `message.content`\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.ai/docs/guide/context-caching — \"`kimi-k3.1-pro` and `kimi-k3` support Cache Write\"; https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart: \"Context caching is automatic for regular model requests\" (5m default / 1h TTL) — Highspeed is priced with its own cache rates on https://platform.kimi.ai/docs/pricing/chat",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-reasoning-effort — \"Kimi K3.1 Pro always reasons and configures reasoning effort with the top-level `reasoning_effort` request field. It supports \\\"low\\\", \\\"high\\\", and \\\"max\\\", with \\\"max\\\" as the default.\" — stated for K3.1 Pro; applied to its Highspeed variant (same model, same Messages/Responses enum)",
+          "confidence": "inferred",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "max",
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-thinking-models (read 2026-10-29): \"The reasoning process is returned in the response's `reasoning_content` field\" (raw text; streamed as `delta.reasoning_content`)",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://platform.kimi.ai/docs/guide/use-reasoning-effort (read 2026-10-29): \"K3 requires the complete assistant message returned by the API to be passed back to `messages` as-is, including `reasoning_content` and `tool_calls`\"; https://platform.kimi.ai/docs/guide/use-thinking-models: K3.1 Pro \"always reasons with Preserved Thinking always on\"; \"For K3.1 Pro and K3, this is required in multi-turn conversations and tool-call loops.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "moonshot-cn/kimi-k3.1-pro-highspeed"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://platform.kimi.ai/docs/guide/use-reasoning-effort (read 2026-10-29): \"K3 requires the complete assistant message returned by the API to be passed back to `messages` as-is, including `reasoning_content` and `tool_calls`\"; https://platform.kimi.ai/docs/guide/use-thinking-models: K3.1 Pro \"always reasons with Preserved Thinking always on\"; \"For K3.1 Pro and K3, this is required in multi-turn conversations and tool-call loops.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 3.874,
+          "outputPerMTokUsd": 20.264,
+          "cacheReadPerMTokUsd": 0.1937,
+          "cacheWritePerMTokUsd": 3.874
+        },
+        "source": "official-doc",
+        "sourceRef": "https://platform.kimi.com/docs/pricing/chat (read 2026-10-29) — K3 系列模型 table, `kimi-k3.1-pro-highspeed`: 输入 ¥26.00 / MTok, 输出 ¥136.00 / MTok, 缓存命中 ¥1.30 / MTok, 缓存写入（5min）¥26.00 / MTok (1h ¥52.00); USD conversion at CNY/USD 0.149 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [
+        "thinking"
+      ],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k3.1-pro-highspeed",
+      "modelFamily": "kimi"
+    }
+  ]
+}

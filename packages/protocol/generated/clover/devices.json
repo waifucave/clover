@@ -51,7 +51,8 @@
                   "enum": [
                     "macos",
                     "windows",
-                    "linux"
+                    "linux",
+                    "ios"
                   ]
                 },
                 "runsCore": {
@@ -135,6 +136,13 @@
                         "tpm",
                         "hello",
                         "none"
+                      ]
+                    },
+                    "alg": {
+                      "type": "string",
+                      "enum": [
+                        "ed25519",
+                        "p256"
                       ]
                     }
                   },
@@ -689,6 +697,11 @@
                   }
                 ]
               },
+              "scope": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
               "epoch": {
                 "type": "integer",
                 "minimum": 0,
@@ -955,6 +968,92 @@
         "additionalProperties": false
       }
     },
+    "device.answerKey.set": {
+      "doc": "Registers this desktop's app-held answer key, proved by the app's own signature.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "publicKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          },
+          "held": {
+            "type": "string",
+            "enum": [
+              "secure-enclave",
+              "keystore",
+              "app-keychain",
+              "tpm",
+              "hello",
+              "none"
+            ]
+          },
+          "alg": {
+            "type": "string",
+            "enum": [
+              "ed25519",
+              "p256"
+            ]
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+          }
+        },
+        "required": [
+          "publicKey",
+          "held",
+          "signature"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "applied"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "boolean",
+                "const": false
+              },
+              "card": {
+                "type": "string",
+                "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
+              }
+            },
+            "required": [
+              "applied",
+              "card"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
     "peer.hello": {
       "doc": "Opens a link's session: links negotiate a protocol version and support one release back (§14.2 item 22).",
       "owner": "H",
@@ -980,6 +1079,11 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "epochScope": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "features": {
             "maxItems": 64,
             "type": "array",
@@ -987,13 +1091,19 @@
               "type": "string",
               "maxLength": 64
             }
+          },
+          "connSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "protocolVersion",
           "device",
           "epoch",
-          "features"
+          "features",
+          "connSeq"
         ]
       },
       "result": {
@@ -1014,19 +1124,30 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "epochScope": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "features": {
             "type": "array",
             "items": {
               "type": "string",
               "maxLength": 64
             }
+          },
+          "connSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "protocolVersion",
           "device",
           "epoch",
-          "features"
+          "features",
+          "connSeq"
         ],
         "additionalProperties": false
       }
@@ -1175,6 +1296,31 @@
             "enum": [
               "remote",
               "web"
+            ]
+          },
+          "fence": {
+            "type": "object",
+            "properties": {
+              "scope": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "epoch": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "holder": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "scope",
+              "epoch",
+              "holder"
             ]
           },
           "answer": {
@@ -1340,6 +1486,12 @@
                     "type": "object",
                     "properties": {
                       "computer": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 63,
+                        "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                      },
+                      "source": {
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 63,
@@ -1587,6 +1739,226 @@
         },
         "required": [
           "result"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "link.session.deliver": {
+      "doc": "A bot's, an agent's or a routine's message, or an agent's final report, to a session that runs on this computer, from the computer that sent it.",
+      "owner": "H",
+      "direction": "to-daemon",
+      "roles": [
+        "peer"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "computer": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+          },
+          "input": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "bot"
+                  },
+                  "bot": {
+                    "type": "string",
+                    "maxLength": 81,
+                    "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "session": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  }
+                },
+                "required": [
+                  "from",
+                  "bot",
+                  "session",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "agent"
+                  },
+                  "agent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  }
+                },
+                "required": [
+                  "from",
+                  "agent",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "routine"
+                  },
+                  "routine": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "name": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "sideThread": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._:-]+$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  }
+                },
+                "required": [
+                  "from",
+                  "routine",
+                  "name",
+                  "sideThread",
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "const": "task-notification"
+                  },
+                  "agent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "backend": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "stopReason": {
+                    "type": "string",
+                    "enum": [
+                      "end_turn",
+                      "refusal",
+                      "cancelled",
+                      "stopped",
+                      "stalled",
+                      "sign-in",
+                      "crashed",
+                      "error"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "transcript": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "usage": {
+                    "type": "object",
+                    "properties": {
+                      "inputTokens": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "outputTokens": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "inputTokens",
+                      "outputTokens"
+                    ]
+                  }
+                },
+                "required": [
+                  "from",
+                  "agent",
+                  "backend",
+                  "stopReason",
+                  "text",
+                  "transcript"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "computer",
+          "input"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "turn",
+              "interrupted",
+              "folded",
+              "queued",
+              "note"
+            ]
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "disposition",
+          "seq"
         ],
         "additionalProperties": false
       }
@@ -2026,7 +2398,8 @@
                 "enum": [
                   "macos",
                   "windows",
-                  "linux"
+                  "linux",
+                  "ios"
                 ]
               },
               "runsCore": {
@@ -2109,6 +2482,13 @@
                       "tpm",
                       "hello",
                       "none"
+                    ]
+                  },
+                  "alg": {
+                    "type": "string",
+                    "enum": [
+                      "ed25519",
+                      "p256"
                     ]
                   }
                 },
@@ -2223,6 +2603,11 @@
                     "type": "null"
                   }
                 ]
+              },
+              "scope": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
               },
               "epoch": {
                 "type": "integer",

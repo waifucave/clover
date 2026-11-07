@@ -1,0 +1,1014 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "anthropic-messages"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.anthropic-messages",
+    "family": "anthropic",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys.",
+        "The vendor's OpenAI-dialect reasoning replay contract must not be assumed for Anthropic Messages without a dialect-specific document or probe."
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://cloud.baidu.com/doc/qianfan-docs/s/6mh3e6gjp — Baidu Qianfan Anthropic-compatibility documentation, retrieved 2026-09-25: every chat model is reachable through the Anthropic Messages specification at `https://qianfan.baidubce.com/anthropic` (x-api-key), per-token CNY billing.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "qianfan-anthropic/ernie-4.5-turbo-128k",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-4.5-turbo-128k",
+      "displayName": "ERNIE 4.5 Turbo 128K (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-128k: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 123000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-128k: maximum input 123000 tokens (table 123k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 12288,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-128k: maximum output 12288 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-128k is listed in text generation tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific function-calling claim found for this model.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific native-tools claim found.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1192,
+          "outputPerMTokUsd": 0.4768,
+          "cacheReadPerMTokUsd": 0.0298
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-4.5-turbo-128k: input CNY 0.0008/1k, output CNY 0.0032/1k. CNY per 1k; cache hit CNY 0.0002/1k. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 (read 2026-09-27): \"\" — same underlying model as qianfan/ernie-4.5-turbo-128k",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "ernie-4.5-turbo-128k",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-4.5-turbo-20260402",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-4.5-turbo-20260402",
+      "displayName": "ERNIE 4.5 Turbo 20260402 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-20260402: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 123000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-20260402: maximum input 123000 tokens (table 123k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 12288,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-20260402: maximum output 12288 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-20260402 is listed in text generation tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific function-calling claim found for this model.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific native-tools claim found.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1192,
+          "outputPerMTokUsd": 0.4768,
+          "cacheReadPerMTokUsd": 0.0298
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-4.5-turbo-20260402: input CNY 0.0008/1k, output CNY 0.0032/1k. CNY per 1k; cache hit CNY 0.0002/1k. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 (read 2026-09-27): \"\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "ernie-4.5-turbo-20260402",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-4.5-turbo-32k",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-4.5-turbo-32k",
+      "displayName": "ERNIE 4.5 Turbo 32K (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-32k: context 32768 tokens (vendor table rounds as 32k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 27000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-32k: maximum input 27000 tokens (table 27k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 12288,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-32k: maximum output 12288 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-32k is listed in text generation tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific function-calling claim found for this model.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific native-tools claim found.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1192,
+          "outputPerMTokUsd": 0.4768,
+          "cacheReadPerMTokUsd": 0.0298
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-4.5-turbo-32k: input CNY 0.0008/1k, output CNY 0.0032/1k. CNY per 1k; cache hit CNY 0.0002/1k. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 (read 2026-09-27): \"\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "ernie-4.5-turbo-32k",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-4.5-turbo-vl",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-4.5-turbo-vl",
+      "displayName": "ERNIE 4.5 Turbo VL (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 123000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl: maximum input 123000 tokens (table 123k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl: maximum output 16384 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl is listed in text generation and visual understanding tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific function-calling claim found for this model.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific native-tools claim found.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.447,
+          "outputPerMTokUsd": 1.341
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-4.5-turbo-vl: input CNY 0.003/1k, output CNY 0.009/1k. CNY per 1k. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 (read 2026-09-27): \"\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "ernie-4.5-turbo-vl",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-4.5-turbo-vl-32k",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-4.5-turbo-vl-32k",
+      "displayName": "ERNIE 4.5 Turbo VL 32K (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl-32k: context 32768 tokens (vendor table rounds as 32k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 27000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl-32k: maximum input 27000 tokens (table 27k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 12288,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl-32k: maximum output 12288 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-4.5-turbo-vl-32k is listed in text generation and visual understanding tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific function-calling claim found for this model.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific native-tools claim found.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.447,
+          "outputPerMTokUsd": 1.341
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-4.5-turbo-vl-32k: input CNY 0.003/1k, output CNY 0.009/1k. CNY per 1k. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 (read 2026-09-27): \"\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "canonicalModelId": "ernie-4.5-turbo-vl-32k",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-5.0",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-5.0",
+      "displayName": "ERNIE 5.0 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 119000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0: maximum input 119000 tokens (table 119k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0: maximum output 65536 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0 is listed in text generation and visual understanding tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-5.0 appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-5.0 appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0 appears in deep-thinking table or has documented thinking controls.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:59:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 3.576
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-5.0: input CNY 0.006/1k, output CNY 0.024/1k. Input <=32k base tier; >32k: CNY 0.010/0.040 per 1k input/output. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ernie-5.0",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-5.0-thinking-exp",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-5.0-thinking-exp",
+      "displayName": "ERNIE 5.0 Thinking Experimental (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-exp: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 119000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-exp: maximum input 119000 tokens (table 119k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-exp: maximum output 65536 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-exp is listed in text generation tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific function-calling claim found for this model.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific native-tools claim found.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-exp appears in deep-thinking table or has documented thinking controls.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:59:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 3.576
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-5.0-thinking-exp: input CNY 0.006/1k, output CNY 0.024/1k. Input <=32k base tier; >32k: CNY 0.010/0.040 per 1k input/output. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ernie-5.0-thinking-exp",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-5.0-thinking-latest",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-5.0-thinking-latest",
+      "displayName": "ERNIE 5.0 Thinking Latest (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-latest: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 119000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-latest: maximum input 119000 tokens (table 119k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-latest: maximum output 65536 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-latest is listed in text generation and visual understanding tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific function-calling claim found for this model.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — No model-specific native-tools claim found.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-latest appears in deep-thinking table or has documented thinking controls.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:59:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 3.576
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-5.0-thinking-latest: input CNY 0.006/1k, output CNY 0.024/1k. Input <=32k base tier; >32k: CNY 0.010/0.040 per 1k input/output. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ernie-5.0-thinking-latest",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-5.0-thinking-preview",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-5.0-thinking-preview",
+      "displayName": "ERNIE 5.0 Thinking Preview (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-preview: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 119000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-preview: maximum input 119000 tokens (table 119k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-preview: maximum output 65536 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-preview is listed in text generation and visual understanding tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-5.0-thinking-preview appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-5.0-thinking-preview appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.0-thinking-preview appears in deep-thinking table or has documented thinking controls.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:59:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.894,
+          "outputPerMTokUsd": 3.576
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-5.0-thinking-preview: input CNY 0.006/1k, output CNY 0.024/1k. Input <=32k base tier; >32k: CNY 0.010/0.040 per 1k input/output. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ernie-5.0-thinking-preview",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-5.1",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-5.1",
+      "displayName": "ERNIE 5.1 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.1: context 131072 tokens (vendor table rounds as 128k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 119000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.1: maximum input 119000 tokens (table 119k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.1: maximum output 65536 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.1 is listed in text generation tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-5.1 appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-5.1 appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-5.1 appears in deep-thinking table or has documented thinking controls.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:59:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.596,
+          "outputPerMTokUsd": 2.682
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a — ernie-5.1: input CNY 0.004/1k, output CNY 0.018/1k. Input <=32k base tier; >32k: CNY 0.006/0.022 per 1k input/output. USD estimate uses 2026-09-25 CNY/USD 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ernie-5.1",
+      "modelFamily": "ernie"
+    },
+    {
+      "key": "qianfan-anthropic/ernie-x1.1",
+      "providerId": "qianfan-anthropic",
+      "upstreamId": "ernie-x1.1",
+      "displayName": "ERNIE X1.1 (Anthropic dialect)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-x1.1: context 65536 tokens (vendor table rounds as 64k).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxInputTokens": {
+        "value": 55000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-x1.1: maximum input 55000 tokens (table 55k).",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-x1.1: maximum output 65536 tokens.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-x1.1 is listed in text generation tables.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-x1.1 appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/xm95lyys5 — ernie-x1.1 appears in function-calling supported-model list.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:59:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/7m95lyy43 — ernie-x1.1 appears in deep-thinking table or has documented thinking controls.",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:59:30Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.149,
+          "outputPerMTokUsd": 0.596
+        },
+        "source": "official-doc",
+        "sourceRef": "https://cloud.baidu.com/doc/qianfan-docs/s/Jm8r1826a (read 2026-09-27): \"ERNIE X1.1 | ERNIE-X1.1-Preview | 推理服务 | 输入 0.001 | 输出 0.004 | 元/千tokens\" — CNY 1 input / 4 output per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — converted ×1000; see note on baidu/ernie-x1.1",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "ernie-x1.1",
+      "modelFamily": "ernie"
+    }
+  ]
+}

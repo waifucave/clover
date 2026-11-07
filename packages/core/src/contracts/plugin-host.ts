@@ -26,6 +26,19 @@
 //   to its process. The core's router refuses a call whose plugin doesn't run in the process it came from, so a
 //   third-party worker presenting a `clover/*` id is refused, and honours the account token and `keys.*` only from
 //   the `clover` process (`guardApiRouter`, S4).
+// * Who a plugin's API call acts for (ruling R7): a call the plugin makes while it serves a call from the core (a tool
+//   call, a hook) acts as that call's caller, the session that made the tool call. The core binds it from its own
+//   record of the call it made: the host carries the call's id with each API call made inside it (`ApiCall.invocation`,
+//   the `ctx.api` the handler got, or in a `host` MCP server the `tools/call` the host runs inside the call), and the
+//   core looks the caller up by that id. The core never trusts a caller the plugin supplies: no `_meta` caller, no
+//   argument. An MCP request the core sends carries the id as `_meta["clover/invocation"]`, which the host takes off
+//   before the server sees it, and an id that isn't an open call to that plugin is refused. A call made outside any
+//   (a timer, a `start` task) acts as the plugin. A call's `ctx.api` ends with the call (#179's review, S1): kept and
+//   used later, from a timer or while serving another call, it rejects `closed`, so a plugin can't go on acting as
+//   that session after its call is done.
+// * B-M2's host also: hands a `host` MCP server's handlers the tool call's context (`callerOf(request)`, lane L's ask),
+//   so a tool reads its caller from the call and never from the request; installs the core's identity in the host's
+//   processes (lane A's ask); and serves the whole plugin API, replacing lane A's interim `model-plugins/plugin-api.ts`.
 // * `stream` runs a handler that returns an async iterable (a model adapter's output, a voice's audio; review S16):
 //   values arrive in order, the iterable's return value ends the stream, and `input` feeds a handler that takes one
 //   (a voice's microphone audio) as `ctx.input`. The limits, cancelling, crashes and reloads are `invoke`'s.
@@ -48,12 +61,15 @@ export interface InstallRecord {
   source: PluginSource;
   /** The manifest's `host.runtime`. */
   runtime?: "bun" | "node";
+  /** The manifest's `host.process`: a process of its own under Bun too (lane A's ask). */
+  process?: "own";
 }
 
-/** The process a host half runs in (the owner's answer to S4): a Node or native plugin's own; the `clover` process for
- *  the bundled `clover` tree (installed with the app, top-level id `clover`); the shared one for every other. */
+/** The process a host half runs in (the owner's answer to S4): a Node or native plugin's own, or a Bun one that asks
+ *  for its own (`host.process: "own"`); the `clover` process for the bundled `clover` tree (installed with the app,
+ *  top-level id `clover`); the shared one for every other. */
 export function hostProcessFor(plugin: InstallRecord): HostProcess {
-  if (plugin.runtime === "node") return "own";
+  if (plugin.runtime === "node" || plugin.process === "own") return "own";
   const top = plugin.id.includes("/") ? plugin.id.slice(0, plugin.id.indexOf("/")) : plugin.id;
   return plugin.source === "bundled" && top === BUNDLED_ROOT_PLUGIN ? "clover" : "shared";
 }
@@ -122,6 +138,7 @@ export interface InvokeRequest {
   method?: string;
   /** Structured-clone data. */
   args: unknown;
+  /** Whom the call is for, as the core decided it; API calls the plugin makes while serving it act as this (R7). */
   caller: Caller;
   /** The session the call is for (a tool call's, a hook's). */
   session?: string;
@@ -149,9 +166,16 @@ export interface HostedStatus {
   reason?: string;
 }
 
-/** One `host` MCP server's end of the in-process transport: raw JSON-RPC messages. */
+/** The key an MCP request from the core carries its call's id under (R7): set by the core, taken off by the host
+ *  before the plugin's server sees the request. */
+export const MCP_INVOCATION_META = "clover/invocation";
+
+/** One `host` MCP server's end of the in-process transport: raw JSON-RPC messages. A `tools/call` the core sends
+ *  carries `_meta[MCP_INVOCATION_META]` with the caller it is for (`McpChannel.send`'s `as`); the plugin API calls the
+ *  server makes while handling it act as that caller (R7). */
 export interface McpChannel {
-  send(message: Record<string, unknown>): void;
+  /** `as`: for a request, whom it is for (a tool call's session); the host binds the API calls made while serving it. */
+  send(message: Record<string, unknown>, as?: Caller): void;
   onMessage(fn: (message: Record<string, unknown>) => void): Unsubscribe;
   close(): void;
   readonly closed: boolean;
@@ -165,7 +189,15 @@ export interface McpChannel {
  *  its `auth` entries: a placement off the closed list refuses that build, so the plugin has no fetch at all, rather
  *  than failing a request (lane A's kit, `placement-closed-list`). A request's `idleTimeoutMs` is held to 1 s - 30 min
  *  (`clampKeyedIdleTimeoutMs`). */
-export type ApiRouter = (call: { pluginId: string; process: HostProcess; path: string; args: unknown[]; caller: Caller }) => Promise<unknown>;
+export type ApiRouter = (call: {
+  pluginId: string;
+  process: HostProcess;
+  path: string;
+  args: unknown[];
+  /** Whom the call acts for: the caller of the core's call it was made in, which the core looked up by that call's id
+   *  (R7), or the plugin itself; never anything the plugin said. */
+  caller: Caller;
+}) => Promise<unknown>;
 
 export interface PluginHost {
   /** The computer this host runs on. */

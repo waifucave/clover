@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PanelOpenTabParams, PANEL_COMMAND_ARGS_MAX_JSON_BYTES } from "@waifucave/clover-protocol";
+import { PanelOpenTabParams, PANEL_COMMAND_ARGS_MAX_JSON_BYTES, utf16 } from "@waifucave/clover-protocol";
 import type { ToolDefinition, ToolRegistry } from "./registry";
 import type { PanelCommandAction, PanelCommandOutcome } from "../../panel/commands";
 import type { PanelTabState } from "../../panel/store";
@@ -261,8 +261,10 @@ export const BROWSER_WAIT_DEFAULT_TIMEOUT_MS = 10_000;
  *  interaction surface to the one mode spec §1 says must never have one. Keeping them out is also
  *  what makes the rendered chat schema honestly small. */
 const INTERACT_OPERANDS = {
-  selector: z.string().min(1).max(BROWSER_SELECTOR_MAX_LENGTH).optional(),
-  text: z.string().min(1).max(BROWSER_TYPE_TEXT_MAX_LENGTH).optional(),
+  // Both caps count UTF-16 units under any zod (`utf16`): the app checks the same ceilings in that unit
+  // (`PanelCommandArguments`, `PanelURLPolicy.wireLength`), so a command this accepts is never refused there.
+  selector: utf16(BROWSER_SELECTOR_MAX_LENGTH, 1).optional(),
+  text: utf16(BROWSER_TYPE_TEXT_MAX_LENGTH, 1).optional(),
   direction: z.enum(BROWSER_SCROLL_DIRECTIONS).optional(),
   amount: z.number().int().positive().max(BROWSER_SCROLL_MAX_AMOUNT_PX).optional(),
   until: z.enum(BROWSER_WAIT_UNTIL).optional(),

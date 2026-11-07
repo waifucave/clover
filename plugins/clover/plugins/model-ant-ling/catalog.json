@@ -1,0 +1,494 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/ant-ling/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read"
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://developer.ant-ling.com/en/docs/ — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://api.ant-ling.com/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "ant-ling/Ling-2.6-1T",
+      "providerId": "ant-ling",
+      "upstreamId": "Ling-2.6-1T",
+      "displayName": "Ling 2.6 1T",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/ant-ling/index.ts#Ling-2.6-1T",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/ant-ling/index.ts#Ling-2.6-1T — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ling (read 2026-09-27): \"Highly compatible with mainstream Agent frameworks including Claude Code, OpenCode, and OpenClaw, covering multi-tool, multi-step, and multi-constraint scenarios\" — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ling (read 2026-09-27): \"Highly compatible with mainstream Agent frameworks including Claude Code, OpenCode, and OpenClaw, covering multi-tool, multi-step, and multi-constraint scenarios\" — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ling (read 2026-09-27): \"Ling-2.6-1T: Supports up to 1M context window natively; the official API currently exposes a 256K context window.\" — reporting the API-exposed figure (256K=262144); native training-time capability is 1M but the live API caps at 256K. Corroborated independently on the maker's own HuggingFace deployment README (\"--context-length 262144\")",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developer.ant-ling.com/en/docs/models/ling (read 2026-09-27): \"leverages the innovative MLA and Linear Attention Hybrid architecture to bypass cumbersome \"slow thinking\" ... through a \"fast thinking\" mechanism\" — an always-on architectural behavior, not a request-time effort parameter (contrast with Ring-2.6-1T, which has an explicit high/xhigh reasoning-effort control)",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6705,
+          "outputPerMTokUsd": 2.682,
+          "cacheReadPerMTokUsd": 0.1341
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-09-27): \"Ling-2.6-1T Flagship ¥4.50 ¥18.00 ¥0.90\" — CNY 4.5 input / 18.0 output / 0.9 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "ling-2.6-1t",
+      "modelFamily": "other"
+    },
+    {
+      "key": "ant-ling/Ling-2.6-flash",
+      "providerId": "ant-ling",
+      "upstreamId": "Ling-2.6-flash",
+      "displayName": "Ling 2.6 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/ant-ling/index.ts#Ling-2.6-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/ant-ling/index.ts#Ling-2.6-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/inclusionAI/Ling-2.6-flash (read 2026-09-27): \"--tool-call-parser qwen25 ... targeted improvements for agent scenarios including tool use, multi-step planning, and task execution\" — ant-ling's own narrative page doesn't cover this variant specifically; sourced from the maker's own deployment README per the maker exception",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/inclusionAI/Ling-2.6-flash (read 2026-09-27): \"--tool-call-parser qwen25 ... targeted improvements for agent scenarios including tool use, multi-step planning, and task execution\" — ant-ling's own narrative page doesn't cover this variant specifically; sourced from the maker's own deployment README per the maker exception",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "MAKER page for the model this row serves (the serving provider's own pages state nothing for it; a host may cap differently): https://huggingface.co/inclusionAI/Ling-2.6-flash (read 2026-09-27): \"--context-length 262144 (SGLang/vLLM launch command in the maker's own deployment guide)\" — not stated in prose on ant-ling's own model-details page (which covers other Ling variants), only in the pricing table and the maker's own HF deployment README",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0894,
+          "outputPerMTokUsd": 0.2682,
+          "cacheReadPerMTokUsd": 0.01788
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-09-27): \"Ling-2.6-flash Cost-effective ¥0.60 ¥1.80 ¥0.12\" — CNY 0.6 input / 1.8 output / 0.12 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "ling-2.6-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "ant-ling/Ling-3.0-flash",
+      "providerId": "ant-ling",
+      "upstreamId": "Ling-3.0-flash",
+      "displayName": "Ling 3.0 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ling (read 2026-10-29): \"Ling-3.0-flash: Native 256K context window, extendable up to 1M.\" — the native window, read as 256,000",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/deprecation — `Ling-3.0-flash` is a text model (only Ling-3.0-flash-VL is described as accepting image and video input)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): request body \"tools | list | No | — | Tool list (Function Calling)\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): request body \"tools | list | No | — | Tool list (Function Calling)\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-10-29): a Cache Read price is listed for `Ling-3.0-flash`",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): \"thinking.type ... Optional, default enabled. Description: Controls whether 3.0 series models and 3.1 series models enable reasoning. Options: enabled — Default. Enables deep thinking ... disabled — Disables deep thinking\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0745,
+          "outputPerMTokUsd": 0.2235,
+          "cacheReadPerMTokUsd": 0.0149
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-10-29): \"Ling-3.0-flash | ... | ¥0.50 ¥0.14 | 1M tokens | ¥1.50 ¥0.42 | 1M tokens | ¥0.10 ¥0.028 | 1M tokens\" — the first figure of each pair is the ORIGINAL list price (recorded), the second the 72%-off promotional price; USD = CNY × 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ling-3.0-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "ant-ling/Ling-3.0-flash-VL",
+      "providerId": "ant-ling",
+      "upstreamId": "Ling-3.0-flash-VL",
+      "displayName": "Ling 3.0 Flash VL",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): \"When using Ling-3.0-flash-VL, the request accepts text, images, and videos. Use image_url content blocks ...\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): request body \"tools | list | No | — | Tool list (Function Calling)\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): request body \"tools | list | No | — | Tool list (Function Calling)\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-10-29): a Cache Read price is listed for `Ling-3.0-flash-VL`",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): \"thinking.type ... Optional, default enabled. Description: Controls whether 3.0 series models and 3.1 series models enable reasoning. Options: enabled — Default. Enables deep thinking ... disabled — Disables deep thinking\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0745,
+          "outputPerMTokUsd": 0.2235,
+          "cacheReadPerMTokUsd": 0.0149
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-10-29): \"Ling-3.0-flash-VL | ... | ¥0.50 ¥0.14 | 1M tokens | ¥1.50 ¥0.42 | 1M tokens | ¥0.10 ¥0.028 | 1M tokens\" — the first figure of each pair is the ORIGINAL list price (recorded), the second the 72%-off promotional price; USD = CNY × 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ling-3.0-flash-vl",
+      "modelFamily": "other"
+    },
+    {
+      "key": "ant-ling/Ling-3.1-flash",
+      "providerId": "ant-ling",
+      "upstreamId": "Ling-3.1-flash",
+      "displayName": "Ling 3.1 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ling (read 2026-10-29): \"Ling-3.1-flash: Context window up to 1M; the official service currently exposes a 256K context window.\" — the SERVED window is recorded, read as 256,000",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/deprecation — `Ling-3.1-flash` is a text model (only Ling-3.0-flash-VL is described as accepting image and video input)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): request body \"tools | list | No | — | Tool list (Function Calling)\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): request body \"tools | list | No | — | Tool list (Function Calling)\"",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-10-29): a Cache Read price is listed for `Ling-3.1-flash`",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developer.ant-ling.com/en/docs/api-reference/chat/openai/ (read 2026-10-29): \"thinking.type ... Optional, default enabled. Description: Controls whether 3.0 series models and 3.1 series models enable reasoning. Options: enabled — Default. Enables deep thinking ... disabled — Disables deep thinking\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.298,
+          "outputPerMTokUsd": 0.894,
+          "cacheReadPerMTokUsd": 0.0596
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-10-29): \"Ling-3.1-flash | ... | ¥2.00 ¥0.50 | 1M tokens | ¥6.00 ¥1.50 | 1M tokens | ¥0.40 ¥0.10 | 1M tokens\" — the first figure of each pair is the ORIGINAL list price (recorded), the second the 75%-off promotional price; USD = CNY × 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "ling-3.1-flash",
+      "modelFamily": "other"
+    },
+    {
+      "key": "ant-ling/Ring-2.6-1T",
+      "providerId": "ant-ling",
+      "upstreamId": "Ring-2.6-1T",
+      "displayName": "Ring 2.6 1T",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/ant-ling/index.ts#Ring-2.6-1T",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/ant-ling/index.ts#Ring-2.6-1T — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ring (read 2026-09-27): \"designed for real-world Agent workflows. The model is optimized for coding agents, tool use, and long-horizon task execution\" — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ring (read 2026-09-27): \"designed for real-world Agent workflows. The model is optimized for coding agents, tool use, and long-horizon task execution\" — coding-agent-guide evidence (the vendor tells users to point a coding agent at this endpoint, which cannot work without tool use): confidence `inferred` per the user ruling",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/ring (read 2026-09-27): \"Ring-2.6-1T supports a 256K context window, meeting scenarios like long document analysis and multi-step complex reasoning.\" — stated as \"256K\"; maker's own HF card corroborates via \"128K -> 256K (YaRN)\" scaling",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://developer.ant-ling.com/en/docs/models/ring (read 2026-09-27): \"Ring-2.6-1T introduces an adjustable Reasoning Effort mechanism, supporting high and xhigh reasoning intensity levels ... high mode (production default)\" — the literal request-field name (e.g. reasoning_effort) is not shown verbatim on this page — only the prose labels \"high\"/\"xhigh\" and \"production default\" for high — effort values ['high', 'xhigh'] ride `None`, not `reasoning_effort` (the literal this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.6705,
+          "outputPerMTokUsd": 2.682,
+          "cacheReadPerMTokUsd": 0.1341
+        },
+        "source": "official-doc",
+        "sourceRef": "https://developer.ant-ling.com/en/docs/models/price (read 2026-09-27): \"Ring-2.6-1T Flagship reasoning ¥4.50 ¥18.00 ¥0.90\" — CNY 4.5 input / 18.0 output / 0.9 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "ring-2.6-1t",
+      "modelFamily": "other"
+    }
+  ]
+}

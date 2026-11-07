@@ -34,30 +34,62 @@ export const WELL_BEHAVED_QUIRKS: AgentQuirks = {
   marks: [],
 };
 
-/** Cursor's CLI as S5 found it (§1, §8, edits 6 and 11). */
+/** Cursor's CLI as S5 found it (§1, §8, edits 6 and 11; owner's item 78), lane K's measured row (`agents/quirks.ts`). */
 export const S5_CURSOR_QUIRKS: AgentQuirks = {
-  ...WELL_BEHAVED_QUIRKS,
-  launch: { ...WELL_BEHAVED_QUIRKS.launch, command: { macos: ["cursor-agent", "acp"], linux: ["cursor-agent", "acp"], windows: ["cursor-agent.exe", "acp"] }, identity: { versionArgs: ["--version"], versionPattern: "^\\d{4}\\.\\d+" } },
-  mcp: { transports: ["stdio", "http"], storesPlainText: false, passesEnvironment: false, instructionsReachPrompt: false, systemPromptChannel: null, tellsConversationId: false },
+  launch: {
+    command: { macos: ["cursor-agent", "acp"], linux: ["cursor-agent", "acp"], windows: ["cursor-agent.exe", "acp"] },
+    // A shell script running a bundled node: no code signature to check, so the version output is the identity.
+    identity: { versionArgs: ["--version"], versionPattern: "^(\\d{4}\\.\\d{1,2}\\.\\d{1,2})-[0-9a-f]{6,}\\s*$" },
+    envAllow: [],
+    // Its sign-in would open a browser; nothing a delegation does may (S5 §6).
+    envSet: { NO_OPEN_BROWSER: "1" },
+    versions: ">=2026.10.22",
+  },
+  capabilities: { snakeCaseDuplicates: false, httpMcpUnadvertised: false },
+  mcp: {
+    transports: ["stdio", "http", "sse"], storesPlainText: false, passesEnvironment: false,
+    // It files MCP instructions as INSTRUCTIONS.md for the model to open on demand.
+    instructionsReachPrompt: false, systemPromptChannel: null, tellsConversationId: false,
+  },
   sessions: { load: { supported: true, replays: true }, resume: { supported: false, replays: false }, replayKeepsToolCallIds: false, listFiltersHonestly: false, close: false },
   turns: { refusal: "reported-completed", cancelLeavesToolCallsOpen: true, reportsUsage: false, quotaErrorsAsText: true },
-  permissions: { optionKinds: ["allow_once", "allow_always", "reject_once"], neverAsks: ["edit inside the root", "commands on the user's own allowlist", "delete inside the root (by its code, untested)"], mcpNames: { server: "rawInput.providerIdentifier", tool: "rawInput.toolName" } },
+  permissions: {
+    optionKinds: ["allow_once", "allow_always", "reject_once"],
+    neverAsks: ["edit inside the root", "commands on the user's own allowlist", "delete inside the root (by its code, untested)"],
+    mcpNames: { server: "rawInput.providerIdentifier", tool: "rawInput.toolName" },
+  },
   config: { modelOption: "model", effortOption: null, effortInModel: true, choicePersists: true },
-  auth: { methods: [{ id: "cursor-login", headless: false }], requiredError: { messagePattern: "login" } },
+  auth: { methods: [{ id: "cursor_login", headless: false }], requiredError: { messagePattern: "(cursor-)?agent login|authentication required" } },
+  progress: { countsChildProcesses: true },
+  placement: "local",
+  // Owner's item 78: accepted with its folder and deny rules as the boundary; Settings says "edits inside its folder
+  // without asking".
   marks: ["unasked-actions", "persists-model-choice"],
 };
-
-/** Antigravity CLI as S5 found it (§2, §8, edit 4). */
+/** Antigravity CLI as S5 found it (§2, §8, edits 3, 4 and 8), lane K's measured row. */
 export const S5_ANTIGRAVITY_QUIRKS: AgentQuirks = {
-  ...WELL_BEHAVED_QUIRKS,
-  launch: { ...WELL_BEHAVED_QUIRKS.launch, command: { macos: ["agy", "acp"], linux: ["agy", "acp"], windows: ["agy.exe", "acp"] }, envSet: { AGY_CLI_DISABLE_AUTO_UPDATE: "1" }, identity: { versionArgs: ["--version"], versionPattern: "^\\d+\\.\\d+\\.\\d+" } },
+  launch: {
+    command: { macos: ["agy", "acp", "--disable-telemetry"], linux: ["agy", "acp", "--disable-telemetry"], windows: ["agy.exe", "acp", "--disable-telemetry"] },
+    // Signed by Google's Developer ID on macOS (TeamIdentifier).
+    identity: { versionArgs: ["--version"], versionPattern: "^(\\d+\\.\\d+\\.\\d+)\\s*$", signer: "EQHXZ8M8AV" },
+    envAllow: [],
+    envSet: { AGY_CLI_DISABLE_AUTO_UPDATE: "1" },
+    versions: ">=1.4.12 <1.5.0",
+  },
+  // It answers `server/discover` probes and HTTP MCP with no `mcpCapabilities` advertised.
   capabilities: { snakeCaseDuplicates: true, httpMcpUnadvertised: true },
-  mcp: { transports: ["stdio", "http"], storesPlainText: true, passesEnvironment: true, instructionsReachPrompt: "unknown", systemPromptChannel: "_meta.antigravity.systemPrompt.append", tellsConversationId: true },
-  sessions: { load: { supported: true, replays: true }, resume: { supported: true, replays: true }, replayKeepsToolCallIds: true, listFiltersHonestly: false, close: false },
+  mcp: {
+    transports: ["stdio", "http"], storesPlainText: true, passesEnvironment: true,
+    instructionsReachPrompt: "unknown", systemPromptChannel: "_meta.antigravity.systemPrompt.append", tellsConversationId: true,
+  },
+  // Its `resume` replays history, so Clover reattaches with `load` and drops the replay (S5 edit 8).
+  sessions: { load: { supported: true, replays: true }, resume: { supported: true, replays: true }, replayKeepsToolCallIds: true, listFiltersHonestly: false, close: true },
   turns: { refusal: "ends-turn", cancelLeavesToolCallsOpen: true, reportsUsage: true, quotaErrorsAsText: false },
   permissions: { optionKinds: ["allow_once", "reject_once"], neverAsks: ["read-only MCP calls"], mcpNames: null },
   config: { modelOption: "model", effortOption: "thought_level", effortInModel: false, choicePersists: false },
-  auth: { methods: [{ id: "google", headless: false }], requiredError: { code: -32000 } },
+  auth: { methods: [{ id: "oauth-personal", headless: false }, { id: "oauth-business", headless: false }], requiredError: { code: -32000 } },
+  progress: { countsChildProcesses: true },
+  placement: "local",
   marks: ["stores-plain-text", "passes-environment"],
 };
 

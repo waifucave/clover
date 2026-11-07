@@ -141,6 +141,48 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
       reg.confirmAdult();
       expect(reg.get("spicy")?.state).toBe("running");
     });
+
+    test("an install from the app or a layer lands found with its OK card; only the CLI's y is the OK (F-M2's review, S1)", async () => {
+      const reg = make({ plugins: [{ ...webhook, approved: false }, { ...island, approved: false }] });
+      const fromApp = await reg.installed("webhook", "app");
+      expect(fromApp).toEqual({ state: "found", card: expect.any(String) });
+      expect(reg.okCards()).toEqual([{ id: "webhook", card: fromApp.card!, treeHash: hashOf(reg, "webhook") }]);
+      expect(reg.entries("triggers")).toEqual([]);
+      // The terminal asks instead: no card, and its y is the switch with the tree it showed.
+      expect(await reg.installed("island", "cli")).toEqual({ state: "found" });
+      expect(reg.okCards().map((c) => c.id)).toEqual(["webhook"]);
+      expect(await reg.setEnabled("island", true, { from: "cli", okHash: hashOf(reg, "island") })).toEqual({ applied: true });
+      expect(reg.get("island")?.state).toBe("running");
+      expect(await reg.approve("webhook", hashOf(reg, "webhook"))).toBe("approved");
+      expect(reg.okCards()).toEqual([]);
+    });
+
+    test("switching a found plugin on raises its OK card and never loads it; the switch refuses what can't run (S2)", async () => {
+      const reg = make({
+        plugins: [
+          { ...webhook, approved: false },
+          { id: "clover", manifest: m({ name: "Clover" }), source: "bundled" },
+          { id: "bad", manifest: m({ name: "Bad" }), invalid: "no manifest format" },
+          { id: "gone", manifest: m({ name: "Gone" }), blocked: "malware" },
+          { id: "no", manifest: m({ name: "No" }), approved: false },
+        ],
+      });
+      const first = await reg.setEnabled("webhook", true);
+      expect(first).toEqual({ applied: false, card: expect.any(String) });
+      expect(await reg.setEnabled("webhook", true)).toEqual(first); // the same card while it waits
+      expect(reg.get("webhook")?.state).toBe("found");
+      expect(reg.entries("triggers")).toEqual([]);
+      // From a layer or the app, an okHash is no OK; from the CLI, a tree that changed since is a conflict.
+      expect(await reg.setEnabled("webhook", true, { okHash: hashOf(reg, "webhook") })).toEqual(first);
+      reg.put({ ...webhook, approved: false, manifest: { ...webhook.manifest, version: "2.0.0" } });
+      const stale = await reg.setEnabled("webhook", true, { from: "cli", okHash: "sha256:" + "0".repeat(64) }).then(() => "ok", (e: { code?: string }) => e.code);
+      expect(stale).toBe("conflict");
+      await reg.refuse("no");
+      for (const id of ["clover", "bad", "gone", "no"]) {
+        const code = await reg.setEnabled(id, id !== "clover").then(() => "ok", (e: { code?: string }) => e.code);
+        expect([id, code]).toEqual([id, "refused"]);
+      }
+    });
   });
 
   describe("PluginRegistry: points", () => {

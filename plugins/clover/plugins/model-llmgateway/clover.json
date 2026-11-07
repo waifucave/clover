@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "LLM Gateway",
+  "description": "LLM Gateway's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "llmgateway",
+        "name": "LLM Gateway",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your LLM Gateway API key. Clover keeps it in your credential store and adds it to LLM Gateway's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.llmgateway.io/v1"
+        }
+      }
+    ]
+  }
+}

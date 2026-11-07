@@ -1,0 +1,36 @@
+{
+  "manifest": 1,
+  "name": "Azure AI Foundry",
+  "description": "Azure AI Foundry's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "settings": {
+    "resource": {
+      "type": "string",
+      "title": "resource",
+      "description": "Your Azure AI Foundry resource, as its endpoint names it (https://<resource>.services.ai.azure.com/openai/v1).",
+      "required": true
+    }
+  },
+  "capabilities": [
+    "network:${setting:resource}.services.ai.azure.com"
+  ],
+  "contributes": {
+    "models": [
+      {
+        "provider": "azure-ai",
+        "name": "Azure AI Foundry",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Azure AI Foundry API key. Clover keeps it in your credential store and adds it to Azure AI Foundry's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://${setting:resource}.services.ai.azure.com/openai/v1"
+        }
+      }
+    ]
+  }
+}

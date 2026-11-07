@@ -92,9 +92,12 @@ export const PluginDetail = PluginSummary.extend({
 export type PluginDetail = z.infer<typeof PluginDetail>;
 
 /** Where to install a plugin from (§5.1). Installing only downloads a folder into the plugins directory. */
+const IndexSource = z.object({ from: z.literal("index"), id: TopPluginId, version: SemverVersion.optional(), index: z.string().url().optional() });
+const NpmSource = z.object({ from: z.literal("npm"), name: utf16(214, 1), version: utf16(256).optional() });
+
 export const InstallSource = z.discriminatedUnion("from", [
-  z.object({ from: z.literal("index"), id: TopPluginId, version: SemverVersion.optional(), index: z.string().url().optional() }),
-  z.object({ from: z.literal("npm"), name: utf16(214, 1), version: utf16(256).optional() }),
+  IndexSource,
+  NpmSource,
   z.object({ from: z.literal("folder"), path: utf16(4096, 1) }),
   /** A bare item that the core wraps into a plugin (§5.1): a pasted MCP config, an MCP URL, a skill folder, an agent
    *  file or a Claude Code plugin folder. */
@@ -155,7 +158,7 @@ export type PluginSettingView = z.infer<typeof PluginSettingView>;
 /** One of a plugin's sign-ins (§5.1 "Sign-ins"), by its place in the manifest's `auth` list. */
 export const PluginAuthView = z.object({
   index: z.number().int().min(0).max(31),
-  method: z.enum(["api-key", "oauth-pkce", "custom"]),
+  method: z.enum(["api-key", "oauth-pkce", "custom", "core"]),
   /** The secret it fills. */
   secret: utf16(64).optional(),
   state: z.enum(["signed-out", "signed-in", "expired", "refreshing", "failed"]),
@@ -168,12 +171,28 @@ export type PluginAuthView = z.infer<typeof PluginAuthView>;
 /** What the app's plugin runtime (lane E) needs to mount one plugin's UI: its layer's origin, its client module, its
  *  `ui` entries as the manifest has them, and its themes and string tables. Assets are served by hash (§5.1); URLs
  *  are the app runtime's scheme, which the daemon fills from `assetBase`. */
+/** What a layer needs of a plugin (lane E's asks). The registry always sends `source`, `enabledAt`, `capabilities`,
+ *  `css` and `networkHosts`; a view without them (an older daemon, a test's fake) means none of each. */
 export const UiPluginView = z.object({
   pluginId: AnyPluginId,
   treeHash: TreeHash,
+  /** Where it came from (§5.5 rule 5: a bundled entry yields to none). */
+  source: PluginSource.optional(),
+  /** When it was last enabled, for rule 6's "the most recently enabled wins". */
+  enabledAt: Timestamp.optional(),
+  /** Its capabilities as the user OK'd them, which the layer's plugin API gates by (lane E's `needs`). */
+  capabilities: z.array(utf16(300, 1)).max(256).optional(),
+  /** Its stylesheets (`client.css`), cleaned, as asset paths under `assetBase`. */
+  css: z.array(utf16(4096, 1)).max(32).optional(),
+  /** The hosts its `network:` capabilities declare, for the layer's CSP and `Connection-Allowlist`. */
+  networkHosts: z.array(utf16(300, 1)).max(256).optional(),
+  /** For a bot's plugin: the bot's name and the theme file its tab wears. */
+  bot: z.object({ name: Text, theme: utf16(4096).optional() }).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
   layer: utf16(128),
   assetBase: utf16(2048),
+  /** The built ES module the layer loads (`CLIENT_BARE_IMPORTS` only as bare imports), under `assetBase`: the
+   *  manifest's `client.entry`, or the registry's cached build of a TypeScript or TSX one. */
   clientEntry: utf16(4096).optional(),
   ui: z.array(z.record(z.string(), z.unknown())).max(500),
   themes: z.array(z.object({ id: utf16(128), file: utf16(4096) })).max(100),
@@ -235,8 +254,11 @@ const IdParams = z.object({ id: AnyPluginId });
 export const PLUGINS_METHODS = {
   pluginList: defineMethod({
     name: "plugin.list", owner: "B", roles: ["app", "cli"],
-    params: Empty, result: z.object({ plugins: z.array(PluginSummary) }),
-    doc: "Every plugin and child plugin on this computer, with its state and reason.",
+    params: Empty,
+    /** `adultConfirmed`: the user already confirmed they are 18 or older (§5.7), so Settings needn't ask again before an
+     *  adult plugin is switched on (lane F's ask). The registry always sends it; absent reads as not confirmed. */
+    result: z.object({ plugins: z.array(PluginSummary), adultConfirmed: z.boolean().optional() }),
+    doc: "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
   }),
   pluginGet: defineMethod({
     name: "plugin.get", owner: "B", roles: ["app", "cli"],
@@ -244,14 +266,20 @@ export const PLUGINS_METHODS = {
     doc: "One plugin: its manifest, provenance, capabilities, hosts, findings and last log lines.",
   }),
   pluginSetEnabled: defineMethod({
+    /** Switching a `found` plugin on is a sensitive change (§5.5; F-M2's review, S2): it raises the plugin's sealed OK
+     *  card (`{ applied: false, card }`) and never loads it directly. From the CLI, `okHash` is the OK: the tree hash of
+     *  the OK text the terminal printed, which the user answered y to. Refused for a blocked, refused or invalid plugin,
+     *  and for the bundled `clover` plugin. */
     name: "plugin.setEnabled", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
     params: z.object({
       id: AnyPluginId, enabled: z.boolean(),
       /** For a plugin that dresses parts of bots' tabs: which bots, replacing its `when.bot` (§5.5). */
       bots: z.union([z.literal("all"), z.array(BotId)]).optional(),
+      /** From the CLI only: the tree the terminal's OK showed (see above). */
+      okHash: TreeHash.optional(),
     }),
     result: ChangeResult,
-    doc: "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1).",
+    doc: "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
   }),
   pluginSetScope: defineMethod({
     name: "plugin.setScope", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, change: "core",
@@ -318,10 +346,16 @@ export const PLUGINS_METHODS = {
     doc: "Signs out of one `auth` entry and deletes its secret everywhere.",
   }),
   pluginInstall: defineMethod({
-    name: "plugin.install", owner: "B", roles: ["app", "cli"], userOnly: true,
+    /** Whoever installs, the plugin lands `found` (F-M2's review, S1). From the app or a layer (the plugin index
+     *  browser, which holds the bundled-only `plugins.install`), the core raises its sealed OK card at once (`card`,
+     *  §5.1): a layer's install is never the OK. Only the CLI's install becomes the OK: the CLI prints the OK text for
+     *  `treeHash` and asks y/N in the terminal, and a y is `plugin.setEnabled` with `okHash`. */
+    name: "plugin.install", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, capability: "plugins.install",
     params: z.object({ source: InstallSource }),
-    result: z.object({ id: TopPluginId, state: PluginState }),
-    doc: "Downloads or wraps a plugin into the plugins folder. The user's own install is its OK (§5.1).",
+    /** A layer installs from an index or npm only, never a folder on disk or a wrapped item (#179's review, check 2). */
+    roleParams: { layer: z.object({ source: z.discriminatedUnion("from", [IndexSource, NpmSource]) }) },
+    result: z.object({ id: TopPluginId, state: PluginState, treeHash: TreeHash.optional(), card: CardId.optional() }),
+    doc: "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, or the CLI's y.",
   }),
   pluginRemove: defineMethod({
     name: "plugin.remove", owner: "B", roles: ["app", "cli"], userOnly: true,
@@ -513,6 +547,12 @@ export const PLUGINS_METHODS = {
       /** An argument is a stream, whose pieces follow as `pluginHost.chunk` with this `callId`. */
       stream: z.boolean().optional(),
       timeoutMs: z.number().int().min(1).max(600_000).optional(),
+      /** The open call it was made while serving (R7): the `callId` of a `pluginHost.invoke`, or the id the daemon put
+       *  on an MCP request (`_meta["clover/invocation"]`, which the host takes off before the plugin sees it). Stamped
+       *  by the host from the handler's own context, never from the plugin. The daemon binds the caller from its own
+       *  record of that call, so the call acts as that call's session, and refuses an id that isn't an open call to
+       *  this plugin. Absent: the call acts as the plugin. */
+      invocation: utf16(128, 1).optional(),
     }),
     result: z.object({ result: z.unknown() }),
     doc: "A plugin's host half calls the plugin API (§5.4). A watch's result is `{ subscription }`.",

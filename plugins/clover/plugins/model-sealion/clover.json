@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "SEA-LION",
+  "description": "SEA-LION's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "sealion",
+        "name": "SEA-LION",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your SEA-LION API key. Clover keeps it in your credential store and adds it to SEA-LION's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.sea-lion.ai/v1"
+        }
+      }
+    ]
+  }
+}

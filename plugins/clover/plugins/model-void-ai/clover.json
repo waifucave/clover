@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "VoidAI",
+  "description": "VoidAI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "void-ai",
+        "name": "VoidAI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your VoidAI API key. Clover keeps it in your credential store and adds it to VoidAI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.voidai.app/v1"
+        }
+      }
+    ]
+  }
+}

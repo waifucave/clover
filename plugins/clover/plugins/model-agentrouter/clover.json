@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "AgentRouter",
+  "description": "AgentRouter's models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "agentrouter",
+        "name": "AgentRouter",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your AgentRouter API key. Clover keeps it in your credential store and adds it to AgentRouter's requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://agentrouter.org"
+        }
+      }
+    ]
+  }
+}

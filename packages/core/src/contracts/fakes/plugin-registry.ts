@@ -4,13 +4,14 @@
 // plugin host reports after crashes. The catalog's declarations come in as `catalog` (the plugin SDK's
 // `catalogPointDecl`), since the contracts don't import the SDK at run time.
 import { createHash } from "node:crypto";
-import type { PluginClass, PluginProvenance, PluginSource, PluginState, ValidationIssue } from "@waifucave/clover-protocol";
-import { Listeners, type Unsubscribe } from "../common";
+import { BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type PluginSource, type PluginState, type ValidationIssue } from "@waifucave/clover-protocol";
+import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  CORE_SPOTS, UNIQUE_ENTRY_FIELD,
-  type ApproveResult, type Contribution, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
+  type ApproveResult, type Contribution, type InstallFrom, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
+  type SwitchOptions, type SwitchResult,
 } from "../plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "../sdk-types";
+import { EMPTY_SNAPSHOT, computeRegistry, parentOf, registryChanges, type RegistryPlugin, type RegistrySnapshot } from "../plugin-registry-rules";
 
 export interface FakePluginInput {
   /** `<id>`, or `<parent>/<folder>` for a child; a child's parent must be put first. */
@@ -58,26 +59,15 @@ interface Held {
 
 const manifestHash = (m: Manifest) => `sha256:${createHash("sha256").update(JSON.stringify(m)).digest("hex")}`;
 
-interface Snapshot {
-  records: Map<string, PluginRecord>;
-  entries: Map<string, Contribution[]>;
-  points: RegisteredPoint[];
-}
-
-const ARRAY_POINTS = new Set([
-  "models", "skills", "agents", "agentBackends", "hooks", "commands", "triggers", "voices", "computerProviders",
-  "relays", "notifiers", "companions", "themes", "locales", "ui",
-]);
-const SINGLE_POINTS = new Set(["bot", "computer"]);
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const parentOf = (id: string): string | undefined => (id.includes("/") ? id.slice(0, id.indexOf("/")) : undefined);
-
 export class FakePluginRegistry implements PluginRegistry {
   readonly #plugins = new Map<string, Held>();
   readonly #listeners = new Listeners<RegistryChange>();
   readonly #catalog: (name: string) => PointDecl | undefined;
+  /** The OK cards raised, by top-level plugin: the card and the tree it shows. */
+  readonly #okCards = new Map<string, { card: string; treeHash: string }>();
+  #okSeq = 0;
   #adultConfirmed: boolean;
-  #snap: Snapshot = { records: new Map(), entries: new Map(), points: [] };
+  #snap: RegistrySnapshot = EMPTY_SNAPSHOT;
 
   constructor(opts: FakePluginRegistryOptions) {
     this.#catalog = opts.catalog;
@@ -105,9 +95,41 @@ export class FakePluginRegistry implements PluginRegistry {
     return this.#snap.points.map((p) => structuredClone(p));
   }
 
-  async setEnabled(id: string, enabled: boolean): Promise<void> {
-    this.#mustGet(id).enabled = enabled;
+  async setEnabled(id: string, enabled: boolean, opts: SwitchOptions = {}): Promise<SwitchResult> {
+    const held = this.#mustGet(id);
+    const state = this.#snap.records.get(id)?.state;
+    if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled") throw new ContractError("refused", "Clover's own plugin is always on");
+    if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
+    if (enabled && state === "found") {
+      const top = parentOf(id) ?? id;
+      if (opts.from !== "cli" || opts.okHash === undefined) return { applied: false, card: this.#raiseOk(top) };
+      if ((await this.approve(top, opts.okHash)) === "changed") throw new ContractError("conflict", `${top} changed since its OK text was shown`);
+    }
+    held.enabled = enabled;
     this.#update();
+    return { applied: true };
+  }
+
+  async installed(id: string, from: InstallFrom): Promise<{ state: PluginState; card?: string }> {
+    this.#mustGet(id);
+    const state = this.#snap.records.get(id)!.state;
+    if (from === "cli" || state !== "found") return { state };
+    return { state, card: this.#raiseOk(id) };
+  }
+
+  /** The OK cards waiting, by plugin. */
+  okCards(): { id: string; card: string; treeHash: string }[] {
+    return [...this.#okCards].map(([id, c]) => ({ id, ...c }));
+  }
+
+  /** One OK card per plugin and tree: a second ask while it waits gets the same card. */
+  #raiseOk(id: string): string {
+    const treeHash = this.#mustGet(id).hash;
+    const waiting = this.#okCards.get(id);
+    if (waiting?.treeHash === treeHash) return waiting.card;
+    const card = `card_ok${String(++this.#okSeq).padStart(6, "0")}`;
+    this.#okCards.set(id, { card, treeHash });
+    return card;
   }
 
   async approve(id: string, treeHash: string, selection: Readonly<Record<string, boolean>> = {}): Promise<ApproveResult> {
@@ -117,6 +139,7 @@ export class FakePluginRegistry implements PluginRegistry {
     held.refused = false;
     held.okHash = treeHash;
     held.cardHeld = false;
+    this.#okCards.delete(id);
     for (const [child, on] of Object.entries(selection)) {
       const c = this.#plugins.get(child);
       if (c && parentOf(child) === id) c.enabled = on;
@@ -127,6 +150,7 @@ export class FakePluginRegistry implements PluginRegistry {
 
   async refuse(id: string): Promise<void> {
     this.#mustGet(id).refused = true;
+    this.#okCards.delete(id);
     this.#update();
   }
 
@@ -205,229 +229,27 @@ export class FakePluginRegistry implements PluginRegistry {
   /** Recomputes, then tells listeners in dependency order. */
   #update(): void {
     const before = this.#snap;
-    const after = this.#compute();
-    this.#snap = after;
-    const pluginChanges: RegistryChange[] = [];
-    const removed: RegistryChange[] = [];
-    let anyStopped = false;
-    for (const [id, rec] of after.records) {
-      const was = before.records.get(id);
-      if (!was || was.state !== rec.state || was.reason !== rec.reason || JSON.stringify(was.waitingFor) !== JSON.stringify(rec.waitingFor)) {
-        pluginChanges.push({ type: "plugin", id, state: rec.state });
-        if (was && (was.state === "running" || was.state === "waiting") && rec.state !== "running" && rec.state !== "waiting") anyStopped = true;
-      }
-    }
-    for (const id of before.records.keys()) if (!after.records.has(id)) {
-      removed.push({ type: "removed", id });
-      anyStopped = true;
-    }
-    const entryChanges: RegistryChange[] = [];
-    for (const point of new Set([...before.entries.keys(), ...after.entries.keys()])) {
-      if (JSON.stringify(before.entries.get(point) ?? []) !== JSON.stringify(after.entries.get(point) ?? [])) entryChanges.push({ type: "entries", point });
-    }
-    // Stopping: the entries that depended on what stopped change first, then the dependents, then what stopped.
-    const live = (c: RegistryChange) => c.type === "plugin" && (c.state === "running" || c.state === "waiting");
-    const order = anyStopped
-      ? [...entryChanges, ...pluginChanges.filter(live), ...pluginChanges.filter((c) => !live(c)), ...removed]
-      : [...pluginChanges, ...removed, ...entryChanges];
-    for (const change of order) this.#listeners.emit(change);
+    this.#snap = this.#compute();
+    for (const change of registryChanges(before, this.#snap)) this.#listeners.emit(change);
   }
 
-  #compute(): Snapshot {
-    const ids = [...this.#plugins.keys()];
-    const topOf = (id: string) => this.#plugins.get(parentOf(id) ?? id);
-    // Who is on, before points: approved, valid, not blocked, refused, stopped or off, its parent on too, and its
-    // namespace not taken by a plugin earlier in the synced list (§6.7).
-    const offReason = new Map<string, { state: PluginState; reason?: string }>();
-    const namespaces = new Map<string, string>();
-    const namespaceOf = (id: string) => topOf(id)?.input.manifest.namespace ?? (parentOf(id) ?? id);
-    for (const id of ids) {
-      const held = this.#plugins.get(id)!;
-      const top = topOf(id);
-      const parentId = parentOf(id);
-      const parentOff = parentId !== undefined && offReason.has(parentId);
-      const adult = top?.input.manifest.adult === true;
-      if (held.input.blocked !== undefined) offReason.set(id, { state: "blocked", reason: held.input.blocked });
-      else if (held.input.invalid !== undefined) offReason.set(id, { state: "invalid", reason: held.input.invalid });
-      else if (held.refused || (top?.refused ?? false)) offReason.set(id, { state: "refused" });
-      else if (!held.approved || !(top?.approved ?? true)) offReason.set(id, { state: "found", reason: "waiting for your OK" });
-      else if (held.stopped !== undefined) offReason.set(id, { state: "stopped", reason: `plugin stopped: ${held.stopped}` });
-      else if (!held.enabled) offReason.set(id, { state: "off" });
-      else if (parentOff) offReason.set(id, { state: "off", reason: "its parent is off" });
-      else if (adult && !this.#adultConfirmed) offReason.set(id, { state: "off", reason: "may contain adult content: off until you confirm you are 18 or older" });
-      else if (parentId === undefined && namespaces.has(namespaceOf(id))) {
-        offReason.set(id, { state: "off", reason: `the namespace \`${namespaceOf(id)}\` is \`${namespaces.get(namespaceOf(id))}\`'s` });
-      }
-      if (parentId === undefined && !offReason.has(id)) namespaces.set(namespaceOf(id), id);
+  #compute(): RegistrySnapshot {
+    const plugins = new Map<string, RegistryPlugin>();
+    for (const [id, h] of this.#plugins) {
+      const i = h.input;
+      const p: RegistryPlugin = { id, manifest: i.manifest, approved: h.approved, refused: h.refused, enabled: h.enabled, hash: h.hash, cardHeld: h.cardHeld };
+      if (i.source !== undefined) p.source = i.source;
+      if (h.okHash !== undefined) p.okHash = h.okHash;
+      if (i.invalid !== undefined) p.invalid = i.invalid;
+      if (i.blocked !== undefined) p.blocked = i.blocked;
+      if (h.stopped !== undefined) p.stopped = h.stopped;
+      if (i.folder !== undefined) p.folder = i.folder;
+      if (i.issues !== undefined) p.issues = i.issues;
+      if (i.class !== undefined) p.class = i.class;
+      if (i.provenance !== undefined) p.provenance = i.provenance;
+      if (i.dev !== undefined) p.dev = i.dev;
+      plugins.set(id, p);
     }
-    const on = ids.filter((id) => !offReason.has(id));
-
-    // Every entry of every plugin that is on.
-    const all: Contribution[] = [];
-    for (const id of on) all.push(...this.#entriesOf(id));
-
-    // Unique entry ids among enabled plugins: the first in the synced order keeps one (§5.1).
-    const owners = new Map<string, string>();
-    for (const c of all) {
-      const field = UNIQUE_ENTRY_FIELD[c.point as keyof CoreEntries];
-      const unique = field !== undefined || c.point === "commands";
-      if (!unique || c.entryId === undefined) continue;
-      const k = `${c.point}\u0000${c.entryId}`;
-      const owner = owners.get(k);
-      if (owner === undefined) owners.set(k, c.pluginId);
-      else if (owner !== c.pluginId) {
-        c.state = "refused";
-        c.reason = `\`${c.entryId}\` is taken by \`${owner}\``;
-      }
-    }
-
-    // Points: the core's, then what active entries and running hosts declare, grown to a fixed point.
-    const declarations = (active: Contribution[]) => {
-      const out: { name: string; decl: PointDecl; pluginId: string; ref: string }[] = [];
-      for (const id of on) {
-        const host = this.#plugins.get(id)!.input.manifest.host;
-        for (const [name, decl] of Object.entries(host?.declares ?? {})) out.push({ name, decl, pluginId: id, ref: "host" });
-      }
-      for (const c of active) {
-        const decl = isObject(c.value) ? (c.value as { declares?: Record<string, PointDecl> }).declares : undefined;
-        for (const [name, d] of Object.entries(decl ?? {})) out.push({ name, decl: d, pluginId: c.pluginId, ref: c.ref });
-      }
-      return out;
-    };
-    const needsPoint = (c: Contribution): string | undefined => {
-      if (c.point === "ui") {
-        const spot = (c.value as { spot?: string }).spot ?? "";
-        return CORE_SPOTS.includes(spot) ? undefined : spot;
-      }
-      return c.point.includes(".") ? c.point : undefined;
-    };
-    const treeOf = (id: string) => parentOf(id) ?? id;
-    for (const c of all) if (c.state !== "refused" && needsPoint(c) === undefined) c.state = "active";
-    for (;;) {
-      const declared = new Map<string, { decl: PointDecl; pluginId: string }>();
-      for (const d of declarations(all.filter((c) => c.state === "active"))) if (!declared.has(d.name)) declared.set(d.name, d);
-      let grew = false;
-      for (const c of all) {
-        if (c.state !== "waiting") continue;
-        const need = needsPoint(c);
-        const point = need === undefined ? undefined : declared.get(need);
-        if (point === undefined) continue;
-        if (point.decl.private === true && treeOf(point.pluginId) !== treeOf(c.pluginId)) {
-          c.state = "refused";
-          c.reason = `\`${need}\` is private to \`${treeOf(point.pluginId)}\``;
-          continue;
-        }
-        c.state = "active";
-        delete c.reason;
-        grew = true;
-      }
-      if (!grew) break;
-    }
-    for (const c of all) if (c.state === "waiting") c.reason = `waiting for \`${needsPoint(c)}\``;
-
-    const points: RegisteredPoint[] = [];
-    const firstDeclarer = new Map<string, string>();
-    for (const d of declarations(all.filter((c) => c.state === "active"))) {
-      // A well-known name is recorded with the catalog's declaration, whatever the declarer wrote (review S2).
-      const decl = this.#catalog(d.name) ?? d.decl;
-      const spot = decl.props !== undefined;
-      const prior = firstDeclarer.get(d.name);
-      if (prior === undefined) firstDeclarer.set(d.name, d.pluginId);
-      points.push({
-        name: d.name, shape: decl.shape, declaredBy: { pluginId: d.pluginId, ref: d.ref }, spot,
-        // A point other than a UI spot has one active declarer; a second one waits until the user picks (§5.4).
-        active: spot || prior === undefined || prior === d.pluginId,
-        decl: structuredClone(decl),
-      });
-    }
-
-    const entries = new Map<string, Contribution[]>();
-    for (const c of all) {
-      const list = entries.get(c.point) ?? [];
-      list.push(c);
-      entries.set(c.point, list);
-    }
-
-    const records = new Map<string, PluginRecord>();
-    for (const id of ids) {
-      const held = this.#plugins.get(id)!;
-      const top = topOf(id)!;
-      const mine = all.filter((c) => c.pluginId === id);
-      const waitingFor = [...new Set(mine.filter((c) => c.state === "waiting").map((c) => needsPoint(c)!))];
-      const off = offReason.get(id);
-      let state: PluginState;
-      let reason: string | undefined;
-      if (off) ({ state, reason } = off);
-      else if (mine.length > 0 && mine.every((c) => c.state === "waiting")) {
-        state = "waiting";
-        reason = `waiting for ${waitingFor.map((w) => `\`${w}\``).join(", ")}`;
-      } else state = "running";
-      const m = held.input.manifest;
-      const hasCode = m.host !== undefined || m.client !== undefined || m.helper !== undefined;
-      const parent = parentOf(id);
-      records.set(id, {
-        id,
-        ...(parent === undefined ? {} : { parent }),
-        name: m.name,
-        version: m.version ?? top.input.manifest.version ?? "0.0.0",
-        state,
-        ...(reason === undefined ? {} : { reason }),
-        ...(waitingFor.length > 0 && !off ? { waitingFor } : {}),
-        enabled: held.enabled,
-        source: held.input.source ?? top.input.source ?? "local",
-        class: held.input.class ?? (hasCode ? "code" : "data"),
-        treeHash: top.hash,
-        ...(top.okHash === undefined ? {} : { okHash: top.okHash }),
-        ...(top.cardHeld ? { cardStylingHeld: true } : {}),
-        namespace: top.input.manifest.namespace ?? (parentOf(id) ?? id),
-        scope: m.scope ?? "both",
-        adult: top.input.manifest.adult === true,
-        children: ids.filter((c) => parentOf(c) === id),
-        dev: held.input.dev ?? false,
-        folder: held.input.folder ?? `/plugins/${id.replace("/", "/plugins/")}`,
-        manifest: held.input.invalid === undefined ? structuredClone(m) : undefined,
-        capabilities: [...(m.capabilities ?? [])],
-        issues: structuredClone(held.input.issues ?? []),
-        provenance: held.input.provenance ?? { by: "user-app", at: 0 },
-      });
-    }
-    return { records, entries, points };
-  }
-
-  #entriesOf(id: string): Contribution[] {
-    const held = this.#plugins.get(id)!;
-    const top = this.#plugins.get(parentOf(id) ?? id)!;
-    const namespace = top.input.manifest.namespace ?? (parentOf(id) ?? id);
-    // A bot's plugin: its tree holds the bot, whose id is the top-level plugin's.
-    const botOfTree = top.input.manifest.contributes?.bot !== undefined ? (parentOf(id) ?? id) : undefined;
-    const out: Contribution[] = [];
-    const push = (point: string, ref: string, value: unknown, entryId?: string, key?: string) =>
-      out.push({
-        point, pluginId: id, ref, value: structuredClone(value), state: "waiting",
-        ...(entryId === undefined ? {} : { entryId }), ...(key === undefined ? {} : { key }),
-      });
-    for (const [point, raw] of Object.entries(held.input.manifest.contributes ?? {})) {
-      if (raw === undefined) continue;
-      if (SINGLE_POINTS.has(point)) push(point, point, raw);
-      else if (point === "mcpServers" && isObject(raw)) {
-        for (const [name, server] of Object.entries(raw)) push(point, `mcpServers/${name}`, { ...(server as object), name }, name);
-      } else if (ARRAY_POINTS.has(point) && Array.isArray(raw)) {
-        (raw as unknown[]).forEach((value, i) => {
-          const v: Record<string, unknown> = isObject(value) ? value : {};
-          const field = UNIQUE_ENTRY_FIELD[point as keyof CoreEntries];
-          let entryId: string | undefined = field ? (v[field] as string | undefined) : (v.id as string | undefined);
-          let key: string | undefined;
-          if (point === "commands") entryId = `${namespace}.${String(v.name)}`;
-          if (point === "triggers") key = v.type as string;
-          if (point === "locales") key = v.lang as string;
-          if (point === "ui") key = (v.key as string | undefined) ?? (v.spot === "bot.tab" ? botOfTree : undefined);
-          push(point, `${point}/${i}`, value, entryId, key);
-        });
-      } else if (point.includes(".")) {
-        if (Array.isArray(raw)) raw.forEach((value, i) => push(point, `${point}/${i}`, value, (value as { id?: string }).id));
-        else push(point, point, raw, (raw as { id?: string }).id);
-      }
-    }
-    return out;
+    return computeRegistry(plugins, { catalog: this.#catalog, adultConfirmed: this.#adultConfirmed });
   }
 }

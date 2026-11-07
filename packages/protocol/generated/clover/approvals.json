@@ -187,6 +187,12 @@
                       "maxLength": 63,
                       "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
                     },
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 63,
+                      "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                    },
                     "method": {
                       "type": "string",
                       "minLength": 1,
@@ -577,6 +583,12 @@
                 "type": "object",
                 "properties": {
                   "computer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                  },
+                  "source": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 63,
@@ -1343,6 +1355,12 @@
                 "type": "object",
                 "properties": {
                   "computer": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63,
+                    "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+                  },
+                  "source": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 63,

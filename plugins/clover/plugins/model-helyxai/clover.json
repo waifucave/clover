@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Helyx AI",
+  "description": "Helyx AI's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "helyxai",
+        "name": "Helyx AI",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Helyx AI API key. Clover keeps it in your credential store and adds it to Helyx AI's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://helyxai.space/v1"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "manifest": 1,
+  "name": "DeepSeek (Anthropic dialect)",
+  "description": "DeepSeek (Anthropic dialect)'s models, on its anthropic-messages endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "deepseek-anthropic",
+        "name": "DeepSeek (Anthropic dialect)",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your DeepSeek (Anthropic dialect) API key. Clover keeps it in your credential store and adds it to DeepSeek (Anthropic dialect)'s requests itself.",
+            "placement": {
+              "header": "x-api-key"
+            }
+          }
+        ],
+        "endpoint": {
+          "protocol": "anthropic-messages",
+          "baseUrl": "https://api.deepseek.com/anthropic"
+        }
+      }
+    ]
+  }
+}

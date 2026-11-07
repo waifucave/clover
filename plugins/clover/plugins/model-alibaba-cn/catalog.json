@@ -1,0 +1,2282 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {
+      "models": "https://dashscope.aliyuncs.com/compatible-mode/v1/models"
+    },
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "OmniRoute",
+      "commit": "5458026c216f77a3da68ea49152dc33470cfe2cb",
+      "sourcePaths": [
+        "open-sse/config/providers/registry/alibaba/cn/index.ts",
+        "src/shared/constants/providers/apikey/index.ts"
+      ]
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "WS-13b §1 admission evidence is PINNED-UPSTREAM, not a fetched vendor document: the citation names the vendor site OmniRoute records, and the api-key path is attested by the pinned RegistryEntry rather than by a doc this lane read",
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys."
+      ]
+    },
+    "scope": "llm",
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://dashscope.console.aliyun.com/ — the vendor's own site as OmniRoute's product catalog records it at 5458026 (src/shared/constants/providers/apikey/*.ts, blob-pinned in extraction-manifest.json). The api-key path is attested by the pinned RegistryEntry: authType \"apikey\", OpenAI Chat Completions at https://dashscope.aliyuncs.com/compatible-mode/v1. EVIDENCE TIER: pinned-upstream, NOT a page this lane fetched and read — see PROVENANCE.md \"Two tiers of admission citation\".",
+      "tier": "pinned-upstream"
+    }
+  },
+  "rows": [
+    {
+      "key": "alibaba-cn/MiniMax-M2.5",
+      "providerId": "alibaba-cn",
+      "upstreamId": "MiniMax-M2.5",
+      "displayName": "MiniMax-M2.5",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/minimax-m2-5 (read 2026-09-27): \"最大输入长度 196608 | 最大输出长度 32768 | 上下文长度 204800\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 32768,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/minimax-m2-5 (read 2026-09-27): \"最大输出长度 32768\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/minimax-m2-5 (read 2026-09-27): \"输入模态 | Text\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/minimax-m2-5 (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/minimax-m2-5 (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://help.aliyun.com/zh/model-studio/deep-thinking (read 2026-09-27): \"MiniMax：仅思考模式：MiniMax-M2.5、MiniMax-M2.1 (MiniMax: Thinking-only mode: MiniMax-M2.5, MiniMax-M2.1)\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.3129,
+          "outputPerMTokUsd": 1.2516
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing (read 2026-09-27): \"MiniMax-M2.5 ... 仅思考模式 ... 2.1 元 ... 8.4 元\" — CNY 2.1 input / 8.4 output per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: 仅思考模式 (thinking mode only) (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "minimax-m2.5",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "alibaba-cn/deepseek-v4-flash",
+      "providerId": "alibaba-cn",
+      "upstreamId": "deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#deepseek-v4-flash",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#deepseek-v4-flash — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-flash (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-flash (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-flash (read 2026-09-27): \"最大输入长度 1000000 ... 上下文长度 1000000\" — K/M values identical to the intl page.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-flash (read 2026-09-27): \"最大输出长度 393216\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://help.aliyun.com/zh/model-studio/deep-thinking (read 2026-09-27): \"混合思考模式，默认开启思考模式：deepseek-v4.1-flash、deepseek-v4-pro、deepseek-v4-flash\" — Chinese-language mirror of the same Alibaba Cloud Model Studio deep-thinking doc.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.149,
+          "outputPerMTokUsd": 0.298
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing (read 2026-09-27): \"deepseek-v4-flash ... 1 元 ... 2 元 ... 100 万 Token\" — CNY 1 input / 2 output per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: flat-rate; free quota 1 million tokens for 90 days (the smallest-context standard tier is stored) — 华北2（北京） (North China 2 / Beijing) section of the China (help.aliyun.com) pricing page, in CNY (元).",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "alibaba-cn/deepseek-v4-pro",
+      "providerId": "alibaba-cn",
+      "upstreamId": "deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#deepseek-v4-pro",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#deepseek-v4-pro — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-pro (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-pro (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-pro (read 2026-09-27): \"最大输入长度 1000000 ... 上下文长度 1000000\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 393216,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-pro (read 2026-09-27): \"最大输出长度 393216\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://help.aliyun.com/zh/model-studio/deep-thinking (read 2026-09-27): \"混合思考模式，默认开启思考模式：deepseek-v4.1-flash、deepseek-v4-pro、deepseek-v4-flash\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.788,
+          "outputPerMTokUsd": 3.576,
+          "cacheReadPerMTokUsd": 0.149
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/deepseek-v4-pro (read 2026-09-28): \"华北 2（北京） 计费项 价格（元） 单位 输入 12 每百万 tokens 输出 24 每百万 tokens 输入（缓存命中） 1 每百万 tokens\" — CNY 12 input / 24 output / 1 cached input per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data)",
+        "confidence": "declared",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-pro",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "alibaba-cn/glm-5.2",
+      "providerId": "alibaba-cn",
+      "upstreamId": "glm-5.2",
+      "displayName": "GLM 5.2",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#glm-5.2",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#glm-5.2 — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/glm-5-2 (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/glm-5-2 (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/glm-5-2 (read 2026-09-27): \"最大输入长度 1048576 ... 上下文长度 1048576\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/glm-5-2 (read 2026-09-27): \"最大输出长度 131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://help.aliyun.com/zh/model-studio/deep-thinking (read 2026-09-27): \"混合思考模式，默认开启思考模式：glm-5.2、glm-5.2-fast-preview、glm-5.1、glm-5、glm-4.7、glm-4.6\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `clear_thinking` \"is supported only by the GLM series models glm-5.3, glm-5.2, glm-5.1, and glm-5. The default value is true for glm-5.3 and false for the other models\"; https://www.alibabacloud.com/help/en/model-studio/glm: \"false: Retains the reasoning_content from previous turns and provides it to the model along with the context.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/glm-5.2"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `clear_thinking` \"is supported only by the GLM series models glm-5.3, glm-5.2, glm-5.1, and glm-5. The default value is true for glm-5.3 and false for the other models\"; https://www.alibabacloud.com/help/en/model-studio/glm: \"false: Retains the reasoning_content from previous turns and provides it to the model along with the context.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "alibaba-cn/glm-5.2-fast-preview",
+      "providerId": "alibaba-cn",
+      "upstreamId": "glm-5.2-fast-preview",
+      "displayName": "GLM 5.2 Fast Preview",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#glm-5.2-fast-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "inferred"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#glm-5.2-fast-preview — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#glm-5.2-fast-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "upstream-static",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#glm-5.2-fast-preview",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://help.aliyun.com/zh/model-studio/deep-thinking (read 2026-09-27): \"混合思考模式，默认开启思考模式：glm-5.2、glm-5.2-fast-preview、glm-5.1、glm-5、glm-4.7、glm-4.6\"",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 2.384,
+          "outputPerMTokUsd": 8.344
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing (read 2026-09-27): \"glm-5.2-fast-preview ... 16 元 ... 56 元 ... 无\" — CNY 16 input / 56 output per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: flat-rate; free quota: 无 (none) (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.2-fast-preview",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "alibaba-cn/kimi-k2.7-code",
+      "providerId": "alibaba-cn",
+      "upstreamId": "kimi-k2.7-code",
+      "displayName": "Kimi K2.7 Code",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/kimi-k2-7-code (read 2026-09-27): \"Input Modality | Text Image Video\" — Same contradiction as the alibaba (intl) row.",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "open-sse/config/providers/registry/alibaba/cn/index.ts#kimi-k2.7-code — WINTER DEFAULT: upstream declares no output modality for any model; \"text\" is Winter's inference for a chat registry, NOT an upstream statement",
+        "observedAt": "2026-09-05T00:00:00Z",
+        "confidence": "unknown"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/kimi-k2-7-code (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/kimi-k2-7-code (read 2026-09-27): \"Function Calling | 支持\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/kimi-k2-7-code (read 2026-09-27): \"最大输入长度 229376 ... 上下文长度 262144\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 16384,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/kimi-k2-7-code (read 2026-09-27): \"最大输出长度 16384\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://help.aliyun.com/zh/model-studio/deep-thinking (read 2026-09-27): \"仅思考模式：kimi-k3、kimi-k2.7-code、kimi-k2-thinking\" — Thinking-only, cannot be disabled; no togglable parameter named for this class of model.",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/kimi-k2.7-code"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.9685,
+          "outputPerMTokUsd": 4.023
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing (read 2026-09-27): \"kimi-k2.7-code ... 仅思考模式 ... 6.5 元 ... 27 元 ... 100 万 Token\" — CNY 6.5 input / 27 output per 1M tokens; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data); tiers: 仅思考模式 (thinking mode only); free quota 1 million tokens for 90 days (the smallest-context standard tier is stored)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k2.7-code",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "alibaba-cn/qwen3-coder-next",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3-coder-next",
+      "displayName": "Qwen3 Coder Next",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: 262,144-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 204800,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: 204,800 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — the Sep 24 2026 text-generation table marks qwen3-coder-next Function Calling Supported; CONFLICT: the older model page https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next (Sep 11) says unsupported (qwen3-coder-plus: unsupported in Singapore, supported in Beijing). Newer dated page wins (review ruling 2026-09-25), hence `inferred`."
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — mirrors toolCalling (Sep 24 table vs older model page conflict)."
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — Sep 24, 2026: qwen3-coder-next Structured Output Supported; https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — Sep 11, 2026: Unsupported (conflict; newer overview preferred)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:50:14Z"
+      },
+      "promptCaching": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-next — qwen3-coder-next: Context Caching Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-coder-next: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.149,
+          "outputPerMTokUsd": 0.596
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing — Beijing CNY list, qwen3-coder-next, ≤32K; 32K–128K: ¥1.5/¥6; 128K–256K: ¥2.5/¥10 input tier: ¥1 input/¥4 output per million; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — the one rate every CNY-derived price in this catalog uses; not an Alibaba FX quote.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3-coder-next",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3-coder-plus",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3-coder-plus",
+      "displayName": "Qwen3 Coder Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 997952,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: 997,952 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: text input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — the Sep 24 2026 text-generation table marks qwen3-coder-plus Function Calling Supported; CONFLICT: the older model page https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus (Sep 11) says unsupported (qwen3-coder-plus: unsupported in Singapore, supported in Beijing). Newer dated page wins (review ruling 2026-09-25), hence `inferred`."
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:00:00Z",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — mirrors toolCalling (Sep 24 table vs older model page conflict)."
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — Sep 24, 2026: qwen3-coder-plus Structured Output Supported; https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — Sep 11, 2026: Unsupported (conflict; newer overview preferred)",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:50:14Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-coder-plus — qwen3-coder-plus: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3-coder-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.596,
+          "outputPerMTokUsd": 2.384
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing — Beijing CNY list, qwen3-coder-plus, ≤32K; 32K–128K: ¥6/¥24; 128K–256K: ¥10/¥40; 256K–1M: ¥20/¥200 input tier: ¥4 input/¥16 output per million; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — the one rate every CNY-derived price in this catalog uses; not an Alibaba FX quote.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3-coder-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.5-122b-a10b",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.5-122b-a10b",
+      "displayName": "Qwen3.5 122B A10B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: 262,144-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 260096,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: 260,096 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-122b-a10b — qwen3.5-122b-a10b: Context Caching Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-122b-a10b: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.298612,
+          "outputPerMTokUsd": 2.3889
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.5-122b-a10b at CNY 0.8/6.4 per MTok through 128K and CNY 2/16 at 128K-256K. ModelPricing records the higher CNY 2 input / CNY 16 output tier. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.5-122b-a10b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.5-397b-a17b",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.5-397b-a17b",
+      "displayName": "Qwen3.5 397B A17B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: 262,144-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 260096,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: 260,096 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-5-397b-a17b — qwen3.5-397b-a17b: Context Caching Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-397b-a17b: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.447919,
+          "outputPerMTokUsd": 2.687512
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.5-397b-a17b at CNY 1.2/7.2 per MTok through 128K and CNY 3/18 at 128K-256K. ModelPricing records the higher CNY 3 input / CNY 18 output tier. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.5-397b-a17b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.5-plus",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.5-plus",
+      "displayName": "Qwen3.5 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.5-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.5-plus: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.5-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.5-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.597225,
+          "outputPerMTokUsd": 3.58335
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.5-plus at CNY 0.8/4.8 per MTok through 128K, CNY 2/12 through 256K, and CNY 4/24 at 256K-1M. ModelPricing records the higher CNY 4 input / CNY 24 output tier. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.5-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.6-27b",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.6-27b",
+      "displayName": "Qwen3.6 27B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: 262,144-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 260096,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: 260,096 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-27b — qwen3.6-27b: Context Caching Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-27b: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.447919,
+          "outputPerMTokUsd": 2.687512
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.6-27b at CNY 3 input / CNY 18 output per MTok. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-27b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.6-35b-a3b",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.6-35b-a3b",
+      "displayName": "Qwen3.6 35B A3B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: 262,144-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxInputTokens": {
+        "value": 260096,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: 260,096 maximum input length; thinking-mode input cap may be lower",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen3-6-35b-a3b — qwen3.6-35b-a3b: Context Caching Unsupported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-35b-a3b: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.268751,
+          "outputPerMTokUsd": 1.612507
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.6-35b-a3b at CNY 1.8 input / CNY 10.8 output per MTok. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-35b-a3b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.6-flash",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.6-flash",
+      "displayName": "Qwen3.6 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-flash: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-flash: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-flash: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.6-flash: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-flash: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/qwen3.6-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1788,
+          "outputPerMTokUsd": 1.0728
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing — Beijing CNY list, qwen3.6-flash, ≤256K; 256K–1M: ¥4.8/¥28.8 input tier: ¥1.2 input/¥7.2 output per million; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — the one rate every CNY-derived price in this catalog uses; not an Alibaba FX quote.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.6-plus",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.6-plus",
+      "displayName": "Qwen3.6 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-plus: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.6-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.6-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/qwen3.6-plus"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.19445,
+          "outputPerMTokUsd": 7.166699
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.6-plus at CNY 2/12 per MTok through 256K and CNY 8/48 at 256K-1M. ModelPricing records the higher CNY 8 input / CNY 48 output tier. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.6-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.7-flash",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.7-flash",
+      "displayName": "Qwen3.7 Flash (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — stated as \"64k\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat — the image-input pixel limit applies to \"qwen3.8-max, qwen3.8-max-0902, qwen3.8-flash, qwen3.8-2.4t-a95b, qwen3.8-27b, qwen3.8-omni-flash, Qwen3.7 series, ...: 16,777,216\" (image input implied; video not stated for this id)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.7-flash` | 1M | 64k | 256k | ✓ | ✓ | ✓ |\" — Structured output ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/run-and-scale/context-cache — context cache supported on qwen3.8-max, max-0902, flash, 2.4t-a95b, 27b and qwen3.7-flash (implicit and explicit cache)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://help.aliyun.com/zh/model-studio/deep-thinking — \"Qwen3.7 Flash series (Hybrid thinking mode, thinking mode enabled by default): qwen3.7-flash, qwen3.7-flash-2026-07-15\"; Chat thinking depth is `thinking_budget` (256k max per https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models), not reasoning_effort",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/qwen3.7-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.0298,
+          "outputPerMTokUsd": 0.1192,
+          "longContextTiers": [
+            {
+              "minPromptTokens": 32001,
+              "inputPerMTokUsd": 0.0894,
+              "outputPerMTokUsd": 0.3576
+            },
+            {
+              "minPromptTokens": 256001,
+              "inputPerMTokUsd": 0.1788,
+              "outputPerMTokUsd": 0.7152
+            }
+          ]
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing (read 2026-10-29) — 华北2（北京）qwen3.7-flash (当前能力等同于 qwen3.7-flash-2026-07-15), 非思考和思考模式: 0<Token≤32K 0.2 / 0.8 元; 32K<Token≤256K 0.6 / 2.4 元; 256K<Token≤1M 1.2 / 4.8 元 (input / output per million); USD = CNY × 0.1490.",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.7-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.7-max",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.7-max",
+      "displayName": "Qwen3.7 Max",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: text input documented in text-generation roster",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.7-max: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-max: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/qwen3.7-max"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.791675,
+          "outputPerMTokUsd": 5.375024
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.7-max at CNY 12 input / CNY 36 output per MTok. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/qwen3-7-max (read 2026-09-27): \"最大输出长度 131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.7-max",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.7-plus",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.7-plus",
+      "displayName": "Qwen3.7 Plus",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 65536,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: 65,536 maximum output tokens",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.7-plus: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.7-plus: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.7-plus: Thinking mode Supported in Qwen3+/Coder roster; Chat uses enable_thinking, Responses uses reasoning.effort",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [],
+        "continuation": "plaintext",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/qwen3.7-plus"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.895837,
+          "outputPerMTokUsd": 3.58335
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.7-plus at list CNY 2/8 per MTok through 256K and CNY 6/24 at 256K-1M, both marked as limited-time 20%-off. ModelPricing records the higher CNY 6 input / CNY 24 output list tier so estimates do not under-report long prompts; it may over-report while the promotion applies. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.7-plus",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.8-2.4t-a95b",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.8-2.4t-a95b",
+      "displayName": "Qwen3.8 2.4T A95B (CN)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — stated as \"1M\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models (read 2026-10-29): \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — stated as \"128k\".",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat — the image-input pixel limit applies to \"qwen3.8-max, qwen3.8-max-0902, qwen3.8-flash, qwen3.8-2.4t-a95b, qwen3.8-27b, qwen3.8-omni-flash, Qwen3.7 series, ...: 16,777,216\" (image input implied; video not stated for this id)",
+        "confidence": "inferred",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — Function calling ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/getting-started/text-generation-models: \"| `qwen3.8-2.4t-a95b` | 1M | 128k | 128k | ✓ | ✓ | ✓ |\" — Structured output ✓",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://docs.qwencloud.com/developer-guides/run-and-scale/context-cache — context cache supported on qwen3.8-max, max-0902, flash, 2.4t-a95b, 27b and qwen3.7-flash (implicit and explicit cache)",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat (read 2026-10-29): \"**`qwen3.8-max`, `qwen3.8-max-0902`, `qwen3.8-flash`, `qwen3.8-2.4t-a95b`, `qwen3.8-27b`:** Options: `low`, `medium`, `xhigh`. Default: `xhigh`. Cannot be set together with thinking_budget ... OpenAI standard value mapping: `max` is mapped to xhigh, `high` is mapped to xhigh, `minimal` is mapped to low, and `none` is mapped to enable_thinking=False.\"; https://help.aliyun.com/zh/model-studio/deep-thinking: thinking mode only for qwen3.8-2.4t-a95b",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T12:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "defaultEffort": "xhigh",
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.788,
+          "outputPerMTokUsd": 5.364
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing (read 2026-10-29) — 华北2（北京）qwen3.8-2.4t-a95b, 非思考和思考模式, 0<Token≤1M: 输入 12 元 / 输出 36 元 per million tokens; USD = CNY × 0.1490 (https://www.investing.com/currencies/cny-usd-historical-data).",
+        "confidence": "declared",
+        "observedAt": "2026-10-29T12:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.8-2.4t-a95b",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.8-flash",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.8-flash",
+      "displayName": "Qwen3.8 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-flash: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-flash: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-flash: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.8-flash: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions — qwen3.8-flash Chat reasoning_effort accepts none, low, medium, xhigh (other standard levels map to these); default xhigh",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "xhigh",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/qwen3.8-flash"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.1192,
+          "outputPerMTokUsd": 0.4023
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/model-pricing — Beijing CNY list, qwen3.8-flash, 0–1M input tier: ¥0.8 input/¥2.7 output per million; USD = CNY × 0.1490 (CNY→USD reference rate for 2026-09-25, https://www.investing.com/currencies/cny-usd-historical-data) — the one rate every CNY-derived price in this catalog uses; not an Alibaba FX quote.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/qwen3-8-flash (read 2026-09-27): \"最大输出长度 131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-flash",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.8-max",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.8-max",
+      "displayName": "Qwen3.8 Max",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: 1,000,000-token context window",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-max: text, image, video input",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/vision-model — qwen3.8-max: text output",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: Function Calling Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/text-generation-model — qwen3.8-max: Structured Outputs Supported",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/model-pricing — qwen3.8-max: context caching discount/support listed",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T09:40:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions — qwen3.8-max Chat reasoning_effort accepts none, low, medium, xhigh (other standard levels map to these); default xhigh",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T09:40:00Z"
+        },
+        "efforts": [
+          "none",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "continuation": "plaintext",
+        "defaultEffort": "xhigh",
+        "readableState": {
+          "value": "full-exposed",
+          "source": "official-doc",
+          "sourceRef": "https://www.alibabacloud.com/help/en/model-studio/deep-thinking (read 2026-10-29): \"The thinking content is returned through the `reasoning_content` field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "replayScope": {
+          "value": "all-turns",
+          "source": "official-doc",
+          "sourceRef": "https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\"",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        },
+        "continuationDomain": {
+          "value": [
+            "alibaba-cn/qwen3.8-max"
+          ],
+          "source": "official-doc",
+          "sourceRef": "BOTH halves. Own-state acceptance: https://docs.qwencloud.com/api-reference/chat/openai-chat and https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions (read 2026-10-29): `preserve_thinking` \"Specifies whether to append the `reasoning_content` from assistant messages in the conversation history to the model input\"; \"Currently supported by qwen3.8-max ..., qwen3.8-flash, qwen3.8-omni-flash ..., qwen3.7-max ..., qwen3.7-plus ..., qwen3.6-plus ..., qwen3.7-flash ..., qwen3.6-flash ..., kimi-k2.6 ..., kimi-k2.7-code ...\"; enabling it \"when historical messages lack `reasoning_content` does not cause an error\". The Chat Completions adapter sends `preserve_thinking: true` for this row and replays `reasoning_content`; the same Model Studio reference (https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions), \"Important (qwen3.8-max/qwen3.8-flash): When using qwen3.8-max/qwen3.8-flash, preserve_thinking defaults to true. You must send back all historical reasoning_content in the reasoning_content field.\" Why the domain is NARROW: the state is valid only for the model that produced it on this route -- a different model, or the same model at another provider (a different credential and account), never receives it, and the history renderer strips it there.",
+          "confidence": "declared",
+          "observedAt": "2026-10-29T20:00:00Z"
+        }
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.791675,
+          "outputPerMTokUsd": 5.375024
+        },
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/en/model-studio/model-pricing — China (Beijing) lists qwen3.8-max at CNY 12 input / CNY 36 output per MTok. Converted using the ECB 2026-09-18 reference rates (EUR 1 = USD 1.1460; CNY 7.6755): https://www.ecb.europa.eu/stats/shared/pdf/eurofxref.pdf?57eae2dc36bcb4af234d5e0b7e1a28c3= (retrieved 2026-09-19).",
+        "confidence": "inferred",
+        "observedAt": "2026-09-19T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/qwen3-8-max (read 2026-09-27): \"最大输出长度 131072\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "qwen3.8-max",
+      "modelFamily": "qwen"
+    },
+    {
+      "key": "alibaba-cn/qwen3.8-omni-flash",
+      "providerId": "alibaba-cn",
+      "upstreamId": "qwen3.8-omni-flash",
+      "displayName": "qwen3.8-omni-flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/qwen3-8-omni-flash (read 2026-09-27): \"上下文窗口 1M tokens\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "maxOutputTokens": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/qwen3-8-omni-flash (read 2026-09-27): \"最大输出长度 131072 Token\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://help.aliyun.com/zh/model-studio/qwen3-8-omni-flash (read 2026-09-27): \"same capability table as the intl page\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "official-doc",
+        "sourceRef": "the provider's own pages state no tool-calling capability for this model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "official-doc",
+        "sourceRef": "the provider's own pages state no tool-calling capability for this model — ABSENT fails CLOSED: `native` is what makes a model agent-eligible (WS-13 §8.1) and is never inferred from silence",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "qwen3.8-omni-flash",
+      "modelFamily": "qwen"
+    }
+  ]
+}

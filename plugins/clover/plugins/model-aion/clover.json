@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "Aion Labs",
+  "description": "Aion Labs's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "aion",
+        "name": "Aion Labs",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your Aion Labs API key. Clover keeps it in your credential store and adds it to Aion Labs's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.aionlabs.ai/v1"
+        }
+      }
+    ]
+  }
+}

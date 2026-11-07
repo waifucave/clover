@@ -3,7 +3,7 @@
   "owner": "B",
   "methods": {
     "plugin.list": {
-      "doc": "Every plugin and child plugin on this computer, with its state and reason.",
+      "doc": "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -155,6 +155,9 @@
               ],
               "additionalProperties": false
             }
+          },
+          "adultConfirmed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -478,7 +481,7 @@
       }
     },
     "plugin.setEnabled": {
-      "doc": "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1).",
+      "doc": "Switches a plugin or child on or off; switching a parent off switches its children off (§5.1); a found plugin's switch is its OK card.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -515,6 +518,10 @@
                 }
               }
             ]
+          },
+          "okHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
           }
         },
         "required": [
@@ -1057,7 +1064,8 @@
                   "enum": [
                     "api-key",
                     "oauth-pkce",
-                    "custom"
+                    "custom",
+                    "core"
                   ]
                 },
                 "secret": {
@@ -1202,13 +1210,15 @@
       }
     },
     "plugin.install": {
-      "doc": "Downloads or wraps a plugin into the plugins folder. The user's own install is its OK (§5.1).",
+      "doc": "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, or the CLI's y.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
         "app",
-        "cli"
+        "cli",
+        "layer"
       ],
+      "capability": "plugins.install",
       "userOnly": true,
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1320,6 +1330,71 @@
           "source"
         ]
       },
+      "roleParams": {
+        "layer": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "source": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "const": "index"
+                    },
+                    "id": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                      "minLength": 2
+                    },
+                    "version": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                    },
+                    "index": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "const": "npm"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 214
+                    },
+                    "version": {
+                      "type": "string",
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "name"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ]
+        }
+      },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1342,6 +1417,14 @@
               "stopped",
               "blocked"
             ]
+          },
+          "treeHash": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "card": {
+            "type": "string",
+            "pattern": "^card_[A-Za-z0-9_-]{6,64}$"
           }
         },
         "required": [
@@ -2103,6 +2186,83 @@
                 "treeHash": {
                   "type": "string",
                   "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "bundled",
+                    "index",
+                    "npm",
+                    "local",
+                    "wrapped",
+                    "dev"
+                  ]
+                },
+                "enabledAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "capabilities": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                },
+                "css": {
+                  "maxItems": 32,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                },
+                "networkHosts": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  }
+                },
+                "bot": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en"
+                          ],
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        }
+                      ]
+                    },
+                    "theme": {
+                      "type": "string",
+                      "maxLength": 4096
+                    }
+                  },
+                  "required": [
+                    "name"
+                  ],
+                  "additionalProperties": false
                 },
                 "layer": {
                   "type": "string",
@@ -3177,6 +3337,11 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 600000
+          },
+          "invocation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
           }
         },
         "required": [
@@ -3566,7 +3731,8 @@
                 "enum": [
                   "api-key",
                   "oauth-pkce",
-                  "custom"
+                  "custom",
+                  "core"
                 ]
               },
               "secret": {

@@ -4,7 +4,7 @@
 // `PluginApi`: a call added there and missing here, or the reverse, fails the typecheck.
 import type {
   ApprovalsApi, AudioApi, BotsApi, BrowserApi, CommandsApi, ComputersApi, ConversationApi, DevicesApi, FilesApi, HostApi, KeysApi,
-  LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
+  LogsApi, MemoryApi, NetApi, NotifyApi, PluginApi, PluginsApi, PointsApi, RoutinesApi, SecretsApi, SettingsApi, SyncedStore,
   TerminalApi, UiSendApi, UsageApi,
 } from "../api/plugin-api";
 import type { HostProcess } from "@waifucave/clover-protocol";
@@ -20,6 +20,7 @@ export type ApiCallPath =
   | `settings.${FnKeys<SettingsApi>}` | `conversation.${FnKeys<ConversationApi>}` | `memory.${FnKeys<MemoryApi>}`
   | `bots.${FnKeys<BotsApi>}` | `routines.${FnKeys<RoutinesApi>}` | `computers.${FnKeys<ComputersApi>}` | `devices.${FnKeys<DevicesApi>}`
   | `approvals.${FnKeys<ApprovalsApi>}` | `files.${FnKeys<FilesApi>}` | `browser.${FnKeys<BrowserApi>}` | `terminal.${FnKeys<TerminalApi>}`
+  | `plugins.${FnKeys<PluginsApi>}`
   | `usage.${FnKeys<UsageApi>}` | `logs.${FnKeys<LogsApi>}` | `notify.${FnKeys<NotifyApi>}` | `audio.${FnKeys<AudioApi>}`;
 
 export interface ApiCallInfo {
@@ -36,7 +37,7 @@ export type ApiCaller = "ui" | HostProcess;
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 
 export const API_CALLS = {
-  confirm: both(),
+  confirm: both(), confirmCard: both(),
   t: both(),
   "points.entries": both(), "points.watch": both(), "points.call": both(),
   "commands.run": both("call:*"), "commands.list": both(),
@@ -64,6 +65,7 @@ export const API_CALLS = {
   "approvals.pending": both("approvals"), "approvals.watch": both("approvals"),
   "files.stat": both("files"), "files.readText": both("files"), "files.readBytes": both("files"), "files.write": both("files"),
   "files.list": both("files"), "files.remove": both("files"), "files.move": both("files"), "files.glob": both("files"), "files.grep": both("files"),
+  "files.watch": both("files"),
   "browser.tabs": both("browser"), "browser.open": both("browser"), "browser.close": both("browser"), "browser.navigate": both("browser"),
   "browser.show": both("browser"), "browser.hide": both("browser"), "browser.screenshot": both("browser"), "browser.cdp": both("browser"),
   "browser.onCdpEvent": both("browser"), "browser.watch": both("browser"),
@@ -71,6 +73,8 @@ export const API_CALLS = {
   "terminal.open": { capability: "terminal", where: "ui" }, "terminal.input": { capability: "terminal", where: "ui" },
   "terminal.onData": { capability: "terminal", where: "ui" }, "terminal.resize": { capability: "terminal", where: "ui" },
   "terminal.close": { capability: "terminal", where: "ui" },
+  /** Components only, of the bundled `clover` tree (the plugin index browser). */
+  "plugins.install": { capability: "plugins.install", where: "ui" },
   "usage.rows": both("usage.read"), "usage.plans": both("usage.read"), "usage.summary": both("usage.read"), "usage.watch": both("usage.read"),
   "logs.read": both("logs.read"), "logs.follow": both("logs.read"),
   "notify.send": both("notify"),

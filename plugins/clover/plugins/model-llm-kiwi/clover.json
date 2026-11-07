@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "llm.kiwi",
+  "description": "llm.kiwi's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "llm-kiwi",
+        "name": "llm.kiwi",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your llm.kiwi API key. Clover keeps it in your credential store and adds it to llm.kiwi's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://api.llm.kiwi/v1"
+        }
+      }
+    ]
+  }
+}

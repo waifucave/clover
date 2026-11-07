@@ -9,7 +9,7 @@
 // allowlisted DevTools domains; while the user holds a tab, an agent's commands on it are refused.
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { BotId, ComputerName, Ok, Timestamp } from "./common";
+import { AnyPluginId, BotId, ComputerName, Ok, SessionId, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 /** DevTools domains the API never passes (§12.1). */
@@ -57,8 +57,13 @@ export function isBrowserUrlAllowed(url: string): boolean {
 }
 
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). */
+/** Whose tab it is. A session without a bot (a coding session) has a partition of its own (ruling R10); the
+ *  person's own logged-in partition (`user`) needs an explicit card per session, and is never the default. A plugin
+ *  acting as itself opens tabs only in its own partition, `plugin-<id>` (#179's review, S1). */
 export const TabOwner = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("bot"), bot: BotId }),
+  z.object({ kind: z.literal("session"), session: SessionId }),
+  z.object({ kind: z.literal("plugin"), plugin: AnyPluginId }),
   z.object({ kind: z.literal("user") }),
 ]);
 export type TabOwner = z.infer<typeof TabOwner>;
@@ -85,6 +90,9 @@ export const TabView = z.object({
   loading: z.boolean(),
   /** The user holds it in the view; an agent's commands are refused meanwhile (the inherited control lease). */
   heldByUser: z.boolean(),
+  /** The view showing it live, when it is `shown`. Two panels showing one tab: the one the person used last has the
+   *  live view, and any other shows its last still frame, marked paused (ruling R8). */
+  view: utf16(256).optional(),
 });
 export type TabView = z.infer<typeof TabView>;
 
@@ -114,9 +122,13 @@ export const BROWSER_METHODS = {
   }),
   browserOpen: defineMethod({
     name: "browser.open", owner: "L", ...API,
-    params: z.object({ owner: TabOwner, url: utf16(8192).optional(), show: z.boolean().optional(), computer: ComputerName.optional() }),
+    params: z.object({
+      owner: TabOwner, url: utf16(8192).optional(), computer: ComputerName.optional(),
+      /** Shows it at once in that view at that size (L's question: `show` names the view); headless otherwise. */
+      show: z.object({ view: utf16(256, 1), viewport: Viewport }).optional(),
+    }),
     result: z.object({ tab: TabView }),
-    doc: "Opens a tab in its owner's partition, headless unless shown.",
+    doc: "Opens a tab in its owner's partition, headless unless `show` names a view.",
   }),
   browserClose: defineMethod({
     name: "browser.close", owner: "L", ...API, params: Tab, result: Ok,

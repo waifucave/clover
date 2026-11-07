@@ -1,0 +1,25 @@
+{
+  "manifest": 1,
+  "name": "iFlytek Spark",
+  "description": "iFlytek Spark's models, on its openai-chat endpoint. Generated from the SDK's catalog.",
+  "contributes": {
+    "models": [
+      {
+        "provider": "iflytek",
+        "name": "iFlytek Spark",
+        "catalog": "catalog.json",
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "api-key",
+            "help": "Your iFlytek Spark API key. Clover keeps it in your credential store and adds it to iFlytek Spark's requests itself."
+          }
+        ],
+        "endpoint": {
+          "protocol": "openai-chat",
+          "baseUrl": "https://spark-api-open.xf-yun.com/v1"
+        }
+      }
+    ]
+  }
+}

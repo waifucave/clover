@@ -5,8 +5,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { verifyAccountToken } from "../../../../../services/shared/account-token";
-import { startSignInStub } from "../../../../test-harness/src/signin-stub";
+import { verifyAccountToken } from "@waifucave/clover-service-shared/account-token";
+import { startSignInStub } from "@waifucave/clover-test-harness/signin-stub";
 import { isContractError } from "../../contracts/common";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { Secret } from "../../contracts/secret-store";
@@ -35,16 +35,23 @@ function stack() {
   return { auth, service };
 }
 
-async function device(s: ReturnType<typeof stack>, name: string) {
+async function device(s: ReturnType<typeof stack>, name: string, opts: { emailSignIn?: boolean } = {}) {
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
   const boxKey = await BoxKey.loadOrCreate(store);
   const home = mkdtempSync(join(tmpdir(), "clover-h-account-"));
   const registry = await FileDeviceRegistry.open({ home, key, clock, self: { name, os: "macos" } });
-  const account = new AccountClient({ config: { authUrl: s.auth.url, anonKey: s.auth.anonKey, serviceUrl: s.service.url }, store, device: key, clock });
+  const account = new AccountClient({ config: { authUrl: s.auth.url, anonKey: s.auth.anonKey, serviceUrl: s.service.url, ...(opts.emailSignIn ? { emailSignInUrl: s.auth.emailSignInUrl } : {}) }, store, device: key, clock });
   stops.push(() => account.close());
   return { name, store, key, boxKey, registry, account, home };
 }
+
+describe("the account service's statements, byte for byte with lane I's", () => {
+  test("mint names the account, as services/accounts' own test vector has it", async () => {
+    const { mintStatement } = await import("../account");
+    expect(new TextDecoder().decode(mintStatement("acct", "push.waifucave.com", "dev", 1793000000123))).toBe("clover-account-v1 mint\nacct\npush.waifucave.com\ndev\n1793000000123");
+  });
+});
 
 describe("account", () => {
   test("password sign-in keeps the session as a device item, never in the registry's file", async () => {
@@ -71,6 +78,47 @@ describe("account", () => {
     const back = await fetch(consent.headers.get("location")!);
     expect(back.status).toBe(200);
     expect(await done).toMatchObject({ signedIn: true, provider: "discord" });
+  });
+
+  test("email sign-in through the sign-in page and the loopback redirect", async () => {
+    const s = stack();
+    const d = await device(s, "Studio", { emailSignIn: true });
+    const { url, done } = await d.account.startSignIn("email");
+    expect(url.startsWith(`${s.auth.emailSignInUrl}?`)).toBe(true);
+    expect(url).not.toContain("code_verifier");
+    // What the browser does: open the page, then send its form back filled in.
+    const page = await fetch(url);
+    expect(page.status).toBe(200);
+    const fields = Object.fromEntries([...(await page.text()).matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((m) => [m[1]!, m[2]!.replaceAll("&#38;", "&")]));
+    expect(Object.keys(fields).sort()).toEqual(["code_challenge", "code_challenge_method", "redirect_to"]);
+    const sent = await fetch(s.auth.emailSignInUrl, {
+      method: "POST", redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ ...fields, email: "someone@example.invalid", password: "correct horse", action: "signin" }).toString(),
+    });
+    expect(sent.status).toBe(302);
+    const back = await fetch(sent.headers.get("location")!);
+    expect(back.status).toBe(200);
+    expect(await done).toMatchObject({ signedIn: true, provider: "email", user: { email: "someone@example.invalid" } });
+  });
+
+  test("email sign-in is refused where no sign-in page is set up, and Cancel on the page ends the wait", async () => {
+    const s = stack();
+    const bare = await device(s, "Bare");
+    expect(isContractError(await bare.account.startSignIn("email").catch((e: unknown) => e), "refused")).toBe(true);
+    const d = await device(s, "Studio", { emailSignIn: true });
+    const { url, done } = await d.account.startSignIn("email");
+    const outcome = done.catch((e: unknown) => e);
+    const fields = new URL(url).searchParams;
+    const cancelled = await fetch(s.auth.emailSignInUrl, {
+      method: "POST", redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ redirect_to: fields.get("redirect_to")!, code_challenge: fields.get("code_challenge")!, action: "cancel" }).toString(),
+    });
+    expect(cancelled.status).toBe(302);
+    expect((await fetch(cancelled.headers.get("location")!)).status).toBe(400);
+    expect(isContractError(await outcome, "refused")).toBe(true);
+    expect(await d.account.status()).toEqual({ signedIn: false });
   });
 
   test("an expired access token is refreshed once, even when two callers ask at the same time", async () => {

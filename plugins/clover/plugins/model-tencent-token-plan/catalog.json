@@ -1,0 +1,1194 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "none",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "China-region platform: keys are issued by and bound to the China account system and are not interchangeable with the international platform's keys.",
+        "Subscription (plan) credential: usage is metered against plan quota, not per-token list prices, so models on this row carry no `pricing`."
+      ]
+    },
+    "pricingBasis": "subscription",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://cloud.tencent.com/document/product/1823/130060 — Tencent Cloud Token Plan documentation, retrieved 2026-09-25: the plan key (`sk-sp-`) is used against `https://api.lkeap.cloud.tencent.com/plan/v3` (OpenAI) and `https://api.lkeap.cloud.tencent.com/plan/anthropic` (Anthropic); billing is the subscription plan.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "tencent-token-plan/deepseek-v4-flash-202605",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "deepseek-v4-flash-202605",
+      "displayName": "DeepSeek V4 Flash 0731 (Token Plan)",
+      "aliases": [
+        "deepseek/deepseek-v4-flash-0731",
+        "deepseek/deepseek-v4-flash"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-flash-202605 row lists context window 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-flash-202605 row lists maximum input 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 384000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-flash-202605 row lists maximum output 384k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"deepseek-v4-flash-202605 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"deepseek-v4-flash-202605 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-flash-202605 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-flash-202605",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "tencent-token-plan/deepseek-v4-pro-202606",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "deepseek-v4-pro-202606",
+      "displayName": "DeepSeek V4 Pro 0813 (Token Plan)",
+      "aliases": [
+        "deepseek/deepseek-v4-pro-0813",
+        "deepseek/deepseek-v4-pro"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-pro-202606 row lists context window 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-pro-202606 row lists maximum input 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 384000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-pro-202606 row lists maximum output 384k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"deepseek-v4-pro-202606 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"deepseek-v4-pro-202606 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — deepseek-v4-pro-202606 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "deepseek-v4-pro-202606",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "tencent-token-plan/glm-5",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "glm-5",
+      "displayName": "GLM 5 (Token Plan)",
+      "aliases": [
+        "glm-5-0"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5 row lists context window 200k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5 row lists maximum input 200k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5 row lists maximum output 128k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tencent-token-plan/glm-5.1",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "glm-5.1",
+      "displayName": "GLM 5.1 (Token Plan)",
+      "aliases": [
+        "glm-5-1"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.1 row lists context window 200k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.1 row lists maximum input 200k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.1 row lists maximum output 128k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.1 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.1 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.1 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.1",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tencent-token-plan/glm-5.2",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "glm-5.2",
+      "displayName": "GLM 5.2 (Token Plan)",
+      "aliases": [
+        "glm-5-2"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.2 row lists context window 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.2 row lists maximum input 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.2 row lists maximum output 128k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.2 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.2 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.2 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.2",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tencent-token-plan/glm-5.3",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "glm-5.3",
+      "displayName": "GLM 5.3 (Token Plan)",
+      "aliases": [
+        "glm-5-3"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3 row lists context window 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3 row lists maximum input 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3 row lists maximum output 128k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.3 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.3 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tencent-token-plan/glm-5.3-flash",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "glm-5.3-flash",
+      "displayName": "GLM 5.3 Flash (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3-flash row lists context window 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3-flash row lists maximum input 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3-flash row lists maximum output 128k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.3-flash row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"glm-5.3-flash row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — glm-5.3-flash capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tencent-token-plan/hy3",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "hy3",
+      "displayName": "Hy3 (Token Plan)",
+      "aliases": [
+        "hy3-preview",
+        "hy3-202608"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3: context window 256k tokens; k/M expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxInputTokens": {
+        "value": 192000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3: maximum input 192k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3: maximum output 128k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table lists structured output.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table lists Cache caching.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy3 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "hy3",
+      "modelFamily": "hunyuan"
+    },
+    {
+      "key": "tencent-token-plan/hy4-preview",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "hy4-preview",
+      "displayName": "Hy4 Preview (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview: context window 1M tokens; k/M expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxInputTokens": {
+        "value": 960000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview: maximum input 960k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "maxOutputTokens": {
+        "value": 64000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview: maximum output 64k tokens; k expanded as decimal.",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table explicitly lists Function Calling.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "structuredOutput": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table lists structured output.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "promptCaching": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table lists Cache caching.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — hy4-preview capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "hy4-preview",
+      "modelFamily": "hunyuan"
+    },
+    {
+      "key": "tencent-token-plan/kimi-k2.7-code",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "kimi-k2.7-code",
+      "displayName": "Kimi K2.7 Code (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k2.7-code row lists context window 256k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k2.7-code row lists maximum input 256k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 256000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k2.7-code row lists maximum output 256k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"kimi-k2.7-code row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"kimi-k2.7-code row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k2.7-code capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k2.7-code",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "tencent-token-plan/kimi-k3",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "kimi-k3",
+      "displayName": "Kimi K3 (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k3 row lists context window 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k3 row lists maximum input 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k3 row lists maximum output 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image",
+          "video"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-28): Tencent TokenHub model list, row \"Kimi K3 | kimi-k3 | 深度思考、结构化输出、Function Calling、Cache 缓存、图片、视频理解 | 1M | 1M | 1M\". That table is TokenHub's model catalog and does not say which plans it covers, so for this Token Plan row the reading is `inferred`. The Token Plan page (https://cloud.tencent.com/document/product/1823/130060) lists kimi-k3 in the general plan; its \"可用模型暂不支持图片、视频等多模态能力\" applies to the Hy Token Plan's models only",
+        "confidence": "inferred",
+        "observedAt": "2026-09-28T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"kimi-k3 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"kimi-k3 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — kimi-k3 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "tencent-token-plan/minimax-m2.7",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "minimax-m2.7",
+      "displayName": "MiniMax M2.7 (Token Plan)",
+      "aliases": [
+        "minimax-m-2-7"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — minimax-m2.7 row lists context window 200k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 200000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — minimax-m2.7 row lists maximum input 200k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxOutputTokens": {
+        "value": 128000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — minimax-m2.7 row lists maximum output 128k tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"minimax-m2.7 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"minimax-m2.7 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — minimax-m2.7 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m2.7",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "tencent-token-plan/minimax-m3",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "minimax-m3",
+      "displayName": "MiniMax M3 (Token Plan)",
+      "aliases": [
+        "minimax-m-3-0"
+      ],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — minimax-m3 row lists context window 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "maxInputTokens": {
+        "value": 1000000,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — minimax-m3 row lists maximum input 1M tokens; k/M expanded as decimal",
+        "confidence": "inferred",
+        "observedAt": "2026-09-25T12:31:56.381Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"minimax-m3 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 (read 2026-09-27): \"minimax-m3 row: 深度思考 ✓ / Function Calling ✓\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://cloud.tencent.com/document/product/1823/130051 — minimax-m3 capability table lists deep thinking (retained thinking).",
+          "confidence": "declared",
+          "observedAt": "2026-09-25T10:06:30Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "minimax-m3",
+      "modelFamily": "minimax"
+    },
+    {
+      "key": "tencent-token-plan/tc-code-latest",
+      "providerId": "tencent-token-plan",
+      "upstreamId": "tc-code-latest",
+      "displayName": "Auto (Token Plan)",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — Token Plan Hy subset is text-only; general plan in AI-tool usage does not document multimodal support.",
+        "confidence": "declared",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: upstream declares no output modality for ANY model, so `text` is Winter's inference for a chat registry, NOT an upstream statement. Stamped `source: winter-default` — the `EvidenceSource` member added for exactly this — so a reader filtering evidence BY SOURCE does not get a Winter guess wearing an upstream label. See PROVENANCE.md.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "none",
+        "source": "winter-default",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — No model-specific function calling is stated. ",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "nativeTools": {
+        "value": false,
+        "source": "winter-default",
+        "sourceRef": "https://cloud.tencent.com/document/product/1823/130060 — No model-specific function calling is stated.",
+        "confidence": "unknown",
+        "observedAt": "2026-09-25T10:06:30Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "canonicalModelId": "tc-code-latest",
+      "modelFamily": "other"
+    }
+  ]
+}

@@ -7,7 +7,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
 import {
-  callBindingInput, cardAnswerSigningInput, cardHashInput, type Caller, type Card, type CardOption, type SignedCardAnswer,
+  TREE_TRANSFER, callBindingInput, cardAnswerSigningInput, cardHashInput, type Caller, type Card, type CardOption, type SignedCardAnswer,
+  type TreeTransferParams,
 } from "@waifucave/clover-protocol";
 import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
@@ -16,7 +17,7 @@ import { FakeClock } from "../fakes/clock";
 import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
-import { splitTreePath, treeCallBinding } from "../tree";
+import { RESERVED_COMPUTER_NAMES, isReservedComputerName, memoryTreeRest, splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -24,7 +25,12 @@ export type TreeHarness = Pick<FakeTree, keyof FakeTree>;
 /** Builds the implementation under test from the options the fake takes. */
 export type TreeFactory = (...args: ConstructorParameters<typeof FakeTree>) => TreeHarness;
 
-export function runTreeConformance(make: TreeFactory): void {
+/** Cases a lane's implementation meets only in a later milestone, run as `todo` there until it does: `r1` (the
+ *  holder's reviewer, J-M2) and `r15` (one answer for a move between computers, J-M2). The fake meets them all. */
+export type TreePendingCase = "r1" | "r15";
+
+export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly TreePendingCase[] } = {}): void {
+  const pendingOr = (key: TreePendingCase) => (opts.pending?.includes(key) ? test.todo : test);
   const BOT: Caller = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" };
   const USER: Caller = { kind: "user", client: "app" };
   const utf8 = (text: string) => ({ encoding: "utf8" as const, text });
@@ -43,7 +49,69 @@ export function runTreeConformance(make: TreeFactory): void {
     return { tree, moveAlpha: (to: string) => (runsAlpha = to) };
   }
 
+  /** Two computers, a phone that answers cards, and the holders' own cards, for a peer's calls. */
+  async function peerSetup() {
+    const clock = new FakeClock();
+    const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+    const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
+    const phone = await makeFakeDevice();
+    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+    const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }];
+    const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
+    // The holder's own card for a tree change, from its built-in tables.
+    const render: CallCardRenderer = (call) => {
+      if (call.method === TREE_TRANSFER) {
+        // R15: both ends render the same card, its text and binding from the params alone.
+        const p = call.params as TreeTransferParams;
+        return { kind: "tool", fields: { title: { type: "text", text: `Move ${p.from} to ${p.to}` } }, options, binds: transferBinding(p, sha256) };
+      }
+      return call.method.startsWith("tree.")
+        ? { kind: "tool", fields: { title: { type: "text", text: `${call.method} on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) }
+        : undefined;
+    };
+    const tree = make({
+      clock,
+      computers: {
+        Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }), level: "ask-risky" },
+        Laptop1: { home: "/home/me", fence: new FakeFence({ os: "linux", home: "/home/me", cloverHome: "/home/me/.clover" }), level: "automatic" },
+      },
+      botComputer: () => undefined,
+      devices: registry,
+      // Each holder keeps its own ledger of used answers (R15: one answer counts once at each end).
+      ledgers: { Studio: new MemoryAnswerLedger(), Laptop1: new MemoryAnswerLedger() },
+      render,
+    });
+    const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
+    let n = 0;
+    const answer = async (computer: string, method: string, params: unknown, title = `${method} on ${computer}`, bound = binds(computer, method, params)): Promise<SignedCardAnswer> => {
+      const unhashed = {
+        id: `card_0011223344556677889900${String(++n).padStart(2, "0")}`, kind: "tool" as const, computer, origin: "user" as const,
+        issuedAt: clock.now(), expiresAt: null, fields: { title: { type: "text" as const, text: title } }, options, binds: bound,
+      };
+      const card = { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card;
+      const at = clock.now();
+      return { card, option: "approve", device: phone.id, at, signature: toBase64(await phone.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: "approve", at })))) };
+    };
+    const code = async (p: Promise<unknown>) => ((await rejection(p)) as { code?: string } | undefined)?.code ?? "ok";
+    return { clock, sha256, tree, PEER, answer, code };
+  }
+
   describe("Tree", () => {
+    test("home/memory/ names the caller's bot's memory, and no computer may be called memory", () => {
+      expect(memoryTreeRest("home/memory/MEMORY.md")).toBe("MEMORY.md");
+      expect(memoryTreeRest("home/memory")).toBe("");
+      expect(memoryTreeRest("home/Studio/memory/x")).toBeUndefined();
+      expect(memoryTreeRest("home/memory/../settings")).toBeUndefined();
+      expect(RESERVED_COMPUTER_NAMES).toContain("memory");
+      expect(memoryTreeRest("home/Memory/MEMORY.md")).toBe("MEMORY.md");
+      expect(memoryTreeRest("home/MEMORY")).toBe("");
+      expect([isReservedComputerName("Memory"), isReservedComputerName("Studio")]).toEqual([true, false]);
+    });
+
+    // Lane J builds home/memory/ (synced, H): it resolves for the caller's bot, and only that bot's main conversation and
+    // side threads read or write it; until then the case runs as todo.
+    test.todo("home/memory/ resolves to the caller's bot's memory, synced, and only its own sessions reach it");
+
     test("home/<Computer>/ is that computer's home; bots/<bot>/ is on the computer running the bot", () => {
       const { tree, moveAlpha } = setup();
       expect(tree.resolve("home/Laptop1/project/run.py")).toEqual({ computer: "Laptop1", path: "/home/me/project/run.py", area: "home" });
@@ -103,7 +171,9 @@ export function runTreeConformance(make: TreeFactory): void {
       expect((err as { detail: unknown }).detail).toEqual({ computer: "Laptop1", reason: "settings" });
       expect(isContractError(await rejection(tree.read("home/Laptop1/.clover/secrets.enc", { as: BOT })), "fenced")).toBe(true);
       await tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: USER });
-      await tree.write("home/Laptop1/.clover/plugins/luna/clover.json", utf8("{}"), { as: BOT });
+      // The installed plugins folder is fenced too (#197's check 2); a routine's files aren't.
+      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/plugins/luna/clover.json", utf8("{}"), { as: BOT })), "fenced")).toBe(true);
+      await tree.write("home/Laptop1/.clover/routines/alpha/morning.md", utf8("# Morning\n"), { as: BOT });
       await tree.write("bots/alpha/memory/MEMORY.md", utf8("# Memory\n"), { as: BOT });
     });
 
@@ -136,40 +206,7 @@ export function runTreeConformance(make: TreeFactory): void {
     });
 
     test("a peer's call is always fenced, and its changes are judged at the stricter level, with a bound signed answer where it asks (N2)", async () => {
-      const clock = new FakeClock();
-      const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
-      const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-      const phone = await makeFakeDevice();
-      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
-      const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }];
-      const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
-      // The holder's own card for a tree change, from its built-in tables.
-      const render: CallCardRenderer = (call) => call.method.startsWith("tree.")
-        ? { kind: "tool", fields: { title: { type: "text", text: `${call.method} on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) }
-        : undefined;
-      const tree = make({
-        clock,
-        computers: {
-          Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }), level: "ask-risky" },
-          Laptop1: { home: "/home/me", fence: new FakeFence({ os: "linux", home: "/home/me", cloverHome: "/home/me/.clover" }), level: "automatic" },
-        },
-        botComputer: () => undefined,
-        devices: registry,
-        ledger: new MemoryAnswerLedger(),
-        render,
-      });
-      const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
-      let n = 0;
-      const answer = async (computer: string, method: string, params: unknown, title = `${method} on ${computer}`): Promise<SignedCardAnswer> => {
-        const unhashed = {
-          id: `card_0011223344556677889900${String(++n).padStart(2, "0")}`, kind: "tool" as const, computer, origin: "user" as const,
-          issuedAt: clock.now(), expiresAt: null, fields: { title: { type: "text" as const, text: title } }, options, binds: binds(computer, method, params),
-        };
-        const card = { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card;
-        const at = clock.now();
-        return { card, option: "approve", device: phone.id, at, signature: toBase64(await phone.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option: "approve", at })))) };
-      };
-      const code = async (p: Promise<unknown>) => ((await rejection(p)) as { code?: string } | undefined)?.code ?? "ok";
+      const { tree, PEER, answer, code } = await peerSetup();
 
       // Always fenced: a peer never passes as the user, whatever its level.
       expect(await code(tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: PEER, level: "automatic" }))).toBe("fenced");
@@ -209,6 +246,92 @@ export function runTreeConformance(make: TreeFactory): void {
       tree.setLevel("Studio", "read-only");
       expect(await code(tree.move("home/Laptop1/old.log", "home/Studio/old.log", { as: PEER, level: "automatic" }))).toBe("refused");
       expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
+    });
+
+    pendingOr("r15")("R15: a peer's move between computers is one answer both ends check against `transferBinding`'s card (`bindsComputer`), with their own ledgers; a swapped one moves nothing (`transferEndsHold`)", async () => {
+      const { sha256, tree, PEER, answer, code } = await peerSetup();
+      await tree.write("home/Laptop1/old.log", utf8("x"), { as: USER });
+      // Studio asks for risky actions; each holder checks the one answer against its own card, with its own ledger.
+      const t = transferChange(true, "home/Laptop1/old.log", "home/Studio/old.log", "Laptop1", "Studio");
+      let one = await answer("Studio", t.method, t.params, "Move home/Laptop1/old.log to home/Studio/old.log");
+      const move = () => tree.move("home/Laptop1/old.log", "home/Studio/old.log", { as: PEER, level: "automatic", answer: one });
+      expect(await code(move())).toBe("refused"); // bound to the destination alone, as a one-computer call: neither end takes it
+      one = await answer("Laptop1", t.method, t.params, "Move home/Laptop1/old.log to home/Studio/old.log", transferBinding(t.params as TreeTransferParams, sha256));
+      expect(await code(move())).toBe("ok");
+      expect(await tree.stat("home/Studio/old.log", { as: USER })).not.toBeNull();
+      await tree.move("home/Studio/old.log", "home/Laptop1/old.log", { as: USER });
+      expect(await code(move())).toBe("refused"); // used, at both ends
+      // An answer for a transfer between the computers the other way round moves nothing (#179's review, check 2).
+      const swapped = transferChange(true, "home/Laptop1/old.log", "home/Studio/old.log", "Studio", "Laptop1");
+      expect(transferEndsHold(swapped.params as TreeTransferParams, (p) => tree.resolve(p))).toBe(false);
+      expect(transferEndsHold(t.params as TreeTransferParams, (p) => tree.resolve(p))).toBe(true);
+      one = await answer("Studio", swapped.method, swapped.params, "Move home/Laptop1/old.log to home/Studio/old.log", transferBinding(swapped.params as TreeTransferParams, sha256));
+      expect(await code(move())).toBe("refused");
+      expect(await tree.stat("home/Laptop1/old.log", { as: USER })).not.toBeNull();
+    });
+
+    pendingOr("r1")("at ask-risky the holder's own reviewer judges a peer's change: safe runs, risky needs a bound answer (ruling R1)", async () => {
+      const clock = new FakeClock();
+      const judged: string[] = [];
+      const tree = make({
+        clock,
+        computers: { Studio: { home: "/Users/me", fence: new FakeFence({ home: "/Users/me", cloverHome: "/Users/me/.clover" }), level: "ask-risky" } },
+        botComputer: () => undefined,
+        reviewer: async (change) => {
+          judged.push(`${change.method} ${change.computer} ${change.as.kind}`);
+          return change.method === "tree.write" && change.params.path.endsWith(".md") ? "safe" : "risky";
+        },
+      });
+      const PEER: Caller = { kind: "peer", device: "desk0000000000000001", sessionId: "s_remote" };
+      const code = async (p: Promise<unknown>) => ((await rejection(p)) as { code?: string } | undefined)?.code ?? "ok";
+      expect(await code(tree.write("home/Studio/notes.md", utf8("hi"), { as: PEER, level: "automatic" }))).toBe("ok");
+      expect(await code(tree.write("home/Studio/run.sh", utf8("rm -rf ~"), { as: PEER, level: "automatic" }))).toBe("refused");
+      expect(judged).toEqual(["tree.write Studio peer", "tree.write Studio peer"]);
+      // A delete at ask-risky still asks, reviewer or not; and the holder's own sessions never meet the peer rule.
+      expect(await code(tree.remove("home/Studio/notes.md", { as: PEER, level: "automatic" }))).toBe("refused");
+      expect(await code(tree.write("home/Studio/run.sh", utf8("x"), { as: BOT }))).toBe("ok");
+      expect(judged).toHaveLength(2);
+    });
+
+    test("watch follows a folder on the computer that holds it, fenced as a listing (lane J's ask)", async () => {
+      const { tree } = setup();
+      await tree.write("home/Laptop1/p/a.txt", utf8("a"), { as: USER });
+      const seen: TreeWatchEvent[] = [];
+      const changed = () => new Set(seen.flatMap((e) => (e.type === "changed" ? e.paths : [])));
+      // A real holder's news comes later and coalesced; the fake's at once.
+      const settle = async (done: () => boolean, ms = 3000) => {
+        for (const end = Date.now() + ms; !done() && Date.now() < end;) await new Promise((r) => setTimeout(r, 10));
+      };
+      const stop = await tree.watch("home/Laptop1/p", { as: BOT }, (e) => seen.push(e));
+      await tree.write("home/Laptop1/p/b.txt", utf8("b"), { as: USER });
+      await tree.write("home/Laptop1/elsewhere.txt", utf8("c"), { as: USER });
+      await tree.remove("home/Laptop1/p/a.txt", { as: USER });
+      await settle(() => changed().has("home/Laptop1/p/b.txt") && changed().has("home/Laptop1/p/a.txt"));
+      stop();
+      expect([...changed()].sort()).toEqual(["home/Laptop1/p/a.txt", "home/Laptop1/p/b.txt"]);
+      const before = seen.length;
+      await tree.write("home/Laptop1/p/c.txt", utf8("c"), { as: USER });
+      await settle(() => false, 200);
+      expect(seen.length).toBe(before);
+      expect(isContractError(await rejection(tree.watch("home/Laptop1/.clover/run", { as: BOT }, () => {})), "fenced")).toBe(true);
+      expect(isContractError(await rejection(tree.watch("home/Laptop1/nowhere", { as: BOT }, () => {})), "not_found")).toBe(true);
+      // Never a whole home, for anyone (#179's review).
+      for (const whole of ["home/Laptop1", "home/Laptop1/", "home/OldLaptop"]) {
+        expect([whole, isContractError(await rejection(tree.watch(whole, { as: USER }, () => {})), "invalid")]).toEqual([whole, true]);
+      }
+    });
+
+    test("a fenced name in another case or a folded spelling is refused on every computer (J-M1's review B1, #179's F1)", async () => {
+      const { tree } = setup();
+      // Studio runs macOS and Laptop1 Linux; the fence folds on both (a Linux home can be case-folding ext4 or APFS).
+      for (const computer of ["Studio", "Laptop1"]) {
+        for (const rel of [".clover/RULES/allow.json", ".clover/Settings/settings.json", ".clover/LEVELS/computer.json",
+          ".clover/\u017Fettings/settings.json", ".clover/tru\u017Ft/x.json", ".clover/plugins-state/o\u212As/x.json", ".clover/\u00DFettings/x.json"]) {
+          const path = `home/${computer}/${rel}`;
+          expect([path, isContractError(await rejection(tree.write(path, utf8("{}"), { as: BOT })), "fenced")]).toEqual([path, true]);
+        }
+      }
+      await tree.write("home/Studio/.clover/bots/alpha/memory/\u65E5\u8A18.md", utf8("x"), { as: BOT });
     });
 
     test("computersFor lists the computers an action touches", () => {

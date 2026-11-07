@@ -674,6 +674,16 @@
                   "maxLength": 4096,
                   "pattern": "^(home|bots)(\\/|$)"
                 },
+                "branch": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "changes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
                 "routine": {
                   "type": "string",
                   "maxLength": 128
@@ -835,6 +845,16 @@
                 "minLength": 1,
                 "maxLength": 4096,
                 "pattern": "^(home|bots)(\\/|$)"
+              },
+              "branch": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "changes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "routine": {
                 "type": "string",
@@ -1402,6 +1422,139 @@
         },
         "required": [
           "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models.list": {
+      "doc": "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not, less blocked rows and the rows of a blocked provider (a picker never offers what `session.setModel` refuses). With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
+      "owner": "A",
+      "direction": "to-daemon",
+      "roles": [
+        "app",
+        "cli",
+        "remote"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        }
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "models": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "provider": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "providerName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "plugin": {
+                  "type": "string",
+                  "maxLength": 81,
+                  "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                },
+                "efforts": {
+                  "maxItems": 16,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  }
+                },
+                "defaultEffort": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32
+                },
+                "images": {
+                  "type": "boolean"
+                },
+                "signedIn": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "provider",
+                "providerName",
+                "plugin",
+                "efforts",
+                "images",
+                "signedIn"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "default": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "models"
         ],
         "additionalProperties": false
       }
@@ -2304,6 +2457,16 @@
                 "minLength": 1,
                 "maxLength": 4096,
                 "pattern": "^(home|bots)(\\/|$)"
+              },
+              "branch": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "changes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "routine": {
                 "type": "string",

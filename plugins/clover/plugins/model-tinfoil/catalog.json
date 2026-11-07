@@ -1,0 +1,567 @@
+{
+  "catalog": 1,
+  "provider": {
+    "protocols": [
+      "openai-chat-completions"
+    ],
+    "authKinds": [
+      "api-key"
+    ],
+    "defaultEndpoints": {},
+    "modelDiscovery": "openai-models",
+    "liveCatalogAuthority": "unknown",
+    "adapterId": "winter.openai-chat-completions",
+    "family": "openai",
+    "upstream": {
+      "project": "winter",
+      "commit": "",
+      "sourcePaths": []
+    },
+    "risk": {
+      "class": "review-required",
+      "reasons": [
+        "Admitted on the vendor's own fetched documentation; this application has not run a live key gate against this endpoint.",
+        "a plain OpenAI client skips Tinfoil's connection-time enclave attestation (the vendor's SDK/proxy performs it); this row does not claim attested transport"
+      ]
+    },
+    "pricingBasis": "token",
+    "admission": {
+      "basis": "api-key",
+      "citation": "https://inference.tinfoil.sh/v1/models and https://docs.tinfoil.sh/introduction.md — Tinfoil, retrieved 2026-09-27: the model list is public (HTTP 200, no key) and names `/v1/chat/completions` per model with USD per-1M-token prices; \"OpenAI-compatible clients don't perform connection-time attestation themselves ... Without either, your traffic still benefits from audit-time verification through Tinfoil's attestation transparency log\"; https://docs.tinfoil.sh/guides/proxy-server.md authenticates with a `TINFOIL_API_KEY` Bearer key.",
+      "tier": "fetched-document"
+    },
+    "scope": "llm"
+  },
+  "rows": [
+    {
+      "key": "tinfoil/deepseek-v4-1-flash",
+      "providerId": "tinfoil",
+      "upstreamId": "deepseek-v4-1-flash",
+      "displayName": "DeepSeek V4.1 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `deepseek-v4-1-flash`: \"context_window\": 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `deepseek-v4-1-flash`: \"multimodal\": true; description: \"DeepSeek's efficient MoE model with a 1M-token context window, image input, Engram memory, built-in speculative decoding, and tool calling\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `deepseek-v4-1-flash`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `deepseek-v4-1-flash`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `deepseek-v4-1-flash`: \"reasoning\": true — reasoning rides {\"chat_template_kwargs\": {\"reasoning_effort\": \"$EFFORT\", \"thinking\": true}} (not the top-level `reasoning_effort` this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.65,
+          "outputPerMTokUsd": 1.45,
+          "cacheReadPerMTokUsd": 0.13
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `deepseek-v4-1-flash`: \"pricing\": {\"cachedInputTokenPricePer1M\": 0.13, \"inputTokenPricePer1M\": 0.65, \"outputTokenPricePer1M\": 1.45, \"requestPrice\": 0} (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "deepseek-v4-1-flash",
+      "modelFamily": "deepseek"
+    },
+    {
+      "key": "tinfoil/gemma4-31b",
+      "providerId": "tinfoil",
+      "upstreamId": "gemma4-31b",
+      "displayName": "Gemma 4 31B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gemma4-31b`: \"context_window\": 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gemma4-31b`: \"multimodal\": true; description: \"Google's most capable open model with image understanding and long-context support\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gemma4-31b`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gemma4-31b`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gemma4-31b`: \"reasoning\": true — reasoning rides {\"chat_template_kwargs\": {\"enable_thinking\": true}} (not the top-level `reasoning_effort` this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.4,
+          "outputPerMTokUsd": 1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gemma4-31b`: \"pricing\": {\"inputTokenPricePer1M\": 0.4, \"outputTokenPricePer1M\": 1, \"requestPrice\": 0} (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gemma4-31b",
+      "modelFamily": "other"
+    },
+    {
+      "key": "tinfoil/glm-5-3",
+      "providerId": "tinfoil",
+      "upstreamId": "glm-5-3",
+      "displayName": "GLM-5.3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3`: \"context_window\": 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3`: \"multimodal\": false",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3`: \"reasoning\": true — reasoning rides {\"chat_template_kwargs\": {\"reasoning_effort\": \"$EFFORT\"}} (not the top-level `reasoning_effort` this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.8,
+          "outputPerMTokUsd": 5.75,
+          "cacheReadPerMTokUsd": 0.45
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3`: \"pricing\": {\"cachedInputTokenPricePer1M\": 0.45, \"inputTokenPricePer1M\": 1.8, \"outputTokenPricePer1M\": 5.75, \"requestPrice\": 0} (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.3",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tinfoil/glm-5-3-flash",
+      "providerId": "tinfoil",
+      "upstreamId": "glm-5-3-flash",
+      "displayName": "GLM-5.3 Flash",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 1048576,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3-flash`: \"context_window\": 1048576",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3-flash`: \"multimodal\": true; description: \"Z.AI's fast multimodal MoE model with a 1M-token context window, image input, reasoning, and tool calling\"",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3-flash`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3-flash`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3-flash`: \"reasoning\": true — reasoning rides {\"chat_template_kwargs\": {\"clear_thinking\": false, \"reasoning_effort\": \"$EFFORT\"}} (not the top-level `reasoning_effort` this adapter sends), so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.4,
+          "outputPerMTokUsd": 1.25,
+          "cacheReadPerMTokUsd": 0.1
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `glm-5-3-flash`: \"pricing\": {\"cachedInputTokenPricePer1M\": 0.1, \"inputTokenPricePer1M\": 0.4, \"outputTokenPricePer1M\": 1.25, \"requestPrice\": 0} (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "glm-5.3-flash",
+      "modelFamily": "glm"
+    },
+    {
+      "key": "tinfoil/gpt-oss-120b",
+      "providerId": "tinfoil",
+      "upstreamId": "gpt-oss-120b",
+      "displayName": "GPT-OSS 120B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gpt-oss-120b`: \"context_window\": 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gpt-oss-120b`: \"multimodal\": false",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gpt-oss-120b`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gpt-oss-120b`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gpt-oss-120b`: \"reasoning\": true; chat-completions reasoning params {\"reasoning_effort\": \"$EFFORT\"} with levels ['high', 'low', 'medium']",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 0.15,
+          "outputPerMTokUsd": 0.6
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `gpt-oss-120b`: \"pricing\": {\"inputTokenPricePer1M\": 0.15, \"outputTokenPricePer1M\": 0.6, \"requestPrice\": 0} (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "gpt-oss-120b",
+      "modelFamily": "gpt-oss"
+    },
+    {
+      "key": "tinfoil/kimi-k3",
+      "providerId": "tinfoil",
+      "upstreamId": "kimi-k3",
+      "displayName": "Kimi K3",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 262144,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `kimi-k3`: \"context_window\": 262144",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text",
+          "image"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `kimi-k3`: \"multimodal\": true — the flag does not name the modality; image input is the reading",
+        "confidence": "inferred",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `kimi-k3`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `kimi-k3`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": true,
+          "source": "official-doc",
+          "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `kimi-k3`: \"reasoning\": true — no reasoning parameters are published, so no vocabulary is recorded",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 4,
+          "outputPerMTokUsd": 20,
+          "cacheReadPerMTokUsd": 0.8
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `kimi-k3`: \"pricing\": {\"cachedInputTokenPricePer1M\": 0.8, \"inputTokenPricePer1M\": 4, \"outputTokenPricePer1M\": 20, \"requestPrice\": 0} (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "kimi-k3",
+      "modelFamily": "kimi"
+    },
+    {
+      "key": "tinfoil/llama3-3-70b",
+      "providerId": "tinfoil",
+      "upstreamId": "llama3-3-70b",
+      "displayName": "Llama 3.3 70B",
+      "aliases": [],
+      "endpoints": [
+        "chat"
+      ],
+      "contextWindow": {
+        "value": 131072,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `llama3-3-70b`: \"context_window\": 131072",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "inputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `llama3-3-70b`: \"multimodal\": false",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "outputModalities": {
+        "value": [
+          "text"
+        ],
+        "source": "winter-default",
+        "sourceRef": "WINTER DEFAULT: the source states no output modality for this model, so `text` is Winter's inference for a chat model, NOT a vendor statement",
+        "confidence": "unknown",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "toolCalling": {
+        "value": "native",
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `llama3-3-70b`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "nativeTools": {
+        "value": true,
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `llama3-3-70b`: \"tool_calling\": true",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "unsupportedParameters": [],
+      "status": "candidate",
+      "reasoning": {
+        "supported": {
+          "value": false,
+          "source": "official-doc",
+          "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `llama3-3-70b`: \"reasoning\": false",
+          "confidence": "declared",
+          "observedAt": "2026-09-27T00:00:00Z"
+        },
+        "efforts": [],
+        "continuation": "none"
+      },
+      "pricing": {
+        "value": {
+          "inputPerMTokUsd": 1.75,
+          "outputPerMTokUsd": 2.75
+        },
+        "source": "official-doc",
+        "sourceRef": "https://inference.tinfoil.sh/v1/models (read 2026-09-27): model `llama3-3-70b`: \"pricing\": {\"inputTokenPricePer1M\": 1.75, \"outputTokenPricePer1M\": 2.75, \"requestPrice\": 0} (USD per 1M tokens)",
+        "confidence": "declared",
+        "observedAt": "2026-09-27T00:00:00Z"
+      },
+      "canonicalModelId": "llama3-3-70b",
+      "modelFamily": "other"
+    }
+  ]
+}

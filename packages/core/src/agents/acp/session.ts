@@ -19,7 +19,8 @@
 //   (Cursor, S5 edit 11), the backend's one record of the user's own selection (`UserSelections`) is set back when the
 //   last delegation that changed it ends, after a crash or a restart too (review 10).
 // * **Read-only** (spec §9.3 [P], item 78): an agent that acts without asking starts in its read-only mode (Cursor's
-//   `ask` or `plan`), or not at all.
+//   `ask` or `plan`), or not at all; `setReadOnly` switches it at a later turn when its computer's level changes, and
+//   back to the mode it had.
 // * **Progress** for the stall watchdog: any message from the agent, stamped on the session's clock. While a
 //   permission request waits on the user, the session is waiting on them, not stalled (review 3).
 // * **A hostile agent's limits** (review 12): at most `MAX_OPEN_ASKS` permission requests at once (more are refused
@@ -35,12 +36,12 @@ import { AGENT_CANCEL_WAIT_MS } from "../../contracts/agent-backend";
 import type { AgentPermissionOption } from "../../contracts/approval-broker";
 import type { Clock } from "../../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
-import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer, type JsonRpcMessage } from "./jsonrpc";
+import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer, type JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
 import { UserSelections } from "./selections";
 import {
   ACP_PROTOCOL_VERSION, type AgentCaps, type ConfigOption, type StdioMcpServer, at, isAuthRequired, obj, pathsOf, readCaps,
   readConfigOptions, readPermissionOptions, readToolStatus, str, textOf, type Obj, type ToolStatus,
-} from "./types";
+} from "@waifucave/clover-agent-sdk/acp";
 
 /** Where the raw wire goes: the transcript, which skips what is marked `replay`. */
 export type WireTap = (dir: "in" | "out", msg: JsonRpcMessage, replay: boolean) => void;
@@ -78,6 +79,8 @@ export interface OpenOptions {
   /** The bridge's essentials (S5 edit 3): the system prompt where the backend lets a client add to it, else the first
    *  prompt. */
   instructions?: string;
+  /** More `_meta` for `session/new`, `load` and `resume`: a sandbox writer's (the Claude adapter's options). */
+  meta?: Obj;
   reattach?: { agentSessionId: string };
   model?: string;
   effort?: string;
@@ -87,9 +90,10 @@ export interface OpenOptions {
   startTimeoutMs?: number;
   /** The backend's record of the user's own selections, where a choice persists (`choicePersists`). */
   selections?: { keeper: UserSelections; backend: string };
-  /** Start in this read-only mode: the config option, and its values in order of preference. The session fails
-   *  `refused` when the agent offers none of them. */
-  readOnly?: { option: string; values: readonly string[] };
+  /** The agent's read-only mode: the config option, and its values in order of preference (`READ_ONLY_MODES`). */
+  readOnlyMode?: { option: string; values: readonly string[] };
+  /** Start in the read-only mode; the session fails `refused` when the agent offers none of its values. */
+  readOnly?: boolean;
 }
 
 /** The most permission requests one agent may have open at once; more are refused without a card. */
@@ -127,6 +131,12 @@ export class AcpAgentSession implements AgentSession {
   readonly #held = new Set<string>();
   /** Permission requests waiting on their answer. */
   #asking = 0;
+  readonly #readOnlyMode: { option: string; values: readonly string[] } | undefined;
+  #readOnly = false;
+  /** The mode before the read-only one, to switch back to. */
+  #modeBefore: string | undefined;
+  /** ACP's session modes (`modes` at `session/new`, `current_mode_update`), for agents that offer no `mode` option. */
+  #modes: { available: string[]; current?: string } | undefined;
   #permission: ((ask: AgentPermissionAsk) => Promise<AgentPermissionAnswer>) | undefined;
   #turn: Turn | undefined;
   #turnDone: Promise<unknown> | undefined;
@@ -145,6 +155,7 @@ export class AcpAgentSession implements AgentSession {
     this.#proc = opts.process;
     this.#lastProgress = opts.clock.now();
     this.#selections = opts.selections ?? { keeper: new UserSelections(), backend: "agent" };
+    this.#readOnlyMode = opts.readOnlyMode;
     const tap = opts.tap;
     this.#peer = new RpcPeer({
       write: (line) => this.#proc.write(line),
@@ -241,8 +252,9 @@ export class AcpAgentSession implements AgentSession {
     if (caps.protocolVersion !== undefined && caps.protocolVersion !== ACP_PROTOCOL_VERSION) {
       throw new ContractError("refused", `the agent speaks ACP version ${caps.protocolVersion}; Clover speaks ${ACP_PROTOCOL_VERSION}`);
     }
-    const meta = this.#systemPromptMeta(opts.instructions);
-    if (opts.instructions && !meta) this.#preamble = opts.instructions;
+    const promptMeta = this.#systemPromptMeta(opts.instructions);
+    if (opts.instructions && !promptMeta) this.#preamble = opts.instructions;
+    const meta = promptMeta || opts.meta ? mergeMeta(promptMeta ?? {}, opts.meta ?? {}) : undefined;
     const base = { cwd: opts.cwd, mcpServers: opts.mcpServers, ...(meta ? { _meta: meta } : {}) };
     let result: unknown;
     if (opts.reattach) {
@@ -267,14 +279,14 @@ export class AcpAgentSession implements AgentSession {
       this.#agentSessionId = id;
     }
     this.#config = readConfigOptions(obj(result)?.["configOptions"]) ?? this.#config;
-    if (opts.readOnly) {
-      const option = this.#config.find((c) => c.id === opts.readOnly!.option);
-      const value = opts.readOnly.values.find((v) => option?.values.includes(v));
-      if (!option || value === undefined) {
-        throw new ContractError("refused", "this agent acts without asking and offers no read-only mode, so it can't start at read-only");
-      }
-      if (option.currentValue !== value) await this.#setOption(option.id, value);
+    const modes = obj(obj(result)?.["modes"]);
+    if (modes) {
+      const available = (Array.isArray(modes["availableModes"]) ? modes["availableModes"] : []).map((m) => str(obj(m)?.["id"])).filter((x): x is string => !!x);
+      const current = str(modes["currentModeId"]);
+      this.#modes = { available, ...(current ? { current } : {}) };
     }
+    await this.#setBackLeftovers();
+    if (opts.readOnly) await this.setReadOnly(true);
     if (opts.model !== undefined) await this.setConfig("model", opts.model);
     if (opts.effort !== undefined && !this.#quirks.config.effortInModel) await this.setConfig("effort", opts.effort);
     this.#state = "ready";
@@ -380,6 +392,63 @@ export class AcpAgentSession implements AgentSession {
       throw new ContractError("refused", `this agent takes no ${option} option${option === "effort" && q.effortInModel ? "; its effort is part of the model" : ""}`);
     }
     await this.#setOption(id, value);
+  }
+
+  /** A choice an earlier delegation left in the user's own settings (its process crashed before it could set it
+   *  back): set back now, before anything else (check 2's minor 4). */
+  async #setBackLeftovers(): Promise<void> {
+    if (!this.#quirks.config.choicePersists) return;
+    const { keeper, backend } = this.#selections;
+    for (const c of [...this.#config]) {
+      const user = keeper.leftover(backend, c.id, c.currentValue);
+      if (user === undefined || user === c.currentValue) {
+        if (user !== undefined) keeper.restored(backend, c.id);
+        continue;
+      }
+      const result = await this.#call("session/set_config_option", { sessionId: this.#agentSessionId, configId: c.id, value: user }, CONFIG_TIMEOUT_MS).catch(() => undefined);
+      if (result === undefined) continue;
+      keeper.restored(backend, c.id);
+      this.#config = readConfigOptions(result) ?? this.#config;
+    }
+  }
+
+  /** Switches the agent into its read-only mode, or back to the mode it had: its `mode` config option, else ACP's
+   *  `session/set_mode`. Refused when it offers no read-only mode, or its answer doesn't show the mode set (check 1's
+   *  minor 11: Clover counts on the agent's own word only once it says so). */
+  async setReadOnly(on: boolean): Promise<void> {
+    if (on === this.#readOnly) return;
+    const mode = this.#readOnlyMode;
+    const option = mode ? this.#config.find((c) => c.id === mode.option) : undefined;
+    const refuse = (why: string): never => {
+      throw new ContractError("refused", `this agent acts without asking and ${why}, so it can't run at read-only`);
+    };
+    if (on) {
+      if (option) {
+        const value = mode!.values.find((v) => option.values.includes(v));
+        if (value === undefined) refuse("offers no read-only mode");
+        this.#modeBefore = option.currentValue;
+        if (option.currentValue !== value) await this.#setOption(option.id, value!);
+        if (this.#config.find((c) => c.id === option.id)?.currentValue !== value) refuse("didn't confirm its read-only mode");
+      } else {
+        const value = mode?.values.find((v) => this.#modes?.available.includes(v));
+        if (value === undefined) refuse("offers no read-only mode");
+        this.#modeBefore = this.#modes!.current;
+        if (this.#modes!.current !== value) {
+          await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: value }, CONFIG_TIMEOUT_MS);
+          this.#modes!.current = value!;
+        }
+      }
+      this.#readOnly = true;
+      return;
+    }
+    if (this.#modeBefore !== undefined) {
+      if (option && option.currentValue !== this.#modeBefore) await this.#setOption(option.id, this.#modeBefore);
+      else if (!option && this.#modes && this.#modes.current !== this.#modeBefore) {
+        await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: this.#modeBefore }, CONFIG_TIMEOUT_MS);
+        this.#modes.current = this.#modeBefore;
+      }
+    }
+    this.#readOnly = false;
   }
 
   async #setOption(id: string, value: string): Promise<void> {
@@ -528,6 +597,14 @@ export class AcpAgentSession implements AgentSession {
       default:
         // Plans, commands, modes, titles, config and usage updates: progress, recorded on the wire.
         if (str(update?.["sessionUpdate"]) === "config_option_update") this.#config = readConfigOptions(update?.["configOptions"]) ?? this.#config;
+        if (str(update?.["sessionUpdate"]) === "current_mode_update" && this.#modes) {
+          const id = str(update?.["currentModeId"]) ?? str(update?.["modeId"]);
+          if (id) {
+            this.#modes.current = id;
+            // The agent left its read-only mode on its own: Clover no longer counts on it.
+            if (this.#readOnly && !this.#readOnlyMode?.values.includes(id)) this.#readOnly = false;
+          }
+        }
         return;
     }
   }
@@ -566,6 +643,13 @@ export class AcpAgentSession implements AgentSession {
   #emit(event: AgentEvent): void {
     this.#events.emit(event);
   }
+}
+
+/** A deep merge of two `_meta` objects; the second wins on a clash of plain values. */
+function mergeMeta(a: Obj, b: Obj): Obj {
+  const out: Obj = { ...a };
+  for (const [k, v] of Object.entries(b)) out[k] = obj(v) && obj(out[k]) ? mergeMeta(out[k] as Obj, v as Obj) : v;
+  return out;
 }
 
 /** A `rawInput` too long to keep whole becomes a preview of its JSON (review 12); with no `command` left, a card for
