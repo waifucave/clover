@@ -51,7 +51,8 @@ export interface Screenshot {
  *  make (`onCdpEvent`) is left out of this copy. */
 export interface BrowserApi {
   tabs(filter?: { owner?: TabOwner; computer?: string }): Promise<TabView[]>;
-  open(opts: { owner: TabOwner; url?: string; show?: boolean; computer?: string }): Promise<TabView>;
+  /** `show` puts it in that view at that size at once (lane B's B-M1 shape); headless otherwise. */
+  open(opts: { owner: TabOwner; url?: string; show?: { view: string; viewport: Viewport }; computer?: string }): Promise<TabView>;
   close(tab: string): Promise<void>;
   navigate(tab: string, url: string): Promise<TabView>;
   show(tab: string, view: string, viewport: Viewport): Promise<TabView>;
@@ -76,6 +77,12 @@ export interface BrowserSpotProps {
   session?: string;
   /** Present in a bot's tab: whose tabs these are. */
   bot?: string;
+  /** The panel host's header row for this panel (lane F's `PanelHost`): the tab row is drawn there, and the host's
+   *  title steps aside. Absent or null: the panel draws its own row. */
+  header?: HTMLElement | null;
+  /** Whether the person used this panel last (lane F's `PanelHost`): of two panels showing browser tabs, the one used
+   *  last has the live view (ruling R8), so becoming the one used last takes the live view back. */
+  usedLast?: boolean;
 }
 
 /** What lane E's runtime gives every component (`EntryProps` in `ui-api.ts`): its spot's props, the resolved tokens
