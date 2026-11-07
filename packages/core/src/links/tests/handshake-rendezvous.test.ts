@@ -88,6 +88,19 @@ describe("the handshake's rendezvous", () => {
     expect(s.slots.has("Slot123")).toBe(true);
   });
 
+  test("a remove that failed keeps its token, so it can be tried again", async () => {
+    const s = service();
+    const host = new HandshakeRendezvous({ baseUrl: s.url });
+    await host.publish("Slot456", "the-box", 600);
+    s.setDown(true);
+    const failed = await host.remove("Slot456").then(() => null, (e: unknown) => e);
+    expect(isContractError(failed) && failed.code === "offline").toBe(true);
+    expect(s.slots.has("Slot456")).toBe(true);
+    s.setDown(false);
+    await host.remove("Slot456");
+    expect(s.slots.has("Slot456")).toBe(false);
+  });
+
   test("an unreachable or failing service is offline; nothing else is", async () => {
     const s = service();
     const r = new HandshakeRendezvous({ baseUrl: s.url });

@@ -1,11 +1,11 @@
 // The daemon's account settings (account-config.ts): production's by default, account.json read strictly, the
 // environment only in dev and test builds, and plain http only to this machine there.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
-import { ACCOUNT_CONFIG_FILE, PRODUCTION_ACCOUNT_SERVICE, resolveAccountConfig, waifucaveAccount } from "../account-config";
+import { ACCOUNT_CONFIG_FILE, PRODUCTION_ACCOUNT_SERVICE, PRODUCTION_ACCOUNT_SETTINGS, resolveAccountConfig, waifucaveAccount } from "../account-config";
 import { DeviceKey } from "../device-key";
 
 const PROD_HANDSHAKE = "https://handshake.waifucave.com";
@@ -52,6 +52,58 @@ describe("the account settings", () => {
       expect(b.account).toBeNull();
       expect(b.problems[0]).toContain("nothing in it was used");
     }
+  });
+
+  test("inherited names are keys it doesn't take: each refuses the file", () => {
+    for (const name of ["toString", "constructor", "hasOwnProperty", "valueOf", "__proto__"]) {
+      // Raw JSON, so "__proto__" is a key of the file and not the literal's prototype.
+      const raw = `{"authUrl":"https://abc.supabase.co","anonKey":"k",${JSON.stringify(name)}:"https://evil.example"}`;
+      const r = resolveAccountConfig({ home: home(raw), env: {}, distBuild: false, log: quiet });
+      expect(r.account).toBeNull();
+      expect(r.problems[0]).toContain("nothing in it was used");
+      expect(r.problems.join(" ")).not.toContain("evil.example");
+    }
+  });
+
+  test("a refused key is named only when it looks like a setting's name", () => {
+    const pasted = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln";
+    const r = resolveAccountConfig({ home: home({ authUrl: "https://abc.supabase.co", [pasted]: "x" }), env: {}, distBuild: true, log: quiet });
+    expect(r.problems[0]).toContain("an unexpected key");
+    expect(r.problems.join(" ")).not.toContain(pasted);
+    const named = resolveAccountConfig({ home: home({ refresh_token: "x" }), env: {}, distBuild: true, log: quiet });
+    expect(named.problems[0]).toContain('("refresh_token")');
+  });
+
+  test("a file that can't be read is reported as unreadable, not as bad JSON", () => {
+    const dir = home();
+    mkdirSync(join(dir, ACCOUNT_CONFIG_FILE));
+    const r = resolveAccountConfig({ home: dir, env: {}, distBuild: true, log: quiet });
+    expect(r.problems[0]).toContain("can't be read");
+    expect(r.problems[0]).not.toContain("isn't JSON");
+  });
+
+  test("a release build takes from the file only what production lacks, and says so once", () => {
+    const file = { authUrl: "https://abc.supabase.co", anonKey: "k", serviceUrl: "https://other.example/auth", handshakeUrl: "https://other.example" };
+    const lines: string[] = [];
+    const dist = resolveAccountConfig({ home: home(file), env: {}, distBuild: true, log: (l) => lines.push(l) });
+    expect(dist.account).toEqual({ authUrl: "https://abc.supabase.co", anonKey: "k", serviceUrl: PRODUCTION_ACCOUNT_SERVICE });
+    expect(dist.handshakeUrl).toBe(PROD_HANDSHAKE);
+    expect(dist.sources).toEqual({ authUrl: "file", anonKey: "file", serviceUrl: "default", handshakeUrl: "default" });
+    expect(dist.problems.filter((p) => p.includes("a release build keeps production's"))).toHaveLength(2);
+    expect(lines).toEqual([`[account] the account settings came from ${ACCOUNT_CONFIG_FILE}`]);
+
+    // A dev build takes the whole file.
+    const dev = resolveAccountConfig({ home: home(file), env: {}, distBuild: false, log: quiet });
+    expect(dev.account?.serviceUrl).toBe("https://other.example/auth");
+    expect(dev.handshakeUrl).toBe("https://other.example");
+
+    // Once production has every setting, a release build ignores the file entirely, and says nothing of it.
+    const full = { ...PRODUCTION_ACCOUNT_SETTINGS, authUrl: "https://prod.supabase.co", anonKey: "prod-anon" };
+    const later: string[] = [];
+    const sealed = resolveAccountConfig({ home: home(file), env: {}, distBuild: true, production: full, log: (l) => later.push(l) });
+    expect(sealed.account).toEqual({ authUrl: "https://prod.supabase.co", anonKey: "prod-anon", serviceUrl: PRODUCTION_ACCOUNT_SERVICE });
+    expect(Object.values(sealed.sources)).not.toContain("file");
+    expect(later).toEqual([]);
   });
 
   test("the environment overrides in dev and test builds only; a release build ignores it", () => {

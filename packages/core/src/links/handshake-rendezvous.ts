@@ -53,14 +53,14 @@ export class HandshakeRendezvous implements PairingRendezvous {
     return typeof body?.box === "string" ? body.box : undefined;
   }
 
-  /** Clears a slot this instance published; anything else is left to its ttl. */
+  /** Clears a slot this instance published; anything else is left to its ttl. The token is forgotten only once the
+   *  slot is gone (removed, or already ended), so a remove that failed can be tried again. */
   async remove(slot: string): Promise<void> {
     const token = this.#tokens.get(slot);
     if (token === undefined) return;
-    this.#tokens.delete(slot);
     const res = await this.#call("DELETE", slot, undefined, { authorization: `Bearer ${token}` });
-    if (res.status === 204 || res.status === 404) return;
-    throw await failure(res);
+    if (res.status !== 204 && res.status !== 404) throw await failure(res);
+    this.#tokens.delete(slot);
   }
 
   async #call(method: string, slot: string, body?: string, headers: Record<string, string> = {}): Promise<Response> {

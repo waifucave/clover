@@ -9,7 +9,9 @@
 //      ignores them and says so once (`build-kind.ts`): anything that can start `clover-core` could otherwise point the
 //      device's sign-in and its device key's statements at a server of its choosing.
 //   2. `<clover home>/account.json`, read strictly: an unknown key (a token or secret put there by mistake included)
-//      refuses the whole file, which is then not used.
+//      refuses the whole file, which is then not used. A release build takes from it only the settings production
+//      leaves unset (today the sign-in project's, `authUrl` and `anonKey`, both public), never the account service or
+//      the handshake, and says once that it did; once production has them all, a release build ignores the file.
 //   3. The built-in production values.
 //
 // With no sign-in project (`authUrl` and `anonKey`) the account is off: the daemon runs signed out and a sign-in says
@@ -45,10 +47,13 @@ export type AccountSetting = keyof typeof ACCOUNT_SETTINGS;
 const URL_SETTINGS: readonly AccountSetting[] = ["authUrl", "serviceUrl", "emailSignInUrl", "handshakeUrl"];
 
 /** The built-in values. The sign-in project's are the owner's to set (live gate); until then a build has none. */
-const PRODUCTION: Partial<Record<AccountSetting, string>> = {
+export const PRODUCTION_ACCOUNT_SETTINGS: Readonly<Partial<Record<AccountSetting, string>>> = Object.freeze({
   serviceUrl: PRODUCTION_ACCOUNT_SERVICE,
   handshakeUrl: WAIFUCAVE_DEVICE_SERVICES.handshake.url,
-};
+});
+
+/** A refused key is named in a log only when it looks like a setting's name; anything else could be a pasted secret. */
+const NAMEABLE_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,39}$/;
 
 export interface ResolvedAccountConfig {
   /** The account client's settings; null when the account is off. */
@@ -67,8 +72,11 @@ export interface ResolveAccountConfigOptions {
   /** The Clover home, where `account.json` lives. */
   home: string;
   env?: Record<string, string | undefined>;
-  /** A release build (`DIST_BUILD`); tests pass it. */
+  /** Tests only. The daemon never passes this, and nothing derives it from the environment: it defaults to the
+   *  compile-time `DIST_BUILD` (build-kind.ts), which is what makes a release build ignore the environment. */
   distBuild?: boolean;
+  /** Tests only: production's built-in settings (`PRODUCTION_ACCOUNT_SETTINGS`), to test a build that has them all. */
+  production?: Readonly<Partial<Record<AccountSetting, string>>>;
   log?(line: string): void;
 }
 
@@ -76,18 +84,31 @@ export function resolveAccountConfig(o: ResolveAccountConfigOptions): ResolvedAc
   const dist = o.distBuild ?? DIST_BUILD;
   const env = o.env ?? process.env;
   const log = o.log ?? ((l: string) => console.error(l));
+  const production = o.production ?? PRODUCTION_ACCOUNT_SETTINGS;
   const problems: string[] = [];
-  const values: Partial<Record<AccountSetting, string>> = {};
-  const sources: ResolvedAccountConfig["sources"] = {};
+  // No prototype: nothing a file names can reach an inherited property.
+  const values = Object.create(null) as Partial<Record<AccountSetting, string>>;
+  const sources = Object.create(null) as ResolvedAccountConfig["sources"];
 
-  for (const [k, v] of Object.entries(PRODUCTION) as [AccountSetting, string][]) {
+  for (const k of Object.keys(ACCOUNT_SETTINGS) as AccountSetting[]) {
+    const v = Object.hasOwn(production, k) ? production[k] : undefined;
+    if (v === undefined) continue;
     values[k] = v;
     sources[k] = "default";
   }
-  for (const [k, v] of Object.entries(readAccountFile(o.home, problems)) as [AccountSetting, string][]) {
+  let fromFile = 0;
+  for (const [k, v] of readAccountFile(o.home, problems)) {
+    // A release build takes from the file only what production leaves unset, so it tightens by itself once
+    // production has every setting.
+    if (dist && values[k] !== undefined) {
+      problems.push(`${ACCOUNT_CONFIG_FILE}'s ${k} isn't used: a release build keeps production's`);
+      continue;
+    }
     values[k] = v;
     sources[k] = "file";
+    fromFile++;
   }
+  if (dist && fromFile > 0) log(`[account] the account settings came from ${ACCOUNT_CONFIG_FILE}`);
   for (const [k, name] of Object.entries(ACCOUNT_SETTINGS) as [AccountSetting, string][]) {
     const v = env[name];
     if (v === undefined || v === "") continue;
@@ -120,7 +141,7 @@ export function resolveAccountConfig(o: ResolveAccountConfigOptions): ResolvedAc
 
   const handshakeUrl = values.handshakeUrl ?? WAIFUCAVE_DEVICE_SERVICES.handshake.url;
   const missing = (["authUrl", "anonKey", "serviceUrl"] as const).filter((k) => values[k] === undefined);
-  const resolved: ResolvedAccountConfig = { account: null, handshakeUrl: trimSlash(handshakeUrl), sources, problems };
+  const resolved: ResolvedAccountConfig = { account: null, handshakeUrl: trimSlash(handshakeUrl), sources: { ...sources }, problems };
   if (missing.length > 0) {
     resolved.off = `account sign-in isn't set up in this build (no ${missing.join(", ")})`;
     return resolved;
@@ -135,32 +156,42 @@ export function resolveAccountConfig(o: ResolveAccountConfigOptions): ResolvedAc
 }
 
 /** `account.json`'s settings, or none when it is absent or refused (with the reason in `problems`). */
-function readAccountFile(home: string, problems: string[]): Partial<Record<AccountSetting, string>> {
+function readAccountFile(home: string, problems: string[]): Map<AccountSetting, string> {
+  const out = new Map<AccountSetting, string>();
   const path = join(home, ACCOUNT_CONFIG_FILE);
-  if (!existsSync(path)) return {};
+  if (!existsSync(path)) return out;
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    problems.push(`${ACCOUNT_CONFIG_FILE} can't be read${code ? ` (${code})` : ""}, so nothing in it was used`);
+    return out;
+  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
+    parsed = JSON.parse(text);
   } catch {
     problems.push(`${ACCOUNT_CONFIG_FILE} isn't JSON, so nothing in it was used`);
-    return {};
+    return out;
   }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     problems.push(`${ACCOUNT_CONFIG_FILE} isn't a JSON object, so nothing in it was used`);
-    return {};
+    return out;
   }
-  const out: Partial<Record<AccountSetting, string>> = {};
   for (const [k, v] of Object.entries(parsed)) {
-    if (!(k in ACCOUNT_SETTINGS)) {
-      // Named, never its value: a token or secret put here by mistake must not reach a log either.
-      problems.push(`${ACCOUNT_CONFIG_FILE} has a key it doesn't take ("${k.slice(0, 40)}"), so nothing in it was used; it takes only ${Object.keys(ACCOUNT_SETTINGS).join(", ")}, and secrets belong in the secret store`);
-      return {};
+    if (!Object.hasOwn(ACCOUNT_SETTINGS, k)) {
+      // Never its value, and its name only when it looks like a setting's: a token or secret put here by mistake
+      // must not reach a log either.
+      const named = NAMEABLE_KEY.test(k) ? `a key it doesn't take ("${k}")` : "an unexpected key";
+      problems.push(`${ACCOUNT_CONFIG_FILE} has ${named}, so nothing in it was used; it takes only ${Object.keys(ACCOUNT_SETTINGS).join(", ")}, and secrets belong in the secret store`);
+      return new Map();
     }
     if (typeof v !== "string") {
       problems.push(`${ACCOUNT_CONFIG_FILE}'s ${k} isn't a string, so nothing in it was used`);
-      return {};
+      return new Map();
     }
-    if (v !== "") out[k as AccountSetting] = v;
+    if (v !== "") out.set(k as AccountSetting, v);
   }
   return out;
 }
@@ -193,6 +224,7 @@ export interface WaifucaveAccountOptions {
   store: SecretStore;
   clock: { now(): number };
   env?: Record<string, string | undefined>;
+  /** Tests only, as `resolveAccountConfig`'s: the daemon leaves it to the compile-time `DIST_BUILD`. */
   distBuild?: boolean;
   fetch?: (req: Request) => Promise<Response>;
   log?(line: string): void;
