@@ -9,13 +9,13 @@
 //   folded name, so a write lands on the name the disk already has), the new content goes to a fresh file made with
 //   `O_CREAT | O_EXCL | O_NOFOLLOW` beside the target, the folder's real path is checked against the memory folder's,
 //   and the file is renamed over the target, which replaces a link there rather than writing through it. Lane C's
-//   `writeChecked` (#205) isn't on main yet; this is the brief's stand-in.
+//   `writeChecked`/`writeOwnFile` aren't on main yet (#205, and #224 merged without them); this is the brief's stand-in.
 // * **Reads never follow a link either** (a bot's runner could leave one in its own memory pointing at another bot's
 //   `MEMORY.md`, and this sync runs as the core, outside the fence): the scan lists regular files only, never going
 //   into a linked folder; every folder from the home down to the file must be a real one; the file is opened with
 //   `O_NOFOLLOW`, and what was opened must be, by its device and inode, the file at a real path inside the bot's own
 //   memory folder. A file with more than one link (a hard link to another file) is never read. Lane C's
-//   `readOwnFile` (#224) isn't on main yet; this is the brief's stand-in.
+//   `readOwnFile` isn't on main yet; this is the brief's stand-in.
 import { createHash, randomBytes } from "node:crypto";
 import {
   closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, unlinkSync,
