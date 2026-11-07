@@ -5,11 +5,23 @@
 //   * the connection's role is one the event lists, and the connection subscribed to the event's area;
 //   * a plugin's connection (`layer`, `plugin-host`) also holds the event's capability, from the plugin registry
 //     (`pluginCapabilities`). A shared plugin host, which runs several plugins, gets no event that needs one;
-//   * the caller's own filter (`to`), for an event meant for some connections only.
+//   * the caller's own filter (`to`), for an event meant for some connections only. An owner-scoped event (a
+//     terminal's output, a tab's changes, a followed tab's DevTools event, a call's output, a watched folder's
+//     changes: `OWNER_SCOPED_EVENTS`) belongs to whoever owns the terminal, tab, call or watch, and is refused
+//     without one;
+//   * a plugin's connection never learns which device answered a card (`card_resolved` without `device`).
 // A connection whose send throws (it just closed) doesn't stop the others. Remote and web clients, which lane H's
 // link brings in as Clover connections, are routed the same way.
 import { CLOVER_EVENTS, CORE_EVENT_NOTIFICATION, PLUGIN_ROLES } from "@waifucave/clover-protocol";
 import type { CloverConn } from "./clover";
+
+/** Events that belong to one owner (a session's or a plugin's terminal, tab, call or watch), sent only with `to`. */
+export const OWNER_SCOPED_EVENTS: ReadonlySet<string> = new Set([
+  "terminal_output", "tab_changed", "tab_closed", "cdp_event", "tool_output", "tree_changed",
+]);
+
+/** Fields a plugin's connection doesn't get, by event type. */
+const PLUGIN_WITHHELD: Readonly<Record<string, readonly string[]>> = { card_resolved: ["device"] };
 
 /** A `core` event as a lane hands it over: its `type`, and `ts` (the shared clock's) unless the sender stamps it. */
 export interface CoreEventInput {
@@ -48,10 +60,21 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
     r.log?.(`[core.event] not a core event, not sent: ${JSON.stringify(String(event.type).slice(0, 64))}`);
     return 0;
   }
+  if (OWNER_SCOPED_EVENTS.has(spec.type) && opts.to === undefined) {
+    r.log?.(`[core.event] a ${spec.type} event belongs to its owner and came with no \`to\`; not sent`);
+    return 0;
+  }
   const parsed = spec.schema.safeParse(event.ts === undefined ? { ...event, ts: (r.now ?? Date.now)() } : event);
   if (!parsed.success) {
     r.log?.(`[core.event] a ${spec.type} event didn't parse; not sent`);
     return 0;
+  }
+  const withheld = PLUGIN_WITHHELD[spec.type];
+  let forPlugins: unknown = parsed.data;
+  if (withheld !== undefined) {
+    const copy = { ...(parsed.data as Record<string, unknown>) };
+    for (const k of withheld) delete copy[k];
+    forPlugins = copy;
   }
   let sent = 0;
   for (const conn of r.connections()) {
@@ -62,7 +85,7 @@ export function sendCoreEvent(r: CoreEventRouting, event: CoreEventInput, opts: 
     }
     if (opts.to !== undefined && !opts.to(conn)) continue;
     try {
-      conn.notify(CORE_EVENT_NOTIFICATION, parsed.data);
+      conn.notify(CORE_EVENT_NOTIFICATION, PLUGIN_ROLES.includes(conn.role) ? forPlugins : parsed.data);
       sent++;
     } catch {
       // closing: its close handler removes it
