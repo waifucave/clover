@@ -72,3 +72,17 @@ export function homeRefusal(o: { platform?: NodeJS.Platform; distBuild?: boolean
   if (account !== undefined && home !== "" && real(home) === real(account)) return undefined;
   return `clover-core: refusing to start: HOME is ${JSON.stringify(home)}, not this account's home${account === undefined ? " (which could not be read)" : ` (${account})`}. On macOS HOME chooses the keychains and trust settings this process reads; start it with HOME unset or set to the account's home.`;
 }
+
+/**
+ * Why a macOS release refuses this raw environment, or undefined: any `DYLD_` entry. Under the hardened runtime with
+ * System Integrity Protection on, dyld removes every `DYLD_*` variable before the process starts, so one that is
+ * still here means that protection is off, and the macOS seal (the `DYLD_…` names seal-bun-doors.ts gives Bun's own
+ * variables) and the block on DYLD_INSERT_LIBRARIES are open. With SIP off a library can be injected before `main`,
+ * which nothing in the core can undo; this refusal is the cheap guard that at least stops the core there.
+ */
+export function dyldRefusal(raw: readonly string[], o: { platform?: NodeJS.Platform; distBuild?: boolean } = {}): string | undefined {
+  if ((o.platform ?? process.platform) !== "darwin" || !(o.distBuild ?? DIST_BUILD)) return undefined;
+  const names = [...new Set(raw.filter((e) => e.startsWith("DYLD_")).map((e) => e.slice(0, Math.max(e.indexOf("="), 0) || e.length)))];
+  if (names.length === 0) return undefined;
+  return `clover-core: refusing to start: ${names.length === 1 ? "a DYLD_ variable is" : "DYLD_ variables are"} set (${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}). dyld removes them from this hardened release when System Integrity Protection is on; one that reached it means SIP is off, and then any library can be injected into this process. Unset ${names.length === 1 ? "it" : "them"}.`;
+}
