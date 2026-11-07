@@ -81,6 +81,8 @@ export interface BotDriverDeps {
   profile?: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
   spawn: SpawnClaudeCodeProcess;
+  /** macOS: the process holder (`EmbeddedSessionDeps.processHolder`); default, the one beside the daemon. */
+  processHolder?: string;
   /** Test seam: the agent SDK's `query`. */
   query?: typeof sdkQuery;
   /** The approval check for a session's tool calls (lanes B and C's broker, through the approval bridge). */
@@ -629,7 +631,9 @@ export class BotSessionDriver implements SessionDriver {
       includePartialMessages: true,
       stderr: (chunk) => this.#log(`bot driver ${ctx.sessionId}: runtime: ${chunk.trimEnd()}`),
       additionalDirectories: [ctx.paths.root],
-      ...(sandbox === undefined ? {} : { sandbox }),
+      // A bot's commands never get launchd to start what the pause can't stop (F8): the runtime's default floor, or the
+      // host's sandbox, with the paths to launchd closed.
+      sandbox: { ...(sandbox ?? { enabled: true }), denyLaunchServices: true },
       ...(resume ? { resume: state.backendSessionId } : { sessionId: state.backendSessionId }),
     };
     // Through the guarded fill (`fillProvider`): the provider sets the model's own keys and nothing else.

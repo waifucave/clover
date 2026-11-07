@@ -4,6 +4,8 @@
 // and, for a real model, the daemon's provider fill (the provider, the credential broker, the model plugins' adapters).
 // Owner: lane A; lane K builds on it.
 import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { buildCoreBrand } from "../brand";
 import { testProviderNameFor } from "../provider-selection";
 
@@ -19,6 +21,22 @@ export interface EmbeddedSessionDeps {
   provider?(model: string, options: Options): void | Promise<void>;
   /** Extra environment for the runtime (never secrets). */
   env?: Record<string, string>;
+  /** macOS: the process holder (agent SDK 0.0.70's `native/process-holder.c`, built and signed by lane M's packaging
+   *  under its own identity). Every command of the session runs as its child, so what a command leaves running,
+   *  setsid'd and double-forked processes included, is adopted as a background task the pause stops. Default: the
+   *  `clover-process-holder` beside the daemon's executable, when it is there; without one, the command's process group
+   *  stands for what it leaves. */
+  processHolder?: string;
+}
+
+/** The file name of the process holder beside the daemon (lane M's layout). */
+export const PROCESS_HOLDER_FILE = "clover-process-holder";
+
+/** The process holder the session's commands run under: the one named, else the one beside the daemon (macOS). */
+export function processHolderFor(deps: Pick<EmbeddedSessionDeps, "processHolder">): string | undefined {
+  if (process.platform !== "darwin") return undefined;
+  const path = deps.processHolder ?? join(dirname(process.execPath), PROCESS_HOLDER_FILE);
+  return existsSync(path) ? path : undefined;
 }
 
 /** The environment variables a session's runtime inherits from the daemon; nothing else does. */
@@ -26,7 +44,7 @@ export const EMBEDDED_ENV_ALLOW = ["PATH", "HOME", "TMPDIR", "LANG"] as const;
 
 /** The options every in-process session starts from: brand, model, folder, environment and spawn hook. The caller
  *  adds its prompt, tools, servers, permissions and transcript (`resume` or `sessionId`). */
-export function embeddedSessionOptions(deps: Pick<EmbeddedSessionDeps, "home" | "profile" | "spawn" | "env">, s: { model: string; effort?: string; cwd: string }): Options {
+export function embeddedSessionOptions(deps: Pick<EmbeddedSessionDeps, "home" | "profile" | "spawn" | "env" | "processHolder">, s: { model: string; effort?: string; cwd: string }): Options {
   const env: Record<string, string> = {};
   for (const key of EMBEDDED_ENV_ALLOW) {
     const v = process.env[key];
@@ -36,6 +54,10 @@ export function embeddedSessionOptions(deps: Pick<EmbeddedSessionDeps, "home" | 
   // Pinned last, so nothing a caller passes moves the home or the profile.
   env.CLOVER_HOME = deps.home;
   env.CLOVER_PROFILE = deps.profile ?? "";
+  // The runtime reads `<PREFIX>PROCESS_HOLDER` at each command (F8); set here, after the caller's, so only the seam names it.
+  const holder = processHolderFor(deps);
+  if (holder !== undefined) env.CLOVER_PROCESS_HOLDER = holder;
+  else delete env.CLOVER_PROCESS_HOLDER;
   const testProvider = testProviderNameFor(s.model);
   if (testProvider !== undefined) env.WINTER_TEST_PROVIDER = testProvider;
   return {

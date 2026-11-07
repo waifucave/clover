@@ -223,6 +223,8 @@ class InProcessSession implements AgentSession {
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
       sandbox: {
         enabled: true,
+        // Nothing the agent's commands start escapes the pause as launchd's (F8).
+        denyLaunchServices: true,
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite, ...privateFolders], denyRead: [...fence.denyRead, ...privateFolders] },
       },
       // The file tools too: `//` anchors a rule at the filesystem root (mode-options.ts).

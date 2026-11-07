@@ -396,4 +396,23 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     expect(run([s("blender", "acme"), s("blender", "blender-tools/render")], new Map([["clover", "clover"], ["blender", "blender-tools"]]))).toEqual({ kept: ["blender-tools/render:blender"], refused: ["acme:blender"] });
     expect(run([s("ok", "acme")], ["clover"])).toEqual({ kept: ["acme:ok"], refused: [] });
   });
+
+  test("F8: the seam names the process holder for the session's commands, beside the daemon by default (macOS)", async () => {
+    const { embeddedSessionOptions, processHolderFor, PROCESS_HOLDER_FILE } = await import("../../../src/runtime-sdk/turn-loop/embedded-session");
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "clover-a3-holder-"));
+    const holder = join(dir, PROCESS_HOLDER_FILE);
+    writeFileSync(holder, "");
+    const spawn = (() => { throw new Error("unused"); }) as never;
+    const named = embeddedSessionOptions({ home: dir, spawn, processHolder: holder, env: { CLOVER_PROCESS_HOLDER: "/elsewhere" } }, { model: "winter-test/echo", cwd: dir });
+    const missing = embeddedSessionOptions({ home: dir, spawn, processHolder: join(dir, "nope"), env: { CLOVER_PROCESS_HOLDER: "/elsewhere" } }, { model: "winter-test/echo", cwd: dir });
+    if (process.platform === "darwin") {
+      expect(named.env?.CLOVER_PROCESS_HOLDER).toBe(holder);
+      expect(processHolderFor({ processHolder: holder })).toBe(holder);
+    } else expect(named.env?.CLOVER_PROCESS_HOLDER).toBeUndefined();
+    // Only the seam names it: a caller's own value never stands.
+    expect(missing.env?.CLOVER_PROCESS_HOLDER).toBeUndefined();
+  });
 });

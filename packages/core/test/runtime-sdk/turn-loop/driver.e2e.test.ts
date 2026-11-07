@@ -378,6 +378,74 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  // F8: what a bot's command leaves running is adopted as a background task (agent SDK 0.0.70), which the pause stops.
+  // The process holder is built here from the SDK's own source (lane M packages and signs it for the app).
+  const holderPath = (() => {
+    if (process.platform !== "darwin") return undefined;
+    const src = join(import.meta.dir, "../../../node_modules/@waifucave/clover-agent-runtime/native/process-holder.c");
+    const out = join(tempHome(), "clover-process-holder");
+    return Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0 ? out : undefined;
+  })();
+  const sleepTag = () => `${(Date.now() % 10000) * 10 + Math.floor(Math.random() * 10)}`;
+  const sleeping = (n: string) => Bun.spawnSync(["/usr/bin/pgrep", "-f", `^sleep ${n}$`]).exitCode === 0;
+  const until = async (ok: () => boolean, ms = 10_000) => {
+    for (let i = 0; i < ms / 100 && !ok(); i++) await Bun.sleep(100);
+    return ok();
+  };
+
+  test.if(process.platform === "darwin")("F8: the pause stops what a command left running: P10's two forms and setsid", async () => {
+    expect(holderPath).toBeDefined();
+    const home = tempHome();
+    const { s, ctx } = pausable();
+    const n = [1, 2, 3].map((i) => `7${sleepTag()}${i}`);
+    const driver = new BotSessionDriver(context(home, "winter-test/calls", ctx), deps(home, spawn, { processHolder: holderPath!, pausePollMs: 200 }));
+    try {
+      const command = `(sleep ${n[0]} &) >/dev/null 2>&1; nohup sleep ${n[1]} >/dev/null 2>&1 & python3 -c 'import os,subprocess; os.setsid(); subprocess.Popen(["sleep","${n[2]}"]); os._exit(0)' & sleep 0.5; echo ok`;
+      const end = await driver.turn(user(`CALL Bash ${JSON.stringify({ command, description: "leave three" })}`), control());
+      expect(results(end)[0]!.content).toContain("still running");
+      for (const x of n) expect(await until(() => sleeping(x))).toBe(true);
+      await Bun.sleep(1_000);
+      for (const x of n) expect(sleeping(x)).toBe(true);
+      s.may = false;
+      expect(await until(() => n.every((x) => !sleeping(x)))).toBe(true);
+    } finally {
+      s.may = true;
+      await driver.stop();
+      for (const x of n) Bun.spawnSync(["/usr/bin/pkill", "-f", `^sleep ${x}$`]);
+    }
+  }, 60_000);
+
+  test.if(process.platform === "darwin")("F8: a nohup server a command started stays up while the bots run; the session's end stops it", async () => {
+    const home = tempHome();
+    const n = `8${sleepTag()}1`;
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { processHolder: holderPath!, pausePollMs: 200 }));
+    try {
+      const end = await driver.turn(user(`CALL Bash ${JSON.stringify({ command: `nohup sleep ${n} >/dev/null 2>&1 & echo started`, description: "server" })}`), control());
+      expect(results(end)[0]!.content).toContain("still running");
+      expect(await until(() => sleeping(n))).toBe(true);
+      await Bun.sleep(2_000);
+      expect(sleeping(n)).toBe(true);
+    } finally {
+      await driver.stop();
+    }
+    expect(await until(() => !sleeping(n))).toBe(true);
+  }, 60_000);
+
+  test("F8: a bot's session closes the paths to launchd (denyLaunchServices), whatever sandbox the host gives", async () => {
+    const home = tempHome();
+    const seen: unknown[] = [];
+    const query: typeof sdkQuery = (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); };
+    for (const sandbox of [() => ({ enabled: false }), () => undefined]) {
+      const driver = new BotSessionDriver(context(home, "winter-test/echo", { sessionId: `b_l${seen.length}` }), deps(home, spawn, { query, sandbox }));
+      try {
+        expect((await driver.turn(user("hi"), control())).reason).toBe("end_turn");
+      } finally {
+        await driver.stop();
+      }
+    }
+    expect(seen).toEqual([{ enabled: false, denyLaunchServices: true }, { enabled: true, denyLaunchServices: true }]);
+  }, 60_000);
+
   test("review P8: nothing is recorded while paused after a tool round ends", async () => {
     const home = tempHome();
     const { s, ctx } = pausable();
