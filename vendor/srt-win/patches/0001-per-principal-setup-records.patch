@@ -5,6 +5,7 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 ---
 
 
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -51,6 +52,12 @@ is unchanged.
  src/reg.rs     |  37 +++++++
  src/user.rs    |  16 ++-
  4 files changed, 415 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 125 ++++++++++++++++++----
+ src/install.rs | 281 ++++++++++++++++++++++++++++++++++++++++++++++---
+ src/reg.rs     |  37 +++++++
+ src/user.rs    |  16 ++-
+ 4 files changed, 416 insertions(+), 43 deletions(-)
 
 diff --git a/src/cli.rs b/src/cli.rs
 index 8e616e2..992f5f0 100644
@@ -318,7 +325,7 @@ index 8e616e2..992f5f0 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..6b0a76e 100644
+index ba0ac37..2c0f969 100644
 --- a/src/install.rs
 +++ b/src/install.rs
 @@ -49,19 +49,116 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
@@ -417,7 +424,7 @@ index ba0ac37..6b0a76e 100644
 +/// Whether the calling process's token counts as an administrator for
 +/// the caller gate. Uses CheckTokenMembership, so deny-only group
 +/// memberships are honoured: an unelevated admin is NOT exempt.
-+fn caller_is_admin() -> bool {
++pub(crate) fn caller_is_admin() -> bool {
 +    use windows::core::BOOL;
 +    use windows::Win32::Foundation::CloseHandle;
 +    use windows::Win32::Security::{CheckTokenMembership, TOKEN_QUERY};
@@ -677,10 +684,11 @@ index ba0ac37..6b0a76e 100644
      Ok(())
  }
  
-@@ -703,3 +948,4 @@ mod tests {
+@@ -703,3 +948,5 @@ mod tests {
          }
      }
  }
++
 +
 diff --git a/src/reg.rs b/src/reg.rs
 index 68ff089..abbf150 100644
