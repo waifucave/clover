@@ -132,9 +132,11 @@
                       "enum": [
                         "secure-enclave",
                         "keystore",
+                        "keychain",
                         "app-keychain",
                         "tpm",
-                        "hello",
+                        "dpapi",
+                        "secret-service",
                         "none"
                       ]
                     },
@@ -991,9 +993,11 @@
             "enum": [
               "secure-enclave",
               "keystore",
+              "keychain",
               "app-keychain",
               "tpm",
-              "hello",
+              "dpapi",
+              "secret-service",
               "none"
             ]
           },
@@ -2481,9 +2485,11 @@
                     "enum": [
                       "secure-enclave",
                       "keystore",
+                      "keychain",
                       "app-keychain",
                       "tpm",
-                      "hello",
+                      "dpapi",
+                      "secret-service",
                       "none"
                     ]
                   },
