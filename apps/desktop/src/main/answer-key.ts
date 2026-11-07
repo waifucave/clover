@@ -38,7 +38,7 @@ export interface SafeStorageLike {
  *  protocol's own choice (macOS's Keychain limited to the signed app; nothing elsewhere this app can prove). */
 export function safeStorageVault(file: string, storage: SafeStorageLike, platform: NodeJS.Platform = process.platform): KeyVault {
   return {
-    held: answerKeyHolderFor(platform, { appKeychain: platform === "darwin" }),
+    held: answerKeyHolderFor(platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux", { appKeychain: platform === "darwin" }),
     load() {
       if (!existsSync(file) || !storage.isEncryptionAvailable()) return undefined;
       try {

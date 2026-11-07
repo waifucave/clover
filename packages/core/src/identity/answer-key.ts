@@ -3,10 +3,10 @@
 // the app's main process) can't sign with it where the OS allows:
 // * macOS: a Keychain item only the signed app can read (`app-keychain`; Electron's safeStorage key is one), with no
 //   biometric access control;
-// * Windows: a TPM-held key that needs no PIN or Hello gesture (`tpm`), else DPAPI (`dpapi`);
-// * Linux: the Secret Service (`secret-service`);
-// * otherwise the key is marked `none`: the owner accepted that a compromised plugin there could approve actions on
-//   other computers.
+// * Windows: a TPM-held key that needs no PIN or Hello gesture (`tpm`);
+// * otherwise the key is marked `none`: DPAPI and the Secret Service keep it at rest only, which plugin code running
+//   as the user can reach — so the picker never chooses them, and the owner accepted that a compromised plugin there
+//   could approve actions on other computers.
 //
 // Nothing here ever asks for Face ID, Touch ID, Windows Hello, a passcode or any other presence check (the owner's
 // decision): a key is protected by where it is stored, and using it never prompts. `held` says where it is stored.
@@ -29,7 +29,7 @@ export type { AnswerKeyProtections };
 /** How the key will be held, from the OS and what it offers; `none` when nothing keeps plugin code from it. One
  *  choice, shared with the desktop through the protocol's own function. */
 export function answerKeyHolder(os: Os, can: AnswerKeyProtections): AnswerKeyHolder {
-  return answerKeyHolderFor(os === "macos" ? "darwin" : os === "windows" ? "win32" : "linux", can);
+  return answerKeyHolderFor(os, can);
 }
 
 /** Where the app keeps the key's seed: its Keychain item, its TPM-wrapped blob, or (for `none`) DPAPI, the Secret
