@@ -208,23 +208,30 @@ export function main(argv: readonly string[], root: string): number {
     return 0;
   }
   rmSync(outDir, { recursive: true, force: true });
-  // The bundled plugins: the tracked files only, staged where electron-builder.yml packs them.
+  // The bundled plugins: the committed files only, staged where electron-builder.yml packs them, and the stages
+  // removed however the build ends (a stale stage would go into a later plain `bun run dist`).
   const stagedPlugins = join(desktop, STAGED_PLUGINS);
-  stageBundledPlugins(root, stagedPlugins);
-  for (const s of steps) {
-    console.log(`build-packages: ${s.say}…`);
-    if (s.stage !== undefined) {
-      rmSync(staged, { recursive: true, force: true });
-      mkdirSync(staged, { recursive: true });
-      copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
-      copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
-      chmodSync(join(staged, "clover-link"), 0o755);
+  try {
+    stageBundledPlugins(root, stagedPlugins);
+    for (const s of steps) {
+      console.log(`build-packages: ${s.say}…`);
+      if (s.stage !== undefined) {
+        rmSync(staged, { recursive: true, force: true });
+        mkdirSync(staged, { recursive: true });
+        copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
+        copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
+        chmodSync(join(staged, "clover-link"), 0o755);
+      }
+      const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
+      if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
     }
-    const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
-    if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
+  } catch (err) {
+    console.error(`build-packages: ${(err as Error).message}`);
+    return 1;
+  } finally {
+    rmSync(staged, { recursive: true, force: true });
+    rmSync(stagedPlugins, { recursive: true, force: true });
   }
-  rmSync(staged, { recursive: true, force: true });
-  rmSync(stagedPlugins, { recursive: true, force: true });
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
   if (args.check) {

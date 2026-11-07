@@ -2,35 +2,70 @@
 // nothing a release leaves out; a plugin's runtime dependencies must ship with it; and the exact import check on a
 // built tree.
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builtPluginImportProblems, bundledPluginsProblems, LAYER_PROVIDED_PACKAGES, leftOut, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree } from "./bundled-plugins";
+import { builtPluginImportProblems, bundledPluginsProblems, LAYER_PROVIDED_PACKAGES, leftOut, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, type PluginsSource } from "./bundled-plugins";
 
 const ROOT = join(import.meta.dir, "..", "..");
-const lsLine = (mode: string, path: string) => `${mode} 0123456789abcdef0123456789abcdef01234567 0\t${path}`;
 
-describe("staging: only tracked files", () => {
-  test("copies what git tracks under plugins/, less what a release leaves out; anything untracked never ships", () => {
-    const repo = mkdtempSync(join(tmpdir(), "lane-m-stage-"));
-    const files = ["plugins/clover/clover.json", "plugins/alpha/clover.json", "plugins/alpha/tab/theme.css", "plugins/alpha/tab/test/tab.test.ts", "plugins/alpha/tab/tsconfig.json"];
-    for (const f of [...files, "plugins/alpha/.env", "plugins/alpha/dist/built.js"]) { mkdirSync(join(repo, f, ".."), { recursive: true }); writeFileSync(join(repo, f), f); }
-    const dest = join(repo, "out", "plugins");
-    // Only the tracked ones are listed: the .env and dist/ output are untracked.
-    const staged = stageBundledPlugins(repo, dest, () => files.map((f) => lsLine("100644", f)).join("\0") + "\0");
-    expect(staged.sort()).toEqual(["alpha/clover.json", "alpha/tab/theme.css", "clover/clover.json"]);
-    expect(existsSync(join(dest, "alpha", ".env"))).toBe(false);
-    expect(existsSync(join(dest, "alpha", "dist", "built.js"))).toBe(false);
-    expect(readFileSync(join(dest, "alpha", "tab", "theme.css"), "utf8")).toBe("plugins/alpha/tab/theme.css");
+/** A throwaway git repository with `files` committed under plugins/. */
+function repo(files: Record<string, string>): string {
+  const dir = mkdtempSync(join(tmpdir(), "lane-m-stage-repo-"));
+  const git = (...args: string[]) => {
+    const r = Bun.spawnSync(["git", ...args], { cwd: dir, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } });
+    if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+  };
+  git("init", "-q");
+  for (const [f, body] of Object.entries(files)) { mkdirSync(join(dir, f, ".."), { recursive: true }); writeFileSync(join(dir, f), body); }
+  git("add", "-A");
+  git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "plugins");
+  return dir;
+}
+
+describe("staging: only committed files", () => {
+  const committed = { "plugins/clover/clover.json": `{"id":"clover"}`, "plugins/clover/host.js": "export {};\n", "plugins/alpha/clover.json": `{"id":"alpha"}`, "plugins/alpha/tab/test/tab.test.ts": "x", "plugins/alpha/tab/tsconfig.json": "{}" };
+
+  test("writes HEAD's blobs under plugins/, less what a release leaves out", () => {
+    const dir = repo(committed);
+    const dest = join(dir, "out", "plugins");
+    expect(stageBundledPlugins(dir, dest).sort()).toEqual(["alpha/clover.json", "clover/clover.json", "clover/host.js"]);
+    expect(readFileSync(join(dest, "clover", "clover.json"), "utf8")).toBe(`{"id":"clover"}`);
+    expect(existsSync(join(dest, "alpha", "tab", "tsconfig.json"))).toBe(false);
   });
 
-  test("a tracked symlink or submodule is refused", () => {
-    const repo = mkdtempSync(join(tmpdir(), "lane-m-stage-"));
-    expect(() => stageBundledPlugins(repo, join(repo, "out"), () => lsLine("120000", "plugins/alpha/link") + "\0")).toThrow("is a symlink");
-    expect(() => stageBundledPlugins(repo, join(repo, "out"), () => lsLine("160000", "plugins/alpha/sub") + "\0")).toThrow("is a submodule");
+  test("a committed file swapped locally for a symlink to an outside file never ships: the build is refused", () => {
+    const dir = repo(committed);
+    const secret = join(dir, "..", `${dir.split("/").pop()}-secret.txt`);
+    writeFileSync(secret, "TOP SECRET");
+    rmSync(join(dir, "plugins", "clover", "host.js"));
+    symlinkSync(secret, join(dir, "plugins", "clover", "host.js"));
+    const dest = join(dir, "out", "plugins");
+    expect(() => stageBundledPlugins(dir, dest)).toThrow("uncommitted changes");
+    expect(existsSync(dest)).toBe(false);
   });
 
-  test("the real tree stages: both top-level manifests, no test or tsconfig", () => {
+  test("a locally edited clover.json, or an untracked file, never ships: the build is refused", () => {
+    const edited = repo(committed);
+    writeFileSync(join(edited, "plugins", "clover", "clover.json"), `{"id":"clover","evil":true}`);
+    expect(() => stageBundledPlugins(edited, join(edited, "out", "plugins"))).toThrow("uncommitted changes");
+    const untracked = repo(committed);
+    writeFileSync(join(untracked, "plugins", "alpha", ".env"), "KEY=x");
+    expect(() => stageBundledPlugins(untracked, join(untracked, "out", "plugins"))).toThrow("uncommitted changes");
+  });
+
+  test("a committed symlink, submodule or odd mode is refused, and a failed stage leaves nothing", () => {
+    const entry = (mode: string, path: string) => `${mode} blob 0123456789abcdef0123456789abcdef01234567\t${path}`;
+    const source = (tree: string, blobs: () => Map<string, Uint8Array> = () => new Map()): PluginsSource => ({ tree: () => tree, status: () => "", blobs });
+    const dest = join(mkdtempSync(join(tmpdir(), "lane-m-stage-")), "plugins");
+    expect(() => stageBundledPlugins("/nowhere", dest, source(entry("120000", "plugins/alpha/link") + "\0"))).toThrow("is a symlink");
+    expect(() => stageBundledPlugins("/nowhere", dest, source(entry("160000", "plugins/alpha/sub") + "\0"))).toThrow("is a submodule");
+    expect(() => stageBundledPlugins("/nowhere", dest, source(entry("040000", "plugins/alpha/x") + "\0"))).toThrow("regular files only");
+    expect(() => stageBundledPlugins("/nowhere", dest, source(entry("100644", "plugins/alpha/x.js") + "\0", () => { throw new Error("cat-file died"); }))).toThrow("cat-file died");
+    expect(existsSync(dest)).toBe(false);
+  });
+
+  test("the real tree stages: both top-level manifests, nothing left out, and the packaged check passes", () => {
     const dest = join(mkdtempSync(join(tmpdir(), "lane-m-stage-real-")), "plugins");
     const staged = stageBundledPlugins(ROOT, dest);
     expect(staged).toContain("clover/clover.json");
@@ -85,7 +120,7 @@ describe("a bundled plugin's runtime dependencies", () => {
 });
 
 describe("the exact import check on a built tree", () => {
-  const tree = ["ui/entry.js", "ui/chunk.js", "host/index.js", "host/node_modules/@waifucave/clover-provider-runtime/package.json", "node_modules/ws/package.json", "host/natives/node_datachannel.node"];
+  const tree = ["ui/entry.js", "ui/chunk.js", "host/index.js", "host/node_modules/@waifucave/clover-provider-runtime/package.json", "host/node_modules/ws/package.json", "host/natives/node_datachannel.node", "other/lib.js"];
 
   test("Bun's transpiler reads the imports, plus a bundle's __require and import.meta.require; computed ones are counted", () => {
     expect(scanModule(`import a from "react"; export { b } from './x.js'; import "./side.js"; const c = await import("lucide-react"); require("node:fs");`).specifiers)
@@ -95,6 +130,10 @@ describe("the exact import check on a built tree", () => {
     expect(scanModule(`const x = import.meta.require("y");`).specifiers).toEqual(["y"]);
     expect(scanModule(`await import(name); require(path); __require(p); import.meta.require(q); require("a" + b);`).computed).toBe(5);
     expect(scanModule(`import("ok"); require("ok2"); foo.require(bar); my_require(x);`).computed).toBe(0);
+    // createRequire's function and native loading can't be verified either.
+    expect(scanModule(`import { createRequire } from "node:module"; const r = createRequire(import.meta.url); r("x");`).computed).toBe(1);
+    expect(scanModule(`createRequire(import.meta.url)("x");`).computed).toBe(1);
+    expect(scanModule(`process.dlopen(module, "/tmp/x.node");`).computed).toBe(1);
   });
 
   test("a correct tree passes: client bare imports within the layer's, host ones builtin or shipped (at or above), natives for the target", () => {
@@ -114,8 +153,10 @@ describe("the exact import check on a built tree", () => {
     for (const spec of ["/etc/passwd", "file:///etc/passwd", "data:text/javascript,x", "https://example.com/x.js", "http://example.com/x.js"]) {
       expect(one("host", `import x from "${spec}";`)[0]).toContain("an absolute path or URL");
     }
-    expect(one("client", `import "./missing.js";`)).toEqual(["ui/entry.js: imports ./missing.js, which isn't in the shipped tree"]);
-    expect(one("client", `import "../../outside.js";`)).toEqual(["ui/entry.js: imports ../../outside.js, which isn't in the shipped tree"]);
+    expect(one("client", `import "./missing.js";`)).toEqual(["ui/entry.js: imports ./missing.js, which isn't in its own plugin's shipped files"]);
+    expect(one("client", `import "../../outside.js";`)).toEqual(["ui/entry.js: imports ../../outside.js, which isn't in its own plugin's shipped files"]);
+    // Another top-level plugin's file, though shipped, is out of reach.
+    expect(one("client", `import "../other/lib.js";`)).toEqual(["ui/entry.js: imports ../other/lib.js, which isn't in its own plugin's shipped files"]);
     // A native for another target, or one the build reported but didn't ship.
     expect(one("host", `__require("node-datachannel");`.replace("__require", "import.meta.require"), { target: "linux-arm64", natives: [{ file: "host/natives/node_datachannel.node", package: "node-datachannel", target: "linux-x64" }] }))
       .toEqual(["host/natives/node_datachannel.node: a native addon for linux-x64, not linux-arm64", "host/index.js: host code imports node-datachannel, which nothing in the shipped tree provides"]);

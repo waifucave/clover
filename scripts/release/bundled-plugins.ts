@@ -1,14 +1,15 @@
 // The bundled plugins every installed build ships (the registry's `bundledDirs`, packages/core/src/registry): the
-// repository's plugins/ as the app's read-only resources/plugins, each subfolder one top-level plugin. Only TRACKED
-// files ship: `stageBundledPlugins` copies `git ls-files plugins` (less what a release leaves out) into a staging
-// folder that electron-builder.yml packs, so nothing a working tree happens to hold (a build output, a `.env`, a key,
-// `.DS_Store`) can come along, and no symlink is ever copied or followed. The core finds the folder beside its own,
+// repository's plugins/ as the app's read-only resources/plugins, each subfolder one top-level plugin. Only COMMITTED
+// files ship: `stageBundledPlugins` writes HEAD's blobs under plugins/ (less what a release leaves out) into a staging
+// folder that electron-builder.yml packs, and refuses a build whose plugins/ has any uncommitted change, so nothing a
+// working tree happens to hold (an edit, a build output, a `.env`, a key, a file swapped for a symlink) can come
+// along, and no symlink is ever copied or followed. The core finds the folder beside its own,
 // and only there (packages/core/src/bundled-plugins-dir.ts). The checks here run on what was built:
 //   - `bundledPluginsProblems`: each top-level manifest is there, nothing the filter leaves out is, no symlink;
 //   - `unshippedPluginDependencies`: what a plugin's package.json needs that nothing ships beside it;
 //   - `builtPluginImportProblems`: the exact check on a release-time-built tree (wired with that build).
 import { spawnSync } from "node:child_process";
-import { copyFileSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, join, posix } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/manifest/schema";
@@ -50,31 +51,78 @@ export function walkTree(dir: string, rel = ""): TreeEntry[] {
   });
 }
 
+/** How staging reads the repository: the committed tree under plugins/, whether plugins/ has uncommitted changes, and
+ *  the committed blobs by object id. */
+export interface PluginsSource {
+  /** `git ls-tree -r -z HEAD -- plugins`: `<mode> <type> <object>\t<path>` entries. */
+  tree(): string;
+  /** `git status --porcelain -z -- plugins`: empty when nothing under plugins/ differs from HEAD. */
+  status(): string;
+  /** Each object's committed bytes (`git cat-file --batch`). */
+  blobs(objects: readonly string[]): Map<string, Uint8Array>;
+}
+
+/** The repository at `root`, through git. */
+export function gitPluginsSource(root: string): PluginsSource {
+  const git = (args: string[], input?: string) => {
+    const r = spawnSync("git", args, { cwd: root, maxBuffer: 1 << 30, ...(input === undefined ? {} : { input }) });
+    if (r.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${String(r.stderr).trim()}`);
+    return r.stdout as Buffer;
+  };
+  return {
+    tree: () => git(["ls-tree", "-r", "-z", "HEAD", "--", BUNDLED_PLUGINS_DIR]).toString("utf8"),
+    status: () => git(["status", "--porcelain", "-z", "--untracked-files=all", "--", BUNDLED_PLUGINS_DIR]).toString("utf8"),
+    blobs: (objects) => {
+      // `<object> blob <size>\n<bytes>\n` per object, in order.
+      const out = git(["cat-file", "--batch"], objects.map((o) => `${o}\n`).join(""));
+      const map = new Map<string, Uint8Array>();
+      let at = 0;
+      for (const o of objects) {
+        const nl = out.indexOf(0x0a, at);
+        const [id, type, size] = out.subarray(at, nl).toString("utf8").split(" ");
+        if (id !== o || type !== "blob") throw new Error(`git cat-file: ${o} is ${type ?? "missing"}, not a blob`);
+        const n = Number(size);
+        map.set(o, new Uint8Array(out.subarray(nl + 1, nl + 1 + n)));
+        at = nl + 1 + n + 1;
+      }
+      return map;
+    },
+  };
+}
+
 /**
- * Copies the tracked files under `plugins/` (`git ls-files -s`, so a tracked symlink, mode 120000, is seen and
- * refused) into `dest`, less what a release leaves out. Throws on a symlink. Answers the files staged.
+ * Writes the COMMITTED files under `plugins/` (HEAD's tree, never the working tree) into `dest`, less what a release
+ * leaves out, and answers the files staged. Refuses a build whose plugins/ has any uncommitted change (an edit, a file
+ * swapped for a symlink, an untracked file), and a committed symlink or submodule. A partial stage is removed.
  */
-export function stageBundledPlugins(root: string, dest: string, ls: () => string = () => {
-  const r = spawnSync("git", ["ls-files", "-s", "-z", "--", BUNDLED_PLUGINS_DIR], { cwd: root, encoding: "utf8" });
-  if (r.status !== 0) throw new Error(`git ls-files ${BUNDLED_PLUGINS_DIR} failed: ${r.stderr.trim()}`);
-  return r.stdout;
-}): string[] {
+export function stageBundledPlugins(root: string, dest: string, source: PluginsSource = gitPluginsSource(root)): string[] {
   rmSync(dest, { recursive: true, force: true });
-  const staged: string[] = [];
-  for (const entry of ls().split("\0").filter((e) => e !== "")) {
-    // `<mode> <object> <stage>\t<path>`
+  const dirty = source.status().split("\0").filter((e) => e !== "");
+  if (dirty.length > 0) throw new Error(`${BUNDLED_PLUGINS_DIR}/ has uncommitted changes, which a release never ships: ${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? ", …" : ""}`);
+  const entries: Array<{ rel: string; object: string }> = [];
+  for (const entry of source.tree().split("\0").filter((e) => e !== "")) {
+    // `<mode> <type> <object>\t<path>`
     const tab = entry.indexOf("\t");
-    const mode = entry.slice(0, entry.indexOf(" "));
+    const [mode, , object] = entry.slice(0, tab).split(" ");
     const path = entry.slice(tab + 1);
     const rel = path.slice(`${BUNDLED_PLUGINS_DIR}/`.length);
     if (mode === "120000") throw new Error(`${path} is a symlink: bundled plugins ship no symlinks`);
-    if (mode === "160000") throw new Error(`${path} is a submodule: bundled plugins ship tracked files only`);
+    if (mode === "160000") throw new Error(`${path} is a submodule: bundled plugins ship committed files only`);
+    if (mode !== "100644" && mode !== "100755") throw new Error(`${path} has mode ${mode}: bundled plugins ship regular files only`);
     if (leftOut(rel) !== undefined) continue;
-    mkdirSync(dirname(join(dest, rel)), { recursive: true });
-    copyFileSync(join(root, path), join(dest, rel));
-    staged.push(rel);
+    entries.push({ rel, object: object! });
   }
-  return staged;
+  try {
+    const blobs = source.blobs(entries.map((e) => e.object));
+    for (const e of entries) {
+      mkdirSync(dirname(join(dest, e.rel)), { recursive: true });
+      writeFileSync(join(dest, e.rel), blobs.get(e.object)!, { flag: "wx" });
+    }
+  } catch (err) {
+    rmSync(dest, { recursive: true, force: true });
+    throw err;
+  }
+  return entries.map((e) => e.rel);
 }
 
 /** What's wrong with a packaged app's bundled plugins under `resources`: each top-level plugin's manifest is there,
@@ -137,7 +185,10 @@ export interface BuiltModule { file: string; kind: "client" | "host"; source: st
 export interface ShippedNative { file: string; package: string; target: string }
 
 /** A module's imports as Bun's transpiler reads them, plus what a bundle hides from it: Bun's own `__require(…)` and
- *  `import.meta.require(…)` for an external, and any import or require whose specifier isn't a literal. */
+ *  `import.meta.require(…)` for an external. Counted as computed (can't be verified): any import or require whose
+ *  specifier isn't a literal, any `createRequire(…)(…)` call, and any `process.dlopen(…)`.
+ *  Known blind spots (a check of a build, not of an adversary): `new Worker(…)`, `module.require(…)`, and a require
+ *  reached through another name (`const r = require; r("x")`). */
 export function scanModule(source: string): { specifiers: string[]; computed: number } {
   const specifiers = new Set<string>();
   for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(source)) specifiers.add(i.path);
@@ -145,6 +196,9 @@ export function scanModule(source: string): { specifiers: string[]; computed: nu
   for (const m of source.matchAll(/(?<![\w$])(?:__require|import\.meta\.require)\s*\(\s*(["'])([^"'\\]+)\1\s*\)/g)) specifiers.add(m[2]!);
   let computed = 0;
   for (const _ of source.matchAll(/(?<![\w$.])(?:import|require|__require|import\.meta\.require)\s*\(\s*(?!["']|\))/g)) computed++;
+  // createRequire's function, called in place or later (`const r = createRequire(url); r("x")`), and native loading.
+  for (const _ of source.matchAll(/(?<![\w$.])createRequire\s*\(/g)) computed++;
+  for (const _ of source.matchAll(/(?<![\w$])process\s*\.\s*dlopen\s*\(/g)) computed++;
   // A literal that isn't the whole argument (`require("a" + b)`) is computed too.
   for (const _ of source.matchAll(/(?<![\w$.])(?:import|require|__require|import\.meta\.require)\s*\(\s*(["'])[^"'\\]*\1\s*[^\s)]/g)) computed++;
   return { specifiers: [...specifiers].sort(), computed };
@@ -155,10 +209,13 @@ function builtin(spec: string): boolean {
   return spec.startsWith("node:") || spec === "bun" || spec.startsWith("bun:") || builtinModules.includes(spec) || builtinModules.includes(spec.split("/")[0]!);
 }
 
-/** A relative import's file inside the tree, or undefined when it leaves the tree or isn't there. */
+/** A relative import's file inside the importing module's own top-level plugin folder, or undefined when it leaves
+ *  that folder (another plugin's files, or outside the tree) or isn't there. */
 function resolveRelative(tree: ReadonlySet<string>, from: string, spec: string): string | undefined {
   const joined = posix.normalize(posix.join(posix.dirname(from), spec));
   if (joined === ".." || joined.startsWith("../") || posix.isAbsolute(joined)) return undefined;
+  const own = from.split("/")[0]!;
+  if (!joined.startsWith(`${own}/`)) return undefined;
   for (const c of [joined, `${joined}.js`, `${joined}.mjs`, `${joined}.cjs`, `${joined}/index.js`, `${joined}/index.mjs`]) if (tree.has(c)) return c;
   return undefined;
 }
@@ -185,7 +242,7 @@ export function builtPluginImportProblems(modules: readonly BuiltModule[], tree:
       if (spec.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(spec) && !spec.startsWith("node:") && !spec.startsWith("bun:")) {
         problems.push(`${m.file}: imports ${spec}, an absolute path or URL, which a shipped plugin never does`);
       } else if (spec.startsWith("./") || spec.startsWith("../") || spec === "." || spec === "..") {
-        if (resolveRelative(files, m.file, spec) === undefined) problems.push(`${m.file}: imports ${spec}, which isn't in the shipped tree`);
+        if (resolveRelative(files, m.file, spec) === undefined) problems.push(`${m.file}: imports ${spec}, which isn't in its own plugin's shipped files`);
       } else if (m.kind === "client") {
         if (!(CLIENT_BARE_IMPORTS as readonly string[]).includes(spec)) problems.push(`${m.file}: a client module imports ${spec}; only ${CLIENT_BARE_IMPORTS.join(", ")} come from the layer, everything else must be bundled`);
       } else if (!builtin(spec)) {
