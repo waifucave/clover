@@ -97,16 +97,15 @@ export class MainLeaseHarness {
   readonly marginMs: number;
   readonly #clock: Clock;
   readonly #service: MemoryLeaseService;
-  readonly #account: boolean;
   #main: string | null;
   readonly #leases = new Map<string, MainLease>();
 
+  /** `account` is the contract's (with or without one, the lease is a record at the handshake, item 85). */
   constructor(opts: { clock: Clock; main?: string; ttlMs?: number; marginMs?: number; account?: boolean }) {
     this.#clock = opts.clock;
     this.#service = new MemoryLeaseService(opts.clock);
     this.ttlMs = opts.ttlMs ?? 30_000;
     this.marginMs = opts.marginMs ?? 5_000;
-    this.#account = opts.account ?? true;
     this.#main = opts.main ?? null;
   }
 
@@ -116,7 +115,9 @@ export class MainLeaseHarness {
     const shifted = { now: () => clock.now() + offset, setTimeout: clock.setTimeout.bind(clock), clearTimeout: clock.clearTimeout.bind(clock) };
     const lease = memoryLease(this.#service, {
       self: device, clock: shifted, monotonic: () => clock.monotonic(), ttlMs: this.ttlMs, marginMs: this.marginMs,
-      main: () => this.#main, scope: this.#account,
+      // With an account or without, the lease is a record at the handshake (item 85): the account's, or the
+      // account-less devices' group's. The harness keeps one record for either.
+      main: () => this.#main,
     }) as unknown as MainLease & { wallNow(): number; offsetMs: number };
     lease.wallNow = () => clock.now() + offset;
     lease.offsetMs = offset;
