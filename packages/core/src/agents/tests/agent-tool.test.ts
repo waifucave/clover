@@ -3,7 +3,7 @@
 // the watchdog stops a stalled agent. Lane B's fakes stand in for the session host, the broker, the tree and the fence.
 import { readProcessTable, type ProcessTableReader } from "../process/table";
 import { afterEach, describe, expect, test, setDefaultTimeout } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentQuirks } from "../../contracts/agent-backend";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS, WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
@@ -18,6 +18,7 @@ import { serveClover } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import { AgentManager } from "../manager";
+import { QUIRKS } from "../quirks";
 import { agentMethods } from "../rpc";
 import { FAKE_AGENT_PATH, fakeLaunch } from "../testing/harness";
 import { agentToolDefs } from "../tools";
@@ -129,16 +130,76 @@ describe("Agent", () => {
     expect(w.approvals.rules().map((x) => x.ruleKey)).toEqual(["Agent(fake):Bash(make)"]);
   });
 
-  test("a request touching a fenced path is a card even at automatic", async () => {
-    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit settings", paths: [] } }]] });
-    // The path is only known once the world exists: the script is rewritten with it.
+  test("a bot no one had when the agent started is covered too: the whole home is denied, and a request into it is refused", async () => {
+    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit notes", paths: [] } }, { say: "Done." }]] });
+    // `latecomer` has no folder at the start; the home's denial and the request check still hold.
+    const late = join(w.cloverHome, "bots", "latecomer", "memory", "MEMORY.md");
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    script.script[0]![0]!.tool.paths = [late];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    let fence: { denyRead: string[]; denyWrite: string[] } | undefined;
+    const start = w.backend.start.bind(w.backend);
+    w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
+    await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
+    expect(fence!.denyRead).toContain(w.cloverHome);
+    expect(fence!.denyWrite).toContain(w.cloverHome);
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
+    // A bot's own Bash may work in its own memory (`ownMemory`); an agent's policy never carries it.
+    expect("ownMemory" in fence!).toBe(false);
+  });
+
+  test("an agent never gets a bot's own memory: a policy that carries ownMemory is refused and the agent doesn't start", async () => {
+    const w = make({ script: [[{ say: "never" }]] });
+    const policy = w.fence.policy.bind(w.fence);
+    w.fence.policy = () => ({ ...policy(), ownMemory: join(w.cloverHome, "bots", "alpha", "memory") }) as ReturnType<typeof policy>;
+    const r = await w.delegate();
+    // The start fails at its first turn: the bot is told, and no agent process ever ran.
+    const n = await waitFor(() => notification(w), "the notification");
+    expect(n.stopReason).not.toBe("end_turn");
+    expect(JSON.stringify(n)).toContain("ownMemory");
+    expect(w.report("started")).toEqual([]);
+    expect(w.tokens.has(r.sessionId)).toBe(false);
+  });
+
+  test("bots' memory is out of every agent's reach: denied to its sandbox, and a request into it refused without a card", async () => {
+    const w = make({ script: [[{ tool: { kind: "read", title: "Read notes", paths: [] } }, { say: "Done." }]] });
+    // Another bot's memory, under a folded name, and the delegating bot's own (which it doesn't have yet).
+    const other = join(w.cloverHome, "bots", "beta", "Memory", "notes.md");
+    mkdirSync(join(w.cloverHome, "bots", "beta", "Memory"), { recursive: true });
+    const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
+    script.script[0]![0]!.tool.paths = [other];
+    await Bun.write(w.agent.config, JSON.stringify(script));
+    let fence: { denyRead: string[]; denyWrite: string[] } | undefined;
+    const start = w.backend.start.bind(w.backend);
+    w.backend.start = async (spec) => ((fence = spec.fence), start(spec));
+    const r = await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).stopReason).toBe("end_turn");
+    expect(w.approvals.cards()).toEqual([]);
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
+    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    expect(calls).toContain('"by":"clover-home"');
+    expect(fence!.denyRead).toContain(w.cloverHome);
+    expect(fence!.denyWrite).toContain(w.cloverHome);
+  });
+
+  test("a request touching a fenced path outside the home is a card even at automatic; one into the home is refused", async () => {
+    const w = make({ script: [[{ tool: { kind: "edit", title: "Edit settings", paths: [] } }, { tool: { kind: "edit", title: "Edit tools", paths: [] } }]] });
+    // The paths are only known once the world exists: the script is rewritten with them. A development folder is a
+    // fenced item outside the Clover home.
     const settings = join(w.cloverHome, "settings");
+    const dev = join(w.userHome, "dev-tools");
+    mkdirSync(dev, { recursive: true });
+    w.fence.addDevFolder(dev);
     const script = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
     script.script[0]![0]!.tool.paths = [settings];
+    script.script[0]![1]!.tool.paths = [join(dev, "x.sh")];
     await Bun.write(w.agent.config, JSON.stringify(script));
     const r = await w.delegate();
     const card = await waitFor(() => w.approvals.cards()[0], "a card");
-    expect(card.fields["paths"]).toEqual({ type: "list", items: [settings] });
+    expect(card.fields["paths"]).toEqual({ type: "list", items: [join(dev, "x.sh")] });
+    expect(w.report("answer")).toMatchObject([{ kind: "reject_once" }]);
     // TaskStop with the card still open: the card is cancelled, and so is the agent's request.
     await w.manager.stop(r.sessionId, { bot: "alpha" });
     expect(w.approvals.cards()).toEqual([]);
@@ -153,6 +214,21 @@ describe("Agent", () => {
     expect(isContractError(await err(w.delegate("x", { computer: "Desk" })), "refused")).toBe(true);
     expect(isContractError(await err(w.delegate("x", { backend: "nope" })), "not_installed")).toBe(true);
     expect(w.host.list({ kind: "agent" })).toEqual([]);
+  });
+
+  test("a cloud backend (Devin's cloud) is listed but never started until its bridge and root are settled", async () => {
+    const w = make({ quirks: { ...WELL_BEHAVED_QUIRKS, placement: "cloud" } });
+    const e = await w.delegate("x").then(() => undefined, (x: unknown) => x);
+    expect(isContractError(e, "refused")).toBe(true);
+    expect(String((e as Error).message)).toContain("bridge");
+    expect(w.report("started")).toEqual([]);
+    expect(w.host.list({ kind: "agent" })).toEqual([]);
+    const methods = agentMethods({ manager: w.manager, backends: () => [w.backend], computer: "Studio" });
+    const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: { protocol: string; placement: string }[] };
+    expect(view.backends[0]).toMatchObject({ protocol: "acp", placement: "cloud" });
+    expect(QUIRKS["devin-cloud"]!.placement).toBe("cloud");
+    expect(QUIRKS["devin-cloud"]!.launch.command.macos).toEqual(["devin", "acp", "--cloud"]);
+    expect(QUIRKS["devin"]!.placement).toBe("local");
   });
 });
 
@@ -197,6 +273,26 @@ describe("the bot keeps control", () => {
     expect((await agent!.run({ prompt: "x" })).isError).toBe(true);
     expect(await taskStop!.run({ id })).toEqual({ text: `Stopped ${id}.`, isError: false });
     expect((await taskStop!.run({ id: "agent_nope" })).isError).toBe(true);
+  });
+
+  test("TaskStop passes a task id that names none of Clover's agents on to the runtime's own TaskStop", async () => {
+    const w = make({ script: [[{ wait: true }]] });
+    const passed: string[] = [];
+    const stopRuntimeTask = async (taskId: string) => {
+      passed.push(taskId);
+      return { text: `stopped background task ${taskId}`, isError: false };
+    };
+    const [agent, taskStop] = agentToolDefs(w.manager, { bot: "alpha", session: "s_alpha", origin: "user" }, { backends: () => ["fake"], stopRuntimeTask });
+    expect(taskStop!.description).toContain("background commands");
+    expect(await taskStop!.run({ task_id: "bash_7" })).toEqual({ text: "stopped background task bash_7", isError: false });
+    expect(await taskStop!.run({ id: "monitor_2" })).toEqual({ text: "stopped background task monitor_2", isError: false });
+    // An agent of another bot is refused, never passed on; the bot's own agent stops as before.
+    const started = await agent!.run({ prompt: "Fix it.", backend: "fake", root: "home/Studio/project1", description: "Fix it" });
+    const id = /agent_[A-Za-z0-9_-]+/.exec(started.text)![0];
+    const [, otherStop] = agentToolDefs(w.manager, { bot: "beta", session: "s_beta", origin: "user" }, { stopRuntimeTask });
+    expect((await otherStop!.run({ id })).isError).toBe(true);
+    expect(await taskStop!.run({ id })).toEqual({ text: `Stopped ${id}.`, isError: false });
+    expect(passed).toEqual(["bash_7", "monitor_2"]);
   });
 
   test("a message from the bot is the agent's next prompt, queued while a turn runs", async () => {
@@ -443,7 +539,11 @@ describe("what never runs quietly", () => {
 describe("check 2's minors", () => {
   test("a fenced path behind 200 harmless ones is still a card at automatic, and listed first (minor 1)", async () => {
     const w = make({ script: [[{ tool: { kind: "edit", title: "Edit many files", paths: [] } }]] });
-    const fenced = join(w.cloverHome, "run", "x.json");
+    // A fenced item outside the Clover home (one in it is refused outright): a development folder.
+    const dev = join(w.userHome, "dev-tools");
+    mkdirSync(dev, { recursive: true });
+    w.fence.addDevFolder(dev);
+    const fenced = join(dev, "x.json");
     const config = JSON.parse(readFileSync(w.agent.config, "utf8")) as { script: { tool: { paths: string[] } }[][] };
     config.script[0]![0]!.tool.paths = [...Array.from({ length: 200 }, (_, i) => `f${i}.txt`), fenced];
     writeFileSync(w.agent.config, JSON.stringify(config));
@@ -686,8 +786,9 @@ describe("the agent's own sandbox, and the OK for one without", () => {
     await waitFor(() => w.report("blocked").length > 0, "the agent to block");
     const dir = join(w.cloverHome, "run", "agents", r.sessionId);
     const policy = JSON.parse(readFileSync(join(dir, "policy.json"), "utf8")) as { denyWrite: string[]; denyRead: string[] };
-    expect(policy.denyWrite).toEqual(w.fence.policy().denyWrite);
-    expect(policy.denyRead).toContain(join(w.cloverHome, "run"));
+    // The fenced set, and the whole Clover home (the owner's decision, #208's check 2).
+    expect(policy.denyWrite).toEqual([...w.fence.policy().denyWrite, w.cloverHome]);
+    expect(policy.denyRead).toEqual([...w.fence.policy().denyRead, w.cloverHome]);
     // The setup folder is itself fenced: no bot or agent rewrites the agent's sandbox.
     expect(w.fence.touches([join(dir, "policy.json")])?.kind).toBe("run-folder");
     expect(w.report("started")[0]!["env"]).toContain("FAKE_SANDBOX_POLICY");

@@ -27,6 +27,7 @@ import {
   PING,
   PONG,
   type RecordView,
+  type RecoveryUse,
   type ScopeKind,
   type ServiceFrame,
 } from "../client/wire";
@@ -70,6 +71,16 @@ const ACCOUNT_QUEUED_MAX = 512;
 
 const socketTag = (member: string) => `m:${member}`;
 
+/** A quorum of `voters` votes: more than half. */
+const quorum = (voters: number): number => Math.floor(voters / 2) + 1;
+
+interface MemberRow extends Record<string, SqlStorageValue> {
+  key: string;
+  joined: number;
+  votes_from: number;
+  admitted_by: string | null;
+}
+
 export class HandshakeDO extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private alarmAt: number | null | undefined;
@@ -86,7 +97,11 @@ export class HandshakeDO extends DurableObject<Env> {
     if (this.metaGet("schema")) return;
     // Frozen at the first deploy: a later change needs a new schema version and a step that migrates to it.
     this.sql.exec(`
-      CREATE TABLE members (key TEXT PRIMARY KEY, joined INTEGER NOT NULL, last_t INTEGER NOT NULL) WITHOUT ROWID;
+      CREATE TABLE members (key TEXT PRIMARY KEY, joined INTEGER NOT NULL, last_t INTEGER NOT NULL,
+        votes_from INTEGER NOT NULL DEFAULT 0, admitted_by TEXT) WITHOUT ROWID;
+      CREATE TABLE changes (seq INTEGER PRIMARY KEY, kind TEXT NOT NULL, target TEXT NOT NULL, at INTEGER NOT NULL,
+        joined INTEGER, votes_from INTEGER, admitted_by TEXT);
+      CREATE TABLE change_signers (seq INTEGER NOT NULL, signer TEXT NOT NULL, PRIMARY KEY (seq, signer)) WITHOUT ROWID;
       CREATE TABLE removed (key TEXT PRIMARY KEY, at INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE records (recipient TEXT NOT NULL, sender TEXT NOT NULL, kind TEXT NOT NULL, gen INTEGER NOT NULL,
         expires INTEGER NOT NULL, box BLOB NOT NULL, PRIMARY KEY (recipient, sender, kind)) WITHOUT ROWID;
@@ -117,10 +132,15 @@ export class HandshakeDO extends DurableObject<Env> {
   }
 
   private members(): MemberView[] {
+    const group = this.kind() === "group";
     return this.sql
-      .exec<{ key: string; joined: number }>("SELECT key, joined FROM members ORDER BY joined, key")
+      .exec<MemberRow>("SELECT key, joined, votes_from, admitted_by FROM members ORDER BY joined, key")
       .toArray()
-      .map((r) => ({ key: r.key, joinedAt: r.joined }));
+      .map((r) => (group ? { key: r.key, joinedAt: r.joined, votesFrom: r.votes_from, ...(r.admitted_by ? { admittedBy: r.admitted_by } : {}) } : { key: r.key, joinedAt: r.joined }));
+  }
+
+  private memberRow(key: string): MemberRow | undefined {
+    return this.sql.exec<MemberRow>("SELECT key, joined, votes_from, admitted_by FROM members WHERE key = ?", key).toArray()[0];
   }
 
   private isMember(key: string): boolean {
@@ -160,13 +180,18 @@ export class HandshakeDO extends DurableObject<Env> {
     if (kind === "group") return this.isMember(key) ? ok({ group }) : fail(409, "conflict");
     this.metaSet("kind", "group");
     this.metaSet("id", group);
-    this.sql.exec("INSERT INTO members (key, joined, last_t) VALUES (?, ?, 0)", key, now);
+    // The founder votes from the start.
+    this.sql.exec("INSERT INTO members (key, joined, last_t, votes_from) VALUES (?, ?, 0, ?)", key, now, now);
     this.sql.exec("INSERT INTO lease (one, holder, epoch, expires) VALUES (1, NULL, 0, 0)");
     return ok({ group }, 201);
   }
 
-  /** A join, after the Worker checked the joining key's join statement and `by`'s admit statement, both at `t`. */
-  async joinGroup(key: string, by: string, t: number, now: number): Promise<Reply> {
+  /**
+   * A join, after the Worker checked the joining key's join statement and the admit statements of `by` and of any
+   * co-signers, all at `t`. One member's admit lets the key in; it votes at once when the admitters who vote are a
+   * quorum of the group's voters, and after LIMITS.recovery.voteDelayMs otherwise.
+   */
+  async joinGroup(key: string, by: string, t: number, now: number, cosigners: string[] = [], options: { requester?: string } = {}): Promise<Reply> {
     if (this.kind() !== "group") return fail(404, "not_found");
     if (this.ended()) return fail(410, "ended");
     if (!this.isMember(by)) return fail(403, "not_member");
@@ -175,11 +200,20 @@ export class HandshakeDO extends DurableObject<Env> {
     if (removedAt !== undefined && t <= removedAt) return fail(403, "revoked");
     const count = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM members").one().n;
     if (count >= LIMITS.membersPerGroup) return fail(409, "full");
-    this.sql.exec("INSERT INTO members (key, joined, last_t) VALUES (?, ?, 0)", key, now);
+    const voters = this.voters(now);
+    const signers = [...new Set([by, ...cosigners])].filter((k) => this.isMember(k) || k === this.recoveryKey());
+    const counted = signers.filter((k) => voters.has(k));
+    // Whatever the key held elsewhere, it votes here at once only when this group's voters admitted it as a quorum.
+    const votesFrom = counted.length >= quorum(voters.size) ? now : now + LIMITS.recovery.voteDelayMs;
+    // The member that asked for the key signs the change too, for its rollback; it doesn't vote by it.
+    if (options.requester !== undefined && this.isMember(options.requester)) signers.push(options.requester);
+    this.sql.exec("INSERT INTO members (key, joined, last_t, votes_from, admitted_by) VALUES (?, ?, 0, ?, ?)", key, now, votesFrom, by);
     this.sql.exec("DELETE FROM removed WHERE key = ?", key);
+    this.logChange("admit", key, signers, undefined, now);
+    this.recoveryUsed("admit", key, by, signers, now);
     const members = this.members();
-    this.broadcast({ t: "members", members });
-    return ok({ members }, 201);
+    this.broadcastMembers();
+    return ok({ members, votesFrom }, 201);
   }
 
   // ---- signed and token calls ----
@@ -193,7 +227,11 @@ export class HandshakeDO extends DurableObject<Env> {
       case "pair get":
         return this.pairView(c.member, now);
       case "group get":
-        return ok({ group: c.id, members: this.members(), lease: this.leaseView() });
+        return ok({ group: c.id, members: this.members(), lease: this.leaseView(), recovery: this.recoveryKey() !== undefined, ...this.recoveryUseField(now) });
+      case "group rollback":
+        return this.rollbackPreview(String(args.key ?? ""), c.member, now);
+      case "group setRecovery":
+        return this.setRecovery(c.member, args, now);
       case "account get":
         return ok({ online: this.onlineDevices(now, c.member), records: this.recordsFor(c.member, now), lease: this.leaseView() });
       case "pair putRecord":
@@ -212,8 +250,10 @@ export class HandshakeDO extends DurableObject<Env> {
       case "pair end":
         return await this.endScope();
       case "group removeMember":
-        return await this.removeMember(String(args.key ?? ""), now);
+        return await this.removeCall(c, args, now);
       case "group lease":
+        if (args.op === "takeover" && (this.memberRow(c.member)?.votes_from ?? Infinity) > now) return fail(403, "not_voter");
+        return this.leaseCall(c.member, args, now);
       case "account lease":
         return this.leaseCall(c.member, args, now);
       case "account revokeDevice":
@@ -365,20 +405,207 @@ export class HandshakeDO extends DurableObject<Env> {
     return { status: 204 };
   }
 
-  private async removeMember(key: string, now: number): Promise<Reply> {
-    if (!this.isMember(key)) return fail(404, "not_found");
+  /** Takes `key` out of the group: its sockets close and its lease ends. The caller broadcasts the members. */
+  private dropMember(key: string, now: number): void {
     this.sql.exec("DELETE FROM members WHERE key = ?", key);
     this.sql.exec("INSERT INTO removed (key, at) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET at = excluded.at", key, now);
     for (const ws of this.ctx.getWebSockets(socketTag(key))) this.closeSocket(ws, CLOSE.ended, "ended");
-    const remaining = this.members();
-    if (remaining.length === 0) return await this.endScope();
-    const lease = this.leaseRow();
-    if (lease.holder === key) {
+    if (this.leaseRow().holder === key) {
       this.sql.exec("UPDATE lease SET holder = NULL, expires = ? WHERE one = 1", now);
       this.broadcast({ t: "lease", lease: this.leaseView() });
     }
-    this.broadcast({ t: "members", members: remaining });
+  }
+
+  /**
+   * A removal (PROTOCOL.md, "Group recovery"). A member removes itself alone. Removing another takes a quorum of the
+   * voters other than the target: the requester's own signed request counts when it votes, and each co-signer (the
+   * Worker checked their remove statements) must vote. The target's own changes of the past days are rolled back.
+   */
+  private async removeCall(c: Call, args: Record<string, unknown>, now: number): Promise<Reply> {
+    const key = String(args.key ?? "");
+    const target = this.memberRow(key);
+    if (!target) return fail(404, "not_found");
+    const cosigners = (args.signers as string[] | undefined) ?? [];
+    if (key === c.member && cosigners.length === 0) {
+      this.dropMember(key, now);
+      if (this.members().length === 0) return await this.endScope();
+      this.broadcastMembers();
+      return { status: 204 };
+    }
+    const t = (args.t as number | undefined) ?? c.t ?? now;
+    if (t <= target.joined) return fail(409, "stale");
+    // The keys the target admitted in the window neither count nor sign: once they vote, a thief's keys would
+    // otherwise outvote the user.
+    const plan = this.rollbackPlan(key, now);
+    const voters = this.voters(now);
+    voters.delete(key);
+    for (const drop of plan.drops) voters.delete(drop);
+    if (cosigners.some((k) => !voters.has(k))) return fail(403, "not_voter");
+    const counted = [...new Set([...cosigners, ...(voters.has(c.member) ? [c.member] : [])])];
+    if (counted.length < quorum(voters.size)) return fail(403, "no_quorum", { voters: voters.size, needed: quorum(voters.size) });
+
+    const keep = new Set((args.keep as string[] | undefined) ?? []);
+    this.logChange("remove", key, counted, target, now);
+    this.dropMember(key, now);
+    for (const drop of plan.drops) {
+      // The requester recognises itself.
+      if (keep.has(drop) || drop === c.member || !this.isMember(drop)) continue;
+      this.logChange("remove", drop, counted, this.memberRow(drop), now);
+      this.dropMember(drop, now);
+    }
+    for (const back of plan.restores) {
+      if (this.isMember(back.key)) continue;
+      const count = this.sql.exec<{ n: number }>("SELECT COUNT(*) AS n FROM members").one().n;
+      if (count >= LIMITS.membersPerGroup) break;
+      this.sql.exec(
+        "INSERT INTO members (key, joined, last_t, votes_from, admitted_by) VALUES (?, ?, 0, ?, ?)",
+        back.key,
+        back.joined,
+        back.votes_from,
+        back.admitted_by,
+      );
+      this.sql.exec("DELETE FROM removed WHERE key = ?", back.key);
+    }
+    this.recoveryUsed("remove", key, c.member, counted, now);
+    if (this.members().length === 0) return await this.endScope();
+    this.broadcastMembers();
     return { status: 204 };
+  }
+
+  /** A key that joined another group of the user's leaves this one: as its own removal, with no rollback. */
+  async moveOut(key: string, now: number): Promise<Reply> {
+    if (this.kind() !== "group" || this.ended() || !this.isMember(key)) return fail(404, "not_found");
+    this.dropMember(key, now);
+    if (this.members().length === 0) return await this.endScope();
+    this.broadcastMembers();
+    return { status: 204 };
+  }
+
+  // ---- group recovery (PROTOCOL.md, "Group recovery") ----
+
+  private recoveryKey(): string | undefined {
+    return this.metaGet("recovery") || undefined;
+  }
+
+  /** The keys that vote now: members past their `votesFrom`, and the recovery key when one is set. */
+  private voters(now: number): Set<string> {
+    const keys = new Set(this.sql.exec<{ key: string }>("SELECT key FROM members WHERE votes_from <= ?", now).toArray().map((r) => r.key));
+    const recovery = this.recoveryKey();
+    if (recovery) keys.add(recovery);
+    return keys;
+  }
+
+  /** Records a change and who signed it, for a rollback; forgets changes past the rollback window. */
+  private logChange(kind: "admit" | "remove", target: string, signers: string[], row: MemberRow | undefined, now: number): void {
+    this.sql.exec("DELETE FROM change_signers WHERE seq IN (SELECT seq FROM changes WHERE at < ?)", now - LIMITS.recovery.rollbackMs);
+    this.sql.exec("DELETE FROM changes WHERE at < ?", now - LIMITS.recovery.rollbackMs);
+    const seq = this.sql
+      .exec<{ seq: number }>(
+        "INSERT INTO changes (kind, target, at, joined, votes_from, admitted_by) VALUES (?, ?, ?, ?, ?, ?) RETURNING seq",
+        kind,
+        target,
+        now,
+        row?.joined ?? null,
+        row?.votes_from ?? null,
+        row?.admitted_by ?? null,
+      )
+      .one().seq;
+    for (const signer of new Set(signers)) this.sql.exec("INSERT INTO change_signers (seq, signer) VALUES (?, ?)", seq, signer);
+  }
+
+  /**
+   * What removing `target` rolls back: the members it helped remove in the window come back, unless one is a member
+   * again or was removed since without it; the keys it helped admit go, and so do the keys those admitted.
+   */
+  private rollbackPlan(target: string, now: number): { restores: MemberRow[]; drops: string[] } {
+    const since = now - LIMITS.recovery.rollbackMs;
+    const restores = new Map<string, MemberRow>();
+    const removals = this.sql
+      .exec<{ seq: number; target: string; joined: number; votes_from: number; admitted_by: string | null }>(
+        `SELECT c.seq, c.target, c.joined, c.votes_from, c.admitted_by FROM changes c JOIN change_signers s ON s.seq = c.seq
+         WHERE c.kind = 'remove' AND s.signer = ? AND c.at >= ? ORDER BY c.seq`,
+        target,
+        since,
+      )
+      .toArray();
+    for (const r of removals) {
+      if (r.target === target || this.isMember(r.target) || r.joined === null) continue;
+      const latest = this.sql.exec<{ seq: number }>("SELECT seq FROM changes WHERE kind = 'remove' AND target = ? ORDER BY seq DESC LIMIT 1", r.target).one().seq;
+      const signedLatest = this.sql.exec("SELECT 1 AS x FROM change_signers WHERE seq = ? AND signer = ?", latest, target).toArray().length > 0;
+      if (signedLatest) restores.set(r.target, { key: r.target, joined: r.joined, votes_from: r.votes_from, admitted_by: r.admitted_by });
+    }
+    const drops: string[] = [];
+    const seen = new Set([target]);
+    const frontier = [target];
+    while (frontier.length > 0) {
+      const signer = frontier.pop()!;
+      const admitted = this.sql
+        .exec<{ target: string }>(
+          `SELECT DISTINCT c.target FROM changes c JOIN change_signers s ON s.seq = c.seq
+           WHERE c.kind = 'admit' AND s.signer = ? AND c.at >= ?`,
+          signer,
+          since,
+        )
+        .toArray();
+      for (const { target: key } of admitted) {
+        if (seen.has(key) || !this.isMember(key)) continue;
+        seen.add(key);
+        drops.push(key);
+        frontier.push(key);
+      }
+    }
+    return { restores: [...restores.values()], drops: drops.sort() };
+  }
+
+  private rollbackPreview(key: string, member: string, now: number): Reply {
+    if (!this.isMember(key)) return fail(404, "not_found");
+    const plan = this.rollbackPlan(key, now);
+    return ok({ restores: plan.restores.map((r) => r.key).sort(), drops: plan.drops.filter((k) => k !== member) });
+  }
+
+  /** Sets or clears the recovery key, by a quorum of all the voters (the current recovery key among them). */
+  private setRecovery(member: string, args: Record<string, unknown>, now: number): Reply {
+    const key = args.key as string | null;
+    const t = args.t as number;
+    if (t <= Number(this.metaGet("recovery_t") ?? "0")) return fail(409, "stale");
+    if (key !== null && this.isMember(key)) return fail(409, "conflict");
+    const cosigners = (args.signers as string[] | undefined) ?? [];
+    const voters = this.voters(now);
+    if (cosigners.some((k) => !voters.has(k))) return fail(403, "not_voter");
+    const counted = [...new Set([...cosigners, ...(voters.has(member) ? [member] : [])])];
+    if (counted.length < quorum(voters.size)) return fail(403, "no_quorum", { voters: voters.size, needed: quorum(voters.size) });
+    this.recoveryUsed("recovery", key, member, counted, now);
+    this.metaSet("recovery", key ?? "");
+    this.metaSet("recovery_t", String(t));
+    this.broadcastMembers();
+    return ok({ recovery: key !== null });
+  }
+
+  /** When the recovery key voted, every member's socket hears it, so the surviving device shows its card. */
+  private recoveryUsed(change: "admit" | "remove" | "recovery", target: string | null, by: string, signers: string[], now: number): void {
+    const recovery = this.recoveryKey();
+    if (!recovery || !signers.includes(recovery)) return;
+    const frame = { t: "recovery" as const, change, target, by, at: now };
+    // Kept for the rollback window, so a member offline now gets it in its next hello and in the group's view.
+    this.metaSet("recovery_used", JSON.stringify(frame));
+    this.broadcast(frame);
+  }
+
+  /** The last time the recovery key voted, within the rollback window. */
+  private lastRecoveryUse(now: number): Extract<ServiceFrame, { t: "recovery" }> | undefined {
+    const raw = this.metaGet("recovery_used");
+    if (!raw) return undefined;
+    const frame = JSON.parse(raw) as Extract<ServiceFrame, { t: "recovery" }>;
+    return frame.at >= now - LIMITS.recovery.rollbackMs ? frame : undefined;
+  }
+
+  private recoveryUseField(now: number): { recoveryUsed?: RecoveryUse } {
+    const used = this.lastRecoveryUse(now);
+    return used ? { recoveryUsed: { change: used.change, target: used.target, by: used.by, at: used.at } } : {};
+  }
+
+  private broadcastMembers(): void {
+    this.broadcast({ t: "members", members: this.members(), recovery: this.recoveryKey() !== undefined });
   }
 
   private revokeDevice(device: string, now: number): Reply {
@@ -478,7 +705,17 @@ export class HandshakeDO extends DurableObject<Env> {
       const peer = this.peerOf(member);
       server.send(JSON.stringify({ t: "hello", v: 1, scope: "pair", peer: { online: peer ? this.isOnline(peer, now) : false } } satisfies ServiceFrame));
     } else if (kind === "group") {
-      server.send(JSON.stringify({ t: "hello", v: 1, scope: "group", lease: this.leaseView(), members: this.members() } satisfies ServiceFrame));
+      server.send(
+        JSON.stringify({
+          t: "hello",
+          v: 1,
+          scope: "group",
+          lease: this.leaseView(),
+          members: this.members(),
+          recovery: this.recoveryKey() !== undefined,
+          ...this.recoveryUseField(Date.now()),
+        } satisfies ServiceFrame),
+      );
     } else {
       server.send(JSON.stringify({ t: "hello", v: 1, scope: "account", online: this.onlineDevices(now, member), lease: this.leaseView() } satisfies ServiceFrame));
     }

@@ -6,7 +6,7 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentEvent, AgentQuirks } from "../../contracts/agent-backend";
+import type { AgentBackend, AgentEvent, AgentQuirks } from "../../contracts/agent-backend";
 import type { Level } from "@waifucave/clover-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -71,6 +71,10 @@ export interface WorldOptions {
   pause?: AgentPauseGate;
   /** The bridge tokens' life, on the world's clock. */
   tokenTtlMs?: number;
+  /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
+  extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>) => AgentBackend[];
+  /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
+  bridgeServerName?: string;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -138,9 +142,10 @@ export class World {
       ...(o.place ? { place: o.place } : {}),
       ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
+    const extra = o.extraBackends?.((id) => manager.wire(id)) ?? [];
     manager = new AgentManager({
       home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
-      backends: () => [this.backend], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock }, watchdog: this.watchdog, clock: this.clock,
+      backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
