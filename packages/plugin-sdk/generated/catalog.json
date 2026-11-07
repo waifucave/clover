@@ -113,6 +113,13 @@
       "warns": false
     },
     {
+      "name": "network:public",
+      "lets": "Reach any public host through the core's fetch, with its web floors: public addresses only, the dangerous-domain list, a card before a private address, and the audit log; its components reach no host from it",
+      "ok": "connects to any public website, through Clover's web safeguards",
+      "warns": true,
+      "bundledOnly": true
+    },
+    {
       "name": "network:<host>",
       "lets": "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host",
       "ok": "connects to {host}",
@@ -3145,6 +3152,9 @@
   ],
   "apiCalls": {
     "confirm": {
+      "where": "both"
+    },
+    "confirmCard": {
       "where": "both"
     },
     "t": {

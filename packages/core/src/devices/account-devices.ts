@@ -79,6 +79,9 @@ export interface RevokeOptions {
   account?: AccountClient;
   services?: { hooks?: DeviceService; push?: DeviceService; handshake?: DeviceService };
   fetch?: (req: Request) => Promise<Response>;
+  /** Removes the member from the group with a quorum of its voters (links/group.ts `GroupKeeper.removeMember`); without
+   *  it the removal is this device's signature alone (v1's rule, enough with two voters). */
+  removeGroupMember?(group: string, member: string, device?: string): Promise<void>;
 }
 
 export type RevokeStep = "account" | "hooks" | "push" | "handshake-account" | "handshake-pair" | "handshake-group";
@@ -94,14 +97,23 @@ export interface RevokeOutcome {
 export async function revokeDevice(o: RevokeOptions, id: string, reason?: string): Promise<RevokeOutcome> {
   const pair = o.registry.pairWith(id);
   const group = o.registry.group();
-  const memberKey = group?.members[id]?.key;
+  // Every key ever bound to it in the group, not only the last (H-M2's check 2).
+  const keys = group ? o.registry.groupKeysOf(id) : [];
+  const memberKey = group?.members[id]?.key ?? keys[0];
   await o.registry.revoke(id, reason);
   const steps: RevokeStep[] = [];
   if (pair) steps.push("handshake-pair");
   if (group && memberKey) steps.push("handshake-group");
-  if (o.account && (await o.account.accountId()) !== null) steps.push("account", "hooks", "push", "handshake-account");
+  // A service that isn't configured has nothing to be told: its step isn't added (H-M1's review).
+  if (o.account && (await o.account.accountId()) !== null) {
+    steps.push("account");
+    if (o.services?.hooks) steps.push("hooks");
+    if (o.services?.push) steps.push("push");
+    if (o.services?.handshake) steps.push("handshake-account");
+  }
   o.registry.addPendingRevoke({
-    device: id, steps, ...(pair ? { pair: pair.pairId } : {}), ...(group && memberKey ? { group: { id: group.id, member: memberKey } } : {}),
+    device: id, steps, ...(pair ? { pair: pair.pairId } : {}),
+    ...(group && memberKey ? { group: { id: group.id, member: memberKey, ...(keys.length > 1 ? { others: keys.filter((k) => k !== memberKey) } : {}) } } : {}),
   });
   const outcome = await runRevokeSteps(o, id);
   return outcome;
@@ -146,10 +158,14 @@ async function runRevokeSteps(o: RevokeOptions, id: string): Promise<RevokeOutco
   const g = pending.group;
   if (g) {
     await run("handshake-group", async () => {
+      if (o.removeGroupMember) {
+        for (const k of [g.member, ...(g.others ?? [])]) await o.removeGroupMember(g.id, k, id);
+        return;
+      }
       if (!o.handshake) throw new ContractError("offline", "no handshake to remove the member at yet");
       const stored = await o.store.get(groupKeyRef(g.id));
       if (!stored) throw new ContractError("not_found", "the group's key is gone");
-      await o.handshake.removeGroupMember(g.id, ed25519FromSecret(stored.value), g.member);
+      for (const k of [g.member, ...(g.others ?? [])]) await o.handshake.removeGroupMember(g.id, ed25519FromSecret(stored.value), k);
     });
   }
   const account = o.account;
@@ -157,7 +173,8 @@ async function runRevokeSteps(o: RevokeOptions, id: string): Promise<RevokeOutco
     await run("account", () => account.revokeDevice(id));
     const fetcher = o.fetch ?? ((req: Request) => fetch(req));
     const del = async (svc: DeviceService | undefined, path: string) => {
-      if (!svc) throw new ContractError("refused", "the service isn't configured");
+      // A step kept from before the service was unconfigured: nothing to tell, so it's done.
+      if (!svc) return;
       const token = await account.tokens.current(svc.audience);
       if (!token) throw new ContractError("refused", "no account token");
       const res = await fetcher(new Request(`${svc.url.replace(/\/+$/, "")}${path}`, { method: "DELETE", headers: { authorization: `Bearer ${token.value.reveal()}` } }));

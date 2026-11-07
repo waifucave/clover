@@ -1789,6 +1789,13 @@ if (import.meta.main) {
     process.stdout.write(`${r.line}\n${peer.line}\n`);
     process.exit(r.ok && peer.ok ? 0 : 1);
   }
+  // M-M2: the update feed's signature, against the key this binary carries (./verify-feed.ts).
+  if (process.argv[2] === "__verify-feed") {
+    const { runVerifyFeed } = await import("./verify-feed");
+    const r = runVerifyFeed(process.argv[3]);
+    process.stdout.write(`${r.line}\n`);
+    process.exit(r.code);
+  }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
     const result = await runChannelReceiverProbe();
@@ -2464,6 +2471,13 @@ if (import.meta.main) {
         positionals.push(tok);
       }
       return { positionals, scopeRaw };
+    }
+
+    if (sub === "validate") {
+      const { runPluginValidate } = await import("./plugin-validate-cli");
+      const run = await runPluginValidate(rest);
+      (run.code === 2 ? console.error : console.log)(run.output);
+      process.exit(run.code);
     }
 
     if (sub === "marketplace") {
@@ -3472,6 +3486,7 @@ if (import.meta.main) {
   trust <dir> [--list] | trust list | trust remove <path>
   skills                                          list discovered skills for this directory
   mcp                                              list configured MCP servers and their tools
+  plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>

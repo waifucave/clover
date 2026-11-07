@@ -46,8 +46,8 @@ export function runBrowserApiConformance(make: BrowserApiFactory): void {
       const CODE: Caller = { kind: "session", sessionId: "s_code", sessionKind: "coding" };
       const refused = async (owner: Parameters<typeof browser.open>[0]["owner"], as: Caller) => isContractError(await rejection(browser.open({ owner }, as)), "refused");
       // A plugin acting as itself: its own partition only, never a bot's, a session's or the person's.
-      expect(await browser.open({ owner: { kind: "plugin", pluginId: "clover/browser-tool" } }, PLUGIN)).toMatchObject({ partition: "persist:plugin-clover--browser-tool" });
-      expect(await refused({ kind: "plugin", pluginId: "other" }, PLUGIN)).toBe(true);
+      expect(await browser.open({ owner: { kind: "plugin", plugin: "clover/browser-tool" } }, PLUGIN)).toMatchObject({ partition: "persist:plugin-clover--browser-tool" });
+      expect(await refused({ kind: "plugin", plugin: "other" }, PLUGIN)).toBe(true);
       expect(await refused({ kind: "bot", bot: "alpha" }, PLUGIN)).toBe(true);
       expect(await refused({ kind: "session", session: "s_alpha" }, PLUGIN)).toBe(true);
       expect(await refused({ kind: "user" }, PLUGIN)).toBe(true);

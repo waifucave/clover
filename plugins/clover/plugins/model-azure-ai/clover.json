@@ -10,6 +10,9 @@
       "required": true
     }
   },
+  "capabilities": [
+    "network:${setting:resource}.services.ai.azure.com"
+  ],
   "contributes": {
     "models": [
       {

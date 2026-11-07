@@ -63,7 +63,7 @@ export function isBrowserUrlAllowed(url: string): boolean {
 export const TabOwner = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("bot"), bot: BotId }),
   z.object({ kind: z.literal("session"), session: SessionId }),
-  z.object({ kind: z.literal("plugin"), pluginId: AnyPluginId }),
+  z.object({ kind: z.literal("plugin"), plugin: AnyPluginId }),
   z.object({ kind: z.literal("user") }),
 ]);
 export type TabOwner = z.infer<typeof TabOwner>;

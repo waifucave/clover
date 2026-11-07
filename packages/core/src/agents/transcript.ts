@@ -22,7 +22,7 @@ import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isAnyPluginId, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
-import type { JsonRpcMessage } from "./acp/jsonrpc";
+import type { JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
 
 /** A bot's id as one path segment: `/` written `--` (`pack--luna`, spec §5.1), as lane D's paths write it. Anything
  *  that isn't a plugin id is refused, so no id can climb out of `bots/`. */

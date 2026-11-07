@@ -17,7 +17,7 @@
 //   server's own, and the essentials also travel in the agent's system prompt (S5 edit 3).
 import { randomUUID } from "node:crypto";
 import { CLOVER_PROTOCOL_VERSION } from "@waifucave/clover-protocol";
-import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer } from "../acp/jsonrpc";
+import { RPC_METHOD_NOT_FOUND, RpcError, RpcPeer } from "@waifucave/clover-agent-sdk/acp";
 import type { BridgeToolDef } from "./tools";
 
 export const BRIDGE_ENV = { token: "CLOVER_BRIDGE_TOKEN", session: "CLOVER_BRIDGE_SESSION", socket: "CLOVER_BRIDGE_SOCKET" } as const;

@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, ChangeResult, ComputerName, DeviceId, Empty, Level, Ok, Os, SecretStoreView, SessionId, Timestamp, TreePath,
+  AnyPluginId, BotId, ChangeResult, ComputerName, DeviceId, Empty, FencingToken, Level, Ok, Os, SecretStoreView, SessionId, Timestamp, TreePath,
 } from "./common";
 import { Card, SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
@@ -96,11 +96,13 @@ const ViaPeer = {
   session: SessionId.optional(),
   level: Level.optional(),
   answer: SignedCardAnswer.optional(),
+  /** The sending main's fencing token; a receiver refuses a stale one (`isStaleFence`). */
+  fence: FencingToken.optional(),
 };
 
 /** A peer asks the receiver to change its own level (levels per computer, J-M2): a lowering applies; a raise needs the
  *  user's answer signed for the receiver's own card (`levelRaiseCall`), or it is refused with `NeedsAnswer`. */
-const PeerSetLevel = z.strictObject({ level: Level, answer: SignedCardAnswer.optional() });
+const PeerSetLevel = z.strictObject({ level: Level, answer: SignedCardAnswer.optional(), fence: FencingToken.optional() });
 
 export const COMPUTERS_METHODS = {
   computerList: defineMethod({
@@ -123,7 +125,7 @@ export const COMPUTERS_METHODS = {
     name: "computer.setLevel", owner: "J", roles: ["app", "cli", "remote", "peer"], userOnly: true, change: "sensitive",
     params: z.union([z.strictObject({ name: ComputerName, level: Level }), PeerSetLevel]),
     /** From a peer, only its own variant: `name` is refused (#179's review, S3). */
-    peerParams: PeerSetLevel,
+    roleParams: { peer: PeerSetLevel },
     result: z.union([ChangeResult, z.object({ applied: z.literal(true) })]),
     doc: "Changes a computer's approval level: a sealed card unless made in the user's own terminal (§5.5); from a peer, the receiver's own level.",
   }),
@@ -247,14 +249,14 @@ export const COMPUTERS_METHODS = {
   // checks it against its own rebuilt card, and a holder whose own rule is stricter (read-only) still refuses.
   treeJudge: defineMethod({
     name: "tree.judge", owner: "J", roles: ["peer"],
-    params: z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level }),
+    params: z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level, fence: FencingToken.optional() }),
     result: Ok,
     doc: "Whether this holder would take its part of a move or copy at this level; refused with `NeedsAnswer` when the user's answer would lift it.",
   }),
   treeReceive: defineMethod({
     name: "tree.receive", owner: "J", roles: ["peer"],
     params: z.object({
-      from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level,
+      from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level, fence: FencingToken.optional(),
       /** The one signed answer for the whole operation (R15): its card binds `tree.transfer` (`TreeTransferParams`, with
        *  `operation`, `from`, `to`, `source` and `destination`), and each holder checks it against its own card. */
       answer: SignedCardAnswer.optional(),
