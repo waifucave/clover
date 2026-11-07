@@ -12,12 +12,13 @@
 //   - `unshippedPluginDependencies`: what a plugin's package.json needs that nothing ships beside it;
 //   - `builtPluginImportProblems`: the exact check on a release-time-built tree (wired with that build).
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/manifest/schema";
 import { formatBundledManifest, measureBundledTree, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
-import { buildPluginForShipping, type ShippedPlugin, type ShipTarget } from "../../packages/core/src/registry/ship";
+import { buildPluginForShipping, untarGz, type ShippedPlugin, type ShipTarget } from "../../packages/core/src/registry/ship";
 
 /** The bundled plugins' folder in the app's resources (electron-builder.yml), beside `daemon/`. */
 export const BUNDLED_PLUGINS_DIR = "plugins";
@@ -154,23 +155,94 @@ export type PluginBuilder = (folder: string, o: { target: ShipTarget; out: strin
 /** A built bundled tree: every file (relative to it), its modules and its native addons, paths prefixed `<id>/`. */
 export interface BuiltBundle { files: string[]; modules: BuiltModule[]; natives: ShippedNative[] }
 
-/** Every `name@version` bun.lock holds (its packages' first fields), for the inputs check. */
-export function lockedPackages(lockText: string): Set<string> {
+/** A package bun.lock pins: where its tarball comes from (empty for npm's registry) and its integrity. */
+export interface LockEntry { registry: string; integrity: string }
+
+/** bun.lock's packages by `name@version` (each entry is `[ "name@version", registry, meta, integrity ]`). */
+export function lockEntries(lockText: string): Map<string, LockEntry> {
   // bun.lock is JSON with trailing commas.
   const lock = JSON.parse(lockText.replace(/,(\s*[\]}])/g, "$1")) as { packages?: Record<string, unknown> };
-  const out = new Set<string>();
-  for (const v of Object.values(lock.packages ?? {})) if (Array.isArray(v) && typeof v[0] === "string") out.add(v[0]);
+  const out = new Map<string, LockEntry>();
+  for (const v of Object.values(lock.packages ?? {})) {
+    if (Array.isArray(v) && typeof v[0] === "string") out.set(v[0], { registry: typeof v[1] === "string" ? v[1] : "", integrity: typeof v[3] === "string" ? v[3] : "" });
+  }
   return out;
+}
+
+/** Every `name@version` bun.lock holds. */
+export function lockedPackages(lockText: string): Set<string> {
+  return new Set(lockEntries(lockText).keys());
+}
+
+/** Where a locked package's tarball is: npm's registry, a registry folder, or the full URL bun.lock keeps. */
+export function tarballUrl(name: string, version: string, registry: string): string {
+  const path = `${name}/-/${name.split("/").pop()}-${version}.tgz`;
+  if (registry === "") return `https://registry.npmjs.org/${path}`;
+  return registry.endsWith("/") ? `${registry}${path}` : registry;
+}
+
+/** Downloads a URL with the given headers. */
+export type Download = (url: string, headers: Record<string, string>) => Promise<Uint8Array>;
+
+const fetchBytes: Download = async (url, headers) => {
+  const res = await fetch(url, { headers, redirect: "follow" });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return new Uint8Array(await res.arrayBuffer());
+};
+
+/**
+ * A locked package's files as its tarball holds them, the tarball checked against bun.lock's integrity (the same
+ * check lane B's builder makes for natives): `files("name@version")`, cached per package. GitHub Packages (the
+ * `@waifucave` scope) needs a token even to read: NODE_AUTH_TOKEN, as `bun install` takes it (bunfig.toml); it is sent
+ * only to npm.pkg.github.com and never appears in a message.
+ */
+export function lockedPackageFiles(entries: ReadonlyMap<string, LockEntry>, o: { download?: Download; token?: string } = {}): (id: string) => Promise<Map<string, Uint8Array>> {
+  const download = o.download ?? fetchBytes;
+  const cache = new Map<string, Promise<Map<string, Uint8Array>>>();
+  const load = async (id: string): Promise<Map<string, Uint8Array>> => {
+    const entry = entries.get(id);
+    if (entry === undefined) throw new Error(`${id} isn't in bun.lock`);
+    const at = id.lastIndexOf("@");
+    const name = id.slice(0, at), version = id.slice(at + 1);
+    const url = tarballUrl(name, version, entry.registry);
+    const headers: Record<string, string> = {};
+    if (new URL(url).host === "npm.pkg.github.com") {
+      if (o.token === undefined || o.token === "") throw new Error(`${id} comes from GitHub Packages, which needs NODE_AUTH_TOKEN (a GitHub token with read:packages) to download`);
+      headers.Authorization = `Bearer ${o.token}`;
+    }
+    const [algo, want] = entry.integrity.split(/-(.*)/s, 2) as [string, string | undefined];
+    if (!["sha512", "sha384", "sha256"].includes(algo) || want === undefined) throw new Error(`${id}: bun.lock has no integrity to check its tarball against`);
+    let bytes: Uint8Array;
+    try {
+      bytes = await download(url, headers);
+    } catch (e) {
+      throw new Error(`${id}: its tarball didn't download (${(e as Error).message})`);
+    }
+    if (createHash(algo).update(bytes).digest("base64") !== want) throw new Error(`${id}: the tarball from ${url} isn't what bun.lock pins (${algo} differs)`);
+    const files = new Map<string, Uint8Array>();
+    for (const f of untarGz(bytes, id)) files.set(f.path, f.bytes);
+    const pkg = JSON.parse(new TextDecoder().decode(files.get("package.json") ?? new Uint8Array())) as { name?: unknown; version?: unknown };
+    if (pkg.name !== name || pkg.version !== version) throw new Error(`${id}: its tarball is ${String(pkg.name)}@${String(pkg.version)}`);
+    return files;
+  };
+  return (id) => {
+    let p = cache.get(id);
+    if (p === undefined) { p = load(id); cache.set(id, p); }
+    return p;
+  };
 }
 
 /**
  * The files a release build's bundler read that it may not ship, each named with why (none means all are vetted).
  * The bundler inlines whatever an entry imports, wherever it is: the staging filter limits only what is copied. So
- * every input (its real path) must be a file tracked at HEAD under `root`, or a file of a node_modules package under
- * `root` whose package.json name is its folder's and whose `name@version` bun.lock holds. Anything else (an ignored
- * build output, a file outside the checkout, a package bun.lock doesn't name) is refused.
+ * every input (its real path) must be either
+ *   - a file tracked at HEAD under `root`, or
+ *   - a file of a node_modules package under `root` whose package.json names its folder, whose `name@version` bun.lock
+ *     holds, and whose bytes are that file's in the package's tarball (checked against bun.lock's integrity): a file
+ *     added to an installed package, an edited one, or a package that only claims a locked name and version fails.
+ * Anything else (an ignored build output, a file outside the checkout) is refused.
  */
-export function unvettedInputs(inputs: readonly string[], o: { root: string; tracked: ReadonlySet<string>; locked: ReadonlySet<string>; read?: (path: string) => string }): string[] {
+export async function unvettedInputs(inputs: readonly string[], o: { root: string; tracked: ReadonlySet<string>; locked: ReadonlySet<string>; packageFiles: (id: string) => Promise<Map<string, Uint8Array>>; read?: (path: string) => string }): Promise<string[]> {
   const read = o.read ?? ((path: string) => readFileSync(path, "utf8"));
   const root = realpathSync(o.root);
   const problems: string[] = [];
@@ -190,13 +262,25 @@ export function unvettedInputs(inputs: readonly string[], o: { root: string; tra
     const nm = rel.lastIndexOf("node_modules/");
     if (nm >= 0) {
       const after = rel.slice(nm + "node_modules/".length).split("/");
-      const name = after[0]!.startsWith("@") ? after.slice(0, 2).join("/") : after[0]!;
+      const scoped = after[0]!.startsWith("@");
+      const name = scoped ? after.slice(0, 2).join("/") : after[0]!;
+      const inPackage = after.slice(scoped ? 2 : 1).join("/");
       const pkgDir = `${rel.slice(0, nm)}node_modules/${name}`;
       let pkg: { name?: unknown; version?: unknown } = {};
       try { pkg = JSON.parse(read(join(root, ...pkgDir.split("/"), "package.json"))); } catch { /* named below */ }
       const id = `${String(pkg.name)}@${String(pkg.version)}`;
-      if (pkg.name !== name || typeof pkg.version !== "string") problems.push(`${rel}: in ${pkgDir}, whose package.json doesn't name ${name} with a version`);
-      else if (!o.locked.has(id)) problems.push(`${rel}: in ${id}, which bun.lock doesn't hold`);
+      if (pkg.name !== name || typeof pkg.version !== "string") { problems.push(`${rel}: in ${pkgDir}, whose package.json doesn't name ${name} with a version`); continue; }
+      if (!o.locked.has(id)) { problems.push(`${rel}: in ${id}, which bun.lock doesn't hold`); continue; }
+      let files: Map<string, Uint8Array>;
+      try {
+        files = await o.packageFiles(id);
+      } catch (e) {
+        problems.push(`${rel}: ${(e as Error).message}`);
+        continue;
+      }
+      const want = files.get(inPackage);
+      if (want === undefined) problems.push(`${rel}: not in ${id}'s tarball (a file added to the installed package)`);
+      else if (!Buffer.from(readFileSync(real)).equals(Buffer.from(want))) problems.push(`${rel}: differs from ${id}'s tarball`);
       continue;
     }
     if (!o.tracked.has(rel)) problems.push(`${rel}: the build read a file that isn't tracked at HEAD`);
@@ -204,13 +288,18 @@ export function unvettedInputs(inputs: readonly string[], o: { root: string; tra
   return problems;
 }
 
-/** The repository's own vetting of a release build's inputs: HEAD's tracked files and bun.lock (unvettedInputs). */
-export function repoInputVetter(root: string): (inputs: readonly string[]) => string[] {
+/**
+ * The repository's own vetting of a release build's inputs (unvettedInputs): HEAD's tracked files, and bun.lock's
+ * packages with their tarballs (`packageFiles`, default lockedPackageFiles with NODE_AUTH_TOKEN from the environment).
+ */
+export function repoInputVetter(root: string, o: { packageFiles?: (id: string) => Promise<Map<string, Uint8Array>>; download?: Download } = {}): (inputs: readonly string[]) => Promise<string[]> {
   const r = spawnSync("git", ["ls-tree", "-r", "-z", "--name-only", "HEAD"], { cwd: root, maxBuffer: 1 << 30 });
   if (r.status !== 0) throw new Error(`git ls-tree HEAD failed: ${String(r.stderr).trim()}`);
   const tracked = new Set(String(r.stdout).split("\0").filter(Boolean));
-  const locked = lockedPackages(readFileSync(join(root, "bun.lock"), "utf8"));
-  return (inputs) => unvettedInputs(inputs, { root, tracked, locked });
+  const entries = lockEntries(readFileSync(join(root, "bun.lock"), "utf8"));
+  const locked = new Set(entries.keys());
+  const packageFiles = o.packageFiles ?? lockedPackageFiles(entries, { download: o.download, token: process.env.NODE_AUTH_TOKEN });
+  return (inputs) => unvettedInputs(inputs, { root, tracked, locked, packageFiles });
 }
 
 /**
@@ -223,7 +312,7 @@ export function repoInputVetter(root: string): (inputs: readonly string[]) => st
  * plugin names goes unshipped (`unshippedPluginDependencies`), and every file the bundler read into a module is
  * tracked at HEAD or in a package bun.lock holds (`unvettedInputs`). Any problem throws, and `dest` is removed.
  */
-export async function buildBundledPlugins(root: string, dest: string, target: ShipTarget, o: { source?: PluginsSource; build?: PluginBuilder; vet?: (inputs: readonly string[]) => string[] } = {}): Promise<BuiltBundle> {
+export async function buildBundledPlugins(root: string, dest: string, target: ShipTarget, o: { source?: PluginsSource; build?: PluginBuilder; vet?: (inputs: readonly string[]) => Promise<string[]> | string[] } = {}): Promise<BuiltBundle> {
   const source = o.source ?? gitPluginsSource(root);
   const build: PluginBuilder = o.build ?? ((folder, opts) => buildPluginForShipping(folder, opts));
   const vet = o.vet ?? repoInputVetter(root);
@@ -243,7 +332,7 @@ export async function buildBundledPlugins(root: string, dest: string, target: Sh
     }
     out.files.sort();
     const problems = [
-      ...vet([...inputs].sort()),
+      ...(await vet([...inputs].sort())),
       ...builtPluginImportProblems(out.modules, out.files, { natives: out.natives, target }),
       ...unshippedPluginDependencies(out.files, (rel) => readFileSync(join(dest, ...rel.split("/")), "utf8")).map((d) => `${d}: a dependency nothing ships`),
     ];

@@ -2,10 +2,11 @@
 // nothing a release leaves out; a plugin's runtime dependencies must ship with it; and the exact import check on a
 // built tree.
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildBundledPlugins, builtPluginImportProblems, bundledPluginsProblems, lockedPackages, type PluginBuilder, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, repoInputVetter, scanModule, stageBundledPlugins, unshippedPluginDependencies, unvettedInputs, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
+import { buildBundledPlugins, builtPluginImportProblems, bundledPluginsProblems, lockedPackageFiles, lockedPackages, lockEntries, tarballUrl, type PluginBuilder, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, repoInputVetter, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
 import { buildPluginModule } from "../../packages/core/src/registry/build";
 import { buildPluginForShipping, hostShipTarget } from "../../packages/core/src/registry/ship";
 import { measureBundledTree, parseBundledManifest, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
@@ -282,11 +283,46 @@ describe("the bundled plugins, built for shipping (lane B's buildPluginForShippi
   });
 });
 
-describe("what the bundler read: every input tracked at HEAD or in a package bun.lock holds (#244 check 4)", () => {
-  const lock = (pkgs: string[]): string => `{\n  "lockfileVersion": 1,\n  "packages": {\n${pkgs.map((p) => `    "${p.replace(/@[^@]*$/, "")}": ["${p}", "", {}, "sha512-x"],\n`).join("")}  },\n}\n`;
+describe("what the bundler read: every input tracked at HEAD or in a package bun.lock holds, byte for byte (#244 check 4, #285)", () => {
+  /** A minimal npm tarball: ustar under `package/`, gzipped. */
+  const tgz = (files: Record<string, string>): Uint8Array => {
+    const blocks: Uint8Array[] = [];
+    for (const [path, body] of Object.entries(files)) {
+      const h = new Uint8Array(512);
+      const put = (at: number, text: string) => h.set(new TextEncoder().encode(text), at);
+      const bytes = new TextEncoder().encode(body);
+      put(0, `package/${path}`);
+      put(100, "0000644\0");
+      put(108, "0000000\0");
+      put(116, "0000000\0");
+      put(124, `${bytes.length.toString(8).padStart(11, "0")}\0`);
+      put(136, "00000000000\0");
+      put(148, "        ");
+      h[156] = 0x30;
+      put(257, "ustar\0");
+      put(263, "00");
+      put(148, `${h.reduce((a, b) => a + b, 0).toString(8).padStart(6, "0")}\0 `);
+      blocks.push(h, bytes, new Uint8Array((512 - (bytes.length % 512)) % 512));
+    }
+    blocks.push(new Uint8Array(1024));
+    return Bun.gzipSync(cat(...blocks));
+  };
+  const cat = (...parts: Uint8Array[]): Uint8Array<ArrayBuffer> => { const out = new Uint8Array(parts.reduce((n, x) => n + x.length, 0)); let o = 0; for (const x of parts) { out.set(x, o); o += x.length; } return out; };
+  const sri = (b: Uint8Array): string => `sha512-${createHash("sha512").update(b).digest("base64")}`;
+  /** A bun.lock pinning each package to its tarball (npm's registry unless `registry` says otherwise). */
+  const lockFor = (pkgs: Record<string, Uint8Array>, registry = ""): string =>
+    `{\n  "lockfileVersion": 1,\n  "packages": {\n${Object.entries(pkgs).map(([id, t]) => `    "${id.replace(/@[^@]*$/, "")}": ["${id}", "${registry}", {}, "${sri(t)}"],\n`).join("")}  },\n}\n`;
+  const lock = (ids: string[]): string => lockFor(Object.fromEntries(ids.map((id) => [id, new Uint8Array([1])])));
+  /** Installs `files` as node_modules/<dir> (its package.json too). */
+  const install = (root: string, dir: string, files: Record<string, string>): void => {
+    for (const [f, body] of Object.entries(files)) { mkdirSync(join(root, "node_modules", dir, f, ".."), { recursive: true }); writeFileSync(join(root, "node_modules", dir, f), body); }
+  };
 
   test("bun.lock's packages, read with its trailing commas", () => {
     expect([...lockedPackages(lock(["left-pad@1.3.0", "@scope/pkg@2.0.0"]))].sort()).toEqual(["@scope/pkg@2.0.0", "left-pad@1.3.0"]);
+    expect(tarballUrl("left-pad", "1.3.0", "")).toBe("https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz");
+    expect(tarballUrl("@s/p", "2.0.0", "https://r.example/")).toBe("https://r.example/@s/p/-/p-2.0.0.tgz");
+    expect(tarballUrl("@s/p", "2.0.0", "https://npm.pkg.github.com/download/@s/p/2.0.0/abc")).toBe("https://npm.pkg.github.com/download/@s/p/2.0.0/abc");
   });
 
   test("the reviewer's probe: an entry importing an ignored file outside its plugin gets it inlined, and the inputs check refuses it by name", async () => {
@@ -301,7 +337,7 @@ describe("what the bundler read: every input tracked at HEAD or in a package bun
     // Inlined: the copy filter never saw it.
     expect(built.source).toContain("generated, never committed");
     expect(built.inputs.map((p) => p.split("/").slice(-2).join("/")).sort()).toEqual(["clover/host.ts", "ignored/gen.ts"]);
-    expect(repoInputVetter(dir)(built.inputs)).toEqual(["ignored/gen.ts: the build read a file that isn't tracked at HEAD"]);
+    expect(await repoInputVetter(dir)(built.inputs)).toEqual(["ignored/gen.ts: the build read a file that isn't tracked at HEAD"]);
     // Through the release's build: the build fails, naming it, and the stage is removed.
     const dest = join(dir, "out", "plugins");
     const leaking: PluginBuilder = async (folder, o) => {
@@ -313,41 +349,103 @@ describe("what the bundler read: every input tracked at HEAD or in a package bun
     expect(existsSync(dest)).toBe(false);
   });
 
-  test("a node_modules file passes only when its package's name and version are bun.lock's; outside the checkout is refused", () => {
-    const dir = repo({ "bun.lock": lock(["left-pad@1.3.0"]), "plugins/clover/host.ts": "x" });
-    const pkg = (version: string, name = "left-pad"): string => {
-      mkdirSync(join(dir, "node_modules", "left-pad"), { recursive: true });
-      writeFileSync(join(dir, "node_modules", "left-pad", "package.json"), JSON.stringify({ name, version }));
-      writeFileSync(join(dir, "node_modules", "left-pad", "index.js"), "module.exports = 1;");
-      return join(dir, "node_modules", "left-pad", "index.js");
+  test("a node_modules file passes only when it is byte for byte its package's file in the tarball bun.lock pins", async () => {
+    const leftPad = { "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "module.exports = 1;" };
+    const react = { "package.json": JSON.stringify({ name: "react", version: "19.0.0" }), "index.js": "export const r = 1;" };
+    const tarballs: Record<string, Uint8Array> = { "left-pad@1.3.0": tgz(leftPad), "react@19.0.0": tgz(react) };
+    const dir = repo({ "bun.lock": lockFor(tarballs), "plugins/clover/host.ts": "x" });
+    install(dir, "left-pad", leftPad);
+    install(dir, "react", react);
+    const fetched: string[] = [];
+    const download = async (url: string): Promise<Uint8Array> => {
+      fetched.push(url);
+      const id = /\/-\/(.+)-(\d+\.\d+\.\d+)\.tgz$/.exec(url)!;
+      return tarballs[`${id[1]}@${id[2]}`]!;
     };
-    const vet = repoInputVetter(dir);
-    expect(vet([pkg("1.3.0"), join(dir, "plugins", "clover", "host.ts")])).toEqual([]);
-    // A package whose version was changed by hand (or installed outside the lockfile).
-    expect(vet([pkg("1.3.1")])).toEqual(["node_modules/left-pad/index.js: in left-pad@1.3.1, which bun.lock doesn't hold"]);
-    expect(vet([pkg("1.3.0", "right-pad")])).toEqual(["node_modules/left-pad/index.js: in node_modules/left-pad, whose package.json doesn't name left-pad with a version"]);
+    const vet = repoInputVetter(dir, { download });
+    const nm = (p: string): string => join(dir, "node_modules", ...p.split("/"));
+    expect(await vet([nm("left-pad/index.js"), nm("react/index.js"), join(dir, "plugins", "clover", "host.ts")])).toEqual([]);
+    // Each package's tarball is fetched once, from npm's registry.
+    expect(fetched.sort()).toEqual(["https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz", "https://registry.npmjs.org/react/-/react-19.0.0.tgz"]);
+    // The reviewer's probes: a file added to an installed, locked package ...
+    writeFileSync(nm("react/evil.js"), "steal();");
+    expect(await vet([nm("react/evil.js")])).toEqual(["node_modules/react/evil.js: not in react@19.0.0's tarball (a file added to the installed package)"]);
+    // ... and a fake nested package claiming a locked name and version.
+    install(dir, "react/node_modules/left-pad", { "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "steal();" });
+    expect(await vet([nm("react/node_modules/left-pad/index.js")])).toEqual(["node_modules/react/node_modules/left-pad/index.js: differs from left-pad@1.3.0's tarball"]);
+    // An edited file of a locked package.
+    writeFileSync(nm("left-pad/index.js"), "module.exports = 2;");
+    expect(await vet([nm("left-pad/index.js")])).toEqual(["node_modules/left-pad/index.js: differs from left-pad@1.3.0's tarball"]);
+    // Identity first: a version bun.lock doesn't hold, a misnamed package.
+    install(dir, "left-pad", { "package.json": JSON.stringify({ name: "left-pad", version: "1.3.1" }) });
+    expect(await vet([nm("left-pad/index.js")])).toEqual(["node_modules/left-pad/index.js: in left-pad@1.3.1, which bun.lock doesn't hold"]);
+    install(dir, "left-pad", { "package.json": JSON.stringify({ name: "right-pad", version: "1.3.0" }) });
+    expect(await vet([nm("left-pad/index.js")])).toEqual(["node_modules/left-pad/index.js: in node_modules/left-pad, whose package.json doesn't name left-pad with a version"]);
+    // Outside the checkout, and not a file at all.
     const outside = join(mkdtempSync(join(tmpdir(), "lane-m-outside-")), "x.ts");
     writeFileSync(outside, "x");
-    expect(vet([outside])).toEqual([`${realpathSync(outside)}: the build read a file outside the checkout`]);
-    expect(vet([join(dir, "gone.ts")])).toEqual([`${join(dir, "gone.ts")}: the build read it, and it isn't a file here`]);
-    // A tracked file modified in the working tree is still HEAD's path; the release's clean-checkout gate refuses the edit.
-    expect(unvettedInputs([join(dir, "plugins", "clover", "host.ts")], { root: dir, tracked: new Set(), locked: new Set() })).toEqual(["plugins/clover/host.ts: the build read a file that isn't tracked at HEAD"]);
+    expect(await vet([outside])).toEqual([`${realpathSync(outside)}: the build read a file outside the checkout`]);
+    expect(await vet([join(dir, "gone.ts")])).toEqual([`${join(dir, "gone.ts")}: the build read it, and it isn't a file here`]);
   });
 
-  test("today's bundled plugins pass: every file the real build reads is tracked at HEAD or in a package bun.lock holds", async () => {
+  test("a tarball is trusted only on bun.lock's integrity, and GitHub Packages needs NODE_AUTH_TOKEN, sent only there", async () => {
+    const good = tgz({ "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "1" });
+    const entries = lockEntries(lockFor({ "left-pad@1.3.0": good }));
+    const swapped = lockedPackageFiles(entries, { download: async () => tgz({ "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "evil" }) });
+    await expect(swapped("left-pad@1.3.0")).rejects.toThrow("isn't what bun.lock pins (sha512 differs)");
+    const gh = lockEntries(lockFor({ "@waifucave/x@1.0.0": good }, "https://npm.pkg.github.com/download/@waifucave/x/1.0.0/abc"));
+    await expect(lockedPackageFiles(gh, { download: async () => good })("@waifucave/x@1.0.0")).rejects.toThrow("needs NODE_AUTH_TOKEN");
+    const sent: Array<Record<string, string>> = [];
+    const files = lockedPackageFiles(gh, { token: "tok-123", download: async (_url, headers) => { sent.push(headers); return good; } });
+    // The tarball says left-pad, not @waifucave/x: refused, and the token never shows in the message.
+    const err = await files("@waifucave/x@1.0.0").catch((e: Error) => e.message);
+    expect(err).toContain("its tarball is left-pad@1.3.0");
+    expect(err).not.toContain("tok-123");
+    expect(sent).toEqual([{ Authorization: "Bearer tok-123" }]);
+    // npm's registry gets no token.
+    const npm: Array<Record<string, string>> = [];
+    await lockedPackageFiles(entries, { token: "tok-123", download: async (_u, h) => { npm.push(h); return good; } })("left-pad@1.3.0");
+    expect(npm).toEqual([{}]);
+  });
+
+  test("today's bundled plugins pass: every file the real build reads is tracked at HEAD or a locked package's own file", async () => {
     const target = hostShipTarget();
     if (target === undefined) return;
     const dest = join(mkdtempSync(join(tmpdir(), "lane-m-inputs-real-")), "plugins");
     const seen: string[] = [];
-    const vet = repoInputVetter(ROOT);
-    // The release's own build, its natives taken from this checkout's install for the host (no download in a test).
+    // No download in a test: each package's files come from this checkout's install, read through the same check (a
+    // release build fetches the tarballs bun.lock pins instead). Every input is still classified: tracked, or a
+    // locked package's file by name, version and path.
+    const installed = new Map<string, string>();
+    const vet = repoInputVetter(ROOT, {
+      packageFiles: async (id) => {
+        const dir = installed.get(id);
+        if (dir === undefined) throw new Error(`${id}: not installed here`);
+        const files = new Map<string, Uint8Array>();
+        const walk = (rel: string): void => {
+          for (const n of readdirSync(join(dir, rel), { withFileTypes: true })) {
+            const r = rel === "" ? n.name : `${rel}/${n.name}`;
+            if (n.isDirectory()) { if (n.name !== "node_modules") walk(r); } else files.set(r, new Uint8Array(readFileSync(join(dir, r))));
+          }
+        };
+        walk("");
+        return files;
+      },
+    });
     const built = await buildBundledPlugins(ROOT, dest, target, {
       build: (folder, o) => buildPluginForShipping(folder, { ...o, dev: true }),
-      vet: (inputs) => { seen.push(...inputs); return vet(inputs); },
+      vet: async (inputs) => {
+        seen.push(...inputs);
+        for (const i of inputs) {
+          const m = /^(.*\/node_modules\/(?:@[^/]+\/)?[^/]+)\//.exec(realpathSync(i));
+          if (m) { const p = JSON.parse(readFileSync(join(m[1]!, "package.json"), "utf8")); installed.set(`${p.name}@${p.version}`, m[1]!); }
+        }
+        return vet(inputs);
+      },
     });
     expect(built.modules.length).toBeGreaterThan(0);
     expect(seen.some((p) => p.includes("/node_modules/"))).toBe(true);
-    expect(vet(seen)).toEqual([]);
+    expect(await vet(seen)).toEqual([]);
     rmSync(join(dest, ".."), { recursive: true, force: true });
   }, 120_000);
 });
