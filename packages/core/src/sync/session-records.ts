@@ -58,7 +58,7 @@ export interface SessionRecordSink {
   setAside(id: string, fromSeq: number, opts: { from: string }): SessionRecord[];
   /** On the computer running the session: another computer's set-aside records, appended at the end marked late.
    *  The same records again add nothing. */
-  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string }): unknown;
+  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string; earlierId?: string }): unknown;
   /** What this computer set aside for a session, and whether the writer has it yet. */
   earlier(id: string): { id: string; delivered?: number }[];
   readEarlier(id: string, earlierId: string): SessionRecord[];
@@ -148,7 +148,7 @@ export class SessionRecordSync {
         this.#mustBeComputer(from);
         const p = raw as { stream?: unknown; base?: unknown; entries?: unknown; head?: unknown; late?: unknown } | undefined;
         const id = sessionOf(p?.stream);
-        if (p?.late === true && id && Array.isArray(p.entries)) return this.#takeLate(id, p.entries as Entry[], from);
+        if (p?.late === true && id && Array.isArray(p.entries)) return this.#takeLate(id, p.entries as Entry[], from, typeof (p as { earlierId?: unknown }).earlierId === "string" ? (p as { earlierId: string }).earlierId : undefined);
         if (!id || typeof p?.base !== "number" || !Array.isArray(p.entries)) throw new ContractError("invalid", "sync.push: bad params");
         return this.#take(id, p.base, p.entries as Entry[], from, typeof p.head === "number" ? p.head : undefined);
       },
@@ -408,12 +408,12 @@ export class SessionRecordSync {
         if (records.length > 0) {
           if (view.computer === this.#o.computer()) {
             // This computer runs it now: its own set-aside records go at the end of its own log.
-            this.#o.host.appendLate(id, records, { from: this.#o.self, computer: this.#o.computer() });
+            this.#o.host.appendLate(id, records, { from: this.#o.self, computer: this.#o.computer(), earlierId: e.id });
           } else {
             const runner = this.#o.registry.list().find((d) => d.computer === view.computer && d.runsCore && d.revokedAt === undefined);
             if (!runner) return;
             const link = await this.#o.transport.connect(runner.id);
-            const r = await link.request<{ ok: boolean }>("sync.push", { stream: `${PREFIX}${id}`, late: true, entries: records.map((rec) => this.#entry(rec, undefined)) });
+            const r = await link.request<{ ok: boolean }>("sync.push", { stream: `${PREFIX}${id}`, late: true, earlierId: e.id, entries: records.map((rec) => this.#entry(rec, undefined)) });
             if (!r.ok) {
               again = true;
               return;
@@ -449,7 +449,7 @@ export class SessionRecordSync {
   }
 
   /** Another computer's set-aside records for a session this computer runs: appended at the end, marked late. */
-  #takeLate(id: string, entries: Entry[], from: string): { ok: boolean; reason?: string } {
+  #takeLate(id: string, entries: Entry[], from: string, earlierId?: string): { ok: boolean; reason?: string } {
     const view = this.#o.host.get(id);
     if (!view) return { ok: false, reason: "refused" };
     if (view.computer !== this.#o.computer()) return { ok: false, reason: "not_runner" };
@@ -462,7 +462,8 @@ export class SessionRecordSync {
     const computer = this.#o.registry.get(from)?.computer;
     if (computer === undefined) return { ok: false, reason: "refused" };
     try {
-      this.#o.host.appendLate(id, records, { from, computer });
+      // The run's id names its one "Earlier on <computer>" note there, however many pages it comes in.
+      this.#o.host.appendLate(id, records, { from, computer, ...(earlierId !== undefined && earlierId.length <= 128 ? { earlierId } : {}) });
     } catch (e) {
       // Not now (lane D refuses while one of this computer's own turns runs): the sender asks again.
       if (e instanceof ContractError) return { ok: false, reason: e.code };

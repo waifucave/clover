@@ -99,11 +99,13 @@ class MemoryHost implements SessionHostForSync {
   /** One of this computer's own turns runs: lane D refuses late records until it ends (typed, to be asked again). */
   busy = false;
   lateRefusals = 0;
-  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string }): void {
+  readonly lateRuns: (string | undefined)[] = [];
+  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string; earlierId?: string }): void {
     if (this.busy) {
       this.lateRefusals++;
       throw new ContractError("conflict", "a turn is running here: ask again once it ended");
     }
+    this.lateRuns.push(opts.earlierId);
     const s = this.sessions.get(id)!;
     for (const r of records) {
       const k = `${opts.from}\u0000${r.seq}`;
@@ -328,6 +330,7 @@ describe("forks: two computers that wrote the same place", () => {
     expect(texts(laptop).slice(10)).toEqual(["B10", "B11", "B12", "A10", "A11"]);
     expect(laptop.history("b_alpha").slice(13).every((r) => (r as { late?: boolean }).late === true)).toBe(true);
     expect(studio.bodies("b_alpha")).toEqual(laptop.bodies("b_alpha"));
+    expect(laptop.lateRuns).toEqual(["e0"]); // the run's id travels with it
     expect(studio.asides).toEqual([{ id: "b_alpha", from: laptopDev.id, earlierId: "e0", delivered: expect.any(Number), records: [expect.objectContaining({ seq: 10 }), expect.objectContaining({ seq: 11 })] }]);
     // Live after that, on the one log.
     laptop.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "B15" } }, 2);
