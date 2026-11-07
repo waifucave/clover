@@ -3,7 +3,7 @@ import { moduleGraphRange, REQUIRED_NATIVE_NAMES, SEALED_ENV_NAMES, sealBunDoors
 
 const enc = new TextEncoder();
 /** Bun's native code as it names the doors: NUL-terminated, and in a run of names with no separators. */
-const NATIVE = `\0NO_COLOR\0BUN_BE_BUN\0BUN_INSTRUMENTS\0link binaryBUN_OPTIONSBUN_INSPECTBUN_INSPECT_CONNECT_TOBUN_INSPECT_NOTIFYBUN_INSPECT_PRELOADNODE_CHANNEL_FD\0nodePath = Bun.env.NODE_PATH, x\0 if (process.env.BUN_INSPECT_NOTIFY = "", y) ["HOME",\n "NODE_PATH",\n "X"]\0`;
+const NATIVE = `\0NO_COLOR\0BUN_BE_BUN\0BUN_INSTRUMENTS\0link binaryBUN_OPTIONSBUN_INSPECTBUN_INSPECT_CONNECT_TOBUN_INSPECT_NOTIFYBUN_INSPECT_PRELOADNODE_CHANNEL_FD\0BUN_CONFIG_VERBOSE_FETCH\0nodePath = Bun.env.NODE_PATH, x\0 if (process.env.BUN_INSPECT_NOTIFY = "", y) ["HOME",\n "NODE_PATH",\n "X"]\0`;
 /** The app's own bundle, which names some of them on purpose (the run home's environment refusals). */
 const GRAPH = `const refused = ["NODE_OPTIONS", "NODE_PATH", "BUN_OPTIONS", "BUN_INSPECT", "BUN_BE_BUN"];`;
 
@@ -117,29 +117,48 @@ describe("the replacements: same length, and a name no environment can carry", (
 });
 
 describe("sealBunDoors", () => {
-  for (const [format, make] of [["macho", macho], ["elf", elf], ["pe", pe]] as const) {
-    test(`${format}: every name outside the module graph becomes its token, and the graph is untouched`, () => {
-      const bytes = make(NATIVE, GRAPH);
-      const graph = moduleGraphRange(bytes);
-      expect(graph.format).toBe(format);
-      const graphBefore = bytes.slice(graph.start, graph.end);
-      expect(sealProblems(bytes).length).toBeGreaterThan(0);
-      const r = sealBunDoors(bytes);
-      expect(r.alreadySealed).toBe(false);
-      expect(r.sealed).toEqual({ BUN_INSPECT_CONNECT_TO: 1, BUN_INSPECT_PRELOAD: 1, BUN_INSPECT_NOTIFY: 2, BUN_INSPECT: 1, BUN_OPTIONS: 1, BUN_BE_BUN: 1, NODE_PATH: 2 });
-      expect(Buffer.from(bytes.slice(graph.start, graph.end)).equals(Buffer.from(graphBefore))).toBe(true);
-      expect(sealProblems(bytes)).toEqual([]);
-      // Nothing else moved: the separators and the neighbours are where they were.
-      const native = Buffer.from(bytes.subarray(0, graph.start)).toString("latin1");
+  const SEALED = { BUN_INTERNAL_WEBVIEW_HOST: 0, BUN_CONFIG_VERBOSE_FETCH: 1, BUN_INSPECT_CONNECT_TO: 1, BUN_INSPECT_PRELOAD: 1, BUN_INSPECT_NOTIFY: 2, BUN_INSPECT: 1, BUN_OPTIONS: 1, BUN_BE_BUN: 1, NODE_PATH: 2 };
+  const check = (bytes: Uint8Array, expectNative: (native: string) => void) => {
+    const graph = moduleGraphRange(bytes);
+    const graphBefore = bytes.slice(graph.start, graph.end);
+    expect(sealProblems(bytes).length).toBeGreaterThan(0);
+    const r = sealBunDoors(bytes);
+    expect(r.alreadySealed).toBe(false);
+    expect(r.sealed).toEqual(SEALED);
+    expect(Buffer.from(bytes.slice(graph.start, graph.end)).equals(Buffer.from(graphBefore))).toBe(true);
+    expect(sealProblems(bytes)).toEqual([]);
+    expectNative(Buffer.from(bytes.subarray(0, graph.start)).toString("latin1"));
+    // The bundle still names every one (its refusals list is the app's, not Bun's).
+    for (const name of ["NODE_PATH", "BUN_OPTIONS", "BUN_INSPECT", "BUN_BE_BUN"]) expect(count(bytes, name)).toBe(1);
+  };
+
+  test("macho: each name becomes DYLD_ and letters, everywhere (dyld strips DYLD_* from a hardened process); the graph is untouched", () => {
+    check(macho(NATIVE, GRAPH), (native) => {
+      expect(native).toContain(`\0NO_COLOR\0DYLD_${sealFiller("BUN_BE_BUN", 5)}\0BUN_INSTRUMENTS\0`);
+      expect(native).toContain(`Bun.env.DYLD_${sealFiller("NODE_PATH", 4)}, x`);
+      expect(native).toContain(`process.env.DYLD_${sealFiller("BUN_INSPECT_NOTIFY", 13)} = ""`);
+      expect(native).toContain(`"DYLD_${sealFiller("NODE_PATH", 4)}",`);
+      expect(native).toContain("NODE_CHANNEL_FD");
+      expect(native).not.toContain(`\0\0${sealFiller("BUN_BE_BUN", 9)}`);
+    });
+  });
+
+  test("elf: a NUL then letters in native code, a U+0000 key in Bun's JS; the graph is untouched", () => {
+    check(elf(NATIVE, GRAPH), (native) => {
       expect(native).toContain(`\0NO_COLOR\0\0${sealFiller("BUN_BE_BUN", 9)}\0BUN_INSTRUMENTS\0`);
       expect(native).toContain(`Bun.env["\\0${sealFiller("NODE_PATH", 4)}"], x`);
       expect(native).toContain(`process.env["\\0${sealFiller("BUN_INSPECT_NOTIFY", 13)}"] = ""`);
       expect(native).toContain(`"\\0${sealFiller("NODE_PATH", 7)}",`);
       expect(native).toContain("NODE_CHANNEL_FD");
-      // The bundle still names every one (its refusals list is the app's, not Bun's).
-      for (const name of ["NODE_PATH", "BUN_OPTIONS", "BUN_INSPECT", "BUN_BE_BUN"]) expect(count(bytes, name)).toBe(1);
     });
-  }
+  });
+
+  test("pe: a Windows binary is never sealed, and the byte check wants it unsealed", () => {
+    const bytes = pe(NATIVE, GRAPH);
+    expect(() => sealBunDoors(bytes)).toThrow("a Windows binary is not sealed");
+    expect(sealProblems(bytes)).toEqual([]);
+    expect(sealProblems(pe(NATIVE.replaceAll("BUN_BE_BUN", "\0".repeat(10)), GRAPH))).toEqual(["BUN_BE_BUN is missing from a Windows binary, which must not be sealed (no half-seal ships)"]);
+  });
 
   test("sealing twice changes nothing and says so", () => {
     const bytes = elf(NATIVE, GRAPH);
@@ -162,9 +181,9 @@ describe("sealBunDoors", () => {
   });
 
   test("the byte check names what is left", () => {
-    const bytes = pe(NATIVE, GRAPH);
+    const bytes = elf(NATIVE, GRAPH);
     const problems = sealProblems(bytes);
     expect(problems.some((p) => p.startsWith("BUN_BE_BUN is still in Bun's code"))).toBe(true);
-    expect(problems.some((p) => p.includes("sealed token is missing"))).toBe(true);
+    expect(problems.some((p) => p.includes("sealed replacement is missing"))).toBe(true);
   });
 });

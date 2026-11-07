@@ -11,7 +11,8 @@
 //
 // Every `bun build` step gets `--define __CLOVER_DIST__=true` (packages/core/src/build-kind.ts: a dist build ignores
 // the environment's choice of programs to run), and the compiled binary is sealed (scripts/seal-bun-doors.ts: Bun's
-// BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT* and NODE_PATH lookups renamed, then the byte check) before anything signs it.
+// BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH made unsettable on macOS and Linux,
+// then the byte check; a Windows binary is left unsealed) before anything signs it.
 //
 // Output: dist/daemon/<target>/clover-core (clover-core.exe on Windows), with its size and SHA-256 printed. The
 // binary is unsigned on every OS: the dev daemon signs its own copy on macOS (scripts/dev-daemon.ts), and release
@@ -215,7 +216,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     // The seal (seal-bun-doors.ts): Bun's own doors to foreign code, closed before anything signs the binary.
     try {
       const sealed = sealFile(output);
-      console.log(`build:daemon: ${target}: sealed ${Object.entries(sealed.sealed).map(([n, c]) => `${n}×${c}`).join(" ")}`);
+      console.log(`build:daemon: ${target}: ${sealed === undefined ? "not sealed (Windows: no store there trusts a binary, scripts/seal-bun-doors.ts)" : `sealed ${Object.entries(sealed.sealed).map(([n, c]) => `${n}×${c}`).join(" ")}`}`);
     } catch (err) {
       console.error(`build:daemon: ${target}: ${(err as Error).message}`);
       return 1;

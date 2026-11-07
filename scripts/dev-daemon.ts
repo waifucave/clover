@@ -55,7 +55,7 @@ import { keychainUnlocked } from "../packages/core/src/auth/keychain-ffi";
 import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { runScriptLine } from "./build-daemon";
-import { sealFile } from "./seal-bun-doors";
+import { DYLD_ENTITLEMENT, sealFile } from "./seal-bun-doors";
 import { bunPinProblem } from "./bun-pin";
 import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devDaemonPlan, devDaemonRequirement, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
 
@@ -100,6 +100,10 @@ function signForKeychain(tmp: string): void {
   if (facts.teamId !== CLOVER_TEAM_ID || facts.identifier !== DEV_DAEMON_IDENTIFIER || !facts.runtime) {
     die(`the signature is not what the Keychain needs (team ${facts.teamId ?? "none"}, identifier ${facts.identifier ?? "none"}, hardened runtime ${facts.runtime}) — expected team ${CLOVER_TEAM_ID}, ${DEV_DAEMON_IDENTIFIER}`);
   }
+  // The macOS seal (`DYLD_*` names, seal-bun-doors.ts) holds only under the hardened runtime (checked above) and with
+  // no allow-dyld-environment-variables entitlement.
+  const ents = run("codesign", ["-d", "--entitlements", "-", "--xml", tmp]);
+  if (`${ents.stdout}${ents.stderr}`.includes(DYLD_ENTITLEMENT)) die(`the signed dev daemon carries ${DYLD_ENTITLEMENT}, which would open its seal`);
   // The 0.120.0 regression class: bun:ffi under the hardened runtime. Loads the libraries, reads no item.
   const probe = run(tmp, ["__keychain-ffi-probe"]);
   if (probe.status !== 0) die(`the signed binary cannot run bun:ffi (__keychain-ffi-probe exit ${probe.status}): ${probe.stderr.trim().slice(0, 300)}`);
