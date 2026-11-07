@@ -96,6 +96,8 @@ describe("ci-changes", () => {
   test("the fence launcher's build runs for its script and its notices' settings alone", () => {
     expect(on(["scripts/release/srt-win.ts"])).toContain("srtwin");
     expect(on(["packaging/windows/about.toml"])).toContain("srtwin");
+    // Lane C's build script, its patches and core's pin run it too.
+    for (const f of ["scripts/build-srt-win.ps1", "vendor/srt-win/patches/0001-per-principal-setup-records.patch", "packages/core/src/fence/windows-launcher.ts"]) expect(on([f]), f).toContain("srtwin");
     expect(on(["packaging/windows/installer.nsh"])).not.toContain("srtwin");
   });
 

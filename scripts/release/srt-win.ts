@@ -6,30 +6,27 @@
 //
 //   bun scripts/release/srt-win.ts [--arch x64|arm64[,…]] [--print] [--dry-run]
 //
-// Windows only, with Rust (rustup: the source pins its own toolchain in rust-toolchain.toml, which rustup reads
-// because cargo runs from the source's root). For each architecture it:
-//   1. fetches anthropics/sandbox-runtime at SRT_WIN_SOURCE.tag into a temp folder and checks the tag is the pinned
-//      commit
-//   2. builds vendor/srt-win-src (`cargo build --release --locked --target <triple>`, the test hooks off), with a
-//      static CRT, and with the linker and paths set so the same source gives the same bytes on any machine
-//      (`/Brepro`, no PDB path, source paths remapped). The same bytes from two clean builds is proven on CI's one
-//      Windows runner image (ci.yml's srt-win job); another machine or image is not yet measured
-//   3. copies it to dist/srt-win/<arch>/srt-win.exe, prints its Authenticode digest, and fails unless it is the pinned one
-//      (`--print` only prints: for measuring a build before its pin is set)
-//   4. writes dist/srt-win/THIRD_PARTY_NOTICES.txt: sandbox-runtime's LICENSE and the licenses of the crates it
-//      compiles in (cargo-about, run in the source's root)
+// Windows only, with Rust (rustup) and the MSVC tools. The build is lane C's, scripts/build-srt-win.ps1: it clones
+// sandbox-runtime at the pinned commit into vendor/srt-win-src, applies Clover's patches (vendor/srt-win/patches), and
+// builds with a static CRT and a reproducible link (/BREPRO). For each architecture this:
+//   1. runs that script: as it is for x64 (the host build, the one core's x64 pin measures), with `-Target
+//      aarch64-pc-windows-msvc` for arm64 (cross-built on x64)
+//   2. copies vendor/srt-win/srt-win.exe to dist/srt-win/<arch>/srt-win.exe, prints its Authenticode digest, and fails
+//      unless it is the pinned one (`--print` only prints: for measuring a build before its pin is set)
+//   3. writes dist/srt-win/THIRD_PARTY_NOTICES.txt: sandbox-runtime's LICENSE and the licenses of the crates it
+//      compiles in (cargo-about, run on the patched source)
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The source: sandbox-runtime 0.0.81, as lane C vendors it. */
+/** The source: sandbox-runtime 0.0.81, as lane C vendors it (scripts/build-srt-win.ps1 clones it to `checkout`). */
 export const SRT_WIN_SOURCE = {
   repo: "https://github.com/anthropics/sandbox-runtime",
   tag: "v0.0.81",
   commit: "c40cf14a65d025e3cd27f071f13a73c12b3b1f92",
+  checkout: "vendor/srt-win-src",
   dir: "vendor/srt-win-src",
   license: "LICENSE",
 } as const;
@@ -122,27 +119,15 @@ export function parsePins(source: string | undefined): Partial<Record<SrtWinArch
   return out;
 }
 
-/**
- * The build's environment: a static CRT, a reproducible link (no timestamp, no PDB path) and the machine's paths
- * remapped, so the hash depends on the source and the toolchain alone. `cargoHome` and `src` are this machine's.
- */
-export function buildEnv(env: Record<string, string | undefined>, src: string, cargoHome: string): Record<string, string | undefined> {
-  const flags = [
-    "-Ctarget-feature=+crt-static",
-    "-Clink-arg=/Brepro",
-    "-Clink-arg=/DEBUG:NONE",
-    "-Cdebuginfo=0",
-    `--remap-path-prefix=${src}=/srt`,
-    `--remap-path-prefix=${cargoHome}=/cargo`,
-  ];
-  // CARGO_ENCODED_RUSTFLAGS (0x1f between flags): a path with a space (the owner's checkout has one) stays one flag.
-  // Each element is one argument to rustc, so `-C` and its option are joined (`-C x` would be one argument `-C x`).
-  const { RUSTFLAGS: _ignored, ...rest } = env;
-  return { ...rest, CARGO_ENCODED_RUSTFLAGS: flags.join("\x1f"), CARGO_INCREMENTAL: "0" };
-}
+/** Lane C's build script, and where it leaves the launcher. */
+export const SRT_WIN_SCRIPT = "scripts/build-srt-win.ps1";
+export const SRT_WIN_BUILT = "vendor/srt-win/srt-win.exe";
 
-export function cargoArgs(arch: SrtWinArch, src: string): string[] {
-  return ["cargo", "build", "--release", "--locked", "--manifest-path", join(src, SRT_WIN_SOURCE.dir, "Cargo.toml"), "--target", SRT_WIN_TRIPLES[arch]];
+/** The script's command for `arch`: x64 exactly as lane C runs it (the host's build), arm64 cross-built. PowerShell 7
+ *  (`pwsh`, on every Windows runner): Windows PowerShell 5.1 turns a native command's redirected stderr (`git fetch
+ *  2>$null`, the script's second run on one checkout) into a terminating error under `$ErrorActionPreference = "Stop"`. */
+export function scriptArgs(arch: SrtWinArch): string[] {
+  return ["pwsh", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SRT_WIN_SCRIPT, ...(arch === "x64" ? [] : ["-Target", SRT_WIN_TRIPLES[arch]])];
 }
 
 /** What's wrong with a built launcher's hash against core's pin (`print` only reports). */
@@ -193,39 +178,33 @@ export function main(argv: readonly string[], root: string): number {
     return 2;
   }
   if (a.dryRun) {
-    console.log(`srt-win: ${SRT_WIN_SOURCE.repo} ${SRT_WIN_SOURCE.tag} (${SRT_WIN_SOURCE.commit}), ${SRT_WIN_SOURCE.dir}`);
-    for (const arch of a.arches) console.log(`srt-win: ${arch}: ${cargoArgs(arch, "<src>").join(" ")} → ${srtWinOutput(arch)}${a.print ? " (print the hash)" : " (checked against core's pin)"}`);
+    console.log(`srt-win: ${SRT_WIN_SOURCE.repo} ${SRT_WIN_SOURCE.tag} (${SRT_WIN_SOURCE.commit}), patched, by ${SRT_WIN_SCRIPT}`);
+    for (const arch of a.arches) console.log(`srt-win: ${arch}: ${scriptArgs(arch).join(" ")} → ${srtWinOutput(arch)}${a.print ? " (print the hash)" : " (checked against core's pin)"}`);
     return 0;
   }
   if (process.platform !== "win32") { console.error("srt-win: it builds on Windows (the MSVC toolchain); use --dry-run elsewhere"); return 2; }
   const pinSource = existsSync(join(root, PIN_FILE)) ? readFileSync(join(root, PIN_FILE), "utf8") : undefined;
   const pins = parsePins(pinSource);
-  const src = mkdtempSync(join(tmpdir(), "clover-srt-win-"));
   try {
-    must(["git", "clone", "--quiet", "--depth", "1", "--branch", SRT_WIN_SOURCE.tag, SRT_WIN_SOURCE.repo, src], root);
-    const head = must(["git", "rev-parse", "HEAD"], src).trim();
-    if (head !== SRT_WIN_SOURCE.commit) throw new Error(`${SRT_WIN_SOURCE.tag} is ${head}, not the pinned ${SRT_WIN_SOURCE.commit}`);
-    const cargoHome = process.env.CARGO_HOME ?? join(process.env.USERPROFILE ?? "", ".cargo");
     const problems: string[] = [];
     for (const arch of a.arches) {
-      // cargo runs from the source's root, so rustup takes its rust-toolchain.toml; the target is added to that toolchain.
-      must(["rustup", "toolchain", "install"], src);
-      must(["rustup", "target", "add", SRT_WIN_TRIPLES[arch]], src);
       console.log(`srt-win: building for ${arch}…`);
-      must(cargoArgs(arch, src), src, buildEnv(process.env, src, cargoHome));
+      const r = spawnSync(scriptArgs(arch)[0]!, scriptArgs(arch).slice(1), { cwd: root, stdio: "inherit" });
+      if ((r.status ?? 1) !== 0) throw new Error(`${SRT_WIN_SCRIPT} failed for ${arch} (exit ${r.status ?? "signal"})`);
       const out = join(root, ...srtWinOutput(arch).split("/"));
       mkdirSync(dirname(out), { recursive: true });
-      copyFileSync(join(src, SRT_WIN_SOURCE.dir, "target", SRT_WIN_TRIPLES[arch], "release", "srt-win.exe"), out);
+      copyFileSync(join(root, ...SRT_WIN_BUILT.split("/")), out);
       const bytes = new Uint8Array(readFileSync(out));
       const digest = authenticodeDigest(bytes);
       console.log(`srt-win: ${srtWinOutput(arch)} authenticode-sha256 ${digest} (file sha256 ${createHash("sha256").update(bytes).digest("hex")})`);
       problems.push(...pinProblems(arch, digest, pins, a.print));
     }
     // The notices: sandbox-runtime's own license, then every crate compiled in (cargo-about's plain-text report).
+    const src = join(root, ...SRT_WIN_SOURCE.checkout.split("/"));
     const crates = must(["cargo", "about", "generate", "--config", join(root, "packaging", "windows", "about.toml"), "--manifest-path", join(src, SRT_WIN_SOURCE.dir, "Cargo.toml"), join(root, "packaging", "windows", "about.hbs")], src);
     const notices = [
       "srt-win.exe is built from sandbox-runtime (https://github.com/anthropics/sandbox-runtime),",
-      `${SRT_WIN_SOURCE.tag}, commit ${SRT_WIN_SOURCE.commit}, under the Apache License 2.0:`,
+      `${SRT_WIN_SOURCE.tag}, commit ${SRT_WIN_SOURCE.commit}, with Clover's patches (vendor/srt-win/patches), under the Apache License 2.0:`,
       "",
       readFileSync(join(src, SRT_WIN_SOURCE.license), "utf8").trimEnd(),
       "",
@@ -240,8 +219,6 @@ export function main(argv: readonly string[], root: string): number {
   } catch (err) {
     console.error(`srt-win: ${(err as Error).message}`);
     return 1;
-  } finally {
-    rmSync(src, { recursive: true, force: true });
   }
 }
 

@@ -19,13 +19,19 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts/build-srt-win.ps1 -ExpectedDigest <hex>
   # Verifies the built binary's Authenticode digest against the pin.
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File scripts/build-srt-win.ps1 -Target aarch64-pc-windows-msvc
+  # Lane M: the arm64 launcher, cross-built on x64 (cargo --target). Without -Target the build is the host's,
+  # unchanged, which is the build the x64 pin measures.
 #>
 [CmdletBinding()]
 param(
   [string]$Tag = "v0.0.81",
   [string]$Commit = "c40cf14a65d025e3cd27f071f13a73c12b3b1f92",
   [string]$Repo = "https://github.com/anthropics/sandbox-runtime.git",
-  [string]$ExpectedDigest = ""
+  [string]$ExpectedDigest = "",
+  [string]$Target = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,9 +86,11 @@ function Apply-Patches {
     Write-Host "build-srt-win: applying $($p.Name)"
     Push-Location $srcDir
     try {
-      git apply --check $p.FullName
+      # The patches are the crate's own (`src/cli.rs`…): applied in vendor/srt-win-src of the checkout. From the
+      # checkout's root without --directory they don't apply, and from inside the crate git applies nothing at all.
+      git apply --check --directory=vendor/srt-win-src $p.FullName
       if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch does not apply: $($p.Name)" }
-      git apply $p.FullName
+      git apply --directory=vendor/srt-win-src $p.FullName
       if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch failed: $($p.Name)" }
     } finally { Pop-Location }
   }
@@ -96,10 +104,19 @@ function Build-Launcher {
     # /BREPRO: deterministic output — the Authenticode digest must be identical on every
     # rebuild of the same source, or the pinned digest could never match lane M's CI build.
     $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/BREPRO"
-    cargo build --release --locked
+    # The source pins its toolchain (rust-toolchain.toml, found from here upwards); rustup installs it if missing.
+    rustup toolchain install
+    if ($LASTEXITCODE -ne 0) { throw "build-srt-win: rustup could not install the source's toolchain" }
+    if ($Target -ne "") {
+      rustup target add $Target
+      if ($LASTEXITCODE -ne 0) { throw "build-srt-win: rustup could not add $Target" }
+      cargo build --release --locked --target $Target
+    } else {
+      cargo build --release --locked
+    }
     if ($LASTEXITCODE -ne 0) { throw "build-srt-win: cargo build failed" }
   } finally { Pop-Location }
-  $built = Join-Path $crateDir "target/release/srt-win.exe"
+  $built = if ($Target -ne "") { Join-Path $crateDir "target/$Target/release/srt-win.exe" } else { Join-Path $crateDir "target/release/srt-win.exe" }
   if (-not (Test-Path $built)) { throw "build-srt-win: expected output not found at $built" }
   New-Item -ItemType Directory -Force -Path $outDir | Out-Null
   Copy-Item -Force $built $outExe

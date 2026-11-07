@@ -432,16 +432,29 @@ jobs:
       - name: cargo-about, for the notices
         run: cargo install --locked --features cli cargo-about@0.9.2
 
+      # Lane C's build (scripts/build-srt-win.ps1: sandbox-runtime's pinned commit with Clover's patches, a static CRT,
+      # /BREPRO), x64 as lane C runs it and arm64 cross-built, twice from clean clones: the same bytes both times.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build twice from clean clones, and compare
         run: |
           bun scripts/release/srt-win.ts --arch x64,arm64 --print | tee first.log
           sha256sum dist/srt-win/*/srt-win.exe > first.txt
-          rm -rf dist/srt-win
+          rm -rf dist/srt-win vendor/srt-win-src vendor/srt-win/srt-win.exe
           bun scripts/release/srt-win.ts --arch x64,arm64 --print
           sha256sum dist/srt-win/*/srt-win.exe > second.txt
           diff first.txt second.txt
           grep authenticode-sha256 first.log
           grep -q "Apache License" dist/srt-win/THIRD_PARTY_NOTICES.txt
+
+      # The x64 build must be the one core pins (lane C's measured digest): the same source and script, the same bytes.
+      # arm64's digest is printed above for its pin.
+      - name: x64 is the build core pins
+        run: |
+          bun -e "import { authenticodeDigest, parsePins, PIN_FILE } from './scripts/release/srt-win'; import { readFileSync } from 'node:fs'; const got = authenticodeDigest(new Uint8Array(readFileSync('dist/srt-win/x64/srt-win.exe'))); const pin = parsePins(readFileSync(PIN_FILE, 'utf8')).x64; console.log('x64 built ' + got + ', pinned ' + pin); if (got !== pin) process.exit(1);"
 
       # The installer's elevated step checks a digest with its own PowerShell copy of authenticodeDigest
       # (packaging/windows/sandbox-elevated.ps1): on real binaries, under the Windows PowerShell the installer runs,
@@ -534,11 +547,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: The installer builds (unsigned)
         run: |

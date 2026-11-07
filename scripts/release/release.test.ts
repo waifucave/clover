@@ -364,19 +364,17 @@ describe("the signed builds' checks", () => {
 
 describe("srt-win.exe, Bash's fence launcher on Windows (scripts/release/srt-win.ts)", () => {
   test("from sandbox-runtime's pinned commit, statically linked, reproducibly, for both Windows architectures", async () => {
-    const { SRT_WIN_SOURCE, buildEnv, cargoArgs, parseSrtWinArgs } = await import("./srt-win");
+    const { SRT_WIN_SOURCE, scriptArgs, parseSrtWinArgs } = await import("./srt-win");
     expect(SRT_WIN_SOURCE).toMatchObject({ tag: "v0.0.81", commit: "c40cf14a65d025e3cd27f071f13a73c12b3b1f92", dir: "vendor/srt-win-src" });
-    const env = buildEnv({ PATH: "x", RUSTFLAGS: "-C ignored" }, "C:\\Users\\Some One\\src", "C:\\cargo");
-    // One flag per 0x1f: a path with a space stays whole, and RUSTFLAGS is dropped (cargo would ignore it anyway).
-    const flags = env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f");
-    expect(flags).toContain("-Ctarget-feature=+crt-static");
-    expect(flags).toContain("-Clink-arg=/Brepro");
-    // One rustc argument each: no flag carries a space of its own outside a path.
-    expect(flags.filter((f) => !f.startsWith("--remap-path-prefix=")).every((f) => !f.includes(" "))).toBe(true);
-    expect(flags).toContain("--remap-path-prefix=C:\\Users\\Some One\\src=/srt");
-    expect(env.RUSTFLAGS).toBeUndefined();
-    expect(cargoArgs("arm64", "S")).toEqual(["cargo", "build", "--release", "--locked", "--manifest-path", join("S", "vendor/srt-win-src", "Cargo.toml"), "--target", "aarch64-pc-windows-msvc"]);
-    expect(cargoArgs("x64", "S").join(" ")).not.toContain("--features");
+    // Lane C's script builds it: x64 exactly as lane C runs it (the host's build its pin measures), arm64 cross-built.
+    expect(scriptArgs("x64")).toEqual(["pwsh", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-srt-win.ps1"]);
+    expect(scriptArgs("arm64").slice(-2)).toEqual(["-Target", "aarch64-pc-windows-msvc"]);
+    const script = read("scripts/build-srt-win.ps1");
+    expect(script).toContain(`[string]$Commit = "${SRT_WIN_SOURCE.commit}"`);
+    expect(script).toContain(`[string]$Tag = "${SRT_WIN_SOURCE.tag}"`);
+    expect(script).toContain('$env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/BREPRO"');
+    // The patches are the crate's: applied in its folder of the checkout, where they apply.
+    expect(script).toContain("git apply --check --directory=vendor/srt-win-src $p.FullName");
     expect(parseSrtWinArgs(["--arch", "x64,arm64", "--print"])).toEqual({ arches: ["x64", "arm64"], print: true, dryRun: false });
     expect(() => parseSrtWinArgs(["--arch", "ia32"])).toThrow(/x64 and\/or arm64/);
   });
