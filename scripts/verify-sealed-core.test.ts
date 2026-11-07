@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { doors, dyldDoor, envNamesIn, hostedRunner, refusalDoors } from "./verify-sealed-core";
+import { doors, dyldDoor, envNamesIn, hostedRunner, refusalDoors, unprovableVerdict } from "./verify-sealed-core";
 import { TLS_TRUST_ENV } from "../packages/core/src/build-kind";
 import { SEALED_ENV_NAMES } from "./seal-bun-doors";
 
@@ -72,5 +72,14 @@ describe("verify:sealed-core", () => {
     expect(hostedRunner({ GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted" })).toBe(true);
     expect(hostedRunner({ GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "self-hosted" })).toBe(false);
     expect(hostedRunner({})).toBe(false);
+  });
+  test("UNPROVABLE: a notice only on a hosted runner without --require-proof; --require-proof fails it anywhere", () => {
+    const u = ["DYLD_INSERT_LIBRARIES (hardened runtime): UNPROVABLE (SIP disabled)"];
+    expect(unprovableVerdict(u, { hosted: true, requireProof: false })).toEqual({ problems: [], notices: [expect.stringContaining("requires SIP on")] });
+    const required = unprovableVerdict(u, { hosted: true, requireProof: true });
+    expect(required.notices).toEqual([]);
+    expect(required.problems[0]).toContain("--require-proof");
+    expect(unprovableVerdict(u, { hosted: false, requireProof: false }).problems).toHaveLength(1);
+    expect(unprovableVerdict([], { hosted: false, requireProof: true })).toEqual({ problems: [], notices: [] });
   });
 });

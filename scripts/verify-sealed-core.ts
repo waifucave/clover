@@ -35,11 +35,15 @@
 // the hardened copy, which refuses any DYLD_ entry); when it can't, the DYLD doors are UNPROVABLE (SIP disabled), never
 // closed and never OPEN. Likewise a macOS OS-store check that plain Bun fails the same way on this machine is
 // UNPROVABLE (runner trust store). An UNPROVABLE result passes with a notice on a GitHub-hosted runner only (whose
-// macOS images run with SIP off); anywhere else, such as the owner's Mac, it fails the gate.
+// macOS images run with SIP off); anywhere else, such as the owner's Mac, it fails the gate. `--require-proof` fails
+// it everywhere, whatever the environment says (those are plain variables): the owner's proof run and the release
+// step (scripts/release/publish.ts --create-draft) use it.
 //
 //   bun run verify:sealed-core                      build this machine's target (scripts/build-daemon.ts), then check
 //   bun run verify:sealed-core --binary <path>      check an existing binary (signed already: add --signed)
 //   … --no-sweep                                    skip the sweep (a quicker local run)
+//   … --require-proof                               fail on any UNPROVABLE result, on any machine
+//   bun run verify:sealed-core:proof                the owner's proof on a SIP-on Mac (= --require-proof)
 //
 // Nothing here starts a daemon or reads a secret store: every run is `--version`, `bridge` without its session,
 // `__runtimes-probe` or `__fetch-probe` to a local server (or Apple's), on a temp CLOVER_HOME and no HOME, with no
@@ -144,6 +148,8 @@ export function refusalDoors(): Door[] {
     out.push({ name: `raw ${name} twice, the refused value last`, raw: [`${name}=${harmless}`, `${name}=${bad}`], os: posix });
   }
   out.push({ name: "HOME=<a planted home>", env: { HOME: "$PLANTED_HOME" }, os: ["darwin"] });
+  // A test's keychain variables: a release refuses them at startup, naming them.
+  for (const name of ["CLOVER_TEST_KEYCHAIN", "CLOVER_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN"]) out.push({ name: `${name}=<set>`, env: { [name]: name === "CLOVER_TEST_KEYCHAIN" ? "$CA" : "x" } });
   return out;
 }
 
@@ -320,6 +326,15 @@ async function trustChecks(work: string, nonce: string, run: (args: string[]) =>
   return { problems, unprovable };
 }
 
+/** What UNPROVABLE results come to: notices on a GitHub-hosted runner without `--require-proof`, else problems. */
+export function unprovableVerdict(unprovable: readonly string[], o: { hosted: boolean; requireProof: boolean }): { problems: string[]; notices: string[] } {
+  const premise = "the macOS seal requires SIP on; with SIP off, any library can be injected before main";
+  if (unprovable.length === 0) return { problems: [], notices: [] };
+  if (o.hosted && !o.requireProof) return { problems: [], notices: unprovable.map((u) => `${u} (${premise})`) };
+  const why = o.requireProof ? "--require-proof" : "not a GitHub-hosted runner";
+  return { problems: unprovable.map((u) => `${u}: not proven (${why}; ${premise}); run the gate on a Mac with SIP on`), notices: [] };
+}
+
 /** A GitHub-hosted runner (its macOS images run with SIP off): the only place an UNPROVABLE result may pass. */
 export function hostedRunner(env: Record<string, string | undefined> = process.env): boolean {
   return env.GITHUB_ACTIONS === "true" && env.RUNNER_ENVIRONMENT === "github-hosted";
@@ -330,7 +345,7 @@ export function dyldDoor(name: string): boolean {
   return name.startsWith("DYLD_INSERT_LIBRARIES") || name.includes("'s macOS replacement DYLD_") || name.startsWith("raw DYLD_");
 }
 
-export async function verifySealedCore(given: string, opts: { signed: boolean; sweep: boolean }): Promise<string[]> {
+export async function verifySealedCore(given: string, opts: { signed: boolean; sweep: boolean; requireProof?: boolean }): Promise<string[]> {
   const problems: string[] = [];
   // Absolute: every run has its own temp working folder.
   const binary = resolve(given);
@@ -625,15 +640,10 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
       console.log(`verify:sealed-core: sweep of ${names.length} BUN_*/NODE_* names × ${values.length} values: ${failures.length === 0 ? "all closed" : `${failures.length} open`}`);
     }
     // UNPROVABLE: a notice on a GitHub-hosted runner, a failure anywhere else (the owner's Mac must prove it).
-    if (unprovable.length > 0) {
-      const premise = "the macOS seal requires SIP on; with SIP off, any library can be injected before main";
-      if (hostedRunner()) {
-        for (const u of unprovable) console.log(`::notice title=verify:sealed-core UNPROVABLE::${u} (${premise})`);
-        console.log(`verify:sealed-core: ${unprovable.length} check(s) UNPROVABLE on this hosted runner, passed with a notice: ${premise}`);
-      } else {
-        for (const u of unprovable) problems.push(`${u}: not provable on this machine (${premise}); run the gate on a Mac with SIP on`);
-      }
-    }
+    const verdict = unprovableVerdict(unprovable, { hosted: hostedRunner(), requireProof: opts.requireProof === true });
+    for (const n of verdict.notices) console.log(`::notice title=verify:sealed-core UNPROVABLE::${n}`);
+    if (verdict.notices.length > 0) console.log(`verify:sealed-core: ${verdict.notices.length} check(s) UNPROVABLE on this hosted runner, passed with a notice`);
+    problems.push(...verdict.problems);
   } finally {
     http.close();
     rmSync(work, { recursive: true, force: true });
@@ -655,7 +665,7 @@ if (import.meta.main) {
     if (built.status !== 0) process.exit(1);
     binary = join(ROOT, daemonOutput(target));
   }
-  const problems = await verifySealedCore(binary, { signed: argv.includes("--signed"), sweep: !argv.includes("--no-sweep") });
+  const problems = await verifySealedCore(binary, { signed: argv.includes("--signed"), sweep: !argv.includes("--no-sweep"), requireProof: argv.includes("--require-proof") });
   for (const p of problems) console.error(`verify:sealed-core: ${p}`);
   console.log(problems.length === 0 ? "verify:sealed-core: ok — the compiled core runs only its own code and shows no key" : `verify:sealed-core: ${problems.length} problem(s)`);
   process.exit(problems.length === 0 ? 0 : 1);

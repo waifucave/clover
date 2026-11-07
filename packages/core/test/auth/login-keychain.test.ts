@@ -137,10 +137,14 @@ describe("under a test, the real login keychain is never opened", () => {
     const { r, opened } = recorder();
     resolveKeychain(r);
     expect(opened).toEqual([`path ${LOGIN}`]);
+    // NODE_ENV=test marks a test only outside a release (a release refuses test variables at startup instead).
+    const release = recorder({ distBuild: true, env: { NODE_ENV: "test" } });
+    resolveKeychain(release.r);
+    expect(release.opened).toEqual([`path ${LOGIN}`]);
   });
 
   test("any test signal without a test keychain refuses, and opens nothing", () => {
-    for (const env of [{ CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-isolated" }, { WINTER_TEST_KEYCHAIN: "memory" }, { [TEST_KEYCHAIN_ENV]: "" }]) {
+    for (const env of [{ CLOVER_KEYCHAIN_SERVICE: "com.waifucave.clover.core.test-isolated" }, { WINTER_TEST_KEYCHAIN: "memory" }, { [TEST_KEYCHAIN_ENV]: "" }, { NODE_ENV: "test" }]) {
       const { r, opened } = recorder({ env });
       expect(() => resolveKeychain(r)).toThrow(KeychainFfiError);
       expect(opened).toEqual([]);

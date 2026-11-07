@@ -2,7 +2,7 @@
 // the release build's and the owner's publish step's plans, and the release workflow's limits (no secrets, nothing
 // published). Nothing here signs, builds or publishes.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
@@ -13,7 +13,7 @@ import {
 } from "./lib";
 import { generateFeedKey, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
-import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, signFeeds } from "./publish";
+import { draftReleaseArgs, macCoreIn, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, sealProofCommand, sealProofProblem, signFeeds } from "./publish";
 
 /** A Keychain of the test's own: the real one is never touched. */
 function memoryStore(): KeyStore & { items: Map<string, string> } {
@@ -306,5 +306,27 @@ describe("the update feed's key (scripts/release/feed-key.ts)", () => {
       expect(src, f).not.toMatch(/writeFileSync\([^)]*privateKey/);
       expect(src, f).not.toMatch(/console\.\w+\([^)]*privateKey/);
     }
+  });
+});
+
+describe("no draft without the sealed core's proof (#243 check 4)", () => {
+  test("a release with a macOS build proves the signed app's clover-core with --signed --require-proof first", () => {
+    const dist = mkdtempSync(join(tmpdir(), "clover-publish-proof-"));
+    const daemon = join(dist, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon");
+    mkdirSync(daemon, { recursive: true });
+    writeFileSync(join(daemon, "clover-core"), "");
+    const core = join(daemon, "clover-core");
+    expect(macCoreIn([join(dist, "nowhere"), dist])).toBe(core);
+    expect(sealProofCommand(core, "/repo").slice(1)).toEqual(["/repo/scripts/verify-sealed-core.ts", "--binary", core, "--signed", "--require-proof"]);
+    const asked: string[] = [];
+    // Proven: the draft goes ahead.
+    expect(sealProofProblem(true, [dist], (c) => { asked.push(c); return true; })).toBeUndefined();
+    expect(asked).toEqual([core]);
+    // Not proven (SIP off, an UNPROVABLE door, anything failing): refused.
+    expect(sealProofProblem(true, [dist], () => false)).toContain("no draft without the seal's proof");
+    // No macOS core to prove: refused, never skipped.
+    expect(sealProofProblem(true, [join(dist, "nowhere")], () => true)).toContain("can't be proven");
+    // A release with no macOS build has nothing to prove here.
+    expect(sealProofProblem(false, [dist], () => false)).toBeUndefined();
   });
 });

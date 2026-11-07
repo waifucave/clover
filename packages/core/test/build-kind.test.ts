@@ -87,6 +87,16 @@ test("a macOS release refuses any DYLD_ entry (SIP is off if one reached it); ot
   expect(dyldRefusal(["DYLD_INSERT_LIBRARIES=/x"], { ...on, platform: "linux" })).toBeUndefined();
 });
 
+test("a release refuses to start with any test-keychain variable set, naming it; a dev build doesn't", async () => {
+  const { testKeychainRefusal } = await import("../src/startup-guard");
+  expect(testKeychainRefusal({}, [], true)).toBeUndefined();
+  expect(testKeychainRefusal({ CLOVER_TEST_KEYCHAIN: "/tmp/t.keychain-db" }, [], true)).toContain("CLOVER_TEST_KEYCHAIN is set");
+  expect(testKeychainRefusal({ CLOVER_KEYCHAIN_SERVICE: "x", WINTER_TEST_KEYCHAIN: "memory" }, [], true)).toContain("CLOVER_KEYCHAIN_SERVICE, WINTER_TEST_KEYCHAIN are set");
+  expect(testKeychainRefusal({}, ["CLOVER_TEST_KEYCHAIN="], true)).toContain("CLOVER_TEST_KEYCHAIN is set");
+  expect(testKeychainRefusal({}, ["NOT_CLOVER_TEST_KEYCHAIN=1"], true)).toBeUndefined();
+  expect(testKeychainRefusal({ CLOVER_TEST_KEYCHAIN: "/tmp/t" }, [], false)).toBeUndefined();
+});
+
 darwinTest("the account's home comes from the password database, not HOME", async () => {
   const { accountHome } = await import("../src/startup-guard");
   const home = accountHome();

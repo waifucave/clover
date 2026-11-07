@@ -105,8 +105,14 @@ const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unk
 function keychainWorker(): BunWorker {
   if (worker !== undefined) return worker;
   const source = `import * as ffi from "bun:ffi";\n(${keychainWorkerMain.toString()})(ffi);\n`;
-  const w = new Worker(URL.createObjectURL(new Blob([source], { type: "application/javascript" }))) as BunWorker;
+  const url = URL.createObjectURL(new Blob([source], { type: "application/javascript" }));
+  const w = new Worker(url) as BunWorker;
+  // Nothing else may start a worker from this source: the URL goes once the worker has loaded it (its first answer
+  // or its failure; revoked at once, the worker could not load it, measured).
+  let revoked = false;
+  const revoke = () => { if (!revoked) { revoked = true; URL.revokeObjectURL(url); } };
   w.onmessage = (e: MessageEvent) => {
+    revoke();
     const reply = e.data as Reply;
     const waiting = pending.get(reply.id);
     if (waiting === undefined) return;
@@ -116,6 +122,7 @@ function keychainWorker(): BunWorker {
     if (pending.size === 0) w.unref();
   };
   w.onerror = (e) => {
+    revoke();
     // A worker that failed takes its calls with it; the next call starts a fresh one.
     for (const [, waiting] of pending) waiting.reject(new KeychainFfiError(`keychain worker (${e.message})`, -1, waiting.account));
     pending.clear();

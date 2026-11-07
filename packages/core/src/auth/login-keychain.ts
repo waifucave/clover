@@ -7,11 +7,12 @@
 // (`getpwuid(getuid())->pw_dir`, startup-guard.ts's `accountHome`), never from HOME.
 //
 // TESTS NEVER REACH IT (#243 check 4, fail closed). A process under a test preload — `CLOVER_KEYCHAIN_SERVICE`,
-// `WINTER_TEST_KEYCHAIN` or `CLOVER_TEST_KEYCHAIN` in its environment, or a test keychain installed in-process —
+// `WINTER_TEST_KEYCHAIN` or `CLOVER_TEST_KEYCHAIN` in its environment, a test keychain installed in-process, or (not a
+// release) `NODE_ENV=test` —
 // can't open the real login keychain: `loginKeychain()` throws. It gets the throwaway keychain FILE the preload made
 // for it (packages/core/test/test-keychain.ts): installed in-process, or named by `CLOVER_TEST_KEYCHAIN` for the test
 // daemons it spawns. A release build never takes that variable (a path in the environment must not choose the
-// core's keychain); in a release it only refuses.
+// core's keychain): a release refuses to start at all with any of them set (startup-guard.ts, exit 78).
 //
 // The item calls themselves run on a worker thread (keychain-worker.ts), so a consent prompt can't stall the
 // daemon's event loop.
@@ -59,7 +60,8 @@ export interface KeychainResolution {
 export function resolveKeychain(r: KeychainResolution): KeychainFile {
   const named = r.distBuild ? undefined : r.env[TEST_KEYCHAIN_ENV];
   const testPath = r.testFile ?? (named !== undefined && named !== "" ? named : undefined);
-  const underTest = r.testFile !== undefined || UNDER_TEST_ENV.some((k) => r.env[k] !== undefined);
+  // A non-release build also counts NODE_ENV=test (bun test's own), so a suite that forgets the preload still can't.
+  const underTest = r.testFile !== undefined || UNDER_TEST_ENV.some((k) => r.env[k] !== undefined) || (!r.distBuild && r.env.NODE_ENV === "test");
   if (testPath !== undefined) {
     // A test keychain must never be the login keychain itself, however it is spelled.
     let real: string;

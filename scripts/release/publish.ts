@@ -13,7 +13,9 @@
 // the update feed's key from the login Keychain (an Ed25519 `.sig` beside it, packages/update-feed; the key is read
 // into memory, checked against the one the app carries, and never written), and creates the release as a draft (a
 // pre-release on beta) tagged v<version>; the owner reads it and publishes it on GitHub, which is the moment it
-// reaches anyone.
+// reaches anyone. Before any of that, a release with a macOS build must prove the sealed core on this Mac: the
+// signed app's `clover-core` passes `verify:sealed-core --signed --require-proof` (the seal's premise, SIP on, proven
+// here, never assumed), or no draft is made.
 //
 // `--promote` turns a published beta into the latest release: it checks the beta update files' signatures, adds
 // them and their signatures under the latest names (the bytes are the same, so the signatures are too) and makes it
@@ -145,6 +147,30 @@ export function promotedName(name: string): string {
 
 const REPO = "waifucave/clover";
 
+/** The macOS build's `clover-core` inside its signed app: `<dir>/mac-<arch>/Clover.app/Contents/Resources/daemon/`. */
+export function macCoreIn(dirs: readonly string[], list: (dir: string) => string[] = (d) => { try { return readdirSync(d); } catch { return []; } }): string | undefined {
+  for (const dir of dirs) {
+    for (const sub of list(dir).filter((n) => n === "mac" || n.startsWith("mac-")).sort()) {
+      const core = join(dir, sub, "Clover.app", "Contents", "Resources", "daemon", "clover-core");
+      if (existsSync(core)) return core;
+    }
+  }
+  return undefined;
+}
+
+/** The proof command: the sealed-core gate on the signed core, failing on anything it can't prove. */
+export function sealProofCommand(core: string, root: string): string[] {
+  return [process.execPath, join(root, "scripts", "verify-sealed-core.ts"), "--binary", core, "--signed", "--require-proof"];
+}
+
+/** Why no draft may be made without the sealed core's proof, or undefined when it is proven. */
+export function sealProofProblem(hasMac: boolean, dirs: readonly string[], prove: (core: string) => boolean, find: (dirs: readonly string[]) => string | undefined = macCoreIn): string | undefined {
+  if (!hasMac) return undefined;
+  const core = find(dirs);
+  if (core === undefined) return `no Clover.app with resources/daemon/clover-core under ${dirs.join(", ")}: the sealed core can't be proven`;
+  return prove(core) ? undefined : `verify:sealed-core --require-proof failed on ${core}: no draft without the seal's proof (it needs a Mac with SIP on)`;
+}
+
 function gh(args: readonly string[]): { status: number; out: string } {
   const r = spawnSync("gh", args.slice(1) as string[], { encoding: "utf8" });
   return { status: r.status ?? 1, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
@@ -159,7 +185,7 @@ function macSignedAndStapled(dmg: string): string[] {
   return problems;
 }
 
-export async function main(argv: readonly string[], root: string): Promise<number> {
+export async function main(argv: readonly string[], root: string, deps: { proveSeal?: (core: string) => boolean } = {}): Promise<number> {
   let a: PublishArgs;
   try {
     a = parsePublishArgs(argv);
@@ -215,6 +241,15 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   console.log(`release/publish: v${version} on ${a.channel}, ${plan.assets.length} files, and a signature for each of ${plan.feeds.join(", ")}:`);
   for (const x of plan.assets) console.log(`  ${x.name}  (${x.dir})`);
   if (!a.create) { console.log("release/publish: nothing signed or uploaded (add --create-draft)"); return 0; }
+  {
+    const prove = deps.proveSeal ?? ((core: string) => {
+      const [cmd, ...args] = sealProofCommand(core, root);
+      console.log(`release/publish: proving the sealed core: ${[cmd, ...args].join(" ")}`);
+      return (spawnSync(cmd!, args, { cwd: root, stdio: "inherit" }).status ?? 1) === 0;
+    });
+    const problem = sealProofProblem(dmg !== undefined, a.from, prove);
+    if (problem !== undefined) { console.error(`release/publish: ${problem}`); return 1; }
+  }
   if (gh(["gh", "release", "view", `v${version}`, "--repo", REPO]).status === 0) { console.error(`release/publish: v${version} already exists`); return 1; }
   const sigDir = mkdtempSync(join(tmpdir(), "clover-feed-sigs-"));
   try {

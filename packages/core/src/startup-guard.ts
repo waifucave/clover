@@ -86,3 +86,15 @@ export function dyldRefusal(raw: readonly string[], o: { platform?: NodeJS.Platf
   if (names.length === 0) return undefined;
   return `clover-core: refusing to start: ${names.length === 1 ? "a DYLD_ variable is" : "DYLD_ variables are"} set (${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}). dyld removes them from this hardened release when System Integrity Protection is on; one that reached it means SIP is off, and then any library can be injected into this process. Unset ${names.length === 1 ? "it" : "them"}.`;
 }
+
+/** The variables that mark a test (auth/login-keychain.ts's `UNDER_TEST_ENV`). */
+const TEST_KEYCHAIN_VARIABLES = ["CLOVER_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN", "CLOVER_TEST_KEYCHAIN"] as const;
+
+/** Why a release refuses to start under a test's keychain variables, or undefined. A release never uses a test
+ *  keychain or a test service; it says so at once, naming the variable, rather than failing at its first item. */
+export function testKeychainRefusal(env: Record<string, string | undefined>, raw: readonly string[] = [], distBuild: boolean = DIST_BUILD): string | undefined {
+  if (!distBuild) return undefined;
+  const set = TEST_KEYCHAIN_VARIABLES.filter((k) => env[k] !== undefined || raw.some((e) => e === k || e.startsWith(`${k}=`)));
+  if (set.length === 0) return undefined;
+  return `clover-core: refusing to start: ${set.join(", ")} ${set.length === 1 ? "is" : "are"} set, which only a test sets. A release build uses the login keychain and its own service, never a test's; unset ${set.length === 1 ? "it" : "them"}.`;
+}
