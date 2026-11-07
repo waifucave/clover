@@ -1,7 +1,7 @@
 import { noteSpawned } from "../auth/clover-caller";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
 /**
  * HookRunner — pure process mechanics for ONE plugin hook invocation (Phase 4f design §Protocol,
@@ -129,8 +129,12 @@ export class HookRunner {
       proc = Bun.spawn(["sh", "-c", spec.command], {
         cwd: spec.cwd,
         // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
+        // The hook's `bun` is Clover's own (#234's check 4, H3): its folder comes first on the PATH.
         env: guardedPluginEnv(
-          { ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event },
+          {
+            ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
+            PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
+          },
           { pluginRoot: spec.cwd, ...this.guardFor() },
         ),
         stdin: "pipe",

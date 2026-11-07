@@ -2,12 +2,13 @@
 // each run once as a control without Clover's flags (the outside file runs) and once as Clover runs plugins (it
 // doesn't). Real Bun processes in temp folders; nothing opens a window.
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
-import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, ensurePluginRunFiles, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
+import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, cloverBun, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
 
 function world() {
   const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
@@ -84,6 +85,8 @@ describe("a plugin process loads only its own tree", () => {
       "host/w.ts": "postMessage(1);\n",
       "host/index.ts": `${settle}await settle(new Worker(new URL("./w.ts", import.meta.url).href, { preload: ["$OUTSIDE/evil.ts"] }));\nprocess.exit(0);\n`,
     }, "host/index.ts"],
+    // #234's check 4, H2.
+    ["a ShadowRealm importing an outside file", { "host/index.ts": "try { await new ShadowRealm().importValue(\"$OUTSIDE/evil.ts\", \"x\"); } catch {}\n" }, "host/index.ts"],
     ["Bun.plugin.clearAll, then an outside import", { "host/index.ts": "try { Bun.plugin.clearAll(); } catch {}\nawait import(\"$OUTSIDE/evil.ts\");\n" }, "host/index.ts"],
     ["a bunfig.toml preload", { "bunfig.toml": "preload = [\"$OUTSIDE/evil.ts\"]\n", "host/index.ts": "console.log(\"host ran\");\n" }, "host/index.ts"],
   ];
@@ -137,6 +140,63 @@ describe("a plugin process loads only its own tree", () => {
     expect([r.code, r.stdout.trim(), r.stderr]).toEqual([0, "ok 2 3", ""]);
   }, 30_000);
 
+  // Bun 1.4.4 hands an ESM load of a file without an extension to neither onResolve nor onLoad (#234's check 4, H1),
+  // so the guard can't see it: the fence keeps runners from planting one above a plugin, and the OK refuses a plugin
+  // that imports what it doesn't ship. This pins the gap: a Bun that closes it fails here, and the guard can then
+  // refuse these loads too.
+  test("pinned Bun behaviour: an ESM import of an outside file with no extension still skips the guard", () => {
+    const root = w.plugin("pin-noext", { "host/index.ts": "import \"$OUTSIDE/noext\";\n" });
+    expect(w.run(root, "host/index.ts", true).ran).toBe(true);
+  }, 30_000);
+
+  test("Clover's bunfig turns off auto-install: a dependency the plugin doesn't ship isn't fetched", () => {
+    expect(PLUGIN_BUNFIG).toContain("[install]\nauto = \"disable\"");
+    const root = w.plugin("no-auto-install", { "host/index.ts": "import pad from \"is-odd\";\nconsole.log(pad);\n" });
+    const started = performance.now();
+    const r = w.run(root, "host/index.ts", true);
+    expect([r.code === 0, /Cannot find (package|module)/.test(r.stderr)]).toEqual([false, true]);
+    expect(performance.now() - started).toBeLessThan(10_000);
+  }, 30_000);
+
+  test("a supervised host runs on Clover's own Bun, never a bun the plugin ships (H3)", async () => {
+    const ranOwn = join(w.base, "own-bun-ran");
+    const hostRan = join(w.base, "host-ran");
+    const root = w.plugin("ships-bun", {
+      "bun": `#!/bin/sh\necho ran > ${JSON.stringify(ranOwn)}\n`,
+      "host/index.ts": `require("node:fs").writeFileSync(${JSON.stringify(hostRan)}, process.execPath);\nsetTimeout(() => {}, 60_000);\n`,
+    });
+    chmodSync(join(root, "bun"), 0o755);
+    const sup = new PluginSupervisor({ runDir: join(w.base, "sup-run-3"), socketPath: "/s", mintToken: () => "t", pluginRun: { files: w.files, shared: [] } });
+    sup.startAll([{ id: "ships@local", dir: root, entry: { command: "./bun", args: ["host/index.ts"] } }]);
+    for (let i = 0; i < 100 && !existsSync(hostRan); i++) await Bun.sleep(50);
+    sup.stopAll();
+    expect([readFileSync(hostRan, "utf8"), existsSync(ranOwn)]).toEqual([cloverBun().command, false]);
+  }, 30_000);
+
+  test("a hook's bun is Clover's own", async () => {
+    const root = w.plugin("hook-bun", { "keep.txt": "" });
+    const runner = new HookRunner({ files: w.files, shared: [] });
+    const r = await runner.run({ pluginId: "p", command: "command -v bun", cwd: root }, { event: "e", sessionId: "s", pluginId: "p", ts: 0 });
+    expect([r.status, r.stdout.trim()]).toEqual(["ok", join(w.files.bin, "bun")]);
+    expect(realpathSync(join(w.files.bin, "bun"))).toBe(realpathSync(cloverBun().command));
+  }, 30_000);
+
+  test("a plugin's Bun stdio MCP server runs guarded, whatever environment the runtime merges under it", () => {
+    const root = w.plugin("mcp", { "bunfig.toml": "preload = [\"$OUTSIDE/evil.ts\"]\n", ".env": "X=1\n", "server.ts": "console.log(\"server ran\");\n" });
+    const guard = { files: w.files, shared: [] };
+    const cfg = pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t", NODE_OPTIONS: "--require x" } }, root, guard);
+    if (cfg.type !== "stdio") throw new Error("stdio expected");
+    expect(cfg.command).toBe(cloverBun().command);
+    expect([cfg.env?.BUN_OPTIONS, cfg.env?.CLOVER_PLUGIN_ROOT, cfg.env?.TOKEN, cfg.env?.NODE_OPTIONS, cfg.env?.NODE_PATH]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t", "", ""]);
+    // The worst merge: the whole parent environment under the config's, the parent's BUN_OPTIONS and NODE_OPTIONS in it.
+    const parent = { ...process.env, NODE_ENV: undefined, BUN_OPTIONS: "--preload=/elsewhere.ts", NODE_OPTIONS: "--require /elsewhere.js" };
+    const r = Bun.spawnSync([cfg.command, ...(cfg.args ?? [])], { cwd: root, env: { ...parent, ...cfg.env }, stdout: "pipe", stderr: "pipe" });
+    expect([r.stdout.toString().trim(), existsSync(join(w.base, "mark"))]).toEqual(["server ran", false]);
+    // A program that isn't Bun is the plugin's own: unchanged.
+    const node = { command: "node", args: ["server.js"], env: { A: "1" } };
+    expect(guardedMcpServer(node, root, guard)).toBe(node);
+  }, 30_000);
+
   test("a hook's bun runs guarded: the outside file never loads", async () => {
     const root = w.plugin("hook", { "hooks/check.ts": "await import(\"../../outside/evil.ts\");\n" });
     const runner = new HookRunner({ files: w.files, shared: [] });
@@ -168,7 +228,8 @@ describe("a plugin process loads only its own tree", () => {
     });
     const root = w.plugin("sup-node", { "host/index.js": "" });
     sup.startAll([{ id: "node@local", dir: root, entry: { command: "node", args: ["host/index.js"] } }, { id: "bun@local", dir: root, entry: { command: "/opt/bin/bun", args: ["host/index.js"] } }]);
-    expect(seen.map((c) => c[0])).toEqual(["/opt/bin/bun"]);
+    // The Bun one runs, on Clover's own Bun whatever path the manifest gave (H3).
+    expect(seen.map((c) => c[0])).toEqual([cloverBun().command]);
     expect([isBunCommand("bun"), isBunCommand("C:\\bun\\bun.exe"), isBunCommand("node"), isBunCommand("/x/bunx")]).toEqual([true, true, false, false]);
     sup.stopAll();
   });

@@ -1,28 +1,31 @@
 // Running a plugin's code with Bun, held to the plugin's own tree at run time (#234's review, F2, the controller's
 // ruling). A static read of loader configs can't see every way one sends a load elsewhere (a `paths` target with `..`
 // after its `*`, a `jsxImportSource`, a dependency's `main`, a bunfig `preload`, a `.env` `NODE_OPTIONS`), so the
-// processes the core starts for a plugin's code run with what follows. Exactly these are covered: a supervised plugin
-// host (`plugins/supervisor.ts`, which starts only a Bun command) and a hook (`plugins/hook-runner.ts`, and any `bun` its
-// shell command starts). Not covered, by the controller's rulings: a plugin's MCP servers (the runtimes start them
-// from the plugin's own config, not the core), an agent backend (its quirks rule), and any program that isn't Bun (a
-// `stdio` server's command, a helper, a `node` the plugin's code starts), which is code by declaration that the OK
-// covers and Clover doesn't confine. Neither is what the approved code chooses to do itself: `eval`, a child it starts
-// with a clean environment. Each process runs with:
+// processes for a plugin's code run with what follows, always on Clover's own Bun (`cloverBun`). Exactly these are
+// covered: a supervised plugin host (`plugins/supervisor.ts`, which starts only a Bun command), a hook
+// (`plugins/hook-runner.ts`, and any `bun` its shell command starts, which the PATH makes Clover's), and a plugin's stdio
+// MCP server whose command is Bun (`guardedMcpServer`, the one door a plugin-sourced stdio entry takes into a runtime's
+// config). Not covered, by the controller's rulings: an agent backend (its quirks rule), and any program that isn't Bun
+// (a `stdio` server's other command, a helper, a `node` the plugin's code starts), which is code by declaration that
+// the OK covers and Clover doesn't confine. Neither is what the approved code chooses to do itself: `eval`, a child it
+// starts with a clean environment. Nor an ESM load of a file without an extension, which Bun 1.4.4 hands to no plugin
+// hook: the fence keeps runners from writing a `node_modules` above a plugin (`pluginLoadDenies`), and the OK refuses
+// a plugin that imports a dependency it doesn't ship (`loaderReach`'s `missing`). Each process runs with:
 //
 // * Clover's own `bunfig.toml` (`--config`), never the plugin's: no `preload`, and no auto-install from the network;
 // * no `.env` loading (`--no-env-file`), and no inherited `NODE_OPTIONS`, `BUN_OPTIONS` or `NODE_PATH`;
 // * Clover's guard preloaded (`--preload`): a Bun plugin whose `onLoad` sees every file the process loads, by its real
 //   path after links, and refuses one outside the plugin's tree and Clover's shared packages, whatever its name or
-//   loader; `process.dlopen` (native addons) held to the same rule; and every worker (`Worker`, `node:worker_threads`)
-//   preloading the guard first, pinned to the same plugin folder.
+//   loader; `process.dlopen` (native addons) held to the same rule; every worker (`Worker`, `node:worker_threads`)
+//   preloading the guard first, pinned to the same plugin folder; and no `ShadowRealm`.
 //
 // The flags go in `BUN_OPTIONS` too, so a `bun` a hook's shell command starts gets them, whatever its cwd (measured on
 // Bun 1.4.4: a plugin folder's `.env` `NODE_OPTIONS=--require <file>` and bunfig `preload` both run without them, and
 // neither does with them). The static check (`loaderReach`) stays as `clover plugin validate`'s early error.
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 /** Clover's bunfig for plugin processes: nothing installed at run time. */
 export const PLUGIN_BUNFIG = `# Clover's own config for plugin processes; a plugin's bunfig.toml never applies.\n[install]\nauto = "disable"\n`;
@@ -99,12 +102,32 @@ const wrap = (Original) => {
 };
 const lock = (obj, key, value) => Object.defineProperty(obj, key, { value, writable: false, configurable: false, enumerable: true });
 lock(globalThis, "Worker", wrap(globalThis.Worker));
+// A ShadowRealm's importValue loads a module with none of this (#234's check 4, H2): there is none.
+lock(globalThis, "ShadowRealm", function ShadowRealm() { fail("ShadowRealm isn't available to a plugin"); });
 lock(workerThreads, "Worker", wrap(workerThreads.Worker));
 `;
 
 export interface PluginRunFiles {
   bunfig: string;
   guard: string;
+  /** A folder holding `bun`, a link to Clover's own Bun (`cloverBun`): first on a hook's PATH, so a hook's `bun` is
+   *  Clover's. */
+  bin: string;
+}
+
+/** True inside a `bun build --compile` binary, whose modules live under `/$bunfs/` (`B:/~BUN/` on Windows). */
+const compiled = () => import.meta.path.startsWith("/$bunfs/") || import.meta.path.includes("~BUN");
+
+/** Clover's own Bun, the one the core runs on (#234's check 4, H3): a plugin's Bun process always runs on it, never on
+ *  a `bun` the plugin or the PATH names. The shipped core is a compiled Bun binary, which runs as Bun with
+ *  `BUN_BE_BUN=1`. */
+export function cloverBun(): { command: string; env: Record<string, string> } {
+  return { command: process.execPath, env: compiled() ? { BUN_BE_BUN: "1" } : {} };
+}
+
+/** Whether a command asks for Bun (`bun`, or a path to one): the manifest chooses Bun or not, never which Bun. */
+export function isBunCommand(command: string): boolean {
+  return /^bun(\.exe)?$/i.test(basename(command.replace(/\\/g, "/")));
 }
 
 /** What a process runner needs to hold a plugin's processes to its tree: the run files, and the shared roots (default:
@@ -129,7 +152,23 @@ export function ensurePluginRunFiles(dir: string): PluginRunFiles {
   if (!st.isDirectory() || (uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0) {
     throw new Error(`${folder} is not a private folder of this user's; plugin processes can't start`);
   }
-  const files = { bunfig: join(folder, "bunfig.toml"), guard: join(folder, "guard.mjs") };
+  const files = { bunfig: join(folder, "bunfig.toml"), guard: join(folder, "guard.mjs"), bin: join(folder, "bin") };
+  mkdirSync(files.bin, { recursive: true, mode: 0o700 });
+  const bunLink = join(files.bin, process.platform === "win32" ? "bun.exe" : "bun");
+  let linked: string | undefined;
+  try {
+    linked = readlinkSync(bunLink);
+  } catch {
+    linked = undefined;
+  }
+  if (linked !== cloverBun().command) {
+    try {
+      unlinkSync(bunLink);
+    } catch {
+      /* none yet */
+    }
+    symlinkSync(cloverBun().command, bunLink);
+  }
   for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE]] as const) {
     let current: string | undefined;
     try {
@@ -150,6 +189,18 @@ export function pluginBunFlags(files: PluginRunFiles): string[] {
 /** Variables a plugin process never inherits: they change what Bun or Node loads. */
 const DROPPED_ENV = /^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+)$/;
 
+/** A plugin's stdio MCP server, as the runtime starts it (#234's check 4). A Bun one runs on Clover's own Bun with
+ *  Clover's config, no `.env` and the load guard, held to the plugin's folder: its `env` carries the flags, and empties
+ *  what changes loading, so no merge of the runtime's own environment under it brings `NODE_OPTIONS`, `NODE_PATH`,
+ *  `BUN_CONFIG_*` or another `BUN_OPTIONS` back. Any other program is the plugin's own, which the OK covers and Clover
+ *  doesn't confine: unchanged. Every plugin-sourced stdio entry goes through this. */
+export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard): E {
+  if (!isBunCommand(entry.command)) return entry;
+  const env = guardedPluginEnv(entry.env ?? {}, { pluginRoot, ...guard });
+  for (const k of ["NODE_OPTIONS", "NODE_PATH", ...Object.keys(process.env).filter((k) => DROPPED_ENV.test(k) && k !== "BUN_OPTIONS")]) env[k] = "";
+  return { ...entry, command: cloverBun().command, env };
+}
+
 /** The packages a plugin may load from Clover's own install (the plugin SDK and what it imports), as folders. */
 export function cloverSharedRoots(): string[] {
   const out: string[] = [];
@@ -169,6 +220,7 @@ export function guardedPluginEnv(base: Readonly<Record<string, string | undefine
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(base)) if (v !== undefined && !DROPPED_ENV.test(k)) env[k] = v;
   env.BUN_OPTIONS = pluginBunFlags(o.files).join(" ");
+  Object.assign(env, cloverBun().env);
   let root: string;
   try {
     root = realpathSync(o.pluginRoot);

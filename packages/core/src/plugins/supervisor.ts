@@ -2,7 +2,7 @@ import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
+import { cloverBun, ensurePluginRunFiles, guardedPluginEnv, isBunCommand, type PluginRunGuard } from "../registry/plugin-run";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -134,10 +134,7 @@ function defaultProcessStartedAt(pid: number): string | null {
 /** The daemon-computed spawn config for one consented, spawn-eligible platform plugin
  *  (agent/plugins.ts#pluginSpawnEligible). `id` is the plugin's spec (WS-24 — see this file's header).
  *  `dir` is the plugin's directory (default cwd); `entry.cwd`, when set, is resolved relative to `dir`. */
-/** Whether a host's command is Bun (`bun`, or a path to it). */
-export function isBunCommand(command: string): boolean {
-  return /^bun(\.exe)?$/i.test(basename(command.replace(/\\/g, "/")));
-}
+export { isBunCommand };
 
 export interface EligiblePlugin {
   id: string;
@@ -212,6 +209,8 @@ export interface PluginSupervisorDeps {
   /** Clover's run files for plugin processes (#234, F2): every plugin process runs with Clover's bunfig, no `.env`, and
    *  the load guard held to its plugin's folder. Default: written into `<runDir>/plugin-run` on first spawn. */
   pluginRun?: PluginRunGuard;
+  /** Testability seam: Clover's own Bun (`cloverBun`). */
+  bun?: string;
 }
 
 /** On-disk shape of `<runDir>/plugins/<id>.pid` since the PID-reuse hardening fix: identity-
@@ -774,7 +773,8 @@ export class PluginSupervisor {
       // that isn't Bun is one a manifest declares (a stdio server, a helper), never a host.
       if (!isBunCommand(config.entry.command)) throw new Error(`a plugin host runs under Bun only, not ${basename(config.entry.command)}`);
       const token = this.deps.mintToken(config.id);
-      const cmd = [config.entry.command, ...(config.entry.args ?? [])];
+      // Clover's own Bun, never the one the manifest's command names (#234's check 4, H3): it chooses Bun and the args.
+      const cmd = [this.deps.bun ?? cloverBun().command, ...(config.entry.args ?? [])];
       const cwd = config.entry.cwd ? join(config.dir, config.entry.cwd) : config.dir;
       this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir) };
       const env = guardedPluginEnv(
