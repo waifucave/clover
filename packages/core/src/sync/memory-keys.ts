@@ -18,8 +18,9 @@
 //   that names this computer as one too, only for the kids a push's checked entries use. A key whose members include a
 //   revoked device is dropped, and a revoked creator's keys leave the ring altogether.
 // * **Epochs count per creator** (#232's check 2, C2): a computer's next key is its own newest + 1, and another's key is
-//   taken only within `EPOCH_STEP` of the newest this computer holds from that creator, so no computer can push
-//   another's epochs anywhere. Each creator keeps at most `PER_CREATOR` keys here (its oldest go first), so no one
+//   taken only within `EPOCH_STEP` of the newest this computer holds from that creator (from one it holds nothing from
+//   yet, any epoch up to the cap), so no computer can push another's epochs anywhere. Sealing prefers this computer's
+//   own newest fitting key, else the newest fitting one by creation time: epochs never compare across creators. Each creator keeps at most `PER_CREATOR` keys here (its oldest go first), so no one
 //   computer can fill the ring.
 // * What a revoked device already holds can't be clawed back: the memory it had, and keys it had, stay with it. It gets
 //   nothing new: its links are cut, no mail is addressed to it, and nothing is sealed under a key it holds.
@@ -112,13 +113,13 @@ export class ContentKeyRing {
     if (this.#making) await this.#making.catch(() => undefined);
     const fit = this.#fit(peers);
     if (fit) return fit;
-    return this.rotate();
+    return this.rotate(peers);
   }
 
   /** Makes a new key for every current computer (on a revocation, or when no key fits). */
-  async rotate(): Promise<ContentKeyInfo> {
+  async rotate(peers: readonly string[] = []): Promise<ContentKeyInfo> {
     // One at a time: two at once would name the same epoch.
-    const making = (this.#making ?? Promise.resolve()).catch(() => undefined).then(() => this.#make());
+    const making = (this.#making ?? Promise.resolve()).catch(() => undefined).then(() => this.#make(peers));
     this.#making = making;
     try {
       return await making;
@@ -127,9 +128,11 @@ export class ContentKeyRing {
     }
   }
 
-  async #make(): Promise<ContentKeyInfo> {
+  async #make(peers: readonly string[]): Promise<ContentKeyInfo> {
     const epoch = Math.min(MAX_EPOCH, this.#highestOf(this.#self) + 1);
-    const members = [this.#self, ...this.#registry.list().filter((d) => d.runsCore && d.revokedAt === undefined && d.id !== this.#self).map((d) => d.id)].slice(0, MAX_MEMBERS);
+    // The computers it is for come first, so a key made for them always names them, past `MAX_MEMBERS` computers too.
+    const current = this.#registry.list().filter((d) => d.runsCore && d.revokedAt === undefined && d.id !== this.#self).map((d) => d.id);
+    const members = [...new Set([this.#self, ...peers.filter((p) => current.includes(p)), ...current])].slice(0, MAX_MEMBERS);
     const bytes = own(randomBytes(32));
     const unsigned = { kid: `${epoch}.${this.#self}.${toBase64Url(randomBytes(9))}`, epoch, creator: this.#self, members, createdAt: this.#now(), commit: commitOf(bytes) };
     const info: ContentKeyInfo = { ...unsigned, sig: toBase64(this.#sign(keyStatement(unsigned))) };
@@ -178,7 +181,10 @@ export class ContentKeyRing {
       if (commitOf(bytes) !== info.commit) continue;
       if (!info.members.includes(this.#self) || !info.members.includes(from) || !info.members.includes(info.creator)) continue;
       if (info.members.some((m) => this.#registry.get(m)?.revokedAt !== undefined)) continue;
-      if (info.epoch > this.#highestOf(info.creator) + EPOCH_STEP) continue;
+      // Within a step of what this computer holds from that creator; from one it holds nothing from yet (a computer
+      // paired later, or one that missed many rotations), any epoch up to the cap.
+      const held = this.#highestOf(info.creator);
+      if (held > 0 && info.epoch > held + EPOCH_STEP) continue;
       const creator = this.#registry.get(info.creator);
       if (!creator || creator.revokedAt !== undefined || !creator.runsCore) continue;
       const sig = fromBase64(info.sig);
@@ -214,14 +220,19 @@ export class ContentKeyRing {
     }
   }
 
+  /** The key to seal to `peers` under: this computer's own newest that fits, else the newest that fits by creation
+   *  time (epochs count per creator, so they never compare across creators). */
   #fit(peers: readonly string[]): ContentKeyInfo | undefined {
-    let best: ContentKeyInfo | undefined;
+    let own: ContentKeyInfo | undefined;
+    let other: ContentKeyInfo | undefined;
     for (const k of this.#keys.values()) {
       if (!k.members.includes(this.#self) || peers.some((p) => !k.members.includes(p))) continue;
       if (k.members.some((m) => m !== this.#self && this.#unsafe(m))) continue;
-      if (!best || k.epoch > best.epoch || (k.epoch === best.epoch && k.creator > best.creator)) best = k;
+      if (k.creator === this.#self) {
+        if (!own || k.epoch > own.epoch) own = k;
+      } else if (!other || k.createdAt > other.createdAt || (k.createdAt === other.createdAt && k.kid > other.kid)) other = k;
     }
-    return best;
+    return own ?? other;
   }
 
   /** A device no key may be sealed for: one revoked, or one this computer doesn't know. */

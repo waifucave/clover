@@ -508,6 +508,40 @@ describe("#232's review: poisoned keys, pinned vectors, a revoked writer's entri
     void studio;
   });
 
+  test("a computer that holds nothing from a creator yet takes its key at any epoch (a computer paired late, after 4,096 rotations)", async () => {
+    const c = await makeLinkCluster(["Studio", "Laptop"], { clock });
+    stops.push(() => c.close());
+    const [studio, laptop] = [c.devices.get("Studio")!, c.devices.get("Laptop")!];
+    const start = async (d: ClusterDevice, seed?: (home: string, store: MemorySecretStore) => Promise<void>) => {
+      const home = mkdtempSync(join(tmpdir(), "clover-h-late-"));
+      stops.push(() => rmSync(home, { recursive: true, force: true }));
+      const store = new MemorySecretStore();
+      await seed?.(home, store);
+      const sync = await MemorySync.start({ home, self: d.id, key: d.key, store, transport: d.transport, registry: d.registry, now: () => DAY });
+      stops.push(() => sync.close());
+      return { home, sync };
+    };
+    // The studio has made 5,000 keys before the laptop ever sees one: its newest, for itself alone, is on its ring.
+    const s = await start(studio, async (home, store) => {
+      const bytes = new Uint8Array(32).fill(9);
+      const unsigned = { kid: `5000.${studio.id}.abcdefghij`, epoch: 5000, creator: studio.id, members: [studio.id], createdAt: DAY, commit: keyCommit(bytes) };
+      const info = { ...unsigned, sig: toBase64(studio.key.sign(keyStatement(unsigned))) };
+      mkdirSync(join(home, "sync"), { recursive: true });
+      writeFileSync(join(home, "sync", "memory-keys.json"), JSON.stringify({ v: 2, keys: [info] }));
+      await store.set({ owner: { kind: "device" }, name: `memory-key:${unsigned.kid}` }, toBase64(bytes), { synced: false });
+    });
+    const l = await start(laptop);
+    expect(s.sync.keys().map((k) => k.epoch)).toEqual([5000]);
+    mkdirSync(botPaths(s.home, BOT).memory, { recursive: true });
+    writeFileSync(join(botPaths(s.home, BOT).memory, "MEMORY.md"), "late\n");
+    s.sync.changed(BOT);
+    await studio.transport.connect(laptop.id);
+    await waitFor(() => existsSync(join(botPaths(l.home, BOT).memory, "MEMORY.md")));
+    expect(readFileSync(join(botPaths(l.home, BOT).memory, "MEMORY.md"), "utf8")).toBe("late\n");
+    // The key it took is the studio's 5,001st, made for both.
+    expect(l.sync.keys().map((k) => k.epoch)).toEqual([5001]);
+  });
+
   test("B4: mail at the full per-file cap and a full page goes in pieces the relay takes; one it refuses goes again", async () => {
     let refuseOnce = true;
     const w = await world(["Studio", "Laptop"], {
