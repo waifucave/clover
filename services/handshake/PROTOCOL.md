@@ -188,7 +188,7 @@ The lease decides which computer is the main one (spec §6.4). For account-less 
 
   | `op` | Succeeds when | Then |
   | :- | :- | :- |
-  | `acquire` | no holder, the lease expired, or the caller already holds it; in a group, a new tenure needs a voter unless the caller held it last ("Group recovery") | the caller holds it; `epoch` rises by one unless the caller already held a live lease |
+  | `acquire` | no holder, the lease expired, or the caller already holds it; in a group, a new tenure needs a voter (one exception for a tenure begun before that rule: "Group recovery") | the caller holds it; `epoch` rises by one unless the caller already held a live lease |
   | `renew` | the caller holds it and `epoch` matches | `expiresAt` moves on |
   | `release` | the caller holds it and `epoch` matches | no holder (the next acquire raises `epoch`) |
   | `takeover` | always: the user chose this computer (§6.4) | the caller holds it, and `epoch` rises by one |
@@ -254,11 +254,11 @@ Agreed with lane H (H-M1's review and the controller's rulings, November 6, 2026
     by a quorum of all the voters, the current recovery key included. When the second device has just joined, the founder alone is that quorum. `t` must be newer than the last change (409 `stale`), and the key can't be a member's (409 `conflict`). The service keeps only the public key, never the code.
   - **Using it:** the recovery key co-signs like a voter (`"by": "<its public key>"`). In a two-device group with a code, neither device alone can remove the other; the code and the surviving device can.
   - **Each use** pushes `{"t":"recovery","change":"admit"|"remove"|"recovery","target","by","at"}` to every member's socket, so the surviving device shows its card. For 7 days the last use is also in the group's view and in each hello as `recoveryUsed`, for a member that was offline.
-- **The lease:** in a group, a member that doesn't vote yet never starts a tenure (403 `not_voter`):
-  - not by `takeover`;
-  - not by an `acquire` of a lease that is free (never held, released, lapsed, or freed by its holder's removal), unless the caller was its last holder, taking its own back.
-
-  The founder votes from the start, so it takes the first lease alone. Holding on (`acquire` while holding), `renew` and `release` need no vote. The account channel's lease has no votes; the account list is its authority.
+- **The lease:** in a group, a member that doesn't vote yet never starts a tenure (403 `not_voter`), not by `takeover` and not by an `acquire` of a lease that is free: never held, released, lapsed, or freed by its holder's removal.
+  - The founder votes from the start, so it takes the first lease alone.
+  - Holding on (`acquire` while holding), `renew` and `release` need no vote.
+  - **One exception, for tenures begun before this rule:** the lease's last holder may `acquire` its own released or lapsed lease again without a vote, while it is still a member. Under this rule every holder already voted when its tenure began, and a member's vote never lapses, so the exception only changes anything for a holder that took the lease, without a vote, before the rule was deployed. Any removal, self-removal or move-out clears the mark, so a key let back in never uses it.
+  - The account channel's lease has no votes; the account list is its authority.
 - **With an account,** the account's device list replaces the group (ruling R17), and the account service's revocation is the authority.
 
 ## The account channel (devices with an account)
