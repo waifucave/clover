@@ -227,7 +227,7 @@ export const CLOSED_DOORS: Record<Os, readonly string[]> = {
 };
 
 /** Cloud metadata endpoints (§9.2): the bash fence blocks them, so a bot can't lift a VM's credentials. */
-export const CLOUD_METADATA_ADDRESSES: readonly string[] = ["169.254.169.254", "fd00:ec2::254", "metadata.google.internal"];
+export const CLOUD_METADATA_ADDRESSES: readonly string[] = ["169.254.169.254", "fd00:ec2::254", "fd20:ce::254", "metadata.google.internal"];
 
 /** One name as a case-folding file system could compare it: Unicode NFC, then upper case and back to lower, then NFC
  *  again. The round trip folds what lower case alone leaves: the long s (`ſettings` opens `settings` on APFS and NTFS),
