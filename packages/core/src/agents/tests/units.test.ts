@@ -8,15 +8,24 @@ import { RpcError, RpcPeer, type JsonRpcMessage } from "../acp/jsonrpc";
 import { UserSelections } from "../acp/selections";
 import { MAX_RAW_INPUT_CHARS, capRawInput, onceOnly } from "../acp/session";
 import { isAuthRequired, pathsOf, readCaps, readConfigOptions } from "../acp/types";
-import { versionSatisfies } from "../backend";
+import { AcpAgentBackend, versionSatisfies } from "../backend";
 import { BridgeTokens } from "../bridge/tokens";
-import { buildAgentEnv } from "../process/launch";
+import { buildAgentEnv, launchContained, spawnPlan } from "../process/launch";
+import { bridgeCloverParts } from "../bridge/handlers";
+import { BRIDGE_ENV, runBridge } from "../bridge/server";
+import type { CloverConn } from "../../ipc/clover";
+import { FakeClock } from "../../contracts/fakes/clock";
+import { FakeFence } from "../../contracts/fakes/fence";
+import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
+import { fakeLaunch } from "../testing/harness";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
-import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS } from "../quirks";
+import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, QUIRK_SOURCES } from "../quirks";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
-import { agentPaths } from "../paths";
+import { MAX_CHECKED_PATHS, agentPaths } from "../paths";
 import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPaths } from "../transcript";
 import { effectOf, promptOf, ruleKeyOf } from "../manager";
+import { ADMISSIONS, admissionFor } from "../sandbox/admission";
+import { FileAgentOks, agentOksPath } from "../sandbox/oks";
 
 function pair(opts: { stringIds?: boolean } = {}) {
   const tapped: [string, JsonRpcMessage][] = [];
@@ -140,7 +149,10 @@ describe("the card's inputs", () => {
     expect(effectOf("execute")).toBe("execute");
     expect(effectOf("switch_mode")).toBe("other");
     expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "execute", title: "`ls`", rawInput: { command: "ls -la" }, options: [], paths: [] })).toBe("Agent(cursor):Bash(ls -la)");
-    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server: "blender", tool: "Render" }, options: [], paths: [] })).toBe("Agent(cursor):mcp__blender__Render");
+    expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server: "blender", tool: "Render" }, options: [], paths: [] })).toBe('Agent(cursor):mcp(["blender","Render"])');
+    // No two calls share a key: `a__b` + `c` and `a` + `b__c` (check 2's minor 2).
+    const mcpKey = (server: string, tool: string) => ruleKeyOf("cursor", { toolCallId: "1", toolKind: "other", title: "x", mcp: { server, tool }, options: [], paths: [] });
+    expect(mcpKey("a__b", "c")).not.toBe(mcpKey("a", "b__c"));
     expect(ruleKeyOf("cursor", { toolCallId: "1", toolKind: "edit", title: "x", options: [], paths: [] })).toBeUndefined();
     expect((await promptOf({ from: "bot", bot: "alpha", session: "s", text: "go on" })).text).toBe("go on");
     expect((await promptOf({ from: "note", label: "Fish", text: "hi", by: { kind: "core" } })).text).toBe("[Fish] hi");
@@ -211,6 +223,15 @@ describe("the bridge's tokens", () => {
     expect(await unbound.accept(tok2, "s9", 501)).toEqual({ ok: false, reason: "agent-not-started" });
   });
 
+  test("a token expires after its life, live agent or not", async () => {
+    let now = 1_000;
+    const t = new BridgeTokens({ table: table(tree), ttlMs: 60_000, now: () => now });
+    const token = t.mint("s1");
+    t.bind("s1", 500);
+    now += 60_001;
+    expect(await t.accept(token, "s1", 501)).toEqual({ ok: false, reason: "expired" });
+  });
+
   test("a revoke while the process table is read wins (review 5, the E2 probe); isLive follows the token", async () => {
     let release!: () => void;
     const slow = () => new Promise<ProcessRow[]>((r) => (release = () => r(tree)));
@@ -230,6 +251,29 @@ describe("the bridge's tokens", () => {
     expect(t2.isLive("s2", ok.connection + 1)).toBe(false);
     t2.revoke("s2");
     expect(t2.isLive("s2", ok.connection)).toBe(false);
+  });
+
+  test("on Windows the agent's job object is the caller check, not the process tree", async () => {
+    const t = new BridgeTokens({ table: table(tree), bindWaitMs: 50 });
+    const token = t.mint("s1");
+    const inJob = new Set([777]);
+    t.bind("s1", 500, (pid) => inJob.has(pid));
+    // 501 descends from 500 in the table, but isn't in the job: refused; 777 is in the job: accepted.
+    expect(await t.accept(token, "s1", 501)).toEqual({ ok: false, reason: "not-the-agent" });
+    expect((await t.accept(token, "s1", 777)).ok).toBe(true);
+  });
+
+  test("the bridge's methods on C's server refuse a session whose token is gone", async () => {
+    const t = new BridgeTokens({ table: table(tree) });
+    t.mint("s1");
+    const parts = bridgeCloverParts(t, {
+      sessionInfo: () => ({ bot: "alpha" }), tools: async () => ({ tools: [], instructions: "" }),
+      call: async () => ({ content: [], isError: false }), sendMessage: async () => {}, glossary: async () => ({ results: [], loaded: [] }),
+    });
+    const conn = { caller: { kind: "session", sessionId: "s1", sessionKind: "agent", bot: "alpha" } } as unknown as CloverConn;
+    expect(await parts.handlers["bridge.tools"]!(conn, {})).toEqual({ tools: [], instructions: "" });
+    t.revoke("s1");
+    expect(await Promise.resolve(parts.handlers["bridge.tools"]!(conn, {})).catch((e: unknown) => (e as Error).message)).toBe("this bridge's token was revoked");
   });
 
   test("minting again revokes the earlier token (a reattach)", async () => {
@@ -274,6 +318,15 @@ describe("the user's own selections (review 10)", () => {
       later.end("cursor", "model", a, false);
       later.begin("cursor", "model", b, "user-new");
       expect(later.end("cursor", "model", b, true)).toBe("user-new");
+      later.restored("cursor", "model");
+      // A session that opens finds a leftover with no holder: still Clover's value, so the user's comes back now;
+      // a value the user set since drops the record (check 2's minor 4).
+      later.begin("cursor", "model", a, "user-model");
+      later.set("cursor", "model", "bot-a");
+      later.end("cursor", "model", a, false);
+      expect(later.leftover("cursor", "model", "bot-a")).toBe("user-model");
+      expect(later.leftover("cursor", "model", "user-changed")).toBeUndefined();
+      expect(later.record("cursor", "model")).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -289,12 +342,16 @@ describe("the paths the fence sees (review 8)", () => {
       mkdirSync(root);
       mkdirSync(clover);
       symlinkSync(clover, join(root, "link"));
-      expect(agentPaths(["notes.md"], root, dir)).toEqual([join(root, "notes.md")]);
-      expect(agentPaths(["../.clover/settings"], root, dir)).toEqual([join(clover, "settings")]);
-      expect(agentPaths(["~/.clover/settings", `file://${join(root, "a b")}`], root, dir)).toEqual([join(clover, "settings"), join(root, "a b")]);
-      expect(agentPaths(["link/settings"], root, dir)).toEqual([join(root, "link", "settings"), join(clover, "settings")]);
-      expect(agentPaths(["link/new/deep.txt"], root, dir)).toEqual([join(root, "link", "new", "deep.txt"), join(clover, "new", "deep.txt")]);
-      expect(agentPaths(["", "a\0b"], root, dir)).toEqual([]);
+      expect(agentPaths(["notes.md"], root, dir).paths).toEqual([join(root, "notes.md")]);
+      expect(agentPaths(["../.clover/settings"], root, dir).paths).toEqual([join(clover, "settings")]);
+      expect(agentPaths(["~/.clover/settings", `file://${join(root, "a b")}`], root, dir).paths).toEqual([join(clover, "settings"), join(root, "a b")]);
+      expect(agentPaths(["link/settings"], root, dir).paths).toEqual([join(root, "link", "settings"), join(clover, "settings")]);
+      expect(agentPaths(["link/new/deep.txt"], root, dir).paths).toEqual([join(root, "link", "new", "deep.txt"), join(clover, "new", "deep.txt")]);
+      expect(agentPaths(["", "a\0b"], root, dir).paths).toEqual([]);
+      // Every path is checked, however many come before it; past the hard cap the request is over.
+      const many = [...Array.from({ length: 300 }, (_, i) => `f${i}.txt`), "../.clover/run/x.json"];
+      expect(agentPaths(many, root, dir).paths.at(-1)).toBe(join(clover, "run", "x.json"));
+      expect(agentPaths(Array.from({ length: MAX_CHECKED_PATHS + 1 }, (_, i) => `f${i}`), root, dir)).toEqual({ paths: [], over: true });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -327,6 +384,64 @@ describe("a hostile agent's sizes (review 12)", () => {
   });
 });
 
+describe("the bridge's hello", () => {
+  test("an unverified caller (two pipe clients at once, on Windows) is tried once more; a second refusal stands", async () => {
+    const run = (answers: string[]) => {
+      let connects = 0;
+      const r = runBridge({ [BRIDGE_ENV.token]: "t".repeat(32), [BRIDGE_ENV.session]: "s1", [BRIDGE_ENV.socket]: "/x" }, {
+        onInput: () => {}, output: () => {}, log: () => {},
+        connect: async (_p, onData) => {
+          const answer = answers[connects++] ?? "ok";
+          return {
+            write: (line) => {
+              const id = (JSON.parse(line) as { id: unknown }).id;
+              const body = answer === "ok" ? { result: { ok: true } } : { error: { code: -32020, message: `the bridge was refused: ${answer}` } };
+              queueMicrotask(() => onData(new TextEncoder().encode(`${JSON.stringify({ jsonrpc: "2.0", id, ...body })}\n`)));
+            },
+            close: () => {},
+          };
+        },
+      });
+      return { ready: r.ready, connects: () => connects };
+    };
+    const once = run(["unverified-caller", "ok"]);
+    await once.ready;
+    expect(once.connects()).toBe(2);
+    const twice = run(["unverified-caller", "unverified-caller"]);
+    expect(await twice.ready.then(() => "ok", (e: unknown) => String(e))).toContain("unverified-caller");
+    expect(twice.connects()).toBe(2);
+    const other = run(["not-the-agent"]);
+    expect(await other.ready.then(() => "ok", (e: unknown) => String(e))).toContain("not-the-agent");
+    expect(other.connects()).toBe(1);
+  });
+});
+
+describe("Windows containment (lane C's AgentJob)", () => {
+  test("a .cmd runs through cmd.exe, every part quoted; an argument cmd.exe would read is refused", () => {
+    expect(spawnPlan("/usr/bin/x", ["a"], "darwin")).toEqual({ file: "/usr/bin/x", args: ["a"], verbatim: false });
+    const plan = spawnPlan("C:\\npm\\codex-acp.cmd", ["--flag", "a b"], "win32");
+    expect(plan.verbatim).toBe(true);
+    expect(plan.args.slice(0, 3)).toEqual(["/d", "/s", "/c"]);
+    expect(plan.args[3]).toBe('""C:\\npm\\codex-acp.cmd" "--flag" "a b""');
+    expect(() => spawnPlan("C:\\x.cmd", ["a&calc"], "win32")).toThrow();
+    expect(() => spawnPlan("C:\\x.bat", ["%PATH%"], "win32")).toThrow();
+  });
+
+  test("an agent that can't join its job is ended and refused; a backend with no job refuses to start", async () => {
+    const job = { assign: () => false, contains: () => false, terminate: () => true, close: () => {} };
+    const p = launchContained({ command: process.execPath, args: ["-e", "setTimeout(() => {}, 30000)"], cwd: tmpdir(), env: { PATH: process.env["PATH"] ?? "" } }, { job });
+    expect(p.contained).toBe(false);
+    await p.exited;
+    const backend = new AcpAgentBackend({
+      id: "w", pluginId: "clover/agent-w", quirks: fakeLaunch(WELL_BEHAVED_QUIRKS), clock: new FakeClock(), os: "windows", makeJob: () => null,
+      command: { program: process.execPath, prefixArgs: ["-e", "1"], acpArgs: [] },
+    });
+    backend.detect = async () => ({ installed: true, path: process.execPath, version: "1.0.0", identityOk: true, versionOk: true, sandboxed: true });
+    const err = await backend.start({ sessionId: "s", root: tmpdir(), bridge: { name: "b", command: "x", args: [], env: {}, tools: [] }, fence: new FakeFence({ home: tmpdir(), cloverHome: join(tmpdir(), ".c") }).policy() }).catch((e: unknown) => e);
+    expect((err as Error).message).toContain("job object");
+  });
+});
+
 describe("the quirks table", () => {
   test("agrees with lane B's presets on every row S5 measured", () => {
     for (const [mine, theirs] of [[CURSOR_QUIRKS, S5_CURSOR_QUIRKS], [ANTIGRAVITY_QUIRKS, S5_ANTIGRAVITY_QUIRKS]] as const) {
@@ -342,5 +457,55 @@ describe("the quirks table", () => {
       expect(mine.mcp.passesEnvironment).toBe(theirs.mcp.passesEnvironment);
       expect(mine.mcp.systemPromptChannel).toBe(theirs.mcp.systemPromptChannel);
     }
+  });
+});
+
+describe("sandbox admissions and OKs", () => {
+  test("only an admitted sandbox, inside its versions, counts; Cursor and Antigravity need the OK today", () => {
+    expect(admissionFor(ADMISSIONS, "cursor", "macos", "2026.10.22").status).toBe("unsupported");
+    expect(admissionFor(ADMISSIONS, "antigravity", "linux", "1.4.12").status).toBe("unverified");
+    expect(admissionFor(ADMISSIONS, "unknown", "macos", "1.0.0").status).toBe("unsupported");
+    const table = { x: { macos: { status: "protected" as const, versions: ">=1.2.0 <2.0.0", evidence: "gates", writer: () => ({}) } } };
+    expect(admissionFor(table, "x", "macos", "1.3.0").status).toBe("protected");
+    expect(admissionFor(table, "x", "macos", "2.0.1")).toMatchObject({ status: "unverified" });
+    expect(admissionFor(table, "x", "macos", undefined)).toMatchObject({ status: "unverified" });
+  });
+
+  test("an OK is kept per backend, version, computer, program path and file hash, in the fenced trust folder", () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-k-oks-"));
+    try {
+      const oks = new FileAgentOks(home);
+      const key = { backend: "cursor", version: "2026.10.22", computer: "Studio", path: "/opt/cursor-agent", sha256: "a".repeat(64) };
+      expect(oks.has(key)).toBe(false);
+      oks.grant(key, { cardId: "card_abcdef", at: 1 });
+      expect(new FileAgentOks(home).has(key)).toBe(true);
+      expect(oks.has({ ...key, version: "2026.11.1" })).toBe(false);
+      expect(oks.has({ ...key, computer: "Desk" })).toBe(false);
+      expect(oks.has({ ...key, path: "/tmp/cursor-agent" })).toBe(false);
+      expect(oks.has({ ...key, sha256: "b".repeat(64) })).toBe(false);
+      expect(agentOksPath(home)).toBe(join(home, "trust", "agent-oks.json"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the backends' rows", () => {
+  test("every backend has a command on every OS, a version pattern that reads its real version line, and a source", () => {
+    const lines: Record<string, string> = {
+      cursor: "2026.10.22-27dcf5f", antigravity: "1.4.12", grok: "grok 1.0.70 (f50904eaee6c) [stable]", gemini: "0.46.0",
+      "claude-code": "0.100.0", codex: "2.5.0", deepseek: "dsh 0.1.2",
+    };
+    for (const [id, q] of Object.entries(QUIRKS)) {
+      for (const os of ["macos", "linux", "windows"] as const) expect(q.launch.command[os]?.length ?? 0).toBeGreaterThan(0);
+      const m = new RegExp(q.launch.identity.versionPattern, "m").exec(lines[id]!);
+      expect(m).not.toBeNull();
+      expect(QUIRK_SOURCES[id]).toBeDefined();
+      expect(q.mcp.transports).toContain("stdio");
+      // No backend's sandbox is admitted yet: each asks for the user's OK until its gates pass.
+      expect(admissionFor(ADMISSIONS, id, "macos", (m![1] ?? m![0]).trim()).status).not.toBe("protected");
+    }
+    // `agent` is Cursor's and Grok's: neither row resolves that name.
+    for (const q of Object.values(QUIRKS)) expect(q.launch.command.macos![0]).not.toBe("agent");
   });
 });

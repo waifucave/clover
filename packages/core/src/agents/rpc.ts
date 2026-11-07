@@ -1,7 +1,7 @@
 // Lane K's methods of the protocol's agents area (packages/protocol/src/agents.ts), as handlers lane C's server mounts
 // (C-M1: roles, tokens, the caller check). Each checks its params with the method's own schema and throws a
 // `ContractError` the server maps to its JSON-RPC code. The bridge's own methods (`bridge.*`, `glossary.query`) are
-// served by the bridge endpoint (bridge/endpoint.ts), bound to one agent session each.
+// served on the daemon's main socket in the bridge role (bridge/handlers.ts), bound to one agent session each.
 //
 // `session.setModel` for agents and coding sessions is lane D's method; D's handler calls `AgentManager.setModel`.
 import { randomUUID } from "node:crypto";
@@ -24,7 +24,9 @@ export interface AgentMethodsOptions {
 
 export type AgentMethod = (params: unknown, ctx: { caller: Caller }) => Promise<unknown>;
 
-export const BACKEND_NAMES: Readonly<Record<string, string>> = { cursor: "Cursor", antigravity: "Antigravity CLI" };
+export const BACKEND_NAMES: Readonly<Record<string, string>> = {
+  cursor: "Cursor", antigravity: "Antigravity CLI", "claude-code": "Claude Code", codex: "Codex", grok: "Grok", gemini: "Gemini CLI", deepseek: "DeepSeek Harness",
+};
 
 function parse<S extends MethodSpec>(spec: S, raw: unknown): z.output<S["params"]> {
   const r = spec.params.safeParse(raw ?? {});
