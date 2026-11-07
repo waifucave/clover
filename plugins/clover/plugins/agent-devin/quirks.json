@@ -1,0 +1,82 @@
+{
+  "notes": "Devin's CLI 3000.11 (Cognition's, Homebrew cask `devin-cli`), native (`devin acp`), from its `--help` and  docs.devin.ai's command reference: it signs in with `devin auth login` or reads `WINDSURF_API_KEY`, and its  permission mode comes from `DEVIN_PERMISSION_MODE` or its config, so Clover sets `normal`, the mode that asks.  Native Windows runs it without its sandbox (its docs: the sandbox needs WSL 2). Unmeasured (from docs, `--help` and code, S5 §3): where a row isn't known it takes the cautious value (a reattach by `load` with its replay dropped, MCP names unread, calls a cancel leaves open closed by Clover), it is held as acting without asking (`unasked-actions`) since it loads the user's own approval settings, and no sandbox is admitted, so it asks for the user's OK. The agent suite's live gates measure each row.",
+  "source": "docs and code (S5 §3)",
+  "quirks": {
+    "capabilities": {
+      "snakeCaseDuplicates": false,
+      "httpMcpUnadvertised": false
+    },
+    "turns": {
+      "refusal": "unknown",
+      "cancelLeavesToolCallsOpen": true,
+      "reportsUsage": true,
+      "quotaErrorsAsText": false
+    },
+    "progress": {
+      "countsChildProcesses": true
+    },
+    "placement": "local",
+    "marks": [
+      "unasked-actions"
+    ],
+    "launch": {
+      "identity": {
+        "versionArgs": [
+          "--version"
+        ],
+        "versionPattern": "^devin (\\d+\\.\\d+\\.\\d+) \\([0-9a-f]+\\)",
+        "signer": "83Z2LHX6XW"
+      },
+      "envAllow": [
+        "WINDSURF_API_KEY"
+      ],
+      "envSet": {
+        "DEVIN_PERMISSION_MODE": "normal"
+      },
+      "versions": ">=3000.11.0 <3001.0.0"
+    },
+    "mcp": {
+      "transports": [
+        "stdio"
+      ],
+      "storesPlainText": false,
+      "passesEnvironment": false,
+      "instructionsReachPrompt": "unknown",
+      "systemPromptChannel": null,
+      "tellsConversationId": false
+    },
+    "sessions": {
+      "load": {
+        "supported": false,
+        "replays": false
+      },
+      "resume": {
+        "supported": false,
+        "replays": false
+      },
+      "replayKeepsToolCallIds": true,
+      "listFiltersHonestly": false,
+      "close": false
+    },
+    "permissions": {
+      "optionKinds": [
+        "allow_once",
+        "reject_once"
+      ],
+      "neverAsks": [],
+      "mcpNames": null
+    },
+    "config": {
+      "modelOption": "model",
+      "effortOption": null,
+      "effortInModel": false,
+      "choicePersists": false
+    },
+    "auth": {
+      "methods": [],
+      "requiredError": {
+        "code": -32000
+      }
+    }
+  }
+}

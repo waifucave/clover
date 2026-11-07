@@ -147,12 +147,10 @@ jobs:
     timeout-minutes: 50
     strategy:
       fail-fast: false
+      # The local gate (owner's ruling, November 7): a pull request's macOS legs run on the lane's own Mac before it
+      # reports a head, so PR runs take no hosted macOS runner. The merge queue (and push, and dispatch) still runs them.
       matrix:
-        include:
-          - { target: darwin-arm64, runner: macos-latest }
-          - { target: linux-x64, runner: ubuntu-24.04 }
-          - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: windows-x64, runner: windows-latest }
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]' || '[{"target":"darwin-arm64","runner":"macos-latest"},{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]') }}
     env:
       WORKSPACES: ${{ needs.changes.outputs.workspaces }}
       DAEMON: ${{ needs.changes.outputs.daemon }}
@@ -434,6 +432,10 @@ jobs:
         working-directory: packages/core
         run: bun test --timeout 30000 test/tree test/computers src/contracts/tests/tree.test.ts src/contracts/tests/computer-registry.test.ts
 
+      - name: An agent backend's bare command on PATH (its .exe or .cmd on Windows)
+        working-directory: packages/core
+        run: bun test --timeout 30000 src/agents/tests/windows-path.test.ts
+
   # The link sidecar (native/link, lane H's clover-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
   # the core's link tests run over it on loopback (src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB
   # stream, a revoke, a key the core didn't allow). Nothing leaves the runner: the relay is off and the endpoints bind
@@ -590,7 +592,8 @@ jobs:
   macos:
     name: macOS (core, cli, scripts, verify, link)
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scriptsmac == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true'
+    # Not on a pull request: the lane runs it on its own Mac (the local gate); the merge queue runs it here.
+    if: github.event_name != 'pull_request' && (needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scriptsmac == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
     env:
@@ -832,7 +835,9 @@ jobs:
   swift:
     name: swift (WinterProtocol + WinterKit + WinterChatKit + WinterBrowserHost)
     needs: changes
-    if: needs.changes.outputs.swift == 'true'
+    # The leftover Swift packages, which Clover's Electron app doesn't use: on demand only (workflow_dispatch), off the gate's
+    # macOS runners (owner's ruling, November 7).
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

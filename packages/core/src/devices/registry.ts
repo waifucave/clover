@@ -315,8 +315,9 @@ export class FileDeviceRegistry implements DeviceRegistry {
 
   async verifyAnswer(id: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> {
     const d = this.#find(id);
-    // Never a phone's link key (the controller's ruling, item 91): only the answer key its record names. B's
-    // `answerKeyOf` still falls back to the link key until lane B drops it.
+    // Never a phone's link key (the controller's ruling, item 91): only the answer key its record names. On main,
+    // `answerKeyOf` still falls back to a phone's link key; lane B's #234 drops that fallback, and with it on main the
+    // phone check here is redundant and goes.
     const keyText = d === undefined || (d.kind === "phone" && d.answerKey === undefined) ? undefined : answerKeyOf(d);
     if (keyText === undefined) return false;
     // With the key's own algorithm: a phone's Secure Enclave key is P-256 (B's #187).

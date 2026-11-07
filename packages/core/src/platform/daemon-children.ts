@@ -56,17 +56,77 @@ export function spawnDisclaimed(argv: readonly string[], env: Record<string, str
     const child = pid[0]!;
     const exited = new Promise<number>((resolve) => {
       const status = new Int32Array(1);
-      const timer = setInterval(() => {
+      // Reaps the child if it has exited; its code (a signal as 128 + its number), or null while it runs.
+      const reap = (): number | null => {
         const r = lib.waitpid!(child, ptr(status), 1 /* WNOHANG */) as number;
-        if (r === 0) return;
-        clearInterval(timer);
-        const s = status[0]!;
-        resolve(r < 0 ? 1 : (s & 0x7f) === 0 ? (s >> 8) & 0xff : 128 + (s & 0x7f));
-      }, 100);
+        if (r === 0) return null;
+        const st = status[0]!;
+        return r < 0 ? 1 : (st & 0x7f) === 0 ? (st >> 8) & 0xff : 128 + (st & 0x7f);
+      };
+      // Told of the exit by libdispatch (a DISPATCH_SOURCE_TYPE_PROC source for DISPATCH_PROC_EXIT), not by polling;
+      // the poll is only the fallback when the source can't be made.
+      // The exit can be told a moment before waitpid can reap it (#205's minor): the reap is retried briefly then,
+      // never taken for a code of 1 at once.
+      const reapSoon = (tries: number) => {
+        const code = reap();
+        if (code !== null) resolve(code);
+        else if (tries > 0) setTimeout(() => reapSoon(tries - 1), 10);
+        else resolve(1);
+      };
+      if (watchExit(child, () => reapSoon(200))) {
+        // A child that exited before the source was armed: reaped here (resolving twice is a no-op).
+        setTimeout(() => { const code = reap(); if (code !== null) resolve(code); }, 0);
+      } else {
+        const timer = setInterval(() => { const code = reap(); if (code !== null) { clearInterval(timer); resolve(code); } }, 100);
+      }
     });
     return { pid: child, exited };
   } finally {
     lib.posix_spawnattr_destroy!(ptr(attr));
     void keep;
+  }
+}
+
+const DISPATCH_PROC_EXIT = 0x80000000;
+
+function dispatchLib() {
+  return ffiLib("darwin-dispatch", "/usr/lib/libSystem.B.dylib", {
+    dlopen: { args: ["ptr", "i32"], returns: "ptr" },
+    dlsym: { args: ["ptr", "ptr"], returns: "ptr" },
+    dispatch_get_global_queue: { args: ["i64", "u64"], returns: "ptr" },
+    dispatch_source_create: { args: ["ptr", "u64", "u64", "ptr"], returns: "ptr" },
+    dispatch_source_set_event_handler_f: { args: ["ptr", "ptr"], returns: "void" },
+    dispatch_source_cancel: { args: ["ptr"], returns: "void" },
+    dispatch_resume: { args: ["ptr"], returns: "void" },
+    dispatch_release: { args: ["ptr"], returns: "void" },
+  });
+}
+
+/** Calls `onExit` once, on this thread, when process `pid` exits. False when libdispatch's source can't be made. */
+function watchExit(pid: number, onExit: () => void): boolean {
+  const d = dispatchLib();
+  if (!d) return false;
+  try {
+    const { JSCallback } = require("bun:ffi") as typeof import("bun:ffi");
+    const self = d.dlopen!(null, 2 /* RTLD_NOW */);
+    const type = self ? d.dlsym!(self, ptr(Buffer.from("_dispatch_source_type_proc\0"))) : null;
+    if (!type) return false;
+    const source = d.dispatch_source_create!(type, BigInt(pid), BigInt(DISPATCH_PROC_EXIT), d.dispatch_get_global_queue!(0n, 0n));
+    if (!source) return false;
+    let fired = false;
+    // Threadsafe: libdispatch runs the handler on one of its threads; Bun queues the call onto this one.
+    const cb = new JSCallback(() => {
+      if (fired) return;
+      fired = true;
+      d.dispatch_source_cancel!(source);
+      d.dispatch_release!(source);
+      setTimeout(() => cb.close(), 0);
+      onExit();
+    }, { args: ["ptr"], returns: "void", threadsafe: true });
+    d.dispatch_source_set_event_handler_f!(source, cb.ptr);
+    d.dispatch_resume!(source);
+    return true;
+  } catch {
+    return false;
   }
 }

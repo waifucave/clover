@@ -184,7 +184,13 @@ export interface HandshakeClientOptions {
   baseUrl: string;
   clock: { now(): number };
   fetch?: (req: Request) => Promise<Response>;
+  /** How long any request may take before it's given up as offline (10 s); lease requests take `LEASE_REQUEST_MS`. */
+  timeoutMs?: number;
 }
+
+/** A lease request (and the reads that carry the lease) is given up after this, so a hang counts as offline (H-M3's
+ *  L11). */
+export const LEASE_REQUEST_MS = 5_000;
 
 /** A signing key in one scope: its last `t`, and a queue so its mutations go one at a time. */
 interface Signer {
@@ -197,12 +203,14 @@ export class HandshakeClient {
   readonly #base: string;
   readonly #clock: { now(): number };
   readonly #fetch: (req: Request) => Promise<Response>;
+  readonly #timeoutMs: number;
   readonly #signers = new Map<string, Signer>();
 
   constructor(opts: HandshakeClientOptions) {
     this.#base = opts.baseUrl.replace(/\/+$/, "");
     this.#clock = opts.clock;
     this.#fetch = opts.fetch ?? ((req) => fetch(req));
+    this.#timeoutMs = opts.timeoutMs ?? 10_000;
   }
 
   /** A fresh `t` for a statement (registration and joins carry their own, signed). */
@@ -289,13 +297,13 @@ export class HandshakeClient {
   }
 
   async readGroup(group: string, key: Ed25519Key): Promise<{ group: string; members: GroupMember[]; lease: LeaseRecord }> {
-    return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}`)).json() as Promise<{ group: string; members: GroupMember[]; lease: LeaseRecord }>;
+    return (await this.#signed(`group:${group}`, key, "GET", `/v1/groups/${group}`, undefined, LEASE_REQUEST_MS)).json() as Promise<{ group: string; members: GroupMember[]; lease: LeaseRecord }>;
   }
 
   /** The group's lease (PROTOCOL.md "Groups and the lease"). A refusal answers `conflict` with the current lease. */
   async lease(group: string, key: Ed25519Key, body: LeaseOpBody): Promise<LeaseRecord> {
     try {
-      return ((await (await this.#signed(`group:${group}`, key, "POST", `/v1/groups/${group}/lease`, body)).json()) as { lease: LeaseRecord }).lease;
+      return ((await (await this.#signed(`group:${group}`, key, "POST", `/v1/groups/${group}/lease`, body, LEASE_REQUEST_MS)).json()) as { lease: LeaseRecord }).lease;
     } catch (err) {
       throw heldConflict(err);
     }
@@ -305,7 +313,7 @@ export class HandshakeClient {
 
   /** `GET /v1/accounts/self`: the account's other online devices, the records addressed to this one, and the lease. */
   async readAccount(token: string): Promise<{ online: string[]; records: unknown[]; lease: LeaseRecord }> {
-    return (await this.#send("GET", "/v1/accounts/self", undefined, { authorization: `Bearer ${token}` })).json() as Promise<{ online: string[]; records: unknown[]; lease: LeaseRecord }>;
+    return (await this.#send("GET", "/v1/accounts/self", undefined, { authorization: `Bearer ${token}` }, LEASE_REQUEST_MS)).json() as Promise<{ online: string[]; records: unknown[]; lease: LeaseRecord }>;
   }
 
   /** This device's latest record of a kind for another device of the account; false when the service holds a newer one. */
@@ -334,7 +342,7 @@ export class HandshakeClient {
   /** The account's lease; its holder is a device id. A refusal answers `conflict` with the current lease. */
   async accountLease(token: string, body: LeaseOpBody): Promise<LeaseRecord> {
     try {
-      return ((await (await this.#send("POST", "/v1/accounts/self/lease", body, { authorization: `Bearer ${token}` })).json()) as { lease: LeaseRecord }).lease;
+      return ((await (await this.#send("POST", "/v1/accounts/self/lease", body, { authorization: `Bearer ${token}` }, LEASE_REQUEST_MS)).json()) as { lease: LeaseRecord }).lease;
     } catch (err) {
       throw heldConflict(err);
     }
@@ -342,12 +350,14 @@ export class HandshakeClient {
 
   // ---- the wire ----
 
-  async #send(method: string, path: string, body: unknown, headers: Record<string, string> = {}): Promise<Response> {
+  async #send(method: string, path: string, body: unknown, headers: Record<string, string> = {}, timeoutMs = this.#timeoutMs): Promise<Response> {
     const bytes = body === undefined ? new Uint8Array(0) : utf8(JSON.stringify(body));
+    // A request that hangs is given up (an AbortError the callers read as offline, never a HandshakeError).
     const req = new Request(`${this.#base}${path}`, {
       method,
       headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
       ...(method === "GET" ? {} : { body: bytes }),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const res = await this.#fetch(req);
     if (res.ok) return res;
@@ -363,7 +373,7 @@ export class HandshakeClient {
 
   /** A signed request: `t` is after the key's last in this scope, and mutations go one at a time per key. A `replay`
    *  answer (another client of the same key got ahead) is retried once with a fresh `t`. */
-  async #signed(scope: string, key: Ed25519Key, method: string, path: string, body?: unknown): Promise<Response> {
+  async #signed(scope: string, key: Ed25519Key, method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Response> {
     const id = `${scope}|${toBase64Url(key.publicKey)}`;
     let signer = this.#signers.get(id);
     if (!signer) {
@@ -377,7 +387,7 @@ export class HandshakeClient {
         s.last = t;
         const bytes = body === undefined ? new Uint8Array(0) : utf8(JSON.stringify(body));
         try {
-          return await this.#send(method, path, body, { authorization: authorizationHeader(key, method, path, t, bytes) });
+          return await this.#send(method, path, body, { authorization: authorizationHeader(key, method, path, t, bytes) }, timeoutMs);
         } catch (err) {
           if (attempt === 0 && err instanceof HandshakeError && err.code === "replay") continue;
           throw err;

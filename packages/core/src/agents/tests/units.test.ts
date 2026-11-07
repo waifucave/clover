@@ -1,7 +1,7 @@
 // Unit checks for the Agent tool's small parts: the JSON-RPC peer, the environment allow-list, the process table,
 // version ranges, the "once" rule, the transcript's redaction, and the tokens' rules.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RpcError, RpcPeer, type JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
@@ -19,7 +19,13 @@ import { FakeFence } from "../../contracts/fakes/fence";
 import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { fakeLaunch } from "../testing/harness";
 import { descendantsOf, isDescendant, parseElapsed, parsePs, type ProcessRow } from "../process/table";
-import { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, QUIRK_SOURCES } from "../quirks";
+import { bundledBackends } from "../testing/bundled-backends";
+
+// The bundled backends' rows, as their plugins hold them.
+const ROWS = bundledBackends();
+const QUIRKS = Object.fromEntries(Object.entries(ROWS).map(([id, r]) => [id, r.quirks]));
+const CURSOR_QUIRKS = QUIRKS["cursor"]!;
+const ANTIGRAVITY_QUIRKS = QUIRKS["antigravity"]!;
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { MAX_CHECKED_PATHS, agentPaths } from "../paths";
 import { AgentTranscript, REDACTED_TOKEN, botSegment, redactDeep, transcriptPaths } from "../transcript";
@@ -379,6 +385,82 @@ describe("a hostile agent's sizes (review 12)", () => {
     }
   });
 
+  test("a link the bot planted anywhere in its agents folder is never written through (#213's review)", () => {
+    const root = mkdtempSync(join(tmpdir(), "clover-k-link-"));
+    try {
+      const home = join(root, "home");
+      const outside = join(root, "outside");
+      mkdirSync(outside);
+      const victim = join(outside, "victim.txt");
+      const before = "the user's own file\n";
+      const untouched = () => {
+        expect(readFileSync(victim, "utf8")).toBe(before);
+        expect(readdirSync(outside).sort()).toEqual(["victim.txt"]);
+      };
+      const writeAll = (t: AgentTranscript) => {
+        t.wire("out", { method: "session/new", params: {} }, false, 1);
+        t.call({ type: "permission" });
+        t.stderr(new TextEncoder().encode("line\n"));
+        t.writeRecord({ v: 1, sessionId: "agent_l", backend: "codex", computer: "mac", root: "projects/x", startedAt: 1 });
+      };
+      const agents = join(home, "bots", "alpha", "agents");
+      const reset = () => {
+        rmSync(home, { recursive: true, force: true });
+        rmSync(outside, { recursive: true, force: true });
+        mkdirSync(outside);
+        writeFileSync(victim, before);
+        mkdirSync(agents, { recursive: true });
+      };
+
+      // 1. `agents` itself is a link to a folder outside.
+      reset();
+      rmSync(agents, { recursive: true });
+      symlinkSync(outside, agents);
+      writeAll(new AgentTranscript(home, "agent_l", "alpha"));
+      untouched();
+
+      // 2. The session's folder is a link.
+      reset();
+      symlinkSync(outside, join(agents, "agent_l"));
+      writeAll(new AgentTranscript(home, "agent_l", "alpha"));
+      untouched();
+
+      // 3. Each file's name is a link to the user's file (and a dangling one, which would create a file outside).
+      for (const file of ["acp.ndjson", "calls.ndjson", "agent.stderr.log", "agent.json"]) {
+        reset();
+        const t = new AgentTranscript(home, "agent_l", "alpha");
+        symlinkSync(victim, join(t.dir, file));
+        writeAll(t);
+        untouched();
+        reset();
+        const t2 = new AgentTranscript(home, "agent_l", "alpha");
+        symlinkSync(join(outside, "made.txt"), join(t2.dir, file));
+        writeAll(t2);
+        untouched();
+      }
+
+      // 4. A hard link to the user's file under a transcript file's name.
+      reset();
+      const t4 = new AgentTranscript(home, "agent_l", "alpha");
+      linkSync(victim, join(t4.dir, "acp.ndjson"));
+      t4.wire("out", { method: "session/new", params: {} }, false, 1);
+      untouched();
+
+      // 5. The session folder swapped for a link after the transcript made it: the next append is refused.
+      reset();
+      const t5 = new AgentTranscript(home, "agent_l", "alpha");
+      t5.call({ type: "first" });
+      expect(readFileSync(join(t5.dir, "calls.ndjson"), "utf8")).toContain("first");
+      renameSync(t5.dir, join(agents, "moved"));
+      symlinkSync(outside, t5.dir);
+      writeAll(t5);
+      untouched();
+      expect(existsSync(join(agents, "moved", "acp.ndjson"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("redactDeep replaces the token in every string and key, at any depth", () => {
     const tok: string = "tok_ABCDEFGHIJKLMNOP";
     expect(redactDeep<unknown>({ a: [`x ${tok} y`, { [tok]: tok }], n: 1 }, [tok])).toEqual({ a: [`x ${REDACTED_TOKEN} y`, { [REDACTED_TOKEN]: REDACTED_TOKEN }], n: 1 });
@@ -502,7 +584,7 @@ describe("the backends' rows", () => {
       for (const os of ["macos", "linux", "windows"] as const) expect(q.launch.command[os]?.length ?? 0).toBeGreaterThan(0);
       const m = new RegExp(q.launch.identity.versionPattern, "m").exec(lines[id]!);
       expect(m).not.toBeNull();
-      expect(QUIRK_SOURCES[id]).toBeDefined();
+      expect(ROWS[id]!.file.source.length).toBeGreaterThan(0);
       expect(q.mcp.transports).toContain("stdio");
       // No backend's sandbox is admitted yet: each asks for the user's OK until its gates pass.
       expect(admissionFor(ADMISSIONS, id, "macos", (m![1] ?? m![0]).trim()).status).not.toBe("protected");

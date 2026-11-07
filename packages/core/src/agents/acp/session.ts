@@ -90,7 +90,7 @@ export interface OpenOptions {
   startTimeoutMs?: number;
   /** The backend's record of the user's own selections, where a choice persists (`choicePersists`). */
   selections?: { keeper: UserSelections; backend: string };
-  /** The agent's read-only mode: the config option, and its values in order of preference (`READ_ONLY_MODES`). */
+  /** The agent's read-only mode: the config option, and its values in order of preference (its quirks file's `readOnlyMode`). */
   readOnlyMode?: { option: string; values: readonly string[] };
   /** Start in the read-only mode; the session fails `refused` when the agent offers none of its values. */
   readOnly?: boolean;
