@@ -3,7 +3,7 @@
 // picture is the same on every run.
 
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
-import type { SurfaceEnvironment, SurfaceHostApi, SurfaceWindowSpec } from "@waifucave/clover-plugin-island";
+import type { Rect, SurfaceEnvironment, SurfaceHostApi, SurfaceWindowSpec } from "@waifucave/clover-plugin-island";
 import { emptyDraft, type PillCard, type QuestionDraft } from "./model/cards";
 import { PILL, barLook, cardSize, contentReveal, mainSize, previewCeiling, previewHeight, type Presentation, type Size } from "./model/metrics";
 import { CHILD_PALETTES, PALETTES } from "./model/plume";
@@ -200,9 +200,10 @@ const SURFACES: Record<"macos" | "windows" | "linux-x11" | "linux-wayland", Surf
   "linux-wayland": { os: "linux", session: "wayland", display: { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 32, width: 1920, height: 1048 }, notch: null } },
 };
 
-function SurfaceScreen({ env, width, height, draft }: { env: SurfaceEnvironment; width: number; height: number; draft?: string }): ReactElement {
+function SurfaceScreen({ env, width, height, draft, menu, targets = TARGETS }: { env: SurfaceEnvironment; width: number; height: number; draft?: string; menu?: BarMenu; targets?: readonly PillTarget[] }): ReactElement {
   const [spec, setSpec] = useState<SurfaceWindowSpec>(() => pillWindow(env, RESTING_CANVAS));
-  const host = useMemo<SurfaceHostApi>(() => ({ setWindow: setSpec, setInteractiveRegions: () => {} }), []);
+  const [regions, setRegions] = useState<readonly Rect[]>([]);
+  const host = useMemo<SurfaceHostApi>(() => ({ setWindow: setSpec, setInteractiveRegions: setRegions }), []);
   const { bounds, workArea } = env.display;
   const cropLeft = bounds.x + bounds.width / 2 - width / 2;
   const cropTop = bounds.y + bounds.height - height;
@@ -227,8 +228,12 @@ function SurfaceScreen({ env, width, height, draft }: { env: SurfaceEnvironment;
           <div style={{ position: "absolute", left: left - 1, top: top - 1, width: spec.bounds.width + 2, height: spec.bounds.height + 2, boxSizing: "border-box", border: "1px dashed #FFFFFFD9" }} />
         )}
         <div style={{ position: "absolute", left, top, background: framed ? "#000000" : undefined }}>
-          <PillSurface environment={env} host={host} target={ALPHA} targets={TARGETS} draft={draft} initialPresentation={draft ? "expanded" : undefined} reducedMotion />
+          <PillSurface environment={env} host={host} target={ALPHA} targets={targets} draft={draft} initialPresentation={draft || menu ? "expanded" : undefined} initialMenu={menu} reducedMotion />
         </div>
+        {/* The parts that take clicks (dotted): everything else in the window passes them through. */}
+        {spec.overlay
+          ? regions.map((r, i) => <div key={i} style={{ position: "absolute", left: left + r.x, top: top + r.y, width: r.width, height: r.height, boxSizing: "border-box", border: "1px dotted #FFD54AE6", pointerEvents: "none" }} />)
+          : null}
       </div>
     </SealedKitContext.Provider>
   );
@@ -242,6 +247,7 @@ const LONG = "Can you tidy the release notes before I post them? Merge the two b
 export const PILL_STORIES: Story[] = [
   { id: "pill/surface-macos", title: "On macOS: the pill's window (dashed) at the bottom centre, just above the Dock, and no bigger than the pill and its shadow", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES.macos} width={W} height={200} /> },
   { id: "pill/surface-windows", title: "On Windows: above the taskbar, the window grown with the typing pill", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES.windows} width={W} height={200} draft="Dim the lights in the studio" /> },
+  { id: "pill/surface-menu", title: "Choosing who to message on macOS: the window (dashed) grows to the menu as drawn, and only the pill and the menu take clicks (dotted)", width: W, height: 420, render: () => <SurfaceScreen env={SURFACES.macos} width={W} height={420} menu="targets" targets={WITH_PLUGIN_TARGETS} /> },
   { id: "pill/surface-linux-x11", title: "On Linux (X11): the same overlay at the bottom centre of a display with no bottom panel", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES["linux-x11"]} width={W} height={200} /> },
   { id: "pill/surface-linux-wayland", title: "On Linux (Wayland): a normal window the user moves, the pill's own size", width: W, height: 200, render: () => <SurfaceScreen env={SURFACES["linux-wayland"]} width={W} height={200} /> },
   { id: "pill/compact", title: "Compact: who it messages, and the voice circle", width: W, height: 120, render: () => <Desk width={W} height={120}><BarFrame /></Desk> },

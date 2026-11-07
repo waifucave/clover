@@ -24,6 +24,24 @@ runDeviceRegistryConformance(async (opts) => {
   return { registry, device: { id: key.id, publicKey: key.publicKeyBase64, sign: async (d: Uint8Array) => key.sign(d) } };
 }, { pending: ["answer-alg"] }); // lane H takes `alg` (a P-256 key, verified by it, and covered by `answerKeyStatement`)
 
+describe("answer keys by algorithm (B's #187, the conformance case \"answer-alg\")", () => {
+  test("an answer key verifies with its own algorithm: Ed25519 by default, P-256 when the record says so", async () => {
+    const { registry } = await open();
+    const data = new TextEncoder().encode("an answer");
+    const b64 = (b: ArrayBuffer) => Buffer.from(b).toString("base64");
+    const ec = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
+    const ecPublic = b64(await crypto.subtle.exportKey("raw", ec.publicKey));
+    const ecSig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, ec.privateKey, data));
+    const enclave = await DeviceKey.loadOrCreate(new MemorySecretStore());
+    await registry.add({ id: enclave.id, name: "Laptop2", kind: "desktop", runsCore: true, computer: "Laptop2", publicKey: enclave.publicKeyBase64, answerKey: { publicKey: ecPublic, held: "secure-enclave", alg: "p256" } as never }, { via: "terminal" });
+    expect(await registry.verifyAnswer(enclave.id, data, ecSig)).toBe(true);
+    expect(await registry.verifyAnswer(enclave.id, new TextEncoder().encode("other"), ecSig)).toBe(false);
+    const relabelled = await DeviceKey.loadOrCreate(new MemorySecretStore());
+    await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKeyBase64, answerKey: { publicKey: ecPublic, held: "secure-enclave" } }, { via: "terminal" });
+    expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
+  });
+});
+
 async function open(dir = home(), clock = new FakeClock(), store = new MemorySecretStore()) {
   const key = await DeviceKey.loadOrCreate(store);
   const registry = await FileDeviceRegistry.open({ home: dir, key, clock, self: { name: "Studio", os: "macos" } });

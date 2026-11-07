@@ -218,6 +218,20 @@ describe("CloverLinkTransport, beyond the contract's cases", () => {
     expect(await ab.request<string>("who", null)).toBe("b");
   });
 
+  test("a hello carries the lease epoch with its scope, and a link counts as heard only within two keepalives (check 4)", async () => {
+    const clock = new FakeClock();
+    const got: [number, string | undefined][] = [];
+    const c = await cluster(["a", "b"], { clock, transport: { epoch: () => 4, epochScope: () => "group:g", onPeerEpoch: (_p, e, s) => got.push([e, s]), keepaliveMs: 1_000, idleTimeoutMs: 60_000 } });
+    await c.t("a").connect(c.id("b"));
+    expect(got).toEqual([[4, "group:g"], [4, "group:g"]]);
+    expect((c.t("a") as unknown as { recentlyHeard(p: string): boolean }).recentlyHeard(c.id("b"))).toBe(true);
+    // The path goes quiet: no keepalive gets through, though the link isn't seen to drop yet.
+    c.net.partition(c.key("a"), c.key("b"));
+    clock.advance(2_001);
+    await flush();
+    expect((c.t("a") as unknown as { recentlyHeard(p: string): boolean }).recentlyHeard(c.id("b"))).toBe(false);
+  });
+
   test("a lost link re-dials by itself, backing off, once the path is back", async () => {
     const clock = new FakeClock();
     const c = await cluster(["a", "b"], { clock });
@@ -318,18 +332,41 @@ describe("CloverLinkTransport, beyond the contract's cases", () => {
   });
 
   test("'not paired yet' means try again only just after this side's own pairing; then the link stops being wanted", async () => {
-    const c = await cluster(["a", "b"], { clock: new SystemClock(), pairAll: false, transport: { unpairedGraceMs: 300, redialBackoffMs: [0, 50, 50] } });
+    // On a fake clock: the grace runs from the pairing's own time, so a slow machine (a stalled disk write between
+    // the pairing and the dial) can't use it up before the dial starts (the flake on #211's Linux and Windows runs).
+    const clock = new FakeClock();
+    const c = await cluster(["a", "b"], { clock, pairAll: false, transport: { unpairedGraceMs: 300, redialBackoffMs: [0, 50, 50] } });
     const { recordFor } = await import("../testing");
     // Only a added b: b doesn't know a. The caller waits through the grace, as the redials are refused.
     await c.devices.get("a")!.registry.add(recordFor(c.devices.get("b")!.key, "b"), { via: "terminal" });
     const link = c.t("a").link(c.id("b"));
-    const started = Date.now();
-    const first = (await c.t("a").connect(c.id("b")).catch((e: unknown) => e)) as ContractError;
-    expect(first.detail?.unpaired).toBe(true);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(250);
-    await Bun.sleep(100);
-    await c.t("a").connect(c.id("b")).catch(() => undefined);
-    await waitFor(() => !(link as unknown as { wanted: boolean }).wanted);
+    let first: ContractError | undefined;
+    void c.t("a").connect(c.id("b")).catch((e: unknown) => (first = e as ContractError));
+    // Lets the in-memory wire's dials and refusals run (they take real turns of the event loop, never fake time).
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) {
+        await flush();
+        await Bun.sleep(1);
+      }
+    };
+    await settle();
+    for (const ms of [0, 50, 50, 50, 50, 50, 49]) {
+      clock.advance(ms);
+      await settle();
+      expect(first).toBeUndefined();
+    }
+    // The grace ends at 300 ms: the caller hears "not paired yet".
+    clock.advance(1);
+    await settle();
+    expect(first?.detail?.unpaired).toBe(true);
+    // Past the grace, a refusal means b unpaired a: the link stops being wanted.
+    clock.advance(100);
+    void c.t("a").connect(c.id("b")).catch(() => undefined);
+    for (let i = 0; i < 10 && (link as unknown as { wanted: boolean }).wanted; i++) {
+      clock.advance(50);
+      await settle();
+    }
+    expect((link as unknown as { wanted: boolean }).wanted).toBe(false);
   });
 
   test("a caller dialling a peer that doesn't know this device yet waits for it to (just paired, or its sidecar restarted)", async () => {

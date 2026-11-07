@@ -10,7 +10,8 @@ import { join } from "node:path";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { FakeFence } from "../../contracts/fakes/fence";
 import { AcpAgentBackend } from "../backend";
-import { BridgeEndpoint } from "../bridge/endpoint";
+import { bridgeCloverParts } from "../bridge/handlers";
+import { serveClover } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BRIDGE_ENV } from "../bridge/server";
 import { BridgeTokens } from "../bridge/tokens";
@@ -30,9 +31,7 @@ describe.skipIf(!live)("the real agents (opt-in)", () => {
       const tokens = new BridgeTokens();
       let toolsAsked = 0;
       const sock = join("/tmp", `ck-live-${process.pid}-${id}.sock`);
-      const endpoint = new BridgeEndpoint({
-        socketPath: sock, tokens, device: "d".repeat(16), serverVersion: "live",
-        handlers: {
+      const endpoint = serveClover(sock, bridgeCloverParts(tokens, {
           sessionInfo: () => ({}),
           tools: async () => {
             toolsAsked++;
@@ -41,9 +40,7 @@ describe.skipIf(!live)("the real agents (opt-in)", () => {
           call: async () => ({ content: [], isError: true }),
           sendMessage: async () => {},
           glossary: async () => ({ results: [], loaded: [] }),
-        },
-      });
-      endpoint.listen();
+      }));
       const backend = new AcpAgentBackend({ id, pluginId: `clover/agent-${id}`, quirks: QUIRKS[id]!, clock, wire: () => ({ launched: (pid) => tokens.bind("live", pid) }) });
       const d = await backend.detect();
       console.log(`${id}: ${JSON.stringify({ path: d.path, version: d.version, identityOk: d.identityOk, versionOk: d.versionOk })}`);

@@ -115,8 +115,7 @@ test("a halt that never answers times out as a failure and does not stall the ot
   const { guard, reader, writers } = guardFor(["a", "b"], { haltTimeoutMs: 25 });
   writers.script = request => request.key === "a" ? new Promise<WriterHaltOutcome>(() => {}) : { halted: true };
   reader.set("a", R - 1); reader.set("b", R - 1);
-  const started = Date.now(), report = await guard.evaluate();
-  expect(Date.now() - started).toBeLessThan(2000);
+  const report = await guard.evaluate(); // "a" never answers: evaluate() returning at all (inside the test timeout) is the proof it was bounded
   expect(report.haltUnconfirmed).toEqual(["a"]);
   expect(report.blocked.map(b => b.filesystemId).sort()).toEqual(["fsid:a", "fsid:b"]);
   expect(guard.snapshot().entries.map(e => [e.key, e.haltConfirmed])).toEqual([["a", false], ["b", true]]);

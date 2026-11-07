@@ -6,9 +6,11 @@
 // * Windows: a TPM key (`tpm`), or else a DPAPI blob in the current user's scope (`dpapi`);
 // * Linux: an item in the Secret Service (`secret-service`);
 // * otherwise the key is kept as well as the OS lets the app, and is marked `none`.
-// The owner accepted that a compromised plugin on Windows or Linux could approve actions on other computers. Using the
-// key never prompts (the owner's rule): no Windows Hello, no `userPresence`, biometry or passcode access control, no
-// DPAPI prompt flag, and the TPM key has no user-auth policy.
+// The owner accepted that a compromised plugin on Windows or Linux could approve actions on other computers.
+//
+// Nothing here ever asks for Face ID, Touch ID, Windows Hello, a passcode or any other presence check (the owner's
+// decision): a key is protected by where it is stored, and using it never prompts (no `userPresence`, biometry or
+// passcode access control, no DPAPI prompt flag, no user-auth policy on the TPM key). `held` says where it is stored.
 //
 // This module is for the app's main process (lane E): it makes or loads the key through storage the app provides,
 // proves it to the core (`registration`, which `FileDeviceRegistry.setOwnAnswerKey` checks), and signs answers.
@@ -39,6 +41,7 @@ export interface AnswerKeyProtections {
 export function answerKeyHolder(os: Os, can: AnswerKeyProtections): AnswerKeyHolder {
   if (os === "macos" && can.appKeychain) return "app-keychain";
   if (os === "macos" && can.keychain) return "keychain";
+  // Never `hello`: a Windows Hello credential prompts, and nothing in Clover prompts (the owner's decision).
   if (os === "windows" && can.tpm) return "tpm";
   if (os === "windows" && can.dpapi) return "dpapi";
   if (os === "linux" && can.secretService) return "secret-service";

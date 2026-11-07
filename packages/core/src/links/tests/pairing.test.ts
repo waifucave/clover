@@ -25,14 +25,15 @@ afterEach(async () => {
   cleanup = [];
 });
 
-async function device(net: MemoryNetwork, name: string, opts: { hs?: FakeHandshake; rendezvous?: MemoryRendezvous; account?: string } = {}) {
+async function device(net: MemoryNetwork, name: string, opts: { hs?: FakeHandshake; rendezvous?: MemoryRendezvous; account?: string; kind?: "phone"; clockOffsetMs?: number } = {}) {
   const store = new MemorySecretStore();
   const key = await DeviceKey.loadOrCreate(store);
-  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-pair-")), key, clock, self: { name, os: "macos" } });
+  const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-h-pair-")), key, clock, self: { name, os: "macos", ...(opts.kind ? { kind: opts.kind } : {}) } });
   const wire = net.endpoint(key.publicKey);
   const handshake = opts.hs ? new HandshakeClient({ baseUrl: opts.hs.url, clock }) : undefined;
+  const devClock = opts.clockOffsetMs ? { ...clock, now: () => clock.now() + opts.clockOffsetMs!, monotonic: () => clock.monotonic(), setTimeout: clock.setTimeout.bind(clock), clearTimeout: clock.clearTimeout.bind(clock), status: () => clock.status() } : clock;
   const pairing = new PairingService({
-    self: key, registry, wire, clock, store, selfTarget: () => ({ relay: "https://relay.test/" }), account: () => opts.account ?? null,
+    self: key, registry, wire, clock: devClock, store, selfTarget: () => ({ relay: "https://relay.test/" }), account: () => opts.account ?? null,
     ...(handshake ? { handshake } : {}), ...(opts.rendezvous ? { rendezvous: opts.rendezvous } : {}),
   });
   cleanup.push(() => pairing.close());
@@ -170,6 +171,37 @@ describe("pairing", () => {
     expect(isContractError(await denied, "refused")).toBe(true);
     await waitFor(() => b.pairing.get(w.id)?.status === "failed");
     expect(b.registry.list()).toHaveLength(1);
+  });
+
+  test("a phone's answer key (P-256, the Secure Enclave's) travels in its record with its own signature; its link key never answers a card", async () => {
+    const net = new MemoryNetwork();
+    const host = await device(net, "Studio");
+    const phone = await device(net, "Phone", { kind: "phone" });
+    const { answerKeyStatement } = await import("../../devices/registry");
+    const { utf8 } = await import("../../identity/bytes");
+    // The Secure Enclave's key is P-256 (B's #187): a raw uncompressed point, and r‖s signatures over SHA-256.
+    const { generateKeyPairSync, sign } = await import("node:crypto");
+    const pair = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = pair.publicKey.export({ format: "jwk" }) as { x: string; y: string };
+    const pub = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url")]).toString("base64");
+    const es256 = (d: Uint8Array) => new Uint8Array(sign("sha256", d, { key: pair.privateKey, dsaEncoding: "ieee-p1363" }));
+    await phone.registry.setOwnAnswerKey(pub, "secure-enclave", es256(answerKeyStatement(phone.key.id, pub, "secure-enclave", "p256")), undefined, "p256");
+    await pairBoth(host, phone);
+    expect(host.registry.get(phone.key.id)?.answerKey).toEqual({ publicKey: pub, held: "secure-enclave", alg: "p256" } as never);
+    const data = utf8("an answer");
+    expect(await host.registry.verifyAnswer(phone.key.id, data, es256(data))).toBe(true);
+    expect(await host.registry.verifyAnswer(phone.key.id, data, phone.key.sign(data))).toBe(false);
+    // The statement covers the algorithm: an Ed25519 statement doesn't register the same key.
+    await expect(phone.registry.setOwnAnswerKey(pub, "secure-enclave", es256(answerKeyStatement(phone.key.id, pub, "secure-enclave")), undefined, "p256")).rejects.toThrow();
+  });
+
+  test("a host whose t is out of the statements' window is refused at its welcome (I's review)", async () => {
+    const net = new MemoryNetwork();
+    const host = await device(net, "Studio", { clockOffsetMs: -15 * 60_000 });
+    const joiner = await device(net, "Laptop");
+    const view = await host.pairing.begin();
+    expect(isContractError(await joiner.pairing.join(view.qr!).catch((e: unknown) => e), "refused")).toBe(true);
+    expect(joiner.registry.list()).toHaveLength(1);
   });
 
   test("two devices on the same account keep no pair credential and form no group", async () => {

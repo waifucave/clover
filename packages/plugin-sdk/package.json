@@ -7,6 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./args": "./src/manifest/args.ts",
+    "./ui": "./src/ui/index.tsx",
+    "./ui/bridge": "./src/ui/bridge.ts",
     "./schemas/*": "./generated/*"
   },
   "scripts": {
@@ -17,5 +19,17 @@
   "dependencies": {
     "@waifucave/clover-protocol": "workspace:*",
     "zod": "^4.6.7"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "react": "19.3.1"
   }
 }

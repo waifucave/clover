@@ -15,7 +15,9 @@ export type DeviceRegistryHarness = Pick<FakeDeviceRegistry, keyof FakeDeviceReg
 /** Builds the implementation under test, with this device's own key, from the options the fake takes. */
 export type DeviceRegistryFactory = (...args: Parameters<typeof FakeDeviceRegistry.create>) => Promise<{ registry: DeviceRegistryHarness; device: FakeDevice }>;
 
-/** Cases an implementation can run as todo until it has them: `answer-alg`, a P-256 answer key (lanes H and I). */
+/** Cases an implementation can run as todo until it has them: `answer-alg`, a P-256 answer key (lanes H and I). A
+ *  phone answering only with its answer key, never its link key (the controller's ruling, item 91), is no longer one:
+ *  `answerKeyOf` has no fallback, so every implementation runs it. */
 export type DeviceRegistryPendingCase = "answer-alg";
 
 export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: { pending?: readonly DeviceRegistryPendingCase[] } = {}): void {
