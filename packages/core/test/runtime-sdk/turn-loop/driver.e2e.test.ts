@@ -14,6 +14,7 @@ import { BotSessionDriver, type BotDriverDeps } from "../../../src/runtime-sdk/t
 import type { CoreToolDef, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
 import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
+import { darwinTest } from "../../helpers/darwin-only";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -379,7 +380,8 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
   }, 60_000);
 
   // F8: what a bot's command leaves running is adopted as a background task (agent SDK 0.0.70), which the pause stops.
-  // The process holder is built here from the SDK's own source (lane M packages and signs it for the app).
+  // The process holder is built here from the SDK's own source (lane M packages and signs it for the app). macOS only:
+  // the holder is macOS's (Linux keeps the namespace alive, Windows a Job Object: lane C).
   const holderPath = (() => {
     if (process.platform !== "darwin") return undefined;
     const src = join(import.meta.dir, "../../../node_modules/@waifucave/clover-agent-runtime/native/process-holder.c");
@@ -393,7 +395,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     return ok();
   };
 
-  test.if(process.platform === "darwin")("F8: the pause stops what a command left running: P10's two forms and setsid", async () => {
+  darwinTest("F8: the pause stops what a command left running: P10's two forms and setsid", async () => {
     expect(holderPath).toBeDefined();
     const home = tempHome();
     const { s, ctx } = pausable();
@@ -415,7 +417,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
-  test.if(process.platform === "darwin")("F8: a nohup server a command started stays up while the bots run; the session's end stops it", async () => {
+  darwinTest("F8: a nohup server a command started stays up while the bots run; the session's end stops it", async () => {
     const home = tempHome();
     const n = `8${sleepTag()}1`;
     const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { processHolder: holderPath!, pausePollMs: 200 }));
