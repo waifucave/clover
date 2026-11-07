@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
+import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
 import { pluginBunArtifacts,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
@@ -199,6 +199,7 @@ describe("the release build (scripts/release/build.ts)", () => {
   test("a macOS release signs with Clover's team only: the Keychain items and plugin Bun's requirement name it", () => {
     expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: `Developer ID Application: Clover (${CLOVER_TEAM_ID})`, APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([]);
     expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Developer ID Application: Someone (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([`CLOVER_MAC_IDENTITY is team AB12CD34EF, not Clover's ${CLOVER_TEAM_ID}: the core's Keychain items and plugin Bun's check would refuse what it signs`]);
+    expect(CLOVER_APP_REQUIREMENT).toBe(`identifier "com.waifucave.clover" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
   });
 });
 

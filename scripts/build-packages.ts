@@ -9,7 +9,9 @@
 // Linux only: electron-builder makes the deb and the rpm with fpm, and the rpm needs rpmbuild (`apt-get install rpm`).
 // An architecture builds on its own machine (CI runs one job per architecture): clover-link is Rust with ring's C,
 // and cargo builds it for the machine it is on. It:
-//   1. builds the daemon for linux-<arch> (scripts/build-daemon.ts) and clover-link (`cargo build --release --locked`)
+//   1. stages the bundled plugins (the committed files under plugins/) and measures them, then builds the daemon for
+//      linux-<arch> (scripts/build-daemon.ts) with that manifest compiled in, and clover-link (`cargo build --release
+//      --locked`)
 //   2. stages both in apps/desktop/out/daemon/, where electron-builder.yml's extraResources picks them up
 //   3. builds the app (apps/desktop's `build`) once, and packages it: electron-builder --linux <formats> --<arch>
 //   4. with --check, opens each package and checks it holds the daemon, the sidecar, the AppArmor profile and
@@ -25,7 +27,8 @@ import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
 import { runNameScan } from "./release/name-scan";
 import { sealProblems } from "./seal-bun-doors";
 import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writePluginBunAssets, writeServedCopies, type Channel } from "./release/lib";
-import { STAGED_PLUGINS, stageBundledPlugins } from "./release/bundled-plugins";
+import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree, writeStagedManifest } from "./release/bundled-plugins";
+import { BUNDLED_MANIFEST_FILE } from "../packages/core/src/bundled-plugins-dir";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -197,6 +200,8 @@ export function main(argv: readonly string[], root: string): number {
   const desktop = join(root, "apps", "desktop");
   const staged = join(desktop, "out", "daemon");
   const outDir = join(desktop, "out", "dist");
+  const stagedPlugins = join(desktop, STAGED_PLUGINS);
+  const manifestFile = join(desktop, "out", BUNDLED_MANIFEST_FILE);
   // `stage`: this architecture's daemon and sidecar go where electron-builder.yml's extraResources reads them, just
   // before packaging.
   const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch }> = [
@@ -204,19 +209,22 @@ export function main(argv: readonly string[], root: string): number {
     { say: "the link sidecar, clover-link", cmd: [...LINK_BUILD], cwd: root },
   ];
   for (const arch of args.arches) {
-    steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch)], cwd: root });
+    steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch), "--plugins-manifest", manifestFile], cwd: root });
     steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats, args.channel)], cwd: desktop, stage: arch });
   }
   if (args.dryRun) {
+    console.log(`build-packages: the bundled plugins: plugins/ at HEAD staged in apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
     for (const s of steps) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
     return 0;
   }
   rmSync(outDir, { recursive: true, force: true });
-  // The bundled plugins: the committed files only, staged where electron-builder.yml packs them, and the stages
-  // removed however the build ends (a stale stage would go into a later plain `bun run dist`).
-  const stagedPlugins = join(desktop, STAGED_PLUGINS);
+  // The bundled plugins: the committed files only, staged where electron-builder.yml packs them and measured into
+  // the manifest each daemon carries; the stages removed however the build ends (a stale stage would go into a later
+  // plain `bun run dist`).
   try {
     stageBundledPlugins(root, stagedPlugins);
+    const manifest = writeStagedManifest(stagedPlugins, manifestFile);
+    console.log(`build-packages: the bundled plugins: ${Object.keys(manifest.files).length} files staged and measured`);
     for (const s of steps) {
       console.log(`build-packages: ${s.say}…`);
       if (s.stage !== undefined) {
@@ -234,6 +242,13 @@ export function main(argv: readonly string[], root: string): number {
       }
       const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
       if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
+      if (s.stage !== undefined) {
+        // What electron-builder packed (its unpacked app) is exactly the tree the daemon's manifest names.
+        const resources = join(outDir, s.stage === "x64" ? "linux-unpacked" : `linux-${s.stage}-unpacked`, "resources");
+        const problems = bundledPluginsProblems(resources, manifest, existsSync, walkTree);
+        for (const p of problems) console.error(`build-packages: ${p} (${s.stage})`);
+        if (problems.length > 0) return 1;
+      }
     }
   } catch (err) {
     console.error(`build-packages: ${(err as Error).message}`);
@@ -241,6 +256,7 @@ export function main(argv: readonly string[], root: string): number {
   } finally {
     rmSync(staged, { recursive: true, force: true });
     rmSync(stagedPlugins, { recursive: true, force: true });
+    rmSync(manifestFile, { force: true });
   }
   // The daemon for a server's own update: each architecture's binary as its release file, with its update files.
   const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
