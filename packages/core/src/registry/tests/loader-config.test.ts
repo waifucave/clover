@@ -30,4 +30,14 @@ describe("loaderReach's outside cases", () => {
     const r = reach({ "node_modules/dep/package.json": { main: "lib/index.js", browser: { "./a.js": "./b.js", fs: false, events: "events-shim" } } });
     expect([r.outside, r.inside]).toEqual([[], ["node_modules/dep/b.js", "node_modules/dep/lib/index.js"]]);
   });
+
+  test("a bare imports target is a built-in or a dependency in the plugin's own node_modules (check 3)", () => {
+    const tree = {
+      "package.json": { imports: { "#a": "dep", "#b": "@s/x/sub", "#c": "node:fs", "#d": "fs/promises", "#e": "elsewhere", "#f": { node: "@s/missing", default: "./x.js" } } },
+      "node_modules/dep/package.json": { name: "dep" }, "node_modules/@s/x/sub.js": "", "x.js": "",
+    };
+    expect(reach(tree).outside.map((o) => [o.field, o.target])).toEqual([["imports.#e", "elsewhere"], ["imports.#f.node", "@s/missing"]]);
+    // A nested package finds the plugin's top-level node_modules, never one outside it.
+    expect(outsideFields({ "pkg/package.json": { imports: { "#a": "dep" } }, "node_modules/dep/index.js": "" })).toEqual([]);
+  });
 });

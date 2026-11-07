@@ -4,6 +4,7 @@
 // they reach inside the plugin counts as code, so a changed `base.json` waits for a new OK; a target outside the
 // plugin's tree makes the plugin invalid, since a plugin never pulls in code or config from elsewhere.
 import { readFileSync, statSync } from "node:fs";
+import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { parseJsonc } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
@@ -65,6 +66,9 @@ function resolve(dir: string, rel: string): string | undefined {
   }
   return out.join("/");
 }
+
+/** A Node or Bun built-in module (`fs`, `node:fs`, `bun:sqlite`). */
+const builtin = (spec: string) => spec.startsWith("node:") || spec.startsWith("bun:") || builtinModules.includes(spec.split("/")[0]!) || builtinModules.includes(spec);
 
 /** Follows every loader config among `files` (tree paths). `readText` gives a file's text, or undefined. */
 export function loaderReach(files: readonly string[], readText: (path: string) => string | undefined): LoaderReach {
@@ -143,6 +147,18 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
       else for (const f of files) if (f === resolved || f.startsWith(`${resolved}/`)) inside.add(f);
     }
   }
+  // The folder of the dependency a bare specifier names (`dep/x`, `@scope/dep/x`), found in a node_modules folder from
+  // `dir` up inside the plugin; undefined when the plugin has none.
+  const dependencyFolder = (dir: string, spec: string): string | undefined => {
+    const parts = spec.split("/");
+    const name = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!;
+    if (name === "" || name === "." || name === ".." || name.includes("..") || (spec.startsWith("@") && parts.length < 2)) return undefined;
+    for (let d = dir; ; d = dirOf(d.slice(0, -1))) {
+      const folder = `${d}node_modules/${name}/`;
+      if (files.some((f) => f.startsWith(folder))) return folder;
+      if (d === "") return undefined;
+    }
+  };
   // package.json `imports` and `exports`: a relative target stays inside the plugin, and counts as code.
   for (const file of files.filter((f) => PACKAGE.test(f))) {
     const pkg = parse(file);
@@ -160,7 +176,12 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     walk("module", pkg.module, true);
     walk("browser", pkg.browser, true);
     for (const { field, target, relative } of targets) {
-      if (!relative && !target.startsWith(".") && !target.startsWith("/") && !/^[A-Za-z]:/.test(target) && !target.startsWith("\\")) continue; // a dependency's name
+      if (!relative && !target.startsWith(".") && !target.startsWith("/") && !/^[A-Za-z]:/.test(target) && !target.startsWith("\\")) {
+        // A dependency's name. In `imports` it must be a built-in module or one in the plugin's own node_modules, so a
+        // program that isn't Bun (which Clover's load guard doesn't hold) can't be sent elsewhere by it (#234's check 3).
+        if (field.startsWith("imports") && !builtin(target) && dependencyFolder(dirOf(file), target) === undefined) outside.push({ file, field, target });
+        continue;
+      }
       const star = target.indexOf("*");
       const prefix = star < 0 ? target : target.slice(0, star);
       const resolved = climbsAfterStar(target) ? undefined : resolve(dirOf(file), prefix === "" ? "." : prefix);
