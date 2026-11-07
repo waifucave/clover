@@ -49,7 +49,9 @@ const texts = (host: DurableSessionHost) => projectRecords(host.history("b_alpha
   .map((e) => (e.type === "note" ? `note:${String(e.label)}` : String(e.text)));
 
 describe("a fork between two computers, end to end", () => {
-  test("A10, A11 against B10–B12: the old main's copy becomes the main's log; its own records reach the main, late, behind a note; its grant grants nothing", async () => {
+  for (const busy of [false, true]) test(busy
+    ? "the main is in a turn of its own when they meet: it says busy, and the laptop's records arrive once the turn ended"
+    : "A10, A11 against B10–B12: the old main's copy becomes the main's log; its own records reach the main, late, behind a note; its grant grants nothing", async () => {
     const c = await makeLinkCluster(["Laptop", "Studio"], { clock: new SystemClock() });
     stops.push(() => c.close());
     const laptopDev = c.devices.get("Laptop")!;
@@ -103,6 +105,11 @@ describe("a fork between two computers, end to end", () => {
     await flush();
     drivers.get("Studio")!.end({ text: "reply three" });
     await flush();
+    if (busy) {
+      // The studio is in the middle of another turn of its own when they meet.
+      await studio.sendUser("b_alpha", user("four", "studio", 4));
+      await flush();
+    }
     // The laptop hears the lease moved.
     runs.Laptop = false;
     laptop.update("b_alpha", { computer: "Studio" });
@@ -121,11 +128,20 @@ describe("a fork between two computers, end to end", () => {
         await Bun.sleep(50);
       }
     }
+    if (busy) {
+      // The laptop's copy follows the studio's own records; its set-aside run waits, refused busy and asked again.
+      await waitFor("the laptop's copy", () => texts(laptop).includes("four"));
+      await Bun.sleep(300);
+      expect(texts(studio)).not.toContain("two");
+      expect(laptop.earlier("b_alpha")[0]?.delivered).toBeUndefined();
+      drivers.get("Studio")!.end({ text: "reply four" });
+      await flush();
+    }
     await waitFor("the laptop's records at the end of the studio's log", () => texts(studio).includes("two"));
     await waitFor("one log on both", () => laptop.head("b_alpha") === studio.head("b_alpha"));
 
     // The studio's log: its own, then the laptop's behind the note, marked late; history only.
-    expect(texts(studio)).toEqual(["one", "three", "note:Earlier on Laptop", "two"]);
+    expect(texts(studio)).toEqual(busy ? ["one", "three", "four", "note:Earlier on Laptop", "two"] : ["one", "three", "note:Earlier on Laptop", "two"]);
     const tail = studio.history("b_alpha").filter((r) => (r as { late?: boolean }).late === true);
     expect(tail.length).toBeGreaterThan(1);
     expect(studio.history("b_alpha").slice(-tail.length)).toEqual(tail);

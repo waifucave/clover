@@ -103,7 +103,7 @@ class MemoryHost implements SessionHostForSync {
   appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string; earlierId?: string }): void {
     if (this.busy) {
       this.lateRefusals++;
-      throw new ContractError("conflict", "a turn is running here: ask again once it ended");
+      throw new ContractError("busy", "a turn is running here: ask again once it ended");
     }
     this.lateRuns.push(opts.earlierId);
     const s = this.sessions.get(id)!;
