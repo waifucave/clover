@@ -34,6 +34,10 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
     make({ os, home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders, agentInstalls: [AGENT], bots: ["alpha"] });
 
   describe("Fence", () => {
+    // Windows' path forms (#234's check 6): `pluginLoadDenies` gives a UNC share's denies at the share and a `\\?\` path's
+    // both as written and in its plain form, in backslashes, and `writesPluginLoadDeny` compares them folded. Which of
+    // those forms the Windows sandbox compares a real path in is the Windows sandbox lane's to pin, in its own
+    // conformance case, so that a deny written here is one its sandbox actually matches.
     test("no runner writes a node_modules above a folder plugin code loads from, on every OS (#234's check 4, H1)", () => {
       const session = (bot: string | undefined, sessionKind: "bot" | "agent" | "coding") =>
         ({ kind: "session", sessionId: `s_${sessionKind}`, sessionKind, ...(bot ? { bot } : {}) }) as const;
