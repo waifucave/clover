@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { buildWorkflowSeatbeltProfile, sandboxAvailable } from "./sandbox";
 import { sandboxAvailable as agentSandboxAvailable } from "../agent/sandbox";
+import { darwinDescribe } from "../../test/helpers/darwin-only";
 
 function realTmp(): string {
   return realpathSync(mkdtempSync(join(tmpdir(), "clover-wf-sb-")));
@@ -101,7 +102,7 @@ describe("buildWorkflowSeatbeltProfile", () => {
 // execvp of the target) and (b) genuinely contains a script running inside it — writeFileSync,
 // execSync, and a real network connect all fail. Mirrors trackA-spike.ts's probe shape (write/exec/net
 // probes, DENIED:/ALLOWED string markers) reduced to a single inline `bun -e` child, per the brief.
-const d = sandboxAvailable() ? describe : describe.skip;
+const d = darwinDescribe;
 
 const PROBE_SCRIPT = `
 import { writeFileSync } from "node:fs";

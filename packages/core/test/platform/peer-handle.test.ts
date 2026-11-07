@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { probePeer, socketFd } from "../../src/platform/caller-probe";
 import { peerHandle, type PeerHandle } from "../../src/platform/peer-handle";
 import { resolveEndpoint } from "../../src/platform/transport";
+import { darwinTest } from "../helpers/darwin-only";
 
 const os = process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
 const CLIENT = (path: string) => `const s = await Bun.connect({ unix: ${JSON.stringify(path)}, socket: { data() {} } }); await Bun.sleep(20000); s.end();`;
@@ -47,7 +48,8 @@ describe("a connection's peer, held by what names the process (review S5)", () =
     } finally { child.kill(); stop(); }
   });
 
-  test.skipIf(os !== "darwin" || process.arch !== "arm64")("macOS: a sandboxed peer is fenced through its audit token", async () => {
+  darwinTest("macOS: a sandboxed peer is fenced through its audit token", async () => {
+    if (process.arch !== "arm64") return; // the audit-token probe is Apple-silicon only
     const { child, handle, stop } = await connectedChild((c) => ["/usr/bin/sandbox-exec", "-p", "(version 1)(allow default)", process.execPath, "-e", c]);
     try {
       expect(handle!.pid).toBe(child.pid); // sandbox-exec execs the command, so the peer is the child itself

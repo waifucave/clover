@@ -13,6 +13,7 @@ import {
   Timestamp, TreePath,
 } from "./common";
 import { canonicalJson } from "./approvals";
+import { STAGE_IMAGE_B64_MAX_LENGTH, STAGE_IMAGE_MEDIA_TYPES } from "./methods";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 // -------------------------------------------------------------------------------------------------
@@ -304,6 +305,17 @@ export const SESSIONS_METHODS = {
     result: Ok,
     doc: "Switches an agent's or coding session's model mid-session; a bot's model is its user layer (§6.3).",
   }),
+  sessionStageImage: defineMethod({
+    name: "session.stageImage", owner: "D", roles: ["app", "cli", "remote"], userOnly: true,
+    params: z.object({
+      id: SessionId,
+      mediaType: z.enum(STAGE_IMAGE_MEDIA_TYPES),
+      /** Strict base64, at most `STAGE_IMAGE_B64_MAX_LENGTH` (the app's cap: one request line's worth). */
+      dataBase64: z.string().min(1).max(STAGE_IMAGE_B64_MAX_LENGTH),
+    }),
+    result: z.object({ path: utf16(4096, 1) }),
+    doc: "Stages an image for a session's next message, on the computer that holds it, with the app's caps (§6.6 \"attachments\"): the media types the bytes must sniff as, and the size. `session.send` names it by the path given back; a client off this computer (a phone, lane I) names only images staged so, never a file of its own.",
+  }),
   modelsList: defineMethod({
     name: "models.list", owner: "A", roles: ["app", "cli", "remote"],
     params: z.object({ session: SessionId.optional() }),
@@ -340,6 +352,12 @@ export const SESSIONS_METHODS = {
     name: "routine.runNow", owner: "D", roles: ["app", "cli"], userOnly: true,
     params: z.object({ id: utf16(128, 1) }), result: z.object({ session: SessionId }),
     doc: "Runs a routine now, in a side thread on its computer.",
+  }),
+  routineWebhookKey: defineMethod({
+    name: "routine.webhookKey", owner: "D", roles: ["app", "cli"], userOnly: true,
+    params: z.object({ id: utf16(128, 1), rotate: z.boolean().optional() }),
+    result: z.object({ url: utf16(4096, 1), key: utf16(256, 1) }),
+    doc: "A webhook routine's URL and key, for the user to paste into the service that calls it (§7). The key is shown once; after that only a new one (`rotate`), which replaces it, is shown. Never to a bot, a plugin or a remote client.",
   }),
   archiveList: defineMethod({
     name: "archive.list", owner: "D", roles: ["app", "cli"],

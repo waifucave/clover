@@ -35,7 +35,7 @@ function fixture(opts: { compatible?: () => boolean | Promise<boolean>; ready?: 
   const request: CoworkVolumeRequest = { workspaceId, proof: PROOF, owner: { controllerInstanceId: "c1", workerInstanceId: "w1", incarnationId: "i1", leaseEpoch: 1, runtimeImageDigest: A } };
   const volumes = new CoworkVolumes(db, home, volumeAuthority, backup);
   volumes.plan(request, { data: RAW_VOLUME_MIN_BYTES, environment: RAW_VOLUME_MIN_BYTES }); volumes.materialize(request);
-  // A checkpointed filesystem: the native format/probe receipts are exercised by volume-filesystem.test.ts; this file only needs the recorded state.
+  // A checkpointed filesystem: the native format/probe receipts are exercised by volume-filesystem.darwin.test.ts; this file only needs the recorded state.
   if (opts.ready !== false) db.db.run("UPDATE cowork_volumes SET filesystem_state='ready',filesystem_journal_json='{}',format_eligible=0 WHERE workspace_id=?", [workspaceId]);
   db.db.run("UPDATE cowork_workspaces SET power='stopped' WHERE workspace_id=?", [workspaceId]);
   const calls: Array<{ action: LifecycleAction; workspaceId: string; homeId: string }> = [];

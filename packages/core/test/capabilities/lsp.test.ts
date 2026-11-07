@@ -16,10 +16,10 @@ import { CLOVER_CAPABILITY_TOOLS, buildCapabilitiesFor, capabilityServerName, ty
 import { CAPABILITY_TOOL_MODES, disallowedToolsFor } from "../../src/runtime-sdk/mode-options";
 import { gateClassFor, hostToolNameFor } from "../../src/runtime-sdk/tool-names";
 import { PermissionGate } from "../../src/agent/gate";
+import { darwinDescribe } from "../helpers/darwin-only";
 
 const FIXTURE = join(import.meta.dir, "../agent/lsp/fake-server.ts");
 const FAKE = { command: "bun", args: ["run", FIXTURE] };
-const isMac = process.platform === "darwin";
 
 function realDir(): string { return realpathSync(mkdtempSync(join(tmpdir(), "clover-cap-lsp-"))); }
 
@@ -154,7 +154,7 @@ describe("lspCapability: the fence and the guards run BEFORE the manager, with t
   });
 });
 
-describe.if(isMac)("lspCapability: a real fake language server through the capability door", () => {
+darwinDescribe("lspCapability: a real fake language server through the capability door", () => {
   test("action 'definition' round-trips the 1-based position convention and previews in-fence locations", async () => {
     const h = harness();
     const prev = process.env.CLOVER_LSP_FAKE_DEFINITION;

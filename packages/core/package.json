@@ -18,15 +18,15 @@
   "dependencies": {
     "@waifucave/clover-protocol": "workspace:*",
     "@waifucave/clover-plugin-sdk": "workspace:*",
-    "@waifucave/clover-agent-sdk": "0.0.67",
-    "@waifucave/clover-agent-runtime": "0.0.67",
-    "@waifucave/clover-provider-catalog": "0.0.67",
-    "@waifucave/clover-provider-runtime": "0.0.67",
+    "@waifucave/clover-agent-sdk": "0.0.69",
+    "@waifucave/clover-agent-runtime": "0.0.69",
+    "@waifucave/clover-provider-catalog": "0.0.69",
+    "@waifucave/clover-provider-runtime": "0.0.69",
     "unpdf": "^1.6.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@waifucave/clover-provider-conformance": "0.0.67",
+    "@waifucave/clover-provider-conformance": "0.0.69",
     "@waifucave/clover-service-shared": "workspace:*",
     "@waifucave/clover-test-harness": "workspace:*"
   },

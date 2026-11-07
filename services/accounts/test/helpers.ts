@@ -87,12 +87,9 @@ export async function registration(
   options: { name?: string; kind?: string; os?: string; t?: number; signer?: TestDevice; account?: string } = {},
 ): Promise<Record<string, unknown>> {
   const t = options.t ?? Date.now();
-  const sig = await (options.signer ?? device).sign(registerStatement(options.account ?? session.account, device.id, t));
-  return {
-    device: { id: device.id, publicKey: device.publicKey, boxKey: device.boxKey, name: options.name ?? "studio", kind: options.kind ?? "desktop", ...(options.os === undefined ? { os: "macos" } : options.os === "" ? {} : { os: options.os }) },
-    t,
-    sig,
-  };
+  const record = { id: device.id, publicKey: device.publicKey, boxKey: device.boxKey, name: options.name ?? "studio", kind: options.kind ?? "desktop", ...(options.os === undefined ? { os: "macos" } : options.os === "" ? {} : { os: options.os }) };
+  const sig = await (options.signer ?? device).sign(registerStatement(options.account ?? session.account, record, t));
+  return { device: record, t, sig };
 }
 
 export async function register(session: Session, device: TestDevice, options: Parameters<typeof registration>[2] & { via?: Via } = {}): Promise<Response> {

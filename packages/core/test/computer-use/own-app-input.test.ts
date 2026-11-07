@@ -12,9 +12,9 @@ import { OwnAppInput } from "../../src/computer-use/own-app-input";
 import { ComputerPolicy } from "../../src/computer-use/policy";
 import { ComputerV2Service } from "../../src/computer-use/service";
 import { WAKE_LIMITS } from "../../src/computer-use/wakes/types";
-import { sandboxAvailable } from "../../src/workflows/sandbox";
 import type { Settings } from "../../src/settings";
 import { FakeHelper } from "./fake-helper";
+import { darwinTest } from "../helpers/darwin-only";
 
 describe("OwnAppInput", () => {
   test("in flight: any instant from 50 ms before its start counts; another app does not", () => {
@@ -71,7 +71,7 @@ describe("OwnAppInput", () => {
   });
 });
 
-const macOnly = sandboxAvailable() ? test : test.skip;
+const macOnly = darwinTest;
 const services: ComputerV2Service[] = [];
 const homes: string[] = [];
 afterEach(() => {
