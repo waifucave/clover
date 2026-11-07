@@ -165,21 +165,22 @@ async function ready(): Promise<void> {
     // (B3): fail closed — anything the core can't answer about it, the answer is refused.
     sealedAnswer: async (token, option, senderKey, children) => {
       const key = answerKeyValue;
-      if (key === undefined) return { accepted: false, reason: "the answer key isn't there" };
+      if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
       const client = pair.client;
-      if (client === undefined) return { accepted: false, reason: "Clover isn't running" };
+      if (client === undefined) { log(`sealed: answer refused (no client)`); return { accepted: false, reason: "Clover isn't running" }; }
       // The gate first, before anything else moves: any computer use driving this desktop's computer, no.
       const acting = await client.request<{ running?: boolean }>("computer.acting", {}, 3_000).catch(() => undefined);
-      if (acting === undefined) return { accepted: false, reason: "the computer-use check couldn't run" };
-      if (acting.running === true) return { accepted: false, reason: "computer use is acting right now" };
+      if (acting === undefined) { log(`sealed: answer refused (computer-use check failed)`); return { accepted: false, reason: "the computer-use check couldn't run" }; }
+      if (acting.running === true) { log(`sealed: answer refused (computer use acting)`); return { accepted: false, reason: "computer use is acting right now" }; }
       const option_ = option ?? sealed.optionOf(token);
-      if (option_ === undefined) return { accepted: false, reason: "no option named" };
+      if (option_ === undefined) { log(`sealed: answer refused (no option)`); return { accepted: false, reason: "no option named" }; }
       const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
-      if ("error" in out) return { accepted: false, reason: out.error };
+      if ("error" in out) { log(`sealed: answer refused (${out.error})`); return { accepted: false, reason: out.error }; }
       disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
       const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
-      if (r.accepted !== true) { sealed.confirmedAnswer(out.card.id, false); return { accepted: false, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) }; }
+      if (r.accepted !== true) { sealed.confirmedAnswer(out.card.id, false); log(`sealed: core refused answer (${typeof r.reason === "string" ? r.reason.slice(0, 120) : "no reason"})`); return { accepted: false, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) }; }
       sealed.confirmedAnswer(out.card.id, true);
+      log(`sealed: answer accepted for ${out.card.id}`);
       return { accepted: true };
     },
     // A sealed frame's page reports its own visibility (IOv2). When a card's approve and deny buttons both show,
@@ -1321,6 +1322,7 @@ async function smoke(): Promise<void> {
               } else {
               const centerX = Math.round(offsetX + buttonRect.x + buttonRect.width / 2);
               const centerY = Math.round(offsetY + buttonRect.y + buttonRect.height / 2);
+              log(`sealed-click: button rect=${buttonRect.x},${buttonRect.y} ${buttonRect.width}x${buttonRect.height} offset=${offsetX},${offsetY}`);
               const press = (kind: "Down" | "Up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
               log(`sealed-click: press sent at ${centerX},${centerY}`);
               press("Down");
@@ -1332,6 +1334,10 @@ async function smoke(): Promise<void> {
                 press("Up");
               }
               sealedClicked = true;
+              await new Promise((r) => setTimeout(r, 1000));
+              const after = await frame.executeJavaScript(
+                `(() => { const s = document.querySelector('.state'); return { state: s ? s.textContent : null, answered: document.body.dataset.answered ?? null }; })()`, true).catch(() => null) as { state: string | null; answered: string | null } | null;
+              if (after !== null && typeof after === "object") log(`sealed-click: after press state=${String((after as { state?: unknown }).state ?? "")} answered=${String((after as { answered?: unknown }).answered ?? "")}`);
               }
             } else {
               log(`sealed-click: no button rect (button=${buttonRect === null ? "null" : "ok"} chain=${chainOk ? "ok" : "null"})`);
