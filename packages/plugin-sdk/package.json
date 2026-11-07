@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./ui": "./src/ui/index.tsx",
     "./ui/bridge": "./src/ui/bridge.ts",
+    "./fold": "./src/catalogs/fold.ts",
     "./schemas/*": "./generated/*"
   },
   "scripts": {
