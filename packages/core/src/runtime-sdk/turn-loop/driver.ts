@@ -50,7 +50,7 @@ import { cloverSessions } from "../sessions";
 import { NO_HOOKS, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
-import { formatTurnInput } from "./input";
+import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
 import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
@@ -641,6 +641,9 @@ export class BotSessionDriver implements SessionDriver {
       // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
       // start what the pause can't stop (F8). Set last, so no spread overrides them.
       sandbox: { ...(sandbox ?? {}), ...BOT_SANDBOX },
+      // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
+      // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
+      notificationPreamble: TASK_NOTIFICATION_FRAME,
       ...(resume ? { resume: state.backendSessionId } : { sessionId: state.backendSessionId }),
     };
     // Through the guarded fill (`fillProvider`): the provider sets the model's own keys and nothing else.

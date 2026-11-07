@@ -10,13 +10,14 @@
 //   small skeleton map;
 // - any case.
 // Only the opening bracket of a tag so found becomes `‹`; everything else stays as written, so the text still reads.
+// Not read as a tag: whitespace between a name's letters (`<mes sage>`), which a model doesn't read as one either.
 // A `<` that opens no guarded name (`a < b`, `<messages>`, `<notebook>`) is left alone.
 
 /** The defused bracket. */
 export const DEFUSED_BRACKET = "‹";
 
 /** `<` and its look-alikes (NFKC already folds `＜` and `﹤`). */
-const LESS_THAN = new Set(["<", "〈", "〈", "⟨", "˂", "ᐸ", "❮", "⧼", "❰", "❬", "⟨", "⧼"]);
+const LESS_THAN = new Set(["<", "〈", "〈", "⟨", "˂", "ᐸ", "❮", "⧼", "❰", "❬"]);
 /** `/` and its look-alikes (NFKC folds `／`). */
 const SLASH = new Set(["/", "⁄", "∕", "⧸", "╱", "ノ", "〳"]);
 /** `-` and its look-alikes (NFKC folds `﹣` and `－`). */
