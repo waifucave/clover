@@ -58,8 +58,13 @@ export interface LinkTransportOptions {
   directory: PeerDirectory;
   clock: Clock;
   planner?: DialPlanner;
-  /** The lease epoch the hello carries (H-M2); 0 until then. */
+  /** The lease epoch the hello carries. */
   epoch?: () => number;
+  /** The lease record that epoch counts in (`account`, `group:<id>`): a peer compares like with like (check 4). */
+  epochScope?: () => string | undefined;
+  /** The epoch a peer's hello carried, with its scope when it named one: a hint to read the lease again, never a
+   *  fencing token by itself. */
+  onPeerEpoch?: (peer: string, epoch: number, scope?: string) => void;
   features?: readonly string[];
   /** A relay's id for `LinkView.relay`, from its URL (the relay plugin that configured it). */
   relayLabel?: (url: string) => string | undefined;
@@ -86,7 +91,7 @@ const DEFAULTS = {
   unpairedGraceMs: 60_000,
 };
 
-type ResolvedLinkOptions = Required<Omit<LinkTransportOptions, "relayLabel" | "epoch">> & Pick<LinkTransportOptions, "relayLabel" | "epoch">;
+type ResolvedLinkOptions = Required<Omit<LinkTransportOptions, "relayLabel" | "epoch" | "epochScope" | "onPeerEpoch">> & Pick<LinkTransportOptions, "relayLabel" | "epoch" | "epochScope" | "onPeerEpoch">;
 
 const PRIORITY_OF: Record<number, LinkPriority> = { 3: "control", 2: "tokens", 1: "screenshots", 0: "files" };
 
@@ -177,6 +182,21 @@ export class CloverLinkTransport implements LinkTransport {
 
   links(): LinkView[] {
     return [...this.#links.values()].map((l) => l.view());
+  }
+
+  /** Whether `peer` was heard from within two keepalives on a live connection (the main's exception to fencing
+   *  counts only those, not a link merely not yet seen to drop; check 4). */
+  recentlyHeard(peer: string): boolean {
+    const l = this.#links.get(peer);
+    if (!l) return false;
+    for (const s of l.sessions) if (s.silentFor() <= 2 * this.#o.keepaliveMs) return true;
+    return false;
+  }
+
+  /** The epoch (and its scope) this device's hellos carry. */
+  epochOf(): { epoch: number; epochScope?: string } {
+    const scope = this.#o.epochScope?.();
+    return { epoch: this.#o.epoch?.() ?? 0, ...(scope ? { epochScope: scope } : {}) };
   }
 
   watch(fn: (view: LinkView) => void): Unsubscribe {
@@ -673,7 +693,7 @@ class Session {
     if (this.conn.outbound) {
       const proposed = this.#link.lastSeq + 1;
       this.#link.lastSeq = proposed;
-      const hello = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.current, device: t.self, epoch: t.opts.epoch?.() ?? 0, features: [...t.opts.features], connSeq: proposed };
+      const hello = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.current, device: t.self, ...t.epochOf(), features: [...t.opts.features], connSeq: proposed };
       const p = this.#send("control", ["q", 0, "peer.hello", hello]);
       this.#pending.set(0, {
         resolve: (v) => {
@@ -690,17 +710,18 @@ class Session {
   }
 
   #helloAnswered(v: unknown): void {
-    const r = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown };
+    const r = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; epoch?: unknown; epochScope?: unknown };
     if (r?.device !== this.#link.peer || !seqOk(r.connSeq, this.#link.lastSeq) || !PEER_PROTOCOL_VERSION_RANGE.accepts(r.protocolVersion)) {
       this.close(CLOSE_PROTOCOL, "a bad hello answer");
       return;
     }
     this.seq = r.connSeq;
+    this.#peerEpoch(r.epoch, r.epochScope);
     this.#becomeReady();
   }
 
   #answerHello(id: number, lane: number, v: unknown): void {
-    const h = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; features?: unknown };
+    const h = v as { protocolVersion?: unknown; device?: unknown; connSeq?: unknown; features?: unknown; epoch?: unknown; epochScope?: unknown };
     if (this.conn.outbound || this.#ready) {
       this.close(CLOSE_PROTOCOL, "an unexpected hello");
       return;
@@ -716,9 +737,16 @@ class Session {
     const agreed = Math.max(h.connSeq, this.#link.lastSeq + 1);
     this.#link.lastSeq = agreed;
     this.seq = agreed;
+    this.#peerEpoch(h.epoch, h.epochScope);
     const t = this.#t;
-    const answer = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.agree(h.protocolVersion as number), device: t.self, epoch: t.opts.epoch?.() ?? 0, features: [...t.opts.features], connSeq: agreed };
+    const answer = { protocolVersion: PEER_PROTOCOL_VERSION_RANGE.agree(h.protocolVersion as number), device: t.self, ...t.epochOf(), features: [...t.opts.features], connSeq: agreed };
     void this.#reply(lane, id, true, answer).then(() => this.#becomeReady(), (e: unknown) => this.#fail(e instanceof Error ? e : new Error(String(e))));
+  }
+
+  #peerEpoch(epoch: unknown, scope: unknown): void {
+    if (typeof epoch !== "number" || !Number.isSafeInteger(epoch) || epoch <= 0) return;
+    if (typeof scope === "string" && scope.length > 0 && scope.length <= 128) this.#t.opts.onPeerEpoch?.(this.#link.peer, epoch, scope);
+    else this.#t.opts.onPeerEpoch?.(this.#link.peer, epoch);
   }
 
   #becomeReady(): void {

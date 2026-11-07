@@ -36,7 +36,7 @@ import {
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { judge as fenceJudge, nonAsciiAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
+import { fenceContextFor, judge as fenceJudge, nonAsciiAlias, type Fence, type FenceOp, type FenceVerdict } from "../contracts/fence";
 import { splitTreePath, treeCallBinding, type TreeChange, type TreeData, type TreeReviewer } from "../contracts/tree";
 import { atOps, type AtOps } from "./at";
 import { checkSegment, foldName, foldPath, hostOs, mayBeShortName } from "./names";
@@ -226,7 +226,7 @@ export class LocalHolder implements Holder {
   /** Whether `call` may change a real path here (a move's source, entry by entry). */
   changeable(real: string, call: HolderCall): boolean {
     if (call.as.kind === "user" || call.as.kind === "core") return true;
-    return this.#memoryOk(real, call.as, true) && this.#check({ op: "delete", path: real }).allowed;
+    return this.#memoryOk(real, call.as, true) && this.#check({ op: "delete", path: real }, call.as).allowed;
   }
 
   /** Judges a whole operation once, with one binding (the direct path's move or copy; review S1). */
@@ -783,7 +783,7 @@ export class LocalHolder implements Holder {
     if (op.op === "write" || op.op === "delete" || op.op === "move") {
       for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) this.#asciiUnderCloverHome(p);
     }
-    const verdict = this.#check(op);
+    const verdict = this.#check(op, as);
     if (!verdict.allowed) {
       throw new ContractError("fenced", `the fence keeps bots out of ${verdict.path}`, { computer: this.#o.name(), reason: verdict.reason });
     }
@@ -791,7 +791,7 @@ export class LocalHolder implements Holder {
 
   #mayRead(real: string, call: HolderCall): boolean {
     if (call.as.kind === "user" || call.as.kind === "core") return true;
-    return this.#memoryOk(real, call.as, false) && this.#check({ op: "read", path: real }).allowed;
+    return this.#memoryOk(real, call.as, false) && this.#check({ op: "read", path: real }, call.as).allowed;
   }
 
   /** Tells lane H's sync that a real path changed, when it is in a bot's memory (the direct path calls this for what
@@ -860,10 +860,11 @@ export class LocalHolder implements Holder {
   }
 
   /** The fence's verdict, as is and folded (review B1): refused when either refuses. */
-  #check(op: FenceOp): FenceVerdict {
+  #check(op: FenceOp, as: Caller): FenceVerdict {
     const fence = this.#o.fence;
     if (!fence) return { allowed: true };
-    const plain = fence.check(op);
+    // The caller's reach for the pattern items (`bot-memory`, `sessions-runtime`), as `Fence.forCaller` binds it.
+    const plain = fence.check(op, fenceContextFor(as));
     if (!plain.allowed) return plain;
     const fold = (p: string) => foldPath(p, this.os);
     const set = fence.fencedSet().map((item) => ({ ...item, path: fold(item.path) }));

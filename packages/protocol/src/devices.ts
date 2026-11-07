@@ -238,8 +238,9 @@ export const DEVICES_METHODS = {
   // Daemon to daemon, over the link.
   peerHello: defineMethod({
     name: "peer.hello", owner: "H", roles: ["peer"],
-    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)).max(64), connSeq: ConnSeq }),
-    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)), connSeq: ConnSeq }),
+    /** `epochScope`: the lease record `epoch` counts in (`account`, `group:<id>`), so the peer compares like with like. */
+    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), epochScope: utf16(128, 1).optional(), features: z.array(utf16(64)).max(64), connSeq: ConnSeq }),
+    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), epochScope: utf16(128, 1).optional(), features: z.array(utf16(64)), connSeq: ConnSeq }),
     doc: "Opens a link's session: links negotiate a protocol version and support one release back (§14.2 item 22).",
   }),
   peerCall: defineMethod({
