@@ -73,7 +73,7 @@ describe("the real fence on a real disk", () => {
     const { clover, home, fence } = make();
     expect(fence.check({ op: "write", path: join(clover, "ſettings.json") })).toEqual({ allowed: false, reason: "settings", path: join(clover, "settings.json") }); // folds onto it
     expect(fence.check({ op: "write", path: join(clover, "plugins-state", "öks") })).toMatchObject({ allowed: false, reason: "clover-home" });
-    expect(fence.check({ op: "write", path: join(clover, "plugins", "lüna", "clover.json") })).toEqual({ allowed: true }); // no fenced item there
+    expect(fence.check({ op: "write", path: join(clover, "plugins", "lüna", "clover.json") })).toMatchObject({ allowed: false, reason: "plugins" }); // the plugins folder is fenced now
     expect(fence.check({ op: "write", path: join(home, "project", "lüna.txt") })).toEqual({ allowed: true });
   });
 
@@ -143,11 +143,11 @@ describe("the real fence on a real disk", () => {
     const { home, clover, fence } = make();
     mkdirSync(join(clover, "bots", "luna", "memory"), { recursive: true });
     const b = (...parts: string[]) => join(clover, "bots", ...parts);
-    const luna = fence.forCaller({ sessionId: "s1", bot: "luna", botsOwnSession: true });
+    const luna = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" });
     expect(luna.check({ op: "write", path: b("luna", "memory", "MEMORY.md") })).toEqual({ allowed: true });
     expect(luna.check({ op: "read", path: b("LUNA", "Memory", "MEMORY.md") })).toEqual({ allowed: true }); // folded
     expect(luna.check({ op: "read", path: b("sol", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
-    expect(luna.check({ op: "write", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false, reason: "bot-memory" });
+    expect(luna.check({ op: "write", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true }); // the rest of a bot's folder isn't memory
     expect(luna.check({ op: "read", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true });
     expect(luna.check({ op: "move", path: b("luna"), to: b("luna2") })).toMatchObject({ allowed: false, reason: "bot-memory" });
     // The memory folder itself: not deleted or moved, by its own bot either.
@@ -155,13 +155,13 @@ describe("the real fence on a real disk", () => {
     expect(luna.check({ op: "move", path: b("luna", "memory"), to: join(home, "m") })).toMatchObject({ allowed: false, reason: "bot-memory" });
     expect(luna.check({ op: "move", path: b("luna", "memory", "a.md"), to: b("luna", "memory", "b.md") })).toEqual({ allowed: true });
     // Not luna's own session (its agent, a coding session): denied both ways, for a bot that doesn't exist yet too.
-    for (const other of [fence.forCaller({ sessionId: "a1", bot: "luna" }), fence.forCaller({ sessionId: "c1" }), fence.forCaller({ sessionId: "s2", bot: "sol", botsOwnSession: true })]) {
+    for (const other of [fence.forCaller({ kind: "session", sessionId: "a1", sessionKind: "agent", bot: "luna" }), fence.forCaller({ kind: "session", sessionId: "c1", sessionKind: "coding" }), fence.forCaller({ kind: "session", sessionId: "s2", sessionKind: "bot", bot: "sol" })]) {
       expect(other.check({ op: "read", path: b("luna", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
       expect(other.check({ op: "write", path: b("future-bot", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
       expect(other.check({ op: "write", path: b("future-bot") })).toMatchObject({ allowed: false });
       expect(other.touches([b("luna", "memory")])).toMatchObject({ kind: "bot-memory" });
     }
-    expect(fence.forCaller({ sessionId: "c1" }).check({ op: "write", path: join(home, "project", "x") })).toEqual({ allowed: true });
+    expect(fence.forCaller({ kind: "session", sessionId: "c1", sessionKind: "coding" }).check({ op: "write", path: join(home, "project", "x") })).toEqual({ allowed: true });
     expect(botFolders(clover)).toEqual(["luna"]);
   });
 
@@ -176,12 +176,12 @@ describe("the real fence on a real disk", () => {
   test("the bot driver's state: write-denied to all, read only by its own session", () => {
     const { clover, fence } = make();
     const rt = (n: string) => join(clover, "sessions-runtime", n);
-    const s1 = fence.forCaller({ sessionId: "s1", bot: "luna", botsOwnSession: true });
+    const s1 = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" });
     expect(s1.check({ op: "read", path: rt("s1.json") })).toEqual({ allowed: true });
     expect(s1.check({ op: "read", path: rt("s2.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
     expect(s1.check({ op: "list", path: join(clover, "sessions-runtime") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
     expect(s1.check({ op: "write", path: rt("s1.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
-    expect(fence.forCaller({ sessionId: "c1" }).check({ op: "read", path: rt("s1.json") })).toMatchObject({ allowed: false });
+    expect(fence.forCaller({ kind: "session", sessionId: "c1", sessionKind: "coding" }).check({ op: "read", path: rt("s1.json") })).toMatchObject({ allowed: false });
   });
 
   test("#205 B1: a `..` after a link is judged both ways, the link's target and the text; `\\\\?\\` paths with dots are refused", () => {
