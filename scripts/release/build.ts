@@ -20,7 +20,8 @@
 //      clover-link.exe and clover-plugin-bun.exe, by the publisher
 //   6. copies the daemon out of the app (signed with it, on a signed build) as clover-core-<version>-<target>, with its
 //      update file for each channel served (lib.ts's `writeCoreAssets`), for a server's daemon to update itself from
-//   7. records the commit it built (BUILD-COMMIT-<os>.txt; a signed build needs a clean checkout), on latest copies
+//   7. runs the identity scan over everything in out/dist (scripts/release/name-scan.ts; a signed release fails
+//      closed without the owner's guard), then records the commit it built (BUILD-COMMIT-<os>.txt; a signed build needs a clean checkout), on latest copies
 //      the update files to the beta names (lib.ts's `writeServedCopies`), and checks the installers and update files are all there, each update file against the files it names, and
 //      writes SHA256SUMS-<os>.txt beside them
 //
@@ -42,6 +43,8 @@ import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
 import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
+import { sealProblems } from "../seal-bun-doors";
+import { runNameScan } from "./name-scan";
 import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
@@ -250,6 +253,10 @@ export function main(argv: readonly string[], root: string): number {
     const built = dirname(join(root, ...daemonOutput(target).split("/")));
     for (const f of bundledFiles(target)) if (existsSync(join(built, f))) copyFileSync(join(built, f), join(staged, f));
     for (const f of readdirSync(staged)) chmodSync(join(staged, f), 0o755);
+    // The seal (scripts/seal-bun-doors.ts) is checked on the very bytes that get signed: a core built some other way
+    // never ships unsealed (on Windows, never half-sealed).
+    const seal = sealProblems(new Uint8Array(readFileSync(join(staged, `clover-core${exe}`))));
+    if (seal.length > 0) throw new Error(`the staged clover-core fails the seal's byte check: ${seal.join("; ")}`);
     if (a.sign && a.os === "mac") {
       for (const b of RESOURCE_BINARIES) {
         must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
@@ -302,6 +309,9 @@ export function main(argv: readonly string[], root: string): number {
     }
     for (const p of problems) console.error(`release/build: ${p}`);
     if (problems.length > 0) return 1;
+    // The identity scan over everything built (scripts/release/name-scan.ts): fails closed on a signed release.
+    const scan = runNameScan(outDir, { required: a.sign });
+    console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason}); a signed release never skips it`);
     const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n) || n.startsWith("clover-core-")).sort();
     writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
     console.log(`release/build: ${shipped.join(", ")} in ${outDir}${a.sign ? "" : " (unsigned)"}`);

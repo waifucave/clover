@@ -10,6 +10,8 @@
 //
 // `typeof` keeps an undefined identifier from throwing; with the define, Bun folds the whole expression to `true`.
 
+import { existsSync } from "node:fs";
+
 declare const __CLOVER_DIST__: boolean | undefined;
 
 /** True only in the binary `scripts/build-daemon.ts` makes. */
@@ -48,3 +50,14 @@ export function tlsEnvRefusal(env: Record<string, string | undefined>, distBuild
 
 /** The exit code of that refusal (`EX_CONFIG`). */
 export const TLS_ENV_REFUSAL_EXIT = 78;
+
+/** The process holder lane A's F8 runs a bot's commands under (macOS): `clover-process-holder` beside the core. */
+export const PROCESS_HOLDER_FILE = "clover-process-holder";
+
+/** The holder's expected path when a compiled macOS core lacks it, else undefined (not macOS, not compiled, or there). */
+export function missingProcessHolder(o: { platform?: NodeJS.Platform; compiled?: boolean; execPath?: string; exists?: (p: string) => boolean } = {}): string | undefined {
+  if ((o.platform ?? process.platform) !== "darwin" || !(o.compiled ?? isCompiledBinary())) return undefined;
+  const execPath = o.execPath ?? process.execPath;
+  const path = `${execPath.slice(0, execPath.lastIndexOf("/"))}/${PROCESS_HOLDER_FILE}`;
+  return (o.exists ?? existsSync)(path) ? undefined : path;
+}

@@ -22,6 +22,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
 import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
+import { runNameScan } from "./release/name-scan";
+import { sealProblems } from "./seal-bun-doors";
 import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writeServedCopies, type Channel } from "./release/lib";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
@@ -219,7 +221,7 @@ export function main(argv: readonly string[], root: string): number {
       const target = daemonTargetFor(s.stage);
       const built = dirname(join(root, ...daemonOutput(target).split("/")));
       for (const f of bundledFiles(target)) if (existsSync(join(built, f))) { copyFileSync(join(built, f), join(staged, f)); chmodSync(join(staged, f), 0o755); }
-      const gate = bundledBinaryProblems(staged, target);
+      const gate = [...bundledBinaryProblems(staged, target), ...sealProblems(new Uint8Array(readFileSync(join(staged, "clover-core")))).map((p) => `the seal: ${p}`)];
       if (gate.length > 0) { console.error(`build-packages: the package gate: ${gate.join("; ")}`); return 1; }
     }
     const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
@@ -234,6 +236,14 @@ export function main(argv: readonly string[], root: string): number {
   // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).
   const commit = checkoutCommit(root, false);
   for (const a of args.arches) writeBuildCommit(outDir, a === "x64" ? "linux-x64" : "linux-arm64", commit);
+  // The identity scan over everything built (scripts/release/name-scan.ts): skipped, and said, without the guard.
+  try {
+    const scan = runNameScan(outDir, { required: false });
+    console.log(scan.ran ? `build-packages: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `build-packages: identity scan skipped (${scan.reason})`);
+  } catch (err) {
+    console.error(`build-packages: ${(err as Error).message}`);
+    return 1;
+  }
   if (args.check) {
     const problems = args.arches.flatMap((arch) => checkBuilt(outDir, arch, args.formats));
     for (const p of problems) console.error(`build-packages: ${p}`);

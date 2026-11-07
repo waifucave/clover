@@ -9,7 +9,7 @@ const ROOT = join(import.meta.dir, "..");
 
 describe("the binaries beside the core", () => {
   test("plain Bun is the core's own Bun: its pins follow .bun-version", () => {
-    expect(PLUGIN_BUN.version).toBe(readFileSync(join(ROOT, ".bun-version"), "utf8").trim());
+    expect(PLUGIN_BUN.version as string).toBe(readFileSync(join(ROOT, ".bun-version"), "utf8").trim());
     for (const a of Object.values(PLUGIN_BUN.assets)) {
       expect(a.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(a.asset).not.toContain("baseline");

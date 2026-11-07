@@ -34,3 +34,12 @@ test("a dist build refuses TLS trust from the environment; a proxy and a dev bui
   expect(tlsEnvRefusal({ NODE_EXTRA_CA_CERTS: "/tmp/ca.pem" }, false)).toBeUndefined();
   expect(tlsEnvRefusal({ NODE_EXTRA_CA_CERTS: "" }, true)).toBeUndefined();
 });
+
+test("a compiled macOS core without the process holder beside it names the missing path; anything else says nothing", async () => {
+  const { missingProcessHolder } = await import("../src/build-kind");
+  const at = "/Applications/Clover.app/Contents/Resources/daemon/clover-core";
+  expect(missingProcessHolder({ platform: "darwin", compiled: true, execPath: at, exists: () => false })).toBe("/Applications/Clover.app/Contents/Resources/daemon/clover-process-holder");
+  expect(missingProcessHolder({ platform: "darwin", compiled: true, execPath: at, exists: () => true })).toBeUndefined();
+  expect(missingProcessHolder({ platform: "darwin", compiled: false, execPath: at, exists: () => false })).toBeUndefined();
+  expect(missingProcessHolder({ platform: "linux", compiled: true, execPath: "/opt/Clover/resources/daemon/clover-core", exists: () => false })).toBeUndefined();
+});
