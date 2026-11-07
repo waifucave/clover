@@ -9,6 +9,7 @@ import type { AgentEvent, AgentPermissionAsk, AgentStartSpec } from "../../../sr
 import { isContractError } from "../../../src/contracts/common";
 import { inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
+import { darwinTest } from "../../helpers/darwin-only";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -83,7 +84,10 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     }
   }, 60_000);
 
-  test("the pause stops the agent's background shells, and holds the turn their notification starts until the user resumes", async () => {
+  // macOS only: an agent's Bash runs inside the runtime's sandbox, which is Seatbelt today. Elsewhere the runtime
+  // refuses a sandboxed command ("sandbox-exec is unavailable"), so no background shell starts to stop (lane C's
+  // fence brings Linux and Windows).
+  darwinTest("the pause stops the agent's background shells, and holds the turn their notification starts until the user resumes", async () => {
     const home = temp("clover-a3-sub-home-");
     const root = temp("clover-a3-sub-root-");
     let paused = false;
