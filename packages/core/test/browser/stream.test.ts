@@ -6,6 +6,7 @@ import type { AppTabCommand, StreamChunk, TabView } from "../../src/browser/cont
 import type { AppTabPort } from "../../src/browser/service";
 import {
   decodeStreamFrame, encodeStreamFrame, STREAM_LINK_LABEL, StreamFrameReader, TabStreams, type StreamLinkMeta,
+  STREAM_MAX_PAYLOAD,
 } from "../../src/browser/stream";
 
 /** A viewer's link stream whose writes resolve only when the test says so (a slow link), or at once. */
@@ -389,5 +390,19 @@ describe("TabStreams", () => {
     expect(streams.list()).toEqual([]);
     expect(app.of("stream").at(-1)).toEqual({ kind: "stream", stream: s, on: false });
     expect(ended).not.toBeNull();
+  });
+});
+
+describe("the payload cap (lane I's receivers refuse more than 16 MiB)", () => {
+  test("no frame over 16 MiB is written or read; a reader refuses a header that claims more before buffering it", () => {
+    expect(STREAM_MAX_PAYLOAD).toBe(16 * 1024 * 1024);
+    expect(() => encodeStreamFrame({ kind: "frame", key: true, timestamp: 0, data: new Uint8Array(STREAM_MAX_PAYLOAD + 1) })).toThrow(/at most/);
+    const header = new Uint8Array(16);
+    const view = new DataView(header.buffer);
+    view.setUint8(0, 1);
+    view.setUint8(1, 2);
+    view.setUint32(12, STREAM_MAX_PAYLOAD + 1);
+    expect(() => new StreamFrameReader().push(header)).toThrow(/at most/);
+    expect(() => decodeStreamFrame(header)).toThrow(/at most/);
   });
 });
