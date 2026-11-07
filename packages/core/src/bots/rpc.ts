@@ -26,6 +26,7 @@ import { projectRecord, projectRecords, readsSealed, transientFor, type WireEven
 import { listMemory, readMemory } from "./memory";
 import { botPaths } from "./paths";
 import { StagedImages } from "./staged-images";
+import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
 
 // The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
@@ -41,6 +42,8 @@ export interface SessionsMethodsDeps {
   localDevice: string;
   /** This computer's name: `session.stageImage` stages only for a session it holds. */
   computer: string;
+  /** Lane M's update gate: the user's message is refused, typed, while an update restarts the daemon. */
+  updateGate?: UpdateGateLike;
   /** `session.setModel` for a background agent or a coding session (lane K's `AgentManager.setModel`); without it the
    *  new model is recorded in the session's view and its driver reads it at the next turn. */
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
@@ -213,6 +216,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
 
     [M.sessionSend.name]: handler(M.sessionSend, async ({ id, message }, ctx) => {
       const caller = requireUser(ctx, "send a message as the user");
+      refuseWhileUpdating(deps.updateGate);
       reachable(id);
       if (message.text.trim() === "") throw new ContractError("invalid", "a message needs text");
       const images = checkedImages(caller, id, message.text, message.images);
@@ -304,6 +308,8 @@ export interface PeerSessionMethodsDeps {
   clock: Pick<Clock, "now">;
   /** The paired devices (lane H): whose answer key signs a user's message. Without it, no relayed message is signed. */
   devices?: Pick<DeviceRegistry, "get" | "verifyAnswer">;
+  /** Lane M's update gate: a relayed message is refused, typed, while an update restarts the daemon. */
+  updateGate?: UpdateGateLike;
   /** A device's computer name (lane H's `DeviceRecord.computer`): `peer.session.deliver` must name the computer the
    *  link authenticated. Without it, the name is taken as given. */
   computerOf?: (device: string) => string | undefined;
@@ -364,6 +370,7 @@ export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string,
     },
     [P.name]: handler(P, async ({ id, message, device, sentAt }, ctx) => {
       if (ctx.caller.kind !== "peer") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "peer.session.send comes only from another computer over the link");
+      refuseWhileUpdating(deps.updateGate);
       const relayedBy = ctx.caller.device;
       // Only a bot's main conversation this computer runs takes a relayed message: never an agent, a side thread or a
       // coding session (review B2).
