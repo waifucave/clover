@@ -1,10 +1,15 @@
 // A desktop's answer key (item 91; the owner's decision on review N1): the key a desktop signs card answers for other
 // computers with, held by the app apart from the core's link key, so plugin code (which runs beside the core, never in
 // the app's main process) can't sign with it where the OS allows:
-// * macOS: a Keychain item only the signed app can read (`app-keychain`; Electron's safeStorage key is one);
-// * Windows: a key behind Windows Hello (`hello`) or the TPM (`tpm`);
-// * otherwise (Linux, Windows without either) the key is kept as well as the OS lets the app, and is marked `none`:
-//   the owner accepted that a compromised plugin there could approve actions on other computers.
+// * macOS: a Keychain item only the signed app can read (`app-keychain`; Electron's safeStorage key is one), with no
+//   biometric access control;
+// * Windows: a TPM-held key that needs no PIN or Hello gesture (`tpm`);
+// * otherwise (Linux, Windows without a TPM) the key is kept as well as the OS lets the app (DPAPI, the Secret
+//   Service), and is marked `none`: the owner accepted that a compromised plugin there could approve actions on other
+//   computers.
+//
+// Nothing here ever asks for Face ID, Touch ID, Windows Hello, a passcode or any other presence check (the owner's
+// decision): a key is protected by where it is stored, and using it never prompts. `held` says where it is stored.
 //
 // This module is for the app's main process (lane E): it makes or loads the key through storage the app provides,
 // proves it to the core (`registration`, which `FileDeviceRegistry.setOwnAnswerKey` checks), and signs answers.
@@ -21,22 +26,21 @@ import { type Ed25519Key, ed25519FromSeed, generateEd25519 } from "./keys";
 export interface AnswerKeyProtections {
   /** macOS: a Keychain item whose access list names only the signed app. */
   appKeychain?: boolean;
-  /** Windows: Windows Hello can guard the key. */
-  hello?: boolean;
-  /** Windows: the TPM can hold it. */
+  /** Windows: the TPM can hold it, with no PIN or Hello gesture to use it. */
   tpm?: boolean;
 }
 
 /** How the key will be held, from the OS and what it offers; `none` when nothing keeps plugin code from it. */
 export function answerKeyHolder(os: Os, can: AnswerKeyProtections): AnswerKeyHolder {
   if (os === "macos" && can.appKeychain) return "app-keychain";
-  if (os === "windows" && can.hello) return "hello";
+  // Never `hello`: a Windows Hello credential prompts, and nothing in Clover prompts (the owner's decision).
   if (os === "windows" && can.tpm) return "tpm";
   return "none";
 }
 
-/** Where the app keeps the key's seed: its Keychain item, its Hello- or TPM-wrapped blob, or (for `none`) a file the
- *  app alone writes. The seed passes through here only as a `Secret`. */
+/** Where the app keeps the key's seed: its Keychain item, its TPM-wrapped blob, or (for `none`) DPAPI, the Secret
+ *  Service or a file the app alone writes; none of them prompts to be read. The seed passes through here only as a
+ *  `Secret`. */
 export interface AnswerKeyStorage {
   load(): Promise<Secret | null>;
   save(seed: Secret): Promise<void>;

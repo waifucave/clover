@@ -39,9 +39,50 @@ export function pillWindow(env: SurfaceEnvironment, canvas: Size): SurfaceWindow
   return { bounds: at, overlay: true, alwaysOnTop: true, transparent: true, frame: false, clickThrough: true, inTaskSwitcher: false, visible: true };
 }
 
-/** The part of the window that takes clicks: the pill and what floats above it, never the shadow's margin. */
-export function pillRegions(env: SurfaceEnvironment, canvas: Size): Rect[] {
+/** What the pill draws, for the regions that take clicks: the pill, the menu open above it (its own width, on its
+ *  side), and the agents' row above that. */
+export interface PillPieces {
+  main: Size;
+  menu?: { width: number; height: number; side: "leading" | "trailing" } | null;
+  agents?: boolean;
+}
+
+/** How far the pill grows under the pointer past its resting rect (`hoverScale`), so a click at its edge counts. */
+const HOVER_SLACK = 6;
+
+/** Each piece's rect in the canvas, bottom up as the stack lays them out: the pill at the bottom inside the shadow's
+ *  margin, then the menu, then the agents' row, `stackGap` apart. */
+export function pieceRects(canvas: Size, pieces: PillPieces): Rect[] {
+  const { main } = pieces;
+  const left = (canvas.width - main.width) / 2;
+  let y = canvas.height - PILL.shadowPad - main.height;
+  const rects: Rect[] = [{ x: left, y, width: main.width, height: main.height }];
+  const menu = pieces.menu;
+  if (menu && menu.height > 0) {
+    const width = Math.min(main.width, menu.width > 0 ? menu.width : main.width);
+    y -= PILL.stackGap + menu.height;
+    rects.push({ x: menu.side === "trailing" ? left + main.width - width : left, y, width, height: menu.height });
+  }
+  if (pieces.agents) {
+    y -= PILL.stackGap + PILL.pillHeight;
+    rects.push({ x: left, y, width: main.width, height: PILL.pillHeight });
+  }
+  return rects;
+}
+
+/** The parts of the window that take clicks: one region per piece the pill draws, never the shadow's margin or the
+ *  empty space beside a menu or a card. Without the pieces, the whole pill and what floats above it. */
+export function pillRegions(env: SurfaceEnvironment, canvas: Size, pieces?: PillPieces): Rect[] {
   const spec = pillWindow(env, canvas);
   const inset = pillInset(pillMode(env));
-  return [{ x: inset, y: inset, width: spec.bounds.width - 2 * inset, height: spec.bounds.height - 2 * inset }];
+  if (!pieces) return [{ x: inset, y: inset, width: spec.bounds.width - 2 * inset, height: spec.bounds.height - 2 * inset }];
+  // Canvas to window: the window drops the shadow's margin it doesn't keep.
+  const shift = PILL.shadowPad - inset;
+  return pieceRects(canvas, pieces).map((r) => {
+    const x = Math.max(0, Math.floor(r.x - shift - HOVER_SLACK));
+    const y = Math.max(0, Math.floor(r.y - shift - HOVER_SLACK));
+    const right = Math.min(spec.bounds.width, Math.ceil(r.x - shift + r.width + HOVER_SLACK));
+    const bottom = Math.min(spec.bounds.height, Math.ceil(r.y - shift + r.height + HOVER_SLACK));
+    return { x, y, width: right - x, height: bottom - y };
+  });
 }

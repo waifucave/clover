@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  Caller, ChangeResult, ComputerName, DeviceId, Empty, Ok, Os, SessionId, Text, Timestamp,
+  BotId, Caller, ChangeResult, ComputerName, DeviceId, DeviceOs, Empty, FencingToken, Ok, SessionId, Text, Timestamp,
 } from "./common";
 import { SignedCardAnswer } from "./approvals";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
@@ -42,11 +42,17 @@ export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "app-keychain",
 export const AnswerKeyHolder = z.enum(ANSWER_KEY_HOLDERS);
 export type AnswerKeyHolder = z.infer<typeof AnswerKeyHolder>;
 
+/** The answer key's algorithm (lanes H and I): `p256` for a key the Secure Enclave, Windows Hello or a TPM holds (raw
+ *  uncompressed point, 65 bytes; signatures are ECDSA over SHA-256, `r‖s`, 64 bytes), `ed25519` for one in software.
+ *  Verification picks it from the record; the registration statement covers it. Absent is `ed25519`. */
+export const AnswerKeyAlg = z.enum(["ed25519", "p256"]);
+export type AnswerKeyAlg = z.infer<typeof AnswerKeyAlg>;
+
 export const DeviceView = z.object({
   id: DeviceId,
   name: utf16(63, 1),
   kind: DeviceKind,
-  os: Os.optional(),
+  os: DeviceOs.optional(),
   /** Runs clover-core, so it is a computer in the tree (§9.1) and can take over (§6.4). */
   runsCore: z.boolean(),
   /** Its folder-tree name, for a device that runs clover-core. */
@@ -59,7 +65,7 @@ export const DeviceView = z.object({
   addedAt: Timestamp,
   lastSeenAt: Timestamp.optional(),
   /** How its app's answer key is held, for a device that may answer cards; absent for one that can't. */
-  answers: z.object({ held: AnswerKeyHolder }).optional(),
+  answers: z.object({ held: AnswerKeyHolder, alg: AnswerKeyAlg.optional() }).optional(),
 });
 export type DeviceView = z.infer<typeof DeviceView>;
 
@@ -69,6 +75,8 @@ export const LeaseView = z.object({
   /** The computer the user chose, or that was chosen automatically (§6.4). */
   main: DeviceId.nullable(),
   holder: DeviceId.nullable(),
+  /** The lease's scope: the account's, or the account-less devices' group's (item 85); with `epoch`, its fencing token. */
+  scope: utf16(128, 1).optional(),
   epoch: z.number().int().nonnegative(),
   expiresAt: Timestamp.nullable(),
   /** The one device that refreshes rotating logins (§8.5). */
@@ -219,17 +227,20 @@ export const DEVICES_METHODS = {
     /** The app's main process hands the core the key it answers cards with (H-M1's ask; item 91): held apart from the
      *  core's link key, so plugin code can't sign with it where the OS allows. The core takes it only with the app's
      *  signature over `clover/answer-key/1\n<device>\n<publicKey>\n<held>` (`setOwnAnswerKey`), for a desktop. */
+    /** The first key applies at once. Replacing one is a sensitive change (#179's review, check 2): other computers
+     *  trust that key with their cards, so it ends in a sealed card (`{ applied: false, card }`). */
     name: "device.answerKey.set", owner: "H", roles: ["app"], userOnly: true,
-    params: z.object({ publicKey: Base64Key, held: AnswerKeyHolder, signature: Base64Key }),
-    result: Ok,
+    params: z.object({ publicKey: Base64Key, held: AnswerKeyHolder, alg: AnswerKeyAlg.optional(), signature: Base64Key }),
+    result: ChangeResult,
     doc: "Registers this desktop's app-held answer key, proved by the app's own signature.",
   }),
 
   // Daemon to daemon, over the link.
   peerHello: defineMethod({
     name: "peer.hello", owner: "H", roles: ["peer"],
-    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)).max(64), connSeq: ConnSeq }),
-    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), features: z.array(utf16(64)), connSeq: ConnSeq }),
+    /** `epochScope`: the lease record `epoch` counts in (`account`, `group:<id>`), so the peer compares like with like. */
+    params: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), epochScope: utf16(128, 1).optional(), features: z.array(utf16(64)).max(64), connSeq: ConnSeq }),
+    result: z.object({ protocolVersion: z.number().int(), device: DeviceId, epoch: z.number().int().nonnegative(), epochScope: utf16(128, 1).optional(), features: z.array(utf16(64)), connSeq: ConnSeq }),
     doc: "Opens a link's session: links negotiate a protocol version and support one release back (§14.2 item 22).",
   }),
   peerCall: defineMethod({
@@ -244,12 +255,40 @@ export const DEVICES_METHODS = {
       /** The allow list the receiver applies: a remote client's (`remote`) or the web page's shorter one (`web`), never
        *  another role's (`peerCallVerdict`). */
       role: z.enum(["remote", "web"]),
+      /** The sending main's fencing token; the receiver refuses a stale one (`isStaleFence`). */
+      fence: FencingToken.optional(),
       /** For a `userOnly` or `change` method: the user's signed answer, bound to this call, which the receiver
        *  verifies itself; without it the call is refused. */
       answer: SignedCardAnswer.optional(),
     }),
     result: z.object({ result: z.unknown() }),
     doc: "Runs a method on this computer for a caller on another one: a message to a bot that thinks here, a card's answer.",
+  }),
+  linkSessionDeliver: defineMethod({
+    /** Lane H's bot relay, as a protocol method (H-M2's ask, D's review S2): another session's message, never the
+     *  user's (a user's message comes only through `peer.session.send`, with its device's signature). The receiver
+     *  takes it only from a paired computer running clover-core, and only as what it says it is; `computer` names the
+     *  sending computer, which must be the link's own peer. */
+    name: "link.session.deliver", owner: "H", roles: ["peer"],
+    params: z.object({
+      id: SessionId,
+      /** The sending computer's tree name; the receiver refuses one that isn't the link's peer. */
+      computer: ComputerName,
+      input: z.discriminatedUnion("from", [
+        z.strictObject({ from: z.literal("bot"), bot: BotId, session: SessionId, text: utf16(1_000_000) }),
+        z.strictObject({ from: z.literal("agent"), agent: utf16(128, 1), text: utf16(1_000_000) }),
+        z.strictObject({ from: z.literal("routine"), routine: utf16(128, 1), name: utf16(200), sideThread: SessionId, text: utf16(1_000_000), failed: z.boolean().optional() }),
+        /** An agent's final report reaching its bot. */
+        z.strictObject({
+          from: z.literal("task-notification"), agent: utf16(128, 1), backend: utf16(128, 1),
+          stopReason: z.enum(["end_turn", "refusal", "cancelled", "stopped", "stalled", "sign-in", "crashed", "error"]),
+          text: utf16(1_000_000), transcript: utf16(4096),
+          usage: z.object({ inputTokens: z.number().int().nonnegative(), outputTokens: z.number().int().nonnegative() }).optional(),
+        }),
+      ]),
+    }),
+    result: z.object({ disposition: z.enum(["turn", "interrupted", "folded", "queued", "note"]), seq: z.number().int().nonnegative() }),
+    doc: "A bot's, an agent's or a routine's message, or an agent's final report, to a session that runs on this computer, from the computer that sent it.",
   }),
   peerSessionDeliver: defineMethod({
     name: "peer.session.send", owner: "D", roles: ["peer"],

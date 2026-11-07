@@ -52,7 +52,7 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
     expect(result.fatal).toBeUndefined();
     const failed = result.steps.filter((s) => !s.ok);
     expect(failed, `${JSON.stringify(failed, null, 2)}\n--- electron's output, last 3000 characters ---\n${output.slice(-3000)}`).toEqual([]);
-    expect(result.steps.length).toBeGreaterThanOrEqual(21);
+    expect(result.steps.length).toBeGreaterThanOrEqual(25);
 
     // The net log: no WPAD or PAC lookup ran, and no spellchecker dictionary was fetched (lane E's netlogs found both).
     expect(existsSync(netlog), "no net log").toBe(true);

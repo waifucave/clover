@@ -56,6 +56,7 @@ jobs:
       daemon: ${{ steps.areas.outputs.daemon }}
       app: ${{ steps.areas.outputs.app }}
       packages: ${{ steps.areas.outputs.packages }}
+      installers: ${{ steps.areas.outputs.installers }}
       gallery: ${{ steps.areas.outputs.gallery }}
       typecheck: ${{ steps.areas.outputs.typecheck }}
       lockfiles: ${{ steps.areas.outputs.lockfiles }}
@@ -63,6 +64,7 @@ jobs:
       core: ${{ steps.areas.outputs.core }}
       cli: ${{ steps.areas.outputs.cli }}
       scripts: ${{ steps.areas.outputs.scripts }}
+      scriptsmac: ${{ steps.areas.outputs.scriptsmac }}
       codegen: ${{ steps.areas.outputs.codegen }}
       swift: ${{ steps.areas.outputs.swift }}
       verify: ${{ steps.areas.outputs.verify }}
@@ -117,18 +119,24 @@ jobs:
       - name: The rename's rules, the layout, the workspaces and the CI areas
         run: bun test scripts/rename/ scripts/layout.test.ts scripts/workspaces.test.ts scripts/ci-changes.test.ts
 
+      # The headless shell's pin (lane L's, plugins/clover/plugins/browser/headless-shell.pins.json) follows the app's
+      # Electron: the same Chromium milestone (spec §12.1). It warns while the file doesn't exist yet.
+      - name: The headless shell's pin follows Electron
+        run: bun scripts/check-headless-pin.ts
+
   # One job per machine (macOS arm64, Linux x64 and arm64, Windows x64), each step run only when this change needs it:
   #  - every workspace package's `test` (docs/clover-layout.md): `scripts/workspaces.ts` runs each one that has the
   #    script, where its `cloverCi.os` allows, and skips core and cli (`cloverCi.ownJob`). On Linux the tests run under
   #    a private D-Bus session with a gnome-keyring of their own, so the harness's throwaway Secret Service store never
   #    meets a real keyring.
   #  - the daemon binary, `clover-core`, built for the machine's own target (`scripts/build-daemon.ts`: packages/cli's
-  #    compile:core with the target set), then run once with `--version` on a temp home: it prints and exits, so no
-  #    daemon starts. Unsigned on every OS; signing is M2's.
+  #    compile:core with the target set, the dist define and the seal), then run once with `--version` on a temp home:
+  #    it prints and exits, so no daemon starts. Then verify:sealed-core runs it with every door to foreign code set.
+  #    Unsigned on every OS but for the gate's own ad hoc hardened-runtime copy on macOS; signing is the release's.
   #  - the app (apps/desktop), built and packaged unsigned and unpacked by electron-builder (`bun run build:app`), then
   #    the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
-  #    Linux runs it under xvfb, with unprivileged user namespaces allowed again for Chromium's sandbox (Ubuntu 24.04's
-  #    AppArmor turns them off by default).
+  #    Linux runs it, and the browser tests, under xvfb, with unprivileged user namespaces allowed again for Chromium's
+  #    sandbox (Ubuntu 24.04's AppArmor turns them off by default).
   # One job, not three, so a macOS runner (five at once on the org's plan) is taken once per change, not three times.
   # A later part still runs after an earlier one fails, so one run reports all three.
   machine:
@@ -139,12 +147,10 @@ jobs:
     timeout-minutes: 50
     strategy:
       fail-fast: false
+      # The local gate (owner's ruling, November 7): a pull request's macOS legs run on the lane's own Mac before it
+      # reports a head, so PR runs take no hosted macOS runner. The merge queue (and push, and dispatch) still runs them.
       matrix:
-        include:
-          - { target: darwin-arm64, runner: macos-latest }
-          - { target: linux-x64, runner: ubuntu-24.04 }
-          - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: windows-x64, runner: windows-latest }
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]' || '[{"target":"darwin-arm64","runner":"macos-latest"},{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]') }}
     env:
       WORKSPACES: ${{ needs.changes.outputs.workspaces }}
       DAEMON: ${{ needs.changes.outputs.daemon }}
@@ -174,58 +180,71 @@ jobs:
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
       - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
+        id: daemon-build
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
         run: bun scripts/build-daemon.ts --target ${{ matrix.target }} --smoke
 
+      # The compiled core runs only its own code (scripts/verify-sealed-core.ts): the binary just built, sealed by
+      # build-daemon (scripts/seal-bun-doors.ts), is run with every door Bun has — BUN_BE_BUN, BUN_OPTIONS' preloads,
+      # BUN_INSPECT and its connect-out, NODE_PATH and a planted node_modules on the runtime ladder, the working
+      # folder's bunfig/.env/tsconfig/package.json, argv — and no payload may run and no debugger may open. On macOS
+      # it is signed first as a release signs it (hardened runtime, ad hoc here) and DYLD_INSERT_LIBRARIES is tried.
+      - name: Daemon · verify:sealed-core
+        if: ${{ !cancelled() && steps.daemon-build.outcome == 'success' }}
+        run: bun scripts/verify-sealed-core.ts --binary dist/daemon/${{ matrix.target }}/clover-core${{ matrix.target == 'windows-x64' && '.exe' || '' }}
+
+      # The built daemon and app are kept only from a push to main or a manual run: nothing in a pull request or a
+      # merge group downloads them, and the upload costs a runner about 40 s (a macOS one is the queue's bottleneck).
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() && env.DAEMON == 'true' }}
+        if: ${{ !cancelled() && env.DAEMON == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
           name: clover-core-${{ matrix.target }}
           path: dist/daemon/${{ matrix.target }}/
           retention-days: 5
           if-no-files-found: error
 
+      # Chromium's sandbox on Linux needs unprivileged user namespaces, which Ubuntu 24.04's AppArmor turns off by
+      # default: allowed once, for the headless browser's test and the app's tests alike.
+      - name: Chromium's sandbox (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' && (env.DAEMON == 'true' || env.APP == 'true') }}
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # The Clover Browser where no app runs (lane L, plan §4 L M2): the pinned headless shell installed into a temp
+      # folder, then a bot's tab, its pictures, the URL rule, the refused DevTools domains, R13 through the real network
+      # filter, a stream and a page's window (`packages/core/test/browser/headless-real.test.ts`). The headless shell
+      # opens no window.
+      - name: Daemon · Headless browser test
+        if: ${{ !cancelled() && env.DAEMON == 'true' }}
+        working-directory: packages/core
+        env:
+          CLOVER_HEADLESS_TESTS: "1"
+        run: bun test test/browser/headless
+
       - name: App · build the unsigned app
         id: app-build
         if: ${{ !cancelled() && env.APP == 'true' }}
         run: bun run build:app
 
+      # The app's window tests run under xvfb on Linux, directly elsewhere.
       - name: App · UI test
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
-        run: bun test test/ui-smoke.test.ts
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui-smoke.test.ts
 
-      - name: App · the sandbox (Linux)
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: App · UI test (under xvfb)
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+      # The Clover Browser in a real Electron (lane L, plan §4 L M1 and M2): offscreen bot tabs, the viewport, the
+      # person's selecting and copying through it, the screen-reader hybrid, and the streamed view. CI only, like the
+      # UI test.
+      - name: App · Browser tests
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
-        run: xvfb-run -a bun test test/ui-smoke.test.ts
-
-      # The Clover Browser in a real Electron (lane L, plan §4 L M1): offscreen bot tabs, the viewport, the person's
-      # selecting and copying through it, the screen-reader hybrid. CI only, like the UI test.
-      - name: App · Browser test
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
-        working-directory: apps/desktop
-        env:
-          CLOVER_UI_TESTS: "1"
-        run: bun test test/browser.test.ts
-
-      - name: App · Browser test (under xvfb)
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
-        working-directory: apps/desktop
-        env:
-          CLOVER_UI_TESTS: "1"
-        run: xvfb-run -a bun test test/browser.test.ts
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/browser.test.ts test/browser-stream.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
           name: clover-app-${{ matrix.target }}
           path: apps/desktop/out/dist/
@@ -319,9 +338,66 @@ jobs:
           CLOVER_HOME="$(mktemp -d)" clover --version
           test -x /opt/Clover/resources/daemon/clover-link
           test -f /etc/apparmor.d/clover
+          test "$(cat /opt/Clover/resources/daemon/install.json)" = '{"kind":"package"}'
           sudo apt-get remove -y -qq "$name"
+          test ! -e /opt/Clover/resources/daemon/install.json
           test ! -e /usr/bin/clover
           test ! -e /etc/apparmor.d/clover
+
+  # The macOS and Windows installers (plan §4 M-M2): the release build itself, unsigned (scripts/release/build.ts), so
+  # each PR that touches them shows they still build: the dmg and its update zip on Apple silicon, the NSIS installer
+  # on Windows, each with its update files and the daemon's own (clover-core-<version>-<target> and its update file),
+  # every one checked against the files it names. Nothing is signed, uploaded or published.
+  installers:
+    name: installers · ${{ matrix.os }} (${{ matrix.what }})
+    needs: changes
+    if: needs.changes.outputs.installers == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      # The local gate (owner's ruling, November 7): a pull request's macOS legs run on the lane's own Mac, so PR runs
+      # take no hosted macOS runner; the merge queue (and push, and dispatch) still builds the dmg.
+      matrix:
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"win","runner":"windows-latest","what":"NSIS"}]' || '[{"os":"mac","runner":"macos-latest","what":"dmg, zip"},{"os":"win","runner":"windows-latest","what":"NSIS"}]') }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: native/link -> target
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the installers (unsigned) and check them
+        shell: bash
+        run: |
+          bun scripts/release/build.ts --channel latest
+          ls -l apps/desktop/out/dist
+
+      # The daemon's release file answers `--version` in the environment a server's self-update gives it
+      # (packages/cli/src/self-update.ts's versionEnv): PATH alone, and on Windows SystemRoot and windir too.
+      - name: The daemon's release file answers --version as its self-update runs it
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bin=$(ls apps/desktop/out/dist/clover-core-"$version"-*)
+          extra=()
+          if [ "$RUNNER_OS" = Windows ]; then extra=(SystemRoot="${SYSTEMROOT:-$SystemRoot}" windir="${WINDIR:-$windir}"); fi
+          said=$(env -i PATH="$PATH" "${extra[@]}" "$bin" --version)
+          echo "$bin --version: $said"
+          test "$said" = "clover $version"
 
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
@@ -356,6 +432,10 @@ jobs:
       - name: The tree and the computers, with lane B's conformance suites
         working-directory: packages/core
         run: bun test --timeout 30000 test/tree test/computers src/contracts/tests/tree.test.ts src/contracts/tests/computer-registry.test.ts
+
+      - name: An agent backend's bare command on PATH (its .exe or .cmd on Windows)
+        working-directory: packages/core
+        run: bun test --timeout 30000 src/agents/tests/windows-path.test.ts
 
   # The link sidecar (native/link, lane H's clover-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
   # the core's link tests run over it on loopback (src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB
@@ -505,7 +585,7 @@ jobs:
   #    tests run on the embedded runtime; those two still spawn the binary.
   #  - the repo's own scripts' tests (`scripts/**/*.test.ts`): the layout's conventions, the build, dev and release
   #    tools' pure halves, the held scripts, the limiter, the rename's codemod. None builds an app or starts a
-  #    daemon. `embed-runtimes.test.ts` stages the agent runtime's binary from dist/.
+  #    daemon. `embed-runtimes.darwin.test.ts` stages the agent runtime's binary from dist/.
   #  - the compiled-binary proofs (Winter Phase 8d, P8d-5): verify:workflow, verify:automation-worker,
   #    verify:runtime-state, verify:fd-receiver and verify:runtimes, which resolves the `winter` binary through its
   #    own ladder (the installed platform package first).
@@ -513,13 +593,14 @@ jobs:
   macos:
     name: macOS (core, cli, scripts, verify, link)
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scripts == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true'
+    # Not on a pull request: the lane runs it on its own Mac (the local gate); the merge queue runs it here.
+    if: github.event_name != 'pull_request' && (needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scriptsmac == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
     env:
       CORE: ${{ needs.changes.outputs.core }}
       CLI: ${{ needs.changes.outputs.cli }}
-      SCRIPTS: ${{ needs.changes.outputs.scripts }}
+      SCRIPTS: ${{ needs.changes.outputs.scriptsmac }}
       VERIFY: ${{ needs.changes.outputs.verify }}
       LINK: ${{ needs.changes.outputs.link }}
     steps:
@@ -568,25 +649,20 @@ jobs:
           cp "${{ steps.clover-package.outputs.bin }}" dist/winter
           chmod +x dist/winter
 
-      - name: Core · test
+      # Only the core's macOS tests: the files named *.darwin.test.ts and the mixed ones that mark theirs with
+      # darwinTest/darwinDescribe (test/helpers/darwin-only.ts). Everything else runs on Linux, in core-linux's shards
+      # (scripts/platform-tests.ts picks each side's files; a clear Bun crash, exit 133 or a signal with no summary, is
+      # re-run once with a ::warning::).
+      # The per-test timeout here and in core-linux's shards is 20 s, not bun's 5 s: an overloaded runner (the merge
+      # queue's Macs above all) took a test that runs in well under a second locally past 5 s and dropped a PR from the
+      # queue for it. Local runs keep the 5 s, so a test that is slow for real still shows there; each run prints its
+      # 10 slowest tests (--slowest), so one creeping toward the limit is seen before it fails.
+      - name: Core · the macOS tests
         if: env.CORE == 'true'
-        working-directory: packages/core
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-        # The suite runs as 3 sequential native shards (`bun test --shard=K/3`, so discovery is bun's
-        # own). They began as a guard against Bun 1.3.14's intermittent Worker use-after-free
-        # ("Segmentation fault at address 0xA", exit 133, in one long process after ~70 Workers); on
-        # 1.4.4 A-M1's dispatch soak ran 20 of 20 clean (6 of 20 crashed on 1.3.14). Memory is not why
-        # they stay: neither Bun hands a terminated Worker's resident pages back (`ps -o rss=`), and on
-        # 1.4.4 its dirty memory (phys_footprint) no longer piles up (packages/core/scripts/test-shards.ts
-        # has the numbers). They stay because a smaller process is cheaper to re-run and keeps a crash to
-        # one shard. Every shard is a fresh process in this directory:
-        # same bunfig preload (per-process temp root, throwaway Keychain service), same env. The
-        # script runs all shards (one that clearly crashed Bun - exit 133 or a signal, with no summary -
-        # is re-run ONCE, with a ::warning::; a second crash fails), then fails the step on any non-zero or signal exit, a missing
-        # "Ran N tests across M files" summary, a 0-file shard, or a file total below the glob count.
-        run: bun scripts/test-shards.ts 3
+        run: bun scripts/platform-tests.ts --root packages/core --cwd packages/core --darwin --timeout 20000 --slowest 10
 
       - name: CLI · test
         if: ${{ !cancelled() && env.CLI == 'true' }}
@@ -594,11 +670,14 @@ jobs:
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-        run: bun test test/*.ts
+        # 20 s per test, as the core's shards (see "Core · the macOS tests").
+        run: bun test --timeout 20000 test/*.ts
 
-      - name: Scripts · test
+      # Only the repo scripts' macOS tests (`scripts/**/*.darwin.test.ts`: codesign, the predecessor app's bundles,
+      # LaunchServices); the rest run on Linux, in the scripts job.
+      - name: Scripts · the macOS-only tests
         if: ${{ !cancelled() && env.SCRIPTS == 'true' }}
-        run: bun test scripts
+        run: bun scripts/platform-tests.ts --root scripts --darwin
 
       - name: Link · the link tests over the sidecar
         if: ${{ !cancelled() && env.LINK == 'true' }}
@@ -647,6 +726,74 @@ jobs:
         if: ${{ !cancelled() && env.VERIFY == 'true' }}
         run: bun run verify:runtimes
 
+  # The core suite on Linux, in three shards: every test file but the macOS ones (*.darwin.test.ts), with the mixed
+  # files' darwinTest/darwinDescribe tests skipping. On a private Secret Service (the OS secret store the harness's
+  # throwaway stores use), with bubblewrap for the Bash fence and a git identity for the tests' throwaway repos.
+  # packages/core/test/platform-ci.json holds the reviewed lists: Linux product bugs the shards skip until fixed (shard
+  # 1 runs each and fails if one now passes), the skips Linux may show, and the darwin mentions that gate nothing.
+  core-linux:
+    name: core · linux ${{ matrix.shard }}/3
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      GIT_AUTHOR_NAME: Clover CI
+      GIT_AUTHOR_EMAIL: ci@clover.invalid
+      GIT_COMMITTER_NAME: Clover CI
+      GIT_COMMITTER_EMAIL: ci@clover.invalid
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: The private Secret Service's tools, and bubblewrap
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0 bubblewrap socat
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Core · test
+        run: scripts/with-private-secret-service.sh bun scripts/platform-tests.ts --root packages/core --cwd packages/core --not-darwin --shard ${{ matrix.shard }}/3 --config packages/core/test/platform-ci.json --timeout 20000 --slowest 10 ${{ matrix.shard == 1 && '--check-known-failures' || '' }}
+
+  # The repo scripts' tests (`scripts/**/*.test.ts`) on Linux: the layout's conventions, the build, dev and release
+  # tools' pure halves, the held scripts, the limiter, the rename's codemod. The few that need macOS are named
+  # `*.darwin.test.ts` and run in the macos job (scripts/platform-tests.ts picks each side's files).
+  scripts:
+    name: scripts · linux
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # xmllint, for release-lib's appcast checks (macOS has it built in).
+      - name: xmllint
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Scripts · test
+        run: bun scripts/platform-tests.ts --root scripts --not-darwin
+
   # The protocol package generates a JSON schema and the Swift round-trip fixtures. If a schema
   # change landed without re-running the generator, the tree is dirty here — which is exactly the
   # drift the checklist in CONTRIBUTING.md exists to prevent.
@@ -689,7 +836,9 @@ jobs:
   swift:
     name: swift (WinterProtocol + WinterKit + WinterChatKit + WinterBrowserHost)
     needs: changes
-    if: needs.changes.outputs.swift == 'true'
+    # The leftover Swift packages, which Clover's Electron app doesn't use: on demand only (workflow_dispatch), off the gate's
+    # macOS runners (owner's ruling, November 7).
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -833,7 +982,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, installers, tree, link, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

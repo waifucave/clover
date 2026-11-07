@@ -10,6 +10,9 @@
       "required": true
     }
   },
+  "capabilities": [
+    "network:${setting:accountIdentifier}.snowflakecomputing.com"
+  ],
   "contributes": {
     "models": [
       {

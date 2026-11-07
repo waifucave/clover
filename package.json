@@ -31,6 +31,8 @@
     "verify:headless-helper": "bun run scripts/verify-headless-helper.ts",
     "verify:cowork-native": "bun run scripts/verify-cowork-native.ts",
     "verify:fd-receiver": "bun run scripts/verify-fd-receiver-compiled.ts",
+    "verify:sealed-core": "bun run scripts/verify-sealed-core.ts",
+    "verify:sealed-core:proof": "bun run scripts/verify-sealed-core.ts --require-proof",
     "verify:cowork-vm": "bun run spikes/cowork-vm/run.ts",
     "typecheck:core": "tsc --noEmit -p packages/core",
     "typecheck:page-runtime": "tsc --noEmit -p packages/core/src/computer-use/browser/page-runtime",
@@ -74,7 +76,8 @@
       "fast-uri": ">=3.1.9 <4",
       "@types/node": "25.9.3",
       "sharp": "0.35.5",
-      "undici": "7.30.1"
+      "undici": "7.30.1",
+      "minimatch@>=7 <11.0.1": "11.0.1"
     }
   },
   "overrides": {
@@ -82,6 +85,7 @@
     "fast-uri": ">=3.1.9 <4",
     "@types/node": "25.9.3",
     "sharp": "0.35.5",
-    "undici": "7.30.1"
+    "undici": "7.30.1",
+    "minimatch@>=7 <11.0.1": "11.0.1"
   }
 }

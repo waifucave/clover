@@ -111,6 +111,9 @@ export interface PeripheralBrokerDeps {
    *  so tests don't have to wait out a real 10s — mirrors ApprovalBroker/PlanBroker/BashReviewer's
    *  constructor-overridable timeouts elsewhere in this codebase). */
   callTimeoutMs?: number;
+  /** The clock leases expire by (default `Date.now`). A test passes its own and calls `sweep(now)` itself, so expiry
+   *  never depends on real waits under load. */
+  now?: () => number;
   /** Session approval-policy check for a lease request (Task 3 builds this on ApprovalBroker).
    *  The broker never touches policy internals — it only awaits "granted" | "denied". Takes the
    *  requested `class` directly (the broker already has it in `req.class`) so a caller building
@@ -142,7 +145,10 @@ export class PeripheralBroker {
   private readonly heartbeatMs: number;
   private readonly callTimeoutMs: number;
 
+  private readonly now: () => number;
+
   constructor(private readonly deps: PeripheralBrokerDeps) {
+    this.now = deps.now ?? (() => Date.now()); // read at each call: tests mock Date.now
     this.expiryMs = deps.expiryMs ?? 15_000;
     this.heartbeatMs = deps.heartbeatMs ?? 5_000;
     this.callTimeoutMs = deps.callTimeoutMs ?? 10_000;
@@ -202,7 +208,7 @@ export class PeripheralBroker {
     const leaseId = `lease_${randomBytes(6).toString("hex")}`;
     const token = `tok_${randomBytes(24).toString("hex")}`;
     const tokenHash = hashToken(token);
-    const expiresAt = Date.now() + this.expiryMs;
+    const expiresAt = this.now() + this.expiryMs;
     this.entries.set(req.class, { leaseId, class: req.class, holder, tokenHash, expiresAt });
     this.armSweep();
 
@@ -253,11 +259,11 @@ export class PeripheralBroker {
       this.auditLease("renew_failed", { leaseId: req.leaseId, class: cls, reason: "token_mismatch" });
       return { code: "token_mismatch" };
     }
-    if (Date.now() >= entry.expiresAt) {
+    if (this.now() >= entry.expiresAt) {
       this.auditLease("renew_failed", { leaseId: req.leaseId, class: cls, reason: "expired" });
       return { code: "expired" };
     }
-    entry.expiresAt = Date.now() + this.expiryMs;
+    entry.expiresAt = this.now() + this.expiryMs;
     this.auditLease("renew", { leaseId: req.leaseId, class: cls });
     return { ok: true, expiresAt: entry.expiresAt };
   }
@@ -324,7 +330,7 @@ export class PeripheralBroker {
       this.auditLease("call_failed", { leaseId: req.leaseId, class: req.class, reason: "token_mismatch" });
       return { code: "token_mismatch" };
     }
-    if (Date.now() >= entry.expiresAt) {
+    if (this.now() >= entry.expiresAt) {
       this.auditLease("call_failed", { leaseId: req.leaseId, class: req.class, reason: "expired" });
       return { code: "expired" };
     }
@@ -430,7 +436,7 @@ export class PeripheralBroker {
 
   private armSweep(): void {
     if (this.sweepTimer) return;
-    const timer = setInterval(() => this.sweep(Date.now()), SWEEP_INTERVAL_MS);
+    const timer = setInterval(() => this.sweep(this.now()), SWEEP_INTERVAL_MS);
     timer.unref();
     this.sweepTimer = timer;
   }

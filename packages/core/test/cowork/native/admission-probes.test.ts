@@ -10,11 +10,12 @@ import {
 } from "../../../src/cowork/native/admission-probes";
 import { hostStorageFenceOptions } from "../../../src/runtime-sdk/host-storage-fence";
 import { ledgerFixture } from "./pressure-ledger-fixture";
+import { onDarwin, darwinTest } from "../../helpers/darwin-only";
 
 // Every host value in this file is synthetic. Tests that read the real host assert SHAPE only, reduce every check to a boolean
 // before it reaches expect(), and never store a host value anywhere.
 const MACHINE = "00000000-0000-4000-8000-0000000000A1", BOOT = "00000000-0000-4000-8000-0000000000B1", BOOT2 = "00000000-0000-4000-8000-0000000000B2", FORGED = "00000000-0000-4000-8000-0000000000F1", INSTALL = "installation-fixture";
-const real = process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
+const real = onDarwin && process.arch === "arm64" ? test : test.skip;
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
 
@@ -56,7 +57,7 @@ test("readMachineId runs only the fixed absolute ioreg query and fails closed on
 // ---------------------------------------------------------------- the command runner
 // `hostIdentity()` runs inside the ledger's BEGIN IMMEDIATE, so a command that never returned would hold the coordination
 // write lock: the runner must be bounded in time and output, and must not inherit the caller's stdin or environment.
-const runnerTest = process.platform === "darwin" ? test : test.skip;
+const runnerTest = darwinTest;
 runnerTest("the host command runner is bounded: a hung child times out, runaway output is capped, the environment is empty and stdin is /dev/null", () => {
   expect(HOST_COMMAND_TIMEOUT_MS).toBeLessThanOrEqual(10_000); expect(HOST_COMMAND_MAX_BUFFER_BYTES).toBeLessThanOrEqual(1024 * 1024);
   expect(typeof runHostCommand).toBe("function");

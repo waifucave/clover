@@ -1,5 +1,5 @@
 /*
- * Unit-test helper for fd-channel.test.ts. It RECEIVES file descriptors on its inherited descriptor 3 and ECHOES their
+ * Unit-test helper for fd-channel.darwin.test.ts. It RECEIVES file descriptors on its inherited descriptor 3 and ECHOES their
  * metadata. It starts no VM, uses no Hypervisor.framework call, opens no path and signs nothing; it exists only so the
  * bun:ffi sendmsg/recvmsg code is exercised against an independent C implementation of the same syscalls.
  *

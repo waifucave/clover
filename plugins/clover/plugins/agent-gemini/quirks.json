@@ -1,0 +1,93 @@
+{
+  "notes": "Gemini CLI 0.46.0, native (`gemini --acp`). Since June 18, 2026 it needs a Gemini API key or Vertex AI. It is the  one agent that uses the client's `fs` when offered; Clover offers none yet, so it uses its own tools. Unmeasured (from docs, `--help` and code, S5 §3): where a row isn't known it takes the cautious value (a reattach by `load` with its replay dropped, MCP names unread, calls a cancel leaves open closed by Clover), it is held as acting without asking (`unasked-actions`) since it loads the user's own approval settings, and no sandbox is admitted, so it asks for the user's OK. The agent suite's live gates measure each row.",
+  "source": "docs and code (S5 §3)",
+  "readOnlyMode": {
+    "option": "mode",
+    "values": [
+      "plan",
+      "default"
+    ]
+  },
+  "quirks": {
+    "capabilities": {
+      "snakeCaseDuplicates": false,
+      "httpMcpUnadvertised": false
+    },
+    "turns": {
+      "refusal": "unknown",
+      "cancelLeavesToolCallsOpen": true,
+      "reportsUsage": true,
+      "quotaErrorsAsText": false
+    },
+    "progress": {
+      "countsChildProcesses": true
+    },
+    "placement": "local",
+    "marks": [
+      "unasked-actions"
+    ],
+    "launch": {
+      "identity": {
+        "versionArgs": [
+          "--version"
+        ],
+        "versionPattern": "^(\\d+\\.\\d+\\.\\d+)\\s*$"
+      },
+      "envAllow": [
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+        "GOOGLE_GENAI_USE_VERTEXAI"
+      ],
+      "envSet": {},
+      "versions": ">=0.46.0 <1.0.0"
+    },
+    "mcp": {
+      "transports": [
+        "stdio",
+        "http",
+        "sse"
+      ],
+      "storesPlainText": false,
+      "passesEnvironment": false,
+      "instructionsReachPrompt": "unknown",
+      "systemPromptChannel": null,
+      "tellsConversationId": false
+    },
+    "sessions": {
+      "load": {
+        "supported": true,
+        "replays": true
+      },
+      "resume": {
+        "supported": false,
+        "replays": false
+      },
+      "replayKeepsToolCallIds": true,
+      "listFiltersHonestly": false,
+      "close": false
+    },
+    "permissions": {
+      "optionKinds": [
+        "allow_once",
+        "allow_always",
+        "reject_once"
+      ],
+      "neverAsks": [],
+      "mcpNames": null
+    },
+    "config": {
+      "modelOption": "model",
+      "effortOption": null,
+      "effortInModel": false,
+      "choicePersists": false
+    },
+    "auth": {
+      "methods": [],
+      "requiredError": {
+        "code": -32000
+      }
+    }
+  }
+}

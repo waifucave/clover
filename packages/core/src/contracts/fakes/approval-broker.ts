@@ -4,11 +4,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   type Card, type CardMeta, type CardOption, type CardOutcome, type Level,
-  DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
+  type TreeTransferParams, DEFAULT_LEVEL, TREE_TRANSFER, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, callBindingInput, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  ALWAYS_CARD_KINDS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
-  type AnswerLedger, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
+  ALWAYS_CARD_KINDS, CALL_CARD_METHODS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
+  type AnswerLedger, type CallCardRenderer, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../approval-broker";
 import type { Clock, TimerHandle } from "../clock";
@@ -225,4 +225,26 @@ export class FakeApprovalBroker implements ApprovalBroker {
     this.#listeners.emit({ type: "resolved", cardId: p.card.id, outcome, ...how });
     p.resolve(decision);
   }
+}
+
+/** A card table for the calls `CALL_CARD_METHODS` names, binding each exactly (the shape lane C's tables give, C-M3);
+ *  any other call shows no card. Takes the SHA-256 the receiver uses. */
+export function fakeCallCardRenderer(sha256: (text: string) => string): CallCardRenderer {
+  const known = new Set(CALL_CARD_METHODS.map((m) => m.method));
+  return (call) => {
+    if (!known.has(call.method)) return undefined;
+    const binds = call.method === TREE_TRANSFER
+      ? transferBindingOf(call.params as TreeTransferParams, sha256)
+      : { computer: call.computer, method: call.method, params: sha256(callBindingInput(call.method, call.params)) };
+    return {
+      kind: "tool",
+      fields: { title: { type: "text", text: `${call.method}` } },
+      options: [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }],
+      binds,
+    };
+  };
+}
+
+function transferBindingOf(p: TreeTransferParams, sha256: (text: string) => string) {
+  return { computer: p.destination, source: p.source, method: TREE_TRANSFER, params: sha256(callBindingInput(TREE_TRANSFER, p)) };
 }

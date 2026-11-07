@@ -12,6 +12,9 @@
 import { z } from "zod";
 import { utf16 } from "@waifucave/clover-protocol";
 import { HandlerName, Path, Text } from "../manifest/fields";
+import { foldTitle } from "./fold";
+
+export { foldTitle, lookalikeOf } from "./fold";
 
 export interface SpotInfo {
   readonly name: string;
@@ -133,32 +136,19 @@ export function spotInfo(name: string): SpotInfo | undefined {
   return SPOTS.find((s) => s.name === name);
 }
 
-/** Letters from other scripts that read as Latin ones (a short table after Unicode's confusables, UTS #39), and the
- *  digits and strokes that read as letters. */
-const CONFUSABLES: Readonly<Record<string, string>> = Object.fromEntries([
-  // Cyrillic
-  ..."АaВbЕeКkМmНhОoРpСcТtХxУyІiЈjЅsҮyҺhӀlԚqԜwаaеeоoрpсcуyхxіiјjѕsԁdһhӏlԛqԝwүyёeїi".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Greek
-  ..."ΑaΒbΕeΖzΗhΙiΚkΜmΝnΟoΡpΤtΥyΧxαaβbεeιiκkνvοoρpτtυuχxγyωw".match(/../gu)!.map((p) => [...p] as [string, string]),
-  // Latin lookalikes, Armenian, digits and strokes
-  ..."ıiɩiɑaɡgʏyℓlǀlօoսuցgհhոn0o1l|l".match(/../gu)!.map((p) => [...p] as [string, string]),
-]);
-const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/gu;
-
-/** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review): NFKC
- *  (width folded), invisible characters dropped (zero-width spaces and joiners, bidi marks, variation selectors), each
- *  letter's confusable skeleton (a Cyrillic "о" is "o"), accents dropped, case folded, and every run of anything but
- *  letters and digits one space. Folding too much only reserves more. */
-export function foldTitle(title: string): string {
-  const visible = title.normalize("NFKC").replace(INVISIBLE, "");
-  const skeleton = [...visible].map((ch) => CONFUSABLES[ch] ?? ch).join("");
-  return skeleton.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-}
+/** Names only the bundled `clover` tree's plugins may have (lane G's ask): the app's own, beside the titles spots
+ *  reserve. */
+export const RESERVED_PLUGIN_NAMES: readonly string[] = ["Clover"];
 
 /** Every title some spot reserves for the `clover` tree, folded. */
 export function reservedTitles(): ReadonlySet<string> {
   return new Set(SPOTS.flatMap((s) => s.reserved?.titles ?? []).map(foldTitle));
+}
+
+/** Whether a plugin outside the `clover` tree may not be named so: it reads as a reserved title or as Clover itself. */
+export function isReservedPluginName(name: string): boolean {
+  const folded = foldTitle(name);
+  return reservedTitles().has(folded) || RESERVED_PLUGIN_NAMES.some((n) => foldTitle(n) === folded);
 }
 
 /** Whether a keyed spot's entry key covers a key: exact, or a `*` pattern after the exact ones (§5.5). */

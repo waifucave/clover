@@ -932,6 +932,11 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
     // ComputerV2's own records (`computer-use/`): the wake triggers' restart file (`wakes/persist.ts` — a forged record
     // would put daemon-worded text into another session's turn) and the recently-used apps.
     join(home, "computer-use"),
+    // M-M2: a server's self-update (packages/cli/src/self-update.ts): the daemon's own binary and the checked one waiting
+    // to replace it (`bin/`, with a package's marker beside it), the boot count and the rolled-back versions after a
+    // swap (`update/`), and the install marker that decides whether the daemon updates itself. A planted binary or
+    // `.old` + boot count would run unsandboxed as the daemon; a planted marker or rolled-back list stops its updates.
+    join(home, "bin"), join(home, "update"), join(home, "install.json"),
     ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => join(home, f)),
     ...hostStorageWriteRoots(home, options),
   ];
@@ -1073,7 +1078,7 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
  * `* ? [ ]` as a GLOB and render it as a seatbelt REGEX, not a `(subpath …)` — claude always has,
  * and the Clover runtime since agent SDK round 11 (`2a118c6`, `splitDenyPathsByGlobShape`). So under a home or project whose path holds a `[` (a directory named `[wip] app`), a raw deny
  * entry is a character class that misses the literal path and fences NOTHING: measured on both real
- * binaries (`sandbox-glob-escape-measure.e2e.test.ts`) — a sandboxed write into the raw-denied directory
+ * binaries (`sandbox-glob-escape-measure.e2e.darwin.test.ts`) — a sandboxed write into the raw-denied directory
  * lands, into the spelled one it does not. The router's `escapeSandboxGlobPath` spells the one escape that
  * grammar honours (`[` → `[[]`); `*`/`?` have no spelling there and stay raw, which for a DENY is the
  * wider, stricter form. Only the deny lists are spelled: this fence has no allow entries.

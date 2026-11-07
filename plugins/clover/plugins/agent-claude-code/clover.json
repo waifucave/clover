@@ -1,0 +1,20 @@
+{
+  "manifest": 1,
+  "name": "Claude Code",
+  "description": "Claude Code, through `claude-agent-acp`, as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "claude-code",
+        "name": "Claude Code",
+        "protocol": "acp",
+        "command": "claude-agent-acp",
+        "args": [],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

@@ -255,9 +255,7 @@ describe("shutdown never leaves a child: an end mid-open, and a spawn refused wh
     const opening = h.session.open();
     const opened = opening.then(() => undefined, (e: Error) => e);
     await Bun.sleep(1);
-    const started = performance.now();
-    await h.session.end(); // the open is still parked: end() resolves after 2 x endGraceMs (25 ms here)
-    expect(performance.now() - started).toBeLessThan(1_000);
+    await h.session.end(); // the open is still parked: end() resolves after 2 x endGraceMs (25 ms here); the gate is only released below, so end() returning at all proves it did not wait for the open
     release(); // the open settles late...
     expect((await opened)?.message).toContain("ended while it was starting");
     expect(h.queries).toHaveLength(0); // ...and spawns nothing
@@ -535,6 +533,28 @@ describe("startCloverSession — one incarnation", () => {
     await h.settled();
     expect(h.q().pushed).toEqual(["A", "B", "C"]);        // a normal result drains again
     expect(seen(h, "turn_started")).toHaveLength(3);
+  });
+
+  test("M-M2: a delivery while the update gate closes for a restart is held, starts no turn, and runs once the gate reopens", async () => {
+    let closing = false;
+    const h = harness({ updateClosing: () => closing });
+    await h.session.open();
+    h.q().emit(init(h.q().options));
+    closing = true;
+    h.session.deliver("held for the restart");
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+    expect(seen(h, "user_message")).toHaveLength(0);
+    // The gate's recheck (every second; the idle timer and others are left alone). Still closed: held again.
+    const recheck = () => { const i = h.timers.armed.findIndex((t) => t.ms === 1_000); expect(i).toBeGreaterThanOrEqual(0); h.timers.armed.splice(i, 1)[0]!.fn(); };
+    recheck();
+    await h.settled();
+    expect(h.q().pushed).toEqual([]);
+    closing = false;
+    recheck();
+    await h.settled();
+    expect(h.q().pushed).toEqual(["held for the restart"]);
+    expect(h.types().slice(-2)).toEqual(["user_message", "turn_started"]);
   });
 
   test("the user's stop (a plain interrupt): a message delivered AFTER the stopped turn ended runs normally — nothing aborts it (the live gate)", async () => {

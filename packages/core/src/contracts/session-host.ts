@@ -63,10 +63,17 @@ export type DeliveredInput =
   | { from: "bot"; bot: string; session: string; text: string }
   | { from: "agent"; agent: string; text: string }
   | { from: "task-notification"; agent: string; backend: string; stopReason: AgentStopReason; text: string; transcript: string; usage?: { inputTokens: number; outputTokens: number } }
-  | { from: "routine"; routine: string; name: string; sideThread: string; text: string }
+  /** `failed`, on a result posted to the bot's conversation: the run didn't finish well (an error, a timeout, a
+   *  refusal, stopped or cut off). */
+  | { from: "routine"; routine: string; name: string; sideThread: string; text: string; failed?: boolean }
   /** A plugin's `conversation.send`, or an MCP Apps page's `ui/message` (`app`), which is never the user's (§5.5). */
   | { from: "plugin"; pluginId: string; text: string; app?: { callId: string } }
-  | { from: "note"; label: string; text: string; by: { kind: "plugin"; pluginId: string } | { kind: "hook"; pluginId: string; hook: string } | { kind: "core" } };
+  | { from: "note"; label: string; text: string; by: { kind: "plugin"; pluginId: string } | { kind: "hook"; pluginId: string; hook: string } | { kind: "core" } }
+  /** A background task the session's own runtime ran (a Bash run in the background, a monitor) finished, failed or
+   *  was stopped, or (`event`) a running monitor reported an event and goes on running. A driver never starts a turn by itself: it hands this to the host (`BotSessionContext.wake`), which
+   *  records it and folds it into the running turn or starts one (through the pause, the lease and the update gate),
+   *  so the turn is logged, its usage counted and its end recorded like any other. */
+  | { from: "task"; task: string; status: "completed" | "failed" | "stopped" | "event"; text: string };
 
 export type TurnInput = UserInput | DeliveredInput;
 
@@ -83,6 +90,7 @@ export function originOf(input: TurnInput): TurnOrigin {
     case "agent":
       return "agent";
     case "task-notification":
+    case "task":
       return "task-notification";
     case "routine":
       return "routine";
@@ -130,7 +138,9 @@ export interface TurnEnd {
   reason: "end_turn" | "refusal" | "interrupted" | "cancelled" | "stopped" | "failed";
   /** The final text, unchanged (S5 §8). */
   text?: string;
-  usage?: { inputTokens: number; outputTokens: number };
+  /** `contextTokens` (lane D's ask): the last main-loop request's whole prompt, cache included, never a sum over the
+   *  turn's requests: how full the context is (agent SDK 0.0.65's `result.context_tokens`); compaction arms on it. */
+  usage?: { inputTokens: number; outputTokens: number; contextTokens?: number };
   failure?: SessionFailure;
 }
 

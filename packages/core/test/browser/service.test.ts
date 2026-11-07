@@ -1,53 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   AGENT_VIEWPORT, BrowserError, BrowserService, browserCallerOf, isBrowserUrlAllowed, partitionFor, type PersonsBrowserCard, type PersonsBrowserGrants,
-  type AppTabCommand, type AppTabPort, type BrowserEvent, type TabOwner, type TabPlace, type TabView,
+  type AppTabCommand, type AppTabPort, type BrowserEvent, type BrowserNetworkConfig, type TabOwner, type TabPlace, type TabView,
 } from "../../src/browser";
-
-/** The app's side, as a test sees it: every command recorded, tabs kept as the app would report them. */
-class FakeApp implements AppTabPort {
-  readonly commands: { id: string; command: AppTabCommand }[] = [];
-  readonly tabs = new Map<string, TabView>();
-  answers: Partial<Record<AppTabCommand["kind"], unknown>> = {};
-  fail?: Error;
-
-  async open(args: { id: string; owner: TabOwner; url?: string; place: TabPlace }): Promise<TabView> {
-    if (this.fail) throw this.fail;
-    const view: TabView = {
-      id: args.id, computer: "Studio", owner: args.owner, partition: partitionFor(args.owner), url: args.url ?? "about:blank",
-      title: "", place: args.place, viewport: { ...AGENT_VIEWPORT }, loading: args.url !== undefined, heldByUser: false,
-    };
-    this.tabs.set(args.id, view);
-    return view;
-  }
-
-  async command(id: string, command: AppTabCommand): Promise<unknown> {
-    if (this.fail) throw this.fail;
-    this.commands.push({ id, command });
-    if (command.kind === "close") this.tabs.delete(id);
-    return this.answers[command.kind] ?? null;
-  }
-
-  async list(): Promise<TabView[]> {
-    return [...this.tabs.values()];
-  }
-}
-
-/** Lane D's grants as a test plays them: the card's answer per session, and every card asked. */
-class FakeGrants implements PersonsBrowserGrants {
-  readonly held = new Set<string>();
-  readonly asked: { session: string; card: PersonsBrowserCard }[] = [];
-  answer = false;
-  has(session: string): boolean {
-    return this.held.has(session);
-  }
-  async ensure(session: string, card: PersonsBrowserCard): Promise<boolean> {
-    if (this.held.has(session)) return true;
-    this.asked.push({ session, card });
-    if (this.answer) this.held.add(session);
-    return this.answer;
-  }
-}
+import { FakeApp, FakeGrants } from "./fakes";
 
 function setup(opts: { app?: FakeApp | null; grants?: FakeGrants } = {}) {
   const app = opts.app === null ? undefined : (opts.app ?? new FakeApp());
@@ -151,7 +107,7 @@ describe("opening and owning tabs", () => {
     // No yes: the card is asked, the answer is no, and nothing of theirs is reached.
     expect(await code(service.open(coding, { owner: user }))).toBe("needs_ok");
     expect(grants.asked).toHaveLength(1);
-    expect(grants.asked[0]).toMatchObject({ session: "sess_code", card: { kind: "confirm", computers: ["Studio"], effect: "screen" } });
+    expect(grants.asked[0]).toMatchObject({ session: "sess_code", card: { computers: ["Studio"], effect: "screen" } });
     expect(service.tabs(coding)).toEqual([]);
     expect(await code(service.navigate(coding, theirs.id, "https://a.example/"))).toBe("no_tab");
     // A yes: for that session alone.
@@ -192,7 +148,7 @@ describe("opening and owning tabs", () => {
     expect(browserCallerOf(plugin)).toEqual({ kind: "plugin", pluginId: "clover/browser" });
     expect(browserCallerOf(plugin, { kind: "session", sessionId: "s1", bot: "alpha" })).toEqual({ kind: "agent", bot: "alpha", session: "s1" });
     expect(browserCallerOf(plugin, { kind: "session", sessionId: "s2" })).toEqual({ kind: "agent", session: "s2" });
-    expect(browserCallerOf({ kind: "peer", device: "d1", sessionId: "s3", bot: "luna" })).toEqual({ kind: "agent", bot: "luna", session: "s3" });
+    expect(browserCallerOf({ kind: "peer", device: "d1", sessionId: "s3", bot: "luna" })).toEqual({ kind: "agent", device: "d1", bot: "luna", session: "s3" });
     expect(browserCallerOf({ kind: "user" })).toEqual({ kind: "user" });
     expect(browserCallerOf({ kind: "core" })).toEqual({ kind: "core" });
   });
@@ -211,9 +167,10 @@ describe("opening and owning tabs", () => {
     expect(await code(service.open(asAlpha, { owner: alpha }))).toBe("no_app");
   });
 
-  test("another computer's tabs come with M2", async () => {
+  test("without links to other computers, another computer's tabs are refused (no_computer); this one's list stays its own", async () => {
     const { service } = setup();
-    expect(await code(service.open(asAlpha, { owner: alpha, computer: "Laptop" }))).toBe("no_app");
+    expect(await code(service.open(asAlpha, { owner: alpha, computer: "Laptop" }))).toBe("no_computer");
+    expect(await code(service.list(asAlpha, { computer: "Laptop" }))).toBe("no_computer");
     expect(service.tabs(person, { computer: "Laptop" })).toEqual([]);
   });
 

@@ -51,8 +51,10 @@ export interface WireStream {
   finish(): void;
   /** Ends both directions at once. */
   reset(code: number): void;
-  /** Bytes from the peer; chunks that arrive before the first listener are kept for it. */
-  onData(fn: (chunk: Uint8Array) => void): Unsubscribe;
+  /** Bytes from the peer; chunks that arrive before the first listener are kept for it. A listener may return a
+   *  promise: the sidecar's wire then holds the next chunk, and the peer, until it settles (backpressure, S6.2 of H-M1's
+   *  review); the in-memory wire doesn't wait. */
+  onData(fn: (chunk: Uint8Array) => void | Promise<void>): Unsubscribe;
   /** The peer finished its side. */
   onFin(fn: () => void): Unsubscribe;
   /** The peer reset the stream, or the connection was lost (`RESET_CONN_LOST`). */

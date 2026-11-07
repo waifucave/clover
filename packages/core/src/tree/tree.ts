@@ -6,15 +6,15 @@
 // * A computer that is off answers `computer_offline` at once, before anything is sent.
 // * A call for another computer carries the calling computer's level for it, the stricter of the computers it touches
 //   (§9.1 "Approvals follow the files"), and the holder judges it at the stricter of that and its own (review N2).
-// * A move between two computers takes the direct path (`transfer.ts`; edit J8, review S1): the destination's holder
-//   takes the files straight from the source's, each judging the whole move once, and the source lets go of what it
-//   sent only once the files are in place.
-import type { FileStat, Level, Os, SignedCardAnswer } from "@waifucave/clover-protocol";
+// * A move between two computers, and any copy, takes the direct path (`transfer.ts`; edit J8, review S1): the
+//   destination's holder takes the files straight from the source's, each judging the whole operation once, and for a
+//   move the source lets go of what it sent only once the files are in place.
+import type { FileStat, Level, Os } from "@waifucave/clover-protocol";
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import { splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
-import type { Holder, HolderCall } from "./holder";
+import { CLOVER_HOME_NAME, type Holder, type HolderCall } from "./holder";
 import type { TransferResult } from "./transfer";
 import { foldName } from "./names";
 import type { TreeWatchEvent } from "./watch";
@@ -45,18 +45,15 @@ export interface CoreTreeOptions {
   holder(computer: string): Holder;
   /** Which computer runs `bot` (its `bots/<bot>/` lives there). */
   botComputer(bot: string): string | undefined;
-  /** The direct path between holders (`transfer.ts`), for a move between computers: `call` carries no answer; each
-   *  holder's comes in `answers`. */
-  transfer?: (o: {
-    from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall;
-    answers: { source?: SignedCardAnswer; destination?: SignedCardAnswer };
-  }) => Promise<TransferResult>;
+  /** The direct path between holders (`transfer.ts`), for a move between computers or any copy, with the one signed
+   *  answer for the whole operation that both holders check (ruling R15). */
+  transfer?: (o: { from: string; to: string; move: boolean; source: string; destination: string; call: HolderCall }) => Promise<TransferResult>;
 }
 
-/** The answer whose card binds `computer`, as `key`. */
-function pick<K extends string>(answers: readonly SignedCardAnswer[], computer: string, key: K): Partial<Record<K, SignedCardAnswer>> {
-  const a = answers.find((x) => x.card.binds?.computer === computer);
-  return (a ? { [key]: a } : {}) as Partial<Record<K, SignedCardAnswer>>;
+/** A computer's Clover home: where its bots' folders are, less `bots`, or `<home>/.clover` until it says. */
+function cloverHomeOf(c: TreeComputer): string | undefined {
+  if (c.botsRoot !== undefined) return c.botsRoot.replace(/[\\/]+bots[\\/]*$/, "");
+  return c.home === undefined ? undefined : joinReal(c.os, c.home, CLOVER_HOME_NAME);
 }
 
 /** A real path inside `home`, joined the way that computer's OS writes paths. */
@@ -80,6 +77,12 @@ export class CoreTree implements Tree {
       const c = this.#o.directory.get(parts.name);
       if (!c) throw new ContractError("not_found", `no computer ${parts.name}`);
       if (c.home === undefined) throw new ContractError("computer_offline", `${c.name} hasn't said where its home folder is yet`, { computer: c.name });
+      // `home/<Computer>/.clover/` is that computer's Clover home, wherever it is on its disk.
+      const [first, ...below] = parts.rest.split("/");
+      const cloverHome = cloverHomeOf(c);
+      if (first !== undefined && cloverHome !== undefined && foldName(first, c.os ?? "macos") === CLOVER_HOME_NAME) {
+        return { computer: c.name, path: joinReal(c.os, cloverHome, below.join("/")), area: "home" };
+      }
       return { computer: c.name, path: joinReal(c.os, c.home, parts.rest), area: "home" };
     }
     const bot = pluginIdFromSegment(parts.name);
@@ -100,6 +103,16 @@ export class CoreTree implements Tree {
     const real = norm(realPath);
     const same = (a: string, b: string) => (c.os === "linux" ? a === b : foldName(a, c.os ?? "macos") === foldName(b, c.os ?? "macos"));
     const s = win ? "\\" : "/";
+    // The Clover home first: it is `home/<Computer>/.clover/` wherever it is.
+    const ch = cloverHomeOf(c);
+    if (ch !== undefined) {
+      const clover = norm(ch);
+      if (same(real, clover)) return `home/${c.name}/${CLOVER_HOME_NAME}`;
+      if (real.length > clover.length + 1 && same(real.slice(0, clover.length + 1), clover + s)) {
+        const rest = real.slice(clover.length + 1).split(s);
+        if (!rest.some((x) => x === "" || x === "." || x === "..")) return `home/${c.name}/${CLOVER_HOME_NAME}/${rest.join("/")}`;
+      }
+    }
     if (same(real, home)) return `home/${c.name}`;
     if (real.length <= home.length + 1 || !same(real.slice(0, home.length + 1), home + s)) return null;
     const rest = real.slice(home.length + 1).split(s);
@@ -107,14 +120,16 @@ export class CoreTree implements Tree {
     return `home/${c.name}/${rest.join("/")}`;
   }
 
-  async stat(path: string, opts: TreeCallOptions): Promise<FileStat | null> {
+  /** `noFollow`: no link anywhere on the way is followed (one is refused), for the user's own file viewers. */
+  async stat(path: string, opts: TreeCallOptions & { noFollow?: boolean }): Promise<FileStat | null> {
     const { holder, call } = this.#reach([path], opts);
-    return holder.stat(path, call);
+    return holder.stat(path, { ...call, ...(opts.noFollow ? { noFollow: true } : {}) });
   }
 
-  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64" }): Promise<TreeData> {
+  /** `noFollow`: as `stat`, in the same call: only a plain file reached without a link is read. */
+  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; noFollow?: boolean }): Promise<TreeData> {
     const { holder, call } = this.#reach([path], opts);
-    return holder.read(path, { ...call, ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }) });
+    return holder.read(path, { ...call, ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }), ...(opts.noFollow ? { noFollow: true } : {}) });
   }
 
   async write(path: string, data: TreeData, opts: TreeCallOptions & { executable?: boolean }): Promise<void> {
@@ -134,7 +149,7 @@ export class CoreTree implements Tree {
 
   /** A move between computers is judged by both holders, each at the stricter of its level and the call's, so it may
    *  need the user's answer at each: `answer` and `answers` go to the holder whose card each binds. */
-  async move(from: string, to: string, opts: TreeCallOptions & { answers?: readonly SignedCardAnswer[] }): Promise<void> {
+  async move(from: string, to: string, opts: TreeCallOptions): Promise<void> {
     const src = this.resolve(from);
     const dst = this.resolve(to);
     if (src.computer === dst.computer) {
@@ -142,15 +157,21 @@ export class CoreTree implements Tree {
       await holder.move(from, to, call);
       return;
     }
+    await this.#direct(true, from, to, opts);
+  }
+
+  /** Copies a file or a folder, on one computer or between two, by the direct path: the files never pass through
+   *  this computer unless it holds one end. */
+  async copy(from: string, to: string, opts: TreeCallOptions): Promise<void> {
+    await this.#direct(false, from, to, opts);
+  }
+
+  async #direct(move: boolean, from: string, to: string, opts: TreeCallOptions): Promise<void> {
+    const src = this.resolve(from);
+    const dst = this.resolve(to);
     const { call } = this.#reach([from, to], opts);
     if (!this.#o.transfer) throw new ContractError("invalid", "this tree has no direct path between computers");
-    const { answer: _one, ...plain } = call;
-    const given = [...(opts.answer ? [opts.answer] : []), ...(opts.answers ?? [])];
-    const answers = {
-      ...pick(given, src.computer, "source"),
-      ...pick(given, dst.computer, "destination"),
-    };
-    const r = await this.#o.transfer({ from, to, move: true, source: src.computer, destination: dst.computer, call: plain, answers });
+    const r = await this.#o.transfer({ from, to, move, source: src.computer, destination: dst.computer, call });
     if (r.kept > 0) {
       throw new ContractError("conflict", `${to} has the files; ${r.kept} of them changed at ${from} while they moved, so they stay there too`, { kept: r.kept });
     }
@@ -201,10 +222,10 @@ export class CoreTree implements Tree {
   }
 
   /** A file's bytes in parts, for the tool layer: `offset` and `length` reach the holder. */
-  async readPart(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; offset?: number; length?: number }): Promise<TreeData> {
+  async readPart(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; offset?: number; length?: number; noFollow?: boolean }): Promise<TreeData> {
     const { holder, call } = this.#reach([path], opts);
     return holder.read(path, {
-      ...call,
+      ...call, ...(opts.noFollow ? { noFollow: true } : {}),
       ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }),
       ...(opts.offset === undefined ? {} : { offset: opts.offset }),
       ...(opts.length === undefined ? {} : { length: opts.length }),

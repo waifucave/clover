@@ -4,7 +4,10 @@
 // sealed card unless the user makes it in their own terminal (§5.5): a device's add (`device.pair.confirm`) and its
 // revoke (`device.revoke`).
 //
-// Not here yet: `main.*` (the lease, H-M2), and the peer methods (`peer.*`, `sync.*`), which ride the link.
+// The main computer's methods (`main.get`, `main.set`, `main.handOver`, H-M2) are here too. Choosing the main is a
+// sensitive change (§5.5): a sealed card unless the user is in their own terminal. Choosing another computer asks that
+// computer, which shows its own card (`mountMainChoiceRequests`), since its main choice is its own to take. The peer
+// methods (`peer.*`, `sync.*`) ride the link and aren't here.
 import {
   CLOVER_ERR, DEVICES_METHODS, ERR,
   type AccountView, type Caller, type ChangeResult, type DeviceView, type LinkView, type MethodSpec,
@@ -12,7 +15,8 @@ import {
 import type { z } from "zod";
 import type { ApprovalBroker, ApprovalRequest } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
-import { isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
+import { ContractError, isContractError, RPC_ERROR_OF, type Unsubscribe } from "../contracts/common";
+import type { MainComputerHandle } from "../lease/main";
 import { renameRemote } from "../links/relay";
 import { answerKeyOf, type DeviceRecord } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";
@@ -67,26 +71,41 @@ const inTerminal = (ctx: MethodContext): boolean => ctx.caller.kind === "user" &
 export const UNNAMED_CARD = "card:unnamed";
 
 /** Opens a sealed card and hands back its id with the decision still to come. */
-export type CardOpener = (req: ApprovalRequest) => Promise<{ card?: string; allowed: Promise<boolean> }>;
+/** Opens a card. `checked` is the children the answer checked, for a card with a checkbox per child (the group's
+ *  cards: the computers to invite, the keys to keep). */
+export type CardOpener = (req: ApprovalRequest) => Promise<{ card?: string; allowed: Promise<boolean>; checked?: Promise<readonly string[]> }>;
 
-/** The opener over lane C's broker: the card's id comes from its `requested` event. */
+/** The opener over lane C's broker: the card's id comes from its `requested` event, the checked children from its
+ *  `resolved` one. */
 export function brokerCardOpener(broker: Pick<ApprovalBroker, "request" | "watch">): CardOpener {
   return (req) => new Promise((resolve) => {
     let settled = false;
+    let cardId: string | undefined;
+    let gotChecked: (c: readonly string[]) => void = () => undefined;
+    const checked = new Promise<readonly string[]>((r) => (gotChecked = r));
     let off: Unsubscribe = () => undefined;
     const allowed = broker.request(req).then((d) => d.allowed);
     off = broker.watch((e) => {
-      if (settled || e.type !== "requested" || e.card.kind !== req.kind || e.card.change !== req.change) return;
-      settled = true;
-      off();
-      resolve({ card: e.card.id, allowed });
+      if (e.type === "requested" && !settled && e.card.kind === req.kind && e.card.change === req.change) {
+        settled = true;
+        cardId = e.card.id;
+        resolve({ card: e.card.id, allowed, checked });
+      } else if (e.type === "resolved" && cardId !== undefined && e.cardId === cardId) {
+        gotChecked(e.children ?? []);
+        off();
+      }
     });
-    void allowed.then(() => {
-      if (settled) return;
-      settled = true;
-      off();
-      resolve({ allowed });
-    });
+    void allowed.finally(() => {
+      if (!settled) {
+        settled = true;
+        resolve({ allowed, checked });
+      }
+      // A card decided without a resolved event that names it (a level, a rule) checked nothing.
+      setTimeout(() => {
+        gotChecked([]);
+        off();
+      }, 0);
+    }).catch(() => undefined);
   });
 }
 
@@ -94,6 +113,8 @@ export interface DevicesMethodsDeps {
   registry: FileDeviceRegistry;
   pairing: PairingService;
   transport: Pick<LinkTransport, "links" | "watch" | "connect">;
+  /** The main computer (the links' `main`); without it `main.*` answer that there's no lease here. */
+  main?: Pick<MainComputerHandle, "lease" | "coordinator">;
   account?: AccountClient;
   clock: Clock;
   openCard: CardOpener;
@@ -110,7 +131,10 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
   });
 
   return {
-    [M.deviceList.name]: handler(M.deviceList, () => ({ devices: registry.list().map((d) => deviceView(d, registry.self().id, linkOf(deps.transport, d.id))) })),
+    [M.deviceList.name]: handler(M.deviceList, () => {
+      const main = deps.main?.lease.state().main ?? null;
+      return { devices: registry.list().map((d) => deviceView(d, registry.self().id, linkOf(deps.transport, d.id), d.id === main)) };
+    }),
 
     [M.deviceRename.name]: handler(M.deviceRename, async (p, ctx): Promise<ChangeResult> => {
       requireUser(ctx, "rename a device");
@@ -202,21 +226,93 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
       return { ok: true as const };
     }),
 
+    // TODO(H-M3, lane B's heldBy): once lane B's follow-up (lane/b-m1-followups, fd143e92e) is on main, `LeaseView` has
+    // `heldBy`: fill it here and in `lease_changed` below, from this computer's registry: `self` for this device, a
+    // known computer by its name, `unknown` for a holder it doesn't know (not paired yet, or removed), null with none.
+    [M.mainGet.name]: handler(M.mainGet, () => ({ lease: mustMain(deps).lease.state() })),
+
+    [M.mainSet.name]: handler(M.mainSet, async (p, ctx): Promise<ChangeResult> => {
+      requireUser(ctx, "choose the main computer");
+      const main = mustMain(deps);
+      const d = registry.get(p.device);
+      if (!d || d.revokedAt !== undefined) throw new MethodError(ERR.NOT_FOUND, `no device ${p.device}`);
+      if (!d.runsCore) throw new MethodError(ERR.INVALID_PARAMS, `${d.name} doesn't run Clover's core, so it can't be the main computer`);
+      if (p.device !== registry.self().id) {
+        // That computer's choice is its own: it shows its own card (any of the user's devices may answer it).
+        try {
+          const link = await deps.transport.connect(p.device);
+          return await link.request<ChangeResult>(MAIN_CHOOSE, {});
+        } catch (err) {
+          if (isContractError(err, "offline")) throw new MethodError(CLOVER_ERR.COMPUTER_OFFLINE, `${d.name} is offline: choose it while it's on`);
+          throw err;
+        }
+      }
+      return chooseHere(main, deps.openCard, d.name, inTerminal(ctx));
+    }),
+
+    [M.mainHandOver.name]: handler(M.mainHandOver, async (_p, ctx) => {
+      requireUser(ctx, "hand the bots over");
+      return mustMain(deps).coordinator.handOver();
+    }),
+
     [M.clockStatus.name]: handler(M.clockStatus, () => deps.clock.status()),
 
     [M.linkList.name]: handler(M.linkList, () => ({ links: deps.transport.links() })),
   };
 }
 
+/** The link's own request asking this computer to become the main one: it shows its own card first. */
+export const MAIN_CHOOSE = "link.lease.choose";
+
+function mustMain(deps: Pick<DevicesMethodsDeps, "main">): NonNullable<DevicesMethodsDeps["main"]> {
+  if (!deps.main) throw new MethodError(ERR.INVALID_REQUEST, "there's no main computer on this daemon");
+  return deps.main;
+}
+
+const mainCard = (name: string): ApprovalRequest => ({
+  kind: "change", origin: "user", computers: [], effect: "other", change: "main-computer",
+  fields: { title: { type: "text", text: `Make ${name} the main computer?` }, detail: { type: "list", items: [name] } },
+});
+
+/** Makes this computer the main one: at once from the user's terminal, otherwise once its card is approved. */
+async function chooseHere(main: NonNullable<DevicesMethodsDeps["main"]>, openCard: CardOpener, name: string, terminal: boolean): Promise<ChangeResult> {
+  if (terminal) {
+    await main.coordinator.chooseSelf();
+    return { applied: true };
+  }
+  const opened = await openCard(mainCard(name));
+  if (!opened.card) {
+    if (!(await opened.allowed)) throw new MethodError(ERR.INVALID_REQUEST, "refused");
+    await main.coordinator.chooseSelf();
+    return { applied: true };
+  }
+  void opened.allowed.then((ok) => (ok ? main.coordinator.chooseSelf() : undefined)).catch(() => undefined);
+  return { applied: false, card: opened.card };
+}
+
+/** Takes another computer's request that this one become the main computer (the user chose it there): this computer
+ *  shows its own sealed card, since a peer's word never makes the choice by itself (review N7, `main-computer`). */
+export function mountMainChoiceRequests(o: {
+  transport: Pick<LinkTransport, "handle">; registry: FileDeviceRegistry; main: NonNullable<DevicesMethodsDeps["main"]>; openCard: CardOpener;
+}): Unsubscribe {
+  return o.transport.handle(MAIN_CHOOSE, async (_raw, from) => {
+    const d = o.registry.get(from);
+    if (!d || d.revokedAt !== undefined || !d.runsCore) throw new ContractError("refused", "only a paired computer asks");
+    const self = o.registry.self();
+    return chooseHere(o.main, o.openCard, self.name, false);
+  });
+}
+
 function linkOf(t: Pick<LinkTransport, "links">, id: string): LinkView | undefined {
   return t.links().find((l) => l.peer === id);
 }
 
-export function deviceView(d: DeviceRecord, self: string, link: LinkView | undefined): DeviceView {
+export function deviceView(d: DeviceRecord, self: string, link: LinkView | undefined, isMain = false): DeviceView {
   // A phone that names no answer key answers with its own device key; how its OS holds that isn't recorded yet.
-  const answers = answerKeyOf(d) === undefined ? undefined : { held: d.answerKey?.held ?? ("none" as const) };
+  // A phone answers with its own answer key only, never its link key (item 91).
+  const answers = answerKeyOf(d) === undefined || (d.kind === "phone" && d.answerKey === undefined) ? undefined : { held: d.answerKey?.held ?? ("none" as const) };
   return {
-    id: d.id, name: d.name, kind: d.kind, runsCore: d.runsCore, online: d.id === self || link?.up === true, isThis: d.id === self, isMain: false, addedAt: d.addedAt,
+    id: d.id, name: d.name, kind: d.kind, runsCore: d.runsCore, online: d.id === self || link?.up === true, isThis: d.id === self, isMain, addedAt: d.addedAt,
     ...(d.os ? { os: d.os } : {}), ...(d.computer ? { computer: d.computer } : {}), ...(d.hasDisplay !== undefined ? { hasDisplay: d.hasDisplay } : {}),
     ...(link ? { link } : {}), ...(d.lastSeenAt !== undefined ? { lastSeenAt: d.lastSeenAt } : {}), ...(answers ? { answers } : {}),
   };
@@ -224,7 +320,7 @@ export function deviceView(d: DeviceRecord, self: string, link: LinkView | undef
 
 /** The devices area's events, from the registry, the links, the pairings and the account. */
 export function devicesEvents(
-  deps: { registry: FileDeviceRegistry; transport: Pick<LinkTransport, "links" | "watch">; pairing: PairingService; account?: AccountClient; clock: { now(): number } },
+  deps: { registry: FileDeviceRegistry; transport: Pick<LinkTransport, "links" | "watch">; pairing: PairingService; account?: AccountClient; clock: { now(): number }; main?: Pick<MainComputerHandle, "lease"> },
   emit: (event: Record<string, unknown> & { type: string; ts: number }) => void,
 ): Unsubscribe {
   const ts = () => deps.clock.now();
@@ -249,6 +345,16 @@ export function devicesEvents(
     });
   }));
   if (deps.account) offs.push(deps.account.watch((account) => emit({ type: "account_changed", ts: ts(), account })));
+  if (deps.main) {
+    let last = "";
+    offs.push(deps.main.lease.watch((lease) => {
+      const key = JSON.stringify(lease);
+      if (key === last) return;
+      last = key;
+      // TODO(H-M3, lane B's heldBy): `heldBy` as in `main.get` once B's follow-up is on main.
+      emit({ type: "lease_changed", ts: ts(), lease });
+    }));
+  }
   return () => {
     for (const off of offs.splice(0)) off();
   };

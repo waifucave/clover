@@ -6,6 +6,7 @@ import { ToolRegistry } from "../../../src/agent/tools/registry";
 import { registerLspTools } from "../../../src/agent/tools/lsp";
 import { LspClient } from "../../../src/agent/lsp/client";
 import { LspManager } from "../../../src/agent/lsp/manager";
+import { darwinDescribe } from "../../helpers/darwin-only";
 
 // lsp consolidation T2: the single `lsp` tool (action-routed) replaces lsp_diagnostics/
 // lsp_definition/lsp_references. Fence discipline and the 1-based<->0-based position boundary are
@@ -15,7 +16,6 @@ import { LspManager } from "../../../src/agent/lsp/manager";
 
 const FIXTURE = join(import.meta.dir, "../lsp/fake-server.ts");
 const FAKE = { command: "bun", args: ["run", FIXTURE] };
-const isMac = process.platform === "darwin";
 
 // Same pattern as client.test.ts's own withEnv: spawn() inherits the parent's env synchronously
 // at the moment it's called (inside start(), before its first await), so setting/restoring env
@@ -126,7 +126,7 @@ describe("lsp tool: pre-spawn guards (fence + language routing + param validatio
   });
 });
 
-describe.if(isMac)("lsp tool: happy-path formatting + position conversion (real fake-server)", () => {
+darwinDescribe("lsp tool: happy-path formatting + position conversion (real fake-server)", () => {
   test("action 'diagnostics': golden formatting — severities, source, no-source, empty", async () => {
     const { root, lsp, r } = setup();
     try {

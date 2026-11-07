@@ -100,7 +100,18 @@ for (const story of stories) {
           const seen = new Map();
           const observer = new IntersectionObserver((entries) => entries.forEach((e) => seen.set(e.target, e)), { trackVisibility: true, delay: 100 });
           parts.forEach((p) => observer.observe(p));
-          setTimeout(() => {
+          // Sampled once every part has its first entry and the page has painted a few more frames, never on a fixed
+          // clock: a busy runner (the merge queue's) can take seconds to deliver a filmstrip's thirty-odd entries, and a
+          // part sampled before its entry came reads as "no entry" though nothing is wrong. After 15 s, what's missing
+          // is a real failure.
+          const started = performance.now();
+          const frames = (n) => new Promise((r) => { const step = () => (n-- <= 0 ? r() : requestAnimationFrame(step)); requestAnimationFrame(step); });
+          const sample = (done) => {
+            const all = parts.every((p) => seen.has(p));
+            if ((all && performance.now() - started >= 700) || performance.now() - started >= 15_000) return void frames(3).then(() => setTimeout(done, 150));
+            setTimeout(() => sample(done), 100);
+          };
+          sample(() => {
             observer.disconnect();
             for (const p of parts) {
               const e = seen.get(p);
@@ -126,7 +137,7 @@ for (const story of stories) {
               tally.visible++;
             }
             resolve(tally);
-          }, 700);
+          });
         }),
     );
     const expected = { visible: story.sealed?.visible ?? 0, moving: story.sealed?.moving ?? 0, scrolled: story.sealed?.scrolled ?? 0 };

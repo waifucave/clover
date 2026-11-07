@@ -11,6 +11,7 @@ import { parseVolumeUuidReply, readVolumeId } from "../../src/cowork/host-env/vo
 import type { ProcessInspection, ProcessTable } from "../../src/cowork/native/admission-probes";
 import type { CoworkNativeLaunchEntry } from "../../src/cowork/native/stop-proof";
 import type { CoworkVolumeRecord } from "../../src/cowork/volumes";
+import { darwinTest } from "../helpers/darwin-only";
 
 // N2 S7B part 1: the host facts of the production native environment, over temp directories and fakes. No real machine id, process or Keychain item is read.
 const roots: string[] = [];
@@ -247,7 +248,7 @@ describe("the two guard probes", () => {
       expect(probeOf(free).imagesUnlocked([{ ...pair[0]!, identity: null } as CoworkVolumeRecord, pair[1]!])).toBe(false);
       expect(probeOf(free).imagesUnlocked([{ ...pair[0]!, purpose: "other" } as unknown as CoworkVolumeRecord, pair[1]!])).toBe(false);
     });
-    test.skipIf(process.platform !== "darwin")("the real probe: a held exclusive lock on the image makes it locked, releasing it makes it unlocked, and the identity is the file's", () => {
+    darwinTest("the real probe: a held exclusive lock on the image makes it locked, releasing it makes it unlocked, and the identity is the file's", () => {
       const home = temp(), directory = join(home, "cowork", "workspaces", "workspace_a");
       mkdirSync(directory, { recursive: true });
       for (const file of ["data.ext4", "env.ext4"]) writeFileSync(join(directory, file), "x", { mode: 0o600 });
@@ -276,7 +277,7 @@ describe("the volume identity", () => {
     expect(readVolumeId("/x", { query: () => reply(20, good) })).toBe("vol-12345678-9abc-def0-1122-334455667788");
     expect(readVolumeId("/x", { query: () => { throw new Error("no"); } })).toBeNull();
   });
-  test.skipIf(process.platform !== "darwin")("the real query answers a ledger-safe id for a real path and null for a missing one", () => {
+  darwinTest("the real query answers a ledger-safe id for a real path and null for a missing one", () => {
     const id = readVolumeId(temp());
     expect(id === null || /^vol-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)).toBe(true);
     expect(readVolumeId(join(temp(), "does-not-exist"))).toBeNull();

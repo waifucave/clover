@@ -8,12 +8,14 @@ import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../../src/co
 import type { Unsubscribe } from "../../src/contracts/common";
 import type { DeviceChange, DeviceRecord, DeviceRegistry } from "../../src/contracts/device-registry";
 import { FakeDeviceRegistry } from "../../src/contracts/fakes/device-registry";
-import type { Fence, FenceOp } from "../../src/contracts/fence";
+import type { Fence, FenceContext, FenceOp } from "../../src/contracts/fence";
 import { FakeFence } from "../../src/contracts/fakes/fence";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
-import { startComputerNode, type ComputerNode } from "../../src/computers/node";
+import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "../../src/computers/node";
 import { hostOs } from "../../src/tree/names";
+import type { AnswerAsker, PeerReviewer } from "../../src/tree/judge";
 import type { ToolExecutor } from "../../src/tree/service";
+import type { ShellLauncher } from "../../src/tree/terminals";
 
 export interface TestComputer {
   name: string;
@@ -58,7 +60,8 @@ export const shellExecutor: ToolExecutor = {
 const posix = (p: string) => p.replace(/\\/g, "/");
 function posixFence(f: Pick<Fence, "check" | "fencedSet">): Pick<Fence, "check" | "fencedSet"> {
   return {
-    check: (op: FenceOp) => f.check(op.op === "move" ? { ...op, path: posix(op.path), to: posix(op.to) } : { ...op, path: posix(op.path) }),
+    // The caller's reach for the pattern items (`bot-memory`, B's #197) goes through as the holder gives it.
+    check: (op: FenceOp, ctx?: FenceContext) => f.check(op.op === "move" ? { ...op, path: posix(op.path), to: posix(op.to) } : { ...op, path: posix(op.path) }, ctx),
     fencedSet: () => f.fencedSet(),
   };
 }
@@ -112,6 +115,12 @@ export interface ClusterOptions {
   devices?: (name: string) => DeviceRegistry | undefined;
   answers?: (name: string) => { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer } | undefined;
   deviceIds?: Record<string, string>;
+  /** The calling computer's side of R1: shows the user another computer's card and signs their answer. */
+  askUser?: (name: string) => AnswerAsker | undefined;
+  reviewer?: (name: string) => PeerReviewer | undefined;
+  terminals?: (name: string) => { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> } | undefined;
+  mcp?: (name: string) => ComputerNodeOptions["mcp"] | undefined;
+  lease?: (name: string) => ComputerNodeOptions["lease"] | undefined;
 }
 
 export class Cluster {
@@ -148,6 +157,11 @@ export class Cluster {
     mkdirSync(cloverHome, { recursive: true });
     const bots: string[] = [];
     const answers = opts.answers?.(name);
+    const askUser = opts.askUser?.(name);
+    const reviewer = opts.reviewer?.(name);
+    const terminals = opts.terminals?.(name);
+    const mcp = opts.mcp?.(name);
+    const lease = opts.lease?.(name);
     const node = startComputerNode({
       clock,
       transport: this.net.endpoint(device),
@@ -159,6 +173,11 @@ export class Cluster {
       bots: () => bots,
       devices,
       ...(answers ? { answers } : {}),
+      ...(askUser ? { askUser } : {}),
+      ...(reviewer ? { reviewer } : {}),
+      ...(terminals ? { terminals } : {}),
+      ...(mcp ? { mcp } : {}),
+      lease: lease ?? null,
     });
     const c: TestComputer = { name, device, home, cloverHome, node, bots };
     this.computers.set(name, c);
