@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { decodeStreamFrame, STREAM_MAX_PAYLOAD, StreamFrameReader, StreamFormatError, type StreamChunk } from "../protocol/browser-stream";
 import type { LinkStream } from "../protocol/rtc-link";
-import { decodableCodecs, receiveTabStreams, type TabPicture, type TabStreamDecoders, TabStreamView } from "../src/tab-stream";
+import { decodableCodecs, ENDED_MESSAGE_MAX, jpegSize, receiveTabStreams, type TabPicture, type TabStreamDecoders, TabStreamView } from "../src/tab-stream";
 
 const hex = (h: string) => new Uint8Array(Buffer.from(h, "hex"));
 const GOLDEN = {
@@ -28,6 +28,10 @@ function frame(kind: 1 | 2 | 3, payload: Uint8Array, opts: { key?: boolean; ts?:
 }
 const config = (codec: string, codecString: string) => frame(1, new TextEncoder().encode(JSON.stringify({ codec, width: 640, height: 400, codecString })));
 const pic = (n: number, key = true, ts = n) => frame(2, new Uint8Array([n]), { key, ts });
+/** The start of a JPEG with its frame header (SOF0), and `n` as its last byte for the fake decoder to report. */
+const jpegBytes = (n: number, width = 640, height = 400, sof = 0xc0) =>
+  new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 4, 0, 0, 0xff, sof, 0, 11, 8, height >> 8, height & 255, width >> 8, width & 255, 1, 1, 0x11, 0, n]);
+const jpic = (n: number, opts: { width?: number; height?: number } = {}) => frame(2, jpegBytes(n, opts.width, opts.height), { key: true, ts: n });
 
 describe("the stream's frames", () => {
   test("lane L's encoder's bytes decode to its chunks", () => {
@@ -68,7 +72,7 @@ function images() {
   const decoders: TabStreamDecoders = {
     decodeImage: (jpeg) =>
       new Promise<TabPicture>((resolve, reject) => {
-        const n = jpeg[0]!;
+        const n = jpeg[jpeg.byteLength - 1]!;
         pending.push({ bytes: n, resolve: () => resolve({ image: {} as CanvasImageSource, width: 640, height: n, close: () => closed.push(n) }), reject });
       }),
   };
@@ -81,7 +85,7 @@ describe("a JPEG stream (a headless computer's)", () => {
     const im = images();
     const shown: number[] = [];
     const view = new TabStreamView({ decoders: im.decoders, onPicture: (p) => shown.push(p.height) });
-    view.push(new Uint8Array([...config("jpeg", "jpeg"), ...pic(1), ...pic(2), ...pic(3)]));
+    view.push(new Uint8Array([...config("jpeg", "jpeg"), ...jpic(1), ...jpic(2), ...jpic(3)]));
     expect(im.pending.map((p) => p.bytes)).toEqual([1]);
     im.pending[0]!.resolve();
     await tick();
@@ -98,10 +102,10 @@ describe("a JPEG stream (a headless computer's)", () => {
     const errors: string[] = [];
     const view = new TabStreamView({ decoders: im.decoders, onPicture: (p) => shown.push(p.height), onError: (m) => errors.push(m) });
     view.push(GOLDEN.jpegConfig);
-    view.push(pic(7));
+    view.push(jpic(7));
     im.pending[0]!.reject();
     await tick();
-    view.push(pic(8));
+    view.push(jpic(8));
     im.pending[1]!.resolve();
     await tick();
     expect(shown).toEqual([8]);
@@ -113,7 +117,7 @@ describe("a JPEG stream (a headless computer's)", () => {
     const shown: number[] = [];
     const ended: unknown[] = [];
     const view = new TabStreamView({ decoders: im.decoders, onPicture: (p) => shown.push(p.height), onEnded: (e) => ended.push(e) });
-    view.push(new Uint8Array([...config("jpeg", "jpeg"), ...pic(4), ...GOLDEN.ended]));
+    view.push(new Uint8Array([...config("jpeg", "jpeg"), ...jpic(4), ...GOLDEN.ended]));
     im.pending[0]!.resolve();
     await tick();
     expect(shown).toEqual([]);
@@ -129,10 +133,12 @@ function video(supported: string[] = ["avc1.42E033", "vp8"]) {
   const instances: FakeDecoder[] = [];
   class FakeDecoder {
     state: CodecState = "unconfigured";
+    decodeQueueSize = 0;
     constructor(readonly init: VideoDecoderInit) {
       instances.push(this);
     }
     configure(c: VideoDecoderConfig) {
+      if (c.codec === "avc1.FFFFFF") throw new TypeError("not a codec string");
       this.state = "configured";
       log.push(`configure ${c.codec} ${c.codedWidth}x${c.codedHeight} ${c.optimizeForLatency}`);
     }
@@ -144,9 +150,9 @@ function video(supported: string[] = ["avc1.42E033", "vp8"]) {
       this.state = "closed";
       log.push("close decoder");
     }
-    fail() {
+    fail(name = "EncodingError") {
       this.state = "closed";
-      this.init.error(new DOMException("bad"));
+      this.init.error(new DOMException("bad", name));
     }
     static async isConfigSupported(c: VideoDecoderConfig) {
       return { supported: supported.includes(c.codec), config: c };
@@ -243,5 +249,90 @@ describe("the link's browser.stream streams", () => {
     handler!(broken.stream, { v: 1, stream: "st_2", tab: "tab_1", computer: "Studio" });
     broken.send(new Uint8Array([9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 0, 0, 0, 0]));
     expect(broken.aborted).toEqual(["can't show it"]);
+  });
+});
+
+describe("the review's edges", () => {
+  test("a config the browser can't take fails the stream once, at configure or as NotSupportedError", () => {
+    const v = video();
+    const errors: string[] = [];
+    const bad = new TabStreamView({ decoders: v.decoders, onPicture: () => {}, onError: (m) => errors.push(m) });
+    bad.push(new Uint8Array([...config("h264", "avc1.FFFFFF"), ...pic(1, true, 1), ...pic(2, true, 2)]));
+    expect(errors).toEqual(["this browser can't decode h264 video (avc1.FFFFFF at 640x400)"]);
+    expect(bad.closed).toBe(true);
+
+    const later = new TabStreamView({ decoders: v.decoders, onPicture: (p) => p.close(), onError: (m) => errors.push(m) });
+    later.push(new Uint8Array([...config("h264", "avc1.64003C"), ...pic(1, true, 1)]));
+    v.instances.at(-1)!.fail("NotSupportedError");
+    later.push(pic(2, true, 2));
+    expect(errors.at(-1)).toBe("this browser can't decode h264 video (avc1.64003C at 640x400)");
+    expect(later.closed).toBe(true);
+    expect(v.log.filter((l) => l.startsWith("decode"))).toEqual(["decode key 1"]); // no retry at the next keyframe
+  });
+
+  test("a decoder that falls behind drops deltas until the next keyframe", () => {
+    const v = video();
+    const view = new TabStreamView({ decoders: v.decoders, onPicture: (p) => p.close() });
+    view.push(new Uint8Array([...config("vp8", "vp8"), ...pic(1, true, 1)]));
+    v.instances[0]!.decodeQueueSize = 4;
+    view.push(new Uint8Array([...pic(2, false, 2), ...pic(3, false, 3)]));
+    v.instances[0]!.decodeQueueSize = 0;
+    view.push(new Uint8Array([...pic(4, false, 4), ...pic(5, true, 5), ...pic(6, false, 6)]));
+    expect(v.log.filter((l) => l.startsWith("decode"))).toEqual(["decode key 1", "decode key 5", "decode delta 6"]);
+  });
+
+  test("a JPEG's own size is read before decoding: none, or past 16384 a side, is never decoded", async () => {
+    expect(jpegSize(jpegBytes(1, 640, 400))).toEqual({ width: 640, height: 400 });
+    expect(jpegSize(jpegBytes(1, 1280, 800, 0xc2))).toEqual({ width: 1280, height: 800 }); // progressive
+    expect(jpegSize(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(jpegSize(jpegBytes(1).subarray(0, 12))).toBeNull();
+    const im = images();
+    const view = new TabStreamView({ decoders: im.decoders, onPicture: () => {} });
+    view.push(new Uint8Array([...config("jpeg", "jpeg"), ...jpic(1, { width: 20000 }), ...frame(2, new Uint8Array([1, 2, 3]), { key: true })]));
+    view.push(jpic(2, { height: 0 }));
+    expect(im.pending).toHaveLength(0);
+    view.push(jpic(3, { width: 16384, height: 16384 }));
+    expect(im.pending.map((p) => p.bytes)).toEqual([3]);
+  });
+
+  test("a stream that finishes without an ended frame ends; one that breaks is an error; messages are capped", () => {
+    const ended: unknown[] = [];
+    const errors: string[] = [];
+    const quiet = new TabStreamView({ decoders: images().decoders, onPicture: () => {}, onEnded: (e) => ended.push(e) });
+    quiet.lose();
+    expect(ended).toEqual([{ reason: "failed", message: "the stream ended without saying why" }]);
+    const broke = new TabStreamView({ decoders: images().decoders, onPicture: () => {}, onError: (m) => errors.push(m) });
+    broke.lose(new Error("the stream's channel closed"));
+    expect(errors).toEqual(["the stream broke: the stream's channel closed"]);
+
+    const long = new TabStreamView({ decoders: images().decoders, onPicture: () => {}, onEnded: (e) => ended.push(e) });
+    long.push(frame(3, new TextEncoder().encode(JSON.stringify({ reason: "failed", message: "é".repeat(500) }))));
+    const message = (ended.at(-1) as { message: string }).message;
+    expect(Array.from(message)).toHaveLength(ENDED_MESSAGE_MAX);
+    expect(message.endsWith("…")).toBe(true);
+  });
+
+  test("a JSON payload that isn't an object is a format error, as in lane L's decoder", () => {
+    for (const body of ["3", "null", '"stopped"', "[]"]) {
+      expect(() => decodeStreamFrame(frame(3, new TextEncoder().encode(body)))).toThrow(StreamFormatError);
+      expect(() => decodeStreamFrame(frame(1, new TextEncoder().encode(body)))).toThrow(StreamFormatError);
+    }
+  });
+
+  test("a large frame in many pieces is read once whole, even if the link reuses its buffer", () => {
+    const payload = new Uint8Array(100_000).map((_, i) => i & 255);
+    const whole = new Uint8Array([...frame(2, payload, { key: true, ts: 9 }), ...GOLDEN.delta]);
+    const reader = new StreamFrameReader();
+    const got: StreamChunk[] = [];
+    const scratch = new Uint8Array(997);
+    for (let at = 0; at < whole.byteLength; at += scratch.byteLength) {
+      const piece = whole.subarray(at, at + scratch.byteLength);
+      scratch.set(piece);
+      got.push(...reader.push(scratch.subarray(0, piece.byteLength)));
+      scratch.fill(0); // the link reusing its buffer
+    }
+    expect(got).toHaveLength(2);
+    expect(got[0]).toEqual({ kind: "frame", key: true, timestamp: 9, data: payload });
+    expect(got[1]).toEqual(decodeStreamFrame(GOLDEN.delta));
   });
 });

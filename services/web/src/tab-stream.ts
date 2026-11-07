@@ -63,13 +63,55 @@ export async function decodableCodecs(d: TabStreamDecoders = browserDecoders()):
   return out;
 }
 
+/** The longest `ended` message the view passes on: it is the computer's text, shown as is. */
+export const ENDED_MESSAGE_MAX = 200;
+/** Deltas waiting in the decoder past this many mean it can't keep up: drop them until the next keyframe. */
+export const DECODE_QUEUE_MAX = 3;
+/** The largest picture side the view decodes, as the frame format's config allows. */
+export const PICTURE_SIDE_MAX = 16384;
+
+/** A JPEG's size from its start-of-frame marker, or null when it has none (not a JPEG). */
+export function jpegSize(jpeg: Uint8Array): { width: number; height: number } | null {
+  if (jpeg.byteLength < 4 || jpeg[0] !== 0xff || jpeg[1] !== 0xd8) return null;
+  let at = 2;
+  while (at + 4 <= jpeg.byteLength) {
+    if (jpeg[at] !== 0xff) return null;
+    const marker = jpeg[at + 1]!;
+    if (marker === 0xff) {
+      at += 1; // fill byte
+      continue;
+    }
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      at += 2; // markers with no length
+      continue;
+    }
+    if (marker === 0xd9 || marker === 0xda) return null; // the picture's data before any frame header
+    const length = (jpeg[at + 2]! << 8) | jpeg[at + 3]!;
+    if (length < 2) return null;
+    // SOF0–SOF15, less DHT (C4), JPG (C8) and DAC (CC).
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      if (at + 9 > jpeg.byteLength) return null;
+      return { height: (jpeg[at + 5]! << 8) | jpeg[at + 6]!, width: (jpeg[at + 7]! << 8) | jpeg[at + 8]! };
+    }
+    at += 2 + length;
+  }
+  return null;
+}
+
+function capped(message: string): string {
+  const chars = Array.from(message);
+  return chars.length <= ENDED_MESSAGE_MAX ? message : `${chars.slice(0, ENDED_MESSAGE_MAX - 1).join("")}…`;
+}
+
 export interface TabStreamViewOptions {
   decoders?: TabStreamDecoders;
   /** The newest picture. */
   onPicture(picture: TabPicture): void;
-  /** The computer ended the stream (stopped, the tab closed, or it failed). */
+  /** The stream ended: the computer's `ended` frame (stopped, the tab closed, or it failed; its message at most
+   *  `ENDED_MESSAGE_MAX` characters), or the link stream finishing without one (`failed`). */
   onEnded?(ended: { reason: "stopped" | "closed" | "failed"; message?: string }): void;
-  /** This side can't go on: a malformed frame, or a codec this browser can't decode. The stream should be ended. */
+  /** This side can't go on (a malformed frame, a codec or config this browser can't decode), or the link stream
+   *  broke. The stream should be ended. */
   onError?(message: string): void;
 }
 
@@ -140,7 +182,7 @@ export class TabStreamView {
       case "ended":
         this.#ended = true;
         this.close();
-        this.#o.onEnded?.(c.message !== undefined ? { reason: c.reason, message: c.message } : { reason: c.reason });
+        this.#o.onEnded?.(c.message !== undefined ? { reason: c.reason, message: capped(c.message) } : { reason: c.reason });
         return;
     }
   }
@@ -162,7 +204,10 @@ export class TabStreamView {
   #openVideo(c: Config): void {
     const generation = this.#generation;
     const Decoder = this.#d.VideoDecoder!;
-    const decoder = new Decoder({
+    const unsupported = `this browser can't decode ${c.codec} video (${c.codecString} at ${c.width}x${c.height})`;
+    let decoder: VideoDecoder;
+    try {
+      decoder = new Decoder({
       output: (frame) => {
         if (generation !== this.#generation || this.#done) {
           frame.close();
@@ -170,15 +215,21 @@ export class TabStreamView {
         }
         this.#o.onPicture({ image: frame, width: frame.displayWidth, height: frame.displayHeight, close: () => frame.close() });
       },
-      // A decoder that errs is closed; the next keyframe opens a new one.
-      error: () => {
-        if (generation !== this.#generation) return;
+      error: (e) => {
+        if (generation !== this.#generation || this.#done) return;
         this.#video = undefined;
+        // A config the browser can't decode won't decode at the next keyframe either: the stream is done with.
+        if ((e as { name?: string } | undefined)?.name === "NotSupportedError") return this.#fail(unsupported);
+        // Anything else (one bad frame): the next keyframe opens a new decoder.
         this.#needKey = true;
       },
-    });
-    // H.264 with no `description` is Annex B, as the sender writes it (SPS and PPS in band before each keyframe).
-    decoder.configure({ codec: c.codecString, codedWidth: c.width, codedHeight: c.height, optimizeForLatency: true });
+      });
+      // H.264 with no `description` is Annex B, as the sender writes it (SPS and PPS in band before each keyframe).
+      decoder.configure({ codec: c.codecString, codedWidth: c.width, codedHeight: c.height, optimizeForLatency: true });
+    } catch {
+      this.#fail(unsupported);
+      return;
+    }
     this.#video = decoder;
   }
 
@@ -191,7 +242,15 @@ export class TabStreamView {
       this.#image(f.data);
       return;
     }
-    if (this.#video === undefined || this.#video.state === "closed") this.#openVideo(config);
+    if (this.#video === undefined || this.#video.state === "closed") {
+      this.#openVideo(config);
+      if (this.#done) return;
+    }
+    // A decoder that can't keep up: drop deltas until the next keyframe rather than fall further behind.
+    if (!f.key && this.#video!.decodeQueueSize > DECODE_QUEUE_MAX) {
+      this.#needKey = true;
+      return;
+    }
     try {
       this.#video!.decode(new this.#d.EncodedVideoChunk!({ type: f.key ? "key" : "delta", timestamp: f.timestamp, data: f.data }));
     } catch {
@@ -202,6 +261,9 @@ export class TabStreamView {
 
   /** Newest picture first: while one decodes, only the latest that arrived meanwhile waits. */
   #image(jpeg: Uint8Array): void {
+    // A picture of no size, or larger than any tab, is never handed to the image decoder.
+    const size = jpegSize(jpeg);
+    if (size === null || size.width === 0 || size.height === 0 || size.width > PICTURE_SIDE_MAX || size.height > PICTURE_SIDE_MAX) return;
     if (this.#imageBusy) {
       this.#imageNext = jpeg;
       return;
@@ -228,6 +290,14 @@ export class TabStreamView {
     const v = this.#video;
     this.#video = undefined;
     if (v !== undefined && v.state !== "closed") v.close();
+  }
+
+  /** The link stream finished (`error` undefined) or broke without the computer's `ended` frame. */
+  lose(error?: Error): void {
+    if (this.#done) return;
+    if (error !== undefined) return this.#fail(`the stream broke: ${capped(error.message)}`);
+    this.close();
+    this.#o.onEnded?.({ reason: "failed", message: "the stream ended without saying why" });
   }
 
   #fail(message: string): void {
@@ -257,9 +327,9 @@ export function receiveTabStreams(
         if (!view.ended) stream.abort("can't show it");
       }
     });
-    stream.onEnd(() => {
+    stream.onEnd((error) => {
       offData();
-      view.close();
+      view.lose(error);
     });
   });
 }

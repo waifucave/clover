@@ -80,28 +80,71 @@ export function decodeStreamFrame(bytes: Uint8Array): StreamChunk {
 
 /** Splits bytes that arrive as one run back into chunks. A malformed frame throws, and the stream is done with. */
 export class StreamFrameReader {
-  #buffered = new Uint8Array(0);
+  /** The pieces of an unfinished frame, joined once it is whole (so a large frame in many pieces is copied once). */
+  #parts: Uint8Array[] = [];
+  #size = 0;
+  /** The unfinished frame's whole length, once its header is in. */
+  #need = 0;
 
   push(bytes: Uint8Array): StreamChunk[] {
-    let all = bytes;
-    if (this.#buffered.byteLength > 0) {
-      all = new Uint8Array(this.#buffered.byteLength + bytes.byteLength);
-      all.set(this.#buffered, 0);
-      all.set(bytes, this.#buffered.byteLength);
-    }
     const out: StreamChunk[] = [];
-    let at = 0;
-    while (all.byteLength - at >= STREAM_HEADER_BYTES) {
-      const length = new DataView(all.buffer, all.byteOffset + at, STREAM_HEADER_BYTES).getUint32(12);
-      if (length > STREAM_MAX_PAYLOAD) throw new StreamFormatError("a stream frame is larger than any picture");
-      const end = at + STREAM_HEADER_BYTES + length;
-      if (end > all.byteLength) break;
-      out.push(decodeStreamFrame(all.subarray(at, end)));
-      at = end;
+    let rest = bytes;
+    while (rest.byteLength > 0) {
+      if (this.#size === 0) {
+        // Whole frames straight from the piece, without copying.
+        while (rest.byteLength >= STREAM_HEADER_BYTES) {
+          const end = STREAM_HEADER_BYTES + payloadLength(rest);
+          if (end > rest.byteLength) break;
+          out.push(decodeStreamFrame(rest.subarray(0, end)));
+          rest = rest.subarray(end);
+        }
+        if (rest.byteLength === 0) break;
+      }
+      if (this.#need === 0) {
+        // Gather the header first: until then the frame's length isn't known.
+        const take = Math.min(rest.byteLength, STREAM_HEADER_BYTES - this.#size);
+        this.#add(rest.subarray(0, take));
+        rest = rest.subarray(take);
+        if (this.#size < STREAM_HEADER_BYTES) break;
+        this.#need = STREAM_HEADER_BYTES + payloadLength(this.#join());
+      }
+      const take = Math.min(rest.byteLength, this.#need - this.#size);
+      this.#add(rest.subarray(0, take));
+      rest = rest.subarray(take);
+      if (this.#size < this.#need) break;
+      const whole = this.#join();
+      this.#parts = [];
+      this.#size = 0;
+      this.#need = 0;
+      out.push(decodeStreamFrame(whole));
     }
-    this.#buffered = all.slice(at);
     return out;
   }
+
+  #add(piece: Uint8Array): void {
+    // The link may reuse its buffer: keep a copy of what waits.
+    this.#parts.push(piece.slice());
+    this.#size += piece.byteLength;
+  }
+
+  #join(): Uint8Array {
+    if (this.#parts.length === 1) return this.#parts[0]!;
+    const all = new Uint8Array(this.#size);
+    let at = 0;
+    for (const p of this.#parts) {
+      all.set(p, at);
+      at += p.byteLength;
+    }
+    this.#parts = [all];
+    return all;
+  }
+}
+
+/** A header's payload length, refused past the cap before anything is buffered for it. */
+function payloadLength(header: Uint8Array): number {
+  const length = new DataView(header.buffer, header.byteOffset, STREAM_HEADER_BYTES).getUint32(12);
+  if (length > STREAM_MAX_PAYLOAD) throw new StreamFormatError("a stream frame is larger than any picture");
+  return length;
 }
 
 function json(payload: Uint8Array): Record<string, unknown> {
