@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  configProblems, gatesOnDarwin, isClearCrash, isDarwinTest, macosFiles, parseArgs, parseConfig, parseJunit, runProblems, select, shardOf,
+  configProblems, gatesOnDarwin, isClearCrash, isDarwinTest, macosFiles, parseArgs, parseConfig, parseJunit, runProblems, select, shardOf, slowestTests,
   skipProblems, testFiles, usesDarwinOnly,
 } from "./platform-tests";
 
@@ -52,9 +52,12 @@ describe("platform-tests", () => {
   });
 
   test("its arguments: a root, one side, and Linux's shard and lists", () => {
-    expect(parseArgs(["--root", "scripts", "--darwin"])).toEqual({ root: "scripts", cwd: undefined, darwin: true, shard: undefined, config: undefined, checkKnownFailures: false, list: false });
+    expect(parseArgs(["--root", "scripts", "--darwin"])).toEqual({ root: "scripts", cwd: undefined, darwin: true, shard: undefined, config: undefined, checkKnownFailures: false, list: false, timeoutMs: undefined, slowest: 0 });
+    expect(parseArgs(["--root", "scripts", "--darwin", "--timeout", "20000", "--slowest", "10"])).toMatchObject({ timeoutMs: 20000, slowest: 10 });
+    expect(() => parseArgs(["--root", "scripts", "--darwin", "--timeout", "20s"])).toThrow(/positive whole number/);
+    expect(() => parseArgs(["--root", "scripts", "--darwin", "--slowest", "0"])).toThrow(/positive whole number/);
     expect(parseArgs(["--root", "packages/core", "--cwd", "packages/core", "--not-darwin", "--shard", "2/3", "--config", "c.json", "--check-known-failures", "--list"]))
-      .toEqual({ root: "packages/core", cwd: "packages/core", darwin: false, shard: { k: 2, n: 3 }, config: "c.json", checkKnownFailures: true, list: true });
+      .toEqual({ root: "packages/core", cwd: "packages/core", darwin: false, shard: { k: 2, n: 3 }, config: "c.json", checkKnownFailures: true, list: true, timeoutMs: undefined, slowest: 0 });
     expect(() => parseArgs(["--darwin"])).toThrow(/--root/);
     expect(() => parseArgs(["--root", "scripts"])).toThrow(/exactly one/);
     expect(() => parseArgs(["--root", "scripts", "--darwin", "--not-darwin"])).toThrow(/exactly one/);
@@ -145,6 +148,31 @@ describe("platform-tests", () => {
     expect(ran.get("t.test.ts")).toEqual({ tests: 3, skipped: 1, failures: 0 });
     expect(ran.get("u.test.ts")).toEqual({ tests: 2, skipped: 0, failures: 0 });
     expect(ran.get("e.test.ts")).toEqual({ tests: 0, skipped: 0, failures: 0 });
+  });
+
+  test("the slowest tests, from bun's JUnit report: slowest first, named by file, suite and test", () => {
+    const xml = [
+      '<testsuites name="bun test" tests="4">',
+      '  <testsuite name="a.test.ts" file="a.test.ts" tests="3" failures="0" skipped="0" time="6">',
+      '    <testsuite name="sync.config" file="a.test.ts" tests="2" failures="0" skipped="0" time="5.2">',
+      '      <testcase name="a real daemon serves &quot;the effort&quot;" classname="sync.config" time="5.129" file="a.test.ts" line="3" assertions="2" />',
+      '      <testcase name="quick" classname="sync.config" time="0.004" file="a.test.ts" line="9" assertions="1" />',
+      '    </testsuite>',
+      '    <testcase name="top level" classname="" time="0.8" file="a.test.ts" line="20" assertions="1">',
+      '      <skipped message="TODO" />',
+      '    </testcase>',
+      '  </testsuite>',
+      '  <testsuite name="b.test.ts" file="b.test.ts" tests="1" failures="0" skipped="0" time="2">',
+      '    <testcase name="mid" classname="B" time="2.25" file="b.test.ts" line="1" assertions="1" />',
+      '  </testsuite>',
+      '</testsuites>',
+    ].join("\n");
+    expect(slowestTests(xml, 3)).toEqual([
+      { seconds: 5.129, test: 'a.test.ts > sync.config > a real daemon serves "the effort"' },
+      { seconds: 2.25, test: "b.test.ts > B > mid" },
+      { seconds: 0.8, test: "a.test.ts > top level" },
+    ]);
+    expect(slowestTests(xml, 10)).toHaveLength(4);
   });
 
   test("a clear Bun crash is exit 133 or a signal with no summary", () => {

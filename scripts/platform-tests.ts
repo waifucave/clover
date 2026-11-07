@@ -7,7 +7,7 @@
 //   every other file   Linux only
 //
 //   bun scripts/platform-tests.ts --root <dir> [--cwd <dir>] --darwin | --not-darwin [--shard K/N] [--config <json>]
-//                                 [--check-known-failures] [--list]
+//                                 [--check-known-failures] [--list] [--timeout <ms>] [--slowest <n>]
 //
 //   --root    where the test files are (relative to the repo root)
 //   --cwd     where bun runs (default: the repo root; the core runs in packages/core, for its bunfig and its paths)
@@ -17,6 +17,11 @@
 //               linuxSkips           file → reason: a Linux file whose tests may skip (an opt-in fixture, another OS…)
 //               darwinGateAllowed    file → reason: a Linux file that names "darwin" near a test gate without gating
 //   --check-known-failures   runs each known failure alone and fails if one now passes (the list only shrinks)
+//   --timeout  bun's per-test timeout (`bun test --timeout`). CI passes 20 s: an overloaded runner (the merge queue's
+//              Macs above all) took a 5 s-default test past 5129 ms and dropped a PR from the queue for it. Local runs
+//              keep bun's 5 s, so a test that is slow for real still shows up there
+//   --slowest  prints the N slowest tests of the run (from bun's JUnit report), so a test creeping toward the limit is
+//              seen before it fails
 //
 // The files go to one `bun test` by path (`./…`, so bun takes each as a file, never a name filter). The run fails on
 // bun's failure, an empty list, a missing or short "Ran N tests across M files" summary (a dropped file is a failure),
@@ -181,6 +186,8 @@ export interface Args {
   config: string | undefined;
   checkKnownFailures: boolean;
   list: boolean;
+  timeoutMs: number | undefined;
+  slowest: number;
 }
 
 export function parseArgs(argv: readonly string[]): Args {
@@ -205,13 +212,35 @@ export function parseArgs(argv: readonly string[]): Args {
     if (darwin) throw new Error("--shard is Linux's (--not-darwin)");
     shard = { k, n };
   }
-  return { root, cwd: value("--cwd"), darwin, shard, config: value("--config"), checkKnownFailures: argv.includes("--check-known-failures"), list: argv.includes("--list") };
+  const count = (flag: string): number | undefined => {
+    const v = value(flag);
+    if (v === undefined) return undefined;
+    if (!/^[1-9]\d*$/.test(v)) throw new Error(`${flag} takes a positive whole number, not ${v}`);
+    return Number(v);
+  };
+  return {
+    root, cwd: value("--cwd"), darwin, shard, config: value("--config"), checkKnownFailures: argv.includes("--check-known-failures"), list: argv.includes("--list"),
+    timeoutMs: count("--timeout"), slowest: count("--slowest") ?? 0,
+  };
+}
+
+/** The `n` slowest tests in a JUnit report, slowest first: seconds and `file > suite > name`. */
+export function slowestTests(xml: string, n: number): Array<{ seconds: number; test: string }> {
+  const out: Array<{ seconds: number; test: string }> = [];
+  for (const m of xml.matchAll(/<testcase ([^>]*?)\/?>/g)) {
+    const attr = (name: string): string | undefined => new RegExp(`\\b${name}="([^"]*)"`).exec(m[1]!)?.[1];
+    const seconds = Number(attr("time") ?? NaN);
+    if (!Number.isFinite(seconds)) continue;
+    const unescape = (t: string): string => t.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    out.push({ seconds, test: [attr("file"), attr("classname"), attr("name")].filter((x) => x !== undefined && x !== "").map((x) => unescape(x!)).join(" > ") });
+  }
+  return out.sort((a, b) => b.seconds - a.seconds).slice(0, n);
 }
 
 interface Run { exitCode: number | null; output: string }
 
-function runBun(cwd: string, files: readonly string[], junit?: string): Run {
-  const args = ["test", ...(junit ? ["--reporter=junit", `--reporter-outfile=${junit}`] : []), ...files.map((f) => `./${f}`)];
+function runBun(cwd: string, files: readonly string[], junit?: string, timeoutMs?: number): Run {
+  const args = ["test", ...(timeoutMs !== undefined ? ["--timeout", String(timeoutMs)] : []), ...(junit ? ["--reporter=junit", `--reporter-outfile=${junit}`] : []), ...files.map((f) => `./${f}`)];
   const r = spawnSync(process.execPath, args, { cwd, encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 });
   return { exitCode: r.status, output: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
@@ -241,7 +270,7 @@ function main(): number {
   if (args.checkKnownFailures && cfg) {
     for (const [f, e] of Object.entries(cfg.linuxKnownFailures)) {
       if (!existsSync(join(rootAbs, f))) continue; // configProblems names it
-      const r = runBun(cwd, [toCwd(f)]);
+      const r = runBun(cwd, [toCwd(f)], undefined, args.timeoutMs);
       if (r.exitCode === 0) problems.push(`${f} now passes on Linux: remove it from linuxKnownFailures (owner ${e.owner})`);
       else console.log(`platform-tests: known Linux failure, still failing as listed: ${f} (owner ${e.owner}: ${e.cause})`);
     }
@@ -251,16 +280,20 @@ function main(): number {
   console.log(`platform-tests: ${files.length} test file(s) under ${args.root} for ${side}`);
   const tmp = mkdtempSync(join(tmpdir(), "platform-tests-"));
   try {
-    const junit = !args.darwin && cfg ? join(tmp, "junit.xml") : undefined;
-    let r = runBun(cwd, files.map(toCwd), junit);
+    const junit = (!args.darwin && cfg) || args.slowest > 0 ? join(tmp, "junit.xml") : undefined;
+    let r = runBun(cwd, files.map(toCwd), junit, args.timeoutMs);
     process.stdout.write(r.output);
     if (isClearCrash(r.exitCode, r.output)) {
       console.log(`::warning::bun crashed (${r.exitCode === null ? "a signal" : `exit ${r.exitCode}`}, no summary): re-running once`);
-      r = runBun(cwd, files.map(toCwd), junit);
+      r = runBun(cwd, files.map(toCwd), junit, args.timeoutMs);
       process.stdout.write(r.output);
     }
     problems.push(...runProblems(r.exitCode, r.output, files.length));
-    if (junit && cfg) {
+    if (junit && args.slowest > 0 && existsSync(junit)) {
+      console.log(`platform-tests: the ${args.slowest} slowest tests of ${side}${args.timeoutMs !== undefined ? ` (the limit is ${args.timeoutMs / 1000} s)` : ""}:`);
+      for (const t of slowestTests(readFileSync(junit, "utf8"), args.slowest)) console.log(`  ${t.seconds.toFixed(2).padStart(7)} s  ${t.test}`);
+    }
+    if (junit && !args.darwin && cfg) {
       if (!existsSync(junit)) problems.push("bun wrote no JUnit report");
       else {
         // JUnit names files relative to where bun ran; the lists name them relative to the root.

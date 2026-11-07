@@ -574,12 +574,16 @@ jobs:
       # darwinTest/darwinDescribe (test/helpers/darwin-only.ts). Everything else runs on Linux, in core-linux's shards
       # (scripts/platform-tests.ts picks each side's files; a clear Bun crash, exit 133 or a signal with no summary, is
       # re-run once with a ::warning::).
+      # The per-test timeout here and in core-linux's shards is 20 s, not bun's 5 s: an overloaded runner (the merge
+      # queue's Macs above all) took a test that runs in well under a second locally past 5 s and dropped a PR from the
+      # queue for it. Local runs keep the 5 s, so a test that is slow for real still shows there; each run prints its
+      # 10 slowest tests (--slowest), so one creeping toward the limit is seen before it fails.
       - name: Core · the macOS tests
         if: env.CORE == 'true'
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-        run: bun scripts/platform-tests.ts --root packages/core --cwd packages/core --darwin
+        run: bun scripts/platform-tests.ts --root packages/core --cwd packages/core --darwin --timeout 20000 --slowest 10
 
       - name: CLI · test
         if: ${{ !cancelled() && env.CLI == 'true' }}
@@ -587,7 +591,8 @@ jobs:
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-        run: bun test test/*.ts
+        # 20 s per test, as the core's shards (see "Core · the macOS tests").
+        run: bun test --timeout 20000 test/*.ts
 
       # Only the repo scripts' macOS tests (`scripts/**/*.darwin.test.ts`: codesign, the predecessor app's bundles,
       # LaunchServices); the rest run on Linux, in the scripts job.
@@ -679,7 +684,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Core · test
-        run: scripts/with-private-secret-service.sh bun scripts/platform-tests.ts --root packages/core --cwd packages/core --not-darwin --shard ${{ matrix.shard }}/3 --config packages/core/test/platform-ci.json ${{ matrix.shard == 1 && '--check-known-failures' || '' }}
+        run: scripts/with-private-secret-service.sh bun scripts/platform-tests.ts --root packages/core --cwd packages/core --not-darwin --shard ${{ matrix.shard }}/3 --config packages/core/test/platform-ci.json --timeout 20000 --slowest 10 ${{ matrix.shard == 1 && '--check-known-failures' || '' }}
 
   # The repo scripts' tests (`scripts/**/*.test.ts`) on Linux: the layout's conventions, the build, dev and release
   # tools' pure halves, the held scripts, the limiter, the rename's codemod. The few that need macOS are named
