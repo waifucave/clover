@@ -126,9 +126,10 @@ export const SANDBOX_EXIT = { OK: 0, FAILED: 1, NOT_ELEVATED: 2, HASH_MISMATCH: 
 /** `srt-win install`: one elevated step provisioning the principal and its WFP filters (the launcher
  *  self-elevates via UAC; idempotent — re-running rotates the password and refreshes the filters).
  *  Loopback stays closed (the default): Bash gets no network, as on macOS and Linux.
- *  The principal is required: the bare prefix is not an account. */
-export function setupArgs(launcher: string, sublayer: string, principal: string): readonly string[] {
-  return [launcher, "install", "--sandbox-user", principal, "--sublayer-guid", sublayer];
+ *  The principal is required: the bare prefix is not an account. `ownerSid` is recorded on the
+ *  install (`--owner-sid`) and gates later use to that owner (admins/SYSTEM excepted). */
+export function setupArgs(launcher: string, sublayer: string, principal: string, ownerSid: string): readonly string[] {
+  return [launcher, "install", "--sandbox-user", principal, "--sublayer-guid", sublayer, "--owner-sid", ownerSid];
 }
 
 /** `srt-win uninstall`: undoes everything (`--keep-user` is never passed: remove removes all of it).
@@ -474,6 +475,110 @@ export function leaseLaunchGate(lease: PrincipalLease | null, holderAlive: (pid:
   return { ok: true };
 }
 
+/** Where pool leases live: `<home>\sandbox\leases\`, writable by the daemon's user. */
+export function sandboxLeasesDir(cloverHome: string): string {
+  return win32.join(cloverHome, "sandbox", "leases");
+}
+
+/** Storage the lease manager needs; injected so unit tests run without disks or processes. */
+export interface LeaseStore {
+  readText(path: string): string | null;
+  /** Atomically create `path` with `content`; `false` when it already exists. */
+  createNew(path: string, content: string): boolean;
+  writeText(path: string, content: string): void;
+  remove(path: string): void;
+}
+
+/** A live lease record on disk. */
+export interface PoolLeaseFile {
+  readonly holderPid: number;
+  /** The holder's start time (ms epoch) when known; guards against PID reuse. */
+  readonly holderStart: number | null;
+  readonly nonce: string;
+  readonly lastUseAt: number | null;
+  readonly lastResetAt: string | null;
+}
+
+/** Acquire one pool principal exclusively (controller ruling 3). Tries members in order; a missing or
+ *  corrupt lease file is free. A live holder blocks; a dead PID — or a start time that differs from
+ *  the recorded one — is stale and taken over. When every member is leased by a live holder, waits
+ *  until `timeoutMs` and then refuses instead of sharing a principal. `nonce` identifies the holder
+ *  for a safe release. */
+export async function acquirePoolLease(o: {
+  store: LeaseStore;
+  leasesDir: string;
+  pool: readonly { principal: string }[];
+  holderPid: number;
+  timeoutMs: number;
+  pollMs?: number;
+  nonce?: string;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+  isAlive?: (pid: number) => boolean;
+  /** Start time of a pid (ms epoch), or null when unknown. Guards against PID reuse. */
+  startTimeOf?: (pid: number) => number | null;
+}): Promise<{ ok: true; principal: string } | { ok: false; reason: string }> {
+  const pollMs = o.pollMs ?? 250;
+  const now = o.now ?? Date.now;
+  const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const isAlive = o.isAlive ?? ((pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } });
+  const startTimeOf = o.startTimeOf ?? (() => null);
+  const holderStart = startTimeOf(o.holderPid);
+  const nonce = o.nonce ?? `${o.holderPid}-${now()}-${Math.floor(Math.random() * 1e9)}`;
+  const deadline = now() + o.timeoutMs;
+  for (;;) {
+    for (const member of o.pool) {
+      const path = principalLeasePath(o.leasesDir, member.principal);
+      const raw = o.store.readText(path);
+      if (raw === null) {
+        const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: null, lastResetAt: null };
+        if (o.store.createNew(path, JSON.stringify(lease))) return { ok: true, principal: member.principal };
+        continue;
+      }
+      let cur: PoolLeaseFile | null = null;
+      try {
+        const v = JSON.parse(raw) as Record<string, unknown>;
+        if (typeof v.holderPid === "number" && typeof v.nonce === "string" &&
+          (v.holderStart === null || typeof v.holderStart === "number") &&
+          (v.lastUseAt === null || typeof v.lastUseAt === "number") &&
+          (v.lastResetAt === null || typeof v.lastResetAt === "string")) {
+          cur = v as unknown as PoolLeaseFile;
+        }
+      } catch { /* corrupt: take over below */ }
+      // Stale when the holder is dead, when the file is corrupt, or when the recorded pid's
+      // current start time differs from the recorded one (the pid was reused by another process).
+      const holderDead = cur === null || !isAlive(cur.holderPid);
+      const recordedStart = cur?.holderStart ?? null;
+      const liveStart = cur === null ? null : startTimeOf(cur.holderPid);
+      const startDiffers = recordedStart !== null && liveStart !== null && liveStart !== recordedStart;
+      if (holderDead || startDiffers) {
+        const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: cur?.lastUseAt ?? null, lastResetAt: cur?.lastResetAt ?? null };
+        o.store.writeText(path, JSON.stringify(lease));
+        return { ok: true, principal: member.principal };
+      }
+    }
+    if (now() >= deadline) {
+      return { ok: false, reason: "the sandbox pool is busy; all 4 principals are leased" };
+    }
+    await sleep(pollMs);
+  }
+}
+
+/** Release a lease the caller holds: removes the file only when its nonce still names us. */
+export function releasePoolLease(store: LeaseStore, leasesDir: string, principal: string, nonce: string): boolean {
+  const path = principalLeasePath(leasesDir, principal);
+  const raw = store.readText(path);
+  if (raw === null) return true;
+  try {
+    const v = JSON.parse(raw) as { nonce?: unknown };
+    if (v.nonce !== nonce) return false;
+  } catch {
+    return false;
+  }
+  store.remove(path);
+  return true;
+}
+
 /** `icacls <path> /deny *<sid>:(OI)(CI)F`: the principal can't write the Startup folder or its children.
  *  The `*` prefix marks the trustee as a SID: without it icacls reads the SID as an account name and
  *  fails with "no mapping between account names and security IDs" (0x534). */
@@ -497,6 +602,25 @@ export function icaclsRemoveDenyArgs(path: string, sid: string): readonly string
  *  name, or volume label syntax is incorrect"); the encoded script keeps every path inert. */
 export function mkdirArgs(path: string): readonly string[] {
   return psEncodedArgs(`New-Item -ItemType Directory -Force -Path "${path}" | Out-Null`);
+}
+
+/** Claim a state dir for admins only (ruling 5: markers folder, as lane M does for the protected
+ *  copy). Creates it when missing, then: resolve the owner's SID (locale-proof, never a name match);
+ *  anyone besides Administrators, SYSTEM or TrustedInstaller is refused with exit 1 (a squatted
+ *  folder owned by a non-admin fails the setup closed); otherwise take ownership for Administrators
+ *  and strip inheritance, granting full control to Administrators and SYSTEM only. */
+export function claimDirArgs(path: string): readonly string[] {
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    `$p='${path.replace(/'/g, "''")}'`,
+    "if (-Not (Test-Path -LiteralPath $p)) { New-Item -ItemType Directory -Force -Path $p | Out-Null }",
+    "$own=(Get-Acl -LiteralPath $p).Owner",
+    "try { $sid=(New-Object System.Security.Principal.NTAccount $own).Translate([System.Security.Principal.SecurityIdentifier]).Value } catch { $sid='' }",
+    "if ($sid -ne 'S-1-5-32-544' -and $sid -ne 'S-1-5-18' -and $sid -ne 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464') { Write-Error ('refusing state dir owned by ' + $own); exit 1 }",
+    "& takeown.exe /f $p /a | Out-Null; if ($LASTEXITCODE -ne 0) { exit 1 }",
+    "& icacls.exe $p /inheritance:r /grant:r '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' | Out-Null; if ($LASTEXITCODE -ne 0) { exit 1 }",
+  ].join("; ");
+  return psEncodedArgs(script);
 }
 
 /** `powershell Remove-Item`: remove a folder tree. The encoded script keeps the path inert. */

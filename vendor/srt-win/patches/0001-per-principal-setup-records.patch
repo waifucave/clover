@@ -10,6 +10,9 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 
 
+
+
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -75,11 +78,43 @@ opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
  src/user.rs    |  16 +++--
  4 files changed, 308 insertions(+), 43 deletions(-)
 
+ src/cli.rs     | 126 ++++++++++++++++++++-----
+ src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
+ src/reg.rs     |  37 ++++++++
+ src/user.rs    |  16 +++-
+ 4 files changed, 381 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 126 ++++++++++++++++++++-----
+ src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
+ src/reg.rs     |  37 ++++++++
+ src/user.rs    |  16 +++-
+ 4 files changed, 381 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 122 +++++++++++++++++++-----
+ src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
+ src/reg.rs     |  37 ++++++++
+ src/user.rs    |  16 +++-
+ 4 files changed, 377 insertions(+), 43 deletions(-)
+
 diff --git a/src/cli.rs b/src/cli.rs
-index 8e616e2..cdbb36a 100644
+index 8e616e2..b3f1b88 100644
 --- a/src/cli.rs
 +++ b/src/cli.rs
-@@ -181,6 +181,13 @@ enum Cmd {
+@@ -157,6 +157,13 @@ enum Cmd {
+         /// srt-win didn't provision is refused (exit 14).
+         #[arg(long)]
+         sandbox_user: Option<String>,
++        /// Owner recorded on the install (`Users\<name>\OwnerSid`)
++        /// and granted read on that principal's `Cred\<name>` key
++        /// instead of BUILTIN\Users. The launcher then refuses any
++        /// caller whose token user SID isn't the owner (admins and
++        /// SYSTEM excepted).
++        #[arg(long, value_name = "SID")]
++        owner_sid: Option<String>,
+         /// Replace an existing install whose port-range, loopback
+         /// mode or sandbox-user name differs (otherwise exits 13).
+         #[arg(long)]
+@@ -181,6 +188,13 @@ enum Cmd {
          /// unit).
          #[arg(long)]
          keep_user: bool,
@@ -93,7 +128,7 @@ index 8e616e2..cdbb36a 100644
          /// Set by `uninstall` itself on the elevated process it
          /// starts: do the machine-wide removal only. The grants kept
          /// for the calling user are that user's to forget, in the
-@@ -294,6 +301,12 @@ enum Cmd {
+@@ -294,6 +308,12 @@ enum Cmd {
          /// command before anything is started.
          #[arg(long = "held-by", value_name = "PID")]
          held_by: Option<u32>,
@@ -106,7 +141,7 @@ index 8e616e2..cdbb36a 100644
          /// Per-exec write-deny — see `--deny-read`.
          #[arg(long = "deny-write")]
          deny_write: Vec<String>,
-@@ -529,7 +542,12 @@ enum UserCmd {
+@@ -529,7 +549,12 @@ enum UserCmd {
      /// `seclogon` is the Secondary Logon service every launch depends
      /// on: `"ok"|"disabled"|"missing"|"cannot-read"` (read-only SCM
      /// query — see `logon::seclogon_state`).
@@ -120,7 +155,7 @@ index 8e616e2..cdbb36a 100644
      /// Print the sandbox user's decrypted password (and only the
      /// password) to stdout. The broker uses this for
      /// `CreateProcessWithLogonW`. Fails when run as the sandbox
-@@ -969,10 +987,10 @@ fn merge_ace_targets(
+@@ -969,10 +994,12 @@ fn merge_ace_targets(
  /// Build the `user status` JSON object (sandbox-user provisioning
  /// state + credential/marker/CA rows from `state.db`). Shared by
  /// `user status` and the top-level combined `status`.
@@ -129,11 +164,21 @@ index 8e616e2..cdbb36a 100644
      use serde_json::json;
      use srt_win::{install, user};
 -    let setup = install::read_setup().ok().flatten();
-+    let setup = install::read_setup_for(for_user).ok().flatten();
++    // Gated: a foreign caller's status read fails closed here, so the
++    // combined `status` never leaks another owner's install state.
++    let setup = install::authorized_setup_for(for_user).ok();
      let name = setup
          .as_ref()
          .map(|s| s.sandbox_user.as_str())
-@@ -1356,7 +1374,10 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1320,6 +1347,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+             proxy_port_range,
+             allow_loopback,
+             sandbox_user,
++            owner_sid,
+             force,
+         } => {
+             use srt_win::{install, user};
+@@ -1356,7 +1384,10 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              // (idempotent) steps below complete it. A pre-existing
              // install whose tags lack a port_range (legacy) is
              // treated as "different" and requires --force.
@@ -145,16 +190,16 @@ index 8e616e2..cdbb36a 100644
              // Shared by the early-out completeness check and the
              // stamping step below (env reads + a stat per entry).
              let ambient_targets = srt_win::ambient::ambient_deny_targets();
-@@ -1505,7 +1526,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1505,7 +1536,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
                  // credential file is written into it.
                  install::provision_machine_store(&pu.group_sid)
                      .context("provision machine state store")?;
 -                install::write_setup(&pu)
-+                install::write_setup(&pu, &sl)
++                install::write_setup(&pu, &sl, owner_sid.as_deref())
                      .context("write sandbox credential + setup marker to state DB")?;
                  Ok(pu)
              })() {
-@@ -1603,6 +1624,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1603,6 +1634,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
          Cmd::Uninstall {
              sublayer_guid,
              keep_user,
@@ -162,7 +207,7 @@ index 8e616e2..cdbb36a 100644
              elevated_step,
          } => {
              // The group's SID is read while the install record is there:
-@@ -1657,8 +1679,20 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1657,8 +1689,20 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              let n = remove_fence(&sl)?;
              // Read setup up front: the ambient cleanup and the
              // deprovision fallback both need the recorded name/SID
@@ -185,7 +230,7 @@ index 8e616e2..cdbb36a 100644
              let user_note = if keep_user {
                  // Ambient write-deny stamps key on the ACCOUNT, not
                  // the sublayer, and this uninstall may be tearing
-@@ -1697,12 +1731,26 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1697,12 +1741,26 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
                          }
                      }
                  }
@@ -218,7 +263,7 @@ index 8e616e2..cdbb36a 100644
                  "Sandbox user, credential, and setup marker removed."
              };
              // Migration: best-effort remove the legacy
-@@ -1726,7 +1774,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1726,7 +1784,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              println!(
                  "{}",
                  json!({
@@ -227,7 +272,7 @@ index 8e616e2..cdbb36a 100644
                      "wfp": wfp_status(&sl)?,
                      "ambient": ambient_status_json()?,
                  })
-@@ -1735,9 +1783,9 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -1735,9 +1793,9 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
  
          // ─── user ──────────────────────────────────────────────────
          Cmd::User {
@@ -239,7 +284,7 @@ index 8e616e2..cdbb36a 100644
          }
          Cmd::User {
              sub: UserCmd::ReadCred,
-@@ -2740,6 +2788,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -2740,6 +2798,7 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              allow_loopback,
              deny_read,
              deny_read_except,
@@ -247,23 +292,19 @@ index 8e616e2..cdbb36a 100644
              held_by,
              deny_write,
              env,
-@@ -2753,9 +2802,12 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
+@@ -2753,9 +2812,8 @@ fn run(cli: Cli, args: &[OsString]) -> anyhow::Result<()> {
              // Credential + setup read happens FIRST so the
              // exit-15 fast-fail (not provisioned / stale cred)
              // fires before any WFP/ACL work.
 -            let (cred, sb_sid) = match install::read_cred().and_then(|c| {
 -                let s = install::read_setup()?
 -                    .ok_or_else(|| anyhow!("sandbox user not provisioned"))?;
-+            let (cred, sb_sid) = match install::read_cred_for(for_user.as_deref()).and_then(|c| {
-+                let s = install::read_setup_for(for_user.as_deref())?
-+                    .ok_or_else(|| match &for_user {
-+                        Some(u) => anyhow!("sandbox user '{u}' not provisioned"),
-+                        None => anyhow!("sandbox user not provisioned"),
-+                    })?;
++            let (cred, sb_sid) = match install::authorized_cred_for(for_user.as_deref()).and_then(|c| {
++                let s = install::authorized_setup_for(for_user.as_deref())?;
                  Ok((c, s.sandbox_user_sid))
              }) {
                  Ok(v) => v,
-@@ -3387,7 +3439,7 @@ mod tests {
+@@ -3387,7 +3445,7 @@ mod tests {
          assert!(matches!(
              with.cmd,
              Cmd::User {
@@ -272,7 +313,7 @@ index 8e616e2..cdbb36a 100644
              }
          ));
          // Standalone shape: no sentinel.
-@@ -3396,7 +3448,7 @@ mod tests {
+@@ -3396,7 +3454,7 @@ mod tests {
          assert!(matches!(
              without.cmd,
              Cmd::User {
@@ -281,7 +322,7 @@ index 8e616e2..cdbb36a 100644
              }
          ));
          // The sentinel is NOT a clap flag — without the strip, it
-@@ -3405,6 +3457,28 @@ mod tests {
+@@ -3405,6 +3463,28 @@ mod tests {
          assert!(
              Cli::try_parse_from(["srt-win.exe", SRT_WIN_DISPATCH_ARG1, "user", "status",]).is_err()
          );
@@ -311,10 +352,10 @@ index 8e616e2..cdbb36a 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..2880674 100644
+index ba0ac37..b9a97dc 100644
 --- a/src/install.rs
 +++ b/src/install.rs
-@@ -49,19 +49,83 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
+@@ -49,19 +49,90 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
      })
  }
  
@@ -374,6 +415,7 @@ index ba0ac37..2880674 100644
 +        sandbox_group_sid,
 +        marker_version,
 +        created_at_unix: base.get_qword("CreatedAt")?.unwrap_or(0),
++        owner_sid: base.get_sz("OwnerSid")?,
 +    }))
 +}
 +
@@ -401,19 +443,41 @@ index ba0ac37..2880674 100644
 +    require_current_setup_for(None)
 +}
 +
++/// Well-known SIDs for the caller check: SYSTEM may always broker,
++/// and so may administrators (setup runs elevated, possibly as a
++/// different admin than the install's owner).
++pub const SYSTEM_SID: &str = "S-1-5-18";
++pub const ADMINISTRATORS_SID: &str = "S-1-5-32-544";
++
  #[derive(Debug, Clone)]
  pub struct SetupInfo {
      pub sandbox_user: String,
-@@ -151,7 +215,7 @@ pub fn provision_machine_store(sandbox_group_sid: &str) -> Result<std::path::Pat
+@@ -69,6 +140,10 @@ pub struct SetupInfo {
+     pub sandbox_group_sid: String,
+     pub marker_version: u32,
+     pub created_at_unix: u64,
++    /// The owner recorded at install time (`install --owner-sid`).
++    /// `None` on records from before the owner field existed: those
++    /// installs predate per-owner gating and stay ungated.
++    pub owner_sid: Option<String>,
+ }
+ 
+ /// Guard the one piece of install state that must stay on the
+@@ -151,7 +226,12 @@ pub fn provision_machine_store(sandbox_group_sid: &str) -> Result<std::path::Pat
  /// HKLM\SOFTWARE). `MarkerVersion` is written LAST: registry writes
  /// are not transactional across values, so the marker is the commit
  /// point a crashed install never reaches.
 -pub fn write_setup(u: &user::ProvisionedUser) -> Result<()> {
-+pub fn write_setup(u: &user::ProvisionedUser, sublayer: &GUID) -> Result<()> {
++pub fn write_setup(u: &user::ProvisionedUser, sublayer: &GUID, owner_sid: Option<&str>) -> Result<()> {
++    if let Some(o) = owner_sid.filter(|o| !o.is_empty()) {
++        if !o.starts_with("S-1-") || o.bytes().any(|b| !(b.is_ascii_alphanumeric() || b == b'-')) {
++            anyhow::bail!("--owner-sid is not a SID: '{o}'");
++        }
++    }
      let blob = dpapi::protect_machine(u.password.as_bytes())?;
      let (base, _) = crate::reg::Key::create(crate::reg::BASE, None)?;
      // A --force re-install under a DIFFERENT sandbox-user name must
-@@ -191,6 +255,26 @@ pub fn write_setup(u: &user::ProvisionedUser) -> Result<()> {
+@@ -191,6 +271,41 @@ pub fn write_setup(u: &user::ProvisionedUser) -> Result<()> {
              .unwrap_or(0),
      )?;
      base.set_dword("MarkerVersion", SETUP_VERSION)?;
@@ -434,13 +498,70 @@ index ba0ac37..2880674 100644
 +    )?;
 +    sub.set_sz("SublayerGuid", &format!("{sublayer:?}").to_lowercase())?;
 +    sub.set_dword("MarkerVersion", SETUP_VERSION)?;
++    if let Some(owner) = owner_sid.filter(|o| !o.is_empty()) {
++        sub.set_sz("OwnerSid", owner)?;
++    }
++    // Per-principal credential DACL: no BUILT-IN\Users read (the old
++    // machine-wide key granted KR to BU, and machine-scope DPAPI is
++    // decryptable by whoever can read the blob). Only SYSTEM, the
++    // installing admin, the sandbox group DENY, and the owner.
++    // ensure_key_with_dacl also heals the DACL on a pre-existing key.
++    let per_sddl = match owner_sid.filter(|o| !o.is_empty()) {
++        Some(owner) => format!(
++            "O:BAD:P(D;;KA;;;{})(A;;KA;;;SY)(A;;KA;;;BA)(A;;KR;;;{owner})",
++            u.group_sid
++        ),
++        None => cred_sddl.clone(),
++    };
 +    let cred_key = cred_key_for(&u.username)?;
-+    let cred = crate::reg::ensure_key_with_dacl(&cred_key, &cred_sddl)?;
++    let cred = crate::reg::ensure_key_with_dacl(&cred_key, &per_sddl)?;
 +    cred.set_binary("Blob", &blob)?;
      Ok(())
  }
  
-@@ -535,8 +619,13 @@ impl Drop for SandboxCred {
+@@ -359,9 +474,41 @@ pub fn read_setup() -> Result<Option<SetupInfo>> {
+         sandbox_group_sid,
+         marker_version,
+         created_at_unix: base.get_qword("CreatedAt")?.unwrap_or(0),
++        owner_sid: base.get_sz("OwnerSid")?,
+     }))
+ }
+ 
++/// The install record for one principal, only if the CALLER may use
++/// it: the record's stored owner SID, or an administrator/SYSTEM
++/// exemption (setup runs elevated, possibly as a different admin).
++/// Records without a stored owner (pre-owner installs) stay ungated.
++pub fn authorized_setup_for(name: Option<&str>) -> Result<SetupInfo> {
++    let info = require_current_setup_for(name)?;
++    if let Some(owner) = info.owner_sid.as_deref() {
++        let caller = crate::sid::current_user_sid()?;
++        let admin = caller == SYSTEM_SID
++            || crate::sam::is_member_of(ADMINISTRATORS_SID, &caller).unwrap_or(false);
++        if caller != owner && !admin {
++            anyhow::bail!(
++                "sandbox user '{}' belongs to another owner; this call runs as {caller}",
++                info.sandbox_user
++            );
++        }
++    }
++    Ok(info)
++}
++
++/// The credential for one principal, gated like its record.
++pub fn authorized_cred_for(name: Option<&str>) -> Result<SandboxCred> {
++    let info = authorized_setup_for(name)?;
++    let blob = read_cred_blob_for(name)?;
++    let pw = String::from_utf8(dpapi::unprotect(&blob)?).context("password is not UTF-8")?;
++    Ok(SandboxCred {
++        user: info.sandbox_user,
++        pw,
++    })
++}
++
+ /// Registry value (MULTI_SZ): one `<sublayer guid>=<mode>` line per
+ /// sublayer whose filters an install wrote; an uninstall removes the line.
+ const LOOPBACK_MODES_VALUE: &str = "LoopbackModes";
+@@ -535,8 +682,13 @@ impl Drop for SandboxCred {
  /// is DENY'd on it (and on the store directory) and so cannot call
  /// this to learn its own password.
  pub fn read_cred() -> Result<SandboxCred> {
@@ -456,7 +577,7 @@ index ba0ac37..2880674 100644
      let pw = String::from_utf8(dpapi::unprotect(&blob)?).context("password is not UTF-8")?;
      Ok(SandboxCred {
          user: info.sandbox_user,
-@@ -548,11 +637,20 @@ pub fn read_cred() -> Result<SandboxCred> {
+@@ -548,11 +700,20 @@ pub fn read_cred() -> Result<SandboxCred> {
  /// means the install is incomplete; the repair is the elevated
  /// re-run either way.
  pub(crate) fn read_cred_blob() -> Result<Vec<u8>> {
@@ -479,7 +600,7 @@ index ba0ac37..2880674 100644
          )
      })?;
      key.get_binary("Blob")?.ok_or_else(|| {
-@@ -616,13 +714,13 @@ pub fn trust_ca(der: &crate::cert_store::CertDer, cred: &SandboxCred, sb_sid: &s
+@@ -616,13 +777,13 @@ pub fn trust_ca(der: &crate::cert_store::CertDer, cred: &SandboxCred, sb_sid: &s
  /// removal left failed entries recorded ([`clear_ambient_denies`]'s
  /// retry contract — `status` surfaces them and a later
  /// uninstall/install retries), the base key and `AmbientDenies`
@@ -499,7 +620,7 @@ index ba0ac37..2880674 100644
      crate::reg::delete_subtree(crate::reg::CA_SUBKEY)?;
      if let Some(base) = crate::reg::Key::open(crate::reg::BASE, true)? {
          for v in [
-@@ -636,6 +734,56 @@ pub fn clear_setup() -> Result<()> {
+@@ -636,6 +797,56 @@ pub fn clear_setup() -> Result<()> {
              crate::reg::delete_value(&base, v)?;
          }
      }

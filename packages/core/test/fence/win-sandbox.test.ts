@@ -37,6 +37,7 @@ import {
   icaclsRemoveDenyArgs,
   mkdirArgs,
   removeDirArgs,
+  claimDirArgs,
   installerTargetSid,
   psEncodedArgs,
   knownFolderArgs,
@@ -61,6 +62,9 @@ import {
   poolSublayerGuid,
   sandboxPool,
   userStatusArgs,
+  sandboxLeasesDir,
+  acquirePoolLease,
+  releasePoolLease,
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
@@ -87,7 +91,7 @@ describe("the pinned launcher", () => {
   });
 
   test("the launcher has Authenticode digest pins for x64 and arm64", () => {
-    expect(SRT_WIN_PINS.x64).toBe("8eda23de479534eb24b57caae60e8079bec8929623ccde98218a0d007259676a");
+    expect(SRT_WIN_PINS.x64).toBe("df9ba649b3fe26be5d324a8474db83eb04c5c253c412e63e9533747e682ddc92");
     expect(SRT_WIN_PINS.arm64).toBe("cf562110127e7612084de53782b0307326074d4e1958ca2c5262a974f6bc19c6");
   });
 
@@ -112,9 +116,9 @@ describe("the pinned launcher", () => {
 
 describe("the sandbox command's args", () => {
   test("setup provisions the principal under Clover's sublayer, loopback closed", () => {
-    // The principal is required: no bare-prefix default.
-    const a = setupArgs("C:\\Clover\\srt-win.exe", CLOVER_WFP_SUBLAYER, "clover-sb-f41c96d1");
-    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-f41c96d1", "--sublayer-guid", CLOVER_WFP_SUBLAYER]);
+    // The principal and owner are required: no bare-prefix default.
+    const a = setupArgs("C:\\Clover\\srt-win.exe", CLOVER_WFP_SUBLAYER, "clover-sb-f41c96d1", "S-1-5-21-1");
+    expect(a).toEqual(["C:\\Clover\\srt-win.exe", "install", "--sandbox-user", "clover-sb-f41c96d1", "--sublayer-guid", CLOVER_WFP_SUBLAYER, "--owner-sid", "S-1-5-21-1"]);
     expect(a.join(" ")).not.toContain("allow-loopback");
   });
 
@@ -521,6 +525,14 @@ describe("the icacls/cmd shapes (measured on the VM)", () => {
     expect(a.slice(0, 5)).toEqual(["powershell", "-NoProfile", "-NoLogo", "-NonInteractive", "-EncodedCommand"]);
     expect(Buffer.from(a[5]!, "base64").toString("utf16le")).toContain('New-Item -ItemType Directory -Force -Path "C:\\Users\\x\\Startup"');
   });
+  test("markers claim refuses non-admin owners and locks the DACL", () => {
+    const a = claimDirArgs("C:\\ProgramData\\Clover Sandbox");
+    expect(a[4]).toBe("-EncodedCommand");
+    const script = Buffer.from(a[5]!, "base64").toString("utf16le");
+    expect(script).toContain("takeown.exe");
+    expect(script).toContain("icacls.exe");
+    expect(script).toContain("S-1-5-32-544");
+  });
 });
 
 describe("the installer target SID (should-fix)", () => {
@@ -658,5 +670,67 @@ describe("the minimal child env (should-fix)", () => {
     expect(e.SystemRoot).toBe("C:\\Windows");
     expect(e.USERPROFILE).toBe("C:\\U");
     expect(e.LOCALAPPDATA).toBe("C:\\L");
+  });
+});
+
+describe("the exclusive pool lease (ruling 3)", () => {
+  const memStore = () => {
+    const files = new Map<string, string>();
+    return {
+      files,
+      store: {
+        readText: (p: string) => files.get(p) ?? null,
+        createNew: (p: string, c: string) => {
+          if (files.has(p)) return false;
+          files.set(p, c);
+          return true;
+        },
+        writeText: (p: string, c: string) => { files.set(p, c); },
+        remove: (p: string) => { files.delete(p); },
+      },
+    };
+  };
+  const pool2 = [{ principal: "clover-sb-a-1" }, { principal: "clover-sb-a-2" }];
+
+  test("two launches get distinct principals; a third waits, then refuses", async () => {
+    const { store } = memStore();
+    let t = 1000;
+    const now = () => t;
+    const sleep = async (ms: number) => { t += ms; };
+    const isAlive = () => true;
+    const a = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, holderPid: 11, timeoutMs: 1000, now, sleep, isAlive });
+    const b = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, holderPid: 22, timeoutMs: 1000, now, sleep, isAlive });
+    expect(a).toEqual({ ok: true, principal: "clover-sb-a-1" });
+    expect(b).toEqual({ ok: true, principal: "clover-sb-a-2" });
+    const c = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, holderPid: 33, timeoutMs: 500, pollMs: 500, now, sleep, isAlive });
+    expect(c.ok).toBe(false);
+    if (!c.ok) expect(c.reason).toContain("busy");
+  });
+
+  test("a dead holder's lease is taken over; release is nonce-guarded", async () => {
+    const { store } = memStore();
+    const alive = new Set([11]);
+    const isAlive = (pid: number) => alive.has(pid);
+    const first = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 11, timeoutMs: 10, isAlive });
+    expect(first).toEqual({ ok: true, principal: "clover-sb-a-1" });
+    alive.delete(11);
+    const second = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 10, isAlive });
+    expect(second).toEqual({ ok: true, principal: "clover-sb-a-1" });
+    // A foreign nonce cannot release our lease.
+    expect(releasePoolLease(store, "L:", "clover-sb-a-1", "nope")).toBe(false);
+  });
+
+  test("a changed holder start time takes over (PID reuse)", async () => {
+    const { store } = memStore();
+    const isAlive = () => true;
+    const starts = new Map<number, number>([[11, 100]]);
+    const startTimeOf = (pid: number) => starts.get(pid) ?? null;
+    await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 11, timeoutMs: 10, isAlive, startTimeOf, nonce: "n1" });
+    // Same pid, different start: the recorded holder is gone.
+    starts.set(11, 200);
+    const again = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 10, isAlive, startTimeOf, nonce: "n2" });
+    expect(again).toEqual({ ok: true, principal: "clover-sb-a-1" });
+    expect(releasePoolLease(store, "L:", "clover-sb-a-1", "n2")).toBe(true);
+    expect(releasePoolLease(store, "L:", "clover-sb-a-1", "n2")).toBe(true); // idempotent
   });
 });

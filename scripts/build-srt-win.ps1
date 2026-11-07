@@ -47,6 +47,26 @@ $crateDir = Join-Path $srcDir "vendor/srt-win-src"
 $outDir = Join-Path $root "vendor/srt-win"
 $outExe = Join-Path $outDir "srt-win.exe"
 
+# Pinned Clover patches (file name -> SHA-256). `Apply-Patches` refuses
+# unknown or extra `*.patch` files and any hash mismatch before building.
+$PinnedPatches = @{
+  "0001-per-principal-setup-records.patch" = "013011761ded779b029d234c5c96adb10e2bd3d6ecea5b85e2952bed0d06c0bb"
+}
+
+# What the pinned patch set must change (per-principal records). After
+# applying, the tree must show exactly these files with this shape, or
+# the build stops: a patch that applies cleanly but changes nothing
+# (wrong -p level, already-applied upstream, CRLF damage) must fail
+# loudly instead of shipping an unpatched launcher under a patched pin.
+$ExpectedPatchFiles = @(
+  "vendor/srt-win-src/src/cli.rs",
+  "vendor/srt-win-src/src/install.rs",
+  "vendor/srt-win-src/src/reg.rs",
+  "vendor/srt-win-src/src/user.rs"
+)
+$ExpectedPatchAdded = 377
+$ExpectedPatchDeleted = 43
+
 function Check-Tools {
   foreach ($t in @("git", "cargo") ) {
     if (-not (Get-Command $t -ErrorAction SilentlyContinue)) { throw "build-srt-win: $t is not on PATH" }
@@ -80,9 +100,21 @@ function Sync-Source {
 function Apply-Patches {
   # Clover's per-principal patch set (vendor/srt-win/patches/*.patch).
   # Applied after the checkout, before the build, in sorted order.
+  # Only pinned files may be present (unknown or extra files fail the
+  # build), each must match its pinned hash, and afterwards the tree
+  # must show the expected change (see $ExpectedPatchFiles below).
   $patchDir = Join-Path $root "vendor/srt-win/patches"
-  $patches = Get-ChildItem -Path $patchDir -Filter "*.patch" -ErrorAction SilentlyContinue | Sort-Object Name
-  foreach ($p in $patches) {
+  $found = @(Get-ChildItem -Path $patchDir -Filter "*.patch" -ErrorAction SilentlyContinue | Sort-Object Name)
+  $pinned = @($PinnedPatches.Keys | Sort-Object)
+  $foundNames = @($found | ForEach-Object { $_.Name })
+  $extra = @($foundNames | Where-Object { $_ -notin $pinned })
+  if ($extra.Count -gt 0) { throw "build-srt-win: unpinned patch files: $($extra -join ', ')" }
+  $missing = @($pinned | Where-Object { $_ -notin $foundNames })
+  if ($missing.Count -gt 0) { throw "build-srt-win: pinned patch files missing: $($missing -join ', ')" }
+  foreach ($p in $found) {
+    $got = (Get-FileHash -Algorithm SHA256 $p.FullName).Hash.ToLower()
+    $want = $PinnedPatches[$p.Name].ToLower()
+    if ($got -ne $want) { throw "build-srt-win: patch hash mismatch for $($p.Name): got $got, expected $want" }
     Write-Host "build-srt-win: applying $($p.Name)"
     Push-Location $srcDir
     try {
@@ -94,7 +126,30 @@ function Apply-Patches {
       if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch failed: $($p.Name)" }
     } finally { Pop-Location }
   }
-  if (-not $patches) { Write-Host "build-srt-win: no patches to apply" }
+  if ($found.Count -eq 0) { Write-Host "build-srt-win: no patches to apply" }
+  # The patch must really have changed the tree: exactly the expected
+  # files, with the expected shape. A no-op apply (wrong -p level,
+  # already-upstreamed hunk, CRLF damage) must fail here, not ship an
+  # unpatched launcher under a patched pin.
+  Push-Location $srcDir
+  try {
+    $stat = @(git diff --numstat -- $ExpectedPatchFiles)
+    if ($stat.Count -ne $ExpectedPatchFiles.Count) {
+      throw "build-srt-win: patch changed $($stat.Count) file(s), expected $($ExpectedPatchFiles.Count)"
+    }
+    $added = 0
+    $deleted = 0
+    foreach ($line in $stat) {
+      $a, $d, $f = $line -split "\s+"
+      if ($f -notin $ExpectedPatchFiles) { throw "build-srt-win: patch touched unexpected file: $f" }
+      $added += [int]$a
+      $deleted += [int]$d
+    }
+    if ($added -ne $ExpectedPatchAdded -or $deleted -ne $ExpectedPatchDeleted) {
+      throw "build-srt-win: patch changed $added insertion(s) and $deleted deletion(s), expected $ExpectedPatchAdded/$ExpectedPatchDeleted"
+    }
+    Write-Host "build-srt-win: patch changed the tree as expected ($added insertions, $deleted deletions)"
+  } finally { Pop-Location }
 }
 
 function Build-Launcher {

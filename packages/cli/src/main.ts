@@ -1649,6 +1649,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
     startupFolders,
     mkdirArgs,
     removeDirArgs,
+    claimDirArgs,
     icaclsDenyArgs,
     icaclsRemoveDenyArgs,
     setDescriptionArgs,
@@ -1743,7 +1744,18 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       }
       // Cross-owner force is refused: another user's install is theirs to remove (ruling 3).
       const { readFile, writeFile, mkdir } = await import("node:fs/promises");
-      const { dirname } = await import("node:path");
+      const { dirname, join } = await import("node:path");
+      // Claim the markers home for admins (should-fix, like lane M's protected copy): a folder
+      // owned by a non-admin fails setup closed instead of inheriting a squatted DACL.
+      const markersRoot = join(programData, "Clover Sandbox");
+      for (const dir of [markersRoot, join(markersRoot, "markers")]) {
+        const claim = await run([...claimDirArgs(dir)]);
+        if (claim.code !== 0) {
+          console.error(`sandbox setup refused: cannot secure ${dir}${claim.out.trim() ? `\n${claim.out.trim().slice(0, 1000)}` : ""}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
       const markerFile = installMarkerPath(programData, ownerSid);
       const existing = await readFile(markerFile, "utf8").then((t) => parseInstallMarker(t), () => null);
       const gate = markerAllowsSetup(existing, ownerSid);
@@ -1777,7 +1789,7 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       for (const slot of pool) {
         const { principal, sublayer } = slot;
         const fail = (msg: string) => { console.error(`sandbox setup: ${principal}: ${msg}`); process.exitCode = 1; failed = true; };
-        const { code, out } = await run([...setupArgs(launcher, sublayer, principal), ...(force ? ["--force"] : [])]);
+        const { code, out } = await run([...setupArgs(launcher, sublayer, principal, ownerSid), ...(force ? ["--force"] : [])]);
         const message = setupExitMessage(code);
         if (message !== null) { fail(`${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`); break; }
         // Finish the profile work in the same call (brief item 5): stamp the owner SID, warm up
