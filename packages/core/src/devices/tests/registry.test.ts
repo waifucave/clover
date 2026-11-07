@@ -22,7 +22,7 @@ runDeviceRegistryConformance(async (opts) => {
     self: { name: opts.name ?? "Studio", ...(opts.kind ? { kind: opts.kind } : {}), ...(opts.os ? { os: opts.os } : {}), ...(opts.computer ? { computer: opts.computer } : {}) },
   });
   return { registry, device: { id: key.id, publicKey: key.publicKeyBase64, sign: async (d: Uint8Array) => key.sign(d) } };
-});
+}, { pending: ["answer-alg"] }); // lane H takes `alg` (a P-256 key, verified by it, and covered by `answerKeyStatement`)
 
 describe("answer keys by algorithm (B's #187, the conformance case \"answer-alg\")", () => {
   test("an answer key verifies with its own algorithm: Ed25519 by default, P-256 when the record says so", async () => {

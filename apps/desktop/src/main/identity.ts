@@ -30,37 +30,34 @@ export function daemonHome(env: Record<string, string | undefined>, home: string
   return env.CLOVER_HOME !== undefined && env.CLOVER_HOME !== "" ? env.CLOVER_HOME : join(home, ".clover");
 }
 
-/** The daemon's socket in that home (the app does not connect yet: lane E's E-M1). */
-export function daemonSocketPath(home: string): string {
-  return join(home, "run", "core.sock");
-}
-
 export interface LaunchArgs {
-  /** `--clover-smoke`: open the window, report what it is on stdout, and quit (the UI test, CI only). */
+  /** `--clover-smoke`: start headless, draw the default shell, report what it is on stdout, and quit (the UI test). */
   smoke: boolean;
+  /** `--clover-headless` (or the smoke run): no window is ever shown, no Dock icon, no tray, no focus taken; the
+   *  tests and local checks run this way (plan §8: nothing on the owner's screen). */
+  headless: boolean;
+  /** `--clover-capture=<png>`: in a headless run, draw offscreen and save the main window's pixels there. */
+  capture?: string;
+  /** `--safe-mode`: only the app's own plugins (§5.8). */
+  safeMode: boolean;
+  /** `--quit`: a second instance's way to ask the running app to Quit (the launcher's Quit on Linux). */
+  quit: boolean;
 }
 
-export function parseLaunchArgs(argv: readonly string[]): LaunchArgs {
-  return { smoke: argv.includes("--clover-smoke") };
-}
-
-/** The renderer's locked-down preferences: sandboxed, isolated, no Node, no remote content (spec §5.5, §12.1). */
-export const WEB_PREFERENCES = {
-  sandbox: true,
-  contextIsolation: true,
-  nodeIntegration: false,
-  nodeIntegrationInWorker: false,
-  nodeIntegrationInSubFrames: false,
-  webSecurity: true,
-  allowRunningInsecureContent: false,
-  webviewTag: false,
-  spellcheck: false,
-} as const;
-
-/** The one window the skeleton opens. Hidden until its page is ready, so it never flashes empty. */
-export function windowOptions(identity: AppIdentity): { width: number; height: number; title: string; show: boolean; webPreferences: typeof WEB_PREFERENCES } {
-  return { width: 960, height: 640, title: identity.productName, show: false, webPreferences: WEB_PREFERENCES };
+export function parseLaunchArgs(argv: readonly string[], env: Record<string, string | undefined> = {}): LaunchArgs {
+  const smoke = argv.includes("--clover-smoke");
+  const capture = argv.find((a) => a.startsWith("--clover-capture="))?.slice("--clover-capture=".length);
+  return {
+    smoke,
+    headless: smoke || argv.includes("--clover-headless") || env.CLOVER_APP_HEADLESS === "1",
+    ...(capture !== undefined && capture !== "" ? { capture } : {}),
+    safeMode: argv.includes("--safe-mode"),
+    quit: argv.includes("--quit"),
+  };
 }
 
 /** The line the smoke run prints, parsed back by the UI test. */
 export const SMOKE_PREFIX = "CLOVER_SMOKE ";
+
+/** The UI session's partition: in memory, so layers keep nothing between runs (state is the core's, decision 77). */
+export const UI_PARTITION = "clover-ui";

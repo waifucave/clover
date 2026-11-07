@@ -92,13 +92,17 @@ export function runLeaseConformance(make: LeaseFactory): void {
       expect(laptop.canAct()).toBe(true);
     });
 
-    test("with no account there's no handshake: only the user's own takeover acquires", async () => {
+    test("with no account the devices' group holds the lease at the handshake, as an account does (item 85)", async () => {
       const clock = new FakeClock();
       const authority = make({ clock, account: false });
       const studio = authority.lease("studio");
-      expect(isContractError(await studio.acquire().catch((e: unknown) => e), "refused")).toBe(true);
-      await studio.acquire({ byUser: true });
+      const laptop = authority.lease("laptop");
+      await studio.acquire();
       expect(studio.canAct()).toBe(true);
+      expect(isContractError(await laptop.acquire().catch((e: unknown) => e), "not_main")).toBe(true);
+      await studio.release();
+      await laptop.acquire({ byUser: true });
+      expect(laptop.canAct()).toBe(true);
     });
 
     test("renewing keeps the epoch and pushes the expiry", async () => {

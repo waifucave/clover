@@ -11,10 +11,10 @@ import type { z } from "zod";
 import {
   BUNDLED_BOT_PLUGIN, BUNDLED_ROOT_PLUGIN, isPluginId, type ValidationIssue,
 } from "@waifucave/clover-protocol";
-import { CAPABILITIES, capabilityOkText, isCapability, parseCapability } from "../catalogs/capabilities";
+import { CAPABILITIES, capabilityOkText, isCapability, parseCapability, parseSettingHost } from "../catalogs/capabilities";
 import { TOOL_HOOK_EVENTS, type HookEvent } from "../catalogs/hooks";
 import { CORE_POINT_NAMES, WELL_KNOWN_POINT_NAMES, dataPointInfo } from "../catalogs/points";
-import { SPOT_NAMES, foldTitle, reservedTitles, spotInfo } from "../catalogs/spots";
+import { SPOT_NAMES, foldTitle, isReservedPluginName, spotInfo } from "../catalogs/spots";
 import { treePathProblem } from "../formats/tree-hash";
 import { parseJsonc } from "../jsonc";
 import { isRange, satisfies } from "../semver";
@@ -350,9 +350,10 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
     if (namespace === BUNDLED_ROOT_PLUGIN) f.error("plugin", "namespace_reserved", ["namespace"], "the namespace `clover` is reserved for the plugins Clover ships");
   }
-  // A plugin named like a reserved title would label its tab with it (#179's review): "Needs you" is Clover's own.
-  if (topId !== BUNDLED_ROOT_PLUGIN && typeof top.name === "string" && reservedTitles().has(foldTitle(top.name))) {
-    f.error("plugin", "name_reserved", ["name"], `"${top.name}" is the name of one of Clover's own entries`);
+  // A plugin named like a reserved title would label its tab with it (#179's review): "Needs you" and "Clover" are
+  // Clover's own (lane G's ask).
+  if (topId !== BUNDLED_ROOT_PLUGIN && typeof top.name === "string" && isReservedPluginName(top.name)) {
+    f.error("plugin", "name_reserved", ["name"], `"${top.name}" is a name only Clover's own plugins have`);
   }
 
   const capabilities = Array.isArray(top.capabilities) ? top.capabilities.filter((c): c is string => typeof c === "string") : [];
@@ -378,6 +379,41 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
       refusedPaths.add(jsonPointer(p.path));
     }
   }
+
+  const endpointSettings = new Set(isObject(top.settings) ? Object.keys(top.settings) : []);
+  // A model's endpoint may name the plugin's settings, never its secrets (lane A's ask, §5.9 `Model.endpoint`). Its
+  // scheme and authority are written out: no userinfo, and a host that takes labels from settings follows a declared
+  // `network:` host's rule (whole labels, the last two fixed, never under a shared-hosting suffix) and is one of them
+  // (#187's review), so the plugin's key reaches only the hosts its OK names.
+  const settingNetworkHosts = new Set(capabilities.filter((c) => c.startsWith("network:") && c.includes("${")).map((c) => c.slice("network:".length)));
+  (isObject(rawContributes) && Array.isArray(rawContributes.models) ? rawContributes.models : []).forEach((model: unknown, i: number) => {
+    const url = isObject(model) && isObject(model.endpoint) ? model.endpoint.baseUrl : undefined;
+    if (typeof url !== "string") return;
+    const at: Seg[] = ["contributes", "models", i, "endpoint", "baseUrl"];
+    // Every finding here refuses the model entry: it leaves the cleaned manifest (#187's check 2).
+    const refuse = (code: string, message: string) => {
+      f.error("entry", code, at, message);
+      refusedPaths.add(jsonPointer(at));
+    };
+    const authority = /^https?:\/\/([^/?#]*)/i.exec(url)?.[1];
+    if (authority === undefined) return void refuse("endpoint_host", "an endpoint starts with its scheme and host, `https://<host>/…`");
+    if (authority.includes("@")) return void refuse("endpoint_host", "an endpoint's URL has no user name or password in it");
+    if (!url.includes("${")) return;
+    const parsed = parseInterpolation(url);
+    if (!parsed.ok) return void refuse("interpolation", parsed.error);
+    for (const part of parsed.parts) {
+      if (part.kind === "text") continue;
+      if (part.kind !== "setting") refuse("interpolation", "an endpoint names only the plugin's settings, `${setting:<key>}`");
+      else if (!endpointSettings.has(part.key)) refuse("interpolation", `\${setting:${part.key}} names no setting of this plugin`);
+    }
+    if (!authority.includes("${")) return;
+    if (parseSettingHost(authority) === null) {
+      return void refuse("endpoint_host", "a host from the plugin's settings takes whole labels, keeps its last two labels fixed, and is never under a shared-hosting suffix");
+    }
+    if (!settingNetworkHosts.has(authority)) {
+      refuse("endpoint_host", `the endpoint's host ${authority} isn't one of the plugin's \`network:\` hosts`);
+    }
+  });
 
   // contributes, key by key.
   const hasHost = isObject(top.host);
@@ -452,10 +488,21 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
 
   const hosts = new Set<string>();
   let dynamicHosts = false;
-  for (const c of capabilities) {
+  const settingKeys = new Set(isObject(top.settings) ? Object.keys(top.settings) : []);
+  capabilities.forEach((c, i) => {
     const p = parseCapability(c);
-    if (p?.kind === "network") hosts.add(`${p.wildcard ? "*." : ""}${p.host}${p.port !== undefined ? `:${p.port}` : ""}`);
-  }
+    if (p?.kind !== "network") return;
+    hosts.add(`${p.wildcard ? "*." : ""}${p.host}${p.port !== undefined ? `:${p.port}` : ""}`);
+    if (!p.settings) return;
+    dynamicHosts = true;
+    for (const key of p.settings) if (!settingKeys.has(key)) f.error("plugin", "interpolation", ["capabilities", i], `\${setting:${key}} names no setting of this plugin`);
+  });
+  // A sign-in the core runs is the clover tree's alone (lane A's ask), at the top level as in entries.
+  (Array.isArray(top.auth) ? top.auth : []).forEach((a: unknown, i: number) => {
+    if (isObject(a) && a.method === "core" && topId !== BUNDLED_ROOT_PLUGIN) {
+      f.error("plugin", "auth_core_bundled_only", ["auth", i, "method"], "a sign-in the core runs is only for the plugins Clover ships");
+    }
+  });
   for (const url of urlFields(manifestOut)) {
     const h = hostOf(url);
     if (h.dynamic) dynamicHosts = true;
@@ -722,6 +769,10 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
     const a = auth[i];
     if (isObject(a) && a.method === "custom" && !ctx.hasHost) {
       f.error("entry", "handler_needs_host", [...at, i, "handler"], "a `custom` sign-in names an export of `host.entry`, and the plugin has no `host`");
+      return false;
+    }
+    if (isObject(a) && a.method === "core" && ctx.topId !== BUNDLED_ROOT_PLUGIN) {
+      f.error("entry", "auth_core_bundled_only", [...at, i, "method"], "a sign-in the core runs is only for the plugins Clover ships");
       return false;
     }
   }

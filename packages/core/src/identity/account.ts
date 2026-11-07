@@ -19,7 +19,7 @@
 //   GET    /.well-known/jwks.json                    the keys tokens are checked against
 // Each takes the Supabase access token as `Authorization: Bearer`.
 import { createHash } from "node:crypto";
-import type { AccountView, DeviceKind, Os } from "@waifucave/clover-protocol";
+import type { AccountView, DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
 import { encode } from "../links/codec";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import { ACCOUNT_TOKEN_MAX_MS, type KeyedTokenSource, mintedTokenSource, Secret, type SecretRef, type SecretStore } from "../contracts/secret-store";
@@ -66,7 +66,7 @@ export interface AccountDevice {
   boxKey: string;
   name: string;
   kind: DeviceKind;
-  os?: Os;
+  os?: DeviceOs;
   addedAt: number;
   revokedAt?: number;
 }
@@ -217,7 +217,7 @@ export class AccountClient {
 
   // ---- the account's devices ----
 
-  async registerDevice(d: { name: string; kind: DeviceKind; os?: Os; boxKey: string }): Promise<AccountDevice> {
+  async registerDevice(d: { name: string; kind: DeviceKind; os?: DeviceOs; boxKey: string }): Promise<AccountDevice> {
     const s = await this.#load();
     if (!s) throw new ContractError("refused", "not signed in");
     const t = Math.floor(this.#o.clock.now());

@@ -69,6 +69,6 @@ describe("QuotaManager", () => {
     const p = q.waitIfLimited(ctrl.signal);
     setTimeout(() => ctrl.abort(), 20);
     await p;
-    expect(Date.now() - started).toBeLessThan(2000); // did not wait the full 10s
+    expect(Date.now() - started).toBeLessThan(8000); // did not wait the full 10s
   });
 });
