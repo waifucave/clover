@@ -15,7 +15,7 @@
 //   devices, which H-M2's lease uses);
 // * the guided rotation a revocation starts: the synced keys the revoked device held, to be rotated (§8.1).
 import { join } from "node:path";
-import type { DeviceKind, Os } from "@waifucave/clover-protocol";
+import type { DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
 import { AnswerKeyHolder, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -26,7 +26,7 @@ import type { SecretMeta } from "../contracts/secret-store";
 import { fromBase64, fromBase64Url, toBase64, utf8 } from "../identity/bytes";
 import { encode } from "../links/codec";
 import type { DeviceKey } from "../identity/device-key";
-import { publicKeyFromBase64, verifyEd25519 } from "../identity/keys";
+import { type AnswerKeyAlg, answerKeyBytes, publicKeyFromBase64, verifyEd25519, verifyKeySignature } from "../identity/keys";
 import { readJsonFile, writeJsonFile } from "./json-file";
 
 /** A pair of devices paired without an account (item 81). The pair's signing keys stay in the secret store. */
@@ -52,12 +52,29 @@ export interface GroupRecord {
   joinedAt: number;
   /** This device's signing key for the group, public half, base64; its seed is in the secret store. */
   ownKey: string;
-  /** The members this device knows, by device id, with their group keys. */
-  members: Record<string, { key: string; since: number }>;
+  /** The members this device knows, by device id, with their group keys and when they vote (the service's last read;
+   *  null: not yet known to vote). */
+  members: Record<string, { key: string; since: number; votesFrom?: number | null }>;
+  /** When this device votes in the group, as the service's last read said. */
+  votesFrom?: number | null;
+  /** How many members the service names, as of its last read (a merge's survivor rule compares these). */
+  size?: number;
+  /** How many of those members this device can't name (no device it knows holds the key), as of the last read: any
+   *  turns off the main's exception to fencing (H-M2's check 4, L4). */
+  unknownMembers?: number;
+  /** The group this one replaced after this device was removed from it (group recovery's two-voter case). */
+  recoveredFrom?: string;
+  /** Every key ever bound to each device in this group, so a revoke removes them all (H-M2's check 2). */
+  keysEver?: Record<string, string[]>;
   /** A founding or a join the service hasn't taken yet (it was unreachable), signed, to send again. */
   pendingCreate?: { group: string; key: string; t: number; sig: string };
-  pendingJoin?: { key: string; t: number; sig: string; by: string; bysig: string };
+  /** `via`: the device whose admit it is, to ask for a fresh one when this one goes stale. */
+  pendingJoin?: { key: string; t: number; sig: string; by: string; bysig: string; from?: string; via?: string };
 }
+
+/** How this device left a group: moved with a merge or an invite, removed by another member, or left on its own
+ *  (its revoke couldn't reach a quorum, so it started a new group). */
+export type GroupLeaving = "moved" | "removed" | "left";
 
 /** The synced keys a revoked device held, to be rotated by the user (§8.1: revoking starts a guided rotation). */
 export interface RotationRecord {
@@ -84,6 +101,9 @@ interface FileShape {
   answerKeyGone: Record<string, number>;
   /** A revocation's steps at the services that haven't been confirmed yet, to send again (S5). */
   pendingRevokes: PendingRevoke[];
+  /** Groups this device left: moved out of in a merge, or was removed from by another member. It never goes back to one
+   *  on its own. */
+  groupsLeft: Record<string, { at: number; how: GroupLeaving }>;
 }
 
 /** What a revocation still has to tell the services, kept until each confirms (devices/account-devices.ts). */
@@ -93,8 +113,8 @@ export interface PendingRevoke {
   steps: string[];
   /** The account-less pair to end, whose keys are kept until the service has ended it. */
   pair?: string;
-  /** The group and the revoked member's key in it, to remove at the service. */
-  group?: { id: string; member: string };
+  /** The group and the revoked member's key in it, to remove at the service, with every other key ever bound to it. */
+  group?: { id: string; member: string; others?: string[] };
 }
 
 /** What makes a peer take a device's answer key: the app's own registration of the key (signed by it), and the chain
@@ -111,16 +131,28 @@ export interface AnswerKeyRotation {
   to: string;
   at: number;
   signature: string;
+  /** The algorithms of `from` and `to` (ed25519 when absent; B's #187). */
+  fromAlg?: AnswerKeyAlg;
+  toAlg?: AnswerKeyAlg;
 }
 
-const MAX_ROTATIONS = 16;
+/** An answer key as the registry keeps it: B's #187 adds `alg` to the contract's record; until it lands, here. */
+export type AnswerKeyRecord = NonNullable<DeviceRecord["answerKey"]> & { alg?: AnswerKeyAlg };
+const algOf = (k: object | undefined): AnswerKeyAlg => (k as { alg?: AnswerKeyAlg } | undefined)?.alg ?? "ed25519";
+
+/** Long enough that a peer away for years of rotations still follows the chain (H-M1's review); a peer that can't
+ *  re-anchors by pairing again. */
+const MAX_ROTATIONS = 256;
 
 const NAME_RE = /^[^\u0000-\u001f\u007f]{1,63}$/u;
 const KINDS: readonly DeviceKind[] = ["desktop", "server", "cloud", "phone", "browser"];
 
-/** What a desktop's app signs to show the core it holds an answer key. */
-export function answerKeyStatement(deviceId: string, publicKey: string, held: string): Uint8Array {
-  return utf8(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`);
+/** What a device's app signs to show it holds an answer key. The statement covers the key's algorithm (B's #187): a
+ *  P-256 key's is `clover/answer-key/2` with `alg` last; an Ed25519 key's stays `clover/answer-key/1`. */
+export function answerKeyStatement(deviceId: string, publicKey: string, held: string, alg: AnswerKeyAlg = "ed25519"): Uint8Array {
+  return alg === "ed25519"
+    ? utf8(`clover/answer-key/1\n${deviceId}\n${publicKey}\n${held}`)
+    : utf8(`clover/answer-key/2\n${deviceId}\n${publicKey}\n${held}\n${alg}`);
 }
 
 /** What the current answer key signs to hand over to the next one. */
@@ -129,20 +161,23 @@ export function answerKeyRotateStatement(deviceId: string, from: string, to: str
 }
 
 /** Whether `proof` carries a device's answer key from `from` (undefined: the device had none) to `to`. */
-function provesAnswerKey(id: string, from: string | undefined, to: { publicKey: string; held: string }, proof: AnswerKeyProof | undefined): boolean {
+function provesAnswerKey(id: string, from: { publicKey: string; alg?: AnswerKeyAlg } | undefined, to: { publicKey: string; held: string; alg?: AnswerKeyAlg }, proof: AnswerKeyProof | undefined): boolean {
   if (!proof || typeof proof.registration !== "string" || !Array.isArray(proof.rotations)) return false;
-  const next = publicKeyFromBase64(to.publicKey);
+  const next = answerKeyBytes(algOf(to), to.publicKey);
   const reg = fromBase64(proof.registration);
-  if (!next || !reg || !verifyEd25519(next, answerKeyStatement(id, to.publicKey, to.held), reg)) return false;
-  if (from === undefined || from === to.publicKey) return true;
-  // Walk the chain from the key this device knows to the new one, each step signed by the key it replaces.
-  let current = from;
+  if (!next || !reg || !verifyKeySignature(algOf(to), next, answerKeyStatement(id, to.publicKey, to.held, algOf(to)), reg)) return false;
+  if (from === undefined || from.publicKey === to.publicKey) return true;
+  // Walk the chain from the key this device knows to the new one, each step signed by the key it replaces, with that
+  // key's own algorithm.
+  let current = from.publicKey;
+  let alg = algOf(from);
   for (const r of proof.rotations.slice(-MAX_ROTATIONS)) {
     if (!r || r.from !== current || typeof r.to !== "string" || typeof r.at !== "number" || typeof r.signature !== "string") continue;
-    const k = publicKeyFromBase64(r.from);
+    const k = answerKeyBytes(alg, r.from);
     const sig = fromBase64(r.signature);
-    if (!k || !sig || !verifyEd25519(k, answerKeyRotateStatement(id, r.from, r.to, r.at), sig)) return false;
+    if (!k || !sig || !verifyKeySignature(alg, k, answerKeyRotateStatement(id, r.from, r.to, r.at), sig)) return false;
     current = r.to;
+    alg = r.toAlg ?? "ed25519";
     if (current === to.publicKey) return true;
   }
   return false;
@@ -152,7 +187,7 @@ export interface FileDeviceRegistryOptions {
   /** The Clover home; the registry is `devices/registry.json` in it. */
   home: string;
   key: DeviceKey;
-  self: { name: string; kind?: DeviceKind; os?: Os; computer?: string; hasDisplay?: boolean };
+  self: { name: string; kind?: DeviceKind; os?: DeviceOs; computer?: string; hasDisplay?: boolean };
   clock: Pick<Clock, "now">;
   /** For a revocation's rotation list: the synced items in the secret store (names only, never values). */
   syncedSecrets?: () => Promise<SecretMeta[]>;
@@ -183,7 +218,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
       if (existing.v !== 1 || existing.self !== opts.key.id) throw new ContractError("conflict", "the device registry belongs to another device key");
       return new FileDeviceRegistry(path, {
         ...existing, pairs: existing.pairs ?? [], rotations: existing.rotations ?? [], updates: existing.updates ?? {}, boxKeys: existing.boxKeys ?? {},
-        answerKeyGone: existing.answerKeyGone ?? {}, pendingRevokes: existing.pendingRevokes ?? [],
+        answerKeyGone: existing.answerKeyGone ?? {}, pendingRevokes: existing.pendingRevokes ?? [], groupsLeft: existing.groupsLeft ?? {},
       }, opts);
     }
     if (!NAME_RE.test(opts.self.name)) throw new ContractError("invalid", "a device name is 1–63 characters");
@@ -194,7 +229,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
       ...(runsCore ? { computer: ((c) => (computerNameProblem(c) === null ? c : computerNameFor(c) || "Computer"))(opts.self.computer ?? opts.self.name) } : {}),
       ...(opts.self.hasDisplay === undefined ? {} : { hasDisplay: opts.self.hasDisplay }),
     };
-    const state: FileShape = { v: 1, self: self.id, devices: [self], pairs: [], rotations: [], updates: {}, boxKeys: {}, answerKeyGone: {}, pendingRevokes: [] };
+    const state: FileShape = { v: 1, self: self.id, devices: [self], pairs: [], rotations: [], updates: {}, boxKeys: {}, answerKeyGone: {}, pendingRevokes: [], groupsLeft: {} };
     writeJsonFile(path, state);
     return new FileDeviceRegistry(path, state, opts);
   }
@@ -226,7 +261,10 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (!key || (await deviceIdFor(key)) !== device.id) throw new ContractError("invalid", "the id doesn't match the key");
     if (!NAME_RE.test(device.name)) throw new ContractError("invalid", "a device name is 1–63 characters");
     if (!KINDS.includes(device.kind)) throw new ContractError("invalid", `unknown device kind ${String(device.kind)}`);
-    if (device.answerKey !== undefined) this.#checkAnswerKey(device.answerKey);
+    // A record's answer key as its pairing or the account gave it: its holder and algorithm must be known ones; a key
+    // that doesn't fit its algorithm (a P-256 point labelled Ed25519) is kept, and simply never verifies an answer
+    // (B's DeviceRegistry conformance, `answer-alg`).
+    if (device.answerKey !== undefined) this.#checkAnswerKeyLabel(device.answerKey);
     // Every computer has its tree name (§9.1; lane J's ask): the one it names, if it passes lane J's rules, else one made
     // from its name; unique here ignoring case, with a `-2` on a collision (S4 of H-M1's review).
     const computer = device.runsCore ? { computer: this.#treeName(device.computer ?? device.name, device.id) } : {};
@@ -277,10 +315,15 @@ export class FileDeviceRegistry implements DeviceRegistry {
 
   async verifyAnswer(id: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> {
     const d = this.#find(id);
-    const keyText = d === undefined ? undefined : answerKeyOf(d);
+    // Never a phone's link key (the controller's ruling, item 91): only the answer key its record names. On main,
+    // `answerKeyOf` still falls back to a phone's link key; lane B's #234 drops that fallback, and with it on main the
+    // phone check here is redundant and goes.
+    const keyText = d === undefined || (d.kind === "phone" && d.answerKey === undefined) ? undefined : answerKeyOf(d);
     if (keyText === undefined) return false;
-    const key = fromBase64(keyText);
-    return key !== null && verifyEd25519(key, data, signature);
+    // With the key's own algorithm: a phone's Secure Enclave key is P-256 (B's #187).
+    const alg = algOf(d!.answerKey as AnswerKeyRecord | undefined);
+    const key = answerKeyBytes(alg, keyText);
+    return key !== null && verifyKeySignature(alg, key, data, signature);
   }
 
   watch(fn: (change: DeviceChange) => void): Unsubscribe {
@@ -300,24 +343,30 @@ export class FileDeviceRegistry implements DeviceRegistry {
   /** Takes this device's app's answer key, after checking the app signed `answerKeyStatement` with it. A different key
    *  from the one held needs the held key's signature handing over to it (`rotation`, `answerKeyRotateStatement`); a
    *  first key after one was removed isn't taken (pair again). */
-  async setOwnAnswerKey(publicKey: string, held: AnswerKeyHolder, signature: Uint8Array, rotation?: { from: string; at: number; signature: Uint8Array }): Promise<DeviceRecord> {
-    this.#checkAnswerKey({ publicKey, held });
+  async setOwnAnswerKey(
+    publicKey: string, held: AnswerKeyHolder, signature: Uint8Array, rotation?: { from: string; at: number; signature: Uint8Array }, alg: AnswerKeyAlg = "ed25519",
+  ): Promise<DeviceRecord> {
+    this.#checkAnswerKey({ publicKey, held, alg });
     const self = this.#find(this.#state.self)!;
-    if (self.kind !== "desktop") throw new ContractError("refused", "only a desktop's app holds an answer key apart from the core's");
-    const key = publicKeyFromBase64(publicKey)!;
-    if (!verifyEd25519(key, answerKeyStatement(self.id, publicKey, held), signature)) throw new ContractError("refused", "the app didn't sign the answer key's statement");
-    const current = self.answerKey?.publicKey;
+    if (self.kind !== "desktop" && self.kind !== "phone") throw new ContractError("refused", "only a desktop's or a phone's app holds an answer key apart from the link key");
+    const key = answerKeyBytes(alg, publicKey)!;
+    if (!verifyKeySignature(alg, key, answerKeyStatement(self.id, publicKey, held, alg), signature)) throw new ContractError("refused", "the app didn't sign the answer key's statement");
+    const held0 = self.answerKey as AnswerKeyRecord | undefined;
+    const current = held0?.publicKey;
     const rotations = [...(this.#state.answerKeyProof?.rotations ?? [])];
     if (current !== undefined && current !== publicKey) {
       if (!rotation || rotation.from !== current) throw new ContractError("refused", "a new answer key needs the current one's signature handing over to it");
-      if (!verifyEd25519(publicKeyFromBase64(current)!, answerKeyRotateStatement(self.id, current, publicKey, rotation.at), rotation.signature)) {
+      if (!verifyKeySignature(algOf(held0), answerKeyBytes(algOf(held0), current)!, answerKeyRotateStatement(self.id, current, publicKey, rotation.at), rotation.signature)) {
         throw new ContractError("refused", "the current answer key didn't sign the hand-over");
       }
-      rotations.push({ from: current, to: publicKey, at: rotation.at, signature: toBase64(rotation.signature) });
+      rotations.push({
+        from: current, to: publicKey, at: rotation.at, signature: toBase64(rotation.signature),
+        ...(algOf(held0) === "ed25519" ? {} : { fromAlg: algOf(held0) }), ...(alg === "ed25519" ? {} : { toAlg: alg }),
+      });
     } else if (current === undefined && this.#state.answerKeyGone[self.id] !== undefined) {
       throw new ContractError("refused", "this device's answer key was removed: pair it again to answer cards");
     }
-    self.answerKey = { publicKey, held };
+    self.answerKey = { publicKey, held, ...(alg === "ed25519" ? {} : { alg }) } as AnswerKeyRecord;
     this.#state.answerKeyProof = { registration: toBase64(signature), rotations: rotations.slice(-MAX_ROTATIONS) };
     this.#save();
     this.#listeners.emit({ type: "changed", device: { ...self } });
@@ -356,11 +405,11 @@ export class FileDeviceRegistry implements DeviceRegistry {
       } catch {
         return false;
       }
-      const current = d.answerKey;
-      const same = current !== undefined && current.publicKey === update.answerKey.publicKey && current.held === update.answerKey.held;
+      const current = d.answerKey as AnswerKeyRecord | undefined;
+      const same = current !== undefined && current.publicKey === update.answerKey.publicKey && current.held === update.answerKey.held && algOf(current) === algOf(update.answerKey);
       if (!same) {
         if (current === undefined && this.#state.answerKeyGone[id] !== undefined) return false;
-        if (!provesAnswerKey(id, current?.publicKey, update.answerKey, proof)) return false;
+        if (!provesAnswerKey(id, current, update.answerKey, proof)) return false;
       }
     }
     if (update.name !== undefined) {
@@ -381,8 +430,15 @@ export class FileDeviceRegistry implements DeviceRegistry {
     return true;
   }
 
-  #checkAnswerKey(k: { publicKey: string; held: string }): void {
-    if (!publicKeyFromBase64(k.publicKey)) throw new ContractError("invalid", "an answer key is a 32-byte Ed25519 public key");
+  #checkAnswerKeyLabel(k: { publicKey: string; held: string; alg?: unknown }): void {
+    if (k.alg !== undefined && k.alg !== "ed25519" && k.alg !== "p256") throw new ContractError("invalid", `unknown answer key algorithm ${String(k.alg)}`);
+    if (typeof k.publicKey !== "string" || fromBase64(k.publicKey) === null) throw new ContractError("invalid", "an answer key is base64");
+    if (!AnswerKeyHolder.safeParse(k.held).success) throw new ContractError("invalid", `unknown answer key holder ${k.held}`);
+  }
+
+  #checkAnswerKey(k: { publicKey: string; held: string; alg?: unknown }): void {
+    if (k.alg !== undefined && k.alg !== "ed25519" && k.alg !== "p256") throw new ContractError("invalid", `unknown answer key algorithm ${String(k.alg)}`);
+    if (!answerKeyBytes(algOf(k as { alg?: AnswerKeyAlg }), k.publicKey)) throw new ContractError("invalid", "an answer key is a 32-byte Ed25519 key, or a P-256 key's 65-byte point");
     if (!AnswerKeyHolder.safeParse(k.held).success) throw new ContractError("invalid", `unknown answer key holder ${k.held}`);
   }
 
@@ -407,6 +463,14 @@ export class FileDeviceRegistry implements DeviceRegistry {
     return { ...record };
   }
 
+  /** A pair registration signed again (its statements' `t` had passed the service's window). */
+  setPairRegistration(pairId: string, registration: NonNullable<PairRecord["registration"]>): void {
+    const p = this.#state.pairs.find((x) => x.pairId === pairId);
+    if (!p) throw new ContractError("not_found", `no pair ${pairId}`);
+    p.registration = { t: registration.t, keys: [...registration.keys], sigs: [...registration.sigs] };
+    this.#save();
+  }
+
   markPairRegistered(pairId: string): void {
     const p = this.#state.pairs.find((x) => x.pairId === pairId);
     if (!p) throw new ContractError("not_found", `no pair ${pairId}`);
@@ -423,11 +487,53 @@ export class FileDeviceRegistry implements DeviceRegistry {
     this.#save();
   }
 
-  addGroupMember(device: string, key: string): void {
+  /** Binds a device's member key: from a confirmed pairing, an invited move, or a key the device proved it holds and
+   *  the service lists. A bound key is never overwritten, and a key bound to one device is never bound to another
+   *  (H-M2's check 2). False when it isn't bound. */
+  addGroupMember(device: string, key: string): boolean {
     const g = this.#state.group;
     if (!g) throw new ContractError("not_found", "no group");
+    const bound = g.members[device];
+    if (bound) return bound.key === key;
+    if (key === g.ownKey || Object.values(g.members).some((m) => m.key === key)) return false;
     g.members[device] = { key, since: this.#clock.now() };
+    const ever = (g.keysEver ??= {});
+    ever[device] = [...new Set([...(ever[device] ?? []), key])];
     this.#save();
+    return true;
+  }
+
+  /** Every key this group record ever bound to `device` (its current one among them). */
+  groupKeysOf(device: string): string[] {
+    const g = this.#state.group;
+    if (!g) return [];
+    return [...new Set([...(g.keysEver?.[device] ?? []), ...(g.members[device] ? [g.members[device].key] : [])])];
+  }
+
+  /** What the service's read of the group says: who votes from when, and how many members it has. A member the read
+   *  doesn't name is kept (a read can cross a join in flight); a revoke drops it. */
+  groupRead(group: string, read: { size: number; self?: number | null; members: Record<string, number | null | undefined>; unknown?: number }): void {
+    const g = this.#state.group;
+    if (!g || g.id !== group) return;
+    g.size = read.size;
+    if (read.unknown !== undefined) g.unknownMembers = read.unknown;
+    if (read.self !== undefined) g.votesFrom = read.self;
+    for (const [device, m] of Object.entries(g.members)) if (device in read.members) m.votesFrom = read.members[device] ?? null;
+    this.#save();
+  }
+
+  /** Leaves the group record behind (merged into another, or removed from it); the next `setGroup` names the new one. */
+  leaveGroup(how: GroupLeaving): void {
+    const g = this.#state.group;
+    if (!g) return;
+    this.#state.groupsLeft[g.id] = { at: this.#clock.now(), how };
+    delete this.#state.group;
+    this.#save();
+  }
+
+  groupLeft(id: string): { at: number; how: GroupLeaving } | undefined {
+    const l = this.#state.groupsLeft[id];
+    return l ? { ...l } : undefined;
   }
 
   // ---- box keys (the handshake's account scope) ----
@@ -450,7 +556,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
   // ---- a revocation's steps at the services (S5) ----
 
   pendingRevokes(): PendingRevoke[] {
-    return this.#state.pendingRevokes.map((r) => ({ ...r, steps: [...r.steps], ...(r.group ? { group: { ...r.group } } : {}) }));
+    return this.#state.pendingRevokes.map((r) => ({ ...r, steps: [...r.steps], ...(r.group ? { group: { ...r.group, ...(r.group.others ? { others: [...r.group.others] } : {}) } } : {}) }));
   }
 
   addPendingRevoke(r: Omit<PendingRevoke, "at">): void {
@@ -510,13 +616,15 @@ export interface PeerUpdate {
   name?: string;
   /** A computer's tree name. */
   computer?: string;
-  answerKey?: { publicKey: string; held: AnswerKeyHolder } | null;
+  answerKey?: { publicKey: string; held: AnswerKeyHolder; alg?: AnswerKeyAlg } | null;
   at: number;
 }
 
 /** The update as signed: canonical CBOR, so no field's value can read as another's or as "no change". */
-export function peerUpdateStatement(id: string, update: { name?: string; computer?: string; answerKey?: { publicKey: string; held: string } | null; at: number }): Uint8Array {
-  const ak = update.answerKey === undefined ? ["keep"] : update.answerKey === null ? ["none"] : ["key", update.answerKey.publicKey, update.answerKey.held];
+export function peerUpdateStatement(id: string, update: { name?: string; computer?: string; answerKey?: { publicKey: string; held: string; alg?: AnswerKeyAlg } | null; at: number }): Uint8Array {
+  // A P-256 key's algorithm is signed too (B's #187); an Ed25519 key's update reads as before.
+  const ak = update.answerKey === undefined ? ["keep"] : update.answerKey === null ? ["none"]
+    : algOf(update.answerKey) === "ed25519" ? ["key", update.answerKey.publicKey, update.answerKey.held] : ["key", update.answerKey.publicKey, update.answerKey.held, algOf(update.answerKey)];
   return encode(["clover/device-update/3", id, update.at, update.name === undefined ? ["keep"] : ["set", update.name], update.computer === undefined ? ["keep"] : ["set", update.computer], ak]);
 }
 

@@ -23,6 +23,7 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { EXA_API_KEY_SECRET } from "../../src/agent/exa-key";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { describeWithEmbeddedRuntime } from "../helpers/embedded-runtime";
+import { darwinTest } from "../helpers/darwin-only";
 
 class TestClient {
   private decoder = new LineDecoder();
@@ -267,7 +268,7 @@ describeWithEmbeddedRuntime("the tool surface — CODE (embedded, like every ses
   // the MCP call → the registry's ordered content → the service → a real sandboxed worker → the projector. A
   // print-only script touches no helper.
   for (const policy of ["dont-ask", "plan", "ask"] as const) {
-    test(`ComputerV2 RUNS under ${policy} — no card for the script itself`, async () => {
+    darwinTest(`ComputerV2 RUNS under ${policy} — no card for the script itself`, async () => {
       const { sessionId } = await d.client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", cwd: d.home, model: "winter-test/calls", approvalPolicy: policy });
       const s = await surfaceOf(d, sessionId, [
         `CALL ToolSearch {"query":"select:ComputerV2"}`,

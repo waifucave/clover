@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, dyldRefusal, testKeychainRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1681,6 +1681,58 @@ async function runSupervise(): Promise<void> {
 }
 
 if (import.meta.main) {
+  // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs, read from
+  // the raw environment too, so a duplicate entry can't hide one) and, on macOS, no keychains from a HOME that isn't the
+  // account's, before anything else runs — every subcommand, every self-spawned worker. build-kind.ts and
+  // startup-guard.ts say why.
+  {
+    const raw = DIST_BUILD ? rawEnvironment() ?? [] : [];
+    const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? homeRefusal() ?? dyldRefusal(raw) ?? testKeychainRefusal(process.env, raw);
+    if (refusal !== undefined) {
+      process.stderr.write(`${refusal}\n`);
+      process.exit(TLS_ENV_REFUSAL_EXIT);
+    }
+  }
+  // verify:sealed-core's probe: one request carrying a dummy key in `Authorization` and `x-api-key` to the URL given,
+  // then `fetch-probe: <status>` or `fetch-probe: failed (<code>)`; with `--worker`, made from a Worker, as an embedded
+  // session's are. The gate checks the key never shows in this process's output, whatever environment it ran with
+  // (BUN_CONFIG_VERBOSE_FETCH printed request headers, keys included), and which certificate authorities a request
+  // trusts (the OS store, `--use-system-ca`; never a self-signed certificate). It never prints the key itself, and it
+  // fetches only loopback or the one Apple URL, with a 32-hex nonce key (fetch-probe.ts), else exits 2.
+  if (process.argv[2] === "__fetch-probe") {
+    const [url, key] = [process.argv[3] ?? "", process.argv[4] ?? ""];
+    const { fetchProbeRefusal } = await import("./fetch-probe");
+    const refused = fetchProbeRefusal(url, key);
+    if (refused !== undefined) {
+      process.stderr.write(`fetch-probe: refused (${refused})\n`);
+      process.exit(2);
+    }
+    // Self-contained (it is also sent to the Worker as source): fetch only.
+    const probe = async (u: string, k: string): Promise<string> => {
+      try {
+        // Never follows a redirect: a 3xx comes back as its status, so the key goes to no second host.
+        const r = await fetch(u, { redirect: "manual", headers: { authorization: `Bearer ${k}`, "x-api-key": k } });
+        return `fetch-probe: ${r.status}`;
+      } catch (err) {
+        const e = err as { code?: string; name?: string };
+        return `fetch-probe: failed (${e.code ?? e.name ?? "error"})`;
+      }
+    };
+    let line: string;
+    if (process.argv.includes("--worker")) {
+      const worker = new Worker(URL.createObjectURL(new Blob([`const probe = ${probe.toString()};\nonmessage = async (e) => postMessage(await probe(e.data.url, e.data.key));`])));
+      line = await new Promise<string>((resolve) => {
+        worker.onmessage = (e) => resolve(String(e.data));
+        worker.onerror = (e) => resolve(`fetch-probe: failed (worker: ${e.message})`);
+        worker.postMessage({ url, key });
+      });
+      worker.terminate();
+    } else {
+      line = await probe(url, key);
+    }
+    process.stdout.write(`${line}\n`);
+    process.exit(0);
+  }
   // WS-23: the RUNTIME's workflow worker (COMPILED path) — an embedded chat/dispatch session's Workflow
   // tool spawns `<clover-core> __runtime-workflow-worker --bridge` under the seatbelt
   // (`runtime-sdk/embedded.ts`'s `runtimeWorkflowWorkerCommand`). POSITIONAL, like the probes below
@@ -1788,6 +1840,13 @@ if (import.meta.main) {
     const peer = r.ok ? await runPeerPidProbe() : { ok: false, line: "peer-pid: not run" };
     process.stdout.write(`${r.line}\n${peer.line}\n`);
     process.exit(r.ok && peer.ok ? 0 : 1);
+  }
+  // M-M2: the update feed's signature, against the key this binary carries (./verify-feed.ts).
+  if (process.argv[2] === "__verify-feed") {
+    const { runVerifyFeed } = await import("./verify-feed");
+    const r = runVerifyFeed(process.argv[3]);
+    process.stdout.write(`${r.line}\n`);
+    process.exit(r.code);
   }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
@@ -2464,6 +2523,13 @@ if (import.meta.main) {
         positionals.push(tok);
       }
       return { positionals, scopeRaw };
+    }
+
+    if (sub === "validate") {
+      const { runPluginValidate } = await import("./plugin-validate-cli");
+      const run = await runPluginValidate(rest);
+      (run.code === 2 ? console.error : console.log)(run.output);
+      process.exit(run.code);
     }
 
     if (sub === "marketplace") {
@@ -3472,6 +3538,7 @@ if (import.meta.main) {
   trust <dir> [--list] | trust list | trust remove <path>
   skills                                          list discovered skills for this directory
   mcp                                              list configured MCP servers and their tools
+  plugin validate [<folder>] [--json] [--upgrade]   a plugin folder's class, contributions, hosts and OK text; non-zero on an error
   plugin list | install <git-url> [name] | enable <name> | disable <name> | remove <name> | restart <name>
   bg list <session> | bg peek <session> <taskId> | bg kill <session> <taskId>
   routines [list] | routines create "<spec>" [--policy auto|plan] -- <prompt>

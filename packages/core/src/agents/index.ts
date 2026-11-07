@@ -42,11 +42,14 @@ import { FileAgentOks } from "./sandbox/oks";
 import { hookShimCommand } from "./claude-code/hook-shim";
 import { placeInClaudeCode } from "./claude-code/placement";
 import type { PluginPartsSource } from "./placement";
-import { QUIRKS, READ_ONLY_MODES } from "./quirks";
+import { ContributedBackendCache, type ContributedBackend } from "./plugin-backends";
+import { ADMISSIONS } from "./sandbox/admission";
+import type { PluginRegistry } from "../contracts/plugin-registry";
+import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 import { StallWatchdog } from "./watchdog";
 
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
-export { RpcPeer, RpcError } from "./acp/jsonrpc";
+export { RpcPeer, RpcError } from "@waifucave/clover-agent-sdk/acp";
 export { AcpAgentBackend, versionSatisfies, type AcpStartSpec, type AgentWire, type BackendCommand } from "./backend";
 export { bridgeCloverParts, type BridgeCloverParts, type BridgeHandlers } from "./bridge/handlers";
 export { bridgeCommand, BRIDGE_MAIN_PATH } from "./bridge/main";
@@ -59,9 +62,11 @@ export { AgentManager, BRIDGE_SERVER_PREFIX, effectOf, promptOf, ruleKeyOf, type
 export { agentPaths } from "./paths";
 export { agentRecordPath, readAgentRecord, type DaemonAgentRecord } from "./records";
 export { buildAgentEnv, launchContained } from "./process/launch";
-export { ANTIGRAVITY_QUIRKS, CURSOR_QUIRKS, QUIRKS, READ_ONLY_MODES } from "./quirks";
+export { AgentQuirksSchema, QuirksFileSchema, bundledAgentPluginId, contributedBackends, quirksWithCommand, readQuirksFile, type ContributedBackend, type FileQuirks, type QuirksFile } from "./plugin-backends";
+export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
+export { inProcessBridgeServer } from "./bridge/in-process";
 export { UserSelections } from "./acp/selections";
-export { agentMethods, BACKEND_NAMES } from "./rpc";
+export { agentMethods } from "./rpc";
 export { agentToolDefs, type CoreToolDef } from "./tools";
 export { AgentTranscript, botSegment, redactDeep, TRANSCRIPT_CAPS, transcriptPaths } from "./transcript";
 export { NO_PARTS, type HookEvent, type PluginParts, type PluginPartsSource } from "./placement";
@@ -81,7 +86,9 @@ export interface AgentsOptions {
   tree: Pick<Tree, "resolve">;
   fence: Pick<Fence, "checkAgentRoot" | "policy" | "touches">;
   clock: Clock;
-  /** The backends to offer; the quirks table's by default. B-M2's registry feeds `agentBackends` here. */
+  /** The plugins' `agentBackends` entries (the bundled `clover/agent-<id>` plugins and any other), read at each start. */
+  registry?: Pick<PluginRegistry, "entries" | "get">;
+  /** The backends to offer in place of the registry's (tests). */
   backends?: (wire: AgentManager["wire"]) => AgentBackend[];
   pluginTools?: BridgeToolSource;
   pluginParts?: PluginPartsSource;
@@ -89,6 +96,9 @@ export interface AgentsOptions {
   levelOf?: (computer: string) => Level | undefined;
   /** The pause switch (lane D's gate): paused, delegated agents are held. */
   pause?: AgentPauseGate;
+  /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
+   *  (`embeddedSessionOptions`, `fillProvider`) and the user's default model. Without it the backend isn't offered. */
+  cloverCode?: Pick<CloverCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "query">;
   log?: (line: string) => void;
 }
 
@@ -100,10 +110,10 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const tokens = new BridgeTokens();
   // The bridge connects to the daemon's own endpoint, where lane C serves the `bridge` role.
   const socketPath = o.socketPath;
-  let backends: AgentBackend[] = [];
+  let backends: () => AgentBackend[] = () => [];
   const manager: AgentManager = new AgentManager({
     home: o.home, computer: o.computer, host: o.host, approvals: o.approvals, tree: o.tree, fence: o.fence, clock: o.clock, tokens,
-    backends: () => backends,
+    backends: () => backends(),
     bridge: { ...bridgeCommand(), socketPath },
     watchdog: new StallWatchdog({ clock: o.clock }),
     oks: new FileAgentOks(o.home),
@@ -118,13 +128,27 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const place = { "claude-code": (parts: Parameters<typeof placeInClaudeCode>[0], ctx: { dir: string }) => placeInClaudeCode(parts, { dir: ctx.dir, shim: hookShimCommand() }) } as const;
   // One record of the user's own selections for every backend, in the daemon's fenced run folder.
   const selections = new UserSelections(join(o.home, "run", "agents", "selections"));
-  backends = o.backends?.(wire) ?? Object.entries(QUIRKS).map(([id, quirks]) => new AcpAgentBackend({
-    id, pluginId: `clover/agent-${id}`, quirks, clock: o.clock, wire, selections, ...(id in place ? { place: place[id as keyof typeof place] } : {}),
-    ...(READ_ONLY_MODES[id] ? { readOnlyMode: READ_ONLY_MODES[id] } : {}),
-  }));
+  // Every ACP backend is a plugin's entry; what the core grants by backend id (an admitted sandbox, Claude Code's
+  // placement) applies only to Clover's own `clover/agent-<id>`.
+  const build = (c: ContributedBackend) => new AcpAgentBackend({
+    id: c.id, pluginId: c.pluginId, bundled: c.bundled, name: c.name, quirks: c.quirks, clock: o.clock, wire, selections,
+    admissions: c.bundled ? ADMISSIONS : {},
+    ...(c.bundled && c.id in place ? { place: place[c.id as keyof typeof place] } : {}),
+    ...(c.file.readOnlyMode ? { readOnlyMode: c.file.readOnlyMode } : {}),
+  });
+  const cache = new ContributedBackendCache(build);
+  // Core backends: Clover's own coding agent (and, with A-M3, the in-process subagents).
+  const core: AgentBackend[] = o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })] : [];
+  if (o.backends) {
+    const fixed = o.backends(wire);
+    backends = () => fixed;
+  } else {
+    const registry = o.registry;
+    backends = () => [...(registry ? cache.backends(registry, o.log) : []), ...core];
+  }
   const clover = bridgeCloverParts(tokens, manager.bridgeHandlers());
   return {
-    manager, clover, tokens, backends: () => backends,
+    manager, clover, tokens, backends: () => backends(),
     close: async () => {
       await manager.close();
       tokens.revokeAll();

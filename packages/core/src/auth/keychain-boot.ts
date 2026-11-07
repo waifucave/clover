@@ -10,6 +10,7 @@ import { codeSigningFacts, realExecutable } from "./app-token-acl";
 import { prepareCredentialAccess, recoverCredentialShadows, runCredentialMigration, type CredentialAclOutcome, type CredentialKeychain } from "./credential-acl";
 import { waitForCredentialMigrationLock, type CredentialMigrationLock } from "./credential-migration-lock";
 import { keychainUnlocked, withKeychainUserInteractionDisabled, type KeychainAccess } from "./keychain-ffi";
+import { loginKeychain } from "./login-keychain";
 
 export interface KeychainPass {
   lock: CredentialMigrationLock;
@@ -32,7 +33,7 @@ export interface BeginKeychainPassInput {
  * Throws `CredentialMigrationBusy` when the lock stays held — the caller lets it end the boot.
  */
 export async function beginKeychainPass(input: BeginKeychainPassInput): Promise<KeychainPass | undefined> {
-  const unlocked = input.unlocked ?? (() => keychainUnlocked(null));
+  const unlocked = input.unlocked ?? (() => keychainUnlocked(loginKeychain()));
   if (!unlocked()) {
     input.log("keychain: the default keychain is locked — no credential shadow pass this boot");
     return undefined;
@@ -41,7 +42,7 @@ export async function beginKeychainPass(input: BeginKeychainPassInput): Promise<
   // Anything that throws from here on must not leave the lock held by a process that will not finish.
   let access: KeychainAccess | undefined;
   try {
-    const kc: CredentialKeychain = input.kc ?? { keychain: null, service: input.service, log: input.log };
+    const kc: CredentialKeychain = input.kc ?? { keychain: loginKeychain(), service: input.service, log: input.log };
     access = withKeychainUserInteractionDisabled(() => prepareCredentialAccess(kc));
     const built = access;
     withKeychainUserInteractionDisabled(() => recoverCredentialShadows(kc, built, { dropShadowsBesideOriginals: false }));
@@ -67,7 +68,7 @@ export function selfRequirement(): string | undefined {
 export function finishCredentialPass(pass: KeychainPass, home: string, deps: { unlocked?: () => boolean; requirement?: () => string | undefined } = {}): CredentialAclOutcome | "skipped" {
   const { kc, access } = pass;
   try {
-    if (!(deps.unlocked ?? (() => keychainUnlocked(null)))()) {
+    if (!(deps.unlocked ?? (() => keychainUnlocked(loginKeychain())))()) {
       kc.log?.("keychain: the default keychain locked during boot — the credential migration waits for the next boot");
       return "skipped";
     }

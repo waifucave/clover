@@ -30,29 +30,54 @@ export interface SecretStore {
 // daemon's and the CLI's — always used the profile's REAL service: a hand-started daemon on a temp home probed
 // `com.waifucave.clover.core[.dev]` and raised one Keychain prompt per item another binary created. No `CLOVER_HOME`
 // still means "assert nothing" (the real service), exactly as before.
-export const DEFAULT_SECRET_SERVICE = keychainService(resolveCloverProfile(), explicitCloverHome());
+//
+// LAZY (#243): resolved at the first store's construction, not at import, so nothing about the Keychain (its warning
+// for an overridden service included) runs before main.ts's startup checks have had their say.
+let defaultService: string | undefined;
+export function defaultSecretService(): string {
+  defaultService ??= keychainService(resolveCloverProfile(), explicitCloverHome());
+  return defaultService;
+}
 
 function explicitCloverHome(): string | undefined {
   const home = process.env.CLOVER_HOME;
   return home !== undefined && home.length > 0 ? home : undefined;
 }
 
-const SERVICE = DEFAULT_SECRET_SERVICE;
 
 /** `app-token-acl.ts`'s `APP_TOKEN_SHADOW_SUFFIX`, spelled here so this module stays free of the FFI. */
 export const MIGRATION_SHADOW_SUFFIX = ".migrating";
 
-/** Production store: macOS Keychain via Bun.secrets. */
+let testBackend: Pick<typeof Bun.secrets, "get" | "set" | "delete"> | undefined;
+
+/** Tests only: the backend every store built without one gets while this is set (an in-memory recorder), so a test
+ *  that boots the daemon without injected secrets never reaches a real keychain. In-process: no environment variable
+ *  or file can set it. */
+export function setDefaultSecretsBackendForTests(backend: Pick<typeof Bun.secrets, "get" | "set" | "delete"> | undefined): void {
+  testBackend = backend;
+}
+
+/** The production backend: on macOS keychain-ffi pinned to the account's login keychain (`login-keychain.ts` says
+ *  why the search list `Bun.secrets` uses is not enough); elsewhere `Bun.secrets` (libsecret, the Credential
+ *  Manager). Loaded only on macOS, so this module stays free of the FFI everywhere else. */
+export function defaultSecretsBackend(): Pick<typeof Bun.secrets, "get" | "set" | "delete"> {
+  if (testBackend !== undefined) return testBackend;
+  if (process.platform !== "darwin") return Bun.secrets;
+  const { pinnedSecretsBackend } = require("./login-keychain") as typeof import("./login-keychain");
+  return pinnedSecretsBackend();
+}
+
+/** Production store: the OS's secret store, on macOS the login keychain by path (`defaultSecretsBackend`). */
 export class KeychainSecretStore implements SecretStore {
-  /** `backend`/`service` exist for tests only (a recording fake — never the real Keychain). */
-  constructor(private readonly backend: Pick<typeof Bun.secrets, "get" | "set" | "delete"> = Bun.secrets, private readonly service: string = SERVICE) {}
+  /** `backend`/`service` exist for tests only (a recording fake, or a throwaway keychain — never the real one). */
+  constructor(private readonly backend: Pick<typeof Bun.secrets, "get" | "set" | "delete"> = defaultSecretsBackend(), private readonly service: string = defaultSecretService()) {}
   async get(name: string): Promise<string | null> {
     return (await this.backend.get({ service: this.service, name })) ?? null;
   }
   async set(name: string, value: string): Promise<void> {
     await this.backend.set({ service: this.service, name, value });
   }
-  /** `Bun.secrets.delete` already answers the exact boolean this interface promises ("true if a
+  /** The backend's delete (`Bun.secrets.delete`'s contract) already answers the exact boolean this interface promises ("true if a
    *  credential was deleted, false if not found"), so nothing is re-derived here. WS-27: a migration
    *  shadow of the item (`<name>.migrating`, `auth/credential-acl.ts`) goes with it, so a removed
    *  credential can never be restored from one — deleted FIRST; its own result does not change the answer. */

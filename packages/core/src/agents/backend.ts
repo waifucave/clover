@@ -16,6 +16,7 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Os } from "@waifucave/clover-protocol";
+import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
@@ -25,7 +26,7 @@ import { UserSelections } from "./acp/selections";
 import { AcpAgentSession, type WireTap } from "./acp/session";
 import { ADMISSIONS, admissionFor, type SandboxAdmission } from "./sandbox/admission";
 import type { PluginParts } from "./placement";
-import type { StdioMcpServer } from "./acp/types";
+import type { StdioMcpServer } from "@waifucave/clover-agent-sdk/acp";
 import { AgentJob } from "../platform/win-job";
 import { programHash } from "./sandbox/oks";
 import { buildAgentEnv, launchContained, spawnPlan, type AgentJobLike } from "./process/launch";
@@ -45,6 +46,10 @@ export interface BackendCommand {
 export interface AcpBackendOptions {
   id: string;
   pluginId: string;
+  /** Clover's own bundled `clover/agent-<id>` entry (what the core grants by id applies). */
+  bundled?: boolean;
+  /** Its `agentBackends` entry's name, for Settings. */
+  name?: string;
   quirks: AgentQuirks;
   clock: Clock;
   /** Overrides the quirks' command (an `agentBackends` entry's `command` and `args`). */
@@ -70,7 +75,7 @@ export interface AcpBackendOptions {
   selections?: UserSelections;
   /** Makes the Windows job object for one agent; lane C's `AgentJob.create` by default. */
   makeJob?: () => AgentJobLike | null;
-  /** The agent's read-only mode, for an agent that acts without asking (`READ_ONLY_MODES`). */
+  /** The agent's read-only mode, for an agent that acts without asking (its quirks file's `readOnlyMode`). */
   readOnlyMode?: { option: string; values: readonly string[] };
 }
 
@@ -80,6 +85,9 @@ export interface AcpStartSpec extends AgentStartSpec {
   readOnly?: boolean;
   /** The program the manager admitted (and the user OK'd, with its file's hash): `start` refuses another. */
   admitted?: { path: string; version?: string; sha256?: string };
+  /** For a backend that runs inside the daemon (`inProcess`): the session's bridge as an in-process MCP server, which it
+   *  serves in place of the stdio `bridge` (there is no process to bind a token to). */
+  inProcessBridge?: McpSdkServerConfigWithInstance;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -104,6 +112,8 @@ export function currentOs(): Os {
 export class AcpAgentBackend implements AgentBackend {
   readonly id: string;
   readonly pluginId: string;
+  readonly bundled: boolean;
+  readonly name: string | undefined;
   readonly quirks: AgentQuirks;
   readonly #opts: AcpBackendOptions;
   readonly #selections: UserSelections;
@@ -111,6 +121,8 @@ export class AcpAgentBackend implements AgentBackend {
   constructor(opts: AcpBackendOptions) {
     this.id = opts.id;
     this.pluginId = opts.pluginId;
+    this.bundled = opts.bundled === true;
+    this.name = opts.name;
     this.quirks = opts.quirks;
     this.#opts = opts;
     this.#selections = opts.selections ?? new UserSelections();

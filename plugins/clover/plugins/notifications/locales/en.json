@@ -15,6 +15,14 @@
     "clover.notifications.unseen": {
       "one": "1 unseen",
       "other": "{count} unseen"
-    }
+    },
+    "clover.notifications.setting.needsYou": "When a bot needs you",
+    "clover.notifications.setting.needsYou.detail": "An approval or a question waiting for your answer.",
+    "clover.notifications.setting.agentDone": "When an agent finishes",
+    "clover.notifications.setting.agentDone.detail": "An agent a bot started has finished its work.",
+    "clover.notifications.setting.routineFailed": "When a routine fails",
+    "clover.notifications.setting.routineFailed.detail": "A routine that ran on its own didn't finish.",
+    "clover.notifications.setting.sounds": "Play sounds",
+    "clover.notifications.setting.sounds.detail": "Let your computer play its notification sound. Off, the banners show silently."
   }
 }

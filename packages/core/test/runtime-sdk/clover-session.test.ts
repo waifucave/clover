@@ -255,9 +255,7 @@ describe("shutdown never leaves a child: an end mid-open, and a spawn refused wh
     const opening = h.session.open();
     const opened = opening.then(() => undefined, (e: Error) => e);
     await Bun.sleep(1);
-    const started = performance.now();
-    await h.session.end(); // the open is still parked: end() resolves after 2 x endGraceMs (25 ms here)
-    expect(performance.now() - started).toBeLessThan(1_000);
+    await h.session.end(); // the open is still parked: end() resolves after 2 x endGraceMs (25 ms here); the gate is only released below, so end() returning at all proves it did not wait for the open
     release(); // the open settles late...
     expect((await opened)?.message).toContain("ended while it was starting");
     expect(h.queries).toHaveLength(0); // ...and spawns nothing

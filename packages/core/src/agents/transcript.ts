@@ -18,11 +18,20 @@
 //
 // Each file has a size cap (`TRANSCRIPT_CAPS`, review 12): past it, one line says so and the file takes no more, so
 // a runaway agent can't fill the disk. The session's own log still has the agent's events.
-import { appendFileSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+//
+// The folder is the bot's: its callers can write there (the fence's `bots/<x>/**`), so a bot can plant a link at any
+// step, `agents`, the session's folder or a file's name, to turn the core's next append into a write anywhere the
+// core can write. So nothing here follows a link (#213's review). Each folder below the home is made with a plain
+// `mkdir`, which never follows one, and must then be a real folder; every write checks them again before it opens its
+// file, and opens it `O_NOFOLLOW`. The opened file
+// must then be the one that is really at `<dir>/<file>` (same device and inode), with every folder on the way still
+// real, and must have one link only, so a hard link to a file elsewhere isn't written either. A step that fails stops
+// the transcript, never the agent.
+import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { isAnyPluginId, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
-import type { JsonRpcMessage } from "./acp/jsonrpc";
+import type { JsonRpcMessage } from "@waifucave/clover-agent-sdk/acp";
 
 /** A bot's id as one path segment: `/` written `--` (`pack--luna`, spec §5.1), as lane D's paths write it. Anything
  *  that isn't a plugin id is refused, so no id can climb out of `bots/`. */
@@ -39,10 +48,54 @@ function sessionSegment(id: string): string {
 
 /** The transcript folder's real path and its tree path. */
 export function transcriptPaths(home: string, sessionId: string, bot?: string): { dir: string; treeDir: string } {
+  const p = transcriptSteps(home, sessionId, bot);
+  return { dir: p.dir, treeDir: p.treeDir };
+}
+
+function transcriptSteps(home: string, sessionId: string, bot?: string): { dir: string; treeDir: string; steps: string[] } {
   sessionSegment(sessionId);
-  if (bot === undefined) return { dir: join(home, "agents", sessionId), treeDir: `agents/${sessionId}` };
+  if (bot === undefined) return { dir: join(home, "agents", sessionId), treeDir: `agents/${sessionId}`, steps: ["agents", sessionId] };
   const seg = botSegment(bot);
-  return { dir: join(home, "bots", seg, "agents", sessionId), treeDir: `bots/${seg}/agents/${sessionId}` };
+  return { dir: join(home, "bots", seg, "agents", sessionId), treeDir: `bots/${seg}/agents/${sessionId}`, steps: ["bots", seg, "agents", sessionId] };
+}
+
+/** `O_NOFOLLOW` where the system has it. Windows has no such flag; there the folder and file checks below still
+ *  refuse a link or a junction (lstat reports both). */
+const NO_FOLLOW = constants.O_NOFOLLOW ?? 0;
+
+/** True when `path` is a real folder, not a link to one. */
+function realFolder(path: string): boolean {
+  try {
+    const st = lstatSync(path);
+    return st.isDirectory() && !st.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+/** Makes each folder from the home down, never following a link: false when one on the way is a link or a file. */
+function makeFolders(home: string, steps: readonly string[]): boolean {
+  let at = home;
+  for (const step of steps) {
+    at = join(at, step);
+    try {
+      mkdirSync(at, { mode: 0o700 });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    }
+    if (!realFolder(at)) return false;
+  }
+  return true;
+}
+
+/** Every folder from the home down is still a real folder. */
+function foldersStillReal(home: string, steps: readonly string[]): boolean {
+  let at = home;
+  for (const step of steps) {
+    at = join(at, step);
+    if (!realFolder(at)) return false;
+  }
+  return true;
 }
 
 export const REDACTED_TOKEN = "<bridge-token>";
@@ -93,6 +146,8 @@ export interface AgentRecordFile {
 export class AgentTranscript {
   readonly dir: string;
   readonly treeDir: string;
+  readonly #home: string;
+  readonly #steps: readonly string[];
   readonly #secrets = new Set<string>();
   readonly #written = new Map<string, number>();
   readonly #full = new Set<string>();
@@ -104,10 +159,42 @@ export class AgentTranscript {
   /** `caps`: each file's cap in bytes, `TRANSCRIPT_CAPS` by default. */
   constructor(home: string, sessionId: string, bot?: string, caps: Readonly<Record<string, number>> = TRANSCRIPT_CAPS) {
     this.#caps = caps;
-    const p = transcriptPaths(home, sessionId, bot);
+    const p = transcriptSteps(home, sessionId, bot);
     this.dir = p.dir;
     this.treeDir = p.treeDir;
-    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    this.#home = home;
+    this.#steps = p.steps;
+    try {
+      if (!makeFolders(home, p.steps)) this.#broken = true;
+    } catch {
+      this.#broken = true;
+    }
+  }
+
+  /** Opens `<dir>/<file>` for writing without following a link, or undefined (and the transcript stops) when the file
+   *  isn't the plain, singly linked file really at that path. `append` false opens for a rewrite. */
+  #open(file: string, append: boolean): number | undefined {
+    if (this.#broken) return undefined;
+    const path = join(this.dir, file);
+    let fd: number | undefined;
+    try {
+      // Before the open, so a link planted on the way never gets an empty file made through it.
+      if (!foldersStillReal(this.#home, this.#steps)) throw new Error("a folder on the way is a link");
+      fd = openSync(path, constants.O_WRONLY | constants.O_CREAT | NO_FOLLOW | (append ? constants.O_APPEND : 0), 0o600);
+      const st = fstatSync(fd);
+      const there = lstatSync(path);
+      // And after it, so a folder swapped for a link between the check and the open, and back, is still caught: the
+      // file the open reached isn't the one at the real path, and nothing is written to it. (Inside that window an
+      // empty file by one of the four names can still be made through the link; no byte reaches it.)
+      if (!st.isFile() || st.nlink !== 1 || !there.isFile() || there.dev !== st.dev || there.ino !== st.ino || !foldersStillReal(this.#home, this.#steps)) {
+        throw new Error("not the transcript's own file");
+      }
+      return fd;
+    } catch {
+      if (fd !== undefined) closeSync(fd);
+      this.#broken = true;
+      return undefined;
+    }
   }
 
   get wirePath(): string {
@@ -158,7 +245,16 @@ export class AgentTranscript {
   }
 
   writeRecord(rec: AgentRecordFile): void {
-    writeFileSync(join(this.dir, "agent.json"), `${JSON.stringify(rec, null, 2)}\n`, { mode: 0o600 });
+    const fd = this.#open("agent.json", false);
+    if (fd === undefined) return;
+    try {
+      ftruncateSync(fd, 0);
+      writeSync(fd, `${JSON.stringify(rec, null, 2)}\n`, 0);
+    } catch {
+      this.#broken = true;
+    } finally {
+      closeSync(fd);
+    }
   }
 
   #append(file: string, record: unknown): void {
@@ -168,29 +264,25 @@ export class AgentTranscript {
   #appendRaw(file: string, text: string): void {
     if (this.#broken || this.#full.has(file)) return;
     for (const s of this.#secrets) text = text.split(s).join(REDACTED_TOKEN);
-    const path = join(this.dir, file);
+    const fd = this.#open(file, true);
+    if (fd === undefined) return;
     try {
-      let size = this.#written.get(file);
-      if (size === undefined) {
-        try {
-          size = statSync(path).size;
-        } catch {
-          size = 0;
-        }
-      }
+      const size = this.#written.get(file) ?? fstatSync(fd).size;
       const bytes = Buffer.byteLength(text);
       const cap = this.#caps[file] ?? TRANSCRIPT_CAPS[file] ?? Number.POSITIVE_INFINITY;
       if (size + bytes > cap) {
         this.#full.add(file);
         const note = file.endsWith(".ndjson") ? `${JSON.stringify({ clover: "truncated", cap })}\n` : `\n[Clover: this log reached its ${cap}-byte cap; the rest isn't kept]\n`;
-        appendFileSync(path, note, { mode: 0o600 });
+        writeSync(fd, note);
         return;
       }
-      appendFileSync(path, text, { mode: 0o600 });
+      writeSync(fd, text);
       this.#written.set(file, size + bytes);
     } catch {
       // A full disk loses transcript lines, never the agent; the session's own log still has its events.
       this.#broken = true;
+    } finally {
+      closeSync(fd);
     }
   }
 }

@@ -16,11 +16,16 @@ import { bridgeCommand } from "../bridge/main";
 import { BRIDGE_ENV } from "../bridge/server";
 import { BridgeTokens } from "../bridge/tokens";
 import { BRIDGE_OWN_TOOLS } from "../bridge/tools";
-import { QUIRKS } from "../quirks";
+import { bundledBackends } from "../testing/bundled-backends";
+
+// The bundled backends' rows, as their plugins hold them.
+const ROWS = bundledBackends();
+const QUIRKS = Object.fromEntries(Object.entries(ROWS).map(([id, r]) => [id, r.quirks]));
 import { waitFor } from "./world";
+import { onDarwin } from "../../../test/helpers/darwin-only";
 
 setDefaultTimeout(120_000);
-const live = process.env["CLOVER_K_LIVE"] === "1" && process.platform === "darwin";
+const live = process.env["CLOVER_K_LIVE"] === "1" && onDarwin;
 const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-live-")));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 

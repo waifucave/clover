@@ -11,6 +11,7 @@ import { processSatisfiesRequirement } from "../../src/computer-use/helper-verif
 import { HELPER_MIN_VERSION, HELPER_PROTOCOL, HelperOutdatedError, helperVersionAtLeast, HelperProtocolMismatchError, HelperRpcError, HelperUnavailableError, helperAppNameFor, helperAppPathFor, helperBundleIdFor, helperProtocolMismatchMessage, helperRequirementFor, helperSocketPath } from "../../src/computer-use/protocol";
 import type { HelperNotification } from "../../src/computer-use/protocol";
 import { FakeHelper, FakeHelperError } from "./fake-helper";
+import { darwinTest } from "../helpers/darwin-only";
 
 const home = () => mkdtempSync(join(tmpdir(), "clover-cu-client-"));
 
@@ -275,8 +276,7 @@ describe("the helper client", () => {
 });
 
 describe("the SecCode check (bun:ffi)", () => {
-  test("a running Apple-signed process satisfies `anchor apple` and not the helper's requirement", async () => {
-    if (process.platform !== "darwin") return;
+  darwinTest("a running Apple-signed process satisfies `anchor apple` and not the helper's requirement", async () => {
     const child = spawn("/bin/sleep", ["5"]);
     try {
       await Bun.sleep(100);

@@ -109,6 +109,16 @@ describe("the hook shim", () => {
     expect(slow.stderr).toContain("ran past 200 ms");
   });
 
+  test.skipIf(process.platform === "win32")("a hook that exits normally ends what it left running in the background (K-M2 check 2)", async () => {
+    const pidFile = join(root, "background.pid");
+    const r = await runHook("/bin/sh", ["-c", `cat >/dev/null; (sleep 30 >/dev/null 2>&1 &) ; sleep 30 >/dev/null 2>&1 & echo $! > ${pidFile}; exit 0`], "{}", 5_000);
+    expect(r.code).toBe(0);
+    const pid = Number(readFileSync(pidFile, "utf8").trim());
+    await new Promise((res) => setTimeout(res, 200));
+    const alive = (() => { try { process.kill(pid, 0); return true; } catch { return false; } })();
+    expect(alive).toBe(false);
+  });
+
   test.skipIf(process.platform === "win32")("a hook's timeout ends what it started too (K-M2 review 8)", async () => {
     const pidFile = join(root, "grandchild.pid");
     await runHook("/bin/sh", ["-c", `sleep 30 & echo $! > ${pidFile}; wait`], "{}", 300);

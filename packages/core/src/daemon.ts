@@ -18,9 +18,10 @@ import { manifestFileState, manifestPath } from "./migration/manifest";
 import { TOKEN_NAMES, TokenAuthority } from "./auth/tokens";
 import { appTokenAclBootTrust, migrateAppTokenAcl, prepareAppTokenAccess, recoverAppTokenShadows, type AppTokenAccess, type AppTokenKeychain, type AppTokenTrust } from "./auth/app-token-acl";
 import { applicationPathsForBundleId, keychainUnlocked, withKeychainUserInteractionDisabled } from "./auth/keychain-ffi";
+import { loginKeychain } from "./auth/login-keychain";
 import { CredentialMigrationBusy } from "./auth/credential-migration-lock";
 import { beginKeychainPass, finishCredentialPass, type KeychainPass } from "./auth/keychain-boot";
-import { KeychainSecretStore, type SecretStore } from "./auth/secret-store";
+import { defaultSecretsBackend, KeychainSecretStore, type SecretStore } from "./auth/secret-store";
 import { migrateLegacyCredentialMaterial } from "./auth/credential-material";
 import { SessionStore } from "./sessions/store";
 import { SessionHub } from "./sessions/hub";
@@ -459,10 +460,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  unless `CLOVER_LOGIN_SHELL_PATH=off` (both test preloads set it). `false`: skipped. An object:
    *  the test seam (a fake runner and/or env to update). */
   loginShellPath?: LoginShellPathDeps | false;
+  /** Test seam: how `settings.json` is watched (default `fs.watch`). A test passes a stream that never fires to
+   *  stand in for one macOS hasn't armed yet, and so proves the watcher's catch-up re-read. */
+  settingsWatch?: (path: string, cb: () => void) => { close(): void };
   /** TEST ONLY (WS-21 ordering contract): stands in for the router's `reconcileRootForRecovery` in the boot
    *  sweep and in Migration C's phase 2 — when set it takes precedence over the linked router's own door, so
    *  a test can observe the reconcile's ordering or make it fail. A production caller never sets it. */
   runRootReconcileForTests?: RootReconcile;
+  /** TEST ONLY: told each boot step the ordering tests pin, as it finishes (`runtime-state-recovered`: §13's recovery;
+   *  `directory-parked`: the directory's recovery and its crash-left rows parked; `socket-bound`: the IPC socket is
+   *  listening), so they assert the order itself rather than compare clocks. A production caller never sets it. */
+  bootOrderForTests?: (step: "runtime-state-recovered" | "directory-parked" | "socket-bound") => void;
   /** WS-25 §7 TEST SEAM: the MCP OAuth store sessions' `mcp-oauth:<id>` sign-ins are brokered from (a
    *  memory store). Absent: production reads `daemonMcpOAuthStore(<this home's Keychain service>)`, and a
    *  caller that injected its own `secrets` gets a per-daemon MEMORY store (WS-25 integration: shared by the
@@ -540,7 +548,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // The service is THIS daemon's home's (`keychainService(profile, home)`): on a custom home a
   // `CLOVER_KEYCHAIN_SERVICE` is honoured, so an experiment or e2e daemon never reads the profile's real items.
-  const secrets = opts.secrets ?? new KeychainSecretStore(Bun.secrets, keychainService(profile, home));
+  const secrets = opts.secrets ?? new KeychainSecretStore(defaultSecretsBackend(), keychainService(profile, home));
 
   // WS-27: the credential items' access lists (`auth/credential-acl.ts`) — same guards as the app-token
   // slot below: real production boot, the profile's own default home, macOS, never fatal, skipped when the
@@ -668,8 +676,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let appTokens: { kc: AppTokenKeychain; trust: AppTokenTrust | undefined; access: AppTokenAccess } | undefined;
   if (keychainPass !== undefined) { // the same guards, and the credential migration lock is held
     try {
-      if (!keychainUnlocked(null)) throw Object.assign(new Error("the default keychain is locked"), { name: "KeychainLocked" });
-      const kc: AppTokenKeychain = { keychain: null, service: keychainService(), log: (line) => console.error(line) };
+      if (!keychainUnlocked(loginKeychain())) throw Object.assign(new Error("the login keychain is locked"), { name: "KeychainLocked" });
+      const kc: AppTokenKeychain = { keychain: loginKeychain(), service: keychainService(), log: (line) => console.error(line) };
       const trust = appTokenAclBootTrust({ profile, log: (line) => console.error(line), lookup: applicationPathsForBundleId });
       const access = withKeychainUserInteractionDisabled(() => prepareAppTokenAccess(kc, trust));
       appTokens = { kc, trust, access };
@@ -823,6 +831,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(linkedRouterSupportsRunHome() ? { recovery: { deferClaudeResumeSweep: true } } : {}),
   });
   const runtime = runtimeStateOnline(runtimeState);
+  opts.bootOrderForTests?.("runtime-state-recovered");
   const coworkRecords = runtime ? new CoworkRepository(runtime.db) : undefined;
   const onStoredSessionDeleted = createCoworkSessionDeletionHook(coworkRecords, runtime?.onSessionDeleted);
 
@@ -1768,6 +1777,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // so the sweep parks them all. A Clover session is resumed by its DRIVER from the 8a record
       // (which keeps its own backend id), never by the messaging layer.
       const parked = await parkRecoveredSessions(runtimeSdk, (line) => console.error(`runtime-sdk: ${line}`));
+      opts.bootOrderForTests?.("directory-parked");
       console.error(
         `runtime-sdk: directory recovery — ${recovered.entriesLoaded} entr(ies), ${recovered.staleMarked} stale, ` +
           `${recovered.cursorsRestored} cursor(s), ${recovered.heldMessagesFound} held, ${parked} parked`,
@@ -2886,6 +2896,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       onChangeObserved: () => advanceAuthorityRevision(cloverHome),
       load: loadSettings,
       apply,
+      ...(opts.settingsWatch ? { watch: opts.settingsWatch } : {}),
       log: (msg) => console.error(`settings-watcher: ${msg}`),
     });
     settingsWatcher.start(settings);
@@ -3322,6 +3333,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }))(runtimeSdk)),
     ...opts.server,
   });
+  opts.bootOrderForTests?.("socket-bound");
 
   console.error(`clover-core ${CORE_VERSION} listening on ${dirs.socketPath}`);
   try {

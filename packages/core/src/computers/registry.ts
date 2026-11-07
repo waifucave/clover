@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 import {
   COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
-  type CloverWindow, type ComputerView, type HoldView, type Level,
+  type CloverWindow, type ComputerView, type HoldView, type Level, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
 import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
@@ -70,6 +70,9 @@ export interface CoreComputerRegistryOptions {
   render?: CallCardRenderer;
   /** Where this computer's own level and old names are kept. */
   store?: SelfStateStore;
+  /** Asks another computer to change its own level, with the user's signed answer for a raise (J-M2, "levels per
+   *  computer"; `peers.ts`). Without it, another computer's level can't be changed from here. */
+  remoteLevel?: (name: string, level: Level, answer?: SignedCardAnswer) => Promise<void>;
 }
 
 export class CoreComputerRegistry implements ComputerRegistry {
@@ -85,6 +88,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
   readonly #ledger: AnswerLedger;
   readonly #render: CallCardRenderer;
   readonly #store: SelfStateStore;
+  #remoteLevel: CoreComputerRegistryOptions["remoteLevel"];
   #holdSeq = 0;
 
   constructor(opts: CoreComputerRegistryOptions) {
@@ -93,6 +97,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
     this.#render = opts.render ?? (() => undefined);
     this.#ledger = opts.ledger ?? new Ledger();
     this.#store = opts.store ?? MEMORY_SELF_STORE;
+    this.#remoteLevel = opts.remoteLevel;
     const saved = this.#store.load();
     const self: ComputerInput = {
       ...opts.self,
@@ -164,6 +169,11 @@ export class CoreComputerRegistry implements ComputerRegistry {
     this.#listeners.emit({ type: "computer", computer: structuredClone(c) });
   }
 
+  /** Sets how another computer's level is asked for (the link's wiring, made after the registry). */
+  setRemoteLevel(fn: CoreComputerRegistryOptions["remoteLevel"]): void {
+    this.#remoteLevel = fn;
+  }
+
   /** The computer a device is. */
   byDevice(device: string): ComputerView | undefined {
     for (const c of this.#computers.values()) if (c.device === device) return structuredClone(c);
@@ -188,9 +198,12 @@ export class CoreComputerRegistry implements ComputerRegistry {
   async setLevel(name: string, level: Level, proof?: LevelRaiseProof): Promise<void> {
     const c = this.#must(name);
     if (c.name !== this.#self) {
-      // §8.5: levels stay on each computer. Another computer's level changes there, with its own card or the user's
-      // signed answer travelling to it (J-M2, "levels per computer").
-      throw new ContractError("refused", `${c.name}'s level changes on ${c.name}`);
+      // §8.5: levels stay on each computer. Another computer's level changes there: a lowering at once, a raise with
+      // the user's answer signed for that computer's own card (a card answered here is this computer's proof only).
+      if (!this.#remoteLevel) throw new ContractError("refused", `${c.name}'s level changes on ${c.name}`);
+      if (levelAbove(level, c.level) && proof?.via === "card") throw new ContractError("refused", `${c.name} takes a raise only with the user's answer signed for its own card`);
+      await this.#remoteLevel(c.name, level, proof?.via === "signed" ? proof.answer : undefined);
+      return;
     }
     if (levelAbove(level, c.level)) {
       const why = await this.#checkRaise(c.name, level, proof);

@@ -20,6 +20,14 @@ export interface SettingsWatcherDeps<T = Settings> {
   log?: (msg: string) => void;
 }
 
+/** When `start` re-reads the file after arming its watch: the next tick, then after FSEvents' arming latency. */
+const CATCH_UP_AFTER_MS = [0, 1_000] as const;
+
+/** Same settings, by their JSON (both sides come from the same loader). */
+function sameContent(a: unknown, b: unknown): boolean {
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+}
+
 /**
  * Watches settings.json for changes, debounces bursts, reloads with keep-last-good on a torn
  * file, and calls the injected `apply(prev, next)` exactly once per settled good change. Owns
@@ -37,6 +45,9 @@ export class SettingsWatcher<T = Settings> {
   private prevSnapshot: T | null = null;
   private watcher: { close(): void } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private catchUps: ReturnType<typeof setTimeout>[] = [];
+  /** An event has come since `start`: the watch is armed, and the catch-up has nothing to add. */
+  private eventSeen = false;
   private stopped = false;
   // Single-flight guard: at most one apply in flight (an apply may await a multi-second drain).
   // Changes arriving during an in-flight apply set `pendingReload`, which the runner's loop picks
@@ -65,7 +76,26 @@ export class SettingsWatcher<T = Settings> {
     this.teardown();
     this.prevSnapshot = prev;
     this.stopped = false;
+    this.eventSeen = false;
     this.watcher = this.watchFn(this.path, () => this.onFsEvent());
+    // fs.watch arms its stream asynchronously (macOS FSEvents especially), so an edit made just after `start` can
+    // raise no event, and the daemon would run on stale settings until the next edit. Catch up by re-reading the
+    // file on the next tick, and once more after the stream has surely armed: a file that differs from what
+    // `start` was given goes through the normal reload, and one that doesn't costs a parse.
+    for (const ms of CATCH_UP_AFTER_MS) {
+      const t = setTimeout(() => this.catchUp(), ms);
+      t.unref?.();
+      this.catchUps.push(t);
+    }
+  }
+
+  private catchUp(): void {
+    if (this.stopped || this.eventSeen) return;
+    let now: T;
+    try { now = this.load(this.path); } catch { return; } // torn or missing: the watcher's own path handles it
+    if (sameContent(now, this.prevSnapshot)) return;
+    this.onChangeObserved?.();
+    void this.runReload();
   }
 
   stop(): void {
@@ -79,6 +109,8 @@ export class SettingsWatcher<T = Settings> {
   private teardown(): void {
     this.watcher?.close();
     this.watcher = null;
+    for (const t of this.catchUps) clearTimeout(t);
+    this.catchUps = [];
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -87,6 +119,7 @@ export class SettingsWatcher<T = Settings> {
 
   private onFsEvent(): void {
     if (this.stopped) return;
+    this.eventSeen = true;
     this.onChangeObserved?.();
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => this.onDebounced(), this.debounceMs);

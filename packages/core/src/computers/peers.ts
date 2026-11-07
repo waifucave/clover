@@ -7,9 +7,13 @@
 // that runs clover-core); a hello from a device that isn't on it is ignored, and a revoked device leaves the tree at
 // once. `computer.hello` is lane J's addition to the protocol (requested of lane B).
 import { z } from "zod";
-import { ComputerName, Level, Os, type ComputerView } from "@waifucave/clover-protocol";
+import { ComputerName, FencingToken, isComputerOs, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
+import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
 import { utf16 } from "@waifucave/clover-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
+import type { CallCardRenderer } from "../contracts/approval-broker";
+import { needsAnswer, withAnswer, type AnswerAsker } from "../tree/judge";
+import { offlineAs } from "../tree/remote";
 import type { DeviceRecord, DeviceRegistry } from "../contracts/device-registry";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { TreeComputer, TreeDirectory } from "../tree/tree";
@@ -35,8 +39,12 @@ export const ComputerHello = z.object({
 });
 export type ComputerHello = z.infer<typeof ComputerHello>;
 
+const SetLevelParams = z.object({ level: Level, answer: SignedCardAnswer.optional(), fence: FencingToken.optional() });
+
 export interface ComputerPeersOptions {
   registry: CoreComputerRegistry;
+  /** This computer's fencing token on the level changes it asks, and its guard for the ones asked of it. */
+  fence?: ActFence;
   transport: LinkTransport;
   /** This computer's part of the tree. */
   roots: () => TreeRoots;
@@ -45,6 +53,10 @@ export interface ComputerPeersOptions {
   /** Which computer runs a bot, from lane D's registry (review S2). Left out, the hellos say, and a bot that two
    *  computers claim is refused rather than guessed. */
   placement?: (bot: string) => string | undefined;
+  /** This computer's own card for a call, which a raise from another computer must answer (review N1). */
+  render?: CallCardRenderer;
+  /** Shows the user another computer's card for a raise, and gives back their signed answer (R1). */
+  ask?: AnswerAsker;
   log?: (line: string) => void;
 }
 
@@ -69,6 +81,32 @@ export class ComputerPeers {
       this.#fromDevice(change.device);
     }));
     this.#off.push(transport.onNotify("computer.hello", (params, from) => this.#hello(params, from)));
+    // Levels per computer (J-M2): another computer asks this one to change its own level. A lowering applies; a raise
+    // needs the user's answer signed for this computer's own card, which the caller is told to show.
+    this.#off.push(transport.handle("computer.setLevel", async (raw, from) => {
+      if (!(devices.get(from)?.runsCore && devices.get(from)?.revokedAt === undefined)) throw new ContractError("refused", "this computer isn't paired with yours");
+      const p = SetLevelParams.safeParse(raw);
+      if (!p.success) throw new ContractError("invalid", "computer.setLevel takes a level");
+      checkActFence(opts.fence, p.data.fence, "computer.setLevel");
+      const self = registry.self();
+      if (levelAbove(p.data.level, self.level) && !p.data.answer) {
+        throw needsAnswer(self.name, "computer.setLevel", { name: self.name, level: p.data.level }, opts.render, `raising ${self.name}'s level takes the user's answer`);
+      }
+      await registry.setLevel(self.name, p.data.level, p.data.answer ? { via: "signed", answer: p.data.answer } : undefined);
+      return { applied: true };
+    }));
+    registry.setRemoteLevel((name, level, answer) => {
+      const c = registry.get(name);
+      if (!c) return Promise.reject(new ContractError("not_found", `no computer ${name}`));
+      return withAnswer(answer ? undefined : opts.ask, async (a) => {
+        try {
+          const link = await transport.connect(c.device);
+          await link.request("computer.setLevel", { level, ...fenceParam(opts.fence), ...((a ?? answer) ? { answer: a ?? answer } : {}) });
+        } catch (e) {
+          throw offlineAs(c.name, e);
+        }
+      });
+    });
     this.#off.push(transport.watch((view) => {
       const c = registry.byDevice(view.peer);
       if (c) {
@@ -187,7 +225,7 @@ export class ComputerPeers {
     }
     const up = this.#o.transport.links().find((v) => v.peer === d.id)?.up ?? false;
     try {
-      registry.add({ name, device: d.id, ...(d.os ? { os: d.os } : {}), ...(d.hasDisplay === undefined ? {} : { hasDisplay: d.hasDisplay }), state: up ? "online" : "offline" });
+      registry.add({ name, device: d.id, ...(d.os && isComputerOs(d.os) ? { os: d.os } : {}), ...(d.hasDisplay === undefined ? {} : { hasDisplay: d.hasDisplay }), state: up ? "online" : "offline" });
     } catch (e) {
       this.#o.log?.(`computers: device ${d.id} can't join the tree as ${name}: ${(e as Error).message}`);
     }

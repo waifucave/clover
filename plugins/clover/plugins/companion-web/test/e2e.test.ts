@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { cleanup } from "node-datachannel";
 import { RTCPeerConnection } from "node-datachannel/polyfill";
 
-import { HandshakeClient } from "@waifucave/clover-service-handshake/client";
+import { type Connect, connectWebSocket, HandshakeClient } from "@waifucave/clover-service-handshake/client";
 import { harnessReady, type HandshakeHarness, startHandshake } from "@waifucave/clover-service-handshake/harness";
 import { Companion, MemoryStore, PairingError, type PairRecord } from "@waifucave/clover-service-web/app";
 import { readInvite, type RtcEnvironment, type RtcLink } from "@waifucave/clover-service-web/protocol";
@@ -82,7 +82,7 @@ interface Computer {
   shown: string[][];
 }
 
-async function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry } = {}): Promise<Computer> {
+async function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry; connect?: Connect } = {}): Promise<Computer> {
   const registry = options.registry ?? (await FakeRegistry.create());
   const store = options.store ?? new MemoryPairStore();
   const links: RtcLink[] = [];
@@ -97,6 +97,7 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
         headers.set("cf-connecting-ip", address);
         return fetch(new Request(request, { headers }));
       },
+      ...(options.connect ? { connect: options.connect } : {}),
     }),
     webOrigin: "https://clover.test",
     inviteHandshake: harness.url,
@@ -121,9 +122,17 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
   return { host, registry, store, links, shown };
 }
 
-function browser(store = new MemoryStore()): Companion {
-  return new Companion({ store, rtc, handshake: "https://handshake.invalid", allowedHandshakes: [harness.url], name: "Test browser" });
+function browser(store = new MemoryStore(), options: { connect?: Connect; fetch?: (request: Request) => Promise<Response> } = {}): Companion {
+  return new Companion({ store, rtc, handshake: "https://handshake.invalid", allowedHandshakes: [harness.url], name: "Test browser", ...options });
 }
+
+/** A browser whose socket reaches the service only after `ms`: slower than the computer's whole answer. */
+const slowSocket =
+  (ms: number): Connect =>
+  async (url) => {
+    await Bun.sleep(ms);
+    return connectWebSocket(url);
+  };
 
 async function invite(c: Computer, code = "481516") {
   const url = await c.host.createInvite({ code, expiresAt: Date.now() + 10 * 60_000 });
@@ -215,6 +224,21 @@ describe.skipIf(!ready)("the web companion", () => {
     c.host.stop();
   }, 30_000);
 
+  test("a browser whose socket opens late still pairs: it asks only once its socket is open", async () => {
+    // The computer confirms at once and ends the invite right after `paired`. Had the request gone out before the
+    // socket was open, the answers would wait in the invite's inbox, which its end deletes: a "refused" pairing.
+    const c = await computer();
+    await c.host.start();
+    const record = await browser(new MemoryStore(), { connect: slowSocket(400) }).pair(await invite(c), { onWords: () => undefined });
+    expect(record.computerName).toBe("Studio");
+    expect(c.registry.added).toHaveLength(1);
+    const wrong = await browser(new MemoryStore(), { connect: slowSocket(400) })
+      .pair({ ...(await invite(c)), code: "000000" }, { onWords: () => undefined })
+      .catch((e: unknown) => e);
+    expect((wrong as PairingError).code).toBe("code");
+    c.host.stop();
+  }, 30_000);
+
   test("a restarted computer answers the browsers it already paired", async () => {
     const store = new MemoryPairStore();
     const first = await computer({ store });
@@ -225,6 +249,43 @@ describe.skipIf(!ready)("the web companion", () => {
     await second.host.start();
     const connection = await b.connect(record);
     expect(await connection.link.request<unknown>("bot.list", {})).toMatchObject({ bots: [{ id: "alpha" }] });
+    connection.close();
+    second.host.stop();
+  }, 30_000);
+
+  test("a computer that restarts slowly is dialled only once it is online, so no signal waits in its inbox", async () => {
+    // The browser's socket is open long before the restarted computer's. Signals sent before then would wait in the
+    // computer's inbox, which keeps the newest 16: an offer with many ICE candidates behind it could be lost.
+    const store = new MemoryPairStore();
+    const first = await computer({ store });
+    await first.host.start();
+    const sent: number[] = [];
+    const b = browser(new MemoryStore(), {
+      fetch: (request) => {
+        if (request.method === "POST" && new URL(request.url).pathname.endsWith("/messages")) sent.push(Date.now());
+        return fetch(request);
+      },
+    });
+    const record = await b.pair(await invite(first), { onWords: () => undefined });
+    first.host.stop();
+    sent.length = 0;
+    // The earliest the service can see the computer online: when its socket starts connecting. The service marks it
+    // present on accepting the upgrade, which can be before this side's connect resolves, so the time is taken before
+    // the connect, never after (a signal may be sent a moment before the client hears its socket opened).
+    let computerUp = Infinity;
+    const second = await computer({
+      store,
+      connect: async (url) => {
+        await Bun.sleep(1500);
+        computerUp = Math.min(computerUp, Date.now());
+        return connectWebSocket(url);
+      },
+    });
+    await second.host.start();
+    const connection = await b.connect(record);
+    expect(await connection.link.request<unknown>("bot.list", {})).toMatchObject({ bots: [{ id: "alpha" }] });
+    expect(sent.length).toBeGreaterThan(0);
+    expect(Math.min(...sent)).toBeGreaterThanOrEqual(computerUp);
     connection.close();
     second.host.stop();
   }, 30_000);

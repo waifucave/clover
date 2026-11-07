@@ -227,12 +227,10 @@ describe("provider.login / provider.loginCode / provider.logout (O6, P10a-6)", (
   test("provider.login stops waiting once the login finishes, even with no URL ever seen (F4)", async () => {
     const { socketPath, harnessToken } = await boot({
       login: async () => ({ submitCode: async () => {}, done: Promise.resolve({ ok: false, reason: "exit_code_1" }) }),
-    });
+    }, { providerLoginUrlHintWaitMs: 60_000 }); // far past the test timeout: a wait that outlasted the login would fail the test outright
     const c = await TestClient.connect(socketPath);
     await c.hello(harnessToken, "cli");
-    const started = Date.now();
     const result = await c.request(METHODS.providerLogin, { provider: "anthropic", kind: "console" });
-    expect(Date.now() - started).toBeLessThan(200); // 200 is this boot()'s own providerLoginUrlHintWaitMs
     expect(result.result).toEqual({ started: true });
     expect("urlHint" in result.result).toBe(false);
     c.close();

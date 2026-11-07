@@ -1,0 +1,20 @@
+{
+  "manifest": 1,
+  "name": "Codex",
+  "description": "Codex, through `codex-acp`, as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "codex",
+        "name": "Codex",
+        "protocol": "acp",
+        "command": "codex-acp",
+        "args": [],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

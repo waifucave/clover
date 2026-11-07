@@ -1,0 +1,23 @@
+{
+  "manifest": 1,
+  "name": "Antigravity CLI",
+  "description": "Antigravity CLI (`agy acp`) as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "antigravity",
+        "name": "Antigravity CLI",
+        "protocol": "acp",
+        "command": "agy",
+        "args": [
+          "acp",
+          "--disable-telemetry"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

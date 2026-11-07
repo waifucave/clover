@@ -43,7 +43,9 @@ import { NO_PLUGIN_TOOLS, bridgeInstructions, bridgeOwnTools, type BridgeToolSou
 import { AgentDriver } from "./driver";
 import { MemoryAgentOks, programHash, type AgentOks } from "./sandbox/oks";
 import { NO_PARTS, type PluginParts, type PluginPartsSource } from "./placement";
+import { inProcessBridgeServer } from "./bridge/in-process";
 import { agentPaths } from "./paths";
+import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
 import type { StallWatchdog } from "./watchdog";
@@ -217,7 +219,12 @@ export class AgentManager {
   async start(req: AgentRequest): Promise<{ sessionId: string; transcript: string }> {
     const backend = this.#o.backends().find((b) => b.id === req.backend);
     if (!backend) throw new ContractError("not_installed", `no agent backend named ${req.backend}`);
-    if (backend.quirks.placement !== "local") throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which comes with K-M3`);
+    // Spec §9.3 "Cloud placement": whether the stdio bridge reaches a cloud session, and what the root folder means
+    // there, are settled before a cloud backend ships, by the agent suite's live gates. Until then it is listed, never
+    // started.
+    if (backend.quirks.placement !== "local") {
+      throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
+    }
     const computer = req.computer ?? this.#o.computer;
     if (computer !== this.#o.computer) {
       throw new ContractError("refused", `placing an agent on ${computer} comes with K-M3; for now an agent runs on ${this.#o.computer}`);
@@ -231,7 +238,7 @@ export class AgentManager {
     const transcript = new AgentTranscript(this.#o.home, id, bot);
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
     writeAgentRecord(this.#o.home, daemon);
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who,
@@ -278,6 +285,27 @@ export class AgentManager {
     }
     const backend = this.#o.backends().find((b) => b.id === view.backend);
     if (!backend) return refuse(`no backend named ${view.backend}`);
+    // Another plugin that took the id since (the bundled one switched off, a third party's on) never gets the session:
+    // its program would see the agent's session id and root. The session ends, saying why.
+    // A record from before the plugin was kept goes on only with Clover's own backend (the bundled `clover/agent-<id>`,
+    // or a core one), and keeps it from now on.
+    const own = (backend as { bundled?: boolean }).bundled === true || (backend as { inProcess?: boolean }).inProcess === true;
+    if (daemon.pluginId === undefined && own) {
+      daemon.pluginId = backend.pluginId;
+      writeAgentRecord(this.#o.home, daemon);
+    }
+    if (daemon.pluginId !== backend.pluginId) {
+      const why = `its agent's plugin changed (from ${daemon.pluginId ?? "an unknown one"} to ${backend.pluginId}), so it can't go on; start a new session`;
+      if (this.#o.host.get(view.id)) {
+        // A note in its log says why, for the user who opens it; then it ends.
+        const host = this.#o.host;
+        void (async () => {
+          await host.deliver(view.id, { from: "note", label: "Agent", text: `This agent session ended: ${why}.`, by: { kind: "core" } }).catch(() => {});
+          await host.stop(view.id, why).catch(() => {});
+        })();
+      }
+      return refuse(why);
+    }
     let rootPath: string;
     try {
       rootPath = this.#rootPath(view.root);
@@ -453,10 +481,17 @@ export class AgentManager {
         env: { [BRIDGE_ENV.token]: e.token, [BRIDGE_ENV.session]: e.id, [BRIDGE_ENV.socket]: this.#o.bridge.socketPath },
         tools: e.bridgeTools,
       },
-      fence: this.#o.fence.policy(),
+      // The Clover home is out of every agent's reach (the owner's decision, #208's check 2): denied to its sandbox
+      // whole, for reads and writes.
+      fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
       admitted,
+      // A backend inside the daemon (Clover's coding agent) gets the bridge in-process: its calls check the session's
+      // token is still live, as the socket's do.
+      ...((e.backend as { inProcess?: boolean }).inProcess === true
+        ? { inProcessBridge: await inProcessBridgeServer(this.bridgeHandlers(), { name: e.serverName, sessionId: e.id, live: () => this.#o.tokens.has(e.id) }) }
+        : {}),
     };
     const session = await e.backend.start(spec);
     e.session = session;
@@ -518,7 +553,13 @@ export class AgentManager {
           { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
           { label: "Folder", value: sealedText(e.root, 4000) },
         ] },
-        detail: { type: "rows", rows: [{ label: "Why", value: sealedText(reason, 4000) }] },
+        detail: { type: "rows", rows: [
+          { label: "Why", value: sealedText(reason, 4000) },
+          // Every environment name it gets, from this computer's (by name) and set for it: a pattern can't tell every
+          // secret, so the user sees them all (#233's review).
+          { label: "Gets from your environment", value: sealedText(e.backend.quirks.launch.envAllow.join(", ") || "nothing", 4000) },
+          { label: "Sets in its environment", value: sealedText(Object.keys(e.backend.quirks.launch.envSet).join(", ") || "nothing", 4000) },
+        ] },
       },
     }, signal ? { signal } : {});
     if (!decision.allowed) {
@@ -541,6 +582,13 @@ export class AgentManager {
     if (resolved.over) {
       // More paths than Clover checks: refused without a card, never let through unchecked (check 2's minor 1).
       e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "too-many-paths", paths: raw.paths.length });
+      const reject = raw.options.find((o) => o.kind === "reject_once");
+      return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+    }
+    // Anything in the Clover home (a bot's memory, its conversations, the runtime's state), as written or through a link:
+    // refused without a card, at every level (the owner's decision, #208's check 2).
+    if (resolved.paths.some((p) => homeReach(this.#o.home, p, e.rootPath) === "inside")) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: raw.toolCallId, toolKind: raw.toolKind, allowed: false, by: "clover-home" });
       const reject = raw.options.find((o) => o.kind === "reject_once");
       return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
     }

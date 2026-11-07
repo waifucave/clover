@@ -120,6 +120,14 @@ bun run verify:workflow                # workflows e2e against the REAL compiled
 binary as a sandboxed subprocess, and the dev path (`bun run src/…`) and the compiled path differ.
 It must stay green.
 
+**Every core test that can skip on Linux needs a reviewed reason.** CI's Linux shards fail any
+`packages/core` file whose tests skip (or that runs none) unless it marks its macOS tests
+(`darwinTest`/`darwinDescribe` from `test/helpers/darwin-only.ts`, or a `*.darwin.test.ts` file) or
+is listed in `linuxSkips` in `packages/core/test/platform-ci.json` with the reason (an opt-in live
+or env-gated test, another OS…). A new `skip`/`skipIf` without one of these breaks the merge queue
+for every PR batched with it. `bun scripts/platform-tests.ts --root packages/core --cwd packages/core
+--not-darwin --config packages/core/test/platform-ci.json` runs the same check locally.
+
 New behaviour needs a test. The bar isn't coverage percentage — it's that the *specific claim* your
 change makes is pinned by something that fails when the claim stops being true.
 

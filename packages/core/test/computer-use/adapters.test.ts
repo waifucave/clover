@@ -30,6 +30,7 @@ import type { WorkerToHost } from "../../src/computer-use/worker/bridge";
 import { createAutomationRuntime, type AutomationRuntime } from "../../src/computer-use/worker/runtime";
 import { referenceProblems } from "./adapter-refs";
 import type { Settings } from "../../src/settings";
+import { darwinTest } from "../helpers/darwin-only";
 
 const noop = async (): Promise<unknown> => undefined;
 const extra = (over: Partial<ExtraDef> = {}): ExtraDef => ({ name: "go", access: "view", signature: "go(): Promise<void>", summary: "does it", run: noop, ...over });
@@ -520,7 +521,7 @@ describe("the built-in adapters' AppleScript", () => {
   });
 
   for (const b of BRANCHES) {
-    test(`${b.bundleId} ${b.extra}(${JSON.stringify(b.args).slice(1, -1).slice(0, 60)}): the source rules, and every reference bound or named`, async () => {
+    darwinTest(`${b.bundleId} ${b.extra}(${JSON.stringify(b.args).slice(1, -1).slice(0, 60)}): the source rules, and every reference bound or named`, async () => {
       const def = BUILTIN_ADAPTERS.find((a) => a.bundleIds.includes(b.bundleId))!.extras.find((e) => e.name === b.extra)!;
       const sources = await scriptsOf(b.bundleId, def, b.args, b.answer ?? "1\t2\t3\t4");
       expect(sources.length).toBeGreaterThan(0);
@@ -577,7 +578,7 @@ describe("the built-in adapters' AppleScript", () => {
     expect(sourceProblems('tell application id "x.y"\nget name\nend tell', "x.y")).toEqual([]);
   });
 
-  test("Finder's trash refuses system and home folders; Notes' HTML is escaped; bad arguments are TypeErrors", async () => {
+  darwinTest("Finder's trash refuses system and home folders; Notes' HTML is escaped; bad arguments are TypeErrors", async () => {
     const home = "/Users/someone";
     for (const p of ["/", "/System/Library", "/Users", home, `${home}/Documents`, `${home}/.ssh/id_rsa`, `${home}/Library/Keychains/x`, `${home}/.clover-dev/x`, ...OTHER_INSTALL_HOMES.map((o) => `${home}/${o.dir}/x`)]) {
       expect(trashRefusal(p, home)).toBeDefined();

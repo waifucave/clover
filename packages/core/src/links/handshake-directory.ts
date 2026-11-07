@@ -47,6 +47,8 @@ export class HandshakeDirectory implements PeerDirectory {
     if (!d || d.revokedAt !== undefined) return undefined;
     const key = fromBase64(d.publicKey);
     if (!key) return undefined;
+    // "Dial now", so the peer dials back at once (S1): both directions race, and the first through wins.
+    if (this.#pair(device)?.registeredAt !== undefined) void this.dialNow(device).catch(() => undefined);
     const addr = await this.addr(device).catch(() => undefined);
     if (!addr) return { key };
     return {
@@ -137,7 +139,7 @@ export class HandshakeDirectory implements PeerDirectory {
 
   /** Opens the pair's socket, so the peer's records and "dial now" arrive at once instead of on the next poll.
    *  Returns the close function; the socket pings every 30 s as the format asks. */
-  async connectSocket(device: string): Promise<() => void> {
+  async connectSocket(device: string, onClosed?: (code: number) => void): Promise<() => void> {
     const pair = this.#pair(device);
     if (!pair || pair.registeredAt === undefined) throw new Error("no registered pair with that device");
     const keys = await this.#pairKeys(pair);
@@ -155,12 +157,17 @@ export class HandshakeDirectory implements PeerDirectory {
       if (f.t === "record") this.takeRecord(device, f as { from: string; kind: string; gen: number; box: string });
       else if (f.t === "message") this.takeMessage(device, f as { from: string; kind: string; at: number; box: string });
     });
-    ws.addEventListener("close", () => clearInterval(ping));
+    let closedByUs = false;
+    ws.addEventListener("close", (ev) => {
+      clearInterval(ping);
+      if (!closedByUs) onClosed?.(ev.code);
+    });
     await new Promise<void>((resolve, reject) => {
       ws.addEventListener("open", () => resolve(), { once: true });
       ws.addEventListener("error", () => reject(new Error("the handshake socket didn't open")), { once: true });
     });
     return () => {
+      closedByUs = true;
       clearInterval(ping);
       ws.close(1000, "done");
     };
