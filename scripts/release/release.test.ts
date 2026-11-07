@@ -547,6 +547,10 @@ describe("the Windows installer's elevated step", () => {
     expect(text).not.toContain("CLOVER_CORE_EXE");
     // No elevated run of anything in the install folder.
     expect(text).not.toMatch(/Start-Process -FilePath \$\$env:CLOVERINSTALL/);
+    // electron-builder leaves out GetProcessInfo and $pid when a customCheckAppRunning is defined; _CHECK_APP_RUNNING needs them.
+    expect(text.indexOf('!include "getProcessInfo.nsh"')).toBeGreaterThan(-1);
+    expect(text.indexOf('!include "getProcessInfo.nsh"')).toBeLessThan(text.indexOf("!macro customCheckAppRunning"));
+    expect(text).toMatch(/^Var pid$/m);
     const check = text.slice(text.indexOf("!macro customCheckAppRunning"), text.indexOf("!macroend", text.indexOf("!macro customCheckAppRunning")));
     expect(check).toContain(`nsExec::ExecToLog '"$INSTDIR\\resources\\daemon\\clover-core.exe" daemon stop'`);
     expect(check.indexOf("daemon stop")).toBeLessThan(check.indexOf("_CHECK_APP_RUNNING"));

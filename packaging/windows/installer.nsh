@@ -47,6 +47,12 @@
   DetailPrint "Clover: sandbox ${ACTION} exited $0"
 !macroend
 
+; electron-builder includes getProcessInfo.nsh and declares $pid only when no customCheckAppRunning is defined
+; (allowOnlyOneInstallerInstance.nsh), and this one ends in its own _CHECK_APP_RUNNING, which uses both: without
+; them makensis stops at "Invalid command: ${GetProcessInfo}". The library has include guards.
+!include "getProcessInfo.nsh"
+Var pid
+
 !macro customCheckAppRunning
   ${if} ${FileExists} "$INSTDIR\resources\daemon\clover-core.exe"
     nsExec::ExecToLog '"$INSTDIR\resources\daemon\clover-core.exe" daemon stop'
