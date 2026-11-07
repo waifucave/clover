@@ -253,4 +253,20 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
       await session.stop();
     }
   }, 60_000);
+
+  test("a cancel that comes before the runtime has taken the prompt up still ends the turn cancelled", async () => {
+    // The interrupt then finds no turn to stop; the turn's own first messages send it again (a slow runner's flake).
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/hang", pauseGateFor: () => OPEN }).start(spec(root, "winter-test/hang"));
+    try {
+      const p = session.prompt({ text: "wait" });
+      await session.cancel();
+      const hung = Bun.sleep(15_000).then(() => ({ stopReason: "still running 15 s after the cancel" }));
+      expect((await Promise.race([p, hung])).stopReason).toBe("cancelled");
+      expect(session.state()).toBe("idle");
+    } finally {
+      await session.stop();
+    }
+  }, 60_000);
 });

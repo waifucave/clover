@@ -87,6 +87,9 @@ function isDirectory(path: string): boolean {
 /** What a delegation with no pause gate gets: held, never open. */
 const CLOSED_GATE: AgentPauseGate = { mayAct: () => false };
 
+/** A session's running turn; `cancelled` once a cancel asked for it to end, `interrupting` while an interrupt is out. */
+type RunningTurn = { resolve(end: AgentTurnEnd): void; text: string; usage: { inputTokens: number; outputTokens: number }; cancelled?: boolean; interrupting?: boolean };
+
 class InProcessSession implements AgentSession {
   readonly agentSessionId: string;
   #state: AgentSessionState = "starting";
@@ -96,7 +99,7 @@ class InProcessSession implements AgentSession {
   #permission: ((ask: AgentPermissionAsk) => Promise<AgentPermissionAnswer>) | undefined;
   readonly #listeners = new Set<(e: AgentEvent) => void>();
   #progressAt = Date.now();
-  #turn: { resolve(end: AgentTurnEnd): void; text: string; usage: { inputTokens: number; outputTokens: number } } | undefined;
+  #turn: RunningTurn | undefined;
   #pump: Promise<void> | undefined;
   readonly #toolKinds = new Map<string, string>();
 
@@ -255,6 +258,10 @@ class InProcessSession implements AgentSession {
 
   #accept(msg: Record<string, unknown>): void {
     this.#emit({ type: "progress" });
+    // A cancelled turn the runtime is still running: the interrupt goes again (one at a time). One sent before the
+    // runtime took the prompt up found no turn to stop, and the turn would run on (a slow runner's flake).
+    const running = this.#turn;
+    if (running?.cancelled === true && msg.type !== "result") this.#interrupt(running);
     if (typeof msg.parent_tool_use_id === "string" && msg.parent_tool_use_id !== "") return;
     if (msg.type === "system" && typeof msg.task_id === "string") {
       // Every task but a foreground command (`is_backgrounded: false`), a running tool call the pause never cuts off; a
@@ -348,15 +355,25 @@ class InProcessSession implements AgentSession {
   }
 
   async cancel(): Promise<void> {
-    if (this.#turn === undefined || this.#query === undefined) return;
+    const t = this.#turn;
+    if (t === undefined || this.#query === undefined) return;
     this.#state = "cancelling";
     const done = new Promise<void>((r) => {
-      const t = this.#turn!;
       const prev = t.resolve;
       t.resolve = (e) => { prev(e); r(); };
     });
-    try { await this.#query.interrupt(); } catch { /* ended already */ }
+    // Marked first: if the runtime hasn't taken the prompt up yet, this interrupt finds no turn, and the turn's own
+    // messages send it again (#accept) once it runs, however late that is.
+    t.cancelled = true;
+    this.#interrupt(t);
     await Promise.race([done, new Promise<void>((r) => setTimeout(r, AGENT_CANCEL_WAIT_MS))]);
+  }
+
+  /** Asks the runtime to stop `t`, unless an ask is out already or `t` has ended. */
+  #interrupt(t: RunningTurn): void {
+    if (t.interrupting === true || this.#turn !== t || this.#query === undefined) return;
+    t.interrupting = true;
+    void this.#query.interrupt().catch(() => { /* ended already */ }).finally(() => { t.interrupting = false; });
   }
 
   async setConfig(option: "model" | "effort", value: string): Promise<void> {
