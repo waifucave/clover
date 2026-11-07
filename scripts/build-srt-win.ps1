@@ -19,13 +19,19 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts/build-srt-win.ps1 -ExpectedDigest <hex>
   # Verifies the built binary's Authenticode digest against the pin.
+
+.EXAMPLE
+  powershell -ExecutionPolicy Bypass -File scripts/build-srt-win.ps1 -Target aarch64-pc-windows-msvc
+  # Lane M: the arm64 launcher, cross-built on x64 (cargo --target). Without -Target the build is the host's,
+  # unchanged, which is the build the x64 pin measures.
 #>
 [CmdletBinding()]
 param(
   [string]$Tag = "v0.0.81",
   [string]$Commit = "c40cf14a65d025e3cd27f071f13a73c12b3b1f92",
   [string]$Repo = "https://github.com/anthropics/sandbox-runtime.git",
-  [string]$ExpectedDigest = ""
+  [string]$ExpectedDigest = "",
+  [string]$Target = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,6 +52,20 @@ $outExe = Join-Path $outDir "srt-win.exe"
 $PinnedPatches = @{
   "0001-per-principal-setup-records.patch" = "013011761ded779b029d234c5c96adb10e2bd3d6ecea5b85e2952bed0d06c0bb"
 }
+
+# What the pinned patch set must change (per-principal records). After
+# applying, the tree must show exactly these files with this shape, or
+# the build stops: a patch that applies cleanly but changes nothing
+# (wrong -p level, already-applied upstream, CRLF damage) must fail
+# loudly instead of shipping an unpatched launcher under a patched pin.
+$ExpectedPatchFiles = @(
+  "vendor/srt-win-src/src/cli.rs",
+  "vendor/srt-win-src/src/install.rs",
+  "vendor/srt-win-src/src/reg.rs",
+  "vendor/srt-win-src/src/user.rs"
+)
+$ExpectedPatchAdded = 377
+$ExpectedPatchDeleted = 43
 
 function Check-Tools {
   foreach ($t in @("git", "cargo") ) {
@@ -80,7 +100,9 @@ function Sync-Source {
 function Apply-Patches {
   # Clover's per-principal patch set (vendor/srt-win/patches/*.patch).
   # Applied after the checkout, before the build, in sorted order.
-  # Only pinned files may be present, and each must match its hash.
+  # Only pinned files may be present (unknown or extra files fail the
+  # build), each must match its pinned hash, and afterwards the tree
+  # must show the expected change (see $ExpectedPatchFiles below).
   $patchDir = Join-Path $root "vendor/srt-win/patches"
   $found = @(Get-ChildItem -Path $patchDir -Filter "*.patch" -ErrorAction SilentlyContinue | Sort-Object Name)
   $pinned = @($PinnedPatches.Keys | Sort-Object)
@@ -96,13 +118,38 @@ function Apply-Patches {
     Write-Host "build-srt-win: applying $($p.Name)"
     Push-Location $srcDir
     try {
-      git apply --check $p.FullName
+      # The patches are the crate's own (`src/cli.rs`…): applied in vendor/srt-win-src of the checkout. From the
+      # checkout's root without --directory they don't apply, and from inside the crate git applies nothing at all.
+      git apply --check --directory=vendor/srt-win-src $p.FullName
       if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch does not apply: $($p.Name)" }
-      git apply $p.FullName
+      git apply --directory=vendor/srt-win-src $p.FullName
       if ($LASTEXITCODE -ne 0) { throw "build-srt-win: patch failed: $($p.Name)" }
     } finally { Pop-Location }
   }
   if ($found.Count -eq 0) { Write-Host "build-srt-win: no patches to apply" }
+  # The patch must really have changed the tree: exactly the expected
+  # files, with the expected shape. A no-op apply (wrong -p level,
+  # already-upstreamed hunk, CRLF damage) must fail here, not ship an
+  # unpatched launcher under a patched pin.
+  Push-Location $srcDir
+  try {
+    $stat = @(git diff --numstat -- $ExpectedPatchFiles)
+    if ($stat.Count -ne $ExpectedPatchFiles.Count) {
+      throw "build-srt-win: patch changed $($stat.Count) file(s), expected $($ExpectedPatchFiles.Count)"
+    }
+    $added = 0
+    $deleted = 0
+    foreach ($line in $stat) {
+      $a, $d, $f = $line -split "\s+"
+      if ($f -notin $ExpectedPatchFiles) { throw "build-srt-win: patch touched unexpected file: $f" }
+      $added += [int]$a
+      $deleted += [int]$d
+    }
+    if ($added -ne $ExpectedPatchAdded -or $deleted -ne $ExpectedPatchDeleted) {
+      throw "build-srt-win: patch changed $added insertion(s) and $deleted deletion(s), expected $ExpectedPatchAdded/$ExpectedPatchDeleted"
+    }
+    Write-Host "build-srt-win: patch changed the tree as expected ($added insertions, $deleted deletions)"
+  } finally { Pop-Location }
 }
 
 function Build-Launcher {
@@ -111,11 +158,35 @@ function Build-Launcher {
     # Static CRT: no VCRUNTIME140/MSVCP140 prerequisite on the target machine (S2).
     # /BREPRO: deterministic output — the Authenticode digest must be identical on every
     # rebuild of the same source, or the pinned digest could never match lane M's CI build.
-    $env:RUSTFLAGS = "-C target-feature=+crt-static -C link-arg=/BREPRO"
-    cargo build --release --locked
+    # And independent of where the build runs: the checkout's and cargo home's paths are remapped
+    # (panic messages carry source paths), and no PDB is made, so no PDB path is written into the
+    # image (/DEBUG:NONE). CARGO_ENCODED_RUSTFLAGS, one flag per 0x1f: a path with a space stays
+    # one flag (RUSTFLAGS splits on spaces).
+    $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $HOME ".cargo" }
+    $flags = @(
+      "-Ctarget-feature=+crt-static",
+      "-Clink-arg=/BREPRO",
+      "-Clink-arg=/DEBUG:NONE",
+      "-Cdebuginfo=0",
+      "--remap-path-prefix=$srcDir=/srt",
+      "--remap-path-prefix=$cargoHome=/cargo"
+    )
+    Remove-Item Env:RUSTFLAGS -ErrorAction SilentlyContinue
+    $env:CARGO_ENCODED_RUSTFLAGS = $flags -join [char]0x1f
+    $env:CARGO_INCREMENTAL = "0"
+    # The source pins its toolchain (rust-toolchain.toml, found from here upwards); rustup installs it if missing.
+    rustup toolchain install
+    if ($LASTEXITCODE -ne 0) { throw "build-srt-win: rustup could not install the source's toolchain" }
+    if ($Target -ne "") {
+      rustup target add $Target
+      if ($LASTEXITCODE -ne 0) { throw "build-srt-win: rustup could not add $Target" }
+      cargo build --release --locked --target $Target
+    } else {
+      cargo build --release --locked
+    }
     if ($LASTEXITCODE -ne 0) { throw "build-srt-win: cargo build failed" }
   } finally { Pop-Location }
-  $built = Join-Path $crateDir "target/release/srt-win.exe"
+  $built = if ($Target -ne "") { Join-Path $crateDir "target/$Target/release/srt-win.exe" } else { Join-Path $crateDir "target/release/srt-win.exe" }
   if (-not (Test-Path $built)) { throw "build-srt-win: expected output not found at $built" }
   New-Item -ItemType Directory -Force -Path $outDir | Out-Null
   Copy-Item -Force $built $outExe
