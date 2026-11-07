@@ -10,7 +10,7 @@ import { ContractError } from "../contracts/common";
 import { readJson, removeFileDurably, writeJsonAtomic } from "../sessions/atomic-file";
 import { userLayerFile } from "./paths";
 
-export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout"] as const;
+export const USER_LAYER_FIELDS = ["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"] as const;
 export type UserLayerField = (typeof USER_LAYER_FIELDS)[number];
 
 export interface UserLayer {
@@ -22,6 +22,9 @@ export interface UserLayer {
   avatar?: { file: string; format: string; portrait?: string };
   theme?: string;
   layout?: string;
+  /** The bot's browser tabs may reach the LAN (lane L's `lanBots`). The person's alone: in the user layer, which only
+   *  the user writes, and never in a plugin's `bot` entry. */
+  lan?: boolean;
 }
 
 /** A model the layer names is a qualified catalog id (`<provider>/<model>`, §5.9); the catalogs live in the model

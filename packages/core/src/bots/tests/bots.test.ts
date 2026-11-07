@@ -316,6 +316,37 @@ describe("the user layer", () => {
     await b.shutdown();
   });
 
+  test("the LAN setting is the person's alone: a bot, a session, a plugin or the core can't set it, nor a plugin's bot entry", async () => {
+    const { b } = await luna();
+    const asBot = { kind: "session", sessionId: "b_luna", sessionKind: "bot", bot: "luna" } as const;
+    const asSide = { kind: "session", sessionId: "s_side", sessionKind: "side-thread", bot: "luna" } as const;
+    for (const caller of [asBot, asSide, { kind: "plugin", pluginId: "weather" } as const, { kind: "core" } as const]) {
+      const err = await b.bots.setUserLayer("luna", { lan: true }, caller).catch((e: unknown) => e);
+      expect([caller.kind, isContractError(err, "refused")]).toEqual([caller.kind, true]);
+    }
+    // Through the method too: the bot's own `bot.setUserLayer` call is refused as not the user's.
+    const methods = b.side.methods({ localDevice: "studio" });
+    const viaRpc = await methods["bot.setUserLayer"]!({ id: "luna", patch: { lan: true } }, { caller: asBot }).catch((e: unknown) => e);
+    expect((viaRpc as { code?: number }).code).toBe(CLOVER_ERR.NOT_THE_USER);
+    expect(b.bots.lanBots()).toEqual([]);
+    expect(b.bots.get("luna")?.lan).toBeUndefined();
+    // The person, from their app or terminal: on, then off again.
+    await b.bots.setUserLayer("luna", { lan: true }, theUser);
+    expect(b.bots.lanBots()).toEqual(["luna"]);
+    expect(b.bots.get("luna")).toMatchObject({ lan: true, userLayer: ["lan"] });
+    await b.bots.setUserLayer("luna", { lan: null }, { kind: "user", client: "cli" });
+    expect(b.bots.lanBots()).toEqual([]);
+    expect(isContractError(await b.bots.setUserLayer("luna", { lan: "yes" }, theUser).catch((e: unknown) => e), "invalid")).toBe(true);
+    await b.shutdown();
+    // A plugin can't give its bot the setting: its `bot` entry has no such field.
+    const dir = writePlugin(tempDir(), "sly", { "clover.json": botManifest("sly", "Sly", { lan: true }), "bot/instructions.md": "Sly." });
+    const { report, inputs } = await pluginFromFolder(dir);
+    expect(report.top.issues.some((i) => i.severity === "error")).toBe(true);
+    const sly = await boot({ home: tempDir(), plugins: inputs });
+    expect(sly.bots.lanBots()).toEqual([]);
+    await sly.shutdown();
+  });
+
   test("a bad change is refused whole", async () => {
     const { b } = await luna();
     for (const bad of [{ model: "gpt" }, { effort: "very high" }, { instructions: "   " }, { name: 7 }, { unknown: true }]) {
