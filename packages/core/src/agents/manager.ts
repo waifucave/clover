@@ -287,6 +287,13 @@ export class AgentManager {
     if (!backend) return refuse(`no backend named ${view.backend}`);
     // Another plugin that took the id since (the bundled one switched off, a third party's on) never gets the session:
     // its program would see the agent's session id and root. The session ends, saying why.
+    // A record from before the plugin was kept goes on only with Clover's own backend (the bundled `clover/agent-<id>`,
+    // or a core one), and keeps it from now on.
+    const own = (backend as { bundled?: boolean }).bundled === true || (backend as { inProcess?: boolean }).inProcess === true;
+    if (daemon.pluginId === undefined && own) {
+      daemon.pluginId = backend.pluginId;
+      writeAgentRecord(this.#o.home, daemon);
+    }
     if (daemon.pluginId !== backend.pluginId) {
       const why = `its agent's plugin changed (from ${daemon.pluginId ?? "an unknown one"} to ${backend.pluginId}), so it can't go on; start a new session`;
       if (this.#o.host.get(view.id)) {

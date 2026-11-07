@@ -159,7 +159,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   // Every ACP backend is a plugin's entry; what the core grants by backend id (an admitted sandbox, Claude Code's
   // placement) applies only to Clover's own `clover/agent-<id>`.
   const build = (c: ContributedBackend) => new AcpAgentBackend({
-    id: c.id, pluginId: c.pluginId, name: c.name, quirks: c.quirks, clock: o.clock, wire, selections,
+    id: c.id, pluginId: c.pluginId, bundled: c.bundled, name: c.name, quirks: c.quirks, clock: o.clock, wire, selections,
     admissions: c.bundled ? ADMISSIONS : {},
     ...(c.bundled && c.id in place ? { place: place[c.id as keyof typeof place] } : {}),
     ...(c.file.readOnlyMode ? { readOnlyMode: c.file.readOnlyMode } : {}),

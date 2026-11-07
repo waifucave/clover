@@ -147,9 +147,12 @@ describe("agent backends from plugins", () => {
       "AWS_ACCESS_KEY_ID", "OPENAI_APIKEY", "GH_PAT", "SENTRY_DSN", "NPM_AUTH", "PRIVATE_KEY_PATH", "MY_PASS", "MYSQL_PASSWD", "AWS_SECRETS", "ANTHROPIC_KEYS",
       "DATABASE_URL", "DB_URL", "REDIS_URL", "MONGODB_URL", "POSTGRES_URL", "MYSQL_URL", "DATABASE_READ_URL",
       "SSH_AUTH_SOCK", "GPG_AGENT_INFO", "ssh_auth_sock",
+      // The second review's misses.
+      "OPENAI-API-KEY", "OPENAI.API.KEY", "openaiApiKey", "githubToken", "dbPassword", "GITHUBTOKEN", "OPENAIAPIKEY", "MYSECRET", "PGPASSWORD", "MYSQL_PWD",
+      "SLACK_WEBHOOK_URL", "TOKENIZERS_PARALLELISM", "awsPrivateKey",
     ];
     for (const n of secret) expect([n, looksLikeSecret(n)]).toEqual([n, true]);
-    const ordinary = ["PATH", "HOME", "LANG", "KEYBOARD", "TOKENIZERS_PARALLELISM", "PATHEXT", "AUTHOR", "PASSENGER", "XDG_DATA_HOME", "TERM", "USER", "HOMEPAGE_URL", "API_URL"];
+    const ordinary = ["PATH", "HOME", "LANG", "KEYBOARD", "PATHEXT", "AUTHOR", "PASSENGER", "PWD", "OLDPWD", "XDG_DATA_HOME", "TERM", "USER", "HOMEPAGE_URL", "API_URL", "NODE_ENV", "SHELL", "TMPDIR"];
     for (const n of ordinary) expect([n, looksLikeSecret(n)]).toEqual([n, false]);
     const root = mkdtempSync(join(tmpdir(), "clover-k-marks-"));
     temps.push(root);

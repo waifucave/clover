@@ -469,6 +469,25 @@ describe("models and sessions", () => {
     expect(w.report("started")).toHaveLength(started);
   });
 
+  test("a record from before the plugin was kept reattaches only to Clover's own backend, and keeps it from then on", async () => {
+    for (const bundled of [true, false]) {
+      const w = make({ script: [[{ say: "first done" }]] });
+      const r = await w.delegate();
+      await waitFor(() => notification(w), "the first notification");
+      const view = w.host.get(r.sessionId)!;
+      // The record as an older daemon wrote it: no plugin.
+      const file = join(w.cloverHome, "run", "agents", `${r.sessionId}.json`);
+      const { pluginId: _p, ...old } = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      writeFileSync(file, JSON.stringify(old));
+      const { m2 } = await restart(w, WELL_BEHAVED_QUIRKS, bundled ? "clover/agent-fake" : "someone/agents", bundled);
+      expect([bundled, m2.reattach({ ...view, status: "idle" })]).toEqual([bundled, bundled]);
+      if (bundled) expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ pluginId: "clover/agent-fake" });
+      else expect(readAgentRecord(w.cloverHome, r.sessionId)?.pluginId).toBeUndefined();
+      for (const f of afterRestart.splice(0)) await f();
+      await w.close();
+    }
+  });
+
   test("a reattach is refused when the daemon's record and the host disagree, or the record is gone", async () => {
     const w = make({ script: [[{ say: "first done" }]] });
     const r = await w.delegate();
@@ -485,7 +504,7 @@ describe("models and sessions", () => {
 
 /** The daemon closes (every agent's process ends, its records stay) and a new one starts: a new host restored the
  *  bot's session (a fresh fake here), new tokens, a new manager. */
-async function restart(w: World, quirks: AgentQuirks, pluginId = "clover/agent-fake") {
+async function restart(w: World, quirks: AgentQuirks, pluginId = "clover/agent-fake", bundled = false) {
   await w.manager.close();
   expect(w.tokens.has(w.host.list({ kind: "agent" })[0]?.id ?? "")).toBe(false);
   const host2 = new FakeSessionHost({ clock: w.clock, approvals: w.approvals });
@@ -493,7 +512,7 @@ async function restart(w: World, quirks: AgentQuirks, pluginId = "clover/agent-f
   const tokens2 = new BridgeTokens();
   let m2!: AgentManager;
   const backend2 = new AcpAgentBackend({
-    id: "fake", pluginId, quirks: fakeLaunch(quirks), clock: w.clock,
+    id: "fake", pluginId, bundled, quirks: fakeLaunch(quirks), clock: w.clock,
     command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, w.agent.config], acpArgs: ["acp"] }, wire: (id) => m2.wire(id),
     admissions: fakeAdmissions("protected"),
   });

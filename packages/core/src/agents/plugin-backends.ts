@@ -118,19 +118,35 @@ export const RESERVED_BACKEND_IDS: ReadonlySet<string> = new Set(["clover-code",
 
 /** Segments of an environment name (split at `_`, any case) that mark a secret. */
 const SECRET_SEGMENTS: ReadonlySet<string> = new Set([
-  "KEY", "KEYS", "APIKEY", "TOKEN", "TOKENS", "SECRET", "SECRETS", "PASS", "PASSWORD", "PASSWD", "CREDENTIAL", "CREDENTIALS", "AUTH", "PAT", "DSN", "PRIVATE",
+  "KEY", "KEYS", "APIKEY", "TOKEN", "TOKENS", "SECRET", "SECRETS", "PASS", "PASSWORD", "PASSWD", "PWD", "CREDENTIAL", "CREDENTIALS", "AUTH", "PAT", "DSN", "PRIVATE",
 ]);
-/** A data store's address, which carries its login: `DATABASE_URL`, `REDIS_URL`, `MONGODB_URL` and the like. */
-const STORE_URL = /^(DATABASE|DB|REDIS|MONGO|POSTGRES|MYSQL)[A-Z0-9_]*_URL$/i;
+/** Words that mark a secret wherever they stand in a name, run together or not (`GITHUBTOKEN`, `PGPASSWORD`). */
+const SECRET_WORDS = ["TOKEN", "SECRET", "PASSWORD", "PASSWD", "APIKEY", "CREDENTIAL", "PRIVATEKEY"];
+/** The first segment of an address that carries a login: a data store's, or a webhook's (any segment). */
+const STORE_PREFIX = /^(DATABASE|DB|REDIS|MONGO|POSTGRES|MYSQL)/;
 /** Names that hand over an agent of the user's keys. */
 const SECRET_NAMES: ReadonlySet<string> = new Set(["SSH_AUTH_SOCK", "GPG_AGENT_INFO"]);
 
-/** An environment name that looks like a secret (#233's review): one of its `_`-delimited segments marks one (`KEY`,
- *  `APIKEY`, `TOKEN`, `SECRET`, `PASS`, `PASSWORD`, `PASSWD`, `CREDENTIAL(S)`, `AUTH`, `PAT`, `DSN`, `PRIVATE`), it is a
- *  data store's `*_URL`, or it is the SSH or GPG agent's. A pattern can't catch every name, so the OK card lists them. */
+/** A name's segments: split at anything that isn't a letter or digit and at camelCase boundaries, upper-cased. */
+function segmentsOf(name: string): string[] {
+  return name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").split(/[^A-Za-z0-9]+/).filter((s) => s !== "").map((s) => s.toUpperCase());
+}
+
+/** An environment name that looks like a secret (#233's review): a segment marks one (`KEY`, `APIKEY`, `TOKEN`,
+ *  `SECRET`, `PASS`, `PASSWORD`, `PASSWD`, `PWD` (never `PWD` alone, the working folder), `CREDENTIAL(S)`, `AUTH`,
+ *  `PAT`, `DSN`, `PRIVATE`); one of `SECRET_WORDS` stands anywhere in it; it is a data store's or a webhook's
+ *  `*_URL`; or it is the SSH or GPG agent's. A pattern can't catch every name, so the OK card lists them all. */
 export function looksLikeSecret(name: string): boolean {
-  if (SECRET_NAMES.has(name.toUpperCase()) || STORE_URL.test(name)) return true;
-  return name.toUpperCase().split("_").some((seg) => SECRET_SEGMENTS.has(seg));
+  const upper = name.toUpperCase();
+  if (SECRET_NAMES.has(upper)) return true;
+  if (upper === "PWD") return false;
+  const segs = segmentsOf(name);
+  if (segs.some((s) => SECRET_SEGMENTS.has(s))) return true;
+  const joined = segs.join("");
+  if (SECRET_WORDS.some((w) => joined.includes(w))) return true;
+  const last = segs.at(-1);
+  if ((last === "URL" || last === "URI") && segs.length > 1 && (STORE_PREFIX.test(segs[0]!) || segs.some((s) => s.includes("WEBHOOK")))) return true;
+  return false;
 }
 
 /** One contributed ACP backend, as the core builds it. */
