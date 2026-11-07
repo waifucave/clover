@@ -7,7 +7,7 @@ export {
   loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs,
   renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
   systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
-  superviseLoop, backoffMs,
+  superviseLoop, backoffMs, UPDATE_RESTART_EXIT_CODE,
   type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState, type Runner, type DaemonStartResult, type CleanStopResult, type CleanStopDeps,
   type SuperviseDeps, type SuperviseResult, type DaemonRun,
 } from "./platform/login";
@@ -21,6 +21,9 @@ export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } f
 export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "./auth/clover-tokens";
 export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
 export { cloverCall } from "./ipc/clover-client";
+export { UpdateGate, UpdateRestartingRefusal, isUpdateRestarting, UPDATE_RESTARTING_MESSAGE, type BusySource, type GateVerdict } from "./update/gate";
+export { type SelfUpdate } from "./update/service";
+export { INSTALL_MARKER, parseInstallMarker, readInstallMarker, removeInstallMarker, updatesItself, writeInstallMarker, type InstallChannel, type InstallKind, type InstallMarker } from "./update/install-marker";
 export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
 export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";

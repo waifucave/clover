@@ -93,6 +93,11 @@ export class WorkflowRuntime {
     this.runsDir = deps.runsDir ?? mkdtempSync(join(tmpdir(), "clover-workflow-runs-"));
   }
 
+  /** M-M2's update gate: the workflow runs still going, in every session (a run outlives the turn that launched it). */
+  runningCount(): number {
+    return this.live.size;
+  }
+
   launch(l: WorkflowLaunch): string {
     const runId = l.runId ?? `wf_${randomBytes(6).toString("hex")}`;
     this.sources.set(runId, l.source);

@@ -686,6 +686,11 @@ export function rpcFromCloverRefusal(err: unknown): never {
     if (isSessionReplaced(err)) {
       throw new RpcFailure(ERR.RETRY, err.message, { code: err.code, retryable: true });
     }
+    // M-M2: refused while the update gate closes for a restart. Nothing was appended; the same send works once the
+    // gate reopens or the daemon is back: a RETRY, never INTERNAL.
+    if (err.reason === "update-restarting") {
+      throw new RpcFailure(ERR.RETRY, err.message, { code: err.code, reason: err.reason, retryable: true });
+    }
     const invalid = err.code === "session_predates_winter_leg" || err.code === "not_supported_on_winter_leg"
       || err.code === "runtime_selection_refused" || err.code === "legacy_session_migration_refused"
       || err.code === "session_cwd_unavailable" || err.code === "unsupported_topology";

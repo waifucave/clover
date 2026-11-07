@@ -100,6 +100,9 @@ function foldersStillReal(home: string, steps: readonly string[]): boolean {
 
 export const REDACTED_TOKEN = "<bridge-token>";
 
+/** The three logs another computer may stream into, exactly these names (never a name the object's prototype has). */
+const PEER_FILES: ReadonlySet<string> = new Set(["acp.ndjson", "calls.ndjson", "agent.stderr.log"]);
+
 /** Each file's cap in bytes. */
 export const TRANSCRIPT_CAPS: Readonly<Record<string, number>> = {
   "acp.ndjson": 256 * 1024 * 1024,
@@ -155,15 +158,20 @@ export class AgentTranscript {
   #stderrTail = "";
 
   readonly #caps: Readonly<Record<string, number>>;
+  readonly #sink: ((file: string, text: string) => void) | undefined;
 
-  /** `caps`: each file's cap in bytes, `TRANSCRIPT_CAPS` by default. */
-  constructor(home: string, sessionId: string, bot?: string, caps: Readonly<Record<string, number>> = TRANSCRIPT_CAPS) {
+  /** `caps`: each file's cap in bytes, `TRANSCRIPT_CAPS` by default. `sink`: an agent this computer runs for another
+   *  (K-M3's placement on other computers): nothing is written here; each line, its secrets replaced, goes to the
+   *  computer running the bot, which writes it (§6.5: `bots/<bot>/agents/` resolves to that computer). */
+  constructor(home: string, sessionId: string, bot?: string, caps: Readonly<Record<string, number>> = TRANSCRIPT_CAPS, opts: { sink?: (file: string, text: string) => void } = {}) {
     this.#caps = caps;
+    this.#sink = opts.sink;
     const p = transcriptSteps(home, sessionId, bot);
     this.dir = p.dir;
     this.treeDir = p.treeDir;
     this.#home = home;
     this.#steps = p.steps;
+    if (this.#sink) return;
     try {
       if (!makeFolders(home, p.steps)) this.#broken = true;
     } catch {
@@ -244,7 +252,17 @@ export class AgentTranscript {
     this.#append("calls.ndjson", record);
   }
 
+  /** Lines another computer streamed for an agent it runs for this one's bot (`sink` there), into one of the three
+   *  logs; `agent.json` stays this computer's own. False when the file isn't one of them. */
+  appendFromPeer(file: string, text: string): boolean {
+    if (!PEER_FILES.has(file)) return false;
+    this.#appendRaw(file, text);
+    return true;
+  }
+
   writeRecord(rec: AgentRecordFile): void {
+    // The bot's computer writes `agent.json` itself for an agent another computer runs.
+    if (this.#sink) return;
     const fd = this.#open("agent.json", false);
     if (fd === undefined) return;
     try {
@@ -264,12 +282,20 @@ export class AgentTranscript {
   #appendRaw(file: string, text: string): void {
     if (this.#broken || this.#full.has(file)) return;
     for (const s of this.#secrets) text = text.split(s).join(REDACTED_TOKEN);
+    if (this.#sink) {
+      try {
+        this.#sink(file, text);
+      } catch {
+        // The bot's computer is out of reach: the line is lost, never the agent.
+      }
+      return;
+    }
     const fd = this.#open(file, true);
     if (fd === undefined) return;
     try {
       const size = this.#written.get(file) ?? fstatSync(fd).size;
       const bytes = Buffer.byteLength(text);
-      const cap = this.#caps[file] ?? TRANSCRIPT_CAPS[file] ?? Number.POSITIVE_INFINITY;
+      const cap = (Object.hasOwn(this.#caps, file) ? this.#caps[file] : undefined) ?? (Object.hasOwn(TRANSCRIPT_CAPS, file) ? TRANSCRIPT_CAPS[file] : undefined) ?? Number.POSITIVE_INFINITY;
       if (size + bytes > cap) {
         this.#full.add(file);
         const note = file.endsWith(".ndjson") ? `${JSON.stringify({ clover: "truncated", cap })}\n` : `\n[Clover: this log reached its ${cap}-byte cap; the rest isn't kept]\n`;

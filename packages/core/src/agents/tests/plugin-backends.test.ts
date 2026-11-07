@@ -150,6 +150,8 @@ describe("agent backends from plugins", () => {
       // The second review's misses.
       "OPENAI-API-KEY", "OPENAI.API.KEY", "openaiApiKey", "githubToken", "dbPassword", "GITHUBTOKEN", "OPENAIAPIKEY", "MYSECRET", "PGPASSWORD", "MYSQL_PWD",
       "SLACK_WEBHOOK_URL", "TOKENIZERS_PARALLELISM", "awsPrivateKey",
+      // The third review's words.
+      "GPG_PASSPHRASE", "SESSION_COOKIE", "authCookie", "BEARER", "API_BEARER", "DB_CONNECTIONSTRING", "AzureConnectionString", "SLACK_WEBHOOK", "discordWebhook",
     ];
     for (const n of secret) expect([n, looksLikeSecret(n)]).toEqual([n, true]);
     const ordinary = ["PATH", "HOME", "LANG", "KEYBOARD", "PATHEXT", "AUTHOR", "PASSENGER", "PWD", "OLDPWD", "XDG_DATA_HOME", "TERM", "USER", "HOMEPAGE_URL", "API_URL", "NODE_ENV", "SHELL", "TMPDIR"];
