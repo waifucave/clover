@@ -10,7 +10,7 @@
 // bridge entry's `env` (S5 edit 4).
 import { z } from "zod";
 import { utf16 } from "./strings";
-import { AnyPluginId, ComputerName, Empty, SessionId, Text, TreePath } from "./common";
+import { AnyPluginId, ComputerName, Empty, Ok, SessionId, Text, TreePath } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
 /** Facts Settings marks on a backend (S5 edit 4, edit 6; §9.3 "Settings marks it"). */
@@ -68,6 +68,16 @@ export const BridgeTool = z.object({
   inputSchema: z.record(z.string(), z.unknown()),
 });
 
+/** The longest ACP line `clover-core code-agent` relays either way (K-M3b): inside a JSON string on one NDJSON line it
+ *  stays under the socket's 8 MiB (`NDJSON_MAX_LINE_BYTES`), however it is escaped. */
+export const CODE_AGENT_MAX_LINE = 2 * 1024 * 1024;
+
+/** The notification that carries one ACP line from the coding agent to `clover-core code-agent`, on its bound
+ *  connection only (a notification, not a request: nothing answers it). */
+export const CODE_AGENT_LINE_NOTIFICATION = "codeAgent.line";
+export const CodeAgentLine = z.object({ line: utf16(CODE_AGENT_MAX_LINE, 1) });
+export type CodeAgentLine = z.infer<typeof CodeAgentLine>;
+
 export const AGENTS_METHODS = {
   agentBackends: defineMethod({
     name: "agent.backends", owner: "K", roles: ["app", "cli"],
@@ -93,6 +103,26 @@ export const AGENTS_METHODS = {
     }),
     result: z.object({ session: SessionId }),
     doc: "Starts a coding session the user drives directly, with no bot (`clover code`, §9.3).",
+  }),
+
+  // `clover-core code-agent` (K-M3b): an outside ACP client's (Zed's) relay to Clover's coding agent, on a `cli`
+  // connection that counts as the user. `codeAgent.open` binds the connection to one session; after it the connection
+  // takes only `codeAgent.send`, and the session ends when the connection does.
+  codeAgentOpen: defineMethod({
+    name: "codeAgent.open", owner: "K", roles: ["cli"], userOnly: true,
+    params: z.object({
+      /** The folder the client opened, as an absolute path: a folder of this computer's tree, under the fence. */
+      cwd: utf16(4096, 1),
+      model: utf16(200).optional(),
+      effort: utf16(32).optional(),
+    }),
+    result: z.object({ session: SessionId }),
+    doc: "Opens a coding session the user drives from an outside ACP client, bound to this connection (§9.3).",
+  }),
+  codeAgentSend: defineMethod({
+    name: "codeAgent.send", owner: "K", roles: ["cli"], userOnly: true,
+    params: z.object({ line: utf16(CODE_AGENT_MAX_LINE, 1) }), result: Ok,
+    doc: "One ACP line from the outside client to the coding agent of this connection's session.",
   }),
 
   // The bridge (role `bridge`): bound to one agent session by its token.
