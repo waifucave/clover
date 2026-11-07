@@ -33,7 +33,7 @@ import type { Fence } from "../contracts/fence";
 import type { SessionHost } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import { UserSelections } from "./acp/selections";
-import { AcpAgentBackend } from "./backend";
+import { AcpAgentBackend, type AcpStartSpec } from "./backend";
 import { bridgeCloverParts, type BridgeCloverParts } from "./bridge/handlers";
 import { bridgeCommand } from "./bridge/main";
 import { BridgeTokens } from "./bridge/tokens";
@@ -47,7 +47,9 @@ import { ContributedBackendCache, type ContributedBackend } from "./plugin-backe
 import { ADMISSIONS } from "./sandbox/admission";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
+import { inProcessSandboxReady, notAvailableHere } from "./sandbox/in-process";
 import { StallWatchdog } from "./watchdog";
+import { AgentPeers, type AgentPeersOptions } from "./remote";
 import { inProcessAgentBackend, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
 
 export { AcpAgentSession, onceOnly, type WireTap } from "./acp/session";
@@ -67,6 +69,7 @@ export { buildAgentEnv, launchContained } from "./process/launch";
 export { AgentQuirksSchema, QuirksFileSchema, bundledAgentPluginId, contributedBackends, quirksWithCommand, readQuirksFile, type ContributedBackend, type FileQuirks, type QuirksFile } from "./plugin-backends";
 export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 export { inProcessBridgeServer } from "./bridge/in-process";
+export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentActFence, type AgentPeersOptions } from "./remote";
 export { UserSelections } from "./acp/selections";
 export { agentMethods } from "./rpc";
 export { agentToolDefs, type CoreToolDef } from "./tools";
@@ -101,6 +104,9 @@ export interface AgentsOptions {
   /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
    *  (`embeddedSessionOptions`, `fillProvider`) and the user's default model. Without it the backend isn't offered. */
   cloverCode?: Pick<CloverCodeDeps, "baseOptions" | "fillProvider" | "defaultModel" | "query">;
+  /** Agents on other computers (K-M3, remote.ts), over lane J's link: the transport, the computers' devices, who may
+   *  call, and this computer's lease fence (#237). Without it, an agent runs only here. */
+  peers?: Pick<AgentPeersOptions, "transport" | "computer" | "mayCall" | "fence">;
   /** Lane A's in-process subagents (`clover`, A-M3) on the embedded runtime: its embedded-session seam and the user's
    *  default model. The pause and the folders it may never reach are the core's (`inProcessBackend`). Without it the
    *  backend isn't offered. */
@@ -125,9 +131,14 @@ export function homeFoldersOf(home: string): string[] {
 /** Lane A's in-process backend as the core registers it: every delegation gets the pause gate (an open one when there
  *  is no switch, so the required form of lane A's seam is met), and the whole Clover home is a private folder, which
  *  the backend denies to its file tools by rule and to its Bash sandbox, on top of the manager's fence. */
-export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">, o: { home: string; pause?: AgentPauseGate }): AgentBackend {
+export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">, o: { home: string; pause?: AgentPauseGate; sandboxReady?: () => boolean }): AgentBackend {
   const gate = o.pause ?? OPEN_PAUSE_GATE;
-  return inProcessAgentBackend({ ...deps, pauseGateFor: () => gate, privateFoldersFor: () => homeFoldersOf(o.home) });
+  // The session's own pause when the manager hands one (for an agent run for another computer, that computer's
+  // forwarded switch too), else this computer's.
+  const b = inProcessAgentBackend({ ...deps, pauseGateFor: (spec) => (spec as AcpStartSpec).pause ?? gate, privateFoldersFor: () => homeFoldersOf(o.home) });
+  // Its sandbox is the embedded runtime's, which only macOS has for now: elsewhere it isn't available, with the reason.
+  const ready = o.sandboxReady ?? inProcessSandboxReady;
+  return { ...b, start: (spec) => b.start(spec), detect: async () => (ready() ? b.detect() : notAvailableHere(b.id)) };
 }
 
 /** Wires the Agent tool for one daemon: the tokens, the bridge's parts for lane C's Clover server (`clover`: pass
@@ -178,9 +189,13 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     backends = () => [...(registry ? cache.backends(registry, o.log) : []), ...core];
   }
   const clover = bridgeCloverParts(tokens, manager.bridgeHandlers());
+  const peers = o.peers
+    ? new AgentPeers(manager, { ...o.peers, home: o.home, clock: o.clock, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })
+    : undefined;
   return {
     manager, clover, tokens, backends: () => backends(),
     close: async () => {
+      peers?.close();
       await manager.close();
       tokens.revokeAll();
     },
