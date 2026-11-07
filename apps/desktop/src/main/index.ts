@@ -1330,6 +1330,12 @@ async function smoke(): Promise<void> {
               const hit = await win.webContents.executeJavaScript(
                 `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 5).map((el) => { const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.slice(0, 60) : (el.className !== undefined ? String(el.className).slice(0, 40) : null); const r = el.getBoundingClientRect(); return { tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; })); })()`, true).catch(() => null) as string | null;
               log(`sealed-click: root hit-test: ${String(hit ?? "failed").slice(0, 600)}`);
+              const cloverFrame = win.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("clover-plugin://clover/"));
+              if (cloverFrame !== undefined) {
+                const cloverHit = await cloverFrame.executeJavaScript(
+                  `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 4).map((el) => ({ tag: el.tagName, src: el.tagName === "IFRAME" ? el.src.slice(0, 60) : null }))); })()`, true).catch(() => null) as string | null;
+                log(`sealed-click: clover hit-test: ${String(cloverHit ?? "failed").slice(0, 400)}`);
+              }
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               press("Down");
