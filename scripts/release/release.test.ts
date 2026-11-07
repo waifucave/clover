@@ -387,6 +387,8 @@ describe("the signed builds' checks", () => {
   });
 });
 
+const cat = (...parts: Uint8Array[]): Uint8Array<ArrayBuffer> => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
+
 describe("the name scan (scripts/release/name-scan.ts)", () => {
   test("fails closed without the owner's local guard", async () => {
     const { nameScan } = await import("./name-scan");
@@ -453,6 +455,17 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     const notPe = pe.slice();
     notPe[0x80] = 0;
     expect(magicOf(notPe)).toBeUndefined();
+    // e_lfanew past the first 512 bytes: formatOf reads where it points.
+    const far = new Uint8Array(0x500);
+    far.set([0x4d, 0x5a]);
+    new DataView(far.buffer).setUint32(0x3c, 0x400, true);
+    far.set([0x50, 0x45, 0, 0], 0x400);
+    const farDir = mkdtempSync(join(tmpdir(), "clover-name-pe-"));
+    writeFileSync(join(farDir, "far.dll"), far);
+    expect(formatOf(join(farDir, "far.dll"))).toBe("pe");
+    far[0x400] = 0;
+    writeFileSync(join(farDir, "far.dll"), far);
+    expect(formatOf(join(farDir, "far.dll"))).toBe("raw");
     expect(TOOLS.pe).toBe("7z");
     expect(peArchiveType("Path = a.exe\nType = PE\nCPU = x64\n")).toBe("PE");
     expect(peArchiveType("Path = setup.exe\nType = Nsis\nMethod = LZMA\n")).toBe("Nsis");
@@ -474,6 +487,97 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     writeFileSync(file, cat(new Uint8Array(4096).fill(0x41), new Uint8Array(readFileSync(zip))));
     expect(formatOf(file)).toBe("appendedzip");
     expect(TOOLS.appendedzip).toBe("7z");
+  });
+
+  test("a known format must run to the file's last byte: tar, ar, 7z, zip and cab are measured by their own structure", async () => {
+    const { arEnd, sevenZipEnd, tarEnd, trailingProblem } = await import("./name-scan");
+    const dir = mkdtempSync(join(tmpdir(), "clover-name-trailing-"));
+    writeFileSync(join(dir, "in.txt"), "inside");
+    const tar = join(dir, "a.tar");
+    expect(Bun.spawnSync(["bsdtar", "-cf", tar, "-C", dir, "in.txt"]).exitCode).toBe(0);
+    const tarBytes = new Uint8Array(readFileSync(tar));
+    const reader = (b: Uint8Array) => (p: number, n: number): Uint8Array => b.subarray(p, p + n);
+    // One header and one data block, then the end-of-archive blocks (bsdtar pads with zeros to its record size).
+    expect(tarEnd(reader(tarBytes), tarBytes.length)).toBe(1024);
+    expect(trailingProblem(tar, "tar")).toBeUndefined();
+    const tarJunk = join(dir, "junk.tar");
+    writeFileSync(tarJunk, cat(tarBytes, Bun.gzipSync(new TextEncoder().encode("hidden"))));
+    expect(trailingProblem(tarJunk, "tar")).toMatch(/^has \d+ bytes after its tar archive's end$/);
+    const bad = tarBytes.slice();
+    bad[0] = bad[0]! ^ 1;
+    expect(tarEnd(reader(bad), bad.length)).toBeUndefined();
+    // ar: each member padded to an even length; nothing after the last.
+    const ar = cat(new TextEncoder().encode("!<arch>\n"), new TextEncoder().encode("debian-binary/  0           0     0     100644  3         `\n"), new TextEncoder().encode("2.0\n"));
+    expect(arEnd(reader(ar), ar.length)).toBe(ar.length);
+    writeFileSync(join(dir, "a.deb"), cat(ar, new Uint8Array([1])));
+    expect(trailingProblem(join(dir, "a.deb"), "deb")).toBe("has 1 bytes after its ar archive's end");
+    // 7z: its start header (CRC checked) says where it ends.
+    const seven = new Uint8Array(40);
+    seven.set([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4]);
+    new DataView(seven.buffer).setBigUint64(12, 4n, true);
+    new DataView(seven.buffer).setBigUint64(20, 4n, true);
+    new DataView(seven.buffer).setUint32(8, Bun.hash.crc32(seven.subarray(12, 32)), true);
+    expect(sevenZipEnd(seven)).toBe(40);
+    writeFileSync(join(dir, "a.7z"), cat(seven, new Uint8Array(5)));
+    expect(trailingProblem(join(dir, "a.7z"), "7z")).toBe("has 5 bytes after its 7z archive's end");
+    seven[8] = seven[8]! ^ 1;
+    expect(sevenZipEnd(seven)).toBeUndefined();
+    // zip: its end record must be the file's last bytes.
+    const zip = join(dir, "a.zip");
+    expect(Bun.spawnSync(["bsdtar", "-a", "-cf", zip, "-C", dir, "in.txt"]).exitCode).toBe(0);
+    expect(trailingProblem(zip, "zip")).toBeUndefined();
+    writeFileSync(join(dir, "b.zip"), cat(new Uint8Array(readFileSync(zip)), new Uint8Array([0])));
+    expect(trailingProblem(join(dir, "b.zip"), "zip")).toBe("has bytes after its zip's end record");
+    // cab: the header's size.
+    const cab = new Uint8Array(64);
+    cab.set(new TextEncoder().encode("MSCF"));
+    new DataView(cab.buffer).setUint32(8, 60, true);
+    writeFileSync(join(dir, "a.cab"), cab);
+    expect(trailingProblem(join(dir, "a.cab"), "cab")).toBe("has 4 bytes after its cab's end");
+  });
+
+  test("a gzip member is measured by inflating it, its trailer checked", async () => {
+    const { gzipMemberEnd } = await import("./name-scan");
+    const g = Bun.gzipSync(new TextEncoder().encode("member one"));
+    const b = cat(new Uint8Array(7).fill(9), g, new Uint8Array(3));
+    expect(gzipMemberEnd(b, 7)).toBe(7 + g.length);
+    const broken = b.slice();
+    broken[7 + g.length - 2] = broken[7 + g.length - 2]! ^ 1;
+    expect(gzipMemberEnd(broken, 7)).toBeUndefined();
+    expect(gzipMemberEnd(b, 0)).toBeUndefined();
+  });
+
+  test("finds streams appended to a file read raw (and the bytes before them, again), never one in its middle", async () => {
+    const { appendedStreams } = await import("./name-scan");
+    const enc = (t: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(t) as Uint8Array<ArrayBuffer>;
+    const raw = new Uint8Array(5000).map((_, i) => (i * 7919) & 0xff);
+    const tools = { xz: Bun.which("xz") ?? undefined, bzip2: Bun.which("bzip2") ?? undefined };
+    // A gzip of two members at the end: found at the first member.
+    const g1 = Bun.gzipSync(enc("one")), g2 = Bun.gzipSync(enc("two"));
+    expect(appendedStreams(cat(raw, g1, g2), tools)).toEqual({ found: [{ offset: 5000, kind: "gz" }], problems: [] });
+    // A gzip in the middle is not appended.
+    expect(appendedStreams(cat(raw, g1, raw), tools)).toEqual({ found: [], problems: [] });
+    // zstd after a gzip after raw bytes: both, latest first.
+    const z = Bun.zstdCompressSync(enc("zstd words"));
+    expect(appendedStreams(cat(raw, g1, z), tools).found).toEqual([{ offset: 5000 + g1.length, kind: "zst" }, { offset: 5000, kind: "gz" }]);
+    // A zip after raw bytes: placed by its central directory.
+    const dir = mkdtempSync(join(tmpdir(), "clover-name-appended-streams-"));
+    writeFileSync(join(dir, "in.txt"), "inside");
+    expect(Bun.spawnSync(["bsdtar", "-a", "-cf", join(dir, "z.zip"), "-C", dir, "in.txt"]).exitCode).toBe(0);
+    expect(appendedStreams(cat(raw, new Uint8Array(readFileSync(join(dir, "z.zip")))), tools).found).toEqual([{ offset: 5000, kind: "zip" }]);
+    // xz and bzip2, checked by their tools; without the tool, a stream that looks appended fails the scan.
+    if (tools.xz !== undefined) {
+      const x = new Uint8Array(Bun.spawnSync([tools.xz, "-c"], { stdin: enc("xz words") }).stdout);
+      expect(appendedStreams(cat(raw, x), tools).found).toEqual([{ offset: 5000, kind: "xz" }]);
+      expect(appendedStreams(cat(raw, x), {}).problems).toEqual(["ends with an xz stream, which the scan needs xz to check"]);
+      expect(appendedStreams(cat(raw, x, raw), tools).found).toEqual([]);
+    }
+    if (tools.bzip2 !== undefined) {
+      const bz = new Uint8Array(Bun.spawnSync([tools.bzip2, "-c"], { stdin: enc("bzip2 words") }).stdout);
+      expect(appendedStreams(cat(raw, bz), tools).found).toEqual([{ offset: 5000, kind: "bz2" }]);
+      expect(appendedStreams(cat(raw, bz, enc("junk")), tools).found).toEqual([]);
+    }
+    expect(appendedStreams(raw, tools)).toEqual({ found: [], problems: [] });
   });
 
   test("an AppImage's squashfs starts where its ELF runtime ends", async () => {
@@ -549,6 +653,9 @@ describe("the name scan, end to end with a stand-in guard", () => {
     expect(Bun.spawnSync(["bsdtar", "-cf", tarFile, "-C", tarDir, "."]).exitCode).toBe(0);
     writeFileSync(join(tree, "hidden.tgz"), Bun.gzipSync(new Uint8Array(readFileSync(tarFile))));
     writeFileSync(join(tree, "blob.bin"), Bun.gzipSync(enc("renamed PLANTED words")));
+    // A gzip appended to bytes in no format is cut out and opened; a tar with a gzip after its end fails the scan.
+    writeFileSync(join(tree, "carrier.dat"), cat(new Uint8Array(3000).fill(0x41), Bun.gzipSync(enc("appended PLANTED words"))));
+    writeFileSync(join(tree, "padded.tar"), cat(new Uint8Array(readFileSync(tarFile)), Bun.gzipSync(enc("after the end"))));
     // A format it knows that doesn't open (an LZ4 frame header and nothing after) fails the scan, never read raw only.
     writeFileSync(join(tree, "junk.bin"), new Uint8Array([4, 0x22, 0x4d, 0x18, 1, 2, 3]));
     const zip = join(home, "Clover-1.2.3-mac.zip");
@@ -569,9 +676,11 @@ describe("the name scan, end to end with a stand-in guard", () => {
     expect(hit("blob.bin")).toBe(true);
     expect(hit("resources/app.asar/asar/lib/deeper.gz")).toBe(true);
     expect(r.problems.some((p) => p.startsWith("junk.bin ") && /lz4/.test(p) || p === "junk.bin doesn't open for the scan")).toBe(true);
+    expect(r.problems.some((p) => p.includes("found the owner's identity in Clover-1.2.3-mac.zip/carrier.dat (its appended gz)"))).toBe(true);
+    expect(r.problems.some((p) => /^padded\.tar has \d+ bytes after its tar archive's end$/.test(p))).toBe(true);
     // Nothing else failed to open: the asar, the tgz and the renamed gzip all did.
     expect(r.problems.filter((p) => p.startsWith("junk.bin ")).length).toBe(1);
-    expect(r.problems.filter((p) => !p.startsWith("junk.bin ") && !p.includes("found the owner's identity"))).toEqual([]);
+    expect(r.problems.filter((p) => !p.startsWith("junk.bin ") && !p.startsWith("padded.tar ") && !p.includes("found the owner's identity"))).toEqual([]);
   });
 });
 

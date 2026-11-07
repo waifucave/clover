@@ -490,7 +490,8 @@ jobs:
 
   # The Linux repositories' signatures against the verifiers users run: a throwaway key signs a fixture Release and
   # repomd.xml as `linux-repo.ts sign` does, and gpgv and sqv must accept them and refuse a changed one.
-  # Three distributions' verifiers: the runner's Ubuntu 24.04, Debian trixie and Ubuntu 26.04 (as containers).
+  # Three distributions' verifiers: the runner's Ubuntu 24.04, Debian trixie and Ubuntu 26.04 (as containers, each
+  # pinned by its image index digest; a bump is a reviewed change like any action's pin).
   linux-repo-signatures:
     name: linux repositories · signatures · ${{ matrix.os }}
     needs: changes
@@ -503,8 +504,8 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-24.04, runner: ubuntu-24.04, container: "" }
-          - { os: debian-trixie, runner: ubuntu-24.04, container: "debian:trixie" }
-          - { os: ubuntu-26.04, runner: ubuntu-24.04, container: "ubuntu:26.04" }
+          - { os: debian-trixie, runner: ubuntu-24.04, container: "debian:trixie@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6" }
+          - { os: ubuntu-26.04, runner: ubuntu-24.04, container: "ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c" }
     steps:
       # Before the checkout and Bun: in a bare container, setup-bun needs unzip and the downloads need CA certificates.
       - name: gpgv, sqv and apt-ftparchive

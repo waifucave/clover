@@ -1,11 +1,11 @@
 // The Linux repositories (scripts/release/linux-repo.ts): the key, the signatures, the layout and the docs' lines,
 // with a throwaway key; nothing reaches the Keychain, a bucket or the network.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  archOf, generateRepoKey, installLines, KEYRING_FILE, ownerOnly, refreshRelease, refreshTree, releaseConfig, REPO_BASE_URL, REPO_KEY_ITEM, repoSigningKey,
+  archOf, generateRepoKey, installLines, KEYRING_FILE, MIN_DAYS_LEFT, ownerOnly, parseAptDate, refreshRelease, refreshTree, releaseConfig, releaseDateProblems, releaseFields, RELEASE_VALID_DAYS, REPO_BASE_URL, REPO_KEY_ITEM, repoSigningKey,
   signRelease, signTree, stampRelease, suiteFor, uploadArgs, uploadPlan, verifyDetached, verifyInRelease, verifyTree, type RepoKeyStore,
 } from "./linux-repo";
 
@@ -44,17 +44,51 @@ describe("the Linux repositories", () => {
     writeFileSync(join(dir, "apt", "dists", "stable", "Release"), release);
     writeFileSync(join(dir, "apt", "dists", "stable", "InRelease"), s.inRelease);
     writeFileSync(join(dir, "apt", "dists", "stable", "Release.gpg"), s.detached);
-    expect(await verifyTree(dir, k.publicKey)).toEqual([]);
-    expect(await verifyTree(dir, (await generateRepoKey()).publicKey)).toEqual(["apt/dists/stable/InRelease doesn't verify", "apt/dists/stable/Release.gpg doesn't verify"]);
-    expect(await verifyTree(mkdtempSync(join(tmpdir(), "clover-repo-empty-")), k.publicKey)).toEqual(["the tree holds no repository metadata"]);
+    const at = { now: new Date(Date.UTC(2026, 10, 6, 12)) };
+    expect(await verifyTree(dir, k.publicKey, at)).toEqual([]);
+    expect(await verifyTree(dir, (await generateRepoKey()).publicKey, at)).toEqual(["apt/dists/stable/InRelease doesn't verify", "apt/dists/stable/Release.gpg doesn't verify"]);
+    expect(await verifyTree(mkdtempSync(join(tmpdir(), "clover-repo-empty-")), k.publicKey, at)).toEqual(["the tree holds no repository metadata"]);
+    // The dates are checked against now: a day before the Release's Date, and after its Valid-Until.
+    expect(await verifyTree(dir, k.publicKey, { now: new Date(Date.UTC(2026, 10, 5)) })).toEqual(["apt/dists/stable/Release is dated Fri, 06 Nov 2026 00:00:00 UTC, after now"]);
+    expect(await verifyTree(dir, k.publicKey, { now: new Date(Date.UTC(2026, 11, 7)) })).toEqual(["apt/dists/stable/Release expired at Sun, 06 Dec 2026 00:00:00 UTC"]);
+    // A suite folder that exists holds all three files.
+    rmSync(join(dir, "apt", "dists", "stable", "InRelease"));
+    expect(await verifyTree(dir, k.publicKey, at)).toEqual(["apt/dists/stable/InRelease is missing"]);
+    writeFileSync(join(dir, "apt", "dists", "stable", "InRelease"), s.inRelease);
+    mkdirSync(join(dir, "apt", "dists", "beta"));
+    expect(await verifyTree(dir, k.publicKey, at)).toEqual(["apt/dists/beta/Release is missing", "apt/dists/beta/InRelease is missing", "apt/dists/beta/Release.gpg is missing"]);
+    rmSync(join(dir, "apt", "dists", "beta"), { recursive: true });
     // A Release with no Date (signed all the same) is refused.
     const undated = new TextEncoder().encode("Origin: Clover\nSuite: stable\nValid-Until: Sun, 06 Dec 2026 00:00:00 UTC\n");
     const u = await signRelease(undated, key);
     writeFileSync(join(dir, "apt", "dists", "stable", "Release"), undated);
     writeFileSync(join(dir, "apt", "dists", "stable", "InRelease"), u.inRelease);
     writeFileSync(join(dir, "apt", "dists", "stable", "Release.gpg"), u.detached);
-    expect(await verifyTree(dir, k.publicKey)).toEqual(["apt/dists/stable/Release has 0 Date fields, not one"]);
+    expect(await verifyTree(dir, k.publicKey, at)).toEqual(["apt/dists/stable/Release has 0 Date fields, not one"]);
   }, 30_000);
+
+  test("a Release's fields and dates, value-checked", () => {
+    expect(parseAptDate("Fri, 06 Nov 2026 00:00:00 UTC")?.toISOString()).toBe("2026-11-06T00:00:00.000Z");
+    for (const bad of ["garbage", "Fri, 06 Nov 2026 00:00:00 GMT", "Sat, 06 Nov 2026 00:00:00 UTC", "Fri, 31 Nov 2026 00:00:00 UTC", "Fri, 6 Nov 2026 00:00:00 UTC", "Fri, 06 Nov 2026 25:00:00 UTC", ""]) {
+      expect(parseAptDate(bad)).toBeUndefined();
+    }
+    // Field names compare without case; continuation lines and later paragraphs aren't fields.
+    const f = releaseFields("Origin: Clover\ndate: Fri, 06 Nov 2026 00:00:00 UTC\nSHA256:\n Date: not-a-field\n\nDate: second paragraph\n");
+    expect(f.get("date")).toEqual(["Fri, 06 Nov 2026 00:00:00 UTC"]);
+    expect(f.get("sha256")).toEqual([""]);
+    const now = new Date(Date.UTC(2026, 10, 6, 12));
+    const rel = (date: string, until: string): string => `Origin: Clover\nDate: ${date}\nValid-Until: ${until}\n`;
+    expect(releaseDateProblems(rel("Fri, 06 Nov 2026 00:00:00 UTC", "Sun, 06 Dec 2026 00:00:00 UTC"), now)).toEqual([]);
+    expect(releaseDateProblems(rel("garbage", "Sun, 06 Dec 2026 00:00:00 UTC"), now)).toEqual(['has a Date that isn\'t an apt date ("garbage")']);
+    expect(releaseDateProblems(rel("Sat, 07 Nov 2026 00:00:00 UTC", "Mon, 07 Dec 2026 00:00:00 UTC"), now)).toEqual(["is dated Sat, 07 Nov 2026 00:00:00 UTC, after now"]);
+    expect(releaseDateProblems(rel("Tue, 06 Oct 2026 00:00:00 UTC", "Thu, 05 Nov 2026 00:00:00 UTC"), now)).toEqual(["expired at Thu, 05 Nov 2026 00:00:00 UTC"]);
+    expect(releaseDateProblems(rel("Wed, 07 Oct 2026 00:00:00 UTC", "Sun, 08 Nov 2026 00:00:00 UTC"), now)).toEqual([`has 1.5 days left (under ${MIN_DAYS_LEFT}): refresh it first`]);
+    expect(releaseDateProblems(rel("Fri, 06 Nov 2026 00:00:00 UTC", "Fri, 06 Nov 2026 00:00:00 UTC"), new Date(Date.UTC(2026, 10, 5)))).toEqual(["is dated Fri, 06 Nov 2026 00:00:00 UTC, after now", `has 1.0 days left (under ${MIN_DAYS_LEFT}): refresh it first`, "has a Valid-Until that isn't after its Date"]);
+    expect(releaseDateProblems(rel("Fri, 06 Nov 2026 00:00:00 UTC", "Fri, 01 Jan 2027 00:00:00 UTC"), now)).toEqual([`is valid until Fri, 01 Jan 2027 00:00:00 UTC, more than ${RELEASE_VALID_DAYS} days from now`]);
+    expect(releaseDateProblems("Origin: Clover\nDate: Fri, 06 Nov 2026 00:00:00 UTC\ndate: Fri, 06 Nov 2026 00:00:00 UTC\nValid-Until: Sun, 06 Dec 2026 00:00:00 UTC\n", now)).toEqual(["has 2 Date fields, not one"]);
+    // stampRelease finds a field whatever its case.
+    expect(stampRelease("Origin: Clover\ndate: x\n", new Date(Date.UTC(2026, 10, 6)))).toBe("Origin: Clover\nDate: Fri, 06 Nov 2026 00:00:00 UTC\nValid-Until: Sun, 06 Dec 2026 00:00:00 UTC\n");
+  });
 
   test("suites, Release settings, and the packages' architectures", () => {
     expect(suiteFor("latest")).toBe("stable");
@@ -93,9 +127,9 @@ describe("the Linux repositories", () => {
     writeFileSync(join(dir, "apt", "dists", "beta", "Release"), release.replaceAll("stable", "beta"));
     await signTree(dir, key, k.publicKey);
     expect(refreshTree(dir, now)).toBe(1);
-    expect(await verifyTree(dir, k.publicKey)).toEqual(["apt/dists/beta/InRelease doesn't verify", "apt/dists/beta/Release.gpg doesn't verify"]);
+    expect(await verifyTree(dir, k.publicKey, { now })).toEqual(["apt/dists/beta/InRelease doesn't verify", "apt/dists/beta/Release.gpg doesn't verify"]);
     await signTree(dir, key, k.publicKey);
-    expect(await verifyTree(dir, k.publicKey)).toEqual([]);
+    expect(await verifyTree(dir, k.publicKey, { now })).toEqual([]);
     expect(readFileSync(join(dir, "apt", "dists", "beta", "InRelease"), "utf8")).toContain("Valid-Until: Thu, 31 Dec 2026 12:00:00 UTC");
     expect(readFileSync(join(dir, "clover-archive-keyring.asc"), "utf8")).toBe(k.publicKey);
     expect(() => refreshTree(mkdtempSync(join(tmpdir(), "clover-repo-none-")))).toThrow(/no apt Release/);
