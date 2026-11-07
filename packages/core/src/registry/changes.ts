@@ -23,6 +23,8 @@ export interface PluginFingerprint {
   hookEvents: string[];
   fetchesCode: string[];
   addons: boolean;
+  /** The code-loading built-ins it names (`builtins`); absent in an OK taken before B-M2 (none). */
+  builtins?: string[];
   adult: boolean;
   /** What runs, as canonical JSON: changed at all is a code change. */
   runs: string;
@@ -226,6 +228,7 @@ export function fingerprintOf(report: ManifestReport, codeFieldsOf: CodeFieldsOf
     hookEvents: sorted((m?.contributes?.hooks ?? []).flatMap((h) => h.on)),
     fetchesCode: sorted(report.fetchesCode),
     addons: report.addons,
+    builtins: sorted(report.builtins),
     adult: report.adult,
     runs: runsOf(m, codeFieldsOf),
     defaults: defaultsOf(m),
@@ -267,7 +270,7 @@ const adds = (before: readonly string[], after: readonly string[]) => after.some
 /** Whether a plugin's fingerprint hits a trigger or changes what runs. A new plugin in the tree (a child) asks again
  *  when it is code; a data child applies, like any data file. */
 function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFingerprint): boolean {
-  if (!before) return after.class !== "data" || after.adult || after.addons || after.capabilities.length > 0
+  if (!before) return after.class !== "data" || after.adult || after.addons || (after.builtins ?? []).length > 0 || after.capabilities.length > 0
     || after.networkHosts.length > 0 || after.helperPermissions.length > 0 || after.hookEvents.length > 0 || after.dynamicHosts;
   return CLASS_RANK[after.class] > CLASS_RANK[before.class]
     || adds(before.capabilities, after.capabilities)
@@ -276,6 +279,7 @@ function pluginAsksAgain(before: PluginFingerprint | undefined, after: PluginFin
     || adds(before.hookEvents, after.hookEvents)
     || adds(before.fetchesCode, after.fetchesCode)
     || (after.addons && !before.addons)
+    || adds(before.builtins ?? [], after.builtins ?? [])
     || (after.adult && !before.adult)
     || after.runs !== before.runs
     || after.defaults !== before.defaults

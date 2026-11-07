@@ -60,6 +60,8 @@ export interface ManifestReport {
   /** `stdio` commands that fetch code when they run (`npx`, `uvx`, …), which the OK flags (§5.6). */
   fetchesCode: string[];
   addons: boolean;
+  /** The code-loading built-ins its host code may import (`builtins`), which the OK lists. */
+  builtins: string[];
   adult: boolean;
   bot: boolean;
   /** It places sealed frames (the `approvals` capability), so it styles approval cards (§5.5); a theme or `style` file
@@ -282,7 +284,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], addons: false, builtins: [], adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -545,6 +547,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
     addons: top.addons !== undefined,
+    builtins: Array.isArray(top.builtins) ? top.builtins.filter((b): b is string => typeof b === "string") : [],
     adult: top.adult === true,
     bot: kept.bot !== undefined,
     restylesCards: capabilities.includes("approvals"),
@@ -934,6 +937,7 @@ export function describeOk(
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
+  if (report.builtins.length > 0) lines.push(`Its code can load or run other code, which Clover doesn't check (${report.builtins.join(", ")}).`);
   if (report.adult) lines.push("It may contain adult content.");
   if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");
   return lines;
