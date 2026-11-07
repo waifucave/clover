@@ -37,7 +37,7 @@ export type ApiCaller = "ui" | HostProcess;
 const both = (capability?: string): ApiCallInfo => (capability ? { capability, where: "both" } : { where: "both" });
 
 export const API_CALLS = {
-  confirm: both(),
+  confirm: both(), confirmCard: both(),
   t: both(),
   "points.entries": both(), "points.watch": both(), "points.call": both(),
   "commands.run": both("call:*"), "commands.list": both(),

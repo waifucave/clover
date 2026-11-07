@@ -96,6 +96,17 @@ export function transferChange(move: boolean, from: string, to: string, source: 
   return { method: TREE_TRANSFER, params: { operation: move ? "move" : "copy", from, to, source, destination } };
 }
 
+/** Whether a transfer's paths lie on the computers it names (#179's review, check 2): `from` on `source`, `to` on
+ *  `destination`, as this holder's tree resolves them. A holder checks it before it judges, so an answer bound to
+ *  one pair of computers can't move files between others. */
+export function transferEndsHold(params: TreeTransferParams, resolve: (path: string) => { computer: string }): boolean {
+  try {
+    return resolve(params.from).computer === params.source && resolve(params.to).computer === params.destination;
+  } catch {
+    return false;
+  }
+}
+
 /** The binding on R15's one card: `computer` is the destination, `source` the source, so either end checks the one
  *  answer against the card it rebuilds (`bindsComputer`). A holder's `CallCardRenderer` uses this for `tree.transfer`. */
 export function transferBinding(params: TreeTransferParams, sha256: (text: string) => string): CallBinding {

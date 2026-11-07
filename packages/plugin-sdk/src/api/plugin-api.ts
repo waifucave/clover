@@ -132,10 +132,10 @@ export interface NotifierUpdate {
   notification?: { title: string; body?: string };
   /** Who the update is from, always (#179's review): `clover` (name "Clover") for the core's own (a message, a card, a
    *  question, a routine's result, an agent finishing, its own notices), or the plugin that called `notify.send`, by id
-   *  and name (lane G's ask). `thirdParty` is true for a plugin outside the bundled `clover` tree: a notifier shows its
+   *  and name (lane G's ask). `bundled` is false for a plugin outside the bundled `clover` tree: a notifier shows its
    *  notification marked as a plugin's ("Home, a plugin: …"), never as Clover's or a bot's, so no plugin named like a
    *  bot ("Luna") speaks as one. */
-  sender: { pluginId: string; name: string; thirdParty: boolean };
+  sender: { pluginId: string; name: string; bundled: boolean };
 }
 
 /** A `webhook.ingress` entry's handler (§7): an object of handlers the webhook trigger calls through `points.call`
@@ -196,8 +196,9 @@ export interface RelayHandler {
   serve?(args: { on: boolean }, ctx: HandlerContext): Promise<{ endpoints: RelayEndpoint[] }>;
   /** Sync mail for a device that is never on with the sender: keep a sealed blob until `expiresAt`. */
   putMail?(args: { to: string; id: string; sealed: Uint8Array; expiresAt: number }, ctx: HandlerContext): Promise<Record<string, never>>;
-  /** This device's mail, oldest first; taken mail stays until `ackMail`. */
-  takeMail?(args: { max?: number }, ctx: HandlerContext): Promise<{ mail: { id: string; sealed: Uint8Array }[] }>;
+  /** A device's mail, oldest first; taken mail stays until `ackMail`. `device` is the taking device's id, which the core
+   *  passes (lane I's ask: a phone or a browser has no tree name). */
+  takeMail?(args: { device: string; max?: number }, ctx: HandlerContext): Promise<{ mail: { id: string; sealed: Uint8Array }[] }>;
   ackMail?(args: { ids: string[] }, ctx: HandlerContext): Promise<Record<string, never>>;
 }
 
@@ -206,6 +207,9 @@ export interface RelayEndpoint {
   kind: "iroh" | "websocket";
   url: string;
   region?: string;
+  /** When `url` stops working (a ticket in it runs out, lane I's ask), in the shared clock's milliseconds: the core asks
+   *  `endpoints()` again before then, and at once after the relay refuses it. */
+  expiresAt?: number;
 }
 
 /** A `companions` entry's handler (§10): the daemon-side half of a remote client (the iOS app, the web page), called
@@ -259,6 +263,9 @@ export interface PluginSelf {
   readonly version: string;
   /** The computer this half runs on. */
   readonly computer: string;
+  /** This device's id (`DeviceRecord.id`), which phones and browsers have too (lane I's ask). Optional until B-M2's
+   *  host fills it, so the stand-ins already on main still type-check. */
+  readonly device?: string;
 }
 
 /** One entry of a point, with its paths turned into asset URLs (§5.4 "Points"). */
@@ -539,7 +546,7 @@ export interface TerminalInputEvent {
 /** A plugin's calls carry the plugin as their caller, or, while it serves a tool call, that call's session (R7).
  *
  *  Whose tabs a call may open (#179's review, S1): acting as itself, a plugin opens tabs only in its own partition
- *  (`owner: { kind: "plugin", pluginId }` with its own id); serving a tool call, only for that session or the session's
+ *  (`owner: { kind: "plugin", plugin }` with its own id); serving a tool call, only for that session or the session's
  *  own bot; and the person's own partition (`user`) only for a session the user gave its card (ruling R10). Anything
  *  else is refused.
  *
@@ -610,6 +617,9 @@ export interface PluginApi {
   /** A sealed card that says it comes from this plugin, with its name, id and source and the text; returns only the
    *  user's answer, and no plugin can read or answer it. Denied after 10 minutes unanswered. */
   confirm(text: string): Promise<boolean>;
+  /** `confirm`, with the card's id for a record that names it (lane I's ask: `PairingProof`'s `{ via: "code", card }`).
+   *  A separate call, so `if (await confirm(...))` never meets an object, which is always true. */
+  confirmCard?(text: string): Promise<{ allowed: boolean; card: string }>;
   /** A string from the plugin's own keys, in the user's language (§5.5). */
   t(key: string, params?: Record<string, string | number>): string;
 

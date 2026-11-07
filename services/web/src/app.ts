@@ -150,6 +150,11 @@ export class Companion {
 
     let secret: Uint8Array | null = null;
     let cancel: (err: Error) => void = () => undefined;
+    // The request goes out only once this browser's socket is open at the service: the computer answers at once and
+    // ends the invite right after `paired`, and what it sends before the socket is there waits in the invite's inbox,
+    // which the invite's end deletes. With the socket open first, every answer arrives live, in order.
+    let opened: () => void = () => undefined;
+    const open = new Promise<void>((resolve) => (opened = resolve));
     const done = new Promise<PairRecord>((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new PairingError("timeout", "the computer didn't confirm in time")),
@@ -162,6 +167,7 @@ export class Companion {
       cancel = (err) => settle(() => reject(err));
       let chain = Promise.resolve();
       const onEvent = (event: ChannelEvent) => {
+        if (event.type === "open") opened();
         if (event.type === "closed" && event.final) {
           // After whatever came before it on the socket: a `paired` then the invite's end is a success.
           chain = chain.then(() => settle(() => reject(new PairingError("refused", "the computer ended the pairing"))));
@@ -203,6 +209,8 @@ export class Companion {
       p1.listen(onEvent);
     });
     try {
+      // An invite that has ended never opens: its final close settles `done` with the refusal instead.
+      await Promise.race([open, done]);
       await p1.send("signal", request as unknown as Record<string, unknown>);
       return await done;
     } catch (err) {

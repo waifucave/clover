@@ -253,6 +253,47 @@
         "additionalProperties": false
       }
     },
+    "protocol.prove": {
+      "doc": "The daemon proves it holds this run's app token, before the app's hello.",
+      "owner": "C",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "nonce": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "nonce"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "proof": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "pid": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "proof",
+          "pid"
+        ],
+        "additionalProperties": false
+      }
+    },
     "events.subscribe": {
       "doc": "Receive the `core.event`s of these areas that this role may receive.",
       "owner": "C",

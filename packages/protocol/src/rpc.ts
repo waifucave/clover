@@ -23,9 +23,10 @@ export interface MethodSpec<P extends z.ZodType = z.ZodType, R extends z.ZodType
   /** `<area>.<verb>`, unique across Clover's protocol. */
   readonly name: string;
   readonly params: P;
-  /** What a `peer` caller may send, where it differs from the other roles (#179's review, S3): a peer's call is parsed
-   *  with this alone (`paramsFor`), so a field only the user's own clients send is refused from another computer. */
-  readonly peerParams?: z.ZodType;
+  /** What a role may send, where it differs from the others (#179's review, S3 and check 2): a call from that role is
+   *  parsed with this alone (`paramsFor`). A peer can't name another computer's level; a layer installs only from an
+   *  index or npm. */
+  readonly roleParams?: Partial<Record<CloverRole, z.ZodType>>;
   readonly result: R;
   /** The roles that may call it. The allow lists are exactly these (clover.ts). */
   readonly roles: readonly CloverRole[];
@@ -46,7 +47,7 @@ export interface MethodSpec<P extends z.ZodType = z.ZodType, R extends z.ZodType
 export interface MethodInput<P extends z.ZodType, R extends z.ZodType> {
   name: string;
   params: P;
-  peerParams?: z.ZodType;
+  roleParams?: Partial<Record<CloverRole, z.ZodType>>;
   result: R;
   roles: readonly CloverRole[];
   owner: Lane;
@@ -57,17 +58,17 @@ export interface MethodInput<P extends z.ZodType, R extends z.ZodType> {
   doc: string;
 }
 
-/** The params schema a call from `role` is parsed with: a peer's own (`peerParams`) where the method has one. Every
+/** The params schema a call from `role` is parsed with: that role's own (`roleParams`) where the method has one. Every
  *  server that takes a call (the daemon's endpoint, the link's peer side) parses with this. */
-export function paramsFor(spec: Pick<MethodSpec, "params" | "peerParams">, role: CloverRole): z.ZodType {
-  return role === "peer" && spec.peerParams !== undefined ? spec.peerParams : spec.params;
+export function paramsFor(spec: Pick<MethodSpec, "params" | "roleParams">, role: CloverRole): z.ZodType {
+  return spec.roleParams?.[role] ?? spec.params;
 }
 
 export function defineMethod<P extends z.ZodType, R extends z.ZodType>(m: MethodInput<P, R>): MethodSpec<P, R> {
   return {
     name: m.name,
     params: m.params,
-    ...(m.peerParams !== undefined ? { peerParams: m.peerParams } : {}),
+    ...(m.roleParams !== undefined ? { roleParams: m.roleParams } : {}),
     result: m.result,
     roles: m.roles,
     owner: m.owner,
