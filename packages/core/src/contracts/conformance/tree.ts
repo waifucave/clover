@@ -164,6 +164,12 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
         () => tree.read("home/Laptop1/data/a.csv", { as: USER, noFollow: true }),
         () => tree.stat("home/Laptop1/data/a.csv", { as: BOT, noFollow: true }),
       ]) expect(isContractError(await rejection(call()), "unsupported")).toBe(true);
+      // Any other value is refused too, never read as false (#234's check 2).
+      for (const v of [1, "true", "false", null, 0, {}]) {
+        const bad = { as: USER, noFollow: v as unknown as boolean };
+        expect([v, isContractError(await rejection(tree.stat("home/Laptop1/data/a.csv", bad)), "invalid")]).toEqual([v, true]);
+        expect([v, isContractError(await rejection(tree.read("home/Laptop1/data/a.csv", bad)), "invalid")]).toEqual([v, true]);
+      }
       // Without it, or with it false, reads go on as before.
       expect(await tree.read("home/Laptop1/data/a.csv", { as: USER, noFollow: false })).toEqual(utf8("x"));
       expect((await tree.stat("home/Laptop1/data/a.csv", { as: USER }))?.type).toBe("file");

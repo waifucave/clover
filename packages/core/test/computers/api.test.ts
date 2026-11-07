@@ -67,6 +67,11 @@ describe("files.* for plugins: the Files panel's data", () => {
     for (const [name, args] of [["files.stat", ["home/Laptop1/proj/src/a.ts", { noFollow: true }]], ["files.readText", ["home/Laptop1/proj/src/a.ts", { noFollow: true }]], ["files.readBytes", ["home/Laptop1/proj/src/a.ts", { offset: 0, noFollow: true }]]] as const) {
       expect([name, isContractError(await rejection(files[name]!([...args], ctx)), "unsupported")]).toEqual([name, true]);
     }
+    for (const v of ["yes", 1, null]) {
+      for (const name of ["files.stat", "files.readText", "files.readBytes"] as const) {
+        expect([name, v, isContractError(await rejection(files[name]!(["home/Laptop1/proj/src/a.ts", { noFollow: v }], ctx)), "invalid")]).toEqual([name, v, true]);
+      }
+    }
     const events: unknown[] = [];
     const stop = await filesWatch(studio.node.tree, ctx, "home/Laptop1/proj", (e) => events.push(e));
     await Bun.sleep(100);
