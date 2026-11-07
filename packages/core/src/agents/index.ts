@@ -68,7 +68,7 @@ export { buildAgentEnv, launchContained } from "./process/launch";
 export { AgentQuirksSchema, QuirksFileSchema, bundledAgentPluginId, contributedBackends, quirksWithCommand, readQuirksFile, type ContributedBackend, type FileQuirks, type QuirksFile } from "./plugin-backends";
 export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 export { inProcessBridgeServer } from "./bridge/in-process";
-export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentActFence, type AgentPeersOptions } from "./remote";
+export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentPeersOptions } from "./remote";
 export { UserSelections } from "./acp/selections";
 export { agentMethods } from "./rpc";
 export { agentToolDefs, type CoreToolDef } from "./tools";

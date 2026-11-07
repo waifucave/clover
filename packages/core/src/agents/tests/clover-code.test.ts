@@ -9,6 +9,7 @@ import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sd
 import { buildCoreBrand } from "../../runtime-sdk/brand";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
+import { darwinTest } from "../../../test/helpers/darwin-only";
 import { CLOVER_CODE_ID, CloverCodeBackend, type CloverCodeDeps } from "../clover-code/backend";
 import { agentMethods } from "../rpc";
 import { waitFor, World, type WorldOptions } from "./world";
@@ -113,6 +114,30 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     expect((await waitFor(() => notification(w), "the task notification")).stopReason).toBe("end_turn");
   });
 
+  // macOS only: the agent's Bash runs in the runtime's sandbox, which is Seatbelt today; elsewhere no background shell
+  // starts to stop (lane C's fence brings Linux and Windows).
+  darwinTest("the pause stops the agent's background shells (lane A's rule)", async () => {
+    let paused = false;
+    const listeners = new Set<() => void>();
+    const gate = { mayAct: () => !paused, watch: (fn: () => void) => (listeners.add(fn), () => void listeners.delete(fn)) };
+    const w = make(spawn, { pause: gate });
+    const marker = join(w.project, "ran.txt");
+    await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user", level: "automatic" },
+      backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Background",
+      prompt: `CALL Bash ${JSON.stringify({ command: `sleep 3; touch ${JSON.stringify(marker)}`, run_in_background: true, description: "wait" })}`,
+      model: MODEL,
+    });
+    expect((await waitFor(() => notification(w), "the turn's end")).stopReason).toBe("end_turn");
+    paused = true;
+    for (const fn of listeners) fn();
+    await Bun.sleep(5_000);
+    // The shell was stopped, as the host: what it would have written never came.
+    expect(existsSync(marker)).toBe(false);
+    paused = false;
+    for (const fn of listeners) fn();
+  }, 60_000);
+
   test("it lists as an ACP backend of this computer, sandboxed, at the SDK's version", async () => {
     const w = make(spawn);
     const methods = agentMethods({ manager: w.manager, backends: () => [new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), sandboxReady: SANDBOX_READY })], computer: "Studio" });
@@ -180,18 +205,23 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
       }
       return Object.assign(run(), { interrupt: async () => {}, setModel: async () => {}, setPermissionMode: async () => {}, setEffort: async () => {}, supportedModels: async () => [] });
     }) as unknown as CloverCodeDeps["query"];
-    const own = async () => ({});
+    // A base hook may refuse or ask, never allow: its allow is taken out.
+    const own = async () => ({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } });
     const post = async () => ({});
     const gate = { mayAct: () => true };
     const w = make(spawn, { pause: gate, query: fakeQuery, base: { hooks: { PreToolUse: [{ hooks: [own] }], PostToolUse: [{ hooks: [post] }] } } });
     await w.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Hooks", prompt: "hi", model: MODEL });
     await waitFor(() => notification(w), "the task notification");
-    // The pause, then the fence's real-path check, then the base's own.
-    expect(seen!.hooks!.PreToolUse!.length).toBe(3);
-    expect(seen!.hooks!.PreToolUse![0]!.failClosed).toBe(true);
-    expect(seen!.hooks!.PreToolUse![1]!.failClosed).toBe(true);
-    expect(seen!.hooks!.PreToolUse![2]!.hooks[0]).toBe(own);
+    // The pause, then the fence's real-path check, then the base's own (its allow taken out), then the pause and the
+    // fence's check again; every model turn's start holds while paused.
+    const pre = seen!.hooks!.PreToolUse!;
+    expect(pre.length).toBe(5);
+    expect([pre[0]!.failClosed, pre[1]!.failClosed, pre[3]!.failClosed, pre[4]!.failClosed]).toEqual([true, true, true, true]);
+    expect(pre[3]).toBe(pre[0]);
+    expect(pre[4]).toBe(pre[1]);
+    expect(await pre[2]!.hooks[0]!({} as never, undefined, { signal: new AbortController().signal })).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse" } });
     expect(seen!.hooks!.PostToolUse![0]!.hooks[0]).toBe(post);
+    expect(seen!.hooks!.UserPromptSubmit!.length).toBe(1);
     // The fence's file-tool denials reach the rules, the bots' folders and the transcript stores among them.
     expect(seen!.permissions!.deny).toEqual(expect.arrayContaining([`Read(/${w.cloverHome}/**)`, `Grep(/${w.cloverHome}/**)`, `Write(/${w.cloverHome}/**)`]));
 
