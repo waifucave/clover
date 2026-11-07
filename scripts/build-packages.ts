@@ -25,6 +25,7 @@ import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
 import { runNameScan } from "./release/name-scan";
 import { sealProblems } from "./seal-bun-doors";
 import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writePluginBunAssets, writeServedCopies, type Channel } from "./release/lib";
+import { STAGED_PLUGINS, stageBundledPlugins } from "./release/bundled-plugins";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -92,10 +93,12 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
 export const LINK_BUILD = ["cargo", "build", "--release", "--locked", "--manifest-path", "native/link/Cargo.toml"] as const;
 export const LINK_OUTPUT = "native/link/target/release/clover-link";
 
-/** What a package must hold: the daemon, its link sidecar beside it, and the AppArmor profile in the app's resources. */
+/** What a package must hold: the daemon, its link sidecar beside it, the AppArmor profile in the app's resources, and
+ *  each bundled top-level plugin's manifest in resources/plugins (the registry's `bundledDirs`). */
 export const REQUIRED_FILES = [
   "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun",
   "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
+  "/opt/Clover/resources/plugins/clover/clover.json", "/opt/Clover/resources/plugins/alpha/clover.json",
 ] as const;
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
 export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
@@ -209,25 +212,36 @@ export function main(argv: readonly string[], root: string): number {
     return 0;
   }
   rmSync(outDir, { recursive: true, force: true });
-  for (const s of steps) {
-    console.log(`build-packages: ${s.say}…`);
-    if (s.stage !== undefined) {
-      rmSync(staged, { recursive: true, force: true });
-      mkdirSync(staged, { recursive: true });
-      copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
-      copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
-      chmodSync(join(staged, "clover-link"), 0o755);
-      // Plain Bun for plugins, beside the core (scripts/bundled-binaries.ts); the package gate before packaging.
-      const target = daemonTargetFor(s.stage);
-      const built = dirname(join(root, ...daemonOutput(target).split("/")));
-      for (const f of bundledFiles(target)) if (existsSync(join(built, f))) { copyFileSync(join(built, f), join(staged, f)); chmodSync(join(staged, f), 0o755); }
-      const gate = [...bundledBinaryProblems(staged, target), ...sealProblems(new Uint8Array(readFileSync(join(staged, "clover-core")))).map((p) => `the seal: ${p}`)];
-      if (gate.length > 0) { console.error(`build-packages: the package gate: ${gate.join("; ")}`); return 1; }
+  // The bundled plugins: the committed files only, staged where electron-builder.yml packs them, and the stages
+  // removed however the build ends (a stale stage would go into a later plain `bun run dist`).
+  const stagedPlugins = join(desktop, STAGED_PLUGINS);
+  try {
+    stageBundledPlugins(root, stagedPlugins);
+    for (const s of steps) {
+      console.log(`build-packages: ${s.say}…`);
+      if (s.stage !== undefined) {
+        rmSync(staged, { recursive: true, force: true });
+        mkdirSync(staged, { recursive: true });
+        copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
+        copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
+        chmodSync(join(staged, "clover-link"), 0o755);
+        // Plain Bun for plugins, beside the core (scripts/bundled-binaries.ts); the package gate before packaging.
+        const target = daemonTargetFor(s.stage);
+        const built = dirname(join(root, ...daemonOutput(target).split("/")));
+        for (const f of bundledFiles(target)) if (existsSync(join(built, f))) { copyFileSync(join(built, f), join(staged, f)); chmodSync(join(staged, f), 0o755); }
+        const gate = [...bundledBinaryProblems(staged, target), ...sealProblems(new Uint8Array(readFileSync(join(staged, "clover-core")))).map((p) => `the seal: ${p}`)];
+        if (gate.length > 0) { console.error(`build-packages: the package gate: ${gate.join("; ")}`); return 1; }
+      }
+      const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
+      if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
     }
-    const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
-    if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
+  } catch (err) {
+    console.error(`build-packages: ${(err as Error).message}`);
+    return 1;
+  } finally {
+    rmSync(staged, { recursive: true, force: true });
+    rmSync(stagedPlugins, { recursive: true, force: true });
   }
-  rmSync(staged, { recursive: true, force: true });
   // The daemon for a server's own update: each architecture's binary as its release file, with its update files.
   const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
   for (const a of args.arches) writeCoreAssets(outDir, version, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(root, ...daemonOutput(daemonTargetFor(a)).split("/")));

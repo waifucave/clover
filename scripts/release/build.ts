@@ -12,7 +12,9 @@
 //      identifier and entitlements: lib.ts's RESOURCE_BINARIES), then the package gate (scripts/bundled-binaries.ts:
 //      plugin Bun and the holder there, under their own identifiers), again on the built app
 //   4. runs electron-builder for the OS's targets (`--publish never`, always) with the channel; with --sign, the
-//      identity and notarization on macOS, and forced signing and the update publisher on Windows
+//      identity and notarization on macOS, and forced signing and the update publisher on Windows; then checks the
+//      bundled plugins (the committed files under plugins/, staged in apps/desktop/out/plugins) are in the app's
+//      resources/plugins, with nothing left out and no symlink (bundled-plugins.ts)
 //   5. with --sign on macOS: signs, notarizes and staples the dmg, measures the update file's dmg entry again,
 //      and checks the app and the app inside the update zip (every signature, the daemon's and the sidecar's
 //      entitlements, the seal, Gatekeeper's verdict, the staple) and the dmg (its signature, its staple, Gatekeeper
@@ -46,6 +48,7 @@ import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import { sealProblems } from "../seal-bun-doors";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { runNameScan } from "./name-scan";
+import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree } from "./bundled-plugins";
 import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
@@ -250,30 +253,45 @@ export function main(argv: readonly string[], root: string): number {
     must("the app", ["bun", "run", "build"], desktop);
     if (runScriptLine(`bun scripts/build-daemon.ts --target ${target}`, root) !== 0) throw new Error("the daemon's build failed");
     must("the link sidecar", LINK_BUILD, root);
-    rmSync(staged, { recursive: true, force: true });
-    mkdirSync(staged, { recursive: true });
-    copyFileSync(join(root, ...daemonOutput(target).split("/")), join(staged, `clover-core${exe}`));
-    copyFileSync(join(root, ...`${LINK_OUTPUT}${exe}`.split("/")), join(staged, `clover-link${exe}`));
-    const built = dirname(join(root, ...daemonOutput(target).split("/")));
-    for (const f of bundledFiles(target)) if (existsSync(join(built, f))) copyFileSync(join(built, f), join(staged, f));
-    for (const f of readdirSync(staged)) chmodSync(join(staged, f), 0o755);
-    // The seal (scripts/seal-bun-doors.ts) is checked on the very bytes that get signed: a core built some other way
-    // never ships unsealed (on Windows, never half-sealed).
-    const seal = sealProblems(new Uint8Array(readFileSync(join(staged, `clover-core${exe}`))));
-    if (seal.length > 0) throw new Error(`the staged clover-core fails the seal's byte check: ${seal.join("; ")}`);
-    if (a.sign && a.os === "mac") {
-      for (const b of RESOURCE_BINARIES) {
-        must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
+    // The daemon's stage and the bundled plugins' (the committed files only), where electron-builder.yml packs them;
+    // both are removed however the build ends (a stale stage would go into a later plain `bun run dist`).
+    const stagedPlugins = join(desktop, STAGED_PLUGINS);
+    try {
+      rmSync(staged, { recursive: true, force: true });
+      mkdirSync(staged, { recursive: true });
+      copyFileSync(join(root, ...daemonOutput(target).split("/")), join(staged, `clover-core${exe}`));
+      copyFileSync(join(root, ...`${LINK_OUTPUT}${exe}`.split("/")), join(staged, `clover-link${exe}`));
+      const built = dirname(join(root, ...daemonOutput(target).split("/")));
+      for (const f of bundledFiles(target)) if (existsSync(join(built, f))) copyFileSync(join(built, f), join(staged, f));
+      for (const f of readdirSync(staged)) chmodSync(join(staged, f), 0o755);
+      // The seal (scripts/seal-bun-doors.ts) is checked on the very bytes that get signed: a core built some other way
+      // never ships unsealed (on Windows, never half-sealed).
+      const seal = sealProblems(new Uint8Array(readFileSync(join(staged, `clover-core${exe}`))));
+      if (seal.length > 0) throw new Error(`the staged clover-core fails the seal's byte check: ${seal.join("; ")}`);
+      if (a.sign && a.os === "mac") {
+        for (const b of RESOURCE_BINARIES) {
+          must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
+        }
       }
+      stageBundledPlugins(root, stagedPlugins);
+      // The package gate (scripts/bundled-binaries.ts): plugin Bun beside the core, and on macOS the process holder,
+      // each under its own identifier — a packaged build never falls back to process-group tracking.
+      const staging = bundledBinaryProblems(staged, target, { kind: "dist" });
+      if (staging.length > 0) throw new Error(`the package gate: ${staging.join("; ")}`);
+      must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, builderEnv(a, process.env));
+      const inApp = bundledBinaryProblems(dirname(daemonInApp(outDir, a.os)), target, { kind: "dist" });
+      if (inApp.length > 0) throw new Error(`the package gate, in the built app: ${inApp.join("; ")}`);
+    } finally {
+      rmSync(staged, { recursive: true, force: true });
+      rmSync(stagedPlugins, { recursive: true, force: true });
     }
-    // The package gate (scripts/bundled-binaries.ts): plugin Bun beside the core, and on macOS the process holder,
-    // each under its own identifier — a packaged build never falls back to process-group tracking.
-    const staging = bundledBinaryProblems(staged, target, { kind: "dist" });
-    if (staging.length > 0) throw new Error(`the package gate: ${staging.join("; ")}`);
-    must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, builderEnv(a, process.env));
-    const inApp = bundledBinaryProblems(dirname(daemonInApp(outDir, a.os)), target, { kind: "dist" });
-    if (inApp.length > 0) throw new Error(`the package gate, in the built app: ${inApp.join("; ")}`);
-    rmSync(staged, { recursive: true, force: true });
+    {
+      // The bundled plugins, where the core looks for them (resources/plugins beside resources/daemon).
+      const resources = a.os === "mac" ? join(outDir, "mac-arm64", "Clover.app", "Contents", "Resources") : join(outDir, "win-unpacked", "resources");
+      const plugins = bundledPluginsProblems(resources, existsSync, walkTree);
+      for (const p of plugins) console.error(`release/build: ${p}`);
+      if (plugins.length > 0) return 1;
+    }
 
     if (a.sign && a.os === "mac") {
       const dmgName = `Clover-${version}.dmg`;

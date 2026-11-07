@@ -320,5 +320,6 @@ export { installDaemonLogFile, daemonLogPathFor, DAEMON_LOG_FILE, DAEMON_LOG_MAX
 export { CloverSecretStore, openCloverSecretStore, secretStoreWarning, probeSystemdCreds, systemdCredsKey, KeychainValues, EncryptedFileValues, bunVault, memoryVault, vaultKey, keyFileKey, type Vault, type ValueBackend } from "./secrets/clover-secret-store";
 export * as registry from "./registry/index";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
+export { bundledPluginsDir } from "./bundled-plugins-dir";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
 export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";

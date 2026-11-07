@@ -31,6 +31,26 @@ extraResources:
       - clover-plugin-bun
       - clover-plugin-bun.exe
       - clover-process-holder
+  # The bundled plugins (the registry's `bundledDirs`, packages/core/src/registry): the repository's plugins/ as the
+  # app's read-only resources/plugins, each subfolder one top-level plugin (`clover`, `alpha`). Only TRACKED files:
+  # the release scripts stage `git ls-files plugins` in out/plugins first (scripts/release/bundled-plugins.ts), so
+  # nothing else a working tree holds comes along, and no symlink. The core finds it beside its own daemon folder
+  # (packages/core/src/bundled-plugins-dir.ts): Clover.app/Contents/Resources/plugins on macOS,
+  # <install>\resources\plugins on Windows, /opt/Clover/resources/plugins in the Linux packages. A plain `bun run dist`
+  # stages none, and packages the app without them.
+  - from: out/plugins
+    to: plugins
+    filter:
+      - "**/*"
+      - "!**/node_modules/**"
+      - "!**/test/**"
+      - "!**/tests/**"
+      - "!**/*.test.ts"
+      - "!**/*.test.tsx"
+      - "!**/tsconfig*.json"
+      - "!**/.env"
+      - "!**/.env.*"
+      - "!**/.DS_Store"
 # The main process is one bundle with no runtime dependencies: nothing to rebuild or collect.
 npmRebuild: false
 nodeGypRebuild: false
