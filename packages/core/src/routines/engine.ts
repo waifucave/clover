@@ -585,8 +585,8 @@ export class RoutineEngine {
       this.#appendRun(id, run);
       this.#changes.emit({ bot: l.bot });
       // TODO(B-M2): send the result to the notifier plugins (kind "routine-result", `failed: run.outcome === "failed"`)
-      // once lane B's plugin host (B-M2) carries the core's notifier calls; no core path reaches notifiers on main yet.
-      // Until then lane G's `routineFailed` switch covers every routine result, successes included.
+      // once lane B's plugin host (B-M2) carries the core's notifier calls. No core path reaches notifiers on main yet,
+      // so until then no routine result reaches a notifier at all, failed or not.
       return run;
     } catch (err) {
       return this.#record(l, { outcome: "skipped", summary: `It didn't run: ${err instanceof Error ? err.message : String(err)}`.slice(0, 4000) });

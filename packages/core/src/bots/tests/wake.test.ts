@@ -59,4 +59,45 @@ describe("a turn the driver asks for", () => {
     expect(d.turns[2]).toMatchObject({ origin: "task-notification", input: { from: "task", task: "bash_9" } });
     await b.shutdown();
   });
+
+  test("an event storm never piles up: 50 rapid events while busy, or behind the pause, make at most one more turn", async () => {
+    const b = await boot({ home: tempDir(), plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs });
+    const ctx = b.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx;
+    const d = b.drivers.for("b_alpha");
+    const taskInputs = () => b.host.history("b_alpha").filter((r) => r.type === "input" && r.input.from === "task").length;
+    // Idle: the first event starts a turn; the other 49 merge while it runs.
+    for (let i = 1; i <= 50; i++) await ctx.wake!({ task: "monitor_1", status: "event", text: `reading ${i}` });
+    await flush();
+    expect(d.turns).toHaveLength(1);
+    expect(taskInputs()).toBe(1);
+    expect(b.host.waiting("b_alpha")).toBe(0);
+    d.end({ text: "seen" });
+    await flush();
+    // As it ends, one merged wake: the latest reading and the count.
+    expect(d.turns).toHaveLength(2);
+    expect(taskInputs()).toBe(2);
+    const merged = d.turns[1]!.input;
+    expect(merged.from === "task" && merged.text).toContain("reading 50");
+    expect(merged.from === "task" && merged.text).toContain("49 events from this task came while you were busy");
+    d.end({ text: "ok" });
+    await flush();
+    // Paused: at most one waits in the queue, whatever comes.
+    await b.bots.setPaused(true, theUser);
+    for (let i = 1; i <= 50; i++) await ctx.wake!({ task: "monitor_1", status: "event", text: `paused ${i}` });
+    await flush();
+    expect(b.host.waiting("b_alpha")).toBeLessThanOrEqual(1);
+    expect(d.turns).toHaveLength(2);
+    await b.bots.setPaused(false, theUser);
+    await flush();
+    expect(d.turns).toHaveLength(3);
+    d.end({ text: "ok" });
+    await flush();
+    expect(d.turns).toHaveLength(4);
+    expect(d.turns[3]!.input.from === "task" && d.turns[3]!.input.text).toContain("paused 50");
+    // A task's end is never merged away.
+    await ctx.wake!({ task: "monitor_1", status: "stopped", text: "stopped" });
+    await flush();
+    expect(d.turns[3]!.folded.map((i) => i.from === "task" && i.status)).toEqual(["stopped"]);
+    await b.shutdown();
+  });
 });

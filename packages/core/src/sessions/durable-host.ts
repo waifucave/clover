@@ -670,6 +670,11 @@ export class DurableSessionHost implements SessionHost {
     return this.#sessions.get(id)?.running?.origin;
   }
 
+  /** How many inputs wait for the session's next turn (held by the pause, the lease, the update gate, or a turn). */
+  waiting(id: string): number {
+    return this.#sessions.get(id)?.queue.length ?? 0;
+  }
+
   /** Whether the session is compacting now: between turns (`compact`) or inside one (the runtime's own). */
   isCompacting(id: string): boolean {
     const s = this.#sessions.get(id);

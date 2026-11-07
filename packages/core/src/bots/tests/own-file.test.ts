@@ -89,4 +89,30 @@ describe("links a bot planted are never followed", () => {
     expect(() => readFileSync(join(alpha.memory, "MEMORY.md"), "utf8")).toThrow();
     expect(() => readFileSync(join(alpha.memory, "luna", "MEMORY.md"), "utf8")).toThrow();
   });
+
+  test("a named pipe a bot planted is refused at once, never read: as its MEMORY.md, as a routine file, or by readOwnFile", async () => {
+    const { home, alpha } = twoBots();
+    const fifo = (path: string) => {
+      const r = Bun.spawnSync(["mkfifo", path]);
+      expect(r.exitCode).toBe(0);
+    };
+    fifo(join(alpha.memory, "MEMORY.md"));
+    const started = Date.now();
+    expect(readOwnFile(home, join(alpha.memory, "MEMORY.md"), { maxBytes: 1000 })).toEqual({ ok: false, why: "not-a-file" });
+    expect(readMemoryIndex(alpha)).toBeUndefined();
+    expect(memoryBlock({ paths: alpha, computer: "Studio" })).toContain("MEMORY.md is empty so far.");
+    const routineDir = join(home, "routines", "alpha");
+    mkdirSync(routineDir, { recursive: true });
+    fifo(join(routineDir, "evil.md"));
+    const engine = new RoutineEngine({
+      home, computer: "Studio", clock: new FakeClock(), computerLevel: () => "ask-risky", watchFiles: false, userTimeZone: () => "UTC",
+      bots: { has: () => true, runSideThread: async () => { throw new Error("no runs here"); } },
+    });
+    await engine.start();
+    await flush();
+    expect(engine.list("alpha")).toEqual([]);
+    engine.stop();
+    // Nothing waited for a writer.
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
 });

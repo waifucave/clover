@@ -85,7 +85,8 @@ export function seedMemory(
         return false;
       }
       let data: Buffer;
-      const inFd = openSync(s, constants.O_RDONLY | NO_FOLLOW);
+      // Without waiting: a pipe swapped in after the check opens at once and is refused below (review B1).
+      const inFd = openSync(s, constants.O_RDONLY | NO_FOLLOW | (constants.O_NONBLOCK ?? 0));
       try {
         const opened = fstatSync(inFd);
         if (!opened.isFile() || opened.nlink > 1) {
