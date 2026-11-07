@@ -185,6 +185,7 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
           outFile: join(out, ...outRel.split("/")),
           side,
           forbid,
+          builtins: builtinsOf(m, units[0]!.manifest),
           keepExternal: side === "client" ? undefined : (spec, importer) => natives.keep(spec, importer, unit.base),
         });
         written.add(outRel);
@@ -239,7 +240,12 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
       else if (!i.path.startsWith(".") && !i.path.startsWith("/") && !allowed(i.path)) copiedProblems.push(`${rel}: imports ${i.path}, which nothing in the shipped tree provides`);
       else if (i.path.startsWith("/")) copiedProblems.push(`${rel}: imports ${i.path}, an absolute path`);
     }
-    copiedProblems.push(...runtimeLoadProblems(text, rel, { client: false, allowed }), ...forbiddenIn(text, rel, forbid));
+    const unit = units.find((u) => u.base !== "" && rel.startsWith(u.base)) ?? units[0]!;
+    copiedProblems.push(...runtimeLoadProblems(text, rel, { client: false, allowed, builtins: builtinsOf(unit.manifest, units[0]!.manifest) }), ...forbiddenIn(text, rel, forbid));
+  }
+  // Copied data a page or a style could carry a path in: JSON, HTML, CSS (R1's smaller item).
+  for (const rel of [...written].filter((f) => /\.(?:json|html?|css|svg|md)$/.test(f) && !f.split("/").includes("node_modules")).sort()) {
+    copiedProblems.push(...forbiddenIn(readFileSync(join(out, ...rel.split("/")), "utf8"), rel, forbid));
   }
   if (copiedProblems.length > 0) throw new PluginBuildError(copiedProblems);
   for (const unit of units) writeRunPackage(src, out, unit, natives.dependenciesOf(unit.base), modules.some((x) => x.file.startsWith(unit.base) && (unit.base !== "" || !x.file.startsWith("plugins/"))), written);
@@ -247,6 +253,12 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
   await checkBuiltTree(src, out, o.bundled === true);
   const files = listFiles(out);
   return { dir: out, files, modules: modules.sort((a, b) => (a.file < b.file ? -1 : 1)), natives: shippedNatives };
+}
+
+/** The code-loading built-ins a plugin named (`builtins`): a child's own, and its top-level plugin's. */
+function builtinsOf(m: Json, top: Json): string[] {
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return [...new Set([...list(m.builtins), ...list(top.builtins)])];
 }
 
 /** What no shipped file may hold: this computer's home folder and user name, the checkout, the plugin's folder and the
