@@ -773,7 +773,7 @@ jobs:
   swift:
     name: swift (WinterProtocol + WinterKit + WinterChatKit + WinterBrowserHost)
     needs: changes
-    # Winter's Swift mirror, which Clover's Electron app doesn't use: on demand only (workflow_dispatch), off the gate's
+    # The leftover Swift packages, which Clover's Electron app doesn't use: on demand only (workflow_dispatch), off the gate's
     # macOS runners (owner's ruling, November 7).
     if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-latest
