@@ -1,0 +1,39 @@
+{
+  "manifest": 1,
+  "name": "Webhook trigger",
+  "description": "Runs a routine when a service posts to its webhook URL with its key. The key stays in your credential store; the payload reaches the bot marked as untrusted outside content. Webhooks reach your computer through a webhook.ingress plugin, the waifucave forwarder by default.",
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "contributes": {
+    "triggers": [
+      {
+        "type": "webhook",
+        "title": "From a webhook",
+        "fields": {
+          "type": "object",
+          "required": ["webhook"],
+          "properties": {
+            "webhook": { "const": true },
+            "ingress": { "type": "string", "description": "The webhook.ingress entry it comes in through (an entry id or a plugin id); the first one installed when left out." }
+          }
+        },
+        "handler": "webhook",
+        "declares": {
+          "webhook.ingress": {
+            "shape": "list",
+            "fields": {
+              "type": "object",
+              "required": ["id", "handler"],
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "handler": { "type": "string" }
+              }
+            },
+            "doc": "Ways for webhooks to reach a device: the waifucave forwarder, the user's cloud computer, a tunnel (§7)."
+          }
+        }
+      }
+    ]
+  }
+}

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION, ERR } from "@waifucave/clover-protocol";
+import { ConnWriter, encodeLine, LineDecoder, METHODS, PROTOCOL_VERSION, ERR, type WritableSocket } from "@waifucave/clover-protocol";
 import { backoffDelayMs, createPlugin } from "../src/index";
 
 // -------------------------------------------------------------------------------------------
@@ -13,7 +13,7 @@ import { backoffDelayMs, createPlugin } from "../src/index";
 // reconnect test.
 // -------------------------------------------------------------------------------------------
 
-interface ConnState { decoder: LineDecoder }
+interface ConnState { decoder: LineDecoder; writer: ConnWriter }
 
 interface ToolResultParams { requestId: string; resultJson?: string; error?: string }
 interface ShortcutEntry { id: string; description?: string; default?: string }
@@ -22,6 +22,8 @@ interface HardwareRequestRecord { verb: string; argsJson?: string }
 
 interface FakeServer {
   order: string[];
+  /** Resolves when the server first receives `method` (the registration event a test waits on, never a timer). */
+  received(method: string): Promise<void>;
   registeredTools: string[];
   shortcuts(): ShortcutEntry[] | null;
   tiles: Array<Record<string, unknown>>;
@@ -67,6 +69,17 @@ function startFakeServer(
   safeUnlink(path); // a prior listener's socket file may still be on disk (restart tests)
 
   const order: string[] = [];
+  const arrivals = new Map<string, { promise: Promise<void>; resolve: () => void }>();
+  const arrival = (method: string) => {
+    let a = arrivals.get(method);
+    if (!a) {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => { resolve = r; });
+      a = { promise, resolve };
+      arrivals.set(method, a);
+    }
+    return a;
+  };
   const registeredTools: string[] = [];
   let shortcuts: ShortcutEntry[] | null = null;
   const tiles: Array<Record<string, unknown>> = [];
@@ -85,11 +98,19 @@ function startFakeServer(
         liveNow++;
         peakLive = Math.max(peakLive, liveNow);
         active = socket;
-        socket.data = { decoder: new LineDecoder() };
+        // Replies go through a ConnWriter, so a partial write is queued and flushed on drain, never dropped (a lost
+        // reply stalls the client until its 10 s request timeout).
+        socket.data = { decoder: new LineDecoder(), writer: new ConnWriter(socket as unknown as WritableSocket) };
+      },
+      drain(socket) {
+        socket.data.writer.onDrain();
       },
       data(socket, chunk) {
+        const send = (frame: Uint8Array) => socket.data.writer.enqueue(frame);
         for (const line of socket.data.decoder.push(chunk)) {
           const msg = JSON.parse(line);
+          // Resolved after this tick's switch has recorded the call, so a waiter sees its effects.
+          if (typeof msg.method === "string") arrival(msg.method).resolve();
           switch (msg.method) {
             case METHODS.hello:
               order.push(METHODS.hello);
@@ -98,25 +119,25 @@ function startFakeServer(
                 break;
               }
               if (helloMode.kind === "unauthorized") {
-                socket.write(encodeLine({
+                send(encodeLine({
                   jsonrpc: "2.0", id: msg.id,
                   error: { code: ERR.UNAUTHORIZED, message: "invalid token for role" },
                 }));
                 break;
               }
-              socket.write(encodeLine({
+              send(encodeLine({
                 jsonrpc: "2.0", id: msg.id,
                 result: { ok: true, serverVersion: "fake", protocolVersion: PROTOCOL_VERSION },
               }));
               break;
             case METHODS.pluginRegister:
               order.push(METHODS.pluginRegister);
-              socket.write(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
+              send(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
               break;
             case METHODS.toolRegister:
               order.push(METHODS.toolRegister);
               registeredTools.push(msg.params.name);
-              socket.write(encodeLine({
+              send(encodeLine({
                 jsonrpc: "2.0", id: msg.id,
                 result: { ok: true, registeredAs: `plugin__test__${msg.params.name}` },
               }));
@@ -124,20 +145,20 @@ function startFakeServer(
             case METHODS.shortcutRegister:
               order.push(METHODS.shortcutRegister);
               shortcuts = msg.params.shortcuts;
-              socket.write(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
+              send(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
               break;
             case METHODS.tileUpdate:
               order.push(METHODS.tileUpdate);
               tiles.push(msg.params.tile);
-              socket.write(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
+              send(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
               break;
             case METHODS.pluginToolResult:
               toolResults.push(msg.params);
-              socket.write(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
+              send(encodeLine({ jsonrpc: "2.0", id: msg.id, result: { ok: true } }));
               break;
             case METHODS.hardwareRequest:
               hardwareRequests.push(msg.params);
-              socket.write(encodeLine({
+              send(encodeLine({
                 jsonrpc: "2.0", id: msg.id,
                 result: hardwareHandler ? hardwareHandler(msg.params) : { code: "unknown_verb" },
               }));
@@ -157,11 +178,12 @@ function startFakeServer(
 
   return {
     order, registeredTools, tiles, toolResults, hardwareRequests,
+    received: (method) => arrival(method).promise,
     shortcuts: () => shortcuts,
     connectionCount: () => connections,
     peakConcurrentConnections: () => peakLive,
     pushEvent(params: unknown) {
-      active?.write(encodeLine({ jsonrpc: "2.0", method: METHODS.event, params }));
+      active?.data.writer.enqueue(encodeLine({ jsonrpc: "2.0", method: METHODS.event, params }));
     },
     stop() { server.stop(true); },
   };
@@ -383,6 +405,10 @@ describe("createPlugin().serve()", () => {
   });
 
   test("onShortcut: registers the shortcut ids declared in clover-plugin.json (plugin cwd)", async () => {
+    // The manifest is read from the plugin's cwd only when CLOVER_PLUGIN_DIR is unset.
+    const savedDir = process.env.CLOVER_PLUGIN_DIR;
+    delete process.env.CLOVER_PLUGIN_DIR;
+    cleanups.push(() => { if (savedDir !== undefined) process.env.CLOVER_PLUGIN_DIR = savedDir; });
     writeFileSync(join(tmpDir, "clover-plugin.json"), JSON.stringify({
       id: "sample", tier: "platform",
       contributes: { shortcuts: [{ id: "toggle", description: "Toggle the thing" }] },
@@ -397,10 +423,13 @@ describe("createPlugin().serve()", () => {
     const plugin = createPlugin({ onShortcut: () => {} });
     cleanups.push(() => plugin.close());
 
-    await plugin.serve({ socketPath: sockPath, token: "tok", pluginId: "sample" });
-
-    expect(server.order).toContain(METHODS.shortcutRegister);
+    // Waits on the registration itself reaching the server (or serve() settling without it, which fails at once
+    // below): no timer anywhere.
+    const served = plugin.serve({ socketPath: sockPath, token: "tok", pluginId: "sample" });
+    await Promise.race([server.received(METHODS.shortcutRegister), served]);
     expect(server.shortcuts()).toEqual([{ id: "toggle", description: "Toggle the thing" }]);
+    await served;
+    expect(server.order).toEqual([METHODS.hello, METHODS.pluginRegister, METHODS.shortcutRegister]);
   });
 
   test("onShortcut with no manifest present never calls shortcut.register", async () => {

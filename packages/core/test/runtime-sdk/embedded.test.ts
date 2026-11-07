@@ -35,6 +35,7 @@ import { RUNTIME_SHUTDOWN_DRAIN_MS } from "../../src/runtime-state";
 import { REQUIRED_WINTER_AGENT_SDK } from "../../src/runtime-sdk/versions";
 import { renderRuntimeWorkflowProfile } from "../helpers/runtime-workflow-profile";
 import { WORKER_NOT_SANDBOXED_EXIT_CODE } from "../../src/workflows/sandbox-guard";
+import { darwinTest } from "../helpers/darwin-only";
 
 const TEMP: string[] = [];
 afterAll(() => {
@@ -85,7 +86,7 @@ describe("the topology", () => {
     for (const c of [compiled, dev]) expect(c.args).not.toContain("__workflow-worker");
   });
 
-  test.skipIf(process.platform !== "darwin")("the dev workflow command really reaches the RUNTIME's worker: undriven (no --bridge), it answers its own not-driven code", () => {
+  darwinTest("the dev workflow command really reaches the RUNTIME's worker: undriven (no --bridge), it answers its own not-driven code", () => {
     const dev = runtimeWorkflowWorkerCommand(false, process.execPath);
     // Inside the RUNTIME's own worker seatbelt, as its parent runs it (WS-27: it refuses to run outside one).
     const run = Bun.spawnSync(["/usr/bin/sandbox-exec", "-p", renderRuntimeWorkflowProfile(dev.file), dev.file, ...dev.args.filter((a) => a !== "--bridge")], { stdout: "pipe", stderr: "pipe" });

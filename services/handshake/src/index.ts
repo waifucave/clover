@@ -30,6 +30,8 @@ import {
   LIMITS,
   pairStatement,
   parseAuthorization,
+  recoveryStatement,
+  removeStatement,
   requestSigningString,
   SCOPE_ID_RE,
   type ScopeKind,
@@ -176,20 +178,58 @@ async function createGroup(request: Request, env: Env): Promise<Response> {
 
 async function joinGroup(request: Request, env: Env, group: string): Promise<Response> {
   await limitRegistration(request, env);
-  const { key, t, sig, by, bysig } = await readJson(request);
+  const { key, t, sig, by, bysig, admits, from, requester } = await readJson(request);
   const now = Date.now();
   if (typeof key !== "string" || !KEY_RE.test(key) || typeof by !== "string" || !KEY_RE.test(by) || key === by) return errorResponse(400, "bad_request");
   if (typeof sig !== "string" || !SIG_RE.test(sig) || typeof bysig !== "string" || !SIG_RE.test(bysig)) return errorResponse(400, "bad_signature_form");
   if (!withinStatementWindow(t, now)) return errorResponse(401, "unauthorized");
+  if (from !== undefined && (typeof from !== "string" || !SCOPE_ID_RE.test(from) || from === group)) return errorResponse(400, "bad_request");
   const [okJoin, okAdmit] = await Promise.all([
-    verifySignature(key, sig, joinStatement(group, key, t)),
+    verifySignature(key, sig, joinStatement(group, key, t, from as string | undefined)),
     verifySignature(by, bysig, admitStatement(group, key, t)),
   ]);
   if (!okJoin || !okAdmit) return errorResponse(401, "unauthorized");
-  return reply(await stubFor(env, "group", group).joinGroup(key, by, t, now));
+  // More admitters, so the new key can vote at once (PROTOCOL.md, "Group recovery").
+  const statement = admitStatement(group, key, t);
+  const cosigners = await cosigned(admits, statement);
+  // The member that asked for the key: a signer of the change for its rollback, never a vote.
+  const [requested] = requester === undefined ? [] : await cosigned([{ by: (requester as { key?: unknown } | null)?.key, sig: (requester as { sig?: unknown } | null)?.sig }], statement);
+  // A vote never carries across groups: the key votes here as any new key does (at once only when this group's
+  // voters admit it with a quorum). `from` only moves it out of the old group, once the join has really added it.
+  const result: Reply = await stubFor(env, "group", group).joinGroup(key, by, t, now, cosigners, {
+    ...(requested !== undefined ? { requester: requested } : {}),
+  });
+  if (typeof from === "string" && result.status === 201) await stubFor(env, "group", from).moveOut(key, now);
+  return reply(result);
 }
 
 // ---- argument checks ----
+
+/** The keys whose signatures over `statement` check, from a body's `[{by, sig}]` list; any bad one refuses all. */
+async function cosigned(list: unknown, statement: string): Promise<string[]> {
+  if (list === undefined) return [];
+  if (!Array.isArray(list) || list.length > LIMITS.membersPerGroup + 1) return refuse(400, "bad_request");
+  const entries = list.map((e) => {
+    const { by, sig } = (e ?? {}) as Record<string, unknown>;
+    if (typeof by !== "string" || !KEY_RE.test(by)) return refuse(400, "bad_request");
+    if (typeof sig !== "string" || !SIG_RE.test(sig)) return refuse(400, "bad_signature_form");
+    return { by, sig };
+  });
+  const checks = await Promise.all(entries.map((e) => verifySignature(e.by, e.sig, statement)));
+  if (checks.some((good) => !good)) return refuse(401, "unauthorized");
+  return [...new Set(entries.map((e) => e.by))];
+}
+
+function keysOf(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > LIMITS.membersPerGroup || !value.every((k) => typeof k === "string" && KEY_RE.test(k))) return refuse(400, "bad_request");
+  return [...new Set(value as string[])];
+}
+
+function statementTime(value: unknown): number {
+  if (!withinStatementWindow(value, Date.now())) return refuse(401, "unauthorized");
+  return value;
+}
 
 function ttlOf(value: unknown, max: number, fallback: number, min = 1): number {
   if (value === undefined) return fallback;
@@ -267,7 +307,23 @@ function signedOp(scope: "pair" | "group", method: string, rest: string[], body:
       if (rest.length === 1) return { op: "ticket" };
       break;
     case "group DELETE members":
-      if (rest.length === 2 && KEY_RE.test(rest[1]!)) return { op: "removeMember", args: { key: rest[1] } };
+      if (rest.length === 2 && KEY_RE.test(rest[1]!)) {
+        const removes = body.removes;
+        return {
+          op: "removeMember",
+          args: { key: rest[1], keep: keysOf(body.keep), ...(removes !== undefined || body.t !== undefined ? { t: statementTime(body.t), removes } : {}) },
+        };
+      }
+      break;
+    case "group GET rollback":
+      if (rest.length === 2 && KEY_RE.test(rest[1]!)) return { op: "rollback", args: { key: rest[1] } };
+      break;
+    case "group PUT recovery":
+      if (rest.length === 1) {
+        const key = body.key;
+        if (key !== null && (typeof key !== "string" || !KEY_RE.test(key))) return refuse(400, "bad_request");
+        return { op: "setRecovery", args: { key, t: statementTime(body.t), sigs: body.sigs } };
+      }
       break;
     case "group POST lease":
       if (rest.length === 1) return { op: "lease", args: leaseArgs(body) };
@@ -287,6 +343,15 @@ async function signedCall(request: Request, env: Env, url: URL, scope: "pair" | 
   if (!(await verifySignature(auth.key, auth.sig, signing))) return errorResponse(401, "unauthorized");
   if (!(await env.API_RATE.limit({ key: `${scope}:${id}|${auth.key}` })).success) rateLimited();
   const { op, args } = signedOp(scope, request.method, rest, parseJson(bytes));
+  // Co-signers' votes (PROTOCOL.md, "Group recovery"): checked here, so the object only counts them.
+  if (op === "removeMember" && args && args.t !== undefined) {
+    args.signers = await cosigned(args.removes, removeStatement(id, args.key as string, args.t as number, args.keep as string[]));
+    delete args.removes;
+  }
+  if (op === "setRecovery" && args) {
+    args.signers = await cosigned(args.sigs, recoveryStatement(id, args.key as string | null, args.t as number));
+    delete args.sigs;
+  }
   const call: Call = { scope, id, member: auth.key, op, ...(args ? { args } : {}), ...(request.method !== "GET" ? { t: auth.t } : {}) };
   return finish(env, call, await stubFor(env, scope, id).call(call));
 }

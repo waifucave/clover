@@ -107,7 +107,7 @@ describe("ssrfGuard", () => {
   // all-decimal quad, reads it as DECIMAL (`0127` → 127). Every host below was ALLOWED by the old
   // guard and confirmed by
   // `getaddrinfo` to denote the private address named in the comment — 18 spellings found by
-  // `ssrf-resolver-sweep.test.ts` against the old guard, which is also the gate that proves the
+  // `ssrf-resolver-sweep.darwin.test.ts` against the old guard, which is also the gate that proves the
   // class (not the list) is closed.
   test("rejects leading-zero-decimal spellings a resolver targets into private space (was a fail-open)", () => {
     for (const bad of [

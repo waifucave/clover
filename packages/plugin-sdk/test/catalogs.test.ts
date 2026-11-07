@@ -8,7 +8,8 @@ import {
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
-  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, CLIENT_BARE_IMPORTS,
+  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
+  reachesPublicNetwork,
 } from "../src/index";
 
 describe("capabilities", () => {
@@ -16,10 +17,11 @@ describe("capabilities", () => {
     expect(CAPABILITIES.map((c) => c.name)).toEqual([
       "conversation.read", "conversation.post", "memory.read", "bots.read", "routines.read", "computers.read",
       "computers.control", "devices.read", "approvals", "files", "browser", "terminal", "plugins.install", "usage.read", "logs.read", "notify", "audio",
-      "call:<plugin-id>", "network:<host>",
+      "call:<plugin-id>", "network:public", "network:<host>",
     ]);
     expect(CAPABILITIES.filter((c) => c.warns).map((c) => c.ok)).toEqual([
       "controls the screen and input of your computers", "restyles approval cards", "runs commands on your computers", "can hear your microphone",
+      "connects to any public website, through Clover's web safeguards",
     ]);
   });
 
@@ -34,6 +36,22 @@ describe("capabilities", () => {
     );
     expect(term("shellish").issues.map((i) => i.code)).toEqual(["capability_bundled_only"]);
     expect(term("panel-terminal", { id: "clover", namespace: "clover" }).issues.map((i) => i.code)).toEqual([]);
+  });
+
+  test("network:public is the clover tree's alone: any public host through the core's fetch, no host for its components", () => {
+    expect(parseCapability("network:public")).toEqual({ kind: "fixed", name: "network:public" });
+    expect(reachesPublicNetwork(["network:public"])).toBe(true);
+    expect(reachesPublicNetwork(["network:api.example.com"])).toBe(false);
+    const web = (id: string, parent?: { id: string; namespace: string }) => validateManifest(
+      { manifest: 1, ...(parent ? {} : { id }), name: "Web", engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, capabilities: ["network:public"] },
+      parent ? { parent, folderName: id, bundled: true } : { folderName: id },
+    );
+    expect(web("webby").issues.map((i) => i.code)).toEqual(["capability_bundled_only"]);
+    const bundled = web("web", { id: "clover", namespace: "clover" });
+    expect(bundled.issues).toEqual([]);
+    expect(bundled.networkHosts).toEqual([]);
+    expect(mayHoldCapability("network:public", { id: "clover/web", source: "bundled" })).toBe(true);
+    expect(mayHoldCapability("network:public", { id: "luna", source: "store" })).toBe(false);
   });
 
   test("network:<host> is a name, an IP, with :port if needed, or *. and a domain (§5.4)", () => {
@@ -80,7 +98,8 @@ describe("the plugin API's gating", () => {
 
   test("every capability but call: and network: gates at least one call", () => {
     const used = new Set(Object.values(API_CALLS).map((i) => (i as { capability?: string }).capability));
-    for (const c of CAPABILITIES) if (!c.name.includes("<")) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
+    // network:public gates the core's fetch, as network:<host> does, not an API call.
+    for (const c of CAPABILITIES) if (!c.name.includes("<") && !c.name.startsWith("network:")) expect([c.name, used.has(c.name)]).toEqual([c.name, true]);
   });
 
   test("without the capability the call doesn't exist; secrets only in a host's own process", () => {
@@ -223,13 +242,39 @@ describe("points and spots", () => {
     expect(named("Needs\u200B y\u043Eu")).toEqual(["name_reserved:/name"]);
     expect(named("Needs you", true)).toEqual([]);
     expect(named("Lights")).toEqual([]);
+    for (const name of ["Clover", "CL\u041EVER", "clover!"]) expect([name, named(name)]).toEqual([name, ["name_reserved:/name"]]);
+    expect(named("Clover", true)).toEqual([]);
     // Always-on-top surfaces are the clover tree's in 1.111.1 (R12).
     expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } })).toEqual(["ui_always_on_top:/contributes/ui/0/window/alwaysOnTop"]);
     expect(entry({ spot: "app.surface", component: "Float", window: { type: "overlay", alwaysOnTop: true } }, CLOVER)).toEqual([]);
     // A pill target names the handler that gets the user's words.
     expect(entry({ spot: "pill.target", component: "Target", title: "Lights" }).some((i) => i.endsWith("/handler"))).toBe(true);
     expect(entry({ spot: "pill.target", component: "Target", title: "Lights", handler: "lights" })).toEqual([]);
-    expect(foldTitle(" Needs\u3000YOU ")).toBe("needs you");
+    expect(foldTitle(" Needs\u3000YOU ")).toBe("needsyou");
+    // As lane G's island compares: small capitals, Cherokee letters, I/1/l as one, "rn" as "m", and missing or
+    // invisible spaces fold too, so the manifest check and the island agree.
+    for (const t of ["Needsyou", "Needs\u200Byou", "\u0274\u1D07\u1D07\u1D05\uA731 \u028F\u1D0F\u1D1C"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
+    for (const t of ["CIover", "C1over", "Cl0ver", "\u13DFlover", "Clov\u0435\u0433"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
+    expect(foldTitle("Rnoon")).toBe(foldTitle("moon"));
+    // Lane G's cases: I and i are one letter, with 1, l, | and the Greek and Cyrillic lookalikes, so a bot named
+    // "Iris" refuses a pill target "iris"; "vv" reads as "w" and "cl" as "d", as the island folds them.
+    for (const [a, b] of [["Iris", "iris"], ["Ivy", "ivy"], ["ILSE", "ilse"], ["Iris", "lris"], ["Iris", "1ris"], ["Iris", "|ris"],
+      ["Iris", "\u0399ris"], ["Iris", "\u0406ris"], ["iris", "\u0456ris"], ["iris", "\u03B9ris"], ["iris", "\u0131ris"], ["Iris", "\u0130ris"],
+      ["Wanda", "Vvanda"], ["wanda", "\u03BD\u03BDanda"], ["Dot", "Clot"], ["dot", "cIot"], ["mimi", "rnirni"]] as const) {
+      expect([a, b, foldTitle(a) === foldTitle(b)]).toEqual([a, b, true]);
+    }
+    expect(foldTitle("Iris")).toBe("lrls");
+    // #187's review: stroke letters, Lisu, the lunate sigma, and marks NFKC would spell out.
+    for (const t of ["Neeđs you", "Neeɗs you", "Needs yøu", "Ꮑeeds you", "ꓠeeds you", "Needs ყou"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
+    for (const t of ["Cłover", "Cƚover", "ꓚlover", "Ϲlover", "ϲlover", "Clover™", "Clover®", "Cloveɍ", "Clovɘr", "Clѻver", "Cl○ver"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
+    expect(foldTitle("ħŧđ")).toBe("htd");
+    expect(foldTitle("Iris")).not.toBe(foldTitle("Irma"));
+    // #264's review: lookalikes the island's own fold refused, which needed the order (NFKD and marks first, the map
+    // before and after case) and the island's tables: Cherokee, Armenian capitals, Greek sigmas, Cyrillic yi.
+    for (const t of ["Needs y\u0585u", "Needs y\u03C3u", "N\u0451eds you", "NEEDS Y\u13EBU", "NEEDS Y\u0555U", "NEEDS YO\u054D", "NEED\u054F YOU"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
+    for (const t of ["CL\u13EBVER", "CL\u0555VER", "C\u0407over", "\u03C2lover", "C\u13A5over"]) expect([t, isReservedPluginName(t)]).toEqual([t, true]);
+    // Too loose to keep: Greek eta reads as "n" only in some faces.
+    expect(foldTitle("\u03B7eeds you")).not.toBe(foldTitle("Needs you"));
     // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
     expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
     expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/clover-plugin-sdk/ui");
@@ -402,9 +447,32 @@ describe("names", () => {
 describe("the catalog document", () => {
   test("carries every catalog, with JSON Schemas for spot fields and props", () => {
     const c = catalogJson();
-    expect(c.capabilities.length).toBe(19);
+    expect(c.capabilities.length).toBe(20);
     expect(c.spots.length).toBe(SPOTS.length);
     expect(c.spots.every((s) => typeof s.props === "object" && typeof s.fields === "object")).toBe(true);
     expect(Object.keys(c.apiCalls).length).toBe(Object.keys(API_CALLS).length);
+  });
+});
+
+describe("format upgrades (§5.1 \"Formats\")", () => {
+  test("a document's format comes from its version key; newer is refused, current left", async () => {
+    const { formatOf, upgradeDocument } = await import("../src/formats/upgrade");
+    expect(formatOf({ manifest: 1, name: "x" })).toEqual({ format: "manifest", version: 1 });
+    expect(formatOf({ theme: 1 })).toEqual({ format: "theme", version: 1 });
+    expect(formatOf({ name: "plain json" })).toBeUndefined();
+    expect(upgradeDocument({ layout: 1 })).toEqual({ status: "current", format: "layout", version: 1 });
+    expect(upgradeDocument({ locale: 7 })).toEqual({ status: "newer", format: "locale", version: 7, reads: 1 });
+  });
+});
+
+describe("hosts from settings (#187's review)", () => {
+  test("never under a shared-hosting suffix", async () => {
+    const { parseNetworkHost, underSharedHosting } = await import("../src/catalogs/capabilities");
+    for (const h of ["${setting:r}.github.io", "${setting:r}.workers.dev", "${setting:r}.pages.dev", "${setting:r}.vercel.app", "${setting:r}.netlify.app",
+      "${setting:r}.herokuapp.com", "${setting:r}.appspot.com", "${setting:r}.cloudfront.net", "${setting:r}.azurewebsites.net", "${setting:r}.blogspot.com",
+      "x.${setting:r}.s3.amazonaws.com"]) expect([h, parseNetworkHost(h)]).toEqual([h, null]);
+    expect(parseNetworkHost("bedrock-runtime.${setting:r}.amazonaws.com")).not.toBeNull();
+    expect(underSharedHosting("me.github.io")).toBe(true);
+    expect(underSharedHosting("example.com")).toBe(false);
   });
 });

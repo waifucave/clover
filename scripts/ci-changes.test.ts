@@ -31,35 +31,79 @@ describe("ci-changes", () => {
   });
 
   test("the packages: packaging/ and the app's builder config build and open the Linux packages; an app change does too", () => {
-    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "scripts"]);
-    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "typecheck", "scripts"]);
+    expect(on(["packaging/linux/after-install.sh"])).toEqual(["packages", "installers", "scripts"]);
+    expect(on(["apps/desktop/electron-builder.yml"])).toEqual(["workspaces", "app", "packages", "installers", "typecheck", "scripts"]);
+  });
+
+  test("the installers' release build runs for what makes them, never for code, CI's own files or a lockfile alone", () => {
+    for (const f of ["scripts/release/lib.ts", "packaging/windows/installer.nsh", "apps/desktop/electron-builder.yml", "apps/desktop/package.json", "scripts/build-packages.ts", "packages/update-feed/src/index.ts"]) {
+      expect(areasFor([f]).installers).toBe(true);
+    }
+    for (const f of ["bun.lock", ".bun-version", ".github/workflows/ci.yml", "packages/core/src/daemon.ts", "apps/desktop/src/main/index.ts", "packages/cli/src/main.ts"]) {
+      expect(areasFor([f]).installers).toBe(false);
+    }
+    expect(areasFor(undefined).installers).toBe(true);
+  });
+
+  test("the merge queue's sweep (its own workflow): the scripts' tests, which run its step against stand-ins", () => {
+    expect(on([".github/workflows/queue-sweep.yml"])).toEqual(["scripts"]);
   });
 
   test("a service's change: its tests and the typecheck", () => {
     expect(on(["services/forwarder/src/index.ts"])).toEqual(["workspaces", "typecheck"]);
   });
 
-  test("macOS: a change takes at most three macOS jobs (its machine's, the one for core, cli, scripts and verify, and Swift)", () => {
-    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { if?: string; "runs-on"?: string; strategy?: { matrix?: { include?: Array<{ runner: string }> } } }> }).jobs;
-    const macJobs = (changed: string[]): string[] => {
+  test("macOS: a merge-queue run takes at most two macOS jobs (its machine's and the one for core, cli, scripts and verify); a pull request takes none (the local gate); Swift runs on demand only", () => {
+    type Job = { if?: string; "runs-on"?: string; strategy?: { matrix?: { include?: string | Array<{ runner: string }> } } };
+    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, Job> }).jobs;
+    type Event = "pull_request" | "merge_group" | "workflow_dispatch";
+    const runsOn = (j: Job, event: Event): boolean => {
+      const cond = j.if ?? "";
+      if (cond.includes("github.event_name == 'workflow_dispatch'") && event !== "workflow_dispatch") return false;
+      if (cond.includes("github.event_name != 'pull_request'") && event === "pull_request") return false;
+      return true;
+    };
+    const isMac = (j: Job, event: Event): boolean => {
+      if (j["runs-on"] === "macos-latest") return true;
+      const include = j.strategy?.matrix?.include;
+      // The machine matrix is an expression: macOS only off a pull request (asserted below).
+      if (typeof include === "string") return event !== "pull_request" && include.includes("macos");
+      return (include ?? []).some((r) => r.runner.startsWith("macos"));
+    };
+    const macJobs = (changed: string[], event: Event = "merge_group"): string[] => {
       const areas = areasFor(changed);
       return Object.entries(jobs).flatMap(([id, j]) => {
         const wanted = [...(j.if ?? "").matchAll(/needs\.changes\.outputs\.(\w+) == 'true'/g)].some((m) => areas[m[1] as CiArea]);
-        const mac = j["runs-on"] === "macos-latest" || (j.strategy?.matrix?.include ?? []).some((r) => r.runner.startsWith("macos"));
-        return wanted && mac ? [id] : [];
+        return wanted && runsOn(j, event) && isMac(j, event) ? [id] : [];
       });
     };
-    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos", "swift"]);
-    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos", "swift"]);
+    // The machine matrix's pull-request branch names no macOS runner.
+    const machine = jobs.machine!.strategy!.matrix!.include as string;
+    expect(machine).toContain("github.event_name == 'pull_request' && '[");
+    expect(machine.slice(0, machine.indexOf("||"))).not.toContain("macos");
+    expect(machine.slice(machine.indexOf("||"))).toContain("macos-latest");
+    expect(macJobs(["packages/core/src/daemon.ts"])).toEqual(["machine", "macos"]);
+    expect(macJobs(["bun.lock"])).toEqual(["machine", "macos"]);
+    expect(macJobs([".github/workflows/ci.yml"])).toEqual(["machine", "macos"]);
     expect(macJobs(["packages/cli/src/main.ts"])).toEqual(["machine", "macos"]);
-    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual(["macos", "swift"]);
+    // An apple/ change: the Swift kits on demand only, and the scripts' tests on Linux, never the macos job (its
+    // scripts step runs only the scripts' own macOS tests, for a change to scripts/).
+    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"])).toEqual([]);
+    expect(macJobs(["apple/WinterKit/Sources/WinterKit/Client.swift"], "workflow_dispatch")).toEqual(["swift"]);
+    expect(on(["apple/WinterKit/Sources/WinterKit/Client.swift"])).not.toContain("scriptsmac");
+    expect(macJobs(["scripts/embed-runtimes.sh"])).toEqual(["macos"]);
+    expect(on(["scripts/embed-runtimes.sh"])).toEqual(expect.arrayContaining(["scripts", "scriptsmac"]));
     expect(macJobs(["plugins/clover/plugins/shell/src/a.tsx"])).toEqual(["machine"]);
     expect(macJobs(["docs/clover-plan.md"])).toEqual([]);
+    // A pull request takes no hosted macOS runner, whatever it changes.
+    for (const change of ["packages/core/src/daemon.ts", ".github/workflows/ci.yml", "apple/WinterKit/Sources/WinterKit/Client.swift", "scripts/embed-runtimes.sh", "plugins/clover/plugins/shell/src/a.tsx"]) {
+      expect(macJobs([change], "pull_request")).toEqual([]);
+    }
   });
 
   test("the core: its own, the CLI's and the scripts' tests, the daemon, the packages that carry it, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
-    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "swift", "verify"]);
+    expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "verify"]);
     expect(core).not.toContain("app");
   });
 
@@ -71,10 +115,13 @@ describe("ci-changes", () => {
 
   test("the tree job (Linux and Windows) runs for the tree's and the computers' code and tests, and their conformance suites", () => {
     for (const f of ["packages/core/src/tree/index.ts", "packages/core/src/computers/registry.ts", "packages/core/test/tree/x.test.ts",
-      "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts"]) {
+      "packages/core/test/computers/x.test.ts", "packages/core/src/contracts/tests/tree.test.ts", "packages/core/src/contracts/tests/computer-registry.test.ts",
+      "packages/core/src/agents/backend.ts", "packages/core/src/agents/process/launch.ts", "packages/core/src/agents/tests/windows-path.test.ts",
+      "plugins/clover/plugins/agent-cursor/clover.json", "plugins/clover/plugins/agent-gemini/clover.json"]) {
       expect(on([f]), f).toContain("tree");
     }
     expect(on(["packages/core/src/daemon.ts"])).not.toContain("tree");
+    expect(on(["plugins/clover/plugins/agent-cursor/quirks.json"])).not.toContain("tree");
     expect(on(["packages/core/src/contracts/tests/secret-store.test.ts"])).not.toContain("tree");
   });
 
@@ -105,10 +152,17 @@ describe("ci-changes", () => {
     expect(on(["packages/protocol/generated/fixtures/x.json"])).toContain("swift");
     expect(on(["packages/protocol/src/methods.ts"])).not.toContain("swift");
     expect(on(["packages/cli/src/main.ts"])).not.toContain("swift");
+    // Only apple/, the root Package.swift, the generated fixtures and CI's own definition run the Swift kits: not the
+    // core (main's push run still covers WinterKit's daemon tests), not the toolchain or a lockfile.
+    expect(on(["packages/core/src/daemon.ts"])).not.toContain("swift");
+    for (const g of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([g]), g).not.toContain("swift");
+    expect(on(["scripts/ci-changes.ts"])).toContain("swift");
+    expect(on(["Package.swift"])).toContain("swift");
   });
 
-  test("CI itself, the toolchain, the root manifest or a lockfile run every area; so does no diff", () => {
-    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f])).toEqual(CI_AREA_NAMES);
+  test("CI itself runs every area but the installers; the toolchain, the root manifest or a lockfile every area but the Swift kits and the installers; so does no diff", () => {
+    for (const f of [".github/workflows/ci.yml", "scripts/ci-changes.ts"]) expect(on([f])).toEqual(CI_AREA_NAMES.filter((a) => a !== "installers"));
+    for (const f of [".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml"]) expect(on([f]), f).toEqual(CI_AREA_NAMES.filter((a) => a !== "swift" && a !== "installers"));
     expect(CI_AREA_NAMES.filter((a) => areasFor(undefined)[a])).toEqual(CI_AREA_NAMES);
   });
 

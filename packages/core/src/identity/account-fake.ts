@@ -82,7 +82,7 @@ export function startFakeAccountService(opts: { authUrl: string; anonKey: string
         if (typeof b.aud !== "string" || typeof b.dev !== "string" || !fresh(b.t)) return Response.json({ error: "bad_request" }, { status: 400 });
         const d = list.find((x) => x.id === b.dev && x.revokedAt === undefined);
         if (!d) return Response.json({ error: "not_member" }, { status: 403 });
-        if (!sigOk(d.publicKey, mintStatement(b.aud, b.dev, b.t!), b.sig)) return Response.json({ error: "unauthorized" }, { status: 401 });
+        if (!sigOk(d.publicKey, mintStatement(sub, b.aud, b.dev, b.t!), b.sig)) return Response.json({ error: "unauthorized" }, { status: 401 });
         const iat = Math.floor(Date.now() / 1000);
         const header = toBase64Url(utf8(JSON.stringify({ alg: "EdDSA", kid, typ: "JWT" })));
         const claims = toBase64Url(utf8(JSON.stringify({ iss: issuer, aud: b.aud, sub, dev: b.dev, iat, exp: iat + ttl, jti: randomUUID() })));

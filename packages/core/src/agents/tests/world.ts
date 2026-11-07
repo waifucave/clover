@@ -1,11 +1,12 @@
 // A small world for the Agent tool's end-to-end tests: one computer ("Studio") with a temp home, lane B's fakes for
 // everything that isn't lane K's (the session host, the approval broker, the tree, the fence, the clock), and lane
-// K's real parts: the manager, the ACP backend launching the scripted agent, the bridge's tokens and endpoint, the
+// K's real parts: the manager, the ACP backend launching the scripted agent, the bridge's tokens, lane C's Clover server
+// serving the bridge role (testing/clover-endpoint.ts), the
 // real bridge process, the watchdog. A bot "alpha" has its main session `s_alpha` to delegate from.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentEvent, AgentQuirks } from "../../contracts/agent-backend";
+import type { AgentBackend, AgentEvent, AgentQuirks } from "../../contracts/agent-backend";
 import type { Level } from "@waifucave/clover-protocol";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -15,16 +16,37 @@ import { FakeTree } from "../../contracts/fakes/tree";
 import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import type { SessionRecord } from "../../contracts/session-host";
 import { UserSelections } from "../acp/selections";
-import { AcpAgentBackend } from "../backend";
-import { BridgeEndpoint } from "../bridge/endpoint";
+import { AcpAgentBackend, type AcpBackendOptions } from "../backend";
+import type { PluginPartsSource } from "../placement";
+import { bridgeCloverParts } from "../bridge/handlers";
+import { serveClover, type TestCloverEndpoint } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import type { BridgeToolSource } from "../bridge/tools";
-import { AgentManager } from "../manager";
+import { AgentManager, type AgentPauseGate } from "../manager";
 import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
 import { StallWatchdog } from "../watchdog";
+import type { SandboxAdmission } from "../sandbox/admission";
+import type { AgentOks } from "../sandbox/oks";
+
+/** The scripted agent's "own sandbox", admitted for the tests: the fenced set written as a file its env names. */
+export const FAKE_PROTECTED: SandboxAdmission = {
+  status: "protected", versions: ">=1.0.0", evidence: "the scripted agent's sandbox (tests)",
+  writer: (policy, ctx) => ({
+    files: [{ name: "policy.json", content: JSON.stringify(policy) }],
+    env: { FAKE_SANDBOX_POLICY: join(ctx.dir, "policy.json") },
+    args: ["--sandboxed"],
+    meta: { fakeSandbox: { policy: join(ctx.dir, "policy.json") } },
+  }),
+};
+
+/** The scripted agent's admission on every OS. */
+export function fakeAdmissions(sandbox: "protected" | "none") {
+  const row: SandboxAdmission = sandbox === "none" ? { status: "unsupported", reason: "the test's agent has none" } : FAKE_PROTECTED;
+  return { fake: { macos: row, linux: row, windows: row } };
+}
 
 export interface WorldOptions {
   quirks?: AgentQuirks;
@@ -35,13 +57,27 @@ export interface WorldOptions {
   /** The watchdog's wall clock, to age a running command past its limit. */
   wallNow?: () => number;
   table?: ProcessTableReader;
-  /** False: no test-only OK for an agent that isn't sandboxed (true by default, since M1 sandboxes none). */
-  unsandboxedOk?: boolean;
+  /** The scripted agent's sandbox: admitted by default, or one Clover can't count on (so it needs the OK). */
+  sandbox?: "protected" | "none";
+  oks?: AgentOks;
+  /** The plugins' parts for every session, and the backend's placement of them (Claude Code's). */
+  pluginParts?: PluginPartsSource;
+  place?: AcpBackendOptions["place"];
   /** The scripted agent's `mode` option values, and the backend's read-only mode. */
   modes?: string[];
   readOnlyMode?: { option: string; values: readonly string[] };
   askDuringReplay?: boolean;
   selections?: UserSelections;
+  pause?: AgentPauseGate;
+  /** The bridge tokens' life, on the world's clock. */
+  tokenTtlMs?: number;
+  /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
+  extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
+  /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
+  bridgeServerName?: string;
+  /** This computer's name ("Studio" by default), and the other computers' homes its tree knows (agents placed there). */
+  computer?: string;
+  otherComputers?: Record<string, string>;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -74,12 +110,14 @@ export class World {
   readonly tokens: BridgeTokens;
   readonly watchdog: StallWatchdog;
   readonly manager: AgentManager;
-  readonly endpoint: BridgeEndpoint;
+  readonly endpoint: TestCloverEndpoint;
   readonly backend: AcpAgentBackend;
   readonly agent: FakeAgentRun;
   level: Level;
+  readonly computer: string;
 
   constructor(o: WorldOptions = {}) {
+    this.computer = o.computer ?? "Studio";
     this.root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-")));
     this.userHome = join(this.root, "home");
     this.cloverHome = join(this.userHome, ".clover");
@@ -88,11 +126,12 @@ export class World {
     mkdirSync(this.cloverHome, { recursive: true });
     this.level = o.level ?? "automatic";
     this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome });
-    this.tree = new FakeTree({ clock: this.clock, computers: { Studio: { home: this.userHome } }, botComputer: () => "Studio" });
+    const others = Object.fromEntries(Object.entries(o.otherComputers ?? {}).map(([name, home]) => [name, { home }]));
+    this.tree = new FakeTree({ clock: this.clock, computers: { ...others, [this.computer]: { home: this.userHome } }, botComputer: () => "Studio" });
     this.approvals = new FakeApprovalBroker({ clock: this.clock, levels: () => this.level, fence: () => this.fence });
     this.host = new FakeSessionHost({ clock: this.clock, approvals: this.approvals });
     this.host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, this.parentDriver);
-    this.tokens = new BridgeTokens(o.table ? { table: o.table } : {});
+    this.tokens = new BridgeTokens({ ...(o.table ? { table: o.table } : {}), ...(o.tokenTtlMs ? { ttlMs: o.tokenTtlMs, now: () => this.clock.now() } : {}) });
     this.watchdog = new StallWatchdog({ clock: this.clock, ...(o.wallNow ? { wallNow: o.wallNow } : {}), ...(o.table ? { table: o.table } : {}) });
     const quirks = fakeLaunch(o.quirks ?? WELL_BEHAVED_QUIRKS);
     this.agent = writeFakeAgent(join(this.root, "agent"), {
@@ -105,18 +144,22 @@ export class World {
       id: "fake", pluginId: "clover/agent-fake", quirks, clock: this.clock,
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
+      admissions: fakeAdmissions(o.sandbox ?? "protected"),
+      ...(o.place ? { place: o.place } : {}),
       ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
+    const extra = o.extraBackends?.((id) => manager.wire(id), this) ?? [];
     manager = new AgentManager({
-      home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
-      backends: () => [this.backend], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock }, watchdog: this.watchdog, clock: this.clock,
+      home: this.cloverHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
+      backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
+      ...(o.oks ? { oks: o.oks } : {}),
+      ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       levelOf: () => this.level,
-      ...(o.unsandboxedOk === false ? {} : { startUnsandboxedForTests: true }),
+      ...(o.pause ? { pause: o.pause } : {}),
     });
     this.manager = manager;
-    this.endpoint = new BridgeEndpoint({ socketPath: sock, tokens: this.tokens, handlers: manager.bridgeHandlers(), device: "d".repeat(16), serverVersion: "test" });
-    this.endpoint.listen();
+    this.endpoint = serveClover(sock, bridgeCloverParts(this.tokens, manager.bridgeHandlers()));
   }
 
   /** What the scripted agent process reported. */

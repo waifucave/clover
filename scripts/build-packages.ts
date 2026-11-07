@@ -17,11 +17,11 @@
 //      world-writable, nothing set-user-ID (`checkPackage`)
 // Output: apps/desktop/out/dist/. Nothing is signed, published or installed.
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
-import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeServedCopies, type Channel } from "./release/lib";
+import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writeServedCopies, type Channel } from "./release/lib";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -242,6 +242,9 @@ export function main(argv: readonly string[], root: string): number {
     if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
   }
   rmSync(staged, { recursive: true, force: true });
+  // The daemon for a server's own update: each architecture's binary as its release file, with its update files.
+  const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
+  for (const a of args.arches) writeCoreAssets(outDir, version, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(root, ...daemonOutput(daemonTargetFor(a)).split("/")));
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
   // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).

@@ -14,7 +14,7 @@ export interface NotificationStory {
 }
 
 const at = 1_781_270_000_000;
-const sender = { pluginId: "clover", name: "Clover", bundled: true };
+const sender = { pluginId: "clover", name: "Clover", thirdParty: false };
 const SAMPLES: { update: NotifierUpdate; name?: string }[] = [
   { update: { seq: 1, kind: "message", unseen: 1, bot: "alpha", at, sender }, name: "Alpha" },
   { update: { seq: 2, kind: "message", unseen: 3, bot: "alpha", at, sender }, name: "Alpha" },
@@ -22,11 +22,11 @@ const SAMPLES: { update: NotifierUpdate; name?: string }[] = [
   { update: { seq: 4, kind: "question", unseen: 5, bot: "luna", at, sender }, name: "Luna" },
   { update: { seq: 5, kind: "routine-result", unseen: 6, bot: "alpha", at, sender }, name: "Alpha" },
   { update: { seq: 6, kind: "agent-finished", unseen: 7, bot: "scout", at, sender }, name: "Scout" },
-  { update: { seq: 7, kind: "notification", unseen: 1, at, notification: { title: "Render finished", body: "scene.blend, 240 frames, 12 min" }, sender: { pluginId: "blender", name: "Blender", bundled: false } } },
+  { update: { seq: 7, kind: "notification", unseen: 1, at, notification: { title: "Render finished", body: "scene.blend, 240 frames, 12 min" }, sender: { pluginId: "blender", name: "Blender", thirdParty: true } } },
   // A plugin trying to speak as a bot: its name comes first, marked as a plugin's.
-  { update: { seq: 8, kind: "notification", unseen: 1, at, notification: { title: "Alpha needs your OK" }, sender: { pluginId: "home", name: "Home", bundled: false } } },
+  { update: { seq: 8, kind: "notification", unseen: 1, at, notification: { title: "Alpha needs your OK" }, sender: { pluginId: "home", name: "Home", thirdParty: true } } },
   // A plugin named as a bot still reads as a plugin.
-  { update: { seq: 9, kind: "notification", unseen: 1, at, notification: { title: "Hi, it's me" }, sender: { pluginId: "evil", name: "Luna", bundled: false } } },
+  { update: { seq: 9, kind: "notification", unseen: 1, at, notification: { title: "Hi, it's me" }, sender: { pluginId: "evil", name: "Luna", thirdParty: true } } },
 ];
 
 type Os = "macos" | "windows" | "linux";

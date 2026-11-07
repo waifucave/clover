@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AdmissionError, CoworkAdmissionLedger, type AdmissionErrorCode, type AdmissionLedgerOptions, type AdmissionOwner, type AdmissionProbes, type HostIdentity, type HostPreparedHomeBinding, type ProcessObservation, type ResourceObservation, type StopReceipt } from "../../src/cowork/admission";
+import { darwinTest } from "../helpers/darwin-only";
 
 const roots:string[]=[],handles:CoworkAdmissionLedger[]=[];
 afterEach(()=>{ for(const handle of handles.splice(0))handle.close(); for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true}); });
@@ -53,7 +54,7 @@ test("canonical prepared home registration persists across handles and checks DB
   code(()=>reserve(b,home,owner,"workspace-one","workspace-one",500),"request_conflict");
   expect(statSync(f.path).mode&0o777).toBe(0o600);expect(statSync(join(f.root,"coordination")).mode&0o777).toBe(0o700);
 });
-test("copied homes, aliases, directory replacement and copied DB identity cannot register or activate",()=>{
+darwinTest("copied homes, aliases, directory replacement and copied DB identity cannot register or activate",()=>{
   const f=fixture(),home=f.makeHome("home-one"),ledger=f.open();ledger.registerHome(home,home.canonicalPath);
   const copied=f.makeHome("home-one","copied"); f.persisted.set(copied.canonicalPath,{...home});
   code(()=>ledger.registerHome(home,copied.canonicalPath),"home_identity_mismatch");
@@ -70,7 +71,7 @@ test("a copied home's origin machine or installation is refused even when the le
   const fromAnotherInstall={...home,originInstallationId:"installation-old"};f.persisted.set(home.canonicalPath,fromAnotherInstall);
   code(()=>ledger.registerHome(fromAnotherInstall,home.canonicalPath),"home_identity_mismatch");
 });
-test("a filesystem identity change after admission remains uncertain and blocks reuse",()=>{
+darwinTest("a filesystem identity change after admission remains uncertain and blocks reuse",()=>{
   const f=fixture(),home=f.makeHome("home-one"),ledger=f.open(),owner=f.makeOwner(111);ledger.registerHome(home,home.canonicalPath);
   const record=reserve(ledger,home,owner);
   rmSync(home.canonicalPath,{recursive:true});mkdirSync(home.canonicalPath);

@@ -36,6 +36,7 @@ import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { DIST_BUILD, isCompiledBinary, noteIgnoredEnvOverride } from "../build-kind";
 import { bundleRuntimePath } from "./bundle-layout";
 import { CODING_AGENT_BINARY_VERSION } from "./versions";
 
@@ -114,8 +115,17 @@ export function resolveWinterExecutable(input: {
   /** Test seam for the P9a-9 package door; defaults to `resolvePlatformPackageWinter`. Injected
    *  (never real-install-dependent) so the ladder's unit tests never need `bun add` a tarball. */
   resolvePlatformPackageBin?: () => string | undefined;
+  /** Test seams for the build: a dist build (`build-kind.ts`) ignores `CLOVER_RUNTIME_EXECUTABLE`, and a compiled
+   *  binary never takes the platform-package rung. Default: this process's own build. */
+  distBuild?: boolean;
+  isCompiled?: boolean;
+  /** Where a dist build says, once, that it ignored the env override. */
+  noteIgnored?: (name: string) => void;
 }): WinterExecutableResolution {
-  const explicit: Array<[WinterExecutableSource, string | undefined]> = [["setting", input.setting?.trim() || undefined], ["env", input.env.CLOVER_RUNTIME_EXECUTABLE?.trim() || undefined]];
+  const envValue = input.env.CLOVER_RUNTIME_EXECUTABLE?.trim() || undefined;
+  const distBuild = input.distBuild ?? DIST_BUILD;
+  if (envValue !== undefined && distBuild) (input.noteIgnored ?? noteIgnoredEnvOverride)("CLOVER_RUNTIME_EXECUTABLE");
+  const explicit: Array<[WinterExecutableSource, string | undefined]> = [["setting", input.setting?.trim() || undefined], ["env", distBuild ? undefined : envValue]];
   for (const [source, path] of explicit) {
     if (!path) continue;
     return input.exists(path) ? { ok: true, path, source } : { ok: false, error: new WinterExecutableUnavailable([path]) };
@@ -123,6 +133,10 @@ export function resolveWinterExecutable(input: {
   const implicit: Array<[WinterExecutableSource, string]> = [["bundle", bundleRuntimePath(input.execPath, "winter")], ["home", join(input.home, "runtimes", "bin", "winter")]];
   const tried: string[] = [];
   for (const [source, path] of implicit) { tried.push(path); if (input.exists(path)) return { ok: true, path, source }; }
+  // A compiled binary never resolves the npm platform package: the resolution walks NODE_PATH and the working
+  // folder's node_modules, so whoever starts it could plant the runtime it then spawns (measured, lane M's door
+  // audit). Only a core run from a checkout has a real node_modules to find it in.
+  if (input.isCompiled ?? isCompiledBinary()) return { ok: false, error: new WinterExecutableUnavailable(tried) };
   const resolvePlatformPackageBin = input.resolvePlatformPackageBin ?? resolvePlatformPackageWinter;
   let packagePath: string | undefined;
   try {

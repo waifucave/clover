@@ -143,7 +143,7 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
           if (opts.kind === "side-thread") {
             return { type: "note", ...envelope, from: { kind: "core" }, label: input.name.slice(0, 120), text: input.text };
           }
-          return { type: "routine_result", ...envelope, routine: input.routine, name: input.name, sideThread: input.sideThread, text: input.text };
+          return { type: "routine_result", ...envelope, routine: input.routine, name: input.name, sideThread: input.sideThread, text: input.text, failed: input.failed ?? false };
         case "plugin":
           return {
             type: "plugin_message", ...envelope, from: { kind: "plugin", pluginId: input.pluginId }, text: input.text,
@@ -151,6 +151,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
           };
         case "note":
           return { type: "note", ...envelope, from: input.by, label: input.label, text: input.text };
+        case "task":
+          return { type: "note", ...envelope, from: { kind: "core" }, label: input.status === "event" ? "Background task event" : `Background task ${input.status}`, text: input.text };
       }
       return undefined;
     }

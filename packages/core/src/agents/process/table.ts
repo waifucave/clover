@@ -63,12 +63,16 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<string> {
 
 /** Reads this computer's process table. */
 export const readProcessTable: ProcessTableReader = async () => {
-  const now = Date.now();
+  // `now` is read once the table has answered, not before: `ps` (and PowerShell's `Get-Date`) measure each process's
+  // age when they run, which under load can be seconds after this call began, and a `now` taken before would make
+  // every process look that much older (a command started after the call then reads as older than the call: a false
+  // stall).
   if (process.platform === "win32") {
     const out = await run("powershell.exe", [
       "-NoProfile", "-NonInteractive", "-Command",
       "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId) $([int64]((Get-Date) - $_.CreationDate).TotalSeconds)\" }",
     ], 15_000);
+    const now = Date.now();
     const rows: ProcessRow[] = [];
     for (const line of out.split(/\r?\n/)) {
       const [pid, ppid, secs] = line.trim().split(/\s+/).map(Number);
@@ -76,7 +80,8 @@ export const readProcessTable: ProcessTableReader = async () => {
     }
     return rows;
   }
-  return parsePs(await run("/bin/ps", ["-A", "-o", "pid=,ppid=,etime="], 10_000), now);
+  const out = await run("/bin/ps", ["-A", "-o", "pid=,ppid=,etime="], 10_000);
+  return parsePs(out, Date.now());
 };
 
 /** Whether `pid` is `root` or descends from it. A loop in a stale table can't hang it. */

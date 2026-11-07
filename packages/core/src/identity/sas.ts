@@ -38,6 +38,8 @@ export interface PairSide {
   pairKey: Uint8Array;
   /** Its signing key for the group, raw. */
   groupKey: Uint8Array;
+  /** The group it is in when it pairs (null: none), so a merge of two groups (R18) is part of what the user checked. */
+  group: string | null;
 }
 
 export const PAIR_NONCE_BYTES = 32;
@@ -49,12 +51,12 @@ export function nonceCommitment(nonce: Uint8Array): Bytes {
 
 /** What the joiner's proof covers: what the joiner knows before the host answers, its nonce's commitment included. */
 export function joinerTranscript(pairingId: string, hostKey: Uint8Array, joiner: PairSide, commit: Uint8Array): Bytes {
-  return own(encode(["clover/pair-transcript/joiner/2", pairingId, own(hostKey), sideArray(joiner), own(commit)]));
+  return own(encode(["clover/pair-transcript/joiner/3", pairingId, own(hostKey), sideArray(joiner), own(commit)]));
 }
 
 /** What the host's proof covers: the exchange up to the welcome, the host's nonce included. */
 export function fullTranscript(joinerPart: Uint8Array, host: PairSide, extra: { t: number; group: string; nonce: Uint8Array }): Bytes {
-  return own(encode(["clover/pair-transcript/2", own(joinerPart), sideArray(host), extra.t, extra.group, own(extra.nonce)]));
+  return own(encode(["clover/pair-transcript/3", own(joinerPart), sideArray(host), extra.t, extra.group, own(extra.nonce)]));
 }
 
 /** What the words and the pair secret cover: the whole exchange, with the joiner's revealed nonce. */
@@ -63,7 +65,7 @@ export function finalTranscript(full: Uint8Array, joinerNonce: Uint8Array): Byte
 }
 
 function sideArray(s: PairSide): unknown[] {
-  return [own(s.key), own(s.record), own(s.pairKey), own(s.groupKey)];
+  return [own(s.key), own(s.record), own(s.pairKey), own(s.groupKey), s.group];
 }
 
 export function pairProof(secret: Uint8Array, domain: string, transcript: Uint8Array): Bytes {
@@ -98,6 +100,11 @@ export function derivePairId(pairSecret: Uint8Array): Bytes {
 }
 
 /** A device record in the one form both sides hash. */
-export function canonicalRecord(r: { id: string; name: string; kind: string; os?: string; runsCore: boolean; computer?: string; hasDisplay?: boolean; publicKey: string }): Bytes {
-  return own(encode([r.id, r.name, r.kind, r.os ?? null, r.runsCore, r.computer ?? null, r.hasDisplay ?? null, r.publicKey]));
+export function canonicalRecord(r: {
+  id: string; name: string; kind: string; os?: string; runsCore: boolean; computer?: string; hasDisplay?: boolean; publicKey: string;
+  answerKey?: { publicKey: string; held: string; alg?: string };
+}): Bytes {
+  // The answer key with its algorithm (B's #187; ed25519 when absent), so the words cover it too.
+  const ak = r.answerKey ? [r.answerKey.publicKey, r.answerKey.held, r.answerKey.alg ?? "ed25519"] : null;
+  return own(encode([r.id, r.name, r.kind, r.os ?? null, r.runsCore, r.computer ?? null, r.hasDisplay ?? null, r.publicKey, ak]));
 }

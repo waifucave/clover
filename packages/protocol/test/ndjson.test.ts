@@ -30,6 +30,15 @@ describe("NDJSON framing", () => {
     expect(() => d.push(new TextEncoder().encode("x".repeat(100)))).toThrow(/line too long/);
   });
 
+  test("a complete oversized line in one chunk throws too, and the decoder recovers", () => {
+    const d = new LineDecoder(64);
+    expect(() => d.push(new TextEncoder().encode(`${"x".repeat(100)}\n`))).toThrow(/line too long/);
+    expect(() => d.push(new TextEncoder().encode(`{"a":1}\n${"y".repeat(100)}\n`))).toThrow(/line too long/);
+    expect(d.push(new TextEncoder().encode('{"ok":1}\n'))).toEqual(['{"ok":1}']);
+    // Exactly the limit is still a line.
+    expect(d.push(new TextEncoder().encode(`${"z".repeat(64)}\n`))).toEqual(["z".repeat(64)]);
+  });
+
   test("blank lines are skipped (bare newline keep-alives, NDJSON blank separators)", () => {
     const d = new LineDecoder();
     expect(d.push(new TextEncoder().encode("\n"))).toEqual([]);
