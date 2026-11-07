@@ -129,7 +129,7 @@ export class HookRunner {
       proc = Bun.spawn(["sh", "-c", spec.command], {
         cwd: spec.cwd,
         // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
-        // The hook's `bun` is Clover's own (#234's check 4, H3): its folder comes first on the PATH.
+        // The hook's `bun` is the plugin Bun (#234's check 5, K1): its folder comes first on the PATH.
         env: guardedPluginEnv(
           {
             ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,

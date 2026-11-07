@@ -209,7 +209,7 @@ export interface PluginSupervisorDeps {
   /** Clover's run files for plugin processes (#234, F2): every plugin process runs with Clover's bunfig, no `.env`, and
    *  the load guard held to its plugin's folder. Default: written into `<runDir>/plugin-run` on first spawn. */
   pluginRun?: PluginRunGuard;
-  /** Testability seam: Clover's own Bun (`cloverBun`). */
+  /** Testability seam: the plugin Bun (`pluginBun`). */
   bun?: string;
 }
 
@@ -775,7 +775,7 @@ export class PluginSupervisor {
       const token = this.deps.mintToken(config.id);
       const cwd = config.entry.cwd ? join(config.dir, config.entry.cwd) : config.dir;
       this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir) };
-      // Clover's own Bun, never the one the manifest's command names (#234's check 4, H3): it chooses Bun and the args.
+      // The plugin Bun, never the one the manifest's command names (#234's check 5, K1): it chooses Bun and the args.
       const launch = pluginBunLaunch(
         config.entry.args ?? [],
         { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: config.dir },

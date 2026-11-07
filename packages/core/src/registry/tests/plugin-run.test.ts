@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
-import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, cloverBun, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, pluginBun, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
 
 function world() {
   const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
@@ -158,7 +158,7 @@ describe("a plugin process loads only its own tree", () => {
     expect(performance.now() - started).toBeLessThan(10_000);
   }, 30_000);
 
-  test("a supervised host runs on Clover's own Bun, never a bun the plugin ships (H3)", async () => {
+  test("a supervised host runs on the plugin Bun, never a bun the plugin ships (K1)", async () => {
     const ranOwn = join(w.base, "own-bun-ran");
     const hostRan = join(w.base, "host-ran");
     const root = w.plugin("ships-bun", {
@@ -170,15 +170,61 @@ describe("a plugin process loads only its own tree", () => {
     sup.startAll([{ id: "ships@local", dir: root, entry: { command: "./bun", args: ["host/index.ts"] } }]);
     for (let i = 0; i < 100 && !existsSync(hostRan); i++) await Bun.sleep(50);
     sup.stopAll();
-    expect([readFileSync(hostRan, "utf8"), existsSync(ranOwn)]).toEqual([cloverBun().command, false]);
+    expect([readFileSync(hostRan, "utf8"), existsSync(ranOwn)]).toEqual([pluginBun(), false]);
   }, 30_000);
 
-  test("a hook's bun is Clover's own", async () => {
+  test("a hook's bun is the plugin Bun", async () => {
     const root = w.plugin("hook-bun", { "keep.txt": "" });
     const runner = new HookRunner({ files: w.files, shared: [] });
     const r = await runner.run({ pluginId: "p", command: "command -v bun", cwd: root }, { event: "e", sessionId: "s", pluginId: "p", ts: 0 });
     expect([r.status, r.stdout.trim()]).toEqual(["ok", join(w.files.bin, "bun")]);
-    expect(realpathSync(join(w.files.bin, "bun"))).toBe(realpathSync(cloverBun().command));
+    expect(realpathSync(join(w.files.bin, "bun"))).toBe(realpathSync(pluginBun()));
+  }, 30_000);
+
+  describe("pluginBun: where plugin code runs (K1, lane M's layout)", () => {
+    const core = "/Applications/Clover.app/Contents/Resources/daemon/clover-core";
+    const beside = "/Applications/Clover.app/Contents/Resources/daemon/clover-plugin-bun";
+    const id = (p: string) => p;
+    test("a compiled core: the one beside it, failing closed without it", () => {
+      expect(pluginBunFor({ compiled: true, execPath: core, exists: (p) => p === beside, real: id })).toBe(beside);
+      expect(() => pluginBunFor({ compiled: true, execPath: core, exists: () => false, real: id })).toThrow(/isn't at .*clover-plugin-bun/);
+      // A test service changes nothing for a compiled core.
+      expect(pluginBunFor({ compiled: true, execPath: core, keychainService: "com.waifucave.clover.core.test-isolated", exists: (p) => p === beside, real: id })).toBe(beside);
+    });
+    test("from source with a test Keychain service: the Bun it runs on", () => {
+      expect(pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", keychainService: "com.waifucave.clover.core.test-isolated" })).toBe("/usr/local/bin/bun");
+      expect(pluginBun()).toBe(process.execPath); // this suite's preload sets the test service
+    });
+    test("from source otherwise (a dev daemon under plain Bun): dist/dev's, failing closed without it", () => {
+      const dev = "/repo/dist/dev";
+      for (const keychainService of [undefined, "com.waifucave.clover.core.dev", "com.waifucave.clover.core"]) {
+        expect(pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", keychainService, devDist: dev, exists: (p) => p === `${dev}/clover-plugin-bun` })).toBe(`${dev}/clover-plugin-bun`);
+        expect(() => pluginBunFor({ compiled: false, execPath: "/usr/local/bin/bun", keychainService, devDist: dev, exists: () => false })).toThrow(/isn't at \/repo\/dist\/dev\/clover-plugin-bun/);
+      }
+    });
+    test("never the compiled core's own execPath, by any name", () => {
+      // The core itself, a link to it, a copy that resolves to it: refused.
+      expect(() => pluginBunFor({ compiled: true, execPath: core, exists: () => true, real: () => core })).toThrow(/the core's own binary/);
+      expect(() => pluginBunFor({ compiled: true, execPath: core, exists: () => true, real: () => { throw new Error("gone"); } })).toThrow(/the core's own binary/);
+      for (const exists of [() => true, (p: string) => p === beside]) {
+        let got: string | undefined;
+        try {
+          got = pluginBunFor({ compiled: true, execPath: core, exists, real: id });
+        } catch {
+          got = undefined;
+        }
+        expect(got).not.toBe(core);
+      }
+    });
+  });
+
+  test("BUN_BE_BUN never reaches a plugin process, whoever set it", () => {
+    expect(guardedPluginEnv({ BUN_BE_BUN: "1", PATH: "/bin" }, { pluginRoot: w.base, files: w.files, shared: [] }).BUN_BE_BUN).toBeUndefined();
+    // The guard deletes it at startup too, for a process started some other way.
+    const root = w.plugin("be-bun", { "host/index.ts": "console.log(process.env.BUN_BE_BUN ?? \"unset\");\n" });
+    const env = { ...guardedPluginEnv({ ...process.env, NODE_ENV: undefined }, { pluginRoot: root, files: w.files, shared: [] }), BUN_BE_BUN: "1" };
+    const r = Bun.spawnSync([process.execPath, "host/index.ts"], { cwd: root, env, stdout: "pipe", stderr: "pipe" });
+    expect(r.stdout.toString().trim()).toBe("unset");
   }, 30_000);
 
   test("a plugin's Bun stdio MCP server runs guarded, whatever environment the runtime merges under it", () => {
@@ -186,15 +232,18 @@ describe("a plugin process loads only its own tree", () => {
     const guard = { files: w.files, shared: [] };
     const cfg = pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t", NODE_OPTIONS: "--require x" } }, root, guard);
     if (cfg.type !== "stdio") throw new Error("stdio expected");
-    expect(cfg.command).toBe(cloverBun().command);
+    expect(cfg.command).toBe(pluginBun());
     expect([cfg.env?.BUN_OPTIONS, cfg.env?.CLOVER_PLUGIN_ROOT, cfg.env?.TOKEN, cfg.env?.NODE_OPTIONS, cfg.env?.NODE_PATH]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t", "", ""]);
     // The worst merge: the whole parent environment under the config's, the parent's BUN_OPTIONS and NODE_OPTIONS in it.
     const parent = { ...process.env, NODE_ENV: undefined, BUN_OPTIONS: "--preload=/elsewhere.ts", NODE_OPTIONS: "--require /elsewhere.js" };
     const r = Bun.spawnSync([cfg.command, ...(cfg.args ?? [])], { cwd: root, env: { ...parent, ...cfg.env }, stdout: "pipe", stderr: "pipe" });
     expect([r.stdout.toString().trim(), existsSync(join(w.base, "mark"))]).toEqual(["server ran", false]);
-    // A program that isn't Bun is the plugin's own: unchanged.
-    const node = { command: "node", args: ["server.js"], env: { A: "1" } };
-    expect(guardedMcpServer(node, root, guard)).toBe(node);
+    // A program that isn't Bun keeps its command, and gets the guarded environment all the same: a `bun` it starts
+    // is the plugin Bun, guarded (check 5).
+    const sh = guardedMcpServer<{ command: string; args?: string[]; env?: Record<string, string> }>({ command: "sh", args: ["-c", "bun server.ts"], env: { A: "1" } }, root, guard);
+    expect([sh.command, sh.env?.A, sh.env?.BUN_OPTIONS, sh.env?.PATH?.split(":")[0], sh.env?.BUN_BE_BUN]).toEqual(["sh", "1", pluginBunFlags(w.files).join(" "), w.files.bin, undefined]);
+    const viaShell = Bun.spawnSync([sh.command, ...(sh.args ?? [])], { cwd: root, env: { ...parent, ...sh.env }, stdout: "pipe", stderr: "pipe" });
+    expect([viaShell.stdout.toString().trim(), existsSync(join(w.base, "mark"))]).toEqual(["server ran", false]);
   }, 30_000);
 
   test("a hook's bun runs guarded: the outside file never loads", async () => {
@@ -228,8 +277,8 @@ describe("a plugin process loads only its own tree", () => {
     });
     const root = w.plugin("sup-node", { "host/index.js": "" });
     sup.startAll([{ id: "node@local", dir: root, entry: { command: "node", args: ["host/index.js"] } }, { id: "bun@local", dir: root, entry: { command: "/opt/bin/bun", args: ["host/index.js"] } }]);
-    // The Bun one runs, on Clover's own Bun whatever path the manifest gave (H3).
-    expect(seen.map((c) => c[0])).toEqual([cloverBun().command]);
+    // The Bun one runs, on the plugin Bun whatever path the manifest gave (K1).
+    expect(seen.map((c) => c[0])).toEqual([pluginBun()]);
     expect([isBunCommand("bun"), isBunCommand("C:\\bun\\bun.exe"), isBunCommand("node"), isBunCommand("/x/bunx")]).toEqual([true, true, false, false]);
     sup.stopAll();
   });
