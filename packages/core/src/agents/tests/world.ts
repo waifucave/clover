@@ -72,7 +72,7 @@ export interface WorldOptions {
   /** The bridge tokens' life, on the world's clock. */
   tokenTtlMs?: number;
   /** More backends beside the scripted one (Clover's coding agent), given the manager's wire. */
-  extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>) => AgentBackend[];
+  extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
   /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
   bridgeServerName?: string;
 }
@@ -142,7 +142,7 @@ export class World {
       ...(o.place ? { place: o.place } : {}),
       ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
-    const extra = o.extraBackends?.((id) => manager.wire(id)) ?? [];
+    const extra = o.extraBackends?.((id) => manager.wire(id), this) ?? [];
     manager = new AgentManager({
       home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
