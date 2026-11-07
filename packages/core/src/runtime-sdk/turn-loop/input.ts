@@ -6,19 +6,18 @@
 // stop reason and transcript), a routine's result posted into the bot's conversation or the instructions that start a
 // side thread, a plugin's message and a note.
 import type { TurnInput } from "../../contracts/session-host";
+import { defuseTagNames } from "./defuse";
 
 function attr(value: string): string {
   return value.replace(/[&"<>]/g, (c) => ({ "&": "&amp;", "\"": "&quot;", "<": "&lt;", ">": "&gt;" })[c]!);
 }
 
 /** Every block an input is wrapped in. */
-const INPUT_TAGS = ["message", "task-notification", "routine-result", "routine", "note", "background-task"] as const;
-/** One of them opened or closed, in any case and with whitespace anywhere before the name (`< /message`, `</ note`). */
-const INPUT_TAG = new RegExp(`<(\\s*\\/?\\s*)(${INPUT_TAGS.join("|")})\\b`, "gi");
-
-/** A body can't close its wrapper or open or close another input's: `</tag` inside becomes `‹/tag`. */
+export const INPUT_TAGS = ["message", "task-notification", "routine-result", "routine", "note", "background-task"] as const;
+/** A body can't close its wrapper or open or close another input's, however the tag is spelled (`defuse.ts`): its
+ *  `<` becomes `‹`. */
 function body(text: string): string {
-  return text.replace(INPUT_TAG, "‹$1$2");
+  return defuseTagNames(text, INPUT_TAGS);
 }
 
 function wrap(tag: (typeof INPUT_TAGS)[number], attrs: Record<string, string | undefined>, text: string): string {

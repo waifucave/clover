@@ -75,6 +75,11 @@ export const ON_DEMAND_BUILTINS: readonly { name: string; description: string }[
 /** The fields every hook and tool hook sees of a tool call. */
 interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown }
 
+/** What every bot's and agent's sandbox is, whatever the host gives: on, no unsandboxed command (a call's
+ *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
+ *  and in-process agents never run a command unsandboxed (the owner's ruling). */
+export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
+
 export interface BotDriverDeps {
   /** The Clover home: the runtime's own home (`CLOVER_HOME`), its transcripts and this driver's state. */
   home: string;
@@ -108,7 +113,8 @@ export interface BotDriverDeps {
   /** Fills what a real model needs (the provider, the credential broker, the model plugins' adapters) into a
    *  session's options; the daemon's. A `winter-test/*` model needs nothing. */
   provider?(model: string, options: Options, ctx: BotSessionContext): void | Promise<void>;
-  /** The Bash sandbox; the runtime's default floor when left out. */
+  /** The Bash sandbox; the runtime's default floor when left out. Whatever it says, a bot's commands run sandboxed
+   *  (`BOT_SANDBOX`). */
   sandbox?(ctx: BotSessionContext): SandboxSettingsConfig | undefined;
   /** Extra environment for the runtime (never secrets). */
   env?: Record<string, string>;
@@ -631,9 +637,10 @@ export class BotSessionDriver implements SessionDriver {
       includePartialMessages: true,
       stderr: (chunk) => this.#log(`bot driver ${ctx.sessionId}: runtime: ${chunk.trimEnd()}`),
       additionalDirectories: [ctx.paths.root],
-      // A bot's commands never get launchd to start what the pause can't stop (F8): the runtime's default floor, or the
-      // host's sandbox, with the paths to launchd closed.
-      sandbox: { ...(sandbox ?? { enabled: true }), denyLaunchServices: true },
+      // A bot's commands always run sandboxed: the host's sandbox, or the runtime's default floor, and nothing a host or
+      // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
+      // start what the pause can't stop (F8). Set last, so no spread overrides them.
+      sandbox: { ...(sandbox ?? {}), ...BOT_SANDBOX },
       ...(resume ? { resume: state.backendSessionId } : { sessionId: state.backendSessionId }),
     };
     // Through the guarded fill (`fillProvider`): the provider sets the model's own keys and nothing else.

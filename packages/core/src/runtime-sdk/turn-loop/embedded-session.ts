@@ -32,11 +32,21 @@ export interface EmbeddedSessionDeps {
 /** The file name of the process holder beside the daemon (lane M's layout). */
 export const PROCESS_HOLDER_FILE = "clover-process-holder";
 
-/** The process holder the session's commands run under: the one named, else the one beside the daemon (macOS). */
-export function processHolderFor(deps: Pick<EmbeddedSessionDeps, "processHolder">): string | undefined {
+/** Paths already said to have no holder (one log line each, not one per session). */
+const missingHolderLogged = new Set<string>();
+
+/** The process holder the session's commands run under: the one named, else the one beside the daemon (macOS). On
+ *  macOS without one it says so once (what a command leaves is then stood for by its process group: a setsid'd one is
+ *  out of the pause's reach). */
+export function processHolderFor(deps: Pick<EmbeddedSessionDeps, "processHolder">, log: (line: string) => void = (l) => console.error(l)): string | undefined {
   if (process.platform !== "darwin") return undefined;
   const path = deps.processHolder ?? join(dirname(process.execPath), PROCESS_HOLDER_FILE);
-  return existsSync(path) ? path : undefined;
+  if (existsSync(path)) return path;
+  if (!missingHolderLogged.has(path)) {
+    missingHolderLogged.add(path);
+    log(`clover: no process holder at ${path}: what a command leaves running is stood for by its process group, so one that starts a session of its own is out of the pause's reach`);
+  }
+  return undefined;
 }
 
 /** The environment variables a session's runtime inherits from the daemon; nothing else does. */

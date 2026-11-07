@@ -9,6 +9,7 @@ import type { AgentEvent, AgentPermissionAsk, AgentStartSpec } from "../../../sr
 import { isContractError } from "../../../src/contracts/common";
 import { query as sdkQuery } from "@waifucave/clover-agent-sdk";
 import { inProcessAgentBackend } from "../../../src/runtime-sdk/turn-loop/subagent-backend";
+import { BOT_SANDBOX } from "../../../src/runtime-sdk/turn-loop/driver";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 import { darwinTest } from "../../helpers/darwin-only";
 
@@ -150,7 +151,25 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
     const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN, query }).start(spec(root, "winter-test/calls"));
     await session.stop();
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toMatchObject({ enabled: true, denyLaunchServices: true });
+    expect(seen[0]).toMatchObject(BOT_SANDBOX);
+  }, 60_000);
+
+  darwinTest("a delegation's command never runs unsandboxed, even when the call asks (dangerouslyDisableSandbox)", async () => {
+    const home = temp("clover-a3-sub-home-");
+    const root = temp("clover-a3-sub-root-");
+    const outside = join(temp("clover-a3-sub-out-"), "outside.txt");
+    const probe = `/bin/launchctl list >/dev/null 2>&1; echo "$?" > ${JSON.stringify(join(root, "launchctl"))}; touch ${JSON.stringify(outside)} 2>/dev/null; echo "$?" > ${JSON.stringify(join(root, "outside"))}`;
+    const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN }).start(spec(root, "winter-test/calls"));
+    session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
+    try {
+      const end = await session.prompt({ text: `CALL Bash ${JSON.stringify({ command: probe, description: "probe", dangerouslyDisableSandbox: true })}` });
+      expect(end.stopReason).toBe("end_turn");
+      expect(readFileSync(join(root, "launchctl"), "utf8").trim()).not.toBe("0");
+      expect(readFileSync(join(root, "outside"), "utf8").trim()).not.toBe("0");
+      expect(existsSync(outside)).toBe(false);
+    } finally {
+      await session.stop();
+    }
   }, 60_000);
 
   test("a delegation can't reach the bot's memory (the owner's decision): Read and Write there are refused", async () => {
