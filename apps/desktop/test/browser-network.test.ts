@@ -3,7 +3,7 @@
 // "public" address is played by a local server through the filter's dialer.
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
-import { connect, isIP, type AddressInfo, type Socket } from "node:net";
+import { connect, isIP, Socket, type AddressInfo } from "node:net";
 import { addressAllowed, BOT_POLICY, classifyAddress, NetworkFilter, PERSON_POLICY, policyFor, SESSION_POLICY, type AddressPolicy } from "../src/main/browser/network";
 
 describe("addresses", () => {
@@ -190,6 +190,28 @@ describe("the filter, after DNS, at connect time", () => {
     expect(loose).not.toBe(strict);
     expect(await get(loose, "127.0.0.1", Number(new URL(strict).port))).toEqual(NOT_ALLOWED);
     expect(await get(loose, "127.0.0.1", Number(new URL(loose).port))).toEqual(NOT_ALLOWED);
+  });
+
+  test("a first address that refuses slowly (Windows' ::1 for a server on IPv4) doesn't hold up the next, and localhost is always both loopback addresses", async () => {
+    const echo = await echoServer();
+    open.push({ close: () => new Promise((r) => echo.server.close(r)) });
+    const dialed: string[] = [];
+    const filter = new NetworkFilter({
+      // The resolver answers ::1 alone, as Windows' sometimes does: the filter tries 127.0.0.1 too.
+      lookup: async () => ["::1"],
+      dial: (port, ip) => {
+        dialed.push(ip);
+        if (ip === "127.0.0.1") return connect(echo.port, "127.0.0.1");
+        const s = new Socket();
+        setTimeout(() => s.destroy(Object.assign(new Error("refused, late"), { code: "ECONNREFUSED" })), 1_500);
+        return s;
+      },
+    });
+    open.push(filter);
+    const t0 = Date.now();
+    expect(await get(await filter.proxyFor(SESSION_POLICY), "localhost", 80, "/raced")).toEqual({ status: 200, body: "echo /raced" });
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(dialed).toEqual(["::1", "127.0.0.1"]);
   });
 
   test("one listener per policy; only SOCKS5 CONNECT without a password; closed means closed", async () => {

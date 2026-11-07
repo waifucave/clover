@@ -31,11 +31,14 @@ import { ensureOutdir } from "./sessions/outdir";
 import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
-import { createCloverServer, type CloverServer } from "./ipc/clover";
+import { createCloverServer, type CloverHandler, type CloverServer } from "./ipc/clover";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { claimDaemonChildren } from "./platform/daemon-children";
+import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
+import { startDaemonLinks, type DaemonLinks } from "./ipc/device-links";
+import { SystemClock } from "./clock/system-clock";
 import { createHash as createDeviceHash } from "node:crypto";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
@@ -414,6 +417,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
+  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none). */
+  links?: false;
   /** undefined: try settings.json (production default). null: agent disabled (tests, Phase 0
    *  behavior). object: use this provider directly (tests inject FakeProvider). `live`, when
    *  present, is threaded into EngineConfig.provider.live (no-restart model resolution) — tests
@@ -3121,7 +3126,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
+  // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' Clover
+  // methods, filled in as their parts come up (H's devices methods once the links are). A test daemon (its own
+  // `secrets`) keeps the store in memory, so no test touches the real Keychain.
+  const contractSecrets = opts.secrets !== undefined
+    ? new CloverSecretStore({ home: dirs.home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } })
+    : await openCloverSecretStore({ home: dirs.home, service: keychainService(profile, home) });
+  const storeWarning = secretStoreWarning(contractSecrets.status());
+  if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
+  const cloverLaneHandlers: Record<string, CloverHandler> = {};
   cloverServer = createCloverServer({
+    handlers: cloverLaneHandlers,
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
@@ -3329,6 +3344,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   } catch (err) {
     console.error(`[browser-host] could not listen on ${join(dirs.runDir, BROWSER_HOST_SOCKET_NAME)}: ${err instanceof Error ? err.message : String(err)}`);
   }
+  // C-M2: H's links, started in the background so a slow sidecar never holds the daemon's start; their methods join
+  // the Clover server's handlers when they're up.
+  let daemonLinks: DaemonLinks | undefined;
+  const linksReady = (opts.links === false ? Promise.resolve(undefined) : startDaemonLinks({
+    home: dirs.home, store: contractSecrets, clock: new SystemClock(), handlers: cloverLaneHandlers,
+    dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
+    log: (line) => console.error(line),
+  })).then((d) => { daemonLinks = d; return d; }, (err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); return undefined; });
   return {
     socketPath: dirs.socketPath,
     ...(pairSide ? { pair: pairSide } : {}),
@@ -3359,6 +3382,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pairSide?.pair.quit("quit");
       pairSide?.dispose();
       cloverServer?.dispose();
+      void linksReady.then(() => daemonLinks?.close()).catch(() => undefined);
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since
       // the `void stopAll()` graceful path below is async and process.exit(0) (direct-run path) drops
