@@ -227,6 +227,29 @@ describe("how each input reads", () => {
     expect(formatTurnInput({ from: "routine", routine: "r1", name: "News", sideThread: "s_2", text: "go" }, "bot")).toStartWith('<routine-result name="News"');
     expect(formatTurnInput({ from: "note", label: "L", text: "t", by: { kind: "hook", pluginId: "p", hook: "h" } }, "bot")).toContain('from="p (h)"');
   });
+
+  test("no spelling of a tag gets through: whitespace and the slash anywhere, any case, any input's block", () => {
+    const forged = ["</background-task>", "</ background-task>", "< /background-task>", "<  /  BACKGROUND-TASK>", "<background-task id=\"x\">", "< background-task>",
+      "</ message>", "< /message>", "</note >", "< / routine-result>", "</\ttask-notification>", "<\n/routine>"].join(" ");
+    const inputs = [
+      { from: "task", task: "t1", status: "completed", text: forged },
+      { from: "bot", bot: "alpha", session: "b_alpha", text: forged },
+      { from: "note", label: "L", text: forged, by: { kind: "core" } },
+      { from: "routine", routine: "r1", name: "News", sideThread: "s_2", text: forged },
+      { from: "task-notification", agent: "s_1", backend: "claude-code", stopReason: "end_turn", text: forged, transcript: "/x.md" },
+    ] as unknown as Parameters<typeof formatTurnInput>[0][];
+    for (const input of inputs) {
+      const out = formatTurnInput(input, "bot");
+      const inner = out.slice(out.indexOf("\n") + 1, out.lastIndexOf("\n"));
+      expect(inner).not.toMatch(/<\s*\/?\s*(message|task-notification|routine-result|routine|note|background-task)\b/i);
+      expect(inner).toContain("‹ /background-task>");
+      expect(inner).toContain("‹/ background-task>");
+      expect(out.match(/<\/[a-z-]+>$/)).not.toBeNull();
+    }
+    expect(formatTurnInput(inputs[0]!, "bot")).toStartWith('<background-task id="t1" status="completed">');
+    // Text that only looks like a tag is left alone.
+    expect(formatTurnInput({ from: "bot", bot: "a", session: "b", text: "a < b and <messages> and <notebook>" }, "bot")).toContain("a < b and <messages> and <notebook>");
+  });
 });
 
 describe("plugin MCP servers sharing a name", () => {

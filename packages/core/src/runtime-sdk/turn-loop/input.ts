@@ -11,14 +11,19 @@ function attr(value: string): string {
   return value.replace(/[&"<>]/g, (c) => ({ "&": "&amp;", "\"": "&quot;", "<": "&lt;", ">": "&gt;" })[c]!);
 }
 
-/** The body can't close its own wrapper: `</tag` inside becomes `‹/tag`. */
-function body(tag: string, text: string): string {
-  return text.replace(new RegExp(`<(/?)${tag}\\b`, "gi"), "‹$1" + tag);
+/** Every block an input is wrapped in. */
+const INPUT_TAGS = ["message", "task-notification", "routine-result", "routine", "note", "background-task"] as const;
+/** One of them opened or closed, in any case and with whitespace anywhere before the name (`< /message`, `</ note`). */
+const INPUT_TAG = new RegExp(`<(\\s*\\/?\\s*)(${INPUT_TAGS.join("|")})\\b`, "gi");
+
+/** A body can't close its wrapper or open or close another input's: `</tag` inside becomes `‹/tag`. */
+function body(text: string): string {
+  return text.replace(INPUT_TAG, "‹$1$2");
 }
 
-function wrap(tag: string, attrs: Record<string, string | undefined>, text: string): string {
+function wrap(tag: (typeof INPUT_TAGS)[number], attrs: Record<string, string | undefined>, text: string): string {
   const a = Object.entries(attrs).filter((e): e is [string, string] => e[1] !== undefined).map(([k, v]) => ` ${k}="${attr(v)}"`).join("");
-  return `<${tag}${a}>\n${body(tag, text)}\n</${tag}>`;
+  return `<${tag}${a}>\n${body(text)}\n</${tag}>`;
 }
 
 export function formatTurnInput(input: TurnInput, kind: "bot" | "side-thread"): string {
