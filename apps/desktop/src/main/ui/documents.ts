@@ -83,7 +83,7 @@ export function connectionAllowlist(hosts: readonly string[] = [], layers: reado
  *  inline-on with no network at all (§5.5: style tokens go in, nothing comes out), and the parents that may hold them
  *  are the core's own origins, never a web page. */
 export function sealHeaders(): Readonly<Record<string, string>> {
-  return { ...commonHeaders(), "Content-Security-Policy": sealCsp() };
+  return { ...commonHeaders(), "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": sealCsp() };
 }
 
 const sealCsp = (): string => [
