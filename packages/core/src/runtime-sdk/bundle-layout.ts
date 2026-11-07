@@ -24,6 +24,7 @@
 import { accessSync, constants } from "node:fs";
 import { join, dirname } from "node:path";
 import { REQUIRED_WINTER_AGENT_SDK, REQUIRED_WINTER_RUNTIME_SDK } from "./versions";
+import { DIST_BUILD, isCompiledBinary as isCompiledBuild, noteIgnoredEnvOverride } from "../build-kind";
 
 export const RUNTIME_BUNDLE_LAYOUT = {
   root: "runtimes",
@@ -182,7 +183,7 @@ function realIsExecutableFile(path: string): boolean {
  * like every other real-vs-fake probe in this ladder.
  */
 export function isCompiledBinary(): boolean {
-  return Bun.main.startsWith("/$bunfs/");
+  return isCompiledBuild();
 }
 
 /**
@@ -232,11 +233,15 @@ export function resolveAntExecutable(input: {
    *  `bun test` always runs uncompiled, so this file's own tests must inject `true` to exercise
    *  the compiled-gate branch at all. */
   isCompiled?: () => boolean;
+  /** Test seams: a dist build (`build-kind.ts`) ignores `CLOVER_ANT_EXECUTABLE` and says so once. */
+  distBuild?: boolean;
+  noteIgnored?: (name: string) => void;
 }): { path: string; source: AntExecutableSource } | undefined {
   const settingPath = input.setting?.trim() || undefined;
   if (settingPath) return { path: settingPath, source: "setting" };
   const envPath = input.env.CLOVER_ANT_EXECUTABLE?.trim() || undefined;
-  if (envPath) return { path: envPath, source: "env" };
+  if (envPath && (input.distBuild ?? DIST_BUILD)) (input.noteIgnored ?? noteIgnoredEnvOverride)("CLOVER_ANT_EXECUTABLE");
+  else if (envPath) return { path: envPath, source: "env" };
 
   const bundlePath = antExecutablePath(input.execPath);
   const isExecutableFile = input.isExecutableFile ?? realIsExecutableFile;

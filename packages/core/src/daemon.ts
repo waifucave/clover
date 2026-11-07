@@ -18,9 +18,10 @@ import { manifestFileState, manifestPath } from "./migration/manifest";
 import { TOKEN_NAMES, TokenAuthority } from "./auth/tokens";
 import { appTokenAclBootTrust, migrateAppTokenAcl, prepareAppTokenAccess, recoverAppTokenShadows, type AppTokenAccess, type AppTokenKeychain, type AppTokenTrust } from "./auth/app-token-acl";
 import { applicationPathsForBundleId, keychainUnlocked, withKeychainUserInteractionDisabled } from "./auth/keychain-ffi";
+import { loginKeychain } from "./auth/login-keychain";
 import { CredentialMigrationBusy } from "./auth/credential-migration-lock";
 import { beginKeychainPass, finishCredentialPass, type KeychainPass } from "./auth/keychain-boot";
-import { KeychainSecretStore, type SecretStore } from "./auth/secret-store";
+import { defaultSecretsBackend, KeychainSecretStore, type SecretStore } from "./auth/secret-store";
 import { migrateLegacyCredentialMaterial } from "./auth/credential-material";
 import { SessionStore } from "./sessions/store";
 import { SessionHub } from "./sessions/hub";
@@ -544,7 +545,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 
   // The service is THIS daemon's home's (`keychainService(profile, home)`): on a custom home a
   // `CLOVER_KEYCHAIN_SERVICE` is honoured, so an experiment or e2e daemon never reads the profile's real items.
-  const secrets = opts.secrets ?? new KeychainSecretStore(Bun.secrets, keychainService(profile, home));
+  const secrets = opts.secrets ?? new KeychainSecretStore(defaultSecretsBackend(), keychainService(profile, home));
 
   // WS-27: the credential items' access lists (`auth/credential-acl.ts`) — same guards as the app-token
   // slot below: real production boot, the profile's own default home, macOS, never fatal, skipped when the
@@ -672,8 +673,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let appTokens: { kc: AppTokenKeychain; trust: AppTokenTrust | undefined; access: AppTokenAccess } | undefined;
   if (keychainPass !== undefined) { // the same guards, and the credential migration lock is held
     try {
-      if (!keychainUnlocked(null)) throw Object.assign(new Error("the default keychain is locked"), { name: "KeychainLocked" });
-      const kc: AppTokenKeychain = { keychain: null, service: keychainService(), log: (line) => console.error(line) };
+      if (!keychainUnlocked(loginKeychain())) throw Object.assign(new Error("the login keychain is locked"), { name: "KeychainLocked" });
+      const kc: AppTokenKeychain = { keychain: loginKeychain(), service: keychainService(), log: (line) => console.error(line) };
       const trust = appTokenAclBootTrust({ profile, log: (line) => console.error(line), lookup: applicationPathsForBundleId });
       const access = withKeychainUserInteractionDisabled(() => prepareAppTokenAccess(kc, trust));
       appTokens = { kc, trust, access };
