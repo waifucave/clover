@@ -4,6 +4,14 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 ---
 
+
+
+
+
+
+
+
+
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -11,35 +19,75 @@ other installs' records. Clover runs one sandbox principal per
 session from a small per-user pool, so each install needs its own
 record and every launch path needs to name which principal it means.
 
-Files: src/cli.rs, src/install.rs, src/reg.rs, src/user.rs.
-
 What changes, and nothing else:
 - HKLM\SOFTWARE\sandbox-runtime\Users\<principal>\ carries the
   same identity values as the global record (SandboxUser,
   SandboxUserSid, SandboxGroupSid, MarkerVersion, CreatedAt) plus
-  the install's SublayerGuid and OwnerSid, and Cred\<principal>\Blob
-  carries that install's DPAPI credential under an owner-only DACL
-  (no BUILTIN\Users read). The global record keeps its exact current
-  semantics (last install wins) so unpatched readers are unaffected;
-  the `--user` selectors read here.
+  the install's SublayerGuid, and Cred\<principal>\Blob carries
+  that install's DPAPI credential. The global record keeps its
+  exact current semantics (last install wins) so unpatched
+  readers are unaffected; the `--user` selectors read here.
 - install::read_setup_for / require_current_setup_for /
-  read_cred_for take an optional principal; authorized_setup_for /
-  authorized_cred_for additionally refuse callers whose token SID is
-  not the stored owner (administrators and SYSTEM excepted).
+  read_cred_for take an optional principal; the old fns keep their
+  signatures as the global (None) case.
 - `exec --user <principal>` and `user status --user <principal>`
-  launch against / report that principal's record, through the caller
-  check. Without the flag the behavior is byte-for-byte the old behavior.
-- `install --owner-sid <SID>` records the owner and locks the Cred key
-  down to it. `uninstall --user <principal>` removes only that
-  principal's Users subkey, Cred blob and account, plus the WFP filters
-  under --sublayer as before (the shared sandbox group survives until
-  the last pool member is removed). The global record is removed only
-  when it names that principal.
+  launch against / report that principal's record. Without the flag
+  the behavior is byte-for-byte the old behavior.
+- `uninstall --user <principal>` removes only that principal's
+  Users subkey, Cred blob and account, plus the WFP filters under
+  --sublayer as before. The global record is removed only when it
+  names that principal.
 
 Upstream-ready: the global record is untouched, all new behavior is
-opt-in behind --user/--owner-sid, and the default `srt-sandbox` flow
-is unchanged.
+opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
 
+ src/cli.rs     |  82 +++++++++++++++++++-----
+ src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 215 insertions(+), 34 deletions(-)
+
+ src/cli.rs     |  84 +++++++++++++++++++------
+ src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 216 insertions(+), 35 deletions(-)
+
+ src/cli.rs     | 110 ++++++++++++++++++++++++++------
+ src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
+ 2 files changed, 240 insertions(+), 37 deletions(-)
+
+ src/cli.rs     | 116 ++++++++++++++++++++++++++------
+ src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  26 ++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 292 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 116 ++++++++++++++++++++++++++------
+ src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  37 +++++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 303 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 116 ++++++++++++++++++++++++++------
+ src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  37 +++++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 303 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 116 +++++++++++++++++++++++++------
+ src/install.rs | 182 ++++++++++++++++++++++++++++++++++++++++++++-----
+ src/reg.rs     |  37 ++++++++++
+ src/user.rs    |  16 +++--
+ 4 files changed, 308 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 126 ++++++++++++++++++++-----
+ src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
+ src/reg.rs     |  37 ++++++++
+ src/user.rs    |  16 +++-
+ 4 files changed, 381 insertions(+), 43 deletions(-)
+
+ src/cli.rs     | 126 ++++++++++++++++++++-----
+ src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
+ src/reg.rs     |  37 ++++++++
+ src/user.rs    |  16 +++-
+ 4 files changed, 381 insertions(+), 43 deletions(-)
 
 diff --git a/src/cli.rs b/src/cli.rs
 index 8e616e2..af847f3 100644
