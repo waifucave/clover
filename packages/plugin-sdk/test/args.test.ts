@@ -1,7 +1,7 @@
 // A command's args against its declared schema (F-M3's review N4): the check `command.run` runs for every caller and
 // the palette runs first.
 import { describe, expect, test } from "bun:test";
-import { checkArgsSchema, validateArgs } from "../src/index";
+import { ARGS_MAX_BYTES, ARGS_MAX_PATTERN_INPUT, checkArgsSchema, patternProblem, validateArgs } from "../src/index";
 
 const fails = (schema: unknown, args: unknown) => {
   const r = validateArgs(schema, args);
@@ -115,5 +115,45 @@ describe("validateArgs", () => {
     let ok: unknown = 1;
     for (let i = 0; i < 10; i++) ok = [ok];
     expect(fails({ type: "object", properties: { v: true } }, { v: ok })).toBe("ok");
+  });
+
+  describe("bounded for a third-party schema (#234's review, F3)", () => {
+    test("a pattern stays in a linear-time subset: no backreference, lookaround, or quantified group with a quantifier or an alternation", () => {
+      for (const ok of ["^[a-z]+$", "^(foo|bar)$", "^(?:ab)+$", "^\\d{3}-\\d{4}$", "^[(]+$", "^a\\(b\\)+c$", "^(?<year>\\d{4})$"]) expect([ok, patternProblem(ok)]).toEqual([ok, undefined]);
+      for (const bad of ["^(a+)+$", "^(a*)*b$", "(a|a)*", "^(\\w+\\s?)*$", "(x+x+)+y", "^((a)+)+$", "(a)\\1", "\\k<n>", "(?=a)", "(?!a)", "(?<=a)", "(?<!a)", "a".repeat(257)]) {
+        expect([bad, patternProblem(bad) !== undefined, checkArgsSchema({ type: "string", pattern: bad }).ok]).toEqual([bad, true, false]);
+      }
+      // The reviewer's ~320 ms-per-string pattern never runs: the schema takes no call.
+      const started = performance.now();
+      expect(validateArgs({ type: "object", properties: { s: { type: "string", pattern: "^(a+)+$" } } }, { s: "a".repeat(30) + "!" })).toEqual({ ok: false, path: "", keyword: "schema" });
+      expect(performance.now() - started).toBeLessThan(50);
+    });
+
+    test("a string longer than 4,096 code points isn't tried on a pattern; args over 256 KiB aren't checked at all", () => {
+      const s = { type: "object", additionalProperties: { type: "string", pattern: "^[a-z]+$" } };
+      expect(validateArgs(s, { a: "a".repeat(ARGS_MAX_PATTERN_INPUT) })).toEqual({ ok: true });
+      expect(validateArgs(s, { a: "a".repeat(ARGS_MAX_PATTERN_INPUT + 1) })).toEqual({ ok: false, path: "/a", keyword: "patternLength" });
+      expect(validateArgs({ type: "object", additionalProperties: true }, { a: "x".repeat(ARGS_MAX_BYTES) })).toEqual({ ok: false, path: "", keyword: "size" });
+      expect(validateArgs({ type: "object", additionalProperties: true }, { a: "x".repeat(1000) })).toEqual({ ok: true });
+    });
+
+    test("uniqueItems is linear: 20,000 objects in well under a second, key order ignored", () => {
+      const items = Array.from({ length: 20_000 }, (_, i) => ({ i })); // ~220 KB, inside the size cap
+      const schema = { type: "array", uniqueItems: true, items: { type: "object", additionalProperties: true } };
+      const started = performance.now();
+      expect(validateArgs({ type: "object", properties: { xs: schema } }, { xs: items })).toEqual({ ok: true });
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(validateArgs({ type: "object", properties: { xs: schema } }, { xs: [{ a: 1, b: 2 }, { b: 2, a: 1 }] })).toEqual({ ok: false, path: "/xs/1", keyword: "uniqueItems" });
+    });
+
+    test("one call visits at most 100,000 schema nodes, anyOf and arrays included", () => {
+      const wide = { anyOf: Array.from({ length: 8 }, () => ({ type: "array", items: { anyOf: Array.from({ length: 8 }, () => ({ type: "array", items: { type: "string" } })) } })) };
+      // Every inner array fits but the very last, which fails only at its end: each outer branch walks it all.
+      const value = { xs: Array.from({ length: 200 }, (_, i) => Array.from({ length: 200 }, (_, j) => (i === 199 && j === 199 ? 1 : "a"))) };
+      const started = performance.now();
+      expect(validateArgs({ type: "object", properties: { xs: wide } }, value)).toEqual({ ok: false, path: "", keyword: "budget" });
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(validateArgs({ type: "object", properties: { xs: wide } }, { xs: [["a"]] })).toEqual({ ok: true });
+    });
   });
 });

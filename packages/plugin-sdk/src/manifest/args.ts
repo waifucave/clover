@@ -13,6 +13,11 @@
 //
 // A failure names the JSON Pointer of the failing value and the keyword, never the value: args can carry what the
 // user typed.
+//
+// The check is bounded, since a third-party schema runs in the core (#234's review, F3): a `pattern` stays in a
+// linear-time subset (at most 256 characters; no backreference, lookaround, or quantified group holding a quantifier
+// or an alternation), is tried only on strings of at most 4,096 code points (`patternLength`), the args are at most
+// 256 KiB of JSON (`size`), `uniqueItems` is linear, and one call visits at most 100,000 schema nodes (`budget`).
 
 /** The keywords the check enforces. */
 export const ARGS_SCHEMA_KEYWORDS = [
@@ -31,6 +36,56 @@ const TYPES = new Set(["string", "number", "integer", "boolean", "object", "arra
 
 /** How deep a schema or a value may nest. */
 export const ARGS_MAX_DEPTH = 64;
+/** The longest `pattern` a schema may hold, in UTF-16 code units (#234's review, F3). */
+export const ARGS_MAX_PATTERN = 256;
+/** The most args a call may carry, as JSON in UTF-8 bytes. */
+export const ARGS_MAX_BYTES = 256 * 1024;
+/** The longest string a `pattern` is tried on, in code points; a longer one fails `patternLength`. */
+export const ARGS_MAX_PATTERN_INPUT = 4096;
+/** The most schema nodes one call's check visits; past it the check fails `budget` (`anyOf`, `oneOf` and arrays
+ *  multiply the work). */
+export const ARGS_VISIT_BUDGET = 100_000;
+
+/** Why a `pattern` is outside the linear-time subset, or undefined when it is in it: no backreference, no lookaround,
+ *  and no quantified group that holds a quantifier or an alternation (the shapes that backtrack exponentially, such
+ *  as `^(a+)+$` or `(a|a)*`). */
+export function patternProblem(source: string): string | undefined {
+  if (source.length > ARGS_MAX_PATTERN) return "too long";
+  // One frame per open group: whether it holds a quantifier or an alternation at any depth.
+  const frames: { quant: boolean; alt: boolean }[] = [{ quant: false, alt: false }];
+  const isQuant = (i: number) => source[i] === "*" || source[i] === "+" || source[i] === "?" || (source[i] === "{" && /^\{\d+(,\d*)?\}/.test(source.slice(i)));
+  for (let i = 0; i < source.length; i++) {
+    const c = source[i]!;
+    if (c === "\\") {
+      const n = source[i + 1];
+      if (n !== undefined && (/[1-9]/.test(n) || n === "k")) return "a backreference";
+      i++;
+      continue;
+    }
+    if (c === "[") {
+      for (i++; i < source.length && source[i] !== "]"; i++) if (source[i] === "\\") i++;
+      continue;
+    }
+    if (c === "(") {
+      if (source.startsWith("(?=", i) || source.startsWith("(?!", i) || source.startsWith("(?<=", i) || source.startsWith("(?<!", i)) return "a lookaround";
+      frames.push({ quant: false, alt: false });
+      continue;
+    }
+    if (c === ")") {
+      const f = frames.pop();
+      if (f === undefined || frames.length === 0) return "an unbalanced group";
+      const quantified = isQuant(i + 1);
+      if (quantified && (f.quant || f.alt)) return "a quantified group holding a quantifier or an alternation";
+      const parent = frames[frames.length - 1]!;
+      parent.quant ||= f.quant || quantified;
+      parent.alt ||= f.alt;
+      continue;
+    }
+    if (c === "|") frames[frames.length - 1]!.alt = true;
+    else if (isQuant(i) && !(c === "?" && source[i - 1] === "(")) frames[frames.length - 1]!.quant = true;
+  }
+  return undefined;
+}
 
 export type ArgsCheck =
   | { ok: true }
@@ -75,7 +130,7 @@ export function checkArgsSchema(schema: unknown, path = "", depth = 0): ArgsSche
   for (const k of ["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"] as const) if (s[k] !== undefined && !isNumber(s[k])) return bad(k);
   if (s.multipleOf !== undefined && !(isNumber(s.multipleOf) && (s.multipleOf as number) > 0)) return bad("multipleOf");
   for (const k of ["minLength", "maxLength", "minProperties", "maxProperties", "minItems", "maxItems"] as const) if (s[k] !== undefined && !isCount(s[k])) return bad(k);
-  if (s.pattern !== undefined && (typeof s.pattern !== "string" || regexOf(s.pattern) === null)) return bad("pattern");
+  if (s.pattern !== undefined && (typeof s.pattern !== "string" || patternProblem(s.pattern) !== undefined || regexOf(s.pattern) === null)) return bad("pattern");
   if (s.uniqueItems !== undefined && typeof s.uniqueItems !== "boolean") return bad("uniqueItems");
   if (s.required !== undefined && !(Array.isArray(s.required) && s.required.every((r) => typeof r === "string"))) return bad("required");
   if (s.properties !== undefined) {
@@ -101,7 +156,14 @@ export function checkArgsSchema(schema: unknown, path = "", depth = 0): ArgsSche
   return { ok: true };
 }
 
-/** JSON equality, for `enum`, `const` and `uniqueItems`: objects by their keys, whatever their order. */
+/** A value as JSON with sorted keys, so equal values give equal strings whatever their key order. */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (isObject(v)) return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(",")}}`;
+  return JSON.stringify(v) ?? "null";
+}
+
+/** JSON equality, for `enum` and `const`: objects by their keys, whatever their order. */
 function jsonEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((x, i) => jsonEqual(x, b[i]));
@@ -125,8 +187,14 @@ function typeMatches(type: string, v: unknown): boolean {
   }
 }
 
-function check(schema: unknown, v: unknown, path: string, depth: number): ArgsCheck {
+interface Budget { visits: number; spent: boolean }
+
+function check(schema: unknown, v: unknown, path: string, depth: number, budget: Budget): ArgsCheck {
   const fail = (keyword: string, at = path): ArgsCheck => ({ ok: false, path: at, keyword });
+  if (budget.spent || ++budget.visits > ARGS_VISIT_BUDGET) {
+    budget.spent = true;
+    return fail("budget");
+  }
   if (schema === true) return { ok: true };
   if (schema === false) return fail("false");
   const s = schema as Schema;
@@ -151,19 +219,28 @@ function check(schema: unknown, v: unknown, path: string, depth: number): ArgsCh
     const length = [...v].length;
     if (s.minLength !== undefined && length < (s.minLength as number)) return fail("minLength");
     if (s.maxLength !== undefined && length > (s.maxLength as number)) return fail("maxLength");
-    if (s.pattern !== undefined && !regexOf(s.pattern as string)!.test(v)) return fail("pattern");
+    if (s.pattern !== undefined) {
+      if (length > ARGS_MAX_PATTERN_INPUT) return fail("patternLength");
+      if (!regexOf(s.pattern as string)!.test(v)) return fail("pattern");
+    }
   }
   if (Array.isArray(v)) {
     if (s.minItems !== undefined && v.length < (s.minItems as number)) return fail("minItems");
     if (s.maxItems !== undefined && v.length > (s.maxItems as number)) return fail("maxItems");
     if (s.uniqueItems === true) {
-      for (let i = 0; i < v.length; i++) for (let j = i + 1; j < v.length; j++) if (jsonEqual(v[i], v[j])) return fail("uniqueItems", pointer(path, j));
+      // Canonical JSON (keys sorted) in a set: linear, where comparing each pair was quadratic (#234's review, F3).
+      const seen = new Set<string>();
+      for (let j = 0; j < v.length; j++) {
+        const key = canonical(v[j]);
+        if (seen.has(key)) return fail("uniqueItems", pointer(path, j));
+        seen.add(key);
+      }
     }
     const prefix = (s.prefixItems as unknown[] | undefined) ?? [];
     for (const [i, item] of v.entries()) {
       const sub = i < prefix.length ? prefix[i] : s.items;
       if (sub === undefined) continue;
-      const r = check(sub, item, pointer(path, i), depth + 1);
+      const r = check(sub, item, pointer(path, i), depth + 1, budget);
       if (!r.ok) return r;
     }
   }
@@ -179,17 +256,18 @@ function check(schema: unknown, v: unknown, path: string, depth: number): ArgsCh
     const props = (s.properties as Record<string, unknown> | undefined) ?? {};
     for (const k of keys) {
       const sub = Object.hasOwn(props, k) ? props[k] : s.additionalProperties ?? false;
-      const r = check(sub, v[k], pointer(path, k), depth + 1);
+      const r = check(sub, v[k], pointer(path, k), depth + 1, budget);
       if (!r.ok) return Object.hasOwn(props, k) || r.keyword !== "false" ? r : fail("additionalProperties", pointer(path, k));
     }
   }
   if (s.allOf !== undefined) for (const sub of s.allOf as unknown[]) {
-    const r = check(sub, v, path, depth + 1);
+    const r = check(sub, v, path, depth + 1, budget);
     if (!r.ok) return r;
   }
-  if (s.anyOf !== undefined && !(s.anyOf as unknown[]).some((sub) => check(sub, v, path, depth + 1).ok)) return fail("anyOf");
-  if (s.oneOf !== undefined && (s.oneOf as unknown[]).filter((sub) => check(sub, v, path, depth + 1).ok).length !== 1) return fail("oneOf");
-  if (s.not !== undefined && check(s.not, v, path, depth + 1).ok) return fail("not");
+  if (s.anyOf !== undefined && !(s.anyOf as unknown[]).some((sub) => check(sub, v, path, depth + 1, budget).ok)) return fail(budget.spent ? "budget" : "anyOf");
+  if (s.oneOf !== undefined && (s.oneOf as unknown[]).filter((sub) => check(sub, v, path, depth + 1, budget).ok).length !== 1) return fail(budget.spent ? "budget" : "oneOf");
+  if (s.not !== undefined && check(s.not, v, path, depth + 1, budget).ok) return fail("not");
+  if (budget.spent) return fail("budget");
   return { ok: true };
 }
 
@@ -222,7 +300,11 @@ export function validateArgs(schema: unknown, args: unknown): ArgsCheck {
   const value = args === undefined ? {} : args;
   const json = nonJson(value, "", 0);
   if (!json.ok) return json;
-  if (schema === undefined) return check({ type: "object", maxProperties: 0 }, value, "", 0);
+  // The whole call's size first, before any walk is paid for.
+  if (new TextEncoder().encode(JSON.stringify(value)).length > ARGS_MAX_BYTES) return { ok: false, path: "", keyword: "size" };
+  const budget: Budget = { visits: 0, spent: false };
+  if (schema === undefined) return check({ type: "object", maxProperties: 0 }, value, "", 0, budget);
   if (!checkArgsSchema(schema).ok) return { ok: false, path: "", keyword: "schema" };
-  return check(schema, value, "", 0);
+  const r = check(schema, value, "", 0, budget);
+  return budget.spent ? { ok: false, path: "", keyword: "budget" } : r;
 }
