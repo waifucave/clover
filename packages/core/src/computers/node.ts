@@ -115,6 +115,9 @@ export interface ComputerNode {
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
   treeRootReady(): Promise<void>;
+  /** For shutdown, before `close`: waits up to `timeoutMs` (10 s by default) for what the cloud pairing door started
+   *  (a VM's device label, a make-main card), so it isn't lost. */
+  drain(timeoutMs?: number): Promise<void>;
   /** Cloud computers (with `cloud` and a lease): kept in line with their folders while this computer holds the lease;
    *  `cloud.door()` is what lane H's pairing door calls with a VM's token. */
   cloud: CloudPoint | undefined;
@@ -293,7 +296,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     const authority = leaseAuthority(o.lease);
     const vms = new CloudComputers({
       clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host), providerIds: () => providerIds(c.plugins),
-      authority, confirm: c.confirm, userData: c.userData, pairedDevices: () => o.devices.list().map((d) => d.id),
+      authority, confirm: c.confirm, userData: c.userData, devices: o.devices,
       ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
     });
     const active = () => authority.canAct() && authority.tenure() !== undefined;
@@ -317,6 +320,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}),
     }),
     treeRootReady: () => rootReady,
+    drain: (timeoutMs) => cloud?.drain(timeoutMs) ?? Promise.resolve(),
     close: () => {
       fence?.close();
       offMain();

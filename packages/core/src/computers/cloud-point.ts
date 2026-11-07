@@ -140,6 +140,11 @@ export class CloudPoint {
     return p;
   }
 
+  /** For shutdown: waits, up to `timeoutMs`, for what the pairing door started (a label call, a make-main card). */
+  drain(timeoutMs?: number): Promise<void> {
+    return this.#cloud.drain(timeoutMs);
+  }
+
   /** What lane H's authenticated pairing door calls when a device presents a cloud computer's token. */
   door(): CloudPairingDoor {
     return this.#cloud.door(() => cloudFolders(this.#registry).folders);
