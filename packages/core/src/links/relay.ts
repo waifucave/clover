@@ -13,7 +13,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import { fromBase64, toBase64 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
-import { type AnswerKeyProof, type FileDeviceRegistry, type PeerUpdate, peerUpdateStatement } from "../devices/registry";
+import { type AnswerKeyProof, type AnswerKeyRecord, type FileDeviceRegistry, type PeerUpdate, peerUpdateStatement } from "../devices/registry";
 
 export type RelayParams = z.input<typeof DEVICES_METHODS.peerSessionDeliver.params>;
 
@@ -87,7 +87,11 @@ export function shareDeviceUpdates(
     lastAt = at;
     const update: PeerUpdate = {
       name: self.name, ...(self.computer ? { computer: self.computer } : {}),
-      answerKey: self.answerKey ? { publicKey: self.answerKey.publicKey, held: self.answerKey.held } : null, at,
+      // With its algorithm when it isn't Ed25519 (B's #187), which the update's signature covers.
+      answerKey: self.answerKey
+        ? { publicKey: self.answerKey.publicKey, held: self.answerKey.held, ...((self.answerKey as AnswerKeyRecord).alg === "p256" ? { alg: "p256" as const } : {}) }
+        : null,
+      at,
     };
     const proof = o.registry.ownAnswerKeyProof();
     return { update, signature: toBase64(o.key.sign(peerUpdateStatement(self.id, update))), ...(proof && update.answerKey ? { proof } : {}) };
