@@ -1239,7 +1239,7 @@ async function smoke(): Promise<void> {
           const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
             f.url.startsWith("clover-sealed://") &&
             (cardId === undefined || f.url.includes(cardId)) &&
-            (element === undefined || f.url.includes(element)));
+            (element === undefined || f.url.includes(element) || (element !== undefined && f.url.includes(encodeURIComponent(element)))));
           if (frame !== undefined) {
             log(`sealed-click: frame found ${frame.url.slice(0, 80)}`);
             // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
