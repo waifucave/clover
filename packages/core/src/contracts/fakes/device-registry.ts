@@ -73,6 +73,9 @@ export class FakeDeviceRegistry implements DeviceRegistry {
     if (existing && existing.revokedAt === undefined) throw new ContractError("conflict", `${device.id} is already paired`);
     if (existing?.revokedAt !== undefined) throw new ContractError("refused", `${device.id} was revoked; pair it again with a new key`);
     if (proof.via === "self") throw new ContractError("invalid", "only this device is added as itself");
+    if (proof.via === "cloud-token" && (!device.runsCore || device.computer !== proof.computer)) {
+      throw new ContractError("invalid", `a cloud token adds only the computer ${proof.computer} it was made for`);
+    }
     if ((await deviceIdFor(unb64(device.publicKey))) !== device.id) throw new ContractError("invalid", "the id doesn't match the key");
     const record: DeviceRecord = { ...device, addedAt: this.#clock.now(), addedBy: proof.via };
     this.#devices.set(device.id, record);

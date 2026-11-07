@@ -257,6 +257,10 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (existing && existing.revokedAt === undefined) throw new ContractError("conflict", `${device.id} is already paired`);
     if (existing?.revokedAt !== undefined) throw new ContractError("refused", `${device.id} was revoked; pair it again with a new key`);
     if (proof.via === "self") throw new ContractError("invalid", "only this device is added as itself");
+    // A cloud token adds only the computer it was made for, under that name (§9.2).
+    if (proof.via === "cloud-token" && (!device.runsCore || device.computer !== proof.computer)) {
+      throw new ContractError("invalid", `a cloud token adds only the computer ${proof.computer} it was made for`);
+    }
     const key = publicKeyFromBase64(device.publicKey);
     if (!key || (await deviceIdFor(key)) !== device.id) throw new ContractError("invalid", "the id doesn't match the key");
     if (!NAME_RE.test(device.name)) throw new ContractError("invalid", "a device name is 1–63 characters");

@@ -29,6 +29,7 @@ import type { CardOpener } from "../devices/rpc";
 import type { HandshakeClient } from "./handshake";
 import { HandshakeDirectory } from "./handshake-directory";
 import { PairingService, type PairingRendezvous } from "./pairing";
+import type { CloudPairingDoor } from "../computers/cloud";
 import { mountRenameRequests, shareDeviceUpdates } from "./relay";
 import { allowListsOf, followRegistry, SidecarWire, type SidecarWireOptions } from "./sidecar-wire";
 import { CloverLinkTransport, type LinkTransportOptions, type PeerDirectory } from "./transport";
@@ -74,6 +75,10 @@ export interface DeviceLinksOptions {
   /** The daemon's update gate (`RunningDaemon.updateGate`, lane M's #198): the lease renews just before an update's
    *  restart, so the bots stay here through it (`MainComputerHandle.beforeUpdateRestart`). */
   updateGate?: UpdateRestartGate;
+  /** Cloud computers' single-use tokens at the pair door: lane J's `CloudPoint` (its `door()`), which the computer node
+   *  makes after the links, read at each use. Without one every token is refused. Join tickets are issued, and tokens taken, only
+   *  while this computer runs the bots (the lease's main computer). */
+  cloudTokens?: () => { door(): CloudPairingDoor } | undefined;
 }
 
 export interface DeviceLinks {
@@ -103,6 +108,8 @@ export interface DeviceLinks {
   networkChanged(): Promise<void>;
   /** Where this device is reached, as the sidecar's last net report said (empty on another wire). */
   localAddresses(): { relay?: string; direct: string[] };
+  /** The link sidecar's pid, while it runs (none on another wire). */
+  sidecarPid(): number | undefined;
   close(): Promise<void>;
 }
 
@@ -241,6 +248,12 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     ...(o.rendezvous ? { rendezvous: o.rendezvous } : {}),
     // A merge in a confirmed pairing (R18): the old group's computers are asked to follow, each by its card.
     onMerged: (old, via) => groups?.merged(old, via),
+    // Cloud computers (§9.2): the main computer is the lease's holder while it may act; a computer with no lease here
+    // is its own main.
+    cloud: {
+      isMain: () => (main ? main.lease.state().holder === key.id && main.lease.canAct() : true),
+      consume: async (token, device) => (await o.cloudTokens?.()?.door().consume(token, device)) ?? null,
+    },
   });
 
   // Peers learn this device's name and answer key over the link, so they can check what its app signs (lane D's relay).
@@ -386,6 +399,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     },
     networkChanged,
     localAddresses: () => ({ ...local, direct: [...local.direct] }),
+    sidecarPid: () => sidecar?.pid,
     async close() {
       driver?.close();
       groups?.close();

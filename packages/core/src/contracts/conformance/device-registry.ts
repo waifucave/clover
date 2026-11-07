@@ -108,6 +108,18 @@ export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: 
       expect(await verifyKeySignature("p256", fromBase64(answers.publicKey), data, await answers.sign(data))).toBe(false);
     });
 
+    test("a cloud token adds only a computer that runs the core, under the name the token was made for", async () => {
+      const { registry } = await make({ clock: new FakeClock() });
+      const vm = await makeFakeDevice();
+      const phone = await makeFakeDevice();
+      const add = (d: FakeDevice, extra: { runsCore: boolean; computer?: string; kind: "desktop" | "phone" }, computer: string) =>
+        registry.add({ id: d.id, name: extra.computer ?? "Phone", publicKey: d.publicKey, ...extra }, { via: "cloud-token", computer });
+      expect(isContractError(await add(phone, { kind: "phone", runsCore: false }, "hetzner-1").catch((e: unknown) => e), "invalid")).toBe(true);
+      expect(isContractError(await add(vm, { kind: "desktop", runsCore: true, computer: "gcp-2" }, "hetzner-1").catch((e: unknown) => e), "invalid")).toBe(true);
+      const added = await add(vm, { kind: "desktop", runsCore: true, computer: "hetzner-1" }, "hetzner-1");
+      expect(added).toMatchObject({ computer: "hetzner-1", addedBy: "cloud-token" });
+    });
+
     test("rename", async () => {
       const { registry, device } = await make({ clock: new FakeClock() });
       await registry.rename(device.id, "Studio 2");

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SystemClock } from "../../src/clock/system-clock";
@@ -23,6 +23,8 @@ async function boot(net: MemoryNetwork, name: string) {
   let netChange: ((why: "addresses" | "wake") => void) | undefined;
   const d = await startDaemonLinks({
     home, store, clock, self: { name, os: "macos" }, handlers, binary: null,
+    // Nothing leaves the machine: no handshake, no public time.
+    handshake: null, publicTime: null, mainComputer: { watchSleep: false },
     wire: (key) => net.endpoint(key.publicKey),
     dispatch: async (method, _params, caller, role) => { dispatched.push({ method, caller, role }); return { ok: true }; },
     watch: (fn) => { netChange = fn; return () => {}; },
@@ -37,7 +39,13 @@ describe("the daemon's links (H-M1 wiring)", () => {
     const d = await startDaemonLinks({ home: mkdtempSync(join(tmpdir(), "x-")), store: new CloverSecretStore({ home: mkdtempSync(join(tmpdir(), "y-")), values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }), clock, handlers: {}, binary: null, dispatch: async () => null, log: (l) => lines.push(l) });
     expect(d.links).toBeNull();
     expect(lines[0]).toMatch(/runs without links/);
-    expect(linkSidecarBinary({ CLOVER_LINK_BIN: "/nonexistent/clover-link" })).toBeNull();
+    expect(linkSidecarBinary("/nonexistent/bin/clover-core")).toBeNull();
+    // The environment never names the sidecar that is handed the device key: only the one beside the daemon counts.
+    const bin = mkdtempSync(join(tmpdir(), "clover-c-bin-"));
+    writeFileSync(join(bin, "clover-core"), "");
+    expect(linkSidecarBinary(join(bin, "clover-core"), "darwin")).toBeNull();
+    writeFileSync(join(bin, "clover-link"), "");
+    expect(linkSidecarBinary(join(bin, "clover-core"), "darwin")).toBe(realpathSync(join(bin, "clover-link")));
   });
 
   test("the device key goes in the real store; the devices methods mount; a sensitive change outside the terminal is refused", async () => {

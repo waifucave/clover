@@ -163,7 +163,7 @@ export class TreeTools {
     const as: Caller = { kind: "session", sessionId: ctx.session, sessionKind: ctx.sessionKind, ...(ctx.bot === undefined ? {} : { bot: ctx.bot }) };
     const opts = { as, ...(ctx.level === undefined ? {} : { level: ctx.level }), ...(ctx.answer === undefined ? {} : { answer: ctx.answer }) };
     const tree = this.#o.tree;
-    const where = (p: string) => tree.resolve(p).computer;
+    const where = (p: string) => tree.computersFor([p])[0]!;
     try {
       switch (tool as TreeToolName) {
         case "Read": {
@@ -222,7 +222,7 @@ export class TreeTools {
 
   async #bash(i: Record<string, unknown>, ctx: TreeToolContext, as: Caller): Promise<TreeToolResult> {
     const { cwd, command } = bashTarget(str(i.command, "command"), ctx.cwd);
-    const loc = this.#o.tree.resolve(cwd);
+    const loc = { computer: this.#o.tree.computersFor([cwd])[0]! };
     const c = this.#o.directory.get(loc.computer);
     if (!c?.online) throw new ContractError("computer_offline", `${loc.computer} is offline`, { computer: loc.computer });
     if (command === null) {
@@ -232,7 +232,7 @@ export class TreeTools {
     }
     const direct = transferCommand(command, cwd);
     if (direct) {
-      const ends = [direct.from, direct.to].map((p) => this.#o.tree.resolve(p).computer);
+      const ends = [direct.from, direct.to].map((p) => this.#o.tree.computersFor([p])[0]!);
       if (ends[0] !== ends[1] || ends[0] !== loc.computer) return this.#transfer(direct, ctx, as, loc.computer, cwd);
     }
     const timeoutMs = num(i.timeout);
