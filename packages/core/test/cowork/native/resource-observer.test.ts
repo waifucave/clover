@@ -8,9 +8,10 @@ import {
   type DiskPressureSource, type ResourceBudgetPolicy,
 } from "../../../src/cowork/native/resource-observer";
 import { ledgerFixture } from "./pressure-ledger-fixture";
+import { onDarwin } from "../../helpers/darwin-only";
 
 const GiB = 1024 ** 3, R = COWORK_FREE_SPACE_RESERVE_BYTES;
-const real = process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
+const real = onDarwin && process.arch === "arm64" ? test : test.skip;
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
 

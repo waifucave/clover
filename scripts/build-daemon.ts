@@ -6,7 +6,8 @@
 //   bun run build:daemon --target linux-x64[,…] | --all   cross-compile (Bun fetches the other targets' runtimes)
 //   bun run build:daemon --smoke                          also run the host binary's `--version` on a temp home, its
 //                                                         `__ffi-probe` (bun:ffi, and the bridge's peer-pid check) and
-//                                                         `bridge` (an MCP initialize, K-M1's dispatch)
+//                                                         `bridge` (an MCP initialize, K-M1's dispatch), and
+//                                                         `__verify-feed` (the update feed's check refuses a bad file)
 //   bun run build:daemon --dry-run                        print the commands, build nothing
 //
 // Every `bun build` step gets `--define __CLOVER_DIST__=true` (packages/core/src/build-kind.ts: a dist build ignores
@@ -19,7 +20,7 @@
 // signing is M2's. `--smoke` never starts a daemon: `--version` prints and exits before anything else runs.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -159,7 +160,7 @@ async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<stri
   }
 }
 
-/** `--version`, `__ffi-probe` and `bridge` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
+/** `--version`, `__ffi-probe`, `bridge` and `__verify-feed` from the host binary, on a temp home with a throwaway secret service, so nothing real is near it. */
 async function smoke(binary: string, version: string): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-smoke-"));
   try {
@@ -179,6 +180,16 @@ async function smoke(binary: string, version: string): Promise<void> {
     }
     for (const line of ffiOut.split("\n")) console.log(`build:daemon: smoke: ${line}`);
     console.log(`build:daemon: smoke: ${await smokeBridge(binary, env)}`);
+    // The update feed's check is in the binary, and refuses a file whose signature isn't the feed key's.
+    const feed = join(home, "latest.yml");
+    writeFileSync(feed, "version: 0.0.0\nfiles: []\n");
+    writeFileSync(`${feed}.sig`, Buffer.alloc(64).toString("base64"));
+    const verified = spawnSync(binary, ["__verify-feed", feed], { env, encoding: "utf8", timeout: 60_000 });
+    const verifiedOut = (verified.stdout ?? "").trim();
+    if (verified.status !== 1 || !/^feed: refused \((no key|bad signature)\)$/.test(verifiedOut)) {
+      throw new Error(`${binary} __verify-feed: exit ${verified.status ?? verified.signal}, printed ${JSON.stringify(verifiedOut)} (expected a refusal)`);
+    }
+    console.log(`build:daemon: smoke: ${verifiedOut} for a file the feed key didn't sign`);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

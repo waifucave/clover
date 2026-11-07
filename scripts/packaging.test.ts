@@ -213,8 +213,9 @@ describe("the Homebrew cask", () => {
 
 describe("build-packages.ts", () => {
   test("arguments: the host's architecture by default, every format, and nothing unknown", () => {
-    expect(parseBuildPackagesArgs([], "x64")).toEqual({ arches: ["x64"], formats: ["deb", "rpm", "AppImage"], check: false, dryRun: false });
-    expect(parseBuildPackagesArgs(["--arch", "arm64", "--formats=deb", "--check"], "arm64")).toEqual({ arches: ["arm64"], formats: ["deb"], check: true, dryRun: false });
+    expect(parseBuildPackagesArgs([], "x64")).toEqual({ arches: ["x64"], formats: ["deb", "rpm", "AppImage"], channel: "latest", check: false, dryRun: false });
+    expect(parseBuildPackagesArgs(["--arch", "arm64", "--formats=deb", "--channel", "beta", "--check"], "arm64")).toEqual({ arches: ["arm64"], formats: ["deb"], channel: "beta", check: true, dryRun: false });
+    expect(() => parseBuildPackagesArgs(["--channel", "nightly"], "x64")).toThrow(/latest or beta/);
     // One machine builds its own architecture (clover-link builds natively); a dry run may print any.
     expect(() => parseBuildPackagesArgs(["--arch", "x64,arm64"], "x64")).toThrow(/build arm64 on a machine of that architecture/);
     expect(parseBuildPackagesArgs(["--arch", "x64,arm64", "--dry-run"], "x64").arches).toEqual(["x64", "arm64"]);
@@ -224,7 +225,8 @@ describe("build-packages.ts", () => {
   });
 
   test("electron-builder packages one architecture at a time and never publishes", () => {
-    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never"]);
+    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
+    expect(electronBuilderArgs("x64", ["AppImage"], "beta")).toEqual(["electron-builder", "--linux", "AppImage", "--x64", "--publish", "never", "-c.publish.channel=beta"]);
     expect(packageArchNames("x64")).toEqual({ deb: "amd64", rpm: "x86_64", appImage: "x86_64" });
     expect(packageArchNames("arm64")).toEqual({ deb: "arm64", rpm: "aarch64", appImage: "arm64" });
   });

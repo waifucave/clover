@@ -12,6 +12,7 @@ import { ApprovalBroker } from "../../src/agent/approvals";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
 import { CoworkError, type CoworkErrorCode } from "../../src/cowork/types";
+import { onDarwin } from "../helpers/darwin-only";
 
 // The Bun this fullsync measurement runs on: the pinned one (.bun-version) and its build. Each Bun bump re-runs it
 // and updates the revision (1.4.4's here; it was reviewed on 1.3.14, 0d9b296a).
@@ -42,7 +43,7 @@ export function instructionFixture(checkpoint: (phase: string) => void = () => {
 }
 const fixture = instructionFixture;
 function refusal(fn: () => unknown, code: CoworkErrorCode) { try { fn(); throw new Error("expected refusal"); } catch (error) { expect(error).toBeInstanceOf(CoworkError); expect((error as CoworkError).code).toBe(code); } }
-const native = process.platform === "darwin" && process.arch === "arm64" && process.env.WINTER_COWORK_INSTRUCTION_FS_FIXTURE === "1" ? test : test.skip;
+const native = onDarwin && process.arch === "arm64" && process.env.WINTER_COWORK_INSTRUCTION_FS_FIXTURE === "1" ? test : test.skip;
 test("strict content schema refuses client paths/approval flags and bounds UTF-8 before effects", () => {
  const valid = { workspaceId: "workspace", requestId: "request", expectedInstructionRevision: 1, expectedDigest: "a".repeat(64), content: "guidance" };
  expect(CoworkInstructionUpdate.safeParse(valid).success).toBe(true);
