@@ -16,6 +16,7 @@ import { fenceContextFor } from "../contracts/fence";
 import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote, unixSocketFilter } from "./linux-bwrap";
 import { gitTemplateDir, globalHooksPathDirs, loginStartDirs, loginStartSafeFiles, loginStartUnsafeFiles, selfUpdateFiles } from "./layout";
+import { supervisorArch } from "./linux-supervisor";
 import { revertWatchedGitChanges, watchedGitChanges } from "./git-config";
 import { macFenceProfile } from "./macos-profile";
 import { callerPlaces } from "./per-caller";
@@ -136,12 +137,20 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           }
           const beltBefore = new Map(supervisedFiles.map((p) => [p, existsNoFollow(p)]));
           const configBefore = snapshotFiles(watchedConfigFiles(o.fence.home, r.cwd));
+          // Fail closed: no supervisor, no run. The shim exits 127 with a `(closed)` marker when it can't start
+          // one; a command that prints the marker and exits 127 only refuses itself.
+          if (supervisorArch() === null) {
+            return { kind: "refused", reason: `a fenced process can't be started here: no user-notification supervisor on ${process.arch} (fail closed)` };
+          }
           const plan = bwrapPlan({ policy: o.fence.policy(ctx), cloverHome: o.fence.cloverHome, cwd: r.cwd, uid: process.getuid?.() ?? 0, seccompFd: 3, caller, repoHooks, supervised: supervisedFiles });
           // The supervisor watches the fenced files that don't exist yet (spec item 1116, #198 B1): it refuses
           // plants with EACCES. Its file list reaches the shim as JSON; the template dir rides GIT_TEMPLATE_DIR.
           const shimEnv = { ...r.env, GIT_TEMPLATE_DIR: template, CLOVER_SUPERVISED_FILES: JSON.stringify(supervisedFiles) };
           const result = await runCommand({ ...r, env: shimEnv }, { shell: "sh", argv: [process.execPath, join(import.meta.dir, "linux-sandbox-shim.ts"), bwrap, ...plan.args, "/bin/sh", "-c", r.command], extraFds: [fd] });
           if (result.kind === "refused") return result;
+          if (result.kind === "exited" && result.code === 127 && result.stderr.includes("(closed)")) {
+            return { kind: "refused", reason: `a fenced process can't be started here: ${result.stderr.trim().slice(0, 200)}` };
+          }
           // Repos made during the run weren't on disk at snapshot time: watch their configs as newly appeared.
           for (const p of watchedConfigFiles(o.fence.home, r.cwd)) if (!configBefore.has(p)) configBefore.set(p, null);
           const notes = [

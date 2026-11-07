@@ -396,13 +396,14 @@ describe("a folder held for a fenced file that isn't there yet (accepted for now
 });
 
 describe("the Linux seccomp filter", () => {
-  test("nine instructions: the architecture, io_uring_setup, socket(AF_UNIX) refused; anything else allowed", () => {
+  test("ten instructions: the architecture, x32 numbers, io_uring_setup, socket(AF_UNIX) refused; anything else allowed", () => {
     const f = unixSocketFilter("x64")!;
-    expect(f.length).toBe(9 * 8);
+    expect(f.length).toBe(10 * 8);
     expect(f.readUInt32LE(1 * 8 + 4)).toBe(0xc000003e);
-    expect(f.readUInt32LE(4 * 8 + 4)).toBe(41);
-    expect(unixSocketFilter("arm64")!.readUInt32LE(4 * 8 + 4)).toBe(198);
-    expect(f.readUInt32LE(8 * 8 + 4)).toBe(0x00050001); // EPERM
+    expect(f.readUInt32LE(5 * 8 + 4)).toBe(41);
+    expect(unixSocketFilter("arm64")!.readUInt32LE(5 * 8 + 4)).toBe(198);
+    expect(f.readUInt32LE(9 * 8 + 4)).toBe(0x00050001); // EPERM
+    expect([f.readUInt16LE(3 * 8), f.readUInt32LE(3 * 8 + 4)]).toEqual([0x35, 0x40000000]); // JGE x32
     expect(unixSocketFilter("ia32")).toBeNull();
   });
 });

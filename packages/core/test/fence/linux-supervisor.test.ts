@@ -1,22 +1,45 @@
 import { describe, expect, test } from "bun:test";
-import { buildUserNotifFilter, decideCall, matchUnsafe, openWrites, supervisorArch, type ProcIo } from "../../src/fence/linux-supervisor";
+import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, splitComps, supervisorArch, trapTable, walkToParent, type SupervisorLib } from "../../src/fence/linux-supervisor";
 import { parseGitConfigWatched, revertWatchedGitChanges, watchedGitChanges } from "../../src/fence/git-config";
 
 describe("the supervisor's filter and decisions", () => {
-  test("no supervisor off x86-64; the filter traps the path syscalls and allows the rest", () => {
-    expect(supervisorArch("arm64")).toBeNull();
+  test("no supervisor off x86-64 and arm64; the filter traps the path syscalls and allows the rest", () => {
+    expect(supervisorArch("ia32")).toBeNull();
     expect(supervisorArch("x64")).toBe("x64");
-    expect(buildUserNotifFilter("arm64")).toBeNull();
+    expect(supervisorArch("arm64")).toBe("arm64");
+    expect(buildUserNotifFilter("ia32")).toBeNull();
     const f = buildUserNotifFilter("x64")!;
     expect(f.length % 8).toBe(0);
     const insns = f.length / 8;
-    expect(insns).toBe(3 + 15 + 2); // arch check, call number, one jump per trapped call, allow, trap
+    expect(insns).toBe(4 + 15 + 3); // arch check, call number, x32 refuse, one jump per trapped call, allow, trap, EPERM
     expect([f.readUInt16LE(0), f.readUInt32LE(4)]).toEqual([0x20, 4]); // LD arch
-    expect([f.readUInt16LE((insns - 2) * 8), f.readUInt32LE((insns - 2) * 8 + 4)]).toEqual([0x06, 0x7fff0000]); // allow
-    expect([f.readUInt16LE((insns - 1) * 8), f.readUInt32LE((insns - 1) * 8 + 4)]).toEqual([0x06, 0x7fc00000]); // trap: USER_NOTIF
+    expect([f.readUInt16LE((insns - 3) * 8), f.readUInt32LE((insns - 3) * 8 + 4)]).toEqual([0x06, 0x7fff0000]); // allow
+    expect([f.readUInt16LE((insns - 2) * 8), f.readUInt32LE((insns - 2) * 8 + 4)]).toEqual([0x06, 0x7fc00000]); // trap: USER_NOTIF
+    expect([f.readUInt16LE((insns - 1) * 8), f.readUInt32LE((insns - 1) * 8 + 4)]).toEqual([0x06, 0x00050001]); // x32 and foreign arch: EPERM
     // The openat jump lands on the trap.
-    const openat = 3 + 0; // first trapped call
+    const openat = 4 + 0; // first trapped call
     expect([f.readUInt8(openat * 8 + 2), f.readUInt32LE(openat * 8 + 4)]).toEqual([15 - 0, 257]);
+    // Wrong arch and x32 numbers both land on EPERM.
+    expect(f.readUInt8(1 * 8 + 2)).toBe(0); // JEQ arch: equal falls through
+    expect(f.readUInt32LE(1 * 8 + 4)).toBe(0xc000003e); // x86-64
+    expect([f.readUInt16LE(3 * 8), f.readUInt8(3 * 8 + 2), f.readUInt32LE(3 * 8 + 4)]).toEqual([0x35, 15 + 2, 0x40000000]); // JGE x32
+  });
+
+  test("the arm64 filter traps arm64's *at-only table (no legacy numbers)", () => {
+    const f = buildUserNotifFilter("arm64")!;
+    expect(f.length / 8).toBe(4 + 8 + 3);
+    expect(f.readUInt32LE(1 * 8 + 4)).toBe(0xc00000b7); // AUDIT_ARCH_AARCH64
+    const nrs = trapTable("arm64")!.map((t) => t.nr);
+    expect(nrs).toEqual([56, 437, 34, 33, 382, 38, 37, 36]);
+    expect(nrs).not.toContain(2); // no legacy open
+    expect(nrs).not.toContain(257); // no x64 openat
+    // symlinkat's linkpath is its third argument, under its second (the new dirfd).
+    expect(trapTable("x64")!.find((t) => t.nr === 266)).toMatchObject({ dirfd: 1, paths: [2] });
+    expect(trapTable("arm64")!.find((t) => t.nr === 36)).toMatchObject({ dirfd: 1, paths: [2] });
+    expect(trapTable("ia32")).toBeNull();
   });
 
   test("openWrites reads the access and creation flags", () => {
@@ -30,64 +53,116 @@ describe("the supervisor's filter and decisions", () => {
     expect(openWrites(0o2000000n)).toBe(false); // O_NOFOLLOW alone reads
   });
 
-  test("matchUnsafe is exact, or folded as the disk would", () => {
-    expect(matchUnsafe("/h/.bash_profile", ["/h/.bash_profile"])).toBe(true);
-    expect(matchUnsafe("/h/.bashrc", ["/h/.bash_profile"])).toBe(false);
-    expect(matchUnsafe("/h/.BASH_PROFILE", ["/h/.bash_profile"])).toBe(true); // folding disk
+  test("foldName matches the way the disks fold", () => {
+    expect(foldName("/h/.bash_profile")).toBe(foldName("/h/.BASH_PROFILE"));
+    expect(foldName("a")).not.toBe(foldName("b"));
   });
 
-  const ioFor = (files: Record<string, string>, cwd = "/h/work"): ProcIo => ({
-    readlink: (p) => {
-      if (p === `/proc/4242/cwd`) return cwd;
-      const m = /^\/proc\/4242\/fd\/(\d+)$/.exec(p);
-      if (m !== null) return { 3: "/h/work", 4: "/h" }[m[1]!] ?? null;
-      return null;
-    },
-    readMem: (_pid, addr, _len) => {
-      const text = files[Number(addr)] ?? null;
-      return text === null ? null : Buffer.from(`${text}\0`, "utf8");
-    },
-  });
-  const call = (nr: number, args: (bigint | number)[], extra: Record<string, string> = {}, cwd = "/h/work") =>
-    decideCall({ nr, args: args.map(BigInt), pid: 4242 }, ["/h/.bash_profile", "/h/.git/hooks", "/h/other"], ioFor(extra, cwd));
-
-  test("reads pass, writes to supervised folders don't", () => {
-    // openat read of an ordinary file.
-    expect(call(257, [3, 0x1000], { 0x1000: "/h/work/a.txt" })).toBe("allow");
-    // openat write: an absolute supervised path is denied whatever the dirfd.
-    expect(call(257, [3, 0x1000, 0o1], { 0x1000: "/h/.bash_profile" })).toBe("deny");
-    expect(call(257, [4, 0x1000, 0o1], { 0x1000: ".bash_profile" })).toBe("deny"); // dirfd 4 = /h
-    expect(call(2, [0x1000, 0o0], { 0x1000: "/h/.bash_profile" })).toBe("allow"); // O_RDONLY reads pass
-    expect(call(2, [0x1000, 0o1], { 0x1000: "/h/.bash_profile" })).toBe("deny");
-    // creat always writes.
-    expect(call(85, [0x1000, 0o644], { 0x1000: "/h/.bash_profile" })).toBe("deny");
-    expect(call(85, [0x1000, 0o644], { 0x1000: "/h/work/new.txt" })).toBe("allow");
-    // mkdir, symlink, link and rename on supervised paths.
-    expect(call(258, [3, 0x1000], { 0x1000: "/h/.ssh" })).toBe("allow"); // not supervised in this list
-    expect(call(88, [0x1000, 0x2000], { 0x1000: "/bin/true", 0x2000: "/h/.bash_profile" })).toBe("deny");
-    expect(call(264, [3, 0x1000, 4, 0x2000], { 0x1000: "a", 0x2000: ".bash_profile" })).toBe("deny");
-    expect(call(264, [3, 0x1000, 4, 0x2000], { 0x1000: "a", 0x2000: "b" })).toBe("allow");
-    // An untrappable call and an unreadable target.
-    expect(call(0, [1, 2, 3])).toBe("allow"); // read: not trapped
-    expect(call(257, [3, 0x1000, 0o1], {})).toBe("deny"); // fail closed
-    // AT_FDCWD arrives as an unsigned word (2^64-100): relative paths still resolve against the cwd.
-    const AT_FDCWD_U = 2n ** 64n - 100n;
-    expect(decideCall({ nr: 257, args: [AT_FDCWD_U, 0x1000n, 0o1n], pid: 4242 }, ["/h/.bash_profile"], ioFor({ 0x1000: ".bash_profile" }, "/h"))).toBe("deny");
-    expect(decideCall({ nr: 257, args: [AT_FDCWD_U, 0x1000n, 0o1n], pid: 4242 }, ["/h/.bash_profile"], ioFor({ 0x1000: "notes.txt" }, "/h"))).toBe("allow");
+  test("splitComps drops empties and keeps dot-dots for the walk to pin", () => {
+    expect(splitComps("/a//b/c")).toEqual(["a", "b", "c"]);
+    expect(splitComps("a/./b")).toEqual(["a", ".", "b"]);
+    expect(splitComps("../x")).toEqual(["..", "x"]);
   });
 
-  test("openat2 reads its write intent from open_how", () => {
-    const how = (flags: bigint) => {
-      const b = Buffer.alloc(24);
-      b.writeBigUInt64LE(flags, 0);
-      return b;
-    };
-    const io: ProcIo = {
-      readlink: (p) => (p === "/proc/4242/cwd" ? "/h" : p === "/proc/4242/fd/3" ? "/h" : null),
-      readMem: (_pid, addr, _len) => (addr === 0x3000n ? how(0n) : addr === 0x3001n ? how(0o1n) : addr === 0x1000n ? Buffer.from(".bash_profile\0") : null),
-    };
-    expect(decideCall({ nr: 437, args: [3n, 0x1000n, 0x3000n], pid: 4242 }, ["/h/.bash_profile"], io)).toBe("allow");
-    expect(decideCall({ nr: 437, args: [3n, 0x1000n, 0x3001n], pid: 4242 }, ["/h/.bash_profile"], io)).toBe("deny");
+  test("trap tables cover every mutating path syscall once", () => {
+    const x64 = trapTable("x64")!.map((t) => t.nr);
+    for (const nr of [257, 437, 2, 85, 258, 83, 259, 133, 316, 264, 38, 265, 86, 266, 88]) expect(x64).toContain(nr);
+    expect(new Set(x64).size).toBe(x64.length); // no duplicates
+  });
+});
+
+const linuxOnly = process.platform === "linux" ? describe : describe.skip;
+
+linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
+  const lib = (): SupervisorLib => {
+    const l = openSupervisorLib();
+    if (l === null) throw new Error("no supervisor lib on this machine");
+    return l;
+  };
+  test("resolveBase opens the cwd, a dir fd, and the root; refuse the rest", () => {
+    const l = lib();
+    const me = process.pid;
+    const cwd = resolveBase(l, me, false, -100);
+    expect(cwd.err).toBe(0);
+    expect(cwd.fd).toBeGreaterThanOrEqual(0);
+    closeSync(cwd.fd);
+    const root = resolveBase(l, me, true, -100);
+    expect(root.err).toBe(0);
+    closeSync(root.fd);
+    expect(resolveBase(l, me, false, 999999).fd).toBe(-1); // no such fd
+    expect(resolveBase(l, 1 << 30, false, -100).fd).toBe(-1); // no such pid
+    // A non-directory fd is ENOTDIR, not a base.
+    const f = openSync(__filename, "r");
+    try {
+      const bad = resolveBase(l, me, false, f);
+      expect(bad.fd).toBe(-1);
+      expect(bad.err).toBe(20);
+    } finally { closeSync(f); }
+  });
+
+  test("walkToParent walks, pins, and refuses links", () => {
+    const l = lib();
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "walk-")));
+    try {
+      mkdirSync(join(root, "a", "b"), { recursive: true });
+      writeFileSync(join(root, "a", "f.txt"), "x");
+      symlinkSync(join(root, "a"), join(root, "slink"));
+      const base = openSync(root, 0o200000); // O_RDONLY|O_DIRECTORY
+      try {
+        const w = walkToParent(l, base, ["a", "b", "c"]);
+        if (!("parentFd" in w)) throw new Error(`walk failed: ${JSON.stringify(w)}`);
+        expect(w.name).toBe("c");
+        const id = parentIdentity(w.parentFd);
+        if (id === null) throw new Error("no identity for a walked-open dir");
+        const st = lstatSync(join(root, "a", "b"));
+        expect({ dev: BigInt(st.dev), ino: BigInt(st.ino) }).toEqual(id);
+        // Name with a slash never survives the split: components walk one level each.
+        const w2 = walkToParent(l, base, ["a", "f.txt"]);
+        if (!("parentFd" in w2)) throw new Error("walk failed");
+        expect(matchSupervised(w2.parentFd, w2.name, [join(root, "a", "f.txt")])).toBe(true);
+        expect(matchSupervised(w2.parentFd, w2.name, [join(root, "a", "other")])).toBe(false);
+        expect(matchSupervised(w2.parentFd, w2.name, [join(root, "nope", "f.txt")])).toBe(false);
+        try { closeSync(w.parentFd); } catch { /* pinned */ }
+        try { closeSync(w2.parentFd); } catch { /* pinned */ }
+        // Through a link: refused with ELOOP, never followed.
+        const wl = walkToParent(l, base, ["slink", "b", "c"]);
+        expect(wl).toEqual({ errno: 40 });
+        // Dot-dot stays under the base's root (the walk pins it, as the kernel does).
+        const wd = walkToParent(l, base, ["a", "..", "a", "x"]);
+        if (!("parentFd" in wd)) throw new Error("walk failed");
+        expect(wd.name).toBe("x");
+        try { closeSync(wd.parentFd); } catch { /* pinned */ }
+        // Empty path is ENOENT, as the kernel.
+        expect(walkToParent(l, base, [])).toEqual({ errno: 2 });
+      } finally { try { closeSync(base); } catch { /* consumed or pinned */ } }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("lstatFinal tells missing, link, dir and file apart without following", () => {
+    const l = lib();
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "fin-")));
+    try {
+      mkdirSync(join(root, "d"));
+      writeFileSync(join(root, "f"), "x");
+      symlinkSync(join(root, "f"), join(root, "s"));
+      const base = openSync(root, 0o200000);
+      try {
+        expect(lstatFinal(l, base, "missing")).toEqual({ kind: "missing" });
+        expect(lstatFinal(l, base, "s")).toEqual({ kind: "link" }); // not followed to f
+        expect(lstatFinal(l, base, "d")).toEqual({ kind: "dir" });
+        expect(lstatFinal(l, base, "f")).toEqual({ kind: "other" });
+      } finally { try { closeSync(base); } catch { /* pinned */ } }
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("readCString reads the target's bytes once (self-read)", () => {
+    const l = lib();
+    const { ptr } = require("bun:ffi") as typeof import("bun:ffi");
+    const buf = Buffer.from("hello-self\0TRAILING", "utf8");
+    const addr = BigInt(ptr(buf) as unknown as number);
+    expect(readCString(l, process.pid, addr)).toBe("hello-self");
+    expect(readPathOnce(l, process.pid, addr, 5)).toEqual(Buffer.from("hello", "utf8"));
+    expect(readCString(l, process.pid, 0n)).toBeNull();
   });
 });
 
