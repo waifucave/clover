@@ -16,6 +16,11 @@
 //   only when its signature checks against the writer's key in this computer's registry, and that writer is a
 //   computer of the user's, not revoked, entitled to the bot's memory. What a sender says about who wrote it is never
 //   taken on its word. A push is taken only from such a computer too, and mail only when its sender's signature checks.
+//   An entry refused for its writer is skipped and the rest taken, so a revoked writer's earlier versions that another
+//   computer passes on never hold up the others (they are dropped, as unsynced edits of a lost device are).
+// * **Counters and times are bounded** (#232's review): each counter at most `COUNTER_STEP` past the highest this
+//   computer has seen of that writer, all well under `MAX_COUNTER`, and no time ahead of the shared clock by more than
+//   `MAX_AHEAD_MS`, so no vector or stamp can pin a file.
 // * **Live:** each change goes to every linked computer as `sync.push` on the stream `memory:<bot>`, and each computer
 //   passes on what it takes, so a change crosses computers that aren't linked to each other directly. When a link
 //   comes up, each side asks the other for its heads and pulls what it lacks (`sync.heads`, `sync.pull`).
@@ -26,6 +31,8 @@
 //   (memory-keys.ts), rotated when a device is revoked.
 // * **Caps, at the receiver:** entries per push, bytes per file, bytes and files per bot. A push over any of them is
 //   refused whole, never cut short.
+// * **Every paired computer of the user keeps every bot's memory** (the ruling on #232's S4: a bot is live on every
+//   computer); never a phone, a browser or a device that doesn't run the core.
 // * **Paths** are names in the bot's memory folder, folded (NFC, case) to compare; `..`, absolute paths and other
 //   bots' paths are refused; nothing is written through a link (memory-files.ts).
 import { isAnyPluginId, pluginIdFromSegment } from "@waifucave/clover-protocol";
@@ -40,7 +47,7 @@ import { sealToBoxKey } from "../identity/box-key";
 import { type Bytes, fromBase64, fromBase64Url, fromUtf8, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { botSegment } from "../sessions/ids";
-import type { SyncMailbox } from "./mailbox";
+import { MAIL_MAX_PIECE, type SyncMailbox } from "./mailbox";
 import { listMemory, memoryPath, readMemoryFile, removeMemoryFile, sha256Hex, writeMemoryFile } from "./memory-files";
 import { ContentKeyRing, contentAad, type SharedContentKey } from "./memory-keys";
 import { mountSyncStreams } from "./streams";
@@ -51,9 +58,17 @@ const DEVICE_RE = /^[a-z0-9]{16,64}$/;
 const HASH_RE = /^[0-9a-f]{64}$/;
 /** What one push or one pull page carries at most in content (the link's own frames are smaller; it splits them). */
 const PAGE_BYTES = 4 * 1024 * 1024;
-/** What one piece of mail carries at most before sealing (the relay takes 1 MiB a piece). */
-const MAIL_BYTES = 640 * 1024;
+/** What one piece of mail seals to at most: the relay takes 1 MiB a piece (`MAIL_MAX_PIECE`), less some room. */
+const MAIL_PIECE_BYTES = MAIL_MAX_PIECE - 4 * 1024;
 const MAIL_TTL_MS = 30 * 24 * 3_600_000;
+/** How far one writer's counter may run past the highest this computer has seen of it (#232's review, B2): far more
+ *  than a lagging computer misses, far less than the counters' room, so no vector can be pushed to where nobody can
+ *  write past it. */
+export const COUNTER_STEP = 2 ** 20;
+/** Counters stay well below the largest safe integer. */
+export const MAX_COUNTER = 2 ** 48;
+/** How far ahead of the shared clock a version's time may be. */
+export const MAX_AHEAD_MS = 10 * 60_000;
 
 export interface MemoryLimits {
   /** Entries in one `sync.push` (or one pull page, or one piece of mail). */
@@ -98,7 +113,10 @@ interface Tracked {
 
 type Applied = "old" | "new" | "newer" | "same" | "conflict";
 type Refusal = "too_many" | "too_large" | "over_quota" | "bad_path" | "not_writer" | "need_key" | "refused";
-export type PushResult = { ok: true; took: number; conflicts: number } | { ok: false; reason: Refusal; detail?: string };
+/** Why one entry was skipped while the rest were taken: its writer (forged, unknown or revoked), counters past the
+ *  bound, or a time ahead of the shared clock. */
+export type SkipReason = "not_writer" | "counters" | "ahead";
+export type PushResult = { ok: true; took: number; conflicts: number; skipped?: { rel: string; reason: SkipReason }[] } | { ok: false; reason: Refusal; detail?: string };
 
 export interface MemorySyncOptions {
   /** The Clover home: memories are in `bots/<bot>/memory/` there, this sync's own state in `sync/`. */
@@ -124,6 +142,8 @@ export interface MemorySyncOptions {
   mailbox?: SyncMailbox;
   /** How long changes wait to go out as mail, so a burst of writes is one piece (30 s by default). */
   mailDelayMs?: number;
+  /** How long mail the relay didn't keep waits to go again (60 s by default). */
+  mailRetryMs?: number;
   /** Whether a computer may hold a bot's memory: by default every paired computer that runs the core and isn't
    *  revoked, from this computer's registry. */
   entitled?(device: string, bot: string): boolean;
@@ -146,6 +166,8 @@ export class MemorySync {
   readonly #scanSoon = new Set<string>();
   readonly #up = new Set<string>();
   readonly #warned = new Set<string>();
+  /** The ids of mail taken lately. */
+  readonly #mailSeen = new Set<string>();
   #flushing = false;
   #mailTimer: ReturnType<typeof setTimeout> | undefined;
   #closed = false;
@@ -159,7 +181,7 @@ export class MemorySync {
   }
 
   static async start(o: MemorySyncOptions): Promise<MemorySync> {
-    const ring = await ContentKeyRing.open({ self: o.self, home: o.home, store: o.store, registry: o.registry, now: o.now });
+    const ring = await ContentKeyRing.open({ self: o.self, home: o.home, store: o.store, registry: o.registry, sign: (d) => o.key.sign(d), now: o.now });
     const s = new MemorySync(o, ring);
     s.#mount();
     return s;
@@ -221,10 +243,16 @@ export class MemorySync {
     for (let rounds = 0; rounds < 64; rounds++) {
       const pieces = await box.take({ max: 16 });
       if (pieces.length === 0) break;
-      for (const p of pieces) taken += await this.#openMail(p.sealed).catch((e: unknown) => {
-        this.#log(`mail ${p.id} wasn't taken: ${errText(e)}`);
-        return 0;
-      });
+      for (const p of pieces) {
+        // Bounded before it is parsed, and each piece once (S5).
+        if (p.sealed.length > MAIL_MAX_PIECE || this.#mailSeen.has(p.id)) continue;
+        this.#mailSeen.add(p.id);
+        if (this.#mailSeen.size > 4_096) this.#mailSeen.delete(this.#mailSeen.values().next().value!);
+        taken += await this.#openMail(p.sealed).catch((e: unknown) => {
+          this.#log(`mail ${p.id} wasn't taken: ${errText(e)}`);
+          return 0;
+        });
+      }
       await box.ack(pieces.map((p) => p.id));
     }
     return taken;
@@ -350,20 +378,39 @@ export class MemorySync {
 
   // ---- taking versions ----
 
-  /** Takes versions `from` sent for `bot` (a push, a pull page or mail): all or none. */
+  /** Takes versions `from` sent for `bot` (a push, a pull page or mail). The caps and the quota are all or none, and so
+   *  is an entry the sender itself made wrong (a bad path, content that doesn't match, a key it didn't send); an entry
+   *  refused for its writer (forged, unknown or revoked, #232's review B3: a revoked writer's earlier versions another
+   *  computer passes on are skipped), for counters past the bound (B2) or a time ahead of the shared clock is skipped
+   *  and logged, and the rest are taken. Keys come in only for the kids the checked entries use (B1). */
   async #take(bot: string, raw: unknown, from: string, keys?: unknown): Promise<PushResult> {
     if (!Array.isArray(raw)) return { ok: false, reason: "refused" };
     if (raw.length > this.#limits.pushEntries) return { ok: false, reason: "too_many", detail: `more than ${this.#limits.pushEntries} entries` };
-    if (keys !== undefined) await this.#ring.take(keys, from);
-    // Every entry is checked before any is taken.
-    const checked: { key: string; names: string[]; v: MemoryVersion; data?: Bytes }[] = [];
+    // Every entry is checked before any is taken: first what needs no key (its path, its writer and signature, its
+    // counters and time), then the keys its kids name, then its content.
+    const seen = this.#seenCounters(bot);
+    const skipped: { rel: string; reason: SkipReason }[] = [];
+    const signed: { key: string; names: string[]; v: MemoryVersion; e: MemoryEntry }[] = [];
     for (const e of raw as MemoryEntry[]) {
-      const c = await this.#check(bot, e);
+      const c = await this.#checkSigned(bot, e, seen);
+      if ("skip" in c) {
+        skipped.push({ rel: typeof e?.rel === "string" ? e.rel.slice(0, 200) : "?", reason: c.skip });
+        continue;
+      }
       if ("reason" in c) return { ok: false, ...c };
-      checked.push(c);
+      signed.push(c);
     }
+    const kids = new Set(signed.map((c) => c.e.kid).filter((k): k is string => typeof k === "string"));
+    if (keys !== undefined) await this.#ring.take(keys, from, kids);
+    const checked: { key: string; names: string[]; v: MemoryVersion; data?: Bytes }[] = [];
+    for (const c of signed) {
+      const opened = this.#openEntry(bot, c);
+      if ("reason" in opened) return { ok: false, ...opened };
+      checked.push(opened);
+    }
+    for (const s of skipped) this.#log(`${bot}'s ${s.rel} from ${from} skipped: ${s.reason}`);
     // From here on nothing waits, so no other push for this bot runs in between.
-    if (checked.length === 0) return { ok: true, took: 0, conflicts: 0 };
+    if (checked.length === 0) return { ok: true, took: 0, conflicts: 0, skipped };
     this.#scanAndMark(bot);
     const files = this.#files(bot);
     let bytes = 0;
@@ -401,34 +448,56 @@ export class MemorySync {
       this.#mark(bot, c.key, files.get(c.key)?.cur === c.v ? from : undefined);
     }
     if (took > 0) this.#save(bot);
-    return { ok: true, took, conflicts };
+    return { ok: true, took, conflicts, skipped };
   }
 
-  /** One entry checked: its path, its writer (by its signature, against this computer's registry), its size, and its
-   *  content (it opens and hashes to what was signed). */
-  async #check(bot: string, e: MemoryEntry): Promise<{ key: string; names: string[]; v: MemoryVersion; data?: Bytes } | { reason: Refusal; detail?: string }> {
+  /** What needs no key: the path, the writer (by its signature, against this computer's registry), the counters and
+   *  the time. A refusal for the entry's writer, its counters or its time skips it (`skip`); anything else the sender
+   *  got wrong refuses the push (`reason`). */
+  async #checkSigned(bot: string, e: MemoryEntry, seen: Vv): Promise<{ key: string; names: string[]; v: MemoryVersion; e: MemoryEntry } | { skip: SkipReason } | { reason: Refusal; detail?: string }> {
     if (!e || typeof e !== "object") return { reason: "refused" };
     const p = memoryPath(e.rel);
     if ("refused" in p) return { reason: "bad_path", detail: p.refused };
     if (p.rel !== e.rel) return { reason: "bad_path", detail: "not in NFC" };
-    if (!isVv(e.vv) || typeof e.ts !== "number" || !Number.isFinite(e.ts) || typeof e.by !== "string" || !DEVICE_RE.test(e.by) || typeof e.sig !== "string") return { reason: "refused" };
+    // Counters past the cap are a vector nobody could write past: skipped, as counters past the bound are (B2).
+    if (e.vv && typeof e.vv === "object" && Object.values(e.vv).some((n) => typeof n === "number" && n > MAX_COUNTER)) return { skip: "counters" };
+    if (!isVv(e.vv) || typeof e.ts !== "number" || !Number.isSafeInteger(e.ts) || typeof e.by !== "string" || !DEVICE_RE.test(e.by) || typeof e.sig !== "string") return { reason: "refused" };
     if (!Number.isSafeInteger(e.size) || e.size < 0) return { reason: "refused" };
     if (e.size > this.#limits.fileBytes) return { reason: "too_large", detail: `${e.rel} is over ${this.#limits.fileBytes} bytes` };
     if (e.hash !== null && (typeof e.hash !== "string" || !HASH_RE.test(e.hash))) return { reason: "refused" };
     if (e.hash === null && e.size !== 0) return { reason: "refused" };
     if (!(e.vv[e.by]! >= 1)) return { reason: "refused" };
     // The writer, from this computer's own registry: a computer of the user's that keeps this bot's memory, whose key
-    // made the signature. A version another computer signed, or no computer did, is refused.
-    if (!this.#entitled(e.by, bot)) return { reason: "not_writer" };
+    // made the signature. A version another computer signed, or no computer did, or a revoked one, is skipped.
+    if (!this.#entitled(e.by, bot)) return { skip: "not_writer" };
     const v: MemoryVersion = { rel: e.rel, vv: { ...e.vv }, ts: e.ts, by: e.by, hash: e.hash, size: e.size, sig: e.sig };
     const sig = fromBase64(e.sig);
-    if (!sig || !(await this.#o.registry.verify(e.by, versionStatement(bot, v), sig))) return { reason: "not_writer" };
-    if (e.hash === null) return { key: p.key, names: p.names, v };
+    if (!sig || !(await this.#o.registry.verify(e.by, versionStatement(bot, v), sig))) return { skip: "not_writer" };
+    // Counters within a step of what this computer has seen of each writer (B2), so no one can push a file's vector to
+    // where nobody can write past it; and no time ahead of the shared clock, which would win every conflict (S5).
+    for (const [w, n] of Object.entries(e.vv)) if (n > (seen[w] ?? 0) + COUNTER_STEP) return { skip: "counters" };
+    if (e.ts > this.#o.now() + MAX_AHEAD_MS) return { skip: "ahead" };
+    return { key: p.key, names: p.names, v, e };
+  }
+
+  /** The content: it opens under its key and hashes to what was signed. */
+  #openEntry(bot: string, c: { key: string; names: string[]; v: MemoryVersion; e: MemoryEntry }): { key: string; names: string[]; v: MemoryVersion; data?: Bytes } | { reason: Refusal; detail?: string } {
+    const { e, v } = c;
+    if (v.hash === null) return { key: c.key, names: c.names, v };
     if (typeof e.kid !== "string" || typeof e.box !== "string") return { reason: "refused" };
+    // A box's length follows from the size it says, before anything is decoded (S5).
+    if (e.box.length > boxChars(v.size)) return { reason: "refused", detail: `${v.rel}'s box is longer than its size` };
     if (!this.#ring.has(e.kid)) return { reason: "need_key" };
-    const data = this.#ring.open(e.kid, contentAad({ kid: e.kid, bot, key: p.key, hash: e.hash }), e.box);
-    if (!data || data.length !== e.size || sha256Hex(data) !== e.hash) return { reason: "refused", detail: `${e.rel}'s content doesn't match its version` };
-    return { key: p.key, names: p.names, v, data };
+    const data = this.#ring.open(e.kid, contentAad({ kid: e.kid, bot, key: c.key, hash: v.hash }), e.box);
+    if (!data || data.length !== v.size || sha256Hex(data) !== v.hash) return { reason: "refused", detail: `${v.rel}'s content doesn't match its version` };
+    return { key: c.key, names: c.names, v, data };
+  }
+
+  /** The highest counter this computer has seen of each writer in a bot's memory. */
+  #seenCounters(bot: string): Vv {
+    const out: Vv = {};
+    for (const t of this.#files(bot).values()) for (const [w, n] of Object.entries(t.ctx)) if (n > (out[w] ?? 0)) out[w] = n;
+    return out;
   }
 
   /** Puts one checked version in place. */
@@ -471,28 +540,21 @@ export class MemorySync {
 
   /** The losing side of a conflict, kept beside the file as a file of its own: `<name> (conflict <computer> <date>)`. */
   #keepConflict(bot: string, loser: MemoryVersion, data: Uint8Array): void {
-    const files = this.#files(bot);
-    const d = this.#o.registry.get(loser.by);
-    const who = cleanName(d?.computer ?? d?.name ?? loser.by.slice(0, 8));
-    const date = new Date(loser.ts).toISOString().slice(0, 10);
-    const names = loser.rel.split("/");
-    const last = names.pop()!;
-    const dot = last.lastIndexOf(".");
-    const stem = dot > 0 ? last.slice(0, dot) : last;
-    const ext = dot > 0 ? last.slice(dot) : "";
+    // The name is made from what the loser's writer signed alone, so every computer makes the same one (#232's
+    // review, S3): its writer's id, the version's date and its content's hash.
+    const p = conflictPath(loser.rel, `${loser.by.slice(0, 8)} ${new Date(loser.ts).toISOString().slice(0, 10)} ${loser.hash!.slice(0, 8)}`);
+    if (!p) return;
+    this.#placeCopy(bot, p, data);
+  }
+
+  /** Writes a copy at its own path and gives it a version of this computer's, unless it is there already. */
+  #placeCopy(bot: string, p: { names: string[]; rel: string; key: string }, data: Uint8Array): void {
     const hash = sha256Hex(data);
-    for (let n = 1; n < 100; n++) {
-      const name = `${stem} (conflict ${who} ${date}${n === 1 ? "" : ` ${n}`})${ext}`;
-      const p = memoryPath([...names, name].join("/"));
-      if ("refused" in p) return;
-      const t = files.get(p.key);
-      if (t && t.cur.hash === hash) return;
-      if (t && t.cur.hash !== null) continue;
-      const w = writeMemoryFile(this.#o.home, this.#root(bot), p.names, data);
-      this.#version(bot, p.key, p.rel, hash, data.length, w.mtimeMs);
-      this.#mark(bot, p.key, undefined);
-      return;
-    }
+    const t = this.#files(bot).get(p.key);
+    if (t && t.cur.hash === hash) return;
+    const w = writeMemoryFile(this.#o.home, this.#root(bot), p.names, data);
+    this.#version(bot, p.key, p.rel, hash, data.length, w.mtimeMs);
+    this.#mark(bot, p.key, undefined);
   }
 
   // ---- this computer's own changes ----
@@ -505,8 +567,27 @@ export class MemorySync {
     if (over) this.#warn(`${bot}:files`, `${bot}'s memory has more than ${this.#limits.botFiles} files; the rest don't sync`);
     const seen = new Set<string>();
     const changed: string[] = [];
+    // Two names that fold alike (`Notes.md` and `notes.md` on a case-sensitive disk) are one file to every other
+    // computer (#232's review, S2): the one this computer already tracks keeps the path, and the other becomes a
+    // conflict copy beside it, so neither silently undoes the other's edits.
+    const byKey = new Map<string, typeof disk>();
+    for (const f of disk) byKey.set(f.key, [...(byKey.get(f.key) ?? []), f]);
+    for (const [key, same] of byKey) {
+      if (same.length < 2) continue;
+      const keep = same.find((f) => f.rel === files.get(key)?.cur.rel) ?? same[0]!;
+      for (const f of same) {
+        if (f === keep) continue;
+        const read = readMemoryFile(this.#o.home, root, f.rel, this.#limits.fileBytes, { exact: true });
+        const p = read ? conflictPath(f.rel, `${this.#o.self.slice(0, 8)} ${new Date(this.#o.now()).toISOString().slice(0, 10)} ${sha256Hex(read.data).slice(0, 8)}`) : undefined;
+        if (!read || !p) continue;
+        this.#warn(`${bot}:fold:${f.rel}`, `${bot}'s ${f.rel} and ${keep.rel} are one name to other computers: ${f.rel} is kept as ${p.rel}`);
+        this.#placeCopy(bot, p, read.data);
+        removeMemoryFile(this.#o.home, root, f.rel.split("/"), { exact: true });
+        changed.push(p.key);
+      }
+    }
     for (const f of disk) {
-      if (seen.has(f.key)) continue; // two names one fold apart on a case-sensitive disk: the first syncs
+      if (seen.has(f.key) || (byKey.get(f.key)!.length > 1 && f.rel !== (byKey.get(f.key)!.find((x) => x.rel === files.get(f.key)?.cur.rel) ?? byKey.get(f.key)![0]!).rel)) continue;
       seen.add(f.key);
       const t = files.get(f.key);
       if (f.size > this.#limits.fileBytes) {
@@ -583,11 +664,7 @@ export class MemorySync {
       if (!this.#o.mailbox || own.length === 0) continue;
       for (const d of this.#o.registry.list()) {
         if (d.id === this.#o.self || !this.#isComputer(d.id) || up.includes(d.id) || !this.#entitled(d.id, bot)) continue;
-        const forPeer = this.#mail.get(d.id) ?? new Map<string, Set<string>>();
-        const set = forPeer.get(bot) ?? new Set<string>();
-        for (const k of own) set.add(k);
-        forPeer.set(bot, set);
-        this.#mail.set(d.id, forPeer);
+        this.#queueMail(d.id, bot, own);
       }
     }
     if (this.#mail.size > 0 && !this.#mailTimer) {
@@ -651,6 +728,7 @@ export class MemorySync {
     if (!box) return;
     const all = [...this.#mail];
     this.#mail.clear();
+    let retry = false;
     for (const [peer, bots] of all) {
       const to = this.#boxKeyOf(peer);
       if (!to) {
@@ -659,21 +737,86 @@ export class MemorySync {
       }
       if (!this.#isComputer(peer)) continue;
       const kid = (await this.#ring.sealingKey([peer])).kid;
-      for (const [bot, keys] of bots) {
-        for (const page of this.#pages(bot, [...keys], kid, MAIL_BYTES)) {
-          const id = `mem-${toBase64Url(crypto.getRandomValues(new Uint8Array(12)))}`;
-          const plain = { v: 1, from: this.#o.self, to: peer, id, at: this.#o.now(), bot, entries: page, keys: this.#ring.sharedWith(peer, [kid]) };
-          const sealedBox = sealToBoxKey(to, mailAad(this.#o.self, peer, id), utf8(JSON.stringify(plain)), MAIL_INFO);
-          const sig = toBase64(this.#o.key.sign(mailStatement(this.#o.self, peer, id, sealedBox)));
-          const sealed = utf8(JSON.stringify({ v: 1, from: this.#o.self, id, box: sealedBox, sig }));
+      const keys = this.#ring.sharedWith(peer, [kid]);
+      for (const [bot, wanted] of bots) {
+        // Pieces are cut by their sealed size, measured (#232's review, B4): what isn't kept stays queued and goes
+        // again, so nothing is lost to a refused piece.
+        for (const piece of this.#mailPieces(peer, to, bot, [...wanted], kid, keys)) {
           try {
-            await box.put({ to: peer, id, sealed, expiresAt: Date.now() + MAIL_TTL_MS });
+            await box.put({ to: peer, id: piece.id, sealed: piece.sealed, expiresAt: Date.now() + MAIL_TTL_MS });
           } catch (e) {
-            this.#log(`memory mail for ${peer} wasn't kept: ${errText(e)}`);
+            this.#log(`memory mail for ${peer} wasn't kept (it goes again): ${errText(e)}`);
+            this.#queueMail(peer, bot, piece.keys);
+            retry = true;
           }
         }
       }
     }
+    if (retry && !this.#closed && !this.#mailTimer) {
+      this.#mailTimer = setTimeout(() => {
+        this.#mailTimer = undefined;
+        void this.#sendMail().catch((e: unknown) => this.#log(`sending memory mail: ${errText(e)}`));
+      }, this.#o.mailRetryMs ?? 60_000);
+      (this.#mailTimer as { unref?: () => void }).unref?.();
+    }
+  }
+
+  /** The pieces of mail for `wanted`, each sealed and at most the relay's piece size; a file whose piece alone would be
+   *  bigger is logged and left out (none is under the default caps: a 512 KiB file seals to about 930 KiB). */
+  *#mailPieces(peer: string, to: Bytes, bot: string, wanted: string[], kid: string, keys: SharedContentKey[]): Generator<{ id: string; sealed: Bytes; keys: string[] }> {
+    const seal = (entries: MemoryEntry[]): { id: string; sealed: Bytes } => {
+      const id = `mem-${toBase64Url(crypto.getRandomValues(new Uint8Array(12)))}`;
+      const plain = { v: 1, from: this.#o.self, to: peer, id, at: this.#o.now(), bot, entries, keys };
+      const sealedBox = sealToBoxKey(to, mailAad(this.#o.self, peer, id), utf8(JSON.stringify(plain)), MAIL_INFO);
+      const sig = toBase64(this.#o.key.sign(mailStatement(this.#o.self, peer, id, sealedBox)));
+      return { id, sealed: utf8(JSON.stringify({ v: 1, from: this.#o.self, id, box: sealedBox, sig })) };
+    };
+    // What a piece seals to, from its plaintext's length: HPKE adds 48 bytes, base64url a third, the outer fields a
+    // few hundred. Measured again once sealed.
+    const sealedSize = (plainLen: number) => Math.ceil(((plainLen + 48) * 4) / 3) + 512;
+    const base = JSON.stringify({ v: 1, from: this.#o.self, to: peer, id: "x".repeat(20), at: this.#o.now(), bot, entries: [], keys }).length;
+    let page: MemoryEntry[] = [];
+    let pageKeys: string[] = [];
+    let len = base;
+    const out: { id: string; sealed: Bytes; keys: string[] }[] = [];
+    const flush = () => {
+      if (page.length === 0) return;
+      const sealed = seal(page);
+      if (sealed.sealed.length <= MAIL_PIECE_BYTES) out.push({ ...sealed, keys: pageKeys });
+      else if (page.length === 1) this.#log(`${bot}'s ${page[0]!.rel} is too big for one piece of mail: it goes only over the link`);
+      else {
+        // Shouldn't happen (the size was measured ahead): halve and seal again.
+        const [a, b] = [page.slice(0, page.length >> 1), page.slice(page.length >> 1)];
+        const [ka, kb] = [pageKeys.slice(0, a.length), pageKeys.slice(a.length)];
+        for (const [p, k] of [[a, ka], [b, kb]] as const) {
+          const s2 = seal([...p]);
+          if (s2.sealed.length <= MAIL_PIECE_BYTES) out.push({ ...s2, keys: [...k] });
+          else this.#log(`a piece of ${bot}'s mail was too big and is left out`);
+        }
+      }
+      page = [];
+      pageKeys = [];
+      len = base;
+    };
+    for (const key of wanted) {
+      const e = this.#entry(bot, key, kid);
+      if (!e) continue;
+      const add = JSON.stringify(e).length + 1;
+      if (page.length > 0 && (page.length >= this.#limits.pushEntries || sealedSize(len + add) > MAIL_PIECE_BYTES)) flush();
+      page.push(e);
+      pageKeys.push(key);
+      len += add;
+    }
+    flush();
+    yield* out;
+  }
+
+  #queueMail(peer: string, bot: string, keys: Iterable<string>): void {
+    const forPeer = this.#mail.get(peer) ?? new Map<string, Set<string>>();
+    const set = forPeer.get(bot) ?? new Set<string>();
+    for (const k of keys) set.add(k);
+    forPeer.set(bot, set);
+    this.#mail.set(peer, forPeer);
   }
 
   /** One piece of mail: its sender's signature checked against this computer's registry, then opened. */
@@ -768,10 +911,12 @@ export class MemorySync {
     return out;
   }
 
+  /** A computer of the user's that runs the core, not revoked: never a phone, a browser or a revoked device. Every
+   *  such computer keeps every bot's memory, since a bot is live on every computer (the ruling on #232's S4). */
   #isComputer(id: string): boolean {
     if (id === this.#o.self) return false;
     const d = this.#o.registry.get(id);
-    return d !== undefined && d.runsCore && d.revokedAt === undefined;
+    return d !== undefined && d.runsCore && d.revokedAt === undefined && d.kind !== "phone" && d.kind !== "browser";
   }
 
   #entitled(device: string, bot: string): boolean {
@@ -820,7 +965,7 @@ function botOf(stream: unknown): string | undefined {
 export function isVv(x: unknown): x is Vv {
   if (!x || typeof x !== "object" || Array.isArray(x)) return false;
   const entries = Object.entries(x);
-  return entries.length <= 256 && entries.every(([k, n]) => DEVICE_RE.test(k) && Number.isSafeInteger(n) && (n as number) > 0);
+  return entries.length <= 256 && entries.every(([k, n]) => DEVICE_RE.test(k) && Number.isSafeInteger(n) && (n as number) > 0 && (n as number) <= MAX_COUNTER);
 }
 
 /** Whether every count in `a` is at most `b`'s: `b` has seen `a`. */
@@ -847,9 +992,20 @@ export function winnerOf(a: MemoryVersion, b: MemoryVersion): MemoryVersion {
   return vvText(a.vv) >= vvText(b.vv) ? a : b;
 }
 
-function cleanName(s: string): string {
-  const c = s.normalize("NFC").replace(/[<>:"|?*/\\\u0000-\u001f]/g, "-").replace(/[. ]+$/, "").slice(0, 40);
-  return c === "" ? "computer" : c;
+/** The most characters a content box of `size` bytes takes: base64url of nonce, content and tag, and a little room. */
+function boxChars(size: number): number {
+  return Math.ceil(((size + 12 + 16) * 4) / 3) + 4;
+}
+
+/** `<stem> (conflict <tag>)<ext>` beside `rel`; undefined when that isn't a path. */
+function conflictPath(rel: string, tag: string): { names: string[]; rel: string; key: string } | undefined {
+  const names = rel.split("/");
+  const last = names.pop()!;
+  const dot = last.lastIndexOf(".");
+  const stem = dot > 0 ? last.slice(0, dot) : last;
+  const ext = dot > 0 ? last.slice(dot) : "";
+  const p = memoryPath([...names, `${stem} (conflict ${tag})${ext}`].join("/"));
+  return "refused" in p ? undefined : p;
 }
 
 function errText(e: unknown): string {

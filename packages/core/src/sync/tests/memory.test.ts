@@ -4,6 +4,7 @@
 // paths that leave the bot's memory are refused; nothing is written through a link.
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { botPaths } from "../../bots/paths";
@@ -12,8 +13,9 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { BoxKey } from "../../identity/box-key";
 import { fromUtf8, toBase64 } from "../../identity/bytes";
 import { type ClusterDevice, makeLinkCluster } from "../../links/testing";
-import { MemoryMailRelay } from "../mailbox";
-import { type MemoryEntry, type MemoryLimits, MemorySync, type PushResult, versionStatement } from "../memory";
+import { MAIL_MAX_PIECE, MemoryMailRelay, type SyncMailbox } from "../mailbox";
+import { keyCommit, keyStatement } from "../memory-keys";
+import { COUNTER_STEP, type MemoryEntry, type MemoryLimits, MemorySync, type PushResult, type SkipReason, versionStatement } from "../memory";
 import { memoryPath, readMemoryFile, removeMemoryFile, writeMemoryFile } from "../memory-files";
 
 const clock = new SystemClock();
@@ -47,7 +49,7 @@ interface Computer {
   restart(): Promise<void>;
 }
 
-async function world(names: string[], opts: { limits?: Record<string, Partial<MemoryLimits>>; mail?: boolean } = {}) {
+async function world(names: string[], opts: { limits?: Record<string, Partial<MemoryLimits>>; mail?: boolean; mailbox?: (relay: MemoryMailRelay, device: string) => SyncMailbox } = {}) {
   const c = await makeLinkCluster(names, { clock });
   stops.push(() => c.close());
   const relay = new MemoryMailRelay();
@@ -63,7 +65,7 @@ async function world(names: string[], opts: { limits?: Record<string, Partial<Me
     const store = new MemorySecretStore();
     const start = () => MemorySync.start({
       home, self: d.id, key: d.key, boxKey: box, store, transport: d.transport, registry: d.registry, now: () => now,
-      ...(opts.mail ? { mailbox: relay.for(d.id), mailDelayMs: 0 } : {}),
+      ...(opts.mail ? { mailbox: opts.mailbox?.(relay, d.id) ?? relay.for(d.id), mailDelayMs: 0, mailRetryMs: 100 } : {}),
       ...(opts.limits?.[n] ? { limits: opts.limits[n] } : {}),
     });
     const root = botPaths(home, BOT).memory;
@@ -119,6 +121,9 @@ function deletion(signer: ClusterDevice, rel: string, o: { by?: string; bot?: st
   const v = { rel, vv: { [by]: o.n ?? 9 }, ts: DAY + 99_000, by, hash: null, size: 0, sig: "" };
   return { ...v, sig: toBase64(signer.key.sign(versionStatement(o.bot ?? BOT, v))) };
 }
+
+/** A push whose one entry was skipped for `reason` (the rest of a push is taken; #232's review, B3). */
+const skipped = (reason: SkipReason): PushResult => ({ ok: true, took: 0, conflicts: 0, skipped: [{ rel: "MEMORY.md", reason }] });
 
 async function push(from: Computer, to: Computer, entries: unknown[], bot = BOT): Promise<PushResult> {
   const link = await from.d.transport.connect(to.d.id);
@@ -224,7 +229,8 @@ describe("a bot's memory across computers", () => {
     w.at("Laptop").write("MEMORY.md", "the laptop's later edit\n");
     w.c.net.heal(w.at("Studio").d.key.publicKey, w.at("Laptop").d.key.publicKey);
     await w.link("Studio", "Laptop");
-    const copy = "MEMORY (conflict Studio 2026-11-06).md";
+    // Named from what the loser's writer signed alone: its id, its date and its content's hash (the same everywhere).
+    const copy = `MEMORY (conflict ${w.at("Studio").d.id.slice(0, 8)} 2026-11-06 ${createHash("sha256").update("the studio's edit\n").digest("hex").slice(0, 8)}).md`;
     for (const n of ["Studio", "Laptop"]) {
       await waitFor(() => w.at(n).read(copy) === "the studio's edit\n");
       expect(w.at(n).read("MEMORY.md")).toBe("the laptop's later edit\n");
@@ -283,7 +289,7 @@ describe("a bot's memory across computers", () => {
     expect(await w.at("Old").d.transport.connect(w.at("Studio").d.id).then(() => "linked", () => "refused")).toBe("refused");
   });
 
-  test("a forged writer is refused: a version another computer signed, an unknown or revoked writer, another bot's version", async () => {
+  test("a forged writer's entry is skipped: a version another computer signed, an unknown or revoked writer, another bot's version", async () => {
     const w = await world(["Studio", "Laptop", "Server", "Gone"]);
     await w.linkAll();
     w.at("Studio").write("MEMORY.md", "kept\n");
@@ -292,17 +298,17 @@ describe("a bot's memory across computers", () => {
     const server = w.at("Server");
     const laptop = w.at("Laptop");
     // The server signs a removal and says the studio wrote it.
-    expect(await push(server, laptop, [deletion(server.d, "MEMORY.md", { by: studio.id })])).toEqual({ ok: false, reason: "not_writer" });
+    expect(await push(server, laptop, [deletion(server.d, "MEMORY.md", { by: studio.id })])).toEqual(skipped("not_writer"));
     // No signature that checks.
-    expect(await push(server, laptop, [{ ...deletion(server.d, "MEMORY.md"), sig: toBase64(new Uint8Array(64)) }])).toEqual({ ok: false, reason: "not_writer" });
+    expect(await push(server, laptop, [{ ...deletion(server.d, "MEMORY.md"), sig: toBase64(new Uint8Array(64)) }])).toEqual(skipped("not_writer"));
     // A writer this computer doesn't know.
-    expect(await push(server, laptop, [deletion(server.d, "MEMORY.md", { by: "z".repeat(32) })])).toEqual({ ok: false, reason: "not_writer" });
+    expect(await push(server, laptop, [deletion(server.d, "MEMORY.md", { by: "z".repeat(32) })])).toEqual(skipped("not_writer"));
     // A revoked writer's own signature.
     const gone = w.at("Gone").d;
     await laptop.d.registry.revoke(gone.id);
-    expect(await push(server, laptop, [deletion(gone, "MEMORY.md")])).toEqual({ ok: false, reason: "not_writer" });
+    expect(await push(server, laptop, [deletion(gone, "MEMORY.md")])).toEqual(skipped("not_writer"));
     // The studio's own version for another bot, replayed into this one.
-    expect(await push(server, laptop, [deletion(studio, "MEMORY.md", { bot: "luna" })])).toEqual({ ok: false, reason: "not_writer" });
+    expect(await push(server, laptop, [deletion(studio, "MEMORY.md", { bot: "luna" })])).toEqual(skipped("not_writer"));
     expect(laptop.read("MEMORY.md")).toBe("kept\n");
     // A real one from the server, which is a computer of the user's, is taken.
     expect(await push(server, laptop, [deletion(server.d, "MEMORY.md", { n: 1 })])).toMatchObject({ ok: true });
@@ -409,6 +415,153 @@ describe("a bot's memory across computers", () => {
     const link = await w.at("Laptop").d.transport.connect(w.at("Studio").d.id);
     const { heads } = await link.request<{ heads: Record<string, unknown> }>("sync.heads", {});
     expect(Object.keys(heads)).toEqual([`memory:${BOT}`]);
+  });
+});
+
+describe("#232's review: poisoned keys, pinned vectors, a revoked writer's entries, mail sizes", () => {
+  /** A key record `signer` signs, made as `o` says. */
+  const keyRecord = (signer: ClusterDevice, o: { epoch: number; creator?: string; members: string[] }) => {
+    const bytes = new Uint8Array(32).fill(7);
+    const creator = o.creator ?? signer.id;
+    const unsigned = { kid: `${o.epoch}.${creator}`, epoch: o.epoch, creator, members: o.members, createdAt: DAY, commit: keyCommit(bytes) };
+    return { ...unsigned, sig: toBase64(signer.key.sign(keyStatement(unsigned))), key: toBase64(bytes) };
+  };
+
+  test("B1: keys come in only signed by their creator, for the kids a push's entries use, within the epoch step", async () => {
+    const w = await world(["Studio", "Laptop", "Server"]);
+    await w.linkAll();
+    w.at("Studio").write("MEMORY.md", "one\n");
+    await waitFor(() => w.at("Laptop").read("MEMORY.md") === "one\n");
+    const [studio, laptop, server] = ["Studio", "Laptop", "Server"].map((n) => w.at(n).d);
+    const before = w.at("Laptop").sync.keys().map((k) => k.kid).sort();
+    const send = async (keys: unknown[], entries: unknown[] = []) => {
+      const link = await server!.transport.connect(laptop!.id);
+      return link.request<PushResult>("sync.push", { stream: `memory:${BOT}`, entries, keys });
+    };
+    const all = [studio!.id, laptop!.id, server!.id];
+    // A good record, but no entry uses it: not taken.
+    await send([keyRecord(server!, { epoch: 3, members: all })]);
+    // Signed by the server in the laptop's name (claiming its next kid), and one whose members leave its creator out.
+    await send([keyRecord(server!, { epoch: 3, creator: laptop!.id, members: all }), keyRecord(server!, { epoch: 4, members: [studio!.id, laptop!.id] })]);
+    // An epoch far past the newest known.
+    await send([keyRecord(server!, { epoch: 999_999_999, members: all })]);
+    expect(w.at("Laptop").sync.keys().map((k) => k.kid).sort()).toEqual(before);
+    // The laptop still makes and takes keys as before: a revocation rotates, and the studio's next write arrives.
+    await w.at("Studio").d.registry.revoke(server!.id);
+    await w.at("Laptop").d.registry.revoke(server!.id);
+    await Bun.sleep(100);
+    w.at("Studio").write("MEMORY.md", "two\n");
+    await waitFor(() => w.at("Laptop").read("MEMORY.md") === "two\n");
+    expect(Math.max(...w.at("Laptop").sync.keys().map((k) => k.epoch))).toBeLessThan(10);
+  });
+
+  test("B2 and S5: counters past the step, and a time ahead of the shared clock, are skipped; the rest is taken", async () => {
+    const w = await world(["Studio", "Laptop", "Server"]);
+    await w.linkAll();
+    w.at("Studio").write("MEMORY.md", "kept\n");
+    await waitFor(() => w.at("Laptop").read("MEMORY.md") === "kept\n");
+    const server = w.at("Server");
+    const signed = (rel: string, vv: Record<string, number>, ts = DAY + 5_000) => {
+      const v = { rel, vv, ts, by: server.d.id, hash: null, size: 0, sig: "" };
+      return { ...v, sig: toBase64(server.d.key.sign(versionStatement(BOT, v))) };
+    };
+    const r = await push(server, w.at("Laptop"), [
+      signed("MEMORY.md", { [server.d.id]: COUNTER_STEP + 10 }),
+      signed("MEMORY.md", { [server.d.id]: 1, [w.at("Studio").d.id]: COUNTER_STEP + 10 }),
+      signed("MEMORY.md", { [server.d.id]: 2 }, DAY + 3_600_000),
+      signed("gone.md", { [server.d.id]: 3 }),
+    ]);
+    expect(r).toMatchObject({ ok: true, took: 1, skipped: [{ rel: "MEMORY.md", reason: "counters" }, { rel: "MEMORY.md", reason: "counters" }, { rel: "MEMORY.md", reason: "ahead" }] });
+    expect(w.at("Laptop").read("MEMORY.md")).toBe("kept\n");
+  });
+
+  test("B4: mail at the full per-file cap and a full page goes in pieces the relay takes; one it refuses goes again", async () => {
+    let refuseOnce = true;
+    const w = await world(["Studio", "Laptop"], {
+      mail: true,
+      mailbox: (relay, device) => {
+        const box = relay.for(device);
+        return {
+          ...box,
+          put: async (a) => {
+            if (refuseOnce) {
+              refuseOnce = false;
+              throw new Error("full");
+            }
+            await box.put(a);
+          },
+        };
+      },
+    });
+    await w.linkAll();
+    w.at("Studio").write("seed.md", "x\n");
+    await waitFor(() => w.at("Laptop").read("seed.md") === "x\n");
+    w.c.net.partition(w.at("Laptop").d.key.publicKey);
+    await waitFor(() => !w.at("Studio").d.transport.links().some((l) => l.up));
+    const cap = 512 * 1024;
+    const files: Record<string, string> = { "a.md": "a".repeat(cap), "b.md": "b".repeat(cap), "c.md": "c".repeat(300 * 1024) };
+    for (let i = 0; i < 40; i++) files[`small/${i}.md`] = `note ${i}\n`;
+    for (const [rel, text] of Object.entries(files)) w.at("Studio").write(rel, text);
+    // The first piece is refused and queued; it goes again on the retry timer.
+    await waitFor(() => w.relay.held(w.at("Laptop").d.id).length >= 3, 10_000);
+    for (const piece of w.relay.held(w.at("Laptop").d.id)) expect(piece.length).toBeLessThanOrEqual(MAIL_MAX_PIECE);
+    w.c.net.partition(w.at("Studio").d.key.publicKey);
+    w.c.net.heal(w.at("Laptop").d.key.publicKey);
+    await w.at("Laptop").sync.takeMail();
+    for (const [rel, text] of Object.entries(files)) expect(w.at("Laptop").read(rel)).toBe(text);
+  });
+
+  test("S5: a box longer than its size is refused before it's decoded; mail too big or seen before isn't parsed", async () => {
+    const w = await world(["Studio", "Laptop"], { mail: true });
+    await w.linkAll();
+    const studio = w.at("Studio");
+    const v = { rel: "x.md", vv: { [studio.d.id]: 1 }, ts: DAY, by: studio.d.id, hash: "0".repeat(64), size: 4, sig: "" };
+    const e = { ...v, sig: toBase64(studio.d.key.sign(versionStatement(BOT, v))), kid: `1.${studio.d.id}`, box: "A".repeat(10_000) };
+    expect(await push(studio, w.at("Laptop"), [e])).toMatchObject({ ok: false, reason: "refused", detail: "x.md's box is longer than its size" });
+    const relay = w.relay.for(studio.d.id);
+    await relay.put({ to: w.at("Laptop").d.id, id: "huge", sealed: new Uint8Array(MAIL_MAX_PIECE), expiresAt: Date.now() + 60_000 });
+    expect(await w.at("Laptop").sync.takeMail()).toBe(0);
+  });
+
+  test("S1: a folder swapped for a link right before a write's rename or a removal's unlink is caught", () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-h-swap-"));
+    stops.push(() => rmSync(home, { recursive: true, force: true }));
+    const outside = mkdtempSync(join(tmpdir(), "clover-h-swap-out-"));
+    stops.push(() => rmSync(outside, { recursive: true, force: true }));
+    const root = botPaths(home, BOT).memory;
+    writeMemoryFile(home, root, ["sub", "keep.md"], new TextEncoder().encode("mine"));
+    writeFileSync(join(outside, "keep.md"), "not memory");
+    const swap = () => {
+      rmSync(join(root, "sub"), { recursive: true });
+      symlinkSync(outside, join(root, "sub"));
+    };
+    expect(() => removeMemoryFile(home, root, ["sub", "keep.md"], { beforeChange: swap })).toThrow("a folder changed");
+    expect(readFileSync(join(outside, "keep.md"), "utf8")).toBe("not memory");
+    unlinkSync(join(root, "sub"));
+    writeMemoryFile(home, root, ["sub", "keep.md"], new TextEncoder().encode("mine"));
+    expect(() => writeMemoryFile(home, root, ["sub", "keep.md"], new TextEncoder().encode("through"), { beforeChange: swap })).toThrow("a folder changed");
+    expect(readFileSync(join(outside, "keep.md"), "utf8")).toBe("not memory");
+  });
+
+  // A case-sensitive disk only (APFS and NTFS fold case by default, so the two names can't both be made there).
+  const caseSensitive = (() => {
+    const d = mkdtempSync(join(tmpdir(), "clover-h-case-"));
+    try {
+      writeFileSync(join(d, "a"), "");
+      return !existsSync(join(d, "A"));
+    } finally {
+      rmSync(d, { recursive: true, force: true });
+    }
+  })();
+  test.skipIf(!caseSensitive)("S2: two names that fold alike: the second is kept as a conflict copy, never undoing the first", async () => {
+    const w = await world(["Studio", "Laptop"]);
+    await w.linkAll();
+    w.at("Studio").write("Notes.md", "the studio's notes\n");
+    await waitFor(() => w.at("Laptop").read("Notes.md") === "the studio's notes\n");
+    w.at("Laptop").write("notes.md", "another file\n");
+    await waitFor(() => readdirSync(botPaths(w.at("Studio").home, BOT).memory).some((n) => n.startsWith("notes (conflict ")));
+    expect(w.at("Studio").read("Notes.md")).toBe("the studio's notes\n");
+    expect(w.at("Laptop").read("notes.md")).toBeUndefined();
   });
 });
 

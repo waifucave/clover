@@ -96,10 +96,10 @@ export function listMemory(base: string, root: string, max: number): { files: Di
 
 /** A memory file's bytes, read without following a link; undefined when it's gone, a link, not a file, or bigger than
  *  `max`. */
-export function readMemoryFile(base: string, root: string, rel: string, max: number): { data: Buffer; mtimeMs: number } | undefined {
+export function readMemoryFile(base: string, root: string, rel: string, max: number, o: { exact?: boolean } = {}): { data: Buffer; mtimeMs: number } | undefined {
   const rootReal = realRoot(base, root);
   if (rootReal === undefined) return undefined;
-  const at = resolveExisting(root, rel.split("/"));
+  const at = resolveExisting(root, rel.split("/"), o.exact === true);
   if (!at) return undefined;
   let fd: number;
   try {
@@ -130,7 +130,7 @@ export function readMemoryFile(base: string, root: string, rel: string, max: num
 
 /** Writes a memory file without following a link anywhere on the way; returns the name it has on disk, `/` between
  *  names, and its mtime. Throws on a link or a non-folder in the way, or a folder at the target. */
-export function writeMemoryFile(base: string, root: string, names: readonly string[], data: Uint8Array): { rel: string; mtimeMs: number } {
+export function writeMemoryFile(base: string, root: string, names: readonly string[], data: Uint8Array, o: { /** TEST-ONLY: runs right before the rename, the window a swap would use. */ beforeChange?: () => void } = {}): { rel: string; mtimeMs: number } {
   const dir = realFolders(base, root, names.slice(0, -1), true)!;
   const want = names.at(-1)!;
   const name = existingName(dir.path, want) ?? want;
@@ -151,6 +151,7 @@ export function writeMemoryFile(base: string, root: string, names: readonly stri
   }
   closeSync(fd);
   // The folder must still be where the memory folder really is: one swapped for a link meanwhile is caught here.
+  o.beforeChange?.();
   if (!sameRealFolder(dir.path, dir.real)) {
     try {
       unlinkSync(tmp);
@@ -164,20 +165,24 @@ export function writeMemoryFile(base: string, root: string, names: readonly stri
 }
 
 /** Removes a memory file (a link at its place is removed itself, never followed); false when nothing was there. */
-export function removeMemoryFile(base: string, root: string, names: readonly string[]): boolean {
+export function removeMemoryFile(base: string, root: string, names: readonly string[], o: { exact?: boolean; /** TEST-ONLY: runs right before the unlink. */ beforeChange?: () => void } = {}): boolean {
   const dir = realFolders(base, root, names.slice(0, -1), false);
   if (!dir) return false;
-  const name = existingName(dir.path, names.at(-1)!);
+  const name = existingName(dir.path, names.at(-1)!, o.exact === true);
   if (name === undefined) return false;
   const target = join(dir.path, name);
   const st = lstatSync(target, { throwIfNoEntry: false });
   if (!st || st.isDirectory()) return false;
+  // The folder must still be where the memory folder really is (#232's review, S1): one swapped for a link since it
+  // was walked is caught here, right before the unlink.
+  o.beforeChange?.();
+  if (!sameRealFolder(dir.path, dir.real)) throw new Error("a folder changed while memory was removed");
   unlinkSync(target);
   return true;
 }
 
 /** The entry in `dir` whose name folds equal to `want` (the exact name first). */
-function existingName(dir: string, want: string): string | undefined {
+function existingName(dir: string, want: string, exact = false): string | undefined {
   let names: string[];
   try {
     names = readdirSync(dir);
@@ -185,17 +190,18 @@ function existingName(dir: string, want: string): string | undefined {
     return undefined;
   }
   if (names.includes(want)) return want;
+  if (exact) return undefined;
   const f = foldName(want, "linux");
   return names.find((n) => foldName(n.normalize("NFC"), "linux") === f);
 }
 
 /** The path of an existing entry, each name matched by fold, every folder on the way a real one. */
-function resolveExisting(root: string, names: readonly string[]): string | undefined {
+function resolveExisting(root: string, names: readonly string[], exact = false): string | undefined {
   const top = lstatSync(root, { throwIfNoEntry: false });
   if (!top?.isDirectory() || top.isSymbolicLink()) return undefined;
   let at = root;
   for (let i = 0; i < names.length; i++) {
-    const n = existingName(at, names[i]!);
+    const n = existingName(at, names[i]!, exact);
     if (n === undefined) return undefined;
     at = join(at, n);
     if (i < names.length - 1) {
@@ -213,12 +219,16 @@ function realFolders(base: string, root: string, names: readonly string[], make:
   const rel = relative(base, root);
   if (rel === "" || rel.startsWith("..")) throw new Error("the memory folder isn't inside the home");
   let at = base;
+  // Where each folder really is, step by step (#232's review, S1): a folder swapped for a link between its check and
+  // the next step (an mkdir in it, say) shows as a real path that isn't the one expected, and the walk stops.
+  let real = realpathSync(base);
   const step = (name: string, matchFold: boolean): boolean => {
     const n = matchFold ? (existingName(at, name) ?? name) : name;
     const next = join(at, n);
     let st = lstatSync(next, { throwIfNoEntry: false });
     if (!st) {
       if (!make) return false;
+      if (!sameRealFolder(at, real)) throw new Error("a folder changed while memory was written");
       try {
         mkdirSync(next);
       } catch (err) {
@@ -227,15 +237,17 @@ function realFolders(base: string, root: string, names: readonly string[], make:
       st = lstatSync(next);
     }
     if (st.isSymbolicLink() || !st.isDirectory()) throw new Error(`${n} is a link or not a folder`);
+    const nextReal = realpathSync(next);
+    if (nextReal !== join(real, n) && relative(real, nextReal) !== n) throw new Error(`${n} isn't where its folder is`);
     at = next;
+    real = nextReal;
     if (matchFold) onDisk.push(n);
     return true;
   };
   const onDisk: string[] = [];
   for (const part of rel.split(sep)) if (!step(part, false)) return undefined;
-  const rootReal = realpathSync(at);
+  const rootReal = real;
   for (const name of names) if (!step(name, true)) return undefined;
-  const real = realpathSync(at);
   const inside = relative(rootReal, real);
   if (inside.startsWith("..") || inside.startsWith(sep)) throw new Error("a folder on the way leaves the memory folder");
   return { path: at, real, names: onDisk };
