@@ -24,7 +24,7 @@ import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
 import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
 import { runNameScan } from "./release/name-scan";
 import { sealProblems } from "./seal-bun-doors";
-import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writeServedCopies, type Channel } from "./release/lib";
+import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writePluginBunAssets, writeServedCopies, type Channel } from "./release/lib";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -231,6 +231,8 @@ export function main(argv: readonly string[], root: string): number {
   // The daemon for a server's own update: each architecture's binary as its release file, with its update files.
   const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
   for (const a of args.arches) writeCoreAssets(outDir, version, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(root, ...daemonOutput(daemonTargetFor(a)).split("/")));
+  // Plain Bun for plugins, for a server install on this architecture (scripts/bundled-binaries.ts).
+  for (const a of args.arches) writePluginBunAssets(outDir, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(dirname(join(root, ...daemonOutput(daemonTargetFor(a)).split("/"))), "clover-plugin-bun"));
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
   // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).

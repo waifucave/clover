@@ -6,8 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readInstallMarker, removeInstallMarker, writeInstallMarker, type LoginSpec } from "@waifucave/clover-core";
 import { insideApp, parseServerArgs, serverBinary, serverInstall, serverUninstall, type ServerDeps } from "../src/server-install";
+import { serverPluginBun, type PluginBunResult } from "../src/plugin-bun-install";
 
-function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registered?: boolean; bin?: string } = {}) {
+function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registered?: boolean; bin?: string; pluginBun?: PluginBunResult } = {}) {
   const root = mkdtempSync(join(tmpdir(), "clover-server-install-"));
   const home = join(root, "home");
   mkdirSync(home);
@@ -31,8 +32,14 @@ function setup(os: LoginSpec["os"], opts: { lingerBefore?: "yes" | "no"; registe
     stopDaemon: async () => "not-running",
     readMarker: (h) => readInstallMarker(h), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
     user: "srv", log: (l) => lines.push(l),
+    pluginBun: async (path, channel) => {
+      plugin.push({ path, channel });
+      if (opts.pluginBun?.kind !== "refused") writeFileSync(path, "plain bun");
+      return opts.pluginBun ?? { kind: "installed", version: "1.4.4", from: "release" };
+    },
   };
-  return { home, bin, deps, ran, enabled, removed, lines };
+  const plugin: Array<{ path: string; channel: string }> = [];
+  return { home, bin, deps, ran, enabled, removed, lines, plugin };
 }
 
 describe("clover-core server install and uninstall", () => {
@@ -90,6 +97,28 @@ describe("clover-core server install and uninstall", () => {
     expect(await serverUninstall(owned.deps)).toBe(1);
     expect(owned.removed).toEqual([]);
     expect(await serverUninstall(setup("linux").deps)).toBe(1);
+  });
+
+  test("plain Bun for plugins goes beside the daemon on install, on the install's channel, and goes with it on uninstall", async () => {
+    const s = setup("linux");
+    expect(await serverInstall(s.deps, "beta")).toBe(0);
+    const bun = serverPluginBun(s.home, "linux");
+    expect(bun).toBe(join(s.home, "bin", "clover-plugin-bun"));
+    expect(s.plugin).toEqual([{ path: bun, channel: "beta" }]);
+    expect(readFileSync(bun, "utf8")).toBe("plain bun");
+    writeFileSync(`${bun}.old`, "older bun");
+    expect(await serverUninstall(s.deps)).toBe(0);
+    expect(existsSync(bun)).toBe(false);
+    expect(existsSync(`${bun}.old`)).toBe(false);
+    expect(serverPluginBun("/h", "win32")).toBe(join("/h", "bin", "clover-plugin-bun.exe"));
+  });
+
+  test("a server that can't have plain Bun for plugins isn't installed: nothing registered, no marker", async () => {
+    const s = setup("linux", { pluginBun: { kind: "refused", why: "clover-plugin-bun-1.4.4-linux-x64: bad signature" } });
+    expect(await serverInstall(s.deps, "latest")).toBe(1);
+    expect(s.enabled).toEqual([]);
+    expect(readInstallMarker(s.home)).toBeUndefined();
+    expect(s.lines.at(-1)).toContain("bad signature");
   });
 
   test("a login start the OS didn't register fails the install", async () => {

@@ -49,12 +49,24 @@ export function coreBinaryFile(version: string, target: CoreTarget): string {
   return `clover-core-${version}-${target}${target === "windows-x64" ? ".exe" : ""}`;
 }
 
+/** Plain Bun for plugins' update file for `target` on `channel` (`latest-plugin-bun-linux-x64.yml`): what a server
+ *  install fetches beside its daemon, and again when the daemon's Bun version changes. */
+export function pluginBunFeedFile(channel: FeedChannel, target: CoreTarget): string {
+  return `${channel}-plugin-bun-${target}.yml`;
+}
+
+/** Plain Bun for plugins in a release (`clover-plugin-bun-1.4.4-linux-x64`, `…-windows-x64.exe`): named by its Bun
+ *  version, the daemon's. */
+export function pluginBunBinaryFile(bunVersion: string, target: CoreTarget): string {
+  return `clover-plugin-bun-${bunVersion}-${target}${target === "windows-x64" ? ".exe" : ""}`;
+}
+
 /**
  * The names a signature may cover: the app's update files (a channel and an OS, scripts/release/lib.ts's `feedFile`),
- * the daemon's (`coreFeedFile`) and the daemon's binaries themselves (`coreBinaryFile`), which a server's daemon
- * checks before it trusts their bytes.
+ * the daemon's (`coreFeedFile`) and plugin Bun's (`pluginBunFeedFile`), and those binaries themselves
+ * (`coreBinaryFile`, `pluginBunBinaryFile`), which a server checks before it trusts their bytes.
  */
-export const FEED_NAME = /^(?:(latest|beta)(-mac|-linux|-linux-arm64|-core-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml|clover-core-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64\.exe))$/;
+export const FEED_NAME = /^(?:(latest|beta)(-mac|-linux|-linux-arm64|-(?:core|plugin-bun)-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml|clover-(?:core|plugin-bun)-\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?-(?:darwin-arm64|linux-x64|linux-arm64|windows-x64\.exe))$/;
 
 /** The daemon's update file (`coreFeedFile`): one binary, its version, SHA-512 (base64) and size. */
 export interface CoreFeed {
@@ -70,18 +82,27 @@ export function formatCoreFeed(f: CoreFeed): string {
 
 /** A daemon's update file, read strictly: exactly its four fields, each well formed; anything else throws. */
 export function parseCoreFeed(text: string): CoreFeed {
+  return parseBinaryFeed(text, "clover-core-", "daemon");
+}
+
+/** Plain Bun's update file (`pluginBunFeedFile`): the same four fields, `version` being Bun's. */
+export function parsePluginBunFeed(text: string): CoreFeed {
+  return parseBinaryFeed(text, "clover-plugin-bun-", "plugin Bun");
+}
+
+function parseBinaryFeed(text: string, prefix: string, what: string): CoreFeed {
   const fields = new Map<string, string>();
   for (const line of text.split(/\r?\n/)) {
     if (line.trim() === "") continue;
     const m = /^(version|file|sha512|size): (\S+)$/.exec(line);
-    if (!m || fields.has(m[1]!)) throw new Error("not a daemon update file");
+    if (!m || fields.has(m[1]!)) throw new Error(`not a ${what} update file`);
     fields.set(m[1]!, m[2]!);
   }
   const version = fields.get("version"), file = fields.get("file"), sha512 = fields.get("sha512"), size = Number(fields.get("size"));
-  if (version === undefined || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version)) throw new Error("a daemon update file needs a version");
-  if (file === undefined || !FEED_NAME.test(file) || !file.startsWith("clover-core-")) throw new Error("a daemon update file names a clover-core binary");
-  if (sha512 === undefined || Buffer.from(sha512, "base64").length !== 64) throw new Error("a daemon update file needs a sha512");
-  if (!Number.isSafeInteger(size) || size <= 0) throw new Error("a daemon update file needs a size");
+  if (version === undefined || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/.test(version)) throw new Error(`a ${what} update file needs a version`);
+  if (file === undefined || !FEED_NAME.test(file) || !file.startsWith(prefix)) throw new Error(`a ${what} update file names a ${prefix.slice(0, -1)} binary`);
+  if (sha512 === undefined || Buffer.from(sha512, "base64").length !== 64) throw new Error(`a ${what} update file needs a sha512`);
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error(`a ${what} update file needs a size`);
   return { version, file, sha512, size };
 }
 

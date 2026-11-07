@@ -36,7 +36,9 @@ export const PLUGIN_BUN = {
 export const PLUGIN_BUN_FILE = "clover-plugin-bun";
 export const HOLDER_FILE = "clover-process-holder";
 
-/** The identifiers each is signed under: a release's, and the dev daemon's (`.dev`). Never the core's. */
+/** The identifiers each is signed under: a release's, and the dev daemon's (`.dev`). Never the core's. Lane B's
+ *  `packages/core/src/bundled-identities.ts` (#234) holds the same values for `pluginBun()`'s requirement check; once it
+ *  lands these come from there, one source for the signer and the checker. */
 export const BUNDLED_IDENTIFIERS = {
   [PLUGIN_BUN_FILE]: { dist: "com.waifucave.clover.plugin-bun", dev: "com.waifucave.clover.plugin-bun.dev" },
   [HOLDER_FILE]: { dist: "com.waifucave.clover.process-holder", dev: "com.waifucave.clover.process-holder.dev" },

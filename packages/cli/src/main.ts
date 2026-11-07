@@ -1,4 +1,5 @@
 import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater } from "./self-update";
+import { daemonBunVersion, ensurePluginBun, serverPluginBun } from "./plugin-bun-install";
 import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -1954,6 +1955,11 @@ if (import.meta.main) {
       os: liveLoginOsDeps(), run: bunRunner, loginEnable, loginRemove, stopDaemon: stopRunningDaemon,
       readMarker: (home: string) => readInstallMarker(home), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
       user: process.env.USER ?? process.env.LOGNAME, log: (line: string) => console.log(line),
+      pluginBun: (path: string, channel: "latest" | "beta") => {
+        const target = coreTargetOf(process.platform, process.arch);
+        if (target === undefined) return Promise.resolve({ kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` });
+        return ensurePluginBun({ path, bunVersion: daemonBunVersion(), target, channel, log: (line) => console.log(line) });
+      },
     };
     process.exit(parsed.action === "install" ? await serverInstall(deps, parsed.channel) : await serverUninstall(deps));
     break;
@@ -2026,6 +2032,10 @@ if (import.meta.main) {
       });
       daemon.setSelfUpdate(self);
       self.start();
+      // Plain Bun for plugins follows the daemon's Bun: after a self-update that moved Bun (or a rollback), the
+      // matching one is fetched (or put back from `.old`) at this start (plugin-bun-install.ts).
+      void ensurePluginBun({ path: serverPluginBun(home, process.platform), bunVersion: daemonBunVersion(), target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) })
+        .then((r) => { if (r.kind === "refused") console.error(`update: plain Bun for plugins: ${r.why}`); });
     }
     // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
     // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app

@@ -82,3 +82,18 @@ describe("the update feed's signature", () => {
     expect(() => parseCoreFeed(`${text}version: 9.9.9\n`)).toThrow();
   });
 });
+
+test("plain Bun for plugins has its own signed update file and binary, named by its Bun version", async () => {
+  const { pluginBunFeedFile, pluginBunBinaryFile, parsePluginBunFeed, parseCoreFeed, FEED_NAME } = await import("../src/index");
+  expect(pluginBunFeedFile("latest", "linux-x64")).toBe("latest-plugin-bun-linux-x64.yml");
+  expect(pluginBunBinaryFile("1.4.4", "windows-x64")).toBe("clover-plugin-bun-1.4.4-windows-x64.exe");
+  expect(pluginBunBinaryFile("1.4.4", "darwin-arm64")).toBe("clover-plugin-bun-1.4.4-darwin-arm64");
+  for (const n of ["beta-plugin-bun-darwin-arm64.yml", "clover-plugin-bun-1.4.4-linux-arm64", "clover-plugin-bun-1.4.4-windows-x64.exe"]) expect(FEED_NAME.test(n)).toBe(true);
+  for (const n of ["clover-plugin-bun-1.4.4-windows-x64", "latest-plugin-bun.yml", "clover-plugin-bun-x-linux-x64"]) expect(FEED_NAME.test(n)).toBe(false);
+  const sha512 = Buffer.alloc(64, 1).toString("base64");
+  const feed = `version: 1.4.4\nfile: clover-plugin-bun-1.4.4-linux-x64\nsha512: ${sha512}\nsize: 100\n`;
+  expect(parsePluginBunFeed(feed)).toEqual({ version: "1.4.4", file: "clover-plugin-bun-1.4.4-linux-x64", sha512, size: 100 });
+  // Neither file passes for the other: a plugin Bun feed never names a daemon, nor the other way round.
+  expect(() => parseCoreFeed(feed)).toThrow("names a clover-core binary");
+  expect(() => parsePluginBunFeed(feed.replace(/clover-plugin-bun/, "clover-core"))).toThrow("names a clover-plugin-bun binary");
+});

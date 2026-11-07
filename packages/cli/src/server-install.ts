@@ -2,7 +2,7 @@
 // alone on a computer with no app (a server, a cloud computer), started by the OS and updating itself.
 //
 // `install` copies this binary to `<home>/bin/clover-core` (the one place a server's binary lives, which its own update
-// replaces), registers lane C's login start for it (`loginEnable`: the same LaunchAgent on macOS, systemd user unit on
+// replaces), puts plain Bun for plugins beside it (`<home>/bin/clover-plugin-bun`, plugin-bun-install.ts), registers lane C's login start for it (`loginEnable`: the same LaunchAgent on macOS, systemd user unit on
 // Linux and per-user Task Scheduler task at logon on Windows that `clover-core autostart` writes, each running
 // `clover-core supervise`), on Linux turns lingering on (`loginctl enable-linger`) so the unit runs with no one logged
 // in, and writes `<home>/install.json` `{ kind: "server" }`, the marker that lets the daemon update itself. A binary
@@ -13,6 +13,7 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { InstallChannel, InstallMarker, LoginOsDeps, LoginSpec, Runner } from "@waifucave/clover-core";
+import { serverPluginBun, type PluginBunResult } from "./plugin-bun-install";
 
 export const SERVER_USAGE = "usage: clover-core server install [--channel latest|beta] | server uninstall";
 
@@ -54,6 +55,9 @@ export interface ServerDeps {
   removeMarker(home: string): void;
   user: string | undefined;
   log(line: string): void;
+  /** Puts plain Bun for plugins at `path` (plugin-bun-install.ts's `ensurePluginBun`, for this daemon's Bun and the
+   *  install's channel). */
+  pluginBun(path: string, channel: InstallChannel): Promise<PluginBunResult>;
 }
 
 const same = (a: string, b: string): boolean => {
@@ -81,6 +85,13 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
     if (spec.os !== "win32") chmodSync(bin, 0o755);
   }
   const served: LoginSpec = { ...spec, bin };
+  // Plain Bun for plugins beside it (`pluginBun()` fails closed without it): from the release, checked as the daemon's
+  // own update is. A server that can't have it isn't installed.
+  const bun = await d.pluginBun(serverPluginBun(spec.home, spec.os), channel);
+  if (bun.kind === "refused") {
+    d.log(`server install: plain Bun for plugins could not be installed (${bun.why}); nothing was registered`);
+    return 1;
+  }
   let linger = marker?.linger ?? false;
   if (spec.os === "linux" && !linger && d.user !== undefined) {
     const shown = await d.run(["loginctl", "show-user", d.user, "--property=Linger", "--value"]);
@@ -96,7 +107,7 @@ export async function serverInstall(d: ServerDeps, channel: InstallChannel): Pro
     d.log(`server install: the login start was written but the OS did not register it (${st.label})`);
     return 1;
   }
-  d.log(`server install: clover-core at ${bin}, started by the OS (${st.label}), updating itself on ${channel}`);
+  d.log(`server install: clover-core at ${bin} with plain Bun for plugins beside it, started by the OS (${st.label}), updating itself on ${channel}`);
   return 0;
 }
 
@@ -117,7 +128,8 @@ export async function serverUninstall(d: ServerDeps): Promise<number> {
   }
   d.removeMarker(spec.home);
   let kept: string | undefined;
-  for (const f of [`${bin}.new`, `${bin}.old`, `${bin}.bad`, bin]) {
+  const bun = serverPluginBun(spec.home, spec.os);
+  for (const f of [`${bin}.new`, `${bin}.old`, `${bin}.bad`, bin, `${bun}.new`, `${bun}.old`, `${bun}.swap`, bun]) {
     try {
       rmSync(f, { force: true });
     } catch {

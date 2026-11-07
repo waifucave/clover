@@ -20,7 +20,8 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { coreBinaryFile, coreFeedFile, formatCoreFeed, parseCoreFeed, type CoreTarget } from "../../packages/update-feed/src/index";
+import { coreBinaryFile, coreFeedFile, formatCoreFeed, parseCoreFeed, parsePluginBunFeed, pluginBunBinaryFile, pluginBunFeedFile, type CoreTarget } from "../../packages/update-feed/src/index";
+import { PLUGIN_BUN } from "../bundled-binaries";
 
 export const CHANNELS = ["latest", "beta"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -86,10 +87,43 @@ export function coreArtifacts(version: string, os: ReleaseOs, channel: Channel):
   return [coreBinaryFile(version, CORE_TARGET[os]), ...channelsServed(channel).map((c) => coreFeedFile(c, CORE_TARGET[os]))];
 }
 
-/** Every file `os`'s release build must leave: its installers, its update files for each channel served, and the
- *  daemon's (`coreArtifacts`). */
+/** Plain Bun for plugins in `os`'s release, for a server install (scripts/bundled-binaries.ts): its binary, named by
+ *  the daemon's Bun version, and its update file for each channel served. */
+export function pluginBunArtifacts(os: ReleaseOs, channel: Channel): string[] {
+  return [pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]), ...channelsServed(channel).map((c) => pluginBunFeedFile(c, CORE_TARGET[os]))];
+}
+
+/** Every file `os`'s release build must leave: its installers, its update files for each channel served, the
+ *  daemon's (`coreArtifacts`) and plugin Bun's (`pluginBunArtifacts`). */
 export function expectedArtifacts(version: string, os: ReleaseOs, channel: Channel): string[] {
-  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os)), ...coreArtifacts(version, os, channel)];
+  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os)), ...coreArtifacts(version, os, channel), ...pluginBunArtifacts(os, channel)];
+}
+
+/** After the build: plugin Bun (`binary`, the one beside the daemon in the app, signed with it on a signed macOS
+ *  build) copied as `clover-plugin-bun-<bun version>-<target>`, and its update file for each channel served. */
+export function writePluginBunAssets(outDir: string, os: ReleaseOs, channel: Channel, binary: string): string[] {
+  const file = pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]);
+  copyFileSync(binary, join(outDir, file));
+  const bytes = readFileSync(join(outDir, file));
+  const feed = formatCoreFeed({ version: PLUGIN_BUN.version, file, sha512: sha512Base64(bytes), size: bytes.length });
+  const feeds = channelsServed(channel).map((c) => pluginBunFeedFile(c, CORE_TARGET[os]));
+  for (const f of feeds) writeFileSync(join(outDir, f), feed);
+  return [file, ...feeds];
+}
+
+/** Whether `name` is one of plugin Bun's update files. */
+export function isPluginBunFeed(name: string): boolean {
+  return /^(latest|beta)-plugin-bun-[a-z0-9-]+\.yml$/.test(name);
+}
+
+/** What's wrong with plugin Bun's update file: its version is the daemon's Bun (PLUGIN_BUN), not the release's. */
+export function checkPluginBunFeed(text: string, read: (name: string) => Uint8Array | undefined): string[] {
+  try {
+    parsePluginBunFeed(text);
+  } catch (err) {
+    return [(err as Error).message];
+  }
+  return checkCoreFeed(text, PLUGIN_BUN.version, read, parsePluginBunFeed);
 }
 
 /**
@@ -107,10 +141,10 @@ export function writeCoreAssets(outDir: string, version: string, os: ReleaseOs, 
 }
 
 /** What's wrong with a daemon's update file against the binary it names (`read` gives a file's bytes, or undefined). */
-export function checkCoreFeed(text: string, version: string, read: (name: string) => Uint8Array | undefined): string[] {
+export function checkCoreFeed(text: string, version: string, read: (name: string) => Uint8Array | undefined, parse: (text: string) => ReturnType<typeof parseCoreFeed> = parseCoreFeed): string[] {
   let feed: ReturnType<typeof parseCoreFeed>;
   try {
-    feed = parseCoreFeed(text);
+    feed = parse(text);
   } catch (err) {
     return [(err as Error).message];
   }

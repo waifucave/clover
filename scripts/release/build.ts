@@ -44,14 +44,15 @@ import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon"
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
 import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import { sealProblems } from "../seal-bun-doors";
+import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { runNameScan } from "./name-scan";
 import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems,
-  writeCoreAssets, writeServedCopies, type Channel,
+  checkPluginBunFeed, writeCoreAssets, writePluginBunAssets, writeServedCopies, type Channel,
 } from "./lib";
-import { coreFeedFile } from "../../packages/update-feed/src/index";
+import { coreFeedFile, pluginBunFeedFile } from "../../packages/update-feed/src/index";
 
 export type BuildOs = "mac" | "win";
 
@@ -101,7 +102,10 @@ export function signingInputs(os: BuildOs, env: Record<string, string | undefine
   const problems: string[] = [];
   if (os === "mac" && env.CLOVER_MAC_IDENTITY) {
     try {
-      identityTeam(env.CLOVER_MAC_IDENTITY);
+      // The team must be Clover's: the Keychain items' requirement for the core, and lane B's for plugin Bun
+      // (`anchor apple generic and identifier … and certificate leaf[subject.OU] = CLOVER_TEAM_ID`), name it.
+      const team = identityTeam(env.CLOVER_MAC_IDENTITY);
+      if (team !== CLOVER_TEAM_ID) problems.push(`CLOVER_MAC_IDENTITY is team ${team}, not Clover's ${CLOVER_TEAM_ID}: the core's Keychain items and plugin Bun's check would refuse what it signs`);
     } catch (err) {
       problems.push((err as Error).message);
     }
@@ -294,6 +298,7 @@ export function main(argv: readonly string[], root: string): number {
       if (problems.length > 0) return 1;
     }
     writeCoreAssets(outDir, version, a.os, a.channel, daemonInApp(outDir, a.os));
+    writePluginBunAssets(outDir, a.os, a.channel, join(dirname(daemonInApp(outDir, a.os)), bundledFiles(target)[0]!));
     writeBuildCommit(outDir, a.os, commit);
     writeServedCopies(outDir, a.channel, [a.os]);
 
@@ -306,13 +311,15 @@ export function main(argv: readonly string[], root: string): number {
       problems.push(...checkUpdateInfo(parseUpdateInfo(readFileSync(path, "utf8")), version, read).map((p) => `${feedFile(ch, a.os)}: ${p}`));
       const core = coreFeedFile(ch, CORE_TARGET[a.os]);
       if (existsSync(join(outDir, core))) problems.push(...checkCoreFeed(readFileSync(join(outDir, core), "utf8"), version, read).map((p) => `${core}: ${p}`));
+      const bun = pluginBunFeedFile(ch, CORE_TARGET[a.os]);
+      if (existsSync(join(outDir, bun))) problems.push(...checkPluginBunFeed(readFileSync(join(outDir, bun), "utf8"), read).map((p) => `${bun}: ${p}`));
     }
     for (const p of problems) console.error(`release/build: ${p}`);
     if (problems.length > 0) return 1;
     // The identity scan over everything built (scripts/release/name-scan.ts): fails closed on a signed release.
     const scan = runNameScan(outDir, { required: a.sign });
     console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason}); a signed release never skips it`);
-    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n) || n.startsWith("clover-core-")).sort();
+    const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip|exe|yml|blockmap)$/.test(n) || n.startsWith("clover-core-") || n.startsWith("clover-plugin-bun-")).sort();
     writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
     console.log(`release/build: ${shipped.join(", ")} in ${outDir}${a.sign ? "" : " (unsigned)"}`);
     return 0;
