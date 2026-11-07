@@ -1,0 +1,49 @@
+name: queue sweep
+
+# When the merge queue rebuilds a batch (a PR dropped, re-enqueued or jumped), GitHub deletes the old
+# gh-readonly-queue/main/pr-N-<sha> ref but leaves that ref's ci.yml run going, holding runners (Mac ones for 40 minutes
+# and more). Each merge_group event runs this once: it cancels every queued or running merge_group run of ci.yml whose
+# ref no longer exists. Never this run, never a run whose ref is live, never a run that isn't the queue's; and it
+# cancels nothing when it can't list the runs or the refs, or when the listing lacks this event's own ref (then the
+# listing can't be trusted). The runs are listed before the refs, so a run's ref already existed when the refs were
+# read. scripts/queue-sweep.test.ts runs the step below against stand-ins for gh and git.
+on:
+  merge_group:
+
+permissions:
+  actions: write
+
+jobs:
+  sweep:
+    name: queue sweep
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Cancel the runs of refs the queue deleted
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          OWN_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # The queue's ci.yml runs not yet finished, first.
+          runs=$(for s in requested waiting pending queued in_progress; do
+            gh api "repos/$REPO/actions/workflows/ci.yml/runs?event=merge_group&status=$s&per_page=100" --jq '.workflow_runs[] | "\(.id) \(.head_branch)"'
+          done | sort -u)
+          # Then the live branches (the repository is public: no token needed, and none is given).
+          refs=$(git ls-remote --heads "https://github.com/$REPO" | awk '{print $2}' | sed 's|^refs/heads/||')
+          if ! grep -qxF "$OWN_BRANCH" <<<"$refs"; then
+            echo "queue sweep: the listing lacks this event's own ref ($OWN_BRANCH); cancelling nothing"
+            exit 0
+          fi
+          cancelled=0
+          while read -r id branch; do
+            [ -n "$id" ] || continue
+            [ "$id" != "$RUN_ID" ] || continue
+            case "$branch" in gh-readonly-queue/*) ;; *) continue ;; esac
+            if grep -qxF "$branch" <<<"$refs"; then continue; fi
+            echo "queue sweep: run $id's ref $branch is gone: cancelling it"
+            if gh api -X POST "repos/$REPO/actions/runs/$id/cancel" >/dev/null; then cancelled=$((cancelled + 1)); else echo "queue sweep: could not cancel $id"; fi
+          done <<<"$runs"
+          echo "queue sweep: $cancelled stale run(s) cancelled"

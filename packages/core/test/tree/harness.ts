@@ -52,9 +52,8 @@ export function realTreeHarness(opts: ConstructorParameters<typeof FakeTree>[0])
     holder: (name) => holders.get(name)!,
     botComputer: opts.botComputer,
     // Both ends on this disk: the direct path between two holders here.
-    transfer: ({ from, to, move, source, destination, call, answers }) => localTransfer(holders.get(source)!, holders.get(destination)!, {
-      from, to, move, level: call.level ?? DEFAULT_LEVEL,
-      ...(answers.destination ? { answer: answers.destination } : {}), ...(answers.source ? { sourceAnswer: answers.source } : {}),
+    transfer: ({ from, to, move, source, destination, call }) => localTransfer(holders.get(source)!, holders.get(destination)!, {
+      from, to, move, level: call.level ?? DEFAULT_LEVEL, ...(call.answer ? { answer: call.answer } : {}),
     }, call.as),
   });
 
