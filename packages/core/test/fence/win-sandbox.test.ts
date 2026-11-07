@@ -51,10 +51,7 @@ import {
   parseInstallMarker,
   markerAllowsSetup,
   markerAllowsRemove,
-  principalLeasePath,
-  parsePrincipalLease,
-  formatPrincipalLease,
-  leaseLaunchGate,
+  poolLockPath,
   minimalChildEnv,
   execArgs,
   profileQueryArgs,
@@ -64,8 +61,6 @@ import {
   userStatusArgs,
   sandboxLeasesDir,
   acquirePoolLease,
-  releasePoolLease,
-  processStartTimeMs,
 } from "../../src/fence/win-sandbox";
 import { authenticodeDigest, validateCertificateTable } from "../../src/fence/windows-launcher";
 import type { SandboxPolicy } from "../../src/contracts/fence";
@@ -643,25 +638,9 @@ describe("the pool (ruling 2)", () => {
   });
 });
 
-describe("the exclusive launch lease (spec one-session-at-a-time)", () => {
-  test("round-trips", () => {
-    const l = { holderPid: 42, startedAt: "t0", lastResetAt: "t1", lastUseAt: "t2" };
-    expect(parsePrincipalLease(formatPrincipalLease(l))).toEqual(l);
-    expect(parsePrincipalLease(null)).toBeNull();
-    expect(parsePrincipalLease("x")).toBeNull();
-    expect(principalLeasePath("C:\\l", "clover-sb-a")).toBe("C:\\l\\clover-sb-a.json");
-  });
-  test("the gate refuses live holders and stale resets", () => {
-    const dead = () => false;
-    const live = (pid: number) => pid === 42;
-    expect(leaseLaunchGate(null, dead)).toEqual({ ok: true });
-    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: "t2", lastUseAt: "t1" }, live))
-      .toEqual({ ok: false, reason: expect.stringContaining("live session") });
-    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: null, lastUseAt: "t1" }, dead))
-      .toEqual({ ok: false, reason: expect.stringContaining("reset") });
-    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: "t1", lastUseAt: "t1" }, dead))
-      .toEqual({ ok: false, reason: expect.stringContaining("reset") });
-    expect(leaseLaunchGate({ holderPid: 42, startedAt: "t0", lastResetAt: "t2", lastUseAt: "t1" }, dead)).toEqual({ ok: true });
+describe("the pool lock file", () => {
+  test("one lock file per principal", () => {
+    expect(poolLockPath("C:\\l", "clover-sb-a")).toBe("C:\\l\\clover-sb-a.lock");
   });
 });
 
@@ -678,25 +657,24 @@ describe("the minimal child env (should-fix)", () => {
 });
 
 describe("the exclusive pool lease (ruling 3)", () => {
-  const memStore = () => {
-    const files = new Map<string, string>();
+  // In-memory fake with OS lock semantics: exclusive, fail-immediately (a second
+  // tryLock on a held path fails even in this same process), freed on release —
+  // which is how the tests model the OS freeing a dead holder's lock.
+  const memLocks = () => {
+    const held = new Set<string>();
     return {
-      files,
       store: {
-        readText: (p: string) => files.get(p) ?? null,
-        createNew: (p: string, c: string) => {
-          if (files.has(p)) return false;
-          files.set(p, c);
-          return true;
-        },
-        remove: (p: string) => { files.delete(p); },
-        renameToGrave: (cur: string, grave: string) => {
-          const c = files.get(cur);
-          if (c === undefined) return false; // ENOENT: another racer moved it first
-          if (files.has(grave)) throw new Error(`grave collision ${grave}`);
-          files.delete(cur);
-          files.set(grave, c);
-          return true;
+        tryLock: (p: string) => {
+          if (held.has(p)) return null;
+          held.add(p);
+          let released = false;
+          return {
+            release: () => {
+              if (released) return;
+              released = true;
+              held.delete(p);
+            },
+          };
         },
       },
     };
@@ -704,110 +682,77 @@ describe("the exclusive pool lease (ruling 3)", () => {
   const pool2 = [{ principal: "clover-sb-a-1" }, { principal: "clover-sb-a-2" }];
 
   test("two launches get distinct principals; a third waits, then refuses", async () => {
-    const { store } = memStore();
+    const { store } = memLocks();
     let t = 1000;
     const now = () => t;
     const sleep = async (ms: number) => { t += ms; };
-    const isAlive = () => true;
-    const a = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, holderPid: 11, timeoutMs: 1000, now, sleep, isAlive });
-    const b = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, holderPid: 22, timeoutMs: 1000, now, sleep, isAlive });
-    expect(a).toEqual({ ok: true, principal: "clover-sb-a-1" });
-    expect(b).toEqual({ ok: true, principal: "clover-sb-a-2" });
-    const c = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, holderPid: 33, timeoutMs: 500, pollMs: 500, now, sleep, isAlive });
+    const a = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 1000, now, sleep });
+    const b = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 1000, now, sleep });
+    if (!a.ok || !b.ok) throw new Error("expected two wins");
+    expect(a.principal).toBe("clover-sb-a-1");
+    expect(b.principal).toBe("clover-sb-a-2");
+    const c = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 500, pollMs: 500, now, sleep });
     expect(c.ok).toBe(false);
     if (!c.ok) expect(c.reason).toContain("busy");
+    a.release();
+    b.release();
   });
 
-  test("a dead holder's lease is taken over; release is nonce-guarded", async () => {
-    const { store } = memStore();
-    const alive = new Set([11]);
-    const isAlive = (pid: number) => alive.has(pid);
-    const first = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 11, timeoutMs: 10, isAlive });
-    expect(first).toEqual({ ok: true, principal: "clover-sb-a-1" });
-    alive.delete(11);
-    const second = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 10, isAlive });
-    expect(second).toEqual({ ok: true, principal: "clover-sb-a-1" });
-    // A foreign nonce cannot release our lease.
-    expect(releasePoolLease(store, "L:", "clover-sb-a-1", "nope")).toBe(false);
+  test("releasing frees the principal immediately (a dead holder's lock is free)", async () => {
+    const { store } = memLocks();
+    const first = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 10 });
+    if (!first.ok) throw new Error("expected a win");
+    expect(first.principal).toBe("clover-sb-a-1");
+    first.release(); // models the OS freeing a killed holder's lock: no staleness, no wait
+    const second = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 10 });
+    if (!second.ok) throw new Error("expected an immediate re-win");
+    expect(second.principal).toBe("clover-sb-a-1");
+    second.release();
+    second.release(); // idempotent
   });
 
-  test("a changed holder start time takes over (PID reuse)", async () => {
-    const { store } = memStore();
-    const isAlive = () => true;
-    const starts = new Map<number, number>([[11, 100]]);
-    const startTimeOf = (pid: number) => starts.get(pid) ?? null;
-    await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 11, timeoutMs: 10, isAlive, startTimeOf, nonce: "n1" });
-    // Same pid, different start: the recorded holder is gone.
-    starts.set(11, 200);
-    const again = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 10, isAlive, startTimeOf, nonce: "n2" });
-    expect(again).toEqual({ ok: true, principal: "clover-sb-a-1" });
-    expect(releasePoolLease(store, "L:", "clover-sb-a-1", "n2")).toBe(true);
-    expect(releasePoolLease(store, "L:", "clover-sb-a-1", "n2")).toBe(true); // idempotent
-  });
-
-  test("two racers for a dead holder's lease: exactly one wins", async () => {
-    const { store, files } = memStore();
-    // A stale lease from a dead holder occupies the only slot.
-    files.set(principalLeasePath("L:", "clover-sb-a-1"), JSON.stringify({ holderPid: 99, holderStart: null, nonce: "dead", lastUseAt: null, lastResetAt: null }));
-    const isAlive = (pid: number) => pid !== 99;
-    const startTimeOf = () => null;
-    // Both contenders race concurrently; the synchronous read/rename/create
-    // sequence admits no interleave, so the loser gets ENOENT on the grave-rename.
+  test("two racers for one lock: exactly one wins", async () => {
+    const { store } = memLocks();
+    // Both contenders race concurrently; the synchronous tryLock admits no
+    // interleave, so the loser sees the winner's held lock and backs off.
     const [a, b] = await Promise.all([
-      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 11, timeoutMs: 500, pollMs: 10, isAlive, startTimeOf, nonce: "racer-1" }),
-      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 500, pollMs: 10, isAlive, startTimeOf, nonce: "racer-2" }),
+      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 500, pollMs: 10 }),
+      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 500, pollMs: 10 }),
     ]);
     const wins = [a, b].filter((r) => r.ok);
     expect(wins).toHaveLength(1);
-    expect(wins[0]).toEqual({ ok: true, principal: "clover-sb-a-1" });
+    expect(wins[0]).toEqual({ ok: true, principal: "clover-sb-a-1", release: expect.any(Function) });
     const loser = [a, b].find((r) => !r.ok)!;
     if (!loser.ok) expect(loser.reason).toContain("busy");
-    // The surviving lease names the winner's nonce — no torn write, no double hold.
-    const raw = store.readText(principalLeasePath("L:", "clover-sb-a-1"))!;
-    const survivor = (JSON.parse(raw) as { nonce: string }).nonce;
-    expect(["racer-1", "racer-2"]).toContain(survivor);
+    for (const r of wins) if (r.ok) r.release();
   });
 
-  test("grave-rename loser restarts from the read and never overwrites a live lease", async () => {
-    const inner = memStore();
-    const path = principalLeasePath("L:", "clover-sb-a-1");
-    inner.files.set(path, JSON.stringify({ holderPid: 99, holderStart: null, nonce: "dead", lastUseAt: null, lastResetAt: null }));
-    // The interleaving the rename-over protocol got wrong, replayed against the
-    // grave protocol: B judges the holder dead from its read; A moves the stale
-    // file aside and installs a live lease; B's grave-rename then finds nothing
-    // to move (ENOENT) and must start again from the read — where it now sees
-    // A's live holder and backs off instead of renaming over it.
-    let raced = false;
+  test("three racers for one lock: exactly one wins", async () => {
+    const { store } = memLocks();
+    const rs = await Promise.all([
+      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 500, pollMs: 10 }),
+      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 500, pollMs: 10 }),
+      acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), timeoutMs: 500, pollMs: 10 }),
+    ]);
+    expect(rs.filter((r) => r.ok)).toHaveLength(1);
+    for (const r of rs) if (r.ok) r.release();
+  });
+
+  test("a contender that finds the first member locked takes the next one", async () => {
+    const inner = memLocks();
+    let forced = false;
     const store = {
-      ...inner.store,
-      renameToGrave: (cur: string, grave: string) => {
-        if (!raced) {
-          raced = true;
-          // Racer A wins the rename first, outside B's call.
-          const moved = inner.store.renameToGrave(cur, `${cur}.dead-a`);
-          expect(moved).toBe(true);
-          const installed = inner.store.createNew(cur, JSON.stringify({ holderPid: 11, holderStart: null, nonce: "a", lastUseAt: null, lastResetAt: null }));
-          expect(installed).toBe(true);
-          return false; // B's rename: the stale file A moved is already gone.
+      tryLock: (p: string) => {
+        if (!forced) {
+          forced = true;
+          return null; // simulate the OS reporting the first member busy
         }
-        return inner.store.renameToGrave(cur, grave);
+        return inner.store.tryLock(p);
       },
     };
-    const r = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2.slice(0, 1), holderPid: 22, timeoutMs: 50, pollMs: 10, isAlive: (pid) => pid !== 99, startTimeOf: () => null, nonce: "b" });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toContain("busy");
-    // B never touched A's live lease: the survivor still names A.
-    expect((JSON.parse(inner.store.readText(path)!) as { nonce: string }).nonce).toBe("a");
-  });
-
-  test("processStartTimeMs returns the current process's start (or null when unknown)", () => {
-    const t = processStartTimeMs(process.pid);
-    // Fail-closed: null is allowed (unknown), but never NaN or a future time.
-    if (t !== null) {
-      expect(Number.isFinite(t)).toBe(true);
-      expect(t).toBeLessThanOrEqual(Date.now());
-    }
-    expect(processStartTimeMs(-1)).toBeNull();
-    expect(processStartTimeMs(0)).toBeNull();
+    const r = await acquirePoolLease({ store, leasesDir: "L:", pool: pool2, timeoutMs: 100 });
+    if (!r.ok) throw new Error("expected a win on the second member");
+    expect(r.principal).toBe("clover-sb-a-2");
+    r.release();
   });
 });

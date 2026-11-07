@@ -13,7 +13,8 @@
 // the per-session reset — runs on Windows only, driven by `clover-core sandbox setup|remove|status`.
 import { win32 } from "node:path";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { dlopen, FFIType } from "bun:ffi";
 import { callerPlaces } from "./per-caller";
 import type { CallerPlaces } from "./per-caller";
 import type { SandboxPolicy } from "../contracts/fence";
@@ -430,50 +431,11 @@ export function markerAllowsRemove(marker: InstallMarker | null, ownerSid: strin
   return { ok: true };
 }
 
-/** The exclusive launch lease (spec's "one session at a time" until the privileged component lands).
- *  One file per principal under the owner's Clover leases dir; the holder records its PID and the last
- *  reset. A launch refuses while a live holder exists, and refuses unless a reset ran for that principal
- *  since its last use (ruling 4) — until the broker performs resets, Windows Bash is not admitted. */
-export interface PrincipalLease {
-  readonly holderPid: number;
-  readonly startedAt: string;
-  readonly lastResetAt: string | null;
-  readonly lastUseAt: string | null;
-}
-
-/** Where a principal's lease lives. */
-export function principalLeasePath(leasesDir: string, principal: string): string {
-  return win32.join(leasesDir, `${principal}.json`);
-}
-
-/** Parse a lease file back; null when absent or not ours. */
-export function parsePrincipalLease(text: string | null): PrincipalLease | null {
-  if (text === null) return null;
-  try {
-    const o = JSON.parse(text) as Record<string, unknown>;
-    if (typeof o.holderPid !== "number" || typeof o.startedAt !== "string" ||
-      (o.lastResetAt !== null && typeof o.lastResetAt !== "string") ||
-      (o.lastUseAt !== null && typeof o.lastUseAt !== "string")) return null;
-    return { holderPid: o.holderPid, startedAt: o.startedAt, lastResetAt: o.lastResetAt, lastUseAt: o.lastUseAt };
-  } catch {
-    return null;
-  }
-}
-
-/** Serialize a lease. */
-export function formatPrincipalLease(l: PrincipalLease): string {
-  return JSON.stringify({ holderPid: l.holderPid, startedAt: l.startedAt, lastResetAt: l.lastResetAt, lastUseAt: l.lastUseAt });
-}
-
-/** The launch gate: refuse while a live holder exists; refuse unless a reset ran since the last use.
- *  `holderAlive` is the daemon's PID-liveness check. A missing lease is a free principal. */
-export function leaseLaunchGate(lease: PrincipalLease | null, holderAlive: (pid: number) => boolean): { ok: true } | { ok: false; reason: string } {
-  if (lease === null) return { ok: true };
-  if (holderAlive(lease.holderPid)) return { ok: false, reason: "the principal is leased by a live session" };
-  if (lease.lastUseAt !== null && (lease.lastResetAt === null || lease.lastResetAt <= lease.lastUseAt)) {
-    return { ok: false, reason: "the principal needs a reset since its last use (item 1116 is unmet on Windows)" };
-  }
-  return { ok: true };
+/** Where a principal's OS lock lives: `<leases>\<principal>.lock`. One file per pool member.
+ *  The file's CONTENT is meaningless (created empty on first lock) — the kernel's byte-range
+ *  lock on it is the lease. */
+export function poolLockPath(leasesDir: string, principal: string): string {
+  return win32.join(leasesDir, `${principal}.lock`);
 }
 
 /** Where pool leases live: `<home>\sandbox\leases\`, writable by the daemon's user. */
@@ -481,165 +443,71 @@ export function sandboxLeasesDir(cloverHome: string): string {
   return win32.join(cloverHome, "sandbox", "leases");
 }
 
-/** Storage the lease manager needs; injected so unit tests run without disks or processes. */
+/** An OS lock guard: the open HANDLE whose kernel lock is the lease. `release()` unlocks and
+ *  closes; it is idempotent. The caller must hold the guard for the whole launch. */
+export interface PoolLockGuard {
+  release(): void;
+}
+
+/** Storage the lease manager needs; injected so unit tests run without disks or processes.
+ *  The production implementation is [`createWindowsLockStore`]; tests use an in-memory fake
+ *  with the same semantics (exclusive, fail-immediately, freed on release). */
 export interface LeaseStore {
-  readText(path: string): string | null;
-  /** Atomically create `path` with `content`; `false` when it already exists. */
-  createNew(path: string, content: string): boolean;
-  remove(path: string): void;
-  /** Atomically move `currentPath` to `gravePath` (same directory, grave name unique
-   *  to the caller). Returns `false` when `currentPath` is already gone (ENOENT):
-   *  another racer moved it first, so the caller must start again from the read —
-   *  never rename over, or create over, a file it has not just moved aside itself.
-   *  The production filesystem implementation is `fs.renameSync`, atomic on one
-   *  directory on both NTFS and POSIX; the in-memory test store swaps `Map` entries.
-   *
-   *  Why not an OS-held lock (`CreateFileW` with `dwShareMode = 0` / `LockFileEx`
-   *  via `bun:ffi`, auto-released when the holder dies)? That would need a
-   *  Windows-only handle held open in the daemon for the whole session lifetime,
-   *  plus native PID/start-time plumbing, and it cannot run in core's
-   *  cross-platform unit tests (macOS). Grave-rename + exclusive-create gives the
-   *  single winner the same way: only one racer can move a given lease file
-   *  aside (the others get ENOENT and retry), and only one can exclusively
-   *  create its replacement. A rename to a unique new name never replaces
-   *  anything, so a live lease is never overwritten — the flaw of renaming a
-   *  temp file OVER the lease and re-reading the nonce (a late racer renames
-   *  over the winner's live lease and its re-read still shows itself, so both
-   *  win). Contenders run in one daemon process and each attempt's
-   *  read/rename/create/remove sequence is synchronous (interleaving only at
-   *  `await sleep`), without native code. When the daemon wires the lease into
-   *  the Windows Bash spawn, its filesystem store implements this with
-   *  `renameSync`. Grave files (`<principal>.json.dead-<nonce>`) left by a
-   *  crashed holder are inert — the lease path is the only source of truth —
-   *  and the winner removes its own grave; a startup sweep may remove the rest. */
-  renameToGrave(currentPath: string, gravePath: string): boolean;
+  /** Open (creating) `lockPath` and take its exclusive lock WITHOUT waiting: the guard on
+   *  success, `null` when another holder owns it. Never throws for a busy lock. */
+  tryLock(lockPath: string): PoolLockGuard | null;
 }
 
-/** A live lease record on disk. */
-export interface PoolLeaseFile {
-  readonly holderPid: number;
-  /** The holder's start time (ms epoch) when known; guards against PID reuse. */
-  readonly holderStart: number | null;
-  readonly nonce: string;
-  readonly lastUseAt: number | null;
-  readonly lastResetAt: string | null;
-}
-
-/** Start time of a live process (ms since the Unix epoch), or null when unknown.
- *  This is the default `startTimeOf` for `acquirePoolLease`: it guards against PID
- *  reuse (a dead holder's PID recycled by an unrelated process). It fails closed —
- *  null disables only the reuse fast-path; liveness still comes from `isAlive`.
- *  Windows reads `(Get-Process -Id <pid>).StartTime`; other platforms read `ps`. */
-export function processStartTimeMs(pid: number): number | null {
-  try {
-    if (!Number.isInteger(pid) || pid <= 0) return null;
-    if (process.platform === "win32") {
-      // Synchronous: lease acquisition is rare (once per session). The PID is
-      // validated above, so no interpolation risk beyond the integer.
-      const out = execFileSync(
-        "powershell",
-        ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString("o")`],
-        { encoding: "utf8", windowsHide: true, timeout: 5000 },
-      ) as string;
-      const t = Date.parse(out.trim());
-      return Number.isNaN(t) ? null : t;
-    }
-    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 5000 }) as string;
-    const t = Date.parse(out.trim());
-    return Number.isNaN(t) ? null : t;
-  } catch {
-    return null;
-  }
-}
-
-/** Acquire one pool principal exclusively (controller ruling 3). Tries members in order; a missing
- *  lease file is free (exclusive-create wins it). A live holder blocks; a dead PID — or a start
- *  time that differs from the recorded one — or a corrupt file is stale and taken over by
- *  grave-rename: move the lease aside to `<principal>.json.dead-<yourNonce>` (only one racer
- *  can move a given file; the rest get ENOENT and start again from the read), then
- *  exclusively create a fresh lease with your nonce, then remove your grave. A rename to a
- *  unique new name never replaces anything, so a live lease is never overwritten. When every
- *  member is leased by a live holder, waits until `timeoutMs` and then refuses instead of
- *  sharing a principal. `nonce` identifies the holder for a safe release.
+/** Acquire one pool principal exclusively (controller ruling 3): the first member whose lock
+ *  succeeds wins. The OS frees a dead holder's lock when its handles close, so there is no
+ *  staleness, no PID, no start time and no takeover. When every member is locked, waits until
+ *  `timeoutMs` and then refuses instead of sharing a principal. The returned `release`
+ *  unlocks and closes the HANDLE; call it at launch end (it is idempotent, and process exit
+ *  frees the lock either way).
  *
  *  Daemon wiring: no Windows Bash spawn exists in the daemon yet (`execArgs` / `sessionGrantArgs`
  *  are built and unit-tested here but no production caller passes them to a child process), so no
- *  production `LeaseStore` exists either. The first daemon caller — the lane that introduces the
- *  Windows Bash tool spawn — implements `LeaseStore` on the filesystem (`readText`/`createNew` via
- *  `O_CREAT|O_EXCL`, `renameToGrave` via `renameSync`) with `sandboxLeasesDir(cloverHome)` as the
- *  leases dir, `process.pid` as `holderPid`, and the defaults for `isAlive`/`startTimeOf`. Until
- *  then the lease is measured by unit tests plus a filesystem-backed race on the VM. */
+ *  production `LeaseStore` is constructed yet either. The first daemon caller — the lane that
+ *  introduces the Windows Bash tool spawn — builds one `createWindowsLockStore` over
+ *  `sandboxLeasesDir(cloverHome)`, acquires per launch, and holds `release` for the session.
+ *  Until then the lease is measured by unit tests (in-memory fake with OS semantics) plus a
+ *  `bun:ffi` kernel32 race on the VM. */
 export async function acquirePoolLease(o: {
   store: LeaseStore;
   leasesDir: string;
   pool: readonly { principal: string }[];
-  holderPid: number;
   timeoutMs: number;
   pollMs?: number;
-  nonce?: string;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
-  isAlive?: (pid: number) => boolean;
-  /** Start time of a pid (ms epoch), or null when unknown. Guards against PID reuse.
-   *  Defaults to `processStartTimeMs` (a real source); tests inject fakes. */
-  startTimeOf?: (pid: number) => number | null;
-}): Promise<{ ok: true; principal: string } | { ok: false; reason: string }> {
+}): Promise<{ ok: true; principal: string; release: () => void } | { ok: false; reason: string }> {
   const pollMs = o.pollMs ?? 250;
   const now = o.now ?? Date.now;
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const isAlive = o.isAlive ?? ((pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } });
-  const startTimeOf = o.startTimeOf ?? processStartTimeMs;
-  const holderStart = startTimeOf(o.holderPid);
-  const nonce = o.nonce ?? `${o.holderPid}-${now()}-${Math.floor(Math.random() * 1e9)}`;
   const deadline = now() + o.timeoutMs;
   for (;;) {
     for (const member of o.pool) {
-      const path = principalLeasePath(o.leasesDir, member.principal);
-      const raw = o.store.readText(path);
-      if (raw === null) {
-        // Free: exclusive-create wins it; a parallel creator means retry.
-        const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: null, lastResetAt: null };
-        try {
-          if (o.store.createNew(path, JSON.stringify(lease))) return { ok: true, principal: member.principal };
-        } catch { /* retry below */ }
-        continue;
+      let guard: PoolLockGuard | null = null;
+      try {
+        guard = o.store.tryLock(poolLockPath(o.leasesDir, member.principal));
+      } catch {
+        guard = null;
       }
-      let cur: PoolLeaseFile | null = null;
-      try {
-        const v = JSON.parse(raw) as Record<string, unknown>;
-        if (typeof v.holderPid === "number" && typeof v.nonce === "string" &&
-          (v.holderStart === null || typeof v.holderStart === "number") &&
-          (v.lastUseAt === null || typeof v.lastUseAt === "number") &&
-          (v.lastResetAt === null || typeof v.lastResetAt === "string")) {
-          cur = v as unknown as PoolLeaseFile;
-        }
-      } catch { /* corrupt: take over below */ }
-      if (cur !== null) {
-        const alive = isAlive(cur.holderPid);
-        const recordedStart = cur.holderStart ?? null;
-        const liveStart = startTimeOf(cur.holderPid);
-        const startDiffers = recordedStart !== null && liveStart !== null && liveStart !== recordedStart;
-        if (alive && !startDiffers) continue; // live holder: try the next member
+      if (guard !== null) {
+        const g = guard;
+        let released = false;
+        return {
+          ok: true,
+          principal: member.principal,
+          release: () => {
+            if (released) return;
+            released = true;
+            try {
+              g.release();
+            } catch { /* process exit frees the lock either way */ }
+          },
+        };
       }
-      // Stale (dead holder, changed start time) or corrupt: grave-rename the lease
-      // aside, preserving the reset/use history when the record parsed. Only the
-      // racer that moves the file wins the rename; the rest retry from the read.
-      const grave = `${path}.dead-${nonce}`;
-      let moved = false;
-      try {
-        moved = o.store.renameToGrave(path, grave);
-      } catch { moved = false; }
-      if (!moved) continue;
-      const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: cur?.lastUseAt ?? null, lastResetAt: cur?.lastResetAt ?? null };
-      let created = false;
-      try {
-        created = o.store.createNew(path, JSON.stringify(lease));
-      } catch { created = false; }
-      try {
-        o.store.remove(grave);
-      } catch { /* grave is inert; a startup sweep may remove leftovers */ }
-      if (created) return { ok: true, principal: member.principal };
-      // Someone else created the replacement first: start again from the read.
     }
     if (now() >= deadline) {
       return { ok: false, reason: "the sandbox pool is busy; all 4 principals are leased" };
@@ -648,19 +516,79 @@ export async function acquirePoolLease(o: {
   }
 }
 
-/** Release a lease the caller holds: removes the file only when its nonce still names us. */
-export function releasePoolLease(store: LeaseStore, leasesDir: string, principal: string, nonce: string): boolean {
-  const path = principalLeasePath(leasesDir, principal);
-  const raw = store.readText(path);
-  if (raw === null) return true;
-  try {
-    const v = JSON.parse(raw) as { nonce?: unknown };
-    if (v.nonce !== nonce) return false;
-  } catch {
-    return false;
-  }
-  store.remove(path);
-  return true;
+/** kernel32, loaded lazily so importing this module on any other OS never touches Windows DLLs. */
+let kernel32: ReturnType<typeof loadKernel32> | undefined;
+function loadKernel32() {
+  // HANDLEs cross as u64 (bigints): a `ptr` return is a 53-bit JS number and would corrupt
+  // addresses with high bits set (same reason as `keychain-ffi.ts`). `ptr` is kept only for
+  // memory this process owns (the path string, the OVERLAPPED region).
+  const H = FFIType.u64;
+  return dlopen("kernel32.dll", {
+    CreateFileW: { args: [FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.u32, FFIType.ptr], returns: H },
+    LockFileEx: { args: [H, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
+    UnlockFileEx: { args: [H, FFIType.u32, FFIType.u32, FFIType.u32, FFIType.ptr], returns: FFIType.bool },
+    CloseHandle: { args: [H], returns: FFIType.bool },
+  }).symbols;
+}
+function K32(): ReturnType<typeof loadKernel32> {
+  if (process.platform !== "win32") throw new Error("the Windows lock store runs on Windows only");
+  kernel32 ??= loadKernel32();
+  return kernel32;
+}
+
+const INVALID_HANDLE_VALUE = 0xffffffffffffffffn;
+const GENERIC_READ_WRITE = 0xc0000000;
+const FILE_SHARE_ALL = 0x7;
+const OPEN_ALWAYS = 4;
+const FILE_ATTRIBUTE_NORMAL = 0x80;
+/** `LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY`. */
+const LOCK_EXCLUSIVE_IMMEDIATE = 0x3;
+
+/** A Windows OS-lock store over a leases dir: `tryLock` opens (creating) `<leases>\<principal>.lock`
+ *  with full sharing and takes a 1-byte exclusive, fail-immediate `LockFileEx` on it. The guard
+ *  keeps the HANDLE open — the lock IS the open handle — so the caller must hold it for the whole
+ *  launch and call `release()` (unlock + close) at the end. When the holder process dies, the OS
+ *  closes its handles and the lock frees immediately: no staleness, no PIDs, no takeover. Any
+ *  other locker (another process, or another handle in this one) fails immediately while held. */
+export function createWindowsLockStore(leasesDir: string): LeaseStore {
+  if (process.platform !== "win32") throw new Error("the Windows lock store runs on Windows only");
+  mkdirSync(leasesDir, { recursive: true });
+  return {
+    tryLock(lockPath: string): PoolLockGuard | null {
+      const k = K32();
+      const path = Buffer.from(`${lockPath}\0`, "utf16le");
+      // `BigInt()` normalises the u64 return either way; INVALID_HANDLE_VALUE never validates.
+      const handle = BigInt(k.CreateFileW(path, GENERIC_READ_WRITE, FILE_SHARE_ALL, null, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, null) as never);
+      if (handle === INVALID_HANDLE_VALUE) return null;
+      // OVERLAPPED, zeroed: lock 1 byte at offset 0. hEvent NULL + FAIL_IMMEDIATELY never waits.
+      const region = new Uint8Array(32);
+      let locked = false;
+      try {
+        locked = k.LockFileEx(handle, LOCK_EXCLUSIVE_IMMEDIATE, 0, 1, 0, region) as unknown as boolean;
+      } catch {
+        locked = false;
+      }
+      if (!locked) {
+        try {
+          k.CloseHandle(handle);
+        } catch { /* ignore */ }
+        return null;
+      }
+      let released = false;
+      return {
+        release(): void {
+          if (released) return;
+          released = true;
+          try {
+            k.UnlockFileEx(handle, 0, 1, 0, new Uint8Array(32));
+          } catch { /* ignore */ }
+          try {
+            k.CloseHandle(handle);
+          } catch { /* ignore */ }
+        },
+      };
+    },
+  };
 }
 
 /** `icacls <path> /deny *<sid>:(OI)(CI)F`: the principal can't write the Startup folder or its children.
