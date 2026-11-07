@@ -113,6 +113,8 @@ const O_CLOEXEC = 0o2000000, O_EXCL = 0o200, O_PATH = 0o10000000;
 const O_NOFOLLOW: number = fsConstants.O_NOFOLLOW as number;
 const O_TMPFILE: number = (0o20000000 | (fsConstants.O_DIRECTORY as number)) >>> 0;
 const AT_FDCWD = -100, AT_SYMLINK_NOFOLLOW = 0x100, AT_SYMLINK_FOLLOW = 0x400;
+/** openat2 resolve flags (linux/openat2.h) the walk must not silently ignore. */
+const RESOLVE_BENEATH = 0x08, RESOLVE_IN_ROOT = 0x10;
 
 /** Whether an open-like call writes, from its flags word (openat2's comes from its open_how). */
 export function openWrites(flags: bigint): boolean {
@@ -208,6 +210,21 @@ export function targetIds(pid: number): TargetIds | null {
   } catch { return null; }
 }
 
+/** The target's umask, read through the pinned `/proc/<pid>` handle (never by pid string, so a recycled
+ *  pid cannot substitute another process's mask). Null when unreadable — the trap is refused then, never
+ *  run under a guessed mask. */
+export function targetUmask(procFd: number): number | null {
+  try {
+    for (const line of readFileSync(`/proc/self/fd/${procFd}/status`, "utf8").split("\n")) {
+      if (line.startsWith("Umask:")) {
+        const m = parseInt(line.split(/\s+/)[1]!, 8);
+        return Number.isSafeInteger(m) ? m : null;
+      }
+    }
+  } catch { /* gone */ }
+  return null;
+}
+
 /** Our own real/effective/filesystem uids, for the credential check. Null when unreadable. */
 export function selfIds(): { ruid: number; euid: number; fsuid: number } | null {
   try {
@@ -223,19 +240,22 @@ export function selfIds(): { ruid: number; euid: number; fsuid: number } | null 
 
 /** Whether this process may supervise: never as root and never with effective capabilities (a performed
  *  call runs with our credentials, so a privileged supervisor would hand its privilege to the target).
- *  Returns the refusal reason, or null when running unprivileged. */
+ *  Returns the refusal reason, or null when running unprivileged. Unreadable credentials refuse too. */
 export function supervisorSelfRefusal(): string | null {
   try {
     if (typeof process.geteuid === "function" && process.geteuid() === 0) return "refuses to run as root (euid 0)";
     const self = selfIds();
-    if (self !== null && (self.ruid === 0 || self.euid === 0 || self.fsuid === 0)) return "refuses to run as root (uid 0)";
+    if (self === null) return "refuses to run where its own credentials can't be read";
+    if (self.ruid === 0 || self.euid === 0 || self.fsuid === 0) return "refuses to run as root (uid 0)";
     for (const line of readFileSync("/proc/self/status", "utf8").split("\n")) {
       if (line.startsWith("CapEff:")) {
         if (BigInt(`0x${line.split(/\s+/)[1]}`) !== 0n) return "refuses to run with effective capabilities";
         break;
       }
     }
-  } catch { /* unreadable: fail closed below */ }
+  } catch {
+    return "refuses to run where its own credentials can't be read";
+  }
   return null;
 }
 
@@ -523,6 +543,9 @@ function performOpen(lib: SupervisorLib, listener: number, id: bigint, procFd: n
   const fin = lstatFinal(lib, parentFd, name);
   if ("errno" in fin) return done(verdictErr(fin.errno)); // missing without O_CREAT lands here as ENOENT
   if (fin.kind === "link") return done((f & O_NOFOLLOW) !== 0 ? verdictErr(40) : VERDICT_DENY); // ELOOP, or refused
+  // Without O_CREAT a missing final is ENOENT — never create it (an O_TMPFILE name is the exception: it names
+  // the directory to create inside, and is handled below).
+  if (fin.kind === "missing" && (f & O_CREAT) === 0 && (f & O_TMPFILE) === 0) return done(verdictErr(2));
   if (fin.kind !== "missing" && (f & O_CREAT) === 0 && !noCont) return done(VERDICT_CONT); // an existing file without O_CREAT may continue
   if (matchSupervised(parentFd, name, unsafe)) return done(VERDICT_DENY);
   // O_TMPFILE names a directory to create an unnamed file in: every supervised entry is a file, so this
@@ -604,10 +627,11 @@ function performMove(lib: SupervisorLib, procFd: number, srcDirfd: number, srcPa
   return done({ val: 0, error: 0, cont: false });
 }
 
-/** Dispatches one trapped call: pins `/proc/<pid>`, checks the notification is still live, reads every
- *  pointer argument ONCE, then performs the operation on walked handles (or continues a read, or refuses a
- *  supervised plant). Never lets the kernel re-read the target's pointers. The supervisor is single-threaded
- *  here (the loop awaits only between traps), so switching the umask around each performed call is safe. */
+/** Dispatches one trapped call: pins `/proc/<pid>`, checks the notification is still live, runs the call
+ *  under the target's own umask (read through the pinned handle), then performs the operation on walked
+ *  handles (or continues a read, or refuses a supervised plant). Never lets the kernel re-read the target's
+ *  pointers. The supervisor is single-threaded here (the loop awaits only between traps), so switching the
+ *  umask around each performed call is safe. */
 function performTrap(lib: SupervisorLib, listener: number, n: SupervisorNotif, unsafe: readonly string[]): SuperviseVerdict {
   const spec = (trapTable() ?? TRAPS_X64).find((t) => t.nr === n.nr);
   if (spec === undefined) return VERDICT_DENY; // fail closed: the filter only traps the table
@@ -617,6 +641,25 @@ function performTrap(lib: SupervisorLib, listener: number, n: SupervisorNotif, u
   if (proc.fd < 0) return VERDICT_DENY;
   try {
     if (!notifIdValid(lib, listener, n.id)) return VERDICT_DENY;
+    // The target's umask, read through the pinned handle and switched around the single-threaded perform,
+    // so setgid inheritance and default ACLs behave exactly as the kernel does them. Unreadable refuses:
+    // never run a performed call under a guessed mask.
+    const umask = targetUmask(proc.fd);
+    if (umask === null) return VERDICT_DENY;
+    const prev = lib.umask(umask);
+    try {
+      return dispatchTrap(lib, listener, n, spec, proc, unsafe);
+    } finally {
+      lib.umask(prev);
+    }
+  } finally {
+    try { closeSync(proc.fd); } catch { /* pinned */ }
+  }
+}
+
+/** Runs one trapped call: reads every pointer argument ONCE, then performs the operation on walked handles
+ *  (or continues a read, or refuses a supervised plant). The umask is already the target's. */
+function dispatchTrap(lib: SupervisorLib, listener: number, n: SupervisorNotif, spec: TrapSpec, proc: { fd: number }, unsafe: readonly string[]): SuperviseVerdict {
     const dirfdAt = (at: number): number => signedArg(n.args[at - 1] ?? -100n);
     const dirfdOf = (at: number): number => (spec.dirfd === -1 ? AT_FDCWD : dirfdAt(at));
     // Every pointer argument is read ONCE per trapped call: later reads hit this cache, so a thread rewriting
@@ -638,15 +681,17 @@ function performTrap(lib: SupervisorLib, listener: number, n: SupervisorNotif, u
       let mode = 0;
       if (isOpenAt2) {
         // openat2: flags, mode and resolve live in its open_how struct. Never CONTINUE: the kernel would
-        // re-read that memory. Perform every openat2. The walk refuses every link and stays pinned under
-        // the target's root, which is at least as strict as RESOLVE_NO_SYMLINKS/BENEATH/IN_ROOT — resolve
-        // flags need no separate handling.
+        // re-read that memory — perform every openat2. The walk refuses every link and stays pinned under
+        // the target's root (as strict as RESOLVE_NO_SYMLINKS), but it cannot emulate a scoped lookup, so
+        // RESOLVE_BENEATH and RESOLVE_IN_ROOT are refused rather than silently ignored.
         const howAddr = n.args[spec.how];
         if (howAddr === undefined || howAddr === 0n) return VERDICT_DENY;
         const how = readPathOnce(lib, n.pid, howAddr, 32);
         if (how === null || how.length < 24) return VERDICT_DENY;
         flags = how.readBigUInt64LE(0);
         mode = Number(how.readBigUInt64LE(8) & 0o7777n);
+        const resolve = how.readBigUInt64LE(16);
+        if ((resolve & BigInt(RESOLVE_BENEATH | RESOLVE_IN_ROOT)) !== 0n) return VERDICT_DENY;
       } else if (spec.kind === "creat") {
         flags = BigInt(O_CREAT | O_WRONLY | O_TRUNC);
         mode = Number((n.args[1] ?? 0n) & 0o7777n);
@@ -705,9 +750,6 @@ function performTrap(lib: SupervisorLib, listener: number, n: SupervisorNotif, u
       return lib.renameat2(srcFd, bufOf(srcName), dstFd, bufOf(dstName), atFlags);
     };
     return performMove(lib, proc.fd, dirfdOf(srcAt), src, src.startsWith("/"), dirfdOf(dstAt), dst, dst.startsWith("/"), unsafe, move);
-  } finally {
-    try { closeSync(proc.fd); } catch { /* pinned */ }
-  }
 }
 
 /** Whether the listener has a notification waiting (milliseconds to wait). */
@@ -767,16 +809,9 @@ export async function supervise(lib: SupervisorLib, listener: number, unsafe: re
         if (notifIdValid(lib, listener, n.id)) sendVerdict(lib, listener, n.id, VERDICT_DENY);
         continue;
       }
-      // The target's umask, read fresh per trap; the perform runs under it so the kernel applies its own
-      // setgid-inheritance and default-ACL rules. Single-threaded here: no trap interleaves.
-      const umask = targetIds(n.pid)?.umask ?? 0o22;
-      const prev = lib.umask(umask);
-      let verdict: SuperviseVerdict;
-      try {
-        verdict = performTrap(lib, listener, n, unsafe);
-      } finally {
-        lib.umask(prev);
-      }
+      // The trap runs under the target's own umask (read through its pinned /proc handle inside the trap,
+      // refused when unreadable); the loop's pre-answer id check is the second half of the pid sandwich.
+      const verdict = performTrap(lib, listener, n, unsafe);
       if (notifIdValid(lib, listener, n.id)) sendVerdict(lib, listener, n.id, verdict);
     }
     await Bun.sleep(0);

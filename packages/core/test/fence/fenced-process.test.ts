@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
-import { fencedSpawner, includeTargets, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys } from "../../src/fence/fenced-process";
+import { fencedSpawner, includeTargets, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys, writeLocked } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../src/fence/linux-bwrap";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
@@ -422,6 +422,39 @@ describe("the session's own repo", () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
+  test("writeLocked never leaves a config.lock behind, and keeps the user's mode", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-lock-")));
+    try {
+      const cfg = join(root, "config");
+      writeFileSync(cfg, "[user]\n\tname = Luna\n");
+      chmodSync(cfg, 0o644);
+      // The landed write keeps the 0644 mode (not the 0600 lock mode), and the user's git reads it.
+      expect(writeLocked(cfg, "[user]\n\tname = Sol\n", "[user]\n\tname = Luna\n")).toBe("ok");
+      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Sol\n");
+      expect(statSync(cfg).mode & 0o777).toBe(0o644);
+      expect(Bun.spawnSync(["git", "config", "--file", cfg, "--list"]).exitCode).toBe(0);
+      // A changed re-read refuses without clobbering — and without a lock stray.
+      writeFileSync(cfg, "[user]\n\tname = Luna\n");
+      expect(writeLocked(cfg, "[user]\n\tname = Sol\n", "[user]\n\tname = Stale\n")).toBe("changed");
+      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Luna\n");
+      expect(existsSync(`${cfg}.lock`)).toBe(false);
+      expect(Bun.spawnSync(["git", "config", "--file", cfg, "--list"]).exitCode).toBe(0);
+      // A failed write (an unwritable folder) leaves no lock either (non-root: root bypasses modes).
+      const ro = join(root, "ro");
+      mkdirSync(ro);
+      const locked = join(ro, "config");
+      writeFileSync(locked, "x");
+      if (process.geteuid?.() !== 0) {
+        chmodSync(ro, 0o555);
+        try {
+          expect(writeLocked(locked, "y", "x")).toBe("error");
+          expect(existsSync(`${locked}.lock`)).toBe(false);
+        } finally { chmodSync(ro, 0o755); }
+      }
+      expect(readdirSync(root).sort()).toEqual(["config", "ro"]);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
   test("includeTargets resolves include.path and includeIf paths the way git reads them", () => {
     const home = join(tmpdir(), "fake-home");
     const base = join(home, ".config", "git");
@@ -740,6 +773,29 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     // And a plant through openat2 is refused, like any other write.
     expect(ok(await w.run(o2(`o2("${bashrc}", os.O_WRONLY | os.O_CREAT)`), own))).toBe(false);
     expect(readFileSync(bashrc, "utf8")).toBe("");
+  }, 90_000);
+
+  test("a write-open without O_CREAT on a missing path is ENOENT and creates nothing; so is a read-only openat2", async () => {
+    if (here !== "linux" || process.arch !== "x64") return; // the Linux supervisor's answers
+    const w = world();
+    const own = { caller: botCaller("luna", "s1") };
+    if (!ok(await w.run(`command -v python3`, own))) return; // no python in the sandbox: skip
+    const missing = join(w.home, "project", "never-there.txt");
+    // open and openat without O_CREAT (plain os.open: O_WRONLY, O_RDWR): the kernel's own ENOENT, no file.
+    for (const flags of ["os.O_WRONLY", "os.O_RDWR"]) {
+      const r = await w.run(`python3 -c 'import os; os.open("${missing}", ${flags})'`, own);
+      expect(r.kind === "exited" && r.code !== 0).toBe(true);
+      expect(r.kind === "exited" && r.stderr).toMatch(/No such file|ENOENT/i);
+    }
+    // A read-only openat2 on a missing path: ENOENT too, never a mode-000 create.
+    const o2miss = await w.run(`python3 - <<'PYEOF'\nimport ctypes, os\nlibc = ctypes.CDLL("libc.so.6", use_errno=True)\nclass How(ctypes.Structure):\n    _fields_ = [("flags", ctypes.c_uint64), ("mode", ctypes.c_uint64), ("resolve", ctypes.c_uint64)]\nhow = How(flags=os.O_RDONLY, mode=0, resolve=0)\nfd = libc.syscall(437, -100, os.fsencode("${missing}"), ctypes.byref(how), ctypes.sizeof(how))\nraise SystemExit(0 if fd >= 0 else 2)\nPYEOF`, own);
+    expect(o2miss.kind === "exited" && o2miss.code).toBe(2);
+    expect(existsSync(missing)).toBe(false);
+    // And a scoped openat2 (RESOLVE_BENEATH) on an existing file is refused outright, not silently unscoped.
+    const real = join(w.home, "project", "real.txt");
+    writeFileSync(real, "hi\n");
+    const o2scoped = await w.run(`python3 - <<'PYEOF'\nimport ctypes, os\nlibc = ctypes.CDLL("libc.so.6", use_errno=True)\nclass How(ctypes.Structure):\n    _fields_ = [("flags", ctypes.c_uint64), ("mode", ctypes.c_uint64), ("resolve", ctypes.c_uint64)]\nhow = How(flags=os.O_RDONLY, mode=0, resolve=0x08)\nfd = libc.syscall(437, -100, os.fsencode("${real}"), ctypes.byref(how), ctypes.sizeof(how))\nraise SystemExit(0 if fd >= 0 else 2)\nPYEOF`, own);
+    expect(o2scoped.kind === "exited" && o2scoped.code).toBe(2);
   }, 90_000);
 
   test("git config guard: a risky key set through git config or a direct edit is reverted", async () => {

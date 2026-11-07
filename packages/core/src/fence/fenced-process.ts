@@ -7,7 +7,7 @@
 //   Windows  not yet: the door says so and refuses
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fchmodSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -310,40 +310,44 @@ export function revertPlantedGitKeys(before: Map<string, string | null>): string
 
 /** Writes `content` over `p` with git's lockfile protocol: `p.lock` is created exclusively (git's own
  *  lockfile name, so a concurrent git respects it too), the live file is re-read against `expect` (a
- *  concurrent writer's bytes are never clobbered), the content is written to the lock, and the lock is
- *  renamed over. Retries a contested lock; returns whether it landed. */
-function writeLocked(p: string, content: string, expect: string | null): "ok" | "changed" | "locked" | "error" {
+ *  concurrent writer's bytes are never clobbered), the content is written to the lock with the live file's
+ *  mode copied over (a 0644 config stays 0644), and the lock is renamed over. Retries a contested lock.
+ *  One `finally` unlinks the lock whenever this call created it and didn't rename it over, so no outcome —
+ *  landed, changed-under-us, or failed — can leave a `config.lock` behind to block the user's git. */
+export function writeLocked(p: string, content: string, expect: string | null): "ok" | "changed" | "locked" | "error" {
   const lock = `${p}.lock`;
   for (let attempt = 0; attempt < 3; attempt++) {
     let fd = -1;
+    let created = false;
+    let renamed = false;
     try {
-      fd = openSync(lock, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException)?.code === "EEXIST") continue; // contested: retry
-      return "error";
-    }
-    try {
-      if (readIfFile(p) !== expect) return "changed"; // the lock is unlinked below
+      try {
+        fd = openSync(lock, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+        created = true;
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException)?.code === "EEXIST") continue; // contested: retry
+        return "error";
+      }
+      if (readIfFile(p) !== expect) return "changed";
       writeFileSync(fd, content, { encoding: "utf8" });
-    } catch {
-      return "error";
-    } finally {
-      if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } }
-    }
-    try {
+      try { fchmodSync(fd, lstatSync(p).mode & 0o7777); } catch { /* 0600 stands */ }
+      if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } fd = -1; }
       renameSync(lock, p);
+      renamed = true;
       return "ok";
     } catch {
       return "error";
     } finally {
-      try { unlinkSync(lock); } catch { /* renamed over */ }
+      if (fd !== -1) { try { closeSync(fd); } catch { /* best effort */ } }
+      if (created && !renamed) { try { unlinkSync(lock); } catch { /* best effort */ } }
     }
   }
   return "locked";
 }
 
 /** The Addendum 10 fallback: put the file's pre-run bytes back (or remove a file that appeared), best
- *  effort, without clobber checks — leaving a half-reverted risky key is worse than restoring. */
+ *  effort, without clobber checks — leaving a half-reverted risky key is worse than restoring. The lock is
+ *  owned the same single way: created here, unlinked here unless renamed over. */
 function restorePreRun(p: string, prev: string | null): void {
   try {
     if (prev === null) {
@@ -356,14 +360,20 @@ function restorePreRun(p: string, prev: string | null): void {
     }
     const lock = `${p}.lock`;
     let fd = -1;
+    let created = false;
+    let renamed = false;
     try {
       fd = openSync(lock, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
+      created = true;
       writeFileSync(fd, prev, { encoding: "utf8" });
-    } catch { return; }
-    finally { if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } } }
-    try { renameSync(lock, p); }
-    catch { /* best effort */ }
-    finally { try { unlinkSync(lock); } catch { /* renamed */ } }
+      try { fchmodSync(fd, lstatSync(p).mode & 0o7777); } catch { /* 0600 stands */ }
+      if (fd !== -1) { try { closeSync(fd); } catch { /* written */ } fd = -1; }
+      renameSync(lock, p);
+      renamed = true;
+    } finally {
+      if (fd !== -1) { try { closeSync(fd); } catch { /* best effort */ } }
+      if (created && !renamed) { try { unlinkSync(lock); } catch { /* best effort */ } }
+    }
   } catch { /* best effort */ }
 }
 

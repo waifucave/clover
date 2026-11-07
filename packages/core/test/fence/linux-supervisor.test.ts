@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, mntIdOf, openParentDir, openProcPid, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, selfIds, splitParent, supervisorArch, supervisorSelfRefusal, targetIds, trapTable, type SupervisorLib } from "../../src/fence/linux-supervisor";
+import { buildUserNotifFilter, foldName, lstatFinal, matchSupervised, mntIdOf, openParentDir, openProcPid, openSupervisorLib, openWrites, parentIdentity, readCString, readPathOnce, resolveBase, selfIds, splitParent, supervisorArch, supervisorSelfRefusal, targetIds, targetUmask, trapTable, type SupervisorLib } from "../../src/fence/linux-supervisor";
 import { parseGitConfigWatched, parseGitConfigWithGit, revertWatchedGitChanges, watchedGitChanges } from "../../src/fence/git-config";
 
 describe("the supervisor's filter and decisions", () => {
@@ -131,6 +131,14 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
     expect(self).toMatchObject({ ruid: t!.ruid, euid: t!.euid, fsuid: t!.fsuid });
     // Unprivileged here: no refusal. (A root run refuses — measured on the VM as root would fail closed.)
     if (process.geteuid?.() !== 0) expect(supervisorSelfRefusal()).toBeNull();
+    // The umask through the pinned handle matches the pid-string read; a dead handle refuses, never guesses.
+    const l = lib();
+    const proc = openProcPid(l, process.pid);
+    expect(proc.fd).toBeGreaterThanOrEqual(0);
+    try {
+      expect(targetUmask(proc.fd)).toBe(t!.umask);
+    } finally { closeSync(proc.fd); }
+    expect(targetUmask(-1)).toBeNull();
   });
 
   test("trap tables: legacy rename/renameat/link carry no flags word; renameat2/linkat do", () => {
