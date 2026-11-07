@@ -3,7 +3,7 @@
   "owner": "B",
   "methods": {
     "plugin.list": {
-      "doc": "Every plugin and child plugin on this computer, with its state and reason.",
+      "doc": "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
@@ -155,6 +155,9 @@
               ],
               "additionalProperties": false
             }
+          },
+          "adultConfirmed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1061,7 +1064,8 @@
                   "enum": [
                     "api-key",
                     "oauth-pkce",
-                    "custom"
+                    "custom",
+                    "core"
                   ]
                 },
                 "secret": {
@@ -1325,6 +1329,71 @@
         "required": [
           "source"
         ]
+      },
+      "roleParams": {
+        "layer": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "source": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "const": "index"
+                    },
+                    "id": {
+                      "type": "string",
+                      "maxLength": 40,
+                      "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$",
+                      "minLength": 2
+                    },
+                    "version": {
+                      "type": "string",
+                      "maxLength": 256,
+                      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                    },
+                    "index": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "id"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "const": "npm"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 214
+                    },
+                    "version": {
+                      "type": "string",
+                      "maxLength": 256
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "name"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ]
+        }
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3662,7 +3731,8 @@
                 "enum": [
                   "api-key",
                   "oauth-pkce",
-                  "custom"
+                  "custom",
+                  "core"
                 ]
               },
               "secret": {

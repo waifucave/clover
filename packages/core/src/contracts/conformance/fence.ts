@@ -5,7 +5,7 @@
 // the policy a sandbox enforces.
 import { describe, expect, test } from "bun:test";
 import { type FakeFence } from "../fakes/fence";
-import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, foldName, foldPath, judge, type FencedKind } from "../fence";
+import { CLOUD_METADATA_ADDRESSES, FENCED_KINDS, foldName, foldPath, judge, windowsAlias, type FencedKind } from "../fence";
 
 /** What the suite drives: the contract and the fake's own drivers (what a test does to the world around it),
  *  as public members, so a real implementation's harness can provide them. */
@@ -16,8 +16,9 @@ export type FenceFactory = (...args: ConstructorParameters<typeof FakeFence>) =>
 export function runFenceConformance(make: FenceFactory): void {
   const HOME = "/Users/me";
   const CLOVER = `${HOME}/.clover`;
+  const AGENT = "/opt/homebrew/lib/node_modules/@zed-industries/codex-acp";
   const fence = (os: "macos" | "linux" | "windows" = "macos", devFolders: string[] = []) =>
-    make({ os, home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders });
+    make({ os, home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders, agentInstalls: [AGENT] });
 
   describe("Fence", () => {
     test("macOS fences every item but the secrets file and key files, which the Keychain holds", () => {
@@ -106,7 +107,15 @@ export function runFenceConformance(make: FenceFactory): void {
       const mac = fence("macos").policy();
       expect(mac.allowWrite).toEqual([HOME, "/tmp"]);
       expect(mac.denyWrite).toContain(`${CLOVER}/credentials`);
-      expect(mac.denyRead).toEqual([`${CLOVER}/run`]);
+      // The read-denied list includes the run folder; an implementation may hide more (lane C keeps `runtimes/`).
+      expect(mac.denyRead).toContain(`${CLOVER}/run`);
+      expect(mac.denyRead).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
+      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents/com.waifucave.clover.core.plist`]));
+      // An OK'd coding agent's install folder is write-denied, not read-denied (lane K).
+      expect(mac.denyWrite).toContain(AGENT);
+      expect(mac.denyRead).not.toContain(AGENT);
+      expect(fence("macos").check({ op: "write", path: `${AGENT}/dist/index.js` })).toEqual({ allowed: false, reason: "agent-installs", path: AGENT });
+      expect(fence("macos").check({ op: "read", path: `${AGENT}/dist/index.js` }).allowed).toBe(true);
       expect(mac.closedDoors).toEqual(["open", "launchctl", "osascript"]);
       expect(mac.blockedAddresses).toEqual([...CLOUD_METADATA_ADDRESSES]);
       expect(mac.network).toBe("none");
@@ -151,6 +160,19 @@ export function runFenceConformance(make: FenceFactory): void {
       expect(foldName("\u017F")).toBe("s");
       expect(foldName(".clover. ", "windows")).toBe(".clover");
       expect(foldPath("C:\\Users\\Me", "windows")).toBe("c:/users/me");
+    });
+
+    test("on Windows a stream or an 8.3 short name is refused wherever it is (J's rules, #179's review check 2)", () => {
+      const win = fence("windows");
+      for (const path of [`${CLOVER}/settings/settings.json::$DATA`, `${CLOVER}/settings/settings.json:x`, `${HOME}/CLOVER~1/settings/settings.json`, `${HOME}/notes~2.md`]) {
+        expect([path, win.check({ op: "write", path })]).toEqual([path, { allowed: false, reason: "alias", path }]);
+        expect(win.check({ op: "read", path }).allowed).toBe(false);
+      }
+      expect(win.check({ op: "move", path: `${HOME}/a.json`, to: `${HOME}/CLOVER~1/rules/a.json` })).toMatchObject({ reason: "alias" });
+      expect(windowsAlias("C:/Users/me/a.json")).toBeUndefined();
+      // Elsewhere a colon or a tilde is part of a name.
+      expect(fence("linux").check({ op: "write", path: `${HOME}/notes~2.md` }).allowed).toBe(true);
+      expect(fence("macos").check({ op: "write", path: `${HOME}/a:b.txt` }).allowed).toBe(true);
     });
 
     test("judge is the shared rule, usable over any set", () => {

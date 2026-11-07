@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The body of apple/Winter/project.yml's "Embed Winter Headless" postCompileScript, in its own file so it is tested
-# standalone (scripts/embed-headless-helper.test.ts), like embed-computer-helper.sh beside it.
+# standalone (scripts/embed-headless-helper.darwin.test.ts), like embed-computer-helper.sh beside it.
 #
 # Winter Headless is Clover's private, invisible browser for the agent's background reading: a background-only app
 # running windowless CEF browsers, which the daemon spawns directly over a pipe. It also carries Clover's ONE Chromium

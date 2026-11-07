@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The body of apple/Winter/project.yml's "Embed Winter Computer Use" postCompileScript, in its own file so it
-# is tested standalone (scripts/embed-computer-helper.test.ts), like embed-runtimes.sh beside it.
+# is tested standalone (scripts/embed-computer-helper.darwin.test.ts), like embed-runtimes.sh beside it.
 #
 # Winter Computer Use is the signed helper app that holds its own Accessibility and Screen Recording grants
 # for ComputerV2. The daemon launches it through LaunchServices (never as a child, or TCC would check the
