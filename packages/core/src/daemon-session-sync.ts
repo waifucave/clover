@@ -8,12 +8,15 @@
 //   place in the log (the seq stays, so the runner's and this copy's heads still agree), the key and the computer it
 //   came from kept for the record, and nothing `SessionGrants` reads. A session that moves here asks again, on its own
 //   card here.
-// * The converted record is core-only, as the grant itself is: never sent to clients.
+// * The converted record is core-only, as the grant itself is: never sent to clients (lane D's `CORE_ONLY_EVENT_TYPES`,
+//   which the clients' projection drops). D's `ingest` renames a copied grant too (#279); this keeps the rule at the
+//   daemon's own door whatever the host does, and adds the computer it came from.
 import type { SessionRecord } from "./contracts/session-host";
-import type { SessionRecordSink } from "./sync/session-records";
+import { COPIED_GRANT_EVENT_TYPE } from "./sessions/durable-host";
+import type { SessionHostForSync, SessionRecordSink } from "./sync/session-records";
 
-/** What a grant copied from another computer becomes in this computer's log. */
-export const COPIED_GRANT_EVENT = "session_grant_copied";
+/** What a grant copied from another computer becomes in this computer's log (lane D's name for it). */
+export const COPIED_GRANT_EVENT = COPIED_GRANT_EVENT_TYPE;
 
 /** The grant records' type (lane D's `SessionGrants`). */
 const GRANT_EVENT = "session_grant";
@@ -31,5 +34,18 @@ export function sinkWithoutCopiedGrants(host: SessionRecordSink): SessionRecordS
   return {
     head: (id) => host.head(id),
     ingest: (view, records, opts) => host.ingest(view, records.map((r) => copiedRecord(r, opts.from)), opts),
+  };
+}
+
+/** Lane D's host as the sync reads and fills it: its records as they are, the others' through the guard above. */
+export function hostForSync(host: SessionHostForSync): SessionHostForSync {
+  const sink = sinkWithoutCopiedGrants(host);
+  return {
+    tap: (fn) => host.tap(fn),
+    history: (id, opts) => host.history(id, opts),
+    list: () => host.list(),
+    get: (id) => host.get(id),
+    head: sink.head,
+    ingest: sink.ingest,
   };
 }
