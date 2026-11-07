@@ -12,20 +12,26 @@
 // the app's window guards leave them alone: `isBrowserContents` tells them apart from the moment each is made.
 import { app, BrowserWindow, dialog, Menu, type BaseWindow, type ContextMenuParams, type Rectangle } from "electron";
 import { randomBytes } from "node:crypto";
-import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabCommand, type AppTabEvent, type TabOwner, type TabPlace, type TabView, type Viewport as Size } from "./contract";
+import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabCommand, type AppTabEvent, type BrowserNetworkConfig, type StreamChunk, type TabOwner, type TabPlace, type TabView, type Viewport as Size } from "./contract";
 import { HostWindow } from "./host-window";
 import { choosePopup } from "./popups";
 import { ScreenReaderSwitch, type ScreenReaderProbe } from "./screen-reader";
-import { NetworkFilter, policyFor, type AddressPolicy, type NetworkFilterOptions } from "./network";
+import { NetworkFilter, policyFor, type AddressPolicy, type NetworkFilterOptions, type UpstreamRoutes } from "./network";
+import { checkProxySetting, DEFAULT_PROXY_SETTING, type BrowserProxySetting } from "./proxy";
+import { appProxyRoutes, resetPacSession, runCommand } from "./system-proxy";
+import { PeerOwner } from "./peer-owner";
 import { guardPage, isSessionReady, prepareTabSession, resetViewportSession } from "./session";
+import { TabStreamer, type StreamPageAssets, type StreamStats } from "./stream";
 import { BrowserTab, HostTab, OffscreenTab, tabWebPreferences, type TabEnv } from "./tab";
 import { Viewport, type ViewportAssets } from "./viewport";
 
 export { BROWSER_ASSETS } from "./assets";
 export { BROWSER_WEBRTC_POLICY, isBrowserContents, isBrowserTab } from "./session";
-export { BOT_POLICY, PERSON_POLICY, SESSION_POLICY, type AddressPolicy } from "./network";
-export type { AppTabCommand, AppTabEvent, TabOwner, TabPlace, TabView } from "./contract";
+export { BOT_LAN_POLICY, BOT_POLICY, PERSON_POLICY, SESSION_POLICY, type AddressPolicy } from "./network";
+export type { BrowserProxySetting } from "./proxy";
+export type { AppTabCommand, AppTabEvent, BrowserNetworkConfig, StreamChunk, StreamCodec, TabOwner, TabPlace, TabView } from "./contract";
 export type { ViewportAssets } from "./viewport";
+export type { StreamPageAssets, StreamStats } from "./stream";
 
 /** Where a browser view's frame is: its window, and the frame's rectangle in the window's content. */
 export interface ViewTarget {
@@ -59,8 +65,20 @@ export interface BrowserHostOptions {
   pickFiles?(window: BaseWindow, multiple: boolean): Promise<string[]>;
   newId?(): string;
   /** Which addresses an owner's tabs may reach (R13; by default `policyFor`: no loopback or private address for a bot,
-   *  loopback for a coding session, never the metadata address), and the filter's resolver and dialer, for tests. */
-  network?: { policyFor?(owner: TabOwner): AddressPolicy } & Pick<NetworkFilterOptions, "lookup" | "dial" | "log">;
+   *  its LAN too when its setting is on, loopback for a coding session, never the metadata address), the routes a
+   *  proxy setting gives (by default `appProxyRoutes`, R14), and the filter's resolver and dialer, for tests. */
+  network?: {
+    policyFor?(owner: TabOwner, lanBots: ReadonlySet<string>): AddressPolicy;
+    routes?(setting: BrowserProxySetting): UpstreamRoutes | undefined;
+  } & Pick<NetworkFilterOptions, "lookup" | "dial" | "log" | "acceptPeer">;
+  /** The network settings to start with (the core sends them again with `configure` as soon as it connects). */
+  config?: BrowserNetworkConfig;
+  /** A streamed tab's chunks, to the daemon (spec §12.1 "From another device"), tagged with the stream the core
+   *  named in its `stream` command: a `config`, then frames, then `ended`. Lane E carries them over the pair. Without
+   *  this and `streamAssets` the app refuses to stream. */
+  streamData?(stream: string, chunk: StreamChunk): void;
+  /** The encoder page's built files (`BROWSER_ASSETS.streamPreload`/`streamHtml`). */
+  streamAssets?: StreamPageAssets;
 }
 
 export class BrowserHost {
@@ -72,10 +90,21 @@ export class BrowserHost {
   private flushing = false;
   private readonly env: TabEnv;
   private readonly network: NetworkFilter;
+  private readonly streamer: TabStreamer | undefined;
+  private lanBots: ReadonlySet<string> = new Set();
+  private proxy: BrowserProxySetting = DEFAULT_PROXY_SETTING;
 
   constructor(private readonly opts: BrowserHostOptions) {
     this.screenReader = new ScreenReaderSwitch({ electron: app, ...opts.screenReader });
-    this.network = new NetworkFilter({ lookup: opts.network?.lookup, dial: opts.network?.dial, log: opts.network?.log });
+    // The filter takes connections only from this app's own network process (the second review's should-fix 1).
+    const owner = new PeerOwner({ platform: process.platform, run: runCommand, allowedPids: networkProcesses, ...(opts.network?.log !== undefined ? { log: opts.network.log } : {}) });
+    this.network = new NetworkFilter({
+      lookup: opts.network?.lookup, dial: opts.network?.dial, log: opts.network?.log,
+      acceptPeer: opts.network?.acceptPeer ?? ((peer, port) => owner.accepts(peer, port)),
+    });
+    if (opts.config !== undefined) void this.configure(opts.config);
+    const { streamData, streamAssets } = opts;
+    this.streamer = streamData !== undefined && streamAssets !== undefined ? new TabStreamer({ assets: streamAssets, send: (stream, chunk) => streamData(stream, chunk) }) : undefined;
     const host = this;
     this.env = {
       computer: opts.computer,
@@ -85,7 +114,10 @@ export class BrowserHost {
       contextMenu: (tab, params) => host.contextMenu(tab, params),
       fileChooser: (tab, chooser) => void host.fileChooser(tab, chooser),
       cursor: (tab, type) => { if (tab instanceof OffscreenTab) host.viewportOf(tab)?.cursor(tab, type); },
-      paint: (tab, dirty, image) => { if (tab instanceof OffscreenTab && tab.place === "shown") host.viewportOf(tab)?.paint(tab, dirty, image); },
+      paint: (tab, dirty, image) => {
+        if (tab instanceof OffscreenTab && tab.place === "shown") host.viewportOf(tab)?.paint(tab, dirty, image);
+        host.streamer?.paint(tab, dirty, image);
+      },
       dragIntercepted: (tab, data) => { if (tab instanceof OffscreenTab) host.viewportOf(tab)?.dragIntercepted(tab, data); },
     };
   }
@@ -111,8 +143,7 @@ export class BrowserHost {
     if (args.url !== undefined && !isBrowserUrlAllowed(args.url)) throw new Error(`the browser doesn't open ${args.url}`);
     // Locked down, its traffic through the network filter for its owner (R13), before the tab exists: `isBrowserTab`
     // holds from `web-contents-created` on, and no page loads before its proxy is set.
-    const policy = this.opts.network?.policyFor?.(args.owner) ?? policyFor(args.owner);
-    await prepareTabSession(partition, await this.network.proxyFor(policy));
+    await prepareTabSession(partition, await this.network.proxyFor(this.policyOf(args.owner)));
     if (this.tabs.has(args.id)) throw new Error(`there's already a tab ${args.id}`);
     // The switch decides where a NEW tab starts, and never moves one (decision 93).
     const tab = this.screenReader.on
@@ -144,12 +175,51 @@ export class BrowserHost {
         return tab.screenshot(command.format, command.quality);
       case "cdp":
         return tab.cdp(command.method, command.params);
+      case "stream":
+        if (this.streamer === undefined) throw new Error("this app doesn't stream tabs");
+        if (command.on) await this.streamer.start(tab, command);
+        else this.streamer.stop(command.stream, "stopped");
+        return null;
+      case "stream-control":
+        if (this.streamer === undefined) throw new Error("this app doesn't stream tabs");
+        this.streamer.control(command);
+        return null;
     }
   }
 
   /** `app.tab.list`. */
   list(): TabView[] {
     return [...this.tabs.values()].filter((t) => !t.closed).map((t) => t.toView());
+  }
+
+  /** `app.browser.configure`: the proxy setting (R14) and the bots whose LAN setting is on. Each new connection takes
+   *  the proxy at once (open ones keep their path); a bot whose LAN setting changed has its partition pointed at its
+   *  new policy's filter, and its open connections closed, before this returns. A bad setting is refused whole. */
+  async configure(config: BrowserNetworkConfig): Promise<void> {
+    const proxy = checkProxySetting(config.proxy);
+    if (!Array.isArray(config.lanBots) || config.lanBots.length > 10_000) throw new Error("lanBots is a list of bots' ids");
+    for (const bot of config.lanBots) partitionFor({ kind: "bot", bot }); // refuses anything that isn't a bot's id
+    const routes = this.opts.network?.routes !== undefined ? this.opts.network.routes(proxy) : appProxyRoutes(proxy, this.opts.network?.log);
+    this.network.setUpstream(routes);
+    this.proxy = proxy;
+    const before = this.lanBots;
+    this.lanBots = new Set(config.lanBots);
+    const changed = new Map<string, TabOwner>();
+    for (const tab of this.tabs.values()) {
+      if (tab.closed || tab.owner.kind !== "bot") continue;
+      if (before.has(tab.owner.bot) !== this.lanBots.has(tab.owner.bot)) changed.set(tab.partition, tab.owner);
+    }
+    await Promise.all([...changed].map(async ([partition, owner]) => prepareTabSession(partition, await this.network.proxyFor(this.policyOf(owner)))));
+  }
+
+  /** The network filter's listener ports on 127.0.0.1, for lane C's fence (denied to fenced commands). */
+  get filterPorts(): number[] {
+    return this.network.listenerPorts();
+  }
+
+  /** The proxy setting in force. */
+  get proxySetting(): BrowserProxySetting {
+    return this.proxy;
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -171,14 +241,25 @@ export class BrowserHost {
     this.show(tab, view, tab.viewport);
   }
 
+  /** The streams running now: codec, encoder, bitrate and what was sent (diagnostics). */
+  streams(): StreamStats[] {
+    return this.streamer?.stats() ?? [];
+  }
+
   shutdown(): void {
     this.screenReader.stop();
+    this.streamer?.shutdown();
     for (const tab of this.tabs.values()) tab.close();
     for (const slot of this.views.values()) slot.viewport?.destroy();
     this.views.clear();
     this.hostWindow.closeIfEmpty();
     resetViewportSession();
+    resetPacSession();
     void this.network.close();
+  }
+
+  private policyOf(owner: TabOwner): AddressPolicy {
+    return this.opts.network?.policyFor?.(owner, this.lanBots) ?? policyFor(owner, this.lanBots);
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -245,6 +326,7 @@ export class BrowserHost {
   private forget(id: string): void {
     const tab = this.tabs.get(id);
     if (tab === undefined) return;
+    this.streamer?.tabClosed(id);
     this.unshow(tab);
     this.tabs.delete(id);
     if (tab instanceof HostTab) this.hostWindow.closeIfEmpty();
@@ -374,6 +456,13 @@ export class BrowserHost {
     // The person picked these files themselves; the API can never set a file input (the core refuses it).
     await tab.debugger.internal("DOM.setFileInputFiles", { files, backendNodeId: chooser.backendNodeId }).catch(() => undefined);
   }
+}
+
+/** The processes that make this app's network connections: Chromium's network service, and the main process for an
+ *  Electron whose network runs in it. */
+function networkProcesses(): number[] {
+  const pids = app.getAppMetrics().filter((m) => m.type === "Utility" && /network/i.test(`${m.serviceName ?? ""} ${m.name ?? ""}`)).map((m) => m.pid);
+  return pids.length > 0 ? pids : [process.pid];
 }
 
 export function createBrowserHost(opts: BrowserHostOptions): BrowserHost {

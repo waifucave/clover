@@ -169,6 +169,7 @@ export class OffscreenTab extends BrowserTab {
   readonly frames = new FrameStore();
   /** A frame at the current size has come since the tab was made or resized. */
   private drawn = false;
+  private streamFps = 0;
 
   private constructor(id: string, owner: TabOwner, window: BrowserWindow, env: TabEnv) {
     super(id, owner, "offscreen", window.webContents, env);
@@ -216,14 +217,30 @@ export class OffscreenTab extends BrowserTab {
       this.frames.clear();
       this.drawn = false;
     }
-    if (place === "resting") {
-      this.contents.stopPainting();
-    } else {
-      if (!this.contents.isPainting()) this.contents.startPainting();
-      this.contents.setFrameRate(place === "shown" ? WATCHED_FPS : BOT_FPS);
-      this.contents.invalidate();
-    }
+    this.applyRate();
+    if (place !== "resting") this.contents.invalidate();
     this.changed();
+  }
+
+  /** While the tab streams to another device (`stream.ts`) it paints at least this fast, even resting; 0 when no
+   *  stream runs, and the tab is back at its place's own rate. */
+  setStreamRate(fps: number): void {
+    this.streamFps = fps;
+    this.applyRate();
+    if (fps > 0 && !this.contents.isDestroyed()) this.contents.invalidate();
+  }
+
+  /** The place's rate (resting: none; a bot's: 10 fps; watched: 60), raised to a stream's while one runs. */
+  private applyRate(): void {
+    if (this.contents.isDestroyed()) return;
+    const own = this.place === "resting" ? 0 : this.place === "shown" ? WATCHED_FPS : BOT_FPS;
+    const fps = Math.max(own, this.streamFps);
+    if (fps === 0) {
+      this.contents.stopPainting();
+      return;
+    }
+    if (!this.contents.isPainting()) this.contents.startPainting();
+    this.contents.setFrameRate(fps);
   }
 
   protected async picture(): Promise<{ image: NativeImage; contentAgeMs: number } | undefined> {
@@ -260,7 +277,7 @@ export class OffscreenTab extends BrowserTab {
     this.contents.startPainting();
     this.contents.invalidate();
     const frame = await next;
-    if (this.place === "resting" && !this.contents.isDestroyed()) this.contents.stopPainting();
+    if (!this.contents.isDestroyed()) this.applyRate(); // resting again (unless a stream started meanwhile)
     return frame !== undefined ? { image: frame.image, contentAgeMs: Date.now() - frame.at } : undefined;
   }
 
