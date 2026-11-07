@@ -192,6 +192,12 @@ export class SidecarWire implements WireEndpoint {
     return wire;
   }
 
+  /** The running sidecar's pid (the Clover server's `linkPid`: the one local process that says hello as `remote`, `web`
+   *  or `peer`); undefined while it restarts or after `close`. */
+  get pid(): number | undefined {
+    return this.#closed ? undefined : this.#proc?.pid;
+  }
+
   /** The relay this endpoint's last start reported. */
   get relay(): string | undefined {
     return this.#relay;
