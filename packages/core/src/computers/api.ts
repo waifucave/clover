@@ -12,6 +12,7 @@
 import type { Caller, ComputerView, HoldTarget, HoldView } from "@waifucave/clover-protocol";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { ComputerRegistry } from "../contracts/computer-registry";
+import { mayRelease, type HoldRouter } from "./holds";
 import type { CoreTree } from "../tree/tree";
 import type { TreeWatchEvent } from "../tree/watch";
 
@@ -30,7 +31,8 @@ const target = (v: unknown): HoldTarget => {
   throw new ContractError("invalid", "a hold's target is an app, or a window of one");
 };
 
-export function computersApiRoutes(registry: ComputerRegistry): Record<string, ApiRoute> {
+/** `holds` routes a hold to the computer whose screen it is (review minor 4); without it, holds are kept here. */
+export function computersApiRoutes(registry: ComputerRegistry, holds?: HoldRouter): Record<string, ApiRoute> {
   const must = (name: string): ComputerView => {
     const c = registry.get(name);
     if (!c) throw new ContractError("not_found", `no computer ${name}`);
@@ -41,13 +43,15 @@ export function computersApiRoutes(registry: ComputerRegistry): Record<string, A
     "computers.get": async ([name]) => must(s(name, "name")),
     "computers.holds": async ([name]) => {
       const c = must(s(name, "computer"));
+      if (holds) return holds.holds(c.name);
       return { holds: registry.holds(c.name), userWorking: registry.userWorking(c.name).length > 0 };
     },
     "computers.takeHold": async ([computer, t], { pluginId, caller }) => {
       // The hold's session is the one the router says made the call, never one the plugin names (review minor 3).
       const session = caller.kind === "session" || caller.kind === "peer" ? caller.sessionId : undefined;
       try {
-        const hold: HoldView = registry.takeHold({ computer: s(computer, "computer"), target: target(t), pluginId, ...(session === undefined ? {} : { session }) });
+        const req = { computer: s(computer, "computer"), target: target(t), pluginId, ...(session === undefined ? {} : { session }) };
+        const hold: HoldView = holds ? await holds.takeHold(req) : registry.takeHold(req);
         return { held: true, hold };
       } catch (e) {
         if (isContractError(e, "held")) return { held: false, reason: "held-by-other", by: String(e.detail?.holder ?? "") };
@@ -56,9 +60,13 @@ export function computersApiRoutes(registry: ComputerRegistry): Record<string, A
         throw e;
       }
     },
-    "computers.releaseHold": async ([id], { pluginId }) => {
+    "computers.releaseHold": async ([id], { pluginId, caller }) => {
+      // Ownership is the router's word: the plugin, and the session that made the call (#177's review).
+      const session = caller.kind === "session" || caller.kind === "peer" ? caller.sessionId : undefined;
+      const by = { pluginId, ...(session === undefined ? {} : { session }) };
+      if (holds) return holds.releaseHold(s(id, "id"), by);
       const hold = registry.holds().find((h) => h.id === id);
-      if (hold && hold.pluginId !== pluginId) throw new ContractError("refused", "a plugin releases only the holds it took");
+      if (hold && !mayRelease(hold, by)) throw new ContractError("refused", "only the session that took a hold, or for a hold with no session the plugin that took it, releases it");
       if (hold) registry.releaseHold(hold.id);
     },
     "computers.setUserWorking": async ([computer, on, t]) => {
