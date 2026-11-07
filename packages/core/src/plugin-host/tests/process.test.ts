@@ -1,7 +1,7 @@
 // The plugin host for real: the daemon side starts a plugin-host process (`process-main.ts`, linked on fd 3), which runs
 // each plugin in a worker of its own. Plain Bun here; the daemon runs it on the plugin Bun with #234's guard.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller, HostProcess } from "@waifucave/clover-protocol";
@@ -183,5 +183,42 @@ export const nested = () => new Promise((resolve) => {
     expect([stolen.code, stolen.message.includes("outside the plugin's own folder")]).toEqual(["failed", true]);
     const nested = await host.invoke({ pluginId: "alpha2", handler: "nested", args: null, caller: USER });
     expect(String(nested)).toContain("refused");
+  }, 60_000);
+
+  // #289: a Bun macro would run its module's code while the plugin's file loads. The host's workers refuse it, at
+  // start (a static import) and later (a dynamic one), and the macro's code never runs.
+  test("a plugin with a macro import is refused at load, and the macro never runs", async () => {
+    const { hostProcessLaunch } = await import("../launch");
+    const base = mkdtempSync(join(tmpdir(), "clover-b2-macro-"));
+    const ran = join(base, "macro-ran");
+    const make = (name: string, files: Record<string, string>) => {
+      const folder = join(base, "plugins", name);
+      mkdirSync(join(folder, "host"), { recursive: true });
+      writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
+      writeFileSync(join(folder, "host", "mac.js"), `import { writeFileSync } from "node:fs";\nexport function leak() { writeFileSync(${JSON.stringify(ran)}, String(process.pid)); return "leaked"; }\n`);
+      for (const [file, text] of Object.entries(files)) writeFileSync(join(folder, "host", file), text);
+      return folder;
+    };
+    const eager = make("eager", { "index.js": `import { leak } from "./mac.js" with { type: "macro" };\nexport const value = () => leak();\n` });
+    const lazy = make("lazy", {
+      "index.js": `export const fine = () => "fine";\nexport const late = async () => (await import("./late.js")).value;\n`,
+      "late.js": `import { leak } from "./mac.js" with { type: "macro" };\nexport const value = leak();\n`,
+    });
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [] });
+    expect(launch.cmd).toContain("--no-macros");
+    const p = spawnHostProcess(launch);
+    processes.push(p);
+    const records = new Map<string, HostedRecord>([
+      ["eager", { id: "eager", source: "local", folder: eager, entry: "host/index.js", dataFolder: join(base, "data") }],
+      ["lazy", { id: "lazy", source: "local", folder: lazy, entry: "host/index.js", dataFolder: join(base, "data") }],
+    ]);
+    const host = new CorePluginHost({ clock: new SystemClock(), computer: "Studio", record: (id) => records.get(id), connect: () => p.peer });
+    const atStart = (await host.invoke({ pluginId: "eager", handler: "value", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
+    expect(atStart).toBeInstanceOf(Error);
+    expect(atStart.message).toContain("a Bun macro");
+    expect(await host.invoke({ pluginId: "lazy", handler: "fine", args: null, caller: USER })).toBe("fine");
+    const later = (await host.invoke({ pluginId: "lazy", handler: "late", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
+    expect([later.code, later.message.includes("a Bun macro")]).toEqual(["failed", true]);
+    expect(existsSync(ran)).toBe(false);
   }, 60_000);
 });

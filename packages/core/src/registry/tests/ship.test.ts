@@ -157,13 +157,13 @@ describe("buildPluginForShipping", () => {
     const mod = (file: string) => r.modules.find((m) => m.file === file)!;
     expect(r.modules.map((m) => [m.file, m.kind])).toEqual([["client/index.js", "client"], ["host/index.js", "host"], ["plugins/kid/client/index.js", "client"], ["server/main.js", "host"]]);
     // The host bundles its own code and pure dependencies, and keeps only the native as an import.
-    const host = new Bun.Transpiler({ loader: "js" }).scanImports(mod("host/index.js").source).map((i) => i.path);
+    const host = new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(mod("host/index.js").source).map((i) => i.path);
     expect(host).toEqual(["fake-native"]);
     expect(mod("host/index.js").source).toContain(`"helper"`);
     expect(mod("host/index.js").source).toContain(`"lib"`);
     // The client keeps only the layer's imports, for production React, and its CSS moved out.
     const client = mod("client/index.js").source;
-    expect(new Bun.Transpiler({ loader: "js" }).scanImports(client).map((i) => i.path)).toEqual(["react/jsx-runtime"]);
+    expect(new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(client).map((i) => i.path)).toEqual(["react/jsx-runtime"]);
     expect(client).not.toContain("jsx-dev-runtime");
     expect(client).toContain(`"ui"`);
     expect(read(r.dir, "client/index.css")).toContain("red");
@@ -414,7 +414,7 @@ describe("the bundled plugins", () => {
       const manifest = JSON.parse(read(r.dir, "clover.json"));
       expect(manifest.built).toBe(true);
       for (const m of r.modules) {
-        const bare = new Bun.Transpiler({ loader: "js" }).scanImports(m.source).map((i) => i.path).filter((s) => !s.startsWith("node:") && !s.startsWith("bun"));
+        const bare = new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(m.source).map((i) => i.path).filter((s) => !s.startsWith("node:") && !s.startsWith("bun"));
         if (m.kind === "client") expect([m.file, bare.filter((s) => !["react", "react/jsx-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"].includes(s))]).toEqual([m.file, []]);
       }
       expect(r.files.some((f) => /\.(?:ts|tsx)$/.test(f))).toBe(false);

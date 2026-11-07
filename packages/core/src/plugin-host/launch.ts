@@ -19,6 +19,8 @@ export async function writeHostBundles(dir: string): Promise<{ host: string; wor
   const result = await Bun.build({
     entrypoints: [fileURLToPath(new URL("./process-main.ts", import.meta.url)), fileURLToPath(new URL("./worker-main.ts", import.meta.url))],
     target: "bun", format: "esm", splitting: false, minify: false, sourcemap: "none", throw: false,
+    // Macros off (#289): an import `with { type: "macro" }` would run in this process. Last, so nothing turns them on.
+    ...{ macros: false },
   });
   if (!result.success) throw new Error(`the plugin host's bundles didn't build: ${result.logs.map(String).join("; ")}`);
   mkdirSync(dir, { recursive: true, mode: 0o700 });

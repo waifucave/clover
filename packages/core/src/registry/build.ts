@@ -129,6 +129,12 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
           });
         },
       }],
+      // NO MACROS. A plugin file importing `with { type: "macro" }` would run that function in THIS process at build
+      // time and inline what it returns (a file it read, the builder's environment): plugin code running in the
+      // builder, which can be the daemon. Off, such an import fails the build ("Macros are disabled"). bun-types has
+      // no field for it, hence the spread; Bun refuses macros from node_modules on its own.
+      // LAST, so nothing after it turns them back on.
+      ...{ macros: false },
     });
   } catch (e) {
     throw new PluginBuildError([`${o.entry}: ${e instanceof Error ? e.message : String(e)}`]);
@@ -154,7 +160,7 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
   const markers = new Set(Object.keys((meta as { inputs?: Record<string, unknown> } | undefined)?.inputs ?? {}).map((k) => `// ${k}`));
   const source = (await Bun.file(o.outFile).text()).split("\n").filter((line) => !markers.has(line)).join("\n");
   await Bun.write(o.outFile, source);
-  const imports = [...new Set(new Bun.Transpiler({ loader: "js" }).scanImports(source).map((i) => i.path))].sort();
+  const imports = [...new Set(new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source).map((i) => i.path))].sort();
   const problems: string[] = [];
   const name = basename(o.outFile);
   for (const spec of imports) {
@@ -347,7 +353,7 @@ export function runtimeLoadProblems(source: string, file: string, o: { client: b
     say([...code.matchAll(/(?<![\w$.])Worker(?![\w$])/g)].length, "reference(s) to Worker");
     say([...code.matchAll(/\bBun\s*\.\s*(?:spawn|spawnSync|build|plugin|resolve|resolveSync)\b|\bBun\s*\[|(?<![\w$.])Bun\s*(?=[;,)}\]])|=\s*Bun\s*(?![\s.\w$])|\}\s*=\s*Bun\b(?!\s*\.)/g)].length, "reference(s) to Bun's spawn, build, plugin or resolve, or Bun itself passed on");
     // A code-loading built-in, imported (statically, or with a literal import()), only when the plugin named it.
-    for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(source)) {
+    for (const i of new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source)) {
       const b = codeLoadingBuiltinOf(i.path);
       if (b === undefined || (o.builtins ?? []).includes(b)) continue;
       if (b === "module" && nodeShim && i.path === "node:module" && [...source.matchAll(/\bcreateRequire\b/g)].length === 2) continue; // the Node shim's own

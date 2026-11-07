@@ -17,7 +17,8 @@
 //   `.env` files and `node_modules` are left out, and every other file is copied as it is.
 //
 // The built tree is then validated as a plugin: an error the source tree doesn't have (a file the build dropped) fails
-// the build. Nothing here runs plugin code.
+// the build. Nothing here runs plugin code: the builds run with Bun's macros off (build.ts), so a plugin file's
+// `with { type: "macro" }` import fails the build instead of running in this process.
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
@@ -235,7 +236,7 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
   for (const rel of [...written].filter((f) => /\.[cm]?js$/.test(f) && !f.split("/").includes("node_modules") && !modules.some((m) => m.file === f)).sort()) {
     const text = readFileSync(join(out, ...rel.split("/")), "utf8");
     const allowed = (spec: string) => isRuntimeBuiltin(spec) || (CLIENT_BARE_IMPORTS as readonly string[]).includes(spec) || nativePackages.has(packageOfSpecifier(spec));
-    for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(text)) {
+    for (const i of new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(text)) {
       if (/^[a-z][a-z0-9+.-]*:/i.test(i.path) && !i.path.startsWith("node:") && !i.path.startsWith("bun:")) copiedProblems.push(`${rel}: imports ${i.path}, a URL`);
       else if (!i.path.startsWith(".") && !i.path.startsWith("/") && !allowed(i.path)) copiedProblems.push(`${rel}: imports ${i.path}, which nothing in the shipped tree provides`);
       else if (i.path.startsWith("/")) copiedProblems.push(`${rel}: imports ${i.path}, an absolute path`);
@@ -298,7 +299,7 @@ function readUnits(src: string): Unit[] {
  *  value, and that take none, before the program's file (#271's L4). */
 const MODULE_FLAGS = new Set(["--import", "--require", "-r", "--preload", "--loader", "--experimental-loader"]);
 const VALUE_FLAGS = new Set(["--conditions", "-C", "--input-type", "--title", "--stack-size", "--max-old-space-size", "--env-file", "--config", "-c", "--tsconfig-override", "--define", "-d", "--port", "--inspect-port"]);
-const BOOLEAN_FLAGS = new Set(["--smol", "--bun", "--no-warnings", "--enable-source-maps", "--no-deprecation", "--trace-warnings", "--experimental-strip-types", "--no-experimental-strip-types", "--expose-gc", "--silent", "--no-env-file", "--no-addons"]);
+const BOOLEAN_FLAGS = new Set(["--smol", "--bun", "--no-warnings", "--enable-source-maps", "--no-deprecation", "--trace-warnings", "--experimental-strip-types", "--no-experimental-strip-types", "--expose-gc", "--silent", "--no-env-file", "--no-addons", "--no-macros"]);
 
 /** Programs a manifest runs with `bun` or `node` from files of the plugin's: a `stdio` server's or an agent backend's
  *  command. Each names the `args` positions to build: the program's file (`bun file`, `bun run file`, `node file`) and
