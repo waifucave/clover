@@ -6,7 +6,8 @@
 //     the relays over TCP), and the system services name lookup and certificate checks use. No file is writable and
 //     nothing under the user's home or the Clover home is readable.
 //   * Linux: bubblewrap. The root is bound read-only, every home (`/home`, `/root`, the user's home wherever it is)
-//     and `/run/user` (the session's sockets) are empty tmpfs mounts, `/tmp` is a fresh tmpfs, with its own pid, IPC and
+//     and `/run/user` (the session's sockets) are empty tmpfs mounts, `/tmp` is a fresh tmpfs (the binary alone bound
+//     back in, read-only, wherever it lives), with its own pid, IPC and
 //     UTS namespaces, no capabilities, a new session and dying with the daemon. The network stays the host's.
 //     Without bwrap at a system location the sidecar isn't started (the links say so); it never runs unfenced.
 //   * Windows: until Bash's sandbox principal lands (#207, after C-M2 part 2), when the sidecar moves under it as part
@@ -69,12 +70,15 @@ export function sidecarSeatbeltProfile(binary: string, hidden: readonly string[]
   ].join("\n");
 }
 
-/** The bubblewrap arguments the sidecar runs under on Linux (before `--` and its argv). */
-export function sidecarBwrapArgs(userHome: string, exists: (p: string) => boolean = existsSync): string[] {
+/** The bubblewrap arguments the sidecar runs under on Linux (before `--` and its argv). The binary itself is bound
+ *  back in, read-only, at its own path: a server install keeps it under the Clover home and an AppImage under /tmp,
+ *  both of which the tmpfs mounts hide. */
+export function sidecarBwrapArgs(userHome: string, binary: string, exists: (p: string) => boolean = existsSync): string[] {
   const args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"];
   const hidden = new Set<string>();
   for (const p of ["/home", "/root", "/run/user", userHome]) if (p !== "" && p !== "/" && exists(p)) hidden.add(p);
   for (const p of hidden) args.push("--tmpfs", p);
+  args.push("--ro-bind", binary, binary);
   args.push("--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-cgroup-try", "--cap-drop", "ALL", "--new-session", "--die-with-parent");
   return args;
 }
@@ -108,7 +112,9 @@ export function fencedSidecarSpawn(o: FencedSidecarOptions = {}): (argv: readonl
     if (platform === "linux") {
       const bwrap = (o.bwrapPaths ?? BWRAP_PATHS).find((p) => existsSync(p));
       if (bwrap === undefined) throw new SidecarFenceUnavailable("bubblewrap (bwrap) isn't installed, so the link sidecar can't run fenced");
-      return spawn([bwrap, ...sidecarBwrapArgs(o.userHome ?? homedir()), "--", binary, ...rest], o.onLog);
+      let real: string;
+      try { real = realpathSync(binary); } catch { throw new SidecarFenceUnavailable("the link sidecar isn't there"); }
+      return spawn([bwrap, ...sidecarBwrapArgs(o.userHome ?? homedir(), real), "--", real, ...rest], o.onLog);
     }
     if (platform === "win32" && o.spawn === undefined) return reducedSidecarSpawn(o.onLog)(argv);
     return spawn(argv, o.onLog);

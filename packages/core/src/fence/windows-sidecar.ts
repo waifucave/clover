@@ -22,6 +22,7 @@ const TOKEN_DUPLICATE = 0x0002, TOKEN_ASSIGN_PRIMARY = 0x0001, TOKEN_QUERY = 0x0
 const DISABLE_MAX_PRIVILEGE = 0x1;
 const SE_GROUP_INTEGRITY = 0x20;
 const TOKEN_INTEGRITY_LEVEL = 25;
+const TOKEN_ELEVATION = 20;
 const CREATE_SUSPENDED = 0x4, CREATE_NO_WINDOW = 0x08000000, EXTENDED_STARTUPINFO_PRESENT = 0x00080000, CREATE_UNICODE_ENVIRONMENT = 0x400;
 const STARTF_USESTDHANDLES = 0x100;
 const PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x20002;
@@ -64,6 +65,7 @@ function loadWin32() {
     ConvertStringSidToSidW: { args: [T.ptr, T.ptr], returns: T.i32 },
     GetLengthSid: { args: [T.i64], returns: T.u32 },
     SetTokenInformation: { args: [T.i64, T.i32, T.ptr, T.u32], returns: T.i32 },
+    GetTokenInformation: { args: [T.i64, T.i32, T.ptr, T.u32, T.ptr], returns: T.i32 },
     CreateProcessAsUserW: { args: [T.i64, T.ptr, T.ptr, T.ptr, T.ptr, T.i32, T.u32, T.ptr, T.ptr, T.ptr, T.ptr], returns: T.i32 },
   });
   return { k: k.symbols, a: a.symbols, ptr: (require("bun:ffi") as typeof import("bun:ffi")).ptr };
@@ -83,18 +85,28 @@ function sidOf(s: string): bigint {
   return out[0]!;
 }
 
-/** The daemon's own token, restricted (no privileges, Administrators deny-only) and at low integrity. */
-function reducedToken(): bigint {
+/** The daemon's own token, restricted (no privileges, Administrators deny-only) and at low integrity. An elevated
+ *  daemon (a server install run as an administrator) keeps Administrators in the sidecar's token: with it deny-only
+ *  the child can't open the window station it was given, and dies initialising (STATUS_DLL_INIT_FAILED, measured over
+ *  SSH on the Windows VM); its low integrity still keeps it from writing what the user's processes hold. A daemon
+ *  started from the user's desktop isn't elevated, and its Administrators is deny-only already (UAC's filtered token). */
+function reducedToken(lowIntegrity = true, restrict = true, disableAdmins = true, onLog?: (line: string) => void): bigint {
   const { k, a } = win!;
   const own = new BigUint64Array(1);
   if (!a.OpenProcessToken(k.GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_QUERY | TOKEN_ADJUST_DEFAULT, own)) fail("OpenProcessToken");
+  const elevation = new Uint32Array(1), got = new Uint32Array(1);
+  const elevated = a.GetTokenInformation(own[0]!, TOKEN_ELEVATION, elevation, 4, got) !== 0 && elevation[0] !== 0;
+  if (elevated && disableAdmins && restrict) onLog?.("the daemon runs elevated: the link sidecar keeps Administrators, without privileges and at low integrity");
+  disableAdmins = disableAdmins && !elevated;
   const admins = sidOf(ADMINISTRATORS_SID);
   const low = sidOf(LOW_INTEGRITY_SID);
   try {
     const disable = Buffer.alloc(16); // SID_AND_ATTRIBUTES { PSID, DWORD }
     disable.writeBigUInt64LE(admins, 0);
     const restricted = new BigUint64Array(1);
-    if (!a.CreateRestrictedToken(own[0]!, DISABLE_MAX_PRIVILEGE, 1, disable, 0, null, 0, null, restricted)) fail("CreateRestrictedToken");
+    const off = restrict && disableAdmins;
+    if (!a.CreateRestrictedToken(own[0]!, restrict ? DISABLE_MAX_PRIVILEGE : 0, off ? 1 : 0, off ? disable : null, 0, null, 0, null, restricted)) fail("CreateRestrictedToken");
+    if (!lowIntegrity) return restricted[0]!;
     const label = Buffer.alloc(16); // TOKEN_MANDATORY_LABEL { SID_AND_ATTRIBUTES }
     label.writeBigUInt64LE(low, 0);
     label.writeUInt32LE(SE_GROUP_INTEGRITY, 8);
@@ -189,7 +201,7 @@ export interface ReducedSidecar extends SidecarProcess {
 
 /** Starts `argv` reduced, as above. Async because its pipes are served first; `SidecarWireOptions.spawn` takes it
  *  through `reducedSidecarSpawn`. */
-export async function startReducedSidecar(argv: readonly string[], onLog?: (line: string) => void): Promise<ReducedSidecar> {
+export async function startReducedSidecar(argv: readonly string[], onLog?: (line: string) => void, reduce: { lowIntegrity?: boolean; restricted?: boolean; disableAdmins?: boolean } = {}): Promise<ReducedSidecar> {
   if (process.platform !== "win32") throw new Error("startReducedSidecar is Windows-only");
   win ??= loadWin32();
   const { k, a, ptr } = win;
@@ -200,7 +212,7 @@ export async function startReducedSidecar(argv: readonly string[], onLog?: (line
   const closeEnds = () => { for (const h of ends) k.CloseHandle(h); };
   let token = 0n, job = 0n;
   try {
-    token = reducedToken();
+    token = reducedToken(reduce.lowIntegrity ?? true, reduce.restricted ?? true, reduce.disableAdmins ?? true, onLog);
     job = killOnCloseJob();
     // Only the three ends are inherited.
     const size = new BigUint64Array(1);
