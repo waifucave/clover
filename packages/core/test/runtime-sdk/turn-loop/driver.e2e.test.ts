@@ -383,19 +383,27 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     const { s, ctx } = pausable();
     const driver = new BotSessionDriver(context(home, "winter-test/calls", ctx), deps(home, spawn));
     const c = control();
+    const dir = tempHome();
+    const started = join(dir, "started");
+    const finished = join(dir, "finished");
     try {
-      const p = driver.turn(user('CALL Bash {"command":"sleep 1.5"}\nCALL Bash {"command":"echo again"}'), c);
-      await Bun.sleep(300);
+      const p = driver.turn(user(`CALL Bash ${JSON.stringify({ command: `touch ${JSON.stringify(started)}; sleep 1.5; touch ${JSON.stringify(finished)}` })}\nCALL Bash {"command":"echo again"}`), c);
+      // The pause comes on while the first call RUNS: its request is answered (its tool_call recorded) and the command
+      // has started. Waited for, not timed, so a slow runner can't put the pause before the first request's answer.
+      for (let i = 0; i < 300 && !(existsSync(started) && c.records.some((r) => r.type === "tool_call")); i++) await Bun.sleep(50);
+      expect(existsSync(started) && c.records.some((r) => r.type === "tool_call")).toBe(true);
       s.may = false;
-      const pausedAt = Date.now();
       const seen = c.records.length;
-      await Bun.sleep(3_000);
-      // The running call finished (its result recorded); nothing after it until the resume.
+      // The running call finishes (never cut off); then nothing is asked of the model, so nothing more is recorded, until
+      // the resume. (Its result waits with the next request.)
+      for (let i = 0; i < 200 && !existsSync(finished); i++) await Bun.sleep(50);
+      expect(existsSync(finished)).toBe(true);
+      await Bun.sleep(2_000);
       const after = c.records.slice(seen).map((r) => r.type).filter((t) => t !== "tool_result" && t !== "tool_call_updated");
       expect(after.filter((t) => t === "tool_call" || t === "assistant_message")).toEqual([]);
-      expect(Date.now() - pausedAt).toBeGreaterThanOrEqual(3_000);
       s.resume();
       expect((await p).reason).toBe("end_turn");
+      expect(c.records.slice(seen).some((r) => r.type === "tool_call")).toBe(true);
     } finally {
       await driver.stop();
     }
