@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HookRunner } from "../../plugins/hook-runner";
-import { PluginSupervisor } from "../../plugins/supervisor";
+import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, ensurePluginRunFiles, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
 
 function world() {
@@ -19,6 +19,9 @@ function world() {
   writeFileSync(join(outside, "evil.ts"), evil);
   writeFileSync(join(outside, "jsx", "jsx-runtime.ts"), evil);
   writeFileSync(join(outside, "jsx", "jsx-dev-runtime.ts"), evil);
+  const cjs = `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`;
+  writeFileSync(join(outside, "noext"), cjs); // no extension: loaded as JavaScript
+  writeFileSync(join(outside, "evil.txt"), cjs); // loaded as TypeScript on request
   const plugin = (name: string, tree: Record<string, string>) => {
     const root = join(base, name);
     for (const [path, text] of Object.entries(tree)) {
@@ -41,6 +44,8 @@ function world() {
 
 describe("a plugin process loads only its own tree", () => {
   const w = world();
+  // Waits for a worker to finish, fail or run 3 s.
+  const settle = "const settle = (w) => new Promise((r) => { for (const e of [\"close\", \"exit\", \"error\", \"messageerror\"]) (w.addEventListener ?? w.on).call(w, e, r); setTimeout(r, 3000); });\n";
   const probes: [string, Record<string, string>, string][] = [
     ["a tsconfig paths target with .. after its *", {
       "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "lib/*": ["./host/a/*/../../../../outside/evil.ts"] } } }),
@@ -54,6 +59,32 @@ describe("a plugin process loads only its own tree", () => {
       "host/index.tsx": "/** @jsxImportSource ../../outside/jsx */\nconst a = <div />;\nconsole.log(\"host ran\", a);\n",
     }, "host/index.tsx"],
     ["a dynamic import outside the plugin", { "host/index.ts": "await import(\"../../outside/evil.ts\");\nconsole.log(\"host ran\");\n" }, "host/index.ts"],
+    // #234's check 3, G1: workers.
+    ["a Worker started on an outside file", { "host/index.ts": `${settle}await settle(new Worker("$OUTSIDE/evil.ts"));\nprocess.exit(0);\n` }, "host/index.ts"],
+    ["a Worker on an inside file that imports an outside one", {
+      "host/w.ts": "import \"../../outside/evil.ts\";\n",
+      "host/index.ts": `${settle}await settle(new Worker(new URL("./w.ts", import.meta.url).href));\nprocess.exit(0);\n`,
+    }, "host/index.ts"],
+    ["a node:worker_threads Worker on an outside file", {
+      "host/index.ts": `import { Worker as W } from "node:worker_threads";\n${settle}await settle(new W("$OUTSIDE/evil.ts"));\nprocess.exit(0);\n`,
+    }, "host/index.ts"],
+    ["a Worker after the plugin points its folder elsewhere in process.env", {
+      "host/index.ts": `process.env.CLOVER_PLUGIN_ROOT = "/";\nprocess.env.CLOVER_PLUGIN_SHARED = "[\\"/\\"]";\n${settle}await settle(new Worker("$OUTSIDE/evil.ts", { env: { CLOVER_PLUGIN_ROOT: "/" } }));\nprocess.exit(0);\n`,
+    }, "host/index.ts"],
+    ["the original Worker reached through the wrapper", {
+      "host/index.ts": `${settle}const C = Worker.prototype.constructor;\nawait settle(new C("$OUTSIDE/evil.ts"));\nprocess.exit(0);\n`,
+    }, "host/index.ts"],
+    // #234's check 3, G2: any outside file, whatever its name or loader.
+    ["a require of an outside file with no extension", { "host/index.ts": "require(\"$OUTSIDE/noext\");\n" }, "host/index.ts"],
+    ["an import of an outside .txt as TypeScript", { "host/index.ts": "await import(\"$OUTSIDE/evil.txt\", { with: { type: \"ts\" } });\n" }, "host/index.ts"],
+    ["the resolver put back, then a require outside", {
+      "host/index.ts": "const M = require(\"node:module\");\ntry { M._resolveFilename = (r) => r; } catch {}\ntry { Object.defineProperty(M, \"_resolveFilename\", { value: (r) => r }); } catch {}\nrequire(\"$OUTSIDE/noext\");\n",
+    }, "host/index.ts"],
+    ["a Worker with an outside preload of its own", {
+      "host/w.ts": "postMessage(1);\n",
+      "host/index.ts": `${settle}await settle(new Worker(new URL("./w.ts", import.meta.url).href, { preload: ["$OUTSIDE/evil.ts"] }));\nprocess.exit(0);\n`,
+    }, "host/index.ts"],
+    ["Bun.plugin.clearAll, then an outside import", { "host/index.ts": "try { Bun.plugin.clearAll(); } catch {}\nawait import(\"$OUTSIDE/evil.ts\");\n" }, "host/index.ts"],
     ["a bunfig.toml preload", { "bunfig.toml": "preload = [\"$OUTSIDE/evil.ts\"]\n", "host/index.ts": "console.log(\"host ran\");\n" }, "host/index.ts"],
   ];
   // A plugin folder's .env reaches the process's env (Bun loads it), and from there any node a plugin starts runs
@@ -90,6 +121,22 @@ describe("a plugin process loads only its own tree", () => {
     expect([r.code, r.stdout.trim(), r.stderr]).toEqual([0, "ok 1 2 3 string", ""]);
   }, 30_000);
 
+  test("a plugin's own workers still run, both kinds, its own imports included", () => {
+    const root = w.plugin("fine-workers", {
+      "host/lib.ts": "export const y = 2;\n",
+      "host/w.ts": "import { y } from \"./lib\";\npostMessage(y);\n",
+      "host/n.ts": "import { parentPort } from \"node:worker_threads\";\nimport { y } from \"./lib\";\nparentPort.postMessage(y + 1);\n",
+      "host/index.ts": [
+        "import { Worker as NW } from \"node:worker_threads\";",
+        "const a = await new Promise((r) => { const x = new Worker(new URL(\"./w.ts\", import.meta.url).href); x.onmessage = (e) => { r(e.data); x.terminate(); }; });",
+        "const b = await new Promise((r) => { const x = new NW(new URL(\"./n.ts\", import.meta.url)); x.on(\"message\", (m) => { r(m); x.terminate(); }); });",
+        "console.log(\"ok\", a, b);", "process.exit(0);", "",
+      ].join("\n"),
+    });
+    const r = w.run(root, "host/index.ts", true);
+    expect([r.code, r.stdout.trim(), r.stderr]).toEqual([0, "ok 2 3", ""]);
+  }, 30_000);
+
   test("a hook's bun runs guarded: the outside file never loads", async () => {
     const root = w.plugin("hook", { "hooks/check.ts": "await import(\"../../outside/evil.ts\");\n" });
     const runner = new HookRunner({ files: w.files, shared: [] });
@@ -108,6 +155,21 @@ describe("a plugin process loads only its own tree", () => {
     const root = w.plugin("sup", { "host/index.ts": "" });
     sup.startAll([{ id: "sup@local", dir: root, entry: { command: "bun", args: ["host/index.ts"] } }]);
     expect([seen[0]?.BUN_OPTIONS, seen[0]?.CLOVER_PLUGIN_ROOT, seen[0]?.CLOVER_PLUGIN_TOKEN]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t"]);
+    sup.stopAll();
+  });
+
+  test("a supervised host whose command isn't Bun never starts", () => {
+    const seen: string[][] = [];
+    const sup = new PluginSupervisor({
+      runDir: join(w.base, "sup-run-2"), socketPath: "/s", mintToken: () => "t",
+      pluginRun: { files: w.files, shared: [] },
+      spawn: (cmd) => { seen.push(cmd); return { pid: 999_998, exited: new Promise<number>(() => {}), kill() {} }; },
+      isAlivePid: () => false, signalPid: () => {}, processStartedAt: () => null,
+    });
+    const root = w.plugin("sup-node", { "host/index.js": "" });
+    sup.startAll([{ id: "node@local", dir: root, entry: { command: "node", args: ["host/index.js"] } }, { id: "bun@local", dir: root, entry: { command: "/opt/bin/bun", args: ["host/index.js"] } }]);
+    expect(seen.map((c) => c[0])).toEqual(["/opt/bin/bun"]);
+    expect([isBunCommand("bun"), isBunCommand("C:\\bun\\bun.exe"), isBunCommand("node"), isBunCommand("/x/bunx")]).toEqual([true, true, false, false]);
     sup.stopAll();
   });
 
