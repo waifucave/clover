@@ -91,6 +91,28 @@ export function devDaemonRequirement(teamId: string): string {
   return `identifier "${DEV_DAEMON_IDENTIFIER}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
 
+/** The dev plugin Bun's signing identifier (#234's check 5, lane M's layout): never the core's, so no Keychain item's
+ *  access list (which names the core alone) lets plugin code in. */
+export const DEV_PLUGIN_BUN_IDENTIFIER = "com.waifucave.clover.plugin-bun.dev";
+
+/** Where the dev daemon's plugin Bun goes: `dist/dev/clover-plugin-bun[.exe]`, where `pluginBun()` looks for it when
+ *  the core runs from source (and beside `dist/dev/clover-core`, where a compiled dev core looks). */
+export function devPluginBunPath(repoRoot: string, platform: NodeJS.Platform = process.platform): string {
+  return join(repoRoot, "dist", "dev", platform === "win32" ? "clover-plugin-bun.exe" : "clover-plugin-bun");
+}
+
+/** The ad-hoc signature the dev plugin Bun gets on macOS: its own identifier, the hardened runtime and Bun's JIT
+ *  entitlement (`scripts/bun-jit.entitlements`). */
+export function devPluginBunSignArgs(path: string, entitlements: string): string[] {
+  return ["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", entitlements, path];
+}
+
+/** Whether the dev plugin Bun must be made again: it's missing, or it was made from a Bun other than `sourceHash`'s
+ *  (the stamp beside it records the source's SHA-256). */
+export function devPluginBunStale(o: { exists: boolean; stamp: string | undefined; sourceHash: string }): boolean {
+  return !o.exists || o.stamp?.trim() !== o.sourceHash;
+}
+
 /** `compile:core`'s own output, which the `verify:*` gates overwrite — the dev daemon is never built there. */
 const COMPILE_CORE_OUTFILE = "--outfile ../../dist/clover-core";
 

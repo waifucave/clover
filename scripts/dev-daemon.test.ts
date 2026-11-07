@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OTHER_INSTALL_HOMES } from "../packages/core/src/other-installs";
-import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devCompileCommand, devDaemonHome, devDaemonPlan, devDaemonRequirement, devOs, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
+import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devCompileCommand, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, devDaemonHome, devDaemonPlan, devDaemonRequirement, devOs, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
 
 const TEAM = "37N77U9RSZ";
 const IDENTITIES = `  1) ${"A".repeat(40)} "Apple Development: someone@example.invalid (AAAAAAAAAA)"
@@ -138,5 +138,23 @@ describe("the dev daemon's plan on each OS", () => {
     expect(mac.some((l) => l.startsWith(`  sign     codesign as ${DEV_DAEMON_IDENTIFIER}`))).toBe(true);
     expect(mac).toContain("  then     the one-time dev Keychain transition, and exit");
     expect(describeDevDaemonPlan(plan(["--dry-run", "--no-build"], "win32"))).toContain("  build    none (--no-build): dist/dev/clover-core.exe as it is");
+  });
+});
+
+describe("the dev plugin Bun (#234's check 5)", () => {
+  test("it sits in dist/dev under its own name, signed under its own identifier, never the core's", () => {
+    expect(devPluginBunPath("/repo", "darwin")).toBe("/repo/dist/dev/clover-plugin-bun");
+    expect(devPluginBunPath("/repo", "win32")).toBe(join("/repo", "dist", "dev", "clover-plugin-bun.exe"));
+    expect(DEV_PLUGIN_BUN_IDENTIFIER).toBe("com.waifucave.clover.plugin-bun.dev");
+    expect(DEV_PLUGIN_BUN_IDENTIFIER).not.toBe(DEV_DAEMON_IDENTIFIER);
+    const args = devPluginBunSignArgs("/tmp/b", "/repo/scripts/bun-jit.entitlements");
+    expect(args).toEqual(["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", "/repo/scripts/bun-jit.entitlements", "/tmp/b"]);
+  });
+
+  test("it is made again only when it's missing or the pinned Bun changed", () => {
+    expect(devPluginBunStale({ exists: false, stamp: "a", sourceHash: "a" })).toBe(true);
+    expect(devPluginBunStale({ exists: true, stamp: undefined, sourceHash: "a" })).toBe(true);
+    expect(devPluginBunStale({ exists: true, stamp: "b\n", sourceHash: "a" })).toBe(true);
+    expect(devPluginBunStale({ exists: true, stamp: "a\n", sourceHash: "a" })).toBe(false);
   });
 });

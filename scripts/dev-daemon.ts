@@ -4,6 +4,10 @@
  *
  *   bun run dev:daemon                     build, then `daemon run` on ~/.clover-dev (dev profile)
  *   bun run dev:daemon --dry-run [...]     print what the other flags would do, and stop: nothing built or started
+ *
+ * Every run but --dry-run also makes `dist/dev/clover-plugin-bun` when it's missing or the pinned Bun changed: a copy
+ * of that Bun, ad-hoc signed on macOS as `com.waifucave.clover.plugin-bun.dev` (hardened runtime, bun-jit.entitlements),
+ * which the dev daemon runs plugin code on, never on its own binary (#234's check 5).
  *   bun run dev:daemon --no-build          reuse dist/dev/clover-core (clover-core.exe on Windows) as it is
  *   bun run dev:daemon --transition        macOS: build, sign, then the ONE-TIME Keychain transition, then exit
  *   bun run dev:daemon <clover args>       run any other verb through the dev binary (e.g. `credentials list`)
@@ -44,7 +48,8 @@
  * daemon is prompted for every item, so dev-profile commands go through the signed binary from then on.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLOVER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
@@ -54,11 +59,12 @@ import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { runScriptLine } from "./build-daemon";
 import { bunPinProblem } from "./bun-pin";
-import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devDaemonPlan, devDaemonRequirement, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
+import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devDaemonPlan, devDaemonRequirement, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_DIR = join(REPO_ROOT, "packages", "cli");
 const ENTITLEMENTS = join(REPO_ROOT, "scripts", "clover-core.entitlements");
+const BUN_JIT_ENTITLEMENTS = join(REPO_ROOT, "scripts", "bun-jit.entitlements");
 
 function die(message: string): never {
   console.error(`dev:daemon: ${message}`);
@@ -118,6 +124,43 @@ function build(build: NonNullable<DevDaemonPlan["build"]>, binary: string): void
   }
 }
 
+/** The plugin Bun the dev daemon runs plugin code on (#234's check 5): `dist/dev/clover-plugin-bun`, a copy of the
+ *  pinned Bun this script runs on, ad-hoc signed on macOS as `com.waifucave.clover.plugin-bun.dev` (hardened runtime,
+ *  `bun-jit.entitlements`), never the core's identity. Made again only when the pinned Bun changed (a stamp beside it
+ *  holds the source's SHA-256), through a temp file and a rename, so a running plugin keeps its binary. */
+function stagePluginBun(): void {
+  const target = devPluginBunPath(REPO_ROOT);
+  const stampFile = `${target}.source-sha256`;
+  const source = realpathSync(process.execPath);
+  const sourceHash = createHash("sha256").update(readFileSync(source)).digest("hex");
+  let stamp: string | undefined;
+  try {
+    stamp = readFileSync(stampFile, "utf8");
+  } catch {
+    stamp = undefined;
+  }
+  if (!devPluginBunStale({ exists: existsSync(target), stamp, sourceHash })) return;
+  mkdirSync(dirname(target), { recursive: true });
+  const tmp = `${target}.tmp-${process.pid}`;
+  try {
+    copyFileSync(source, tmp);
+    chmodSync(tmp, 0o755);
+    if (process.platform === "darwin") {
+      const signed = run("codesign", devPluginBunSignArgs(tmp, BUN_JIT_ENTITLEMENTS));
+      if (signed.status !== 0) die(`codesign of the plugin Bun failed: ${signed.stderr.trim()}`);
+      const facts = signedFacts(run("codesign", ["-dv", tmp]).stderr);
+      if (facts.identifier !== DEV_PLUGIN_BUN_IDENTIFIER || !facts.runtime) die(`the plugin Bun's signature is not ${DEV_PLUGIN_BUN_IDENTIFIER} with the hardened runtime`);
+    }
+    const ran = run(tmp, ["--version"]);
+    if (ran.status !== 0) die(`the plugin Bun doesn't run: ${ran.stderr.trim().slice(0, 300)}`);
+    renameSync(tmp, target);
+    writeFileSync(stampFile, `${sourceHash}\n`);
+    console.error(`dev:daemon: ${target} (Bun ${ran.stdout.trim()}${process.platform === "darwin" ? `, ${DEV_PLUGIN_BUN_IDENTIFIER}` : ""})`);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
 function devEnv(plan: DevDaemonPlan): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...plan.env };
   // A test preload's override has no business here (and a default home ignores it anyway).
@@ -154,6 +197,8 @@ async function main(): Promise<void> {
   const home = plan.home;
   if (plan.build !== undefined) build(plan.build, binary);
   if (!existsSync(binary)) die(`${binary} does not exist — run without --no-build`);
+  // Plugin code never runs on the core's binary: its own Bun, beside it (with --no-build too, when it's missing).
+  stagePluginBun();
   const env = devEnv(plan);
 
   if (plan.transition) {
