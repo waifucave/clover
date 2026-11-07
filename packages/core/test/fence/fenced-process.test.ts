@@ -10,6 +10,7 @@ import { bwrapArgs, bwrapPlan, heldFolderNote, unixSocketFilter } from "../../sr
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
 import type { FencedRun, FencedRunResult } from "../../src/fence/spawn";
+import { darwinDescribe } from "../helpers/darwin-only";
 
 const mac = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec");
 const linuxBwrap = process.platform === "linux" && existsSync("/usr/bin/bwrap")
@@ -126,7 +127,7 @@ describe("the macOS profile, as text", () => {
   });
 });
 
-describe.skipIf(!mac)("the profile agrees with policyAllows, on the real sandbox", () => {
+darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () => {
   test("read, write, create and delete, for each caller kind", async () => {
     const callers: Caller[] = [
       { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
