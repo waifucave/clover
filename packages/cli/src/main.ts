@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1681,10 +1681,12 @@ async function runSupervise(): Promise<void> {
 }
 
 if (import.meta.main) {
-  // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs), before
-  // anything else runs — every subcommand, every self-spawned worker. `build-kind.ts` says why.
+  // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs, read from
+  // the raw environment too, so a duplicate entry can't hide one) and, on macOS, no keychains from a HOME that isn't the
+  // account's, before anything else runs — every subcommand, every self-spawned worker. build-kind.ts and
+  // startup-guard.ts say why.
   {
-    const refusal = tlsEnvRefusal(process.env);
+    const refusal = tlsEnvRefusal(process.env, undefined, DIST_BUILD ? rawEnvironment() ?? [] : []) ?? homeRefusal();
     if (refusal !== undefined) {
       process.stderr.write(`${refusal}\n`);
       process.exit(TLS_ENV_REFUSAL_EXIT);
@@ -1694,9 +1696,16 @@ if (import.meta.main) {
   // then `fetch-probe: <status>` or `fetch-probe: failed (<code>)`; with `--worker`, made from a Worker, as an embedded
   // session's are. The gate checks the key never shows in this process's output, whatever environment it ran with
   // (BUN_CONFIG_VERBOSE_FETCH printed request headers, keys included), and which certificate authorities a request
-  // trusts (the OS store, `--use-system-ca`; never a self-signed certificate). It never prints the key itself.
+  // trusts (the OS store, `--use-system-ca`; never a self-signed certificate). It never prints the key itself, and it
+  // fetches only loopback or the one Apple URL, with a 32-hex nonce key (fetch-probe.ts), else exits 2.
   if (process.argv[2] === "__fetch-probe") {
     const [url, key] = [process.argv[3] ?? "", process.argv[4] ?? ""];
+    const { fetchProbeRefusal } = await import("./fetch-probe");
+    const refused = fetchProbeRefusal(url, key);
+    if (refused !== undefined) {
+      process.stderr.write(`fetch-probe: refused (${refused})\n`);
+      process.exit(2);
+    }
     // Self-contained (it is also sent to the Worker as source): fetch only.
     const probe = async (u: string, k: string): Promise<string> => {
       try {

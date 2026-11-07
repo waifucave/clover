@@ -21,22 +21,32 @@
 // and are not tried, the rest (the ladder, TLS, the working folder, argv, the key) is.
 // TLS trust: a self-signed certificate is refused (main thread and Worker); the OS store is trusted (`--use-system-ca`,
 // baked in by build-daemon): on macOS through a CA only the OS holds (Apple's root, gdmf.apple.com), on Linux runners
-// through a throwaway CA added to the OS store with sudo and removed afterwards.
+// through a throwaway CA added to the OS store with sudo and removed afterwards. Each TLS variable refuses the start
+// set alone and as a duplicate entry, first and last (native code reads the first, JS the last).
+// HOME: every run has none (macOS then takes the account's home from the password database); a planted HOME must be
+// refused on macOS (startup-guard.ts: HOME chooses the keychains and trust settings).
+// `__fetch-probe` refuses any URL but loopback and the one Apple URL, and any key but 32 hex characters.
+// A door that could not run at all (the binary missing, the raw helper's execve failing) is an ERROR, never "closed"
+// or "OPEN", and any ERROR fails the gate.
 //
 //   bun run verify:sealed-core                      build this machine's target (scripts/build-daemon.ts), then check
 //   bun run verify:sealed-core --binary <path>      check an existing binary (signed already: add --signed)
 //   … --no-sweep                                    skip the sweep (a quicker local run)
 //
 // Nothing here starts a daemon or reads a secret store: every run is `--version`, `bridge` without its session,
-// `__runtimes-probe` or `__fetch-probe` to a local server, on a temp CLOVER_HOME and HOME, with no keychain involved.
+// `__runtimes-probe` or `__fetch-probe` to a local server (or Apple's), on a temp CLOVER_HOME and no HOME, with no
+// keychain involved.
 import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createConnection, createServer, type Server } from "node:net";
+import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, hostTarget } from "./build-daemon";
+import { TLS_TRUST_ENV } from "../packages/core/src/build-kind";
+import { accountHome } from "../packages/core/src/startup-guard";
 import { DYLD_ENTITLEMENT, moduleGraphRange, SEALED_ENV_NAMES, sealedReplacement, sealFiller, sealProblems, sealsFormat } from "./seal-bun-doors";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -56,9 +66,6 @@ export interface Door {
   stayItself?: boolean;
   /** Bun's own variables, open on Windows by design (not sealed there). */
   bunEnv?: boolean;
-  /** Run without HOME (the user's own, from the password database): macOS reads the OS trust store only with a real
-   *  home (measured: a temp HOME left Bun with no system CA at all). */
-  noHome?: boolean;
   os?: NodeJS.Platform[];
 }
 
@@ -115,29 +122,56 @@ export function doors(): Door[] {
   return out;
 }
 
-interface Run { marker: boolean; timedOut: boolean; stdout: string; stderr: string; code: number | null }
+/** The environments a release must refuse to start with (exit 78): each TLS variable alone, and as a duplicate entry
+ *  with the refused value first and last (raw, macOS and Linux); on macOS a planted HOME. `$CA` is a file. */
+export function refusalDoors(): Door[] {
+  const posix: NodeJS.Platform[] = ["darwin", "linux"];
+  const out: Door[] = [];
+  for (const name of TLS_TRUST_ENV) {
+    const bad = name === "NODE_TLS_REJECT_UNAUTHORIZED" ? "0" : name === "SSL_CERT_DIR" ? "$CADIR" : "$CA";
+    const harmless = name === "NODE_TLS_REJECT_UNAUTHORIZED" ? "1" : "";
+    out.push({ name: `${name}=${bad === "0" ? "0" : "<set>"}`, env: { [name]: bad } });
+    if (harmless === "") out.push({ name: `${name}= (empty)`, env: { [name]: "" } });
+    out.push({ name: `raw ${name} twice, the refused value first`, raw: [`${name}=${bad}`, `${name}=${harmless}`], os: posix });
+    out.push({ name: `raw ${name} twice, the refused value last`, raw: [`${name}=${harmless}`, `${name}=${bad}`], os: posix });
+  }
+  out.push({ name: "HOME=<a planted home>", env: { HOME: "$PLANTED_HOME" }, os: ["darwin"] });
+  return out;
+}
+
+interface Run { marker: boolean; timedOut: boolean; stdout: string; stderr: string; code: number | null; error?: string }
 
 function runBinary(file: string, args: string[], cwd: string, env: Record<string, string>, mark: string, timeoutMs = 10_000): Promise<Run> {
   return new Promise((resolve) => {
     const child = spawn(file, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "", timedOut = false;
+    let error: string | undefined;
     child.stdout.on("data", (d) => { stdout += String(d); });
     child.stderr.on("data", (d) => { stderr += String(d); });
     const t = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutMs);
-    child.on("error", (err) => { stderr += String(err); });
-    child.on("close", (code) => { clearTimeout(t); resolve({ marker: existsSync(mark), timedOut, stdout, stderr, code }); });
+    child.on("error", (err) => { error = String(err); });
+    child.on("close", (code) => {
+      clearTimeout(t);
+      // The raw helper says so when its execve failed: the door never ran.
+      if (error === undefined && code === 127 && stderr.includes(EXEC_ENV_FAILED)) error = stderr.trim();
+      resolve({ marker: existsSync(mark), timedOut, stdout, stderr, code, ...(error === undefined ? {} : { error }) });
+    });
   });
 }
 
 function baseEnv(dir: string, mark: string): Record<string, string> {
-  const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: join(dir, "h"), CLOVER_HOME: join(dir, "home"), DOOR_MARK: mark };
+  // No HOME: macOS refuses one that isn't the account's own (and takes the account's home from the password database
+  // without one); the core's own state goes to the temp CLOVER_HOME.
+  const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", CLOVER_HOME: join(dir, "home"), DOOR_MARK: mark };
   for (const k of ["SystemRoot", "windir", "TEMP", "TMP"]) if (process.env[k] !== undefined) env[k] = process.env[k]!;
   if (process.platform === "win32") env.USERPROFILE = join(dir, "h");
   return env;
 }
 
+const EXEC_ENV_FAILED = "exec-env: execve failed";
 /** A tiny execve helper: `exec-env <n> <entry>… <program> <args>…` runs the program with exactly those n entries. */
-const EXEC_ENV_C = `#include <stdlib.h>
+const EXEC_ENV_C = `#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 int main(int argc, char **argv) {
   if (argc < 3) return 2;
@@ -146,6 +180,7 @@ int main(int argc, char **argv) {
   char **envp = calloc((size_t)n + 1, sizeof(char *));
   for (int i = 0; i < n; i++) envp[i] = argv[2 + i];
   execve(argv[2 + n], &argv[2 + n], envp);
+  perror("${EXEC_ENV_FAILED}");
   return 127;
 }
 `;
@@ -200,13 +235,12 @@ async function httpsServer(cert: string, key: string): Promise<{ url: string; cl
  * `--use-system-ca` took. Linux with password-less sudo (CI's runners): a throwaway CA added to the OS store and
  * removed again afterwards is trusted for a local server it signed.
  */
-async function trustChecks(work: string, run: (args: string[]) => Promise<Run>): Promise<string[]> {
+async function trustChecks(work: string, nonce: string, run: (args: string[]) => Promise<Run>): Promise<string[]> {
   const problems: string[] = [];
   const say = (ok: boolean, what: string) => console.log(`verify:sealed-core: ${ok ? "ok    " : "WRONG "} ${what}`);
   const dir = join(work, "tls");
   mkdirSync(dir, { recursive: true });
-  const nonce = "sk-tls-probe";
-  const outcome = (r: Run) => (/^fetch-probe: (.*)$/m.exec(r.stdout)?.[1] ?? `no answer (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 120)})`);
+  const outcome = (r: Run) => (r.error !== undefined ? `ERROR: it did not run (${r.error.slice(0, 120)})` : /^fetch-probe: (.*)$/m.exec(r.stdout)?.[1] ?? `no answer (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 120)})`);
   if (openssl(["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=localhost", "-addext", "subjectAltName=DNS:localhost", "-keyout", "self.key", "-out", "self.pem"], dir)) {
     const server = await httpsServer(readFileSync(join(dir, "self.pem"), "utf8"), readFileSync(join(dir, "self.key"), "utf8"));
     try {
@@ -258,8 +292,11 @@ async function trustChecks(work: string, run: (args: string[]) => Promise<Run>):
   return problems;
 }
 
-export async function verifySealedCore(binary: string, opts: { signed: boolean; sweep: boolean }): Promise<string[]> {
+export async function verifySealedCore(given: string, opts: { signed: boolean; sweep: boolean }): Promise<string[]> {
   const problems: string[] = [];
+  // Absolute: every run has its own temp working folder.
+  const binary = resolve(given);
+  if (!existsSync(binary)) return [`ERROR: no binary at ${binary}`];
   const bytes = new Uint8Array(readFileSync(binary));
   const format = moduleGraphRange(bytes).format;
   const sealed = sealsFormat(format);
@@ -267,8 +304,10 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
   const win = process.platform === "win32";
 
   const work = mkdtempSync(join(tmpdir(), "clover-sealed-core-"));
-  const nonce = `sk-sealed-core-probe-${crypto.randomUUID()}`;
-  const http = createHttpServer((_req, res) => { res.writeHead(200); res.end("ok"); });
+  // `__fetch-probe` takes only a 32-hex key (fetch-probe.ts).
+  const nonce = randomBytes(16).toString("hex");
+  let hits = 0;
+  const http = createHttpServer((_req, res) => { hits++; res.writeHead(200); res.end("ok"); });
   await new Promise<void>((r) => http.listen(0, "127.0.0.1", () => r()));
   const probeUrl = `http://127.0.0.1:${(http.address() as { port: number }).port}/sealed-core`;
   try {
@@ -331,7 +370,10 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
       copyFileSync(payload, join(dir, "cwd", "payload.js"));
       return dir;
     };
-    const fill = (s: string) => s.replaceAll("$PAYLOAD", payload).replaceAll("$NP", np).replaceAll("$BUNFIG", bunfig).replaceAll("$DYLIB", dylib);
+    const planted = join(work, "planted-home");
+    mkdirSync(join(planted, "Library", "Keychains"), { recursive: true });
+    writeFileSync(join(work, "ca.pem"), "not a certificate\n");
+    const fill = (s: string) => s.replaceAll("$PAYLOAD", payload).replaceAll("$NP", np).replaceAll("$BUNFIG", bunfig).replaceAll("$DYLIB", dylib).replaceAll("$CADIR", work).replaceAll("$CA", join(work, "ca.pem")).replaceAll("$PLANTED_HOME", planted);
     /** One run of the binary with a door set. */
     const runDoor = async (door: Door, args: string[]): Promise<Run & { mark: string }> => {
       const dir = fresh();
@@ -342,7 +384,6 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
         else writeFileSync(join(cwd, rel), content);
       }
       const env = baseEnv(dir, mark);
-      if (door.noHome) delete env.HOME;
       for (const [k, v] of Object.entries(door.env ?? {})) env[k] = fill(v);
       if (door.raw !== undefined) {
         const entries = [...Object.entries(env).map(([k, v]) => `${k}=${v}`), ...door.raw.map(fill)];
@@ -351,9 +392,18 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
       return { ...(await runBinary(bin, args, cwd, env, mark)), mark };
     };
     const itself = (r: Run) => r.code === 0 && r.stdout.trim() === `clover ${VERSION}`;
+    /** A run that never happened: an ERROR, which fails the gate, never "closed" or "OPEN". */
+    const errored = (name: string, ...runs: Run[]): boolean => {
+      const bad = runs.find((r) => r.error !== undefined);
+      if (bad === undefined) return false;
+      problems.push(`ERROR ${name}: the door did not run: ${bad.error!.slice(0, 200)}`);
+      console.log(`verify:sealed-core: ERROR  ${name}`);
+      return true;
+    };
 
     {
       const r = await runDoor({ name: "baseline" }, ["--version"]);
+      if (errored("baseline", r)) return problems;
       if (!itself(r)) problems.push(`baseline: \`clover-core --version\` did not answer \`clover ${VERSION}\` (exit ${r.code}): ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
     }
 
@@ -364,11 +414,13 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
       if (door.bunEnv && !sealed) continue; // Windows: not sealed by design
       const before = problems.length;
       const r = await runDoor(door, (door.args ?? ["--version"]).map(fill));
+      if (errored(door.name, r)) continue;
       if (r.marker) problems.push(`${door.name}: FOREIGN CODE RAN (${readFileSync(r.mark, "utf8").slice(0, 80)})`);
       if (r.timedOut) problems.push(`${door.name}: the binary did not exit (a debugger waiting?)`);
       if (door.check === "probe" && (r.stdout.includes('"source":"platform-package"') || r.stdout.includes('"source":"env"'))) problems.push(`${door.name}: the runtime ladder resolved a planted runtime: ${r.stdout.trim().slice(0, 300)}`);
       if (door.stayItself !== false && door.args !== undefined) {
         const v = await runDoor(door, ["--version"]);
+        if (errored(`${door.name} (--version)`, v)) continue;
         if (v.marker) problems.push(`${door.name} (--version): FOREIGN CODE RAN`);
         if (!itself(v)) problems.push(`${door.name}: with it set the core did not stay itself (--version gave exit ${v.code}: ${(v.stdout + v.stderr).trim().slice(0, 160)})`);
       } else if (door.stayItself !== false && !itself(r)) {
@@ -377,13 +429,41 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
       console.log(`verify:sealed-core: ${problems.length > before ? "OPEN  " : "closed"} ${door.name}`);
     }
 
-    // TLS trust from the environment: a release refuses to start.
-    writeFileSync(join(work, "ca.pem"), "not a certificate\n");
-    for (const [name, value] of [["NODE_TLS_REJECT_UNAUTHORIZED", "0"], ["NODE_EXTRA_CA_CERTS", join(work, "ca.pem")], ["SSL_CERT_FILE", join(work, "ca.pem")], ["SSL_CERT_DIR", work]] as const) {
-      const r = await runDoor({ name, env: { [name]: value } }, ["--version"]);
+    // TLS trust from the environment (alone, and duplicated either way round) and, on macOS, a planted HOME: a
+    // release refuses to start. The account's own HOME starts.
+    for (const door of refusalDoors()) {
+      if (door.os !== undefined && !door.os.includes(process.platform)) continue;
+      if (door.raw !== undefined && (execEnv === "" || !existsSync(execEnv))) continue;
+      const r = await runDoor(door, ["--version"]);
+      if (errored(door.name, r)) continue;
       const refused = r.code === 78 && r.stderr.includes("refusing to start") && !r.stdout.includes("clover ");
-      if (!refused) problems.push(`${name}: a release build must refuse to start with it set (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 160)})`);
-      console.log(`verify:sealed-core: ${refused ? "refused" : "OPEN   "} ${name}=${value === "0" ? "0" : "<set>"}`);
+      if (!refused) problems.push(`${door.name}: a release build must refuse to start with it (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 160)})`);
+      console.log(`verify:sealed-core: ${refused ? "refused" : "OPEN   "} ${door.name}`);
+    }
+    if (process.platform === "darwin") {
+      const own = accountHome();
+      const r = await runDoor({ name: "HOME=<the account's own>", env: own === undefined ? {} : { HOME: own } }, ["--version"]);
+      if (own === undefined) problems.push("ERROR the account's home could not be read from the password database");
+      else if (!errored("HOME=<the account's own>", r)) {
+        if (!itself(r)) problems.push(`HOME=<the account's own>: the core must start with it (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 160)})`);
+        console.log(`verify:sealed-core: ${itself(r) ? "starts " : "WRONG  "} HOME=<the account's own>`);
+      }
+    }
+
+    // `__fetch-probe` fetches only loopback or the one Apple URL, with a 32-hex key: anything else exits 2, unsent.
+    for (const [what, url, key] of [
+      ["another host", "https://example.com/sealed-core", nonce],
+      ["the Apple host on another path", "https://gdmf.apple.com/sealed-core", nonce],
+      ["a non-loopback address", "http://127.0.0.2:9/sealed-core", nonce],
+      ["a key that isn't 32 hex", probeUrl, `sk-${nonce}`],
+      ["a short key", probeUrl, nonce.slice(1)],
+    ] as const) {
+      const was = hits;
+      const r = await runDoor({ name: what }, ["__fetch-probe", url, key]);
+      if (errored(`__fetch-probe with ${what}`, r)) continue;
+      const refused = r.code === 2 && r.stderr.includes("fetch-probe: refused") && hits === was && !`${r.stdout}${r.stderr}`.includes(nonce);
+      if (!refused) problems.push(`__fetch-probe with ${what}: it must exit 2 without a request (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 160)})`);
+      console.log(`verify:sealed-core: ${refused ? "refused" : "OPEN   "} __fetch-probe with ${what}`);
     }
 
     // The key: a request with a dummy key, with the verbose-fetch variables set, never shows it.
@@ -391,6 +471,7 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
     for (const door of keyDoors) {
       if (door.bunEnv && !sealed) continue;
       const r = await runDoor(door, ["__fetch-probe", probeUrl, nonce]);
+      if (errored(`key in the output with ${door.name}`, r)) continue;
       const ok = /^fetch-probe: /m.test(r.stdout) && !`${r.stdout}${r.stderr}`.includes(nonce);
       if (!/^fetch-probe: 200$/m.test(r.stdout) && door.name === "no variable") problems.push(`__fetch-probe did not reach the local server: ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
       if (!ok) problems.push(`${door.name}: the request's key showed in the output, or the core did not stay itself`);
@@ -399,7 +480,7 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
 
     // Whom TLS trusts (main thread and a Worker, as an embedded session's requests are): the OS store, baked in with
     // `--use-system-ca` (build-daemon.ts) — never a self-signed certificate.
-    problems.push(...(await trustChecks(work, async (args) => runDoor({ name: "tls", noHome: true }, args))));
+    problems.push(...(await trustChecks(work, nonce, async (args) => runDoor({ name: "tls" }, args))));
 
     // The debugger: BUN_INSPECT with wait must neither block nor open its port; CONNECT_TO must not connect out.
     if (sealed) {
@@ -410,8 +491,10 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
       await new Promise((r) => setTimeout(r, 1500));
       const open = await portOpen(port);
       const r = await pending;
-      if (open || r.timedOut || !itself(r)) problems.push(`BUN_INSPECT: ${open ? "a debugger port opened" : r.timedOut ? "a debugger held the process" : "the core did not stay itself"}`);
-      console.log(`verify:sealed-core: ${open || r.timedOut || !itself(r) ? "OPEN  " : "closed"} BUN_INSPECT=ws://…?wait=1`);
+      if (!errored("BUN_INSPECT=ws://…?wait=1", r)) {
+        if (open || r.timedOut || !itself(r)) problems.push(`BUN_INSPECT: ${open ? "a debugger port opened" : r.timedOut ? "a debugger held the process" : "the core did not stay itself"}`);
+        console.log(`verify:sealed-core: ${open || r.timedOut || !itself(r) ? "OPEN  " : "closed"} BUN_INSPECT=ws://…?wait=1`);
+      }
     }
     if (sealed && !win) {
       const dir = fresh();
@@ -423,8 +506,11 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
       const r = await runBinary(bin, ["--version"], join(dir, "cwd"), { ...baseEnv(dir, mark), BUN_INSPECT_CONNECT_TO: `unix://${sock}` }, mark, 6000);
       await new Promise((res) => setTimeout(res, 300));
       server.close();
-      if (connected || r.timedOut || !itself(r)) problems.push("BUN_INSPECT_CONNECT_TO: the binary connected a debugger out, or did not stay itself");
-      console.log(`verify:sealed-core: ${connected ? "OPEN  " : "closed"} BUN_INSPECT_CONNECT_TO=unix://…`);
+      if (!errored("BUN_INSPECT_CONNECT_TO=unix://…", r)) {
+        const open = connected || r.timedOut || !itself(r);
+        if (open) problems.push("BUN_INSPECT_CONNECT_TO: the binary connected a debugger out, or did not stay itself");
+        console.log(`verify:sealed-core: ${open ? "OPEN  " : "closed"} BUN_INSPECT_CONNECT_TO=unix://…`);
+      }
     }
 
     // The sweep: every BUN_*/NODE_* name in Bun's code, each with four values, run through __fetch-probe.
@@ -438,6 +524,10 @@ export async function verifySealedCore(binary: string, opts: { signed: boolean; 
         while (next < jobs.length) {
           const { name, value } = jobs[next++]!;
           const r = await runDoor({ name, env: { [name]: value } }, ["__fetch-probe", probeUrl, nonce]);
+          if (r.error !== undefined) {
+            failures.push(`ERROR ${name}=${value.replace("$PAYLOAD", "<payload>")}: the door did not run: ${r.error.slice(0, 120)}`);
+            continue;
+          }
           const refusedTls = r.code === 78 && r.stderr.includes("refusing to start");
           const ranOwn = /^fetch-probe: /m.test(r.stdout) || refusedTls;
           if (r.marker || r.timedOut || !ranOwn || `${r.stdout}${r.stderr}`.includes(nonce)) {

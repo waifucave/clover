@@ -32,5 +32,58 @@ test("a dist build refuses TLS trust from the environment; a proxy and a dev bui
   expect(tlsEnvRefusal({ SSL_CERT_DIR: "/x" }, true)).toContain("SSL_CERT_DIR is set");
   expect(tlsEnvRefusal({ HTTPS_PROXY: "http://proxy:3128", HTTP_PROXY: "x" }, true)).toBeUndefined();
   expect(tlsEnvRefusal({ NODE_EXTRA_CA_CERTS: "/tmp/ca.pem" }, false)).toBeUndefined();
-  expect(tlsEnvRefusal({ NODE_EXTRA_CA_CERTS: "" }, true)).toBeUndefined();
+  // Present at all refuses, an empty value included: native code reads the first of duplicate entries, JS the last.
+  expect(tlsEnvRefusal({ NODE_EXTRA_CA_CERTS: "" }, true)).toContain("NODE_EXTRA_CA_CERTS is set");
+  expect(tlsEnvRefusal({ SSL_CERT_FILE: "" }, true)).toContain("SSL_CERT_FILE is set");
+  expect(tlsEnvRefusal({ NODE_TLS_REJECT_UNAUTHORIZED: "false" }, true)).toContain("NODE_TLS_REJECT_UNAUTHORIZED is set");
+  expect(tlsEnvRefusal({ NODE_TLS_REJECT_UNAUTHORIZED: "" }, true)).toContain("NODE_TLS_REJECT_UNAUTHORIZED is set");
+  // Bun's process.env answers `in` true for an unset NODE_TLS_REJECT_UNAUTHORIZED: only a value counts.
+  expect(tlsEnvRefusal({ NODE_TLS_REJECT_UNAUTHORIZED: undefined }, true)).toBeUndefined();
+  expect(tlsEnvRefusal(process.env.NODE_TLS_REJECT_UNAUTHORIZED === undefined ? process.env : {}, true)).toBeUndefined();
+});
+
+test("a dist build reads the raw environment too: a duplicate entry can't hide a CA variable or verification off", async () => {
+  const { tlsEnvRefusal, TLS_TRUST_ENV } = await import("../src/build-kind");
+  const env = { PATH: "/usr/bin" };
+  for (const k of TLS_TRUST_ENV) {
+    const bad = k === "NODE_TLS_REJECT_UNAUTHORIZED" ? `${k}=0` : `${k}=/tmp/ca.pem`;
+    // The refused entry first (native code's) and last (JS's), beside a harmless one.
+    for (const raw of [[bad, `${k}=1`], [`${k}=1`, bad], [`${k}=`, bad], [bad]]) {
+      expect(tlsEnvRefusal(env, true, raw)).toContain(`${k} is set`);
+    }
+    expect(tlsEnvRefusal(env, false, [bad])).toBeUndefined();
+  }
+  expect(tlsEnvRefusal(env, true, ["NODE_TLS_REJECT_UNAUTHORIZED=1", "NODE_TLS_REJECT_UNAUTHORIZED=1", "HTTPS_PROXY=http://p:1", "=NODE_EXTRA_CA_CERTS=x"])).toBeUndefined();
+  expect(tlsEnvRefusal(env, true, ["NODE_EXTRA_CA_CERTS"])).toContain("NODE_EXTRA_CA_CERTS is set");
+});
+
+test("a macOS dist build refuses a HOME that isn't the account's own (real path); an unset HOME is fine", async () => {
+  const { homeRefusal } = await import("../src/startup-guard");
+  const account = () => "/Users/me";
+  const real = (p: string) => (p === "/private/var/me-link" ? "/Users/me" : p.replace(/\/$/, ""));
+  const on = { platform: "darwin" as const, distBuild: true, account, real };
+  expect(homeRefusal({ ...on, home: undefined })).toBeUndefined();
+  expect(homeRefusal({ ...on, home: "/Users/me" })).toBeUndefined();
+  expect(homeRefusal({ ...on, home: "/Users/me/" })).toBeUndefined();
+  expect(homeRefusal({ ...on, home: "/private/var/me-link" })).toBeUndefined();
+  expect(homeRefusal({ ...on, home: "/tmp/planted" })).toContain("HOME is \"/tmp/planted\", not this account's home (/Users/me)");
+  expect(homeRefusal({ ...on, home: "" })).toContain("HOME is \"\"");
+  expect(homeRefusal({ ...on, home: "/Users/me", account: () => undefined })).toContain("could not be read");
+  expect(homeRefusal({ ...on, home: "/tmp/planted", distBuild: false })).toBeUndefined();
+  expect(homeRefusal({ ...on, home: "/tmp/planted", platform: "linux" })).toBeUndefined();
+});
+
+test.if(process.platform === "darwin")("the account's home comes from the password database, not HOME; the raw environment is readable", async () => {
+  const { accountHome, rawEnvironment } = await import("../src/startup-guard");
+  const home = accountHome();
+  expect(home).toBeString();
+  expect(home!.startsWith("/")).toBe(true);
+  const raw = rawEnvironment();
+  expect(raw).toBeArray();
+  expect(raw!.some((e) => e.startsWith("PATH="))).toBe(true);
+});
+
+test.if(process.platform === "linux")("the raw environment comes from /proc/self/environ", async () => {
+  const { rawEnvironment } = await import("../src/startup-guard");
+  expect(rawEnvironment()!.some((e) => e.startsWith("PATH="))).toBe(true);
 });
