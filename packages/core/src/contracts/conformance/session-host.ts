@@ -11,7 +11,7 @@ import type { ApprovalDecision } from "../approval-broker";
 import { isContractError } from "../common";
 import { FakeApprovalBroker } from "../fakes/approval-broker";
 import { FAKE_EPOCH_MS, FakeClock, flush } from "../fakes/clock";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64, type FakeDevice } from "../fakes/device-registry";
 import { FakeSessionDriver, type FakeSessionHost } from "../fakes/session-host";
 import { originOf, verifyUserMessage, type DeliveredInput, type SessionRecord, type UserInput } from "../session-host";
 
@@ -248,11 +248,11 @@ export function runSessionHostConformance(make: SessionHostFactory): void {
       const clock = new FakeClock();
       const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
       const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-      const phone = await makeFakeDevice();
+      const phone = await makeFakePhone();
       const server = await makeFakeDevice();
-      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
       await registry.add({ id: server.id, name: "Box", kind: "server", runsCore: true, publicKey: server.publicKey }, { via: "account", account: "acct_1" });
-      const sign = async (who: typeof phone, session: string, m: { text: string; clientMessageId: string; sentAt: number }) =>
+      const sign = async (who: FakeDevice, session: string, m: { text: string; clientMessageId: string; sentAt: number }) =>
         toBase64(await who.sign(new TextEncoder().encode(userMessageSigningInput({ session, clientMessageId: m.clientMessageId, hash: sha256(userMessageHashInput(m)), sentAt: m.sentAt }))));
       const m = { text: "ship it", clientMessageId: "m-ship", sentAt: clock.now() };
       const c = { now: clock.now(), sha256, devices: registry };

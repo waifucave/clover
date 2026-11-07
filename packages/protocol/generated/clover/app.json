@@ -516,6 +516,22 @@
             "type": "string",
             "maxLength": 35
           },
+          "appearance": {
+            "type": "string",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          },
+          "textSize": {
+            "type": "string",
+            "enum": [
+              "small",
+              "default",
+              "large"
+            ]
+          },
           "packs": {
             "type": "object",
             "propertyNames": {
@@ -675,6 +691,22 @@
               "language": {
                 "type": "string",
                 "maxLength": 35
+              },
+              "appearance": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark",
+                  "system"
+                ]
+              },
+              "textSize": {
+                "type": "string",
+                "enum": [
+                  "small",
+                  "default",
+                  "large"
+                ]
               },
               "packs": {
                 "type": "object",
@@ -1369,6 +1401,22 @@
               "language": {
                 "type": "string",
                 "maxLength": 35
+              },
+              "appearance": {
+                "type": "string",
+                "enum": [
+                  "light",
+                  "dark",
+                  "system"
+                ]
+              },
+              "textSize": {
+                "type": "string",
+                "enum": [
+                  "small",
+                  "default",
+                  "large"
+                ]
               },
               "packs": {
                 "type": "object",
