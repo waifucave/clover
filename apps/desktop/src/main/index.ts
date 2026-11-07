@@ -1173,6 +1173,16 @@ async function smoke(): Promise<void> {
   const deadline = Date.now() + Number(process.env.CLOVER_SMOKE_DEADLINE_MS ?? "45000");
   const win = await openMainWindow();
   if (win === undefined) return report({ ok: false, reason: "no window" });
+  // A sealed run delivers real input into out-of-process frames: CDP input routes through the browser's compositor
+  // hit-test, which a hidden window never produces (its views draw nothing to route by) — the press then lands
+  // nowhere, or stops a frame early, depending on the platform. Showing the window inactive (never focusing it)
+  // starts every frame compositing long before the press, so the router can target the sealed frame. Test-only like
+  // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
+  // touched.
+  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && sealedInputAllowed({ packaged: app.isPackaged, headless }) && !win.isVisible()) {
+    win.showInactive();
+    log(`sealed-click: main window shown for input routing`);
+  }
   const probe = `(() => ({
     origin: location.origin,
     node: typeof require !== "undefined" || typeof process !== "undefined",
