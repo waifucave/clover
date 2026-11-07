@@ -1,0 +1,196 @@
+// The turn loop's hook events (spec §5.3 "Hook order", "What each event may return", "Handlers"; the plugin SDK's hook
+// catalog), fired by lane A's bot driver and run on the plugins' `hooks` entries through lane B's plugin host.
+// Owner: lane A (the events and their order); lane B owns the registry, the host and the catalog.
+//
+// * **Events:** `tool.before` and `tool.after` around each tool call, `message.in` on each message before the model
+//   sees it (the one that starts a turn and each one that folds in), `message.out` on the bot's text before it is
+//   stored and shown, `turn.start` and `turn.end`, `compact.before` and `compact.after`.
+// * **Order:** the hooks on one event run one after another in the order of their plugins' ids (`hookOrder`), each
+//   seeing the last one's output.
+// * **What each may return** (`HOOK_RETURNS`): `tool.before` may deny, ask or replace the input, never allow;
+//   `tool.after` may replace the result; `message.in` and `message.out` the text; `turn.start` a labelled note; the
+//   rest only observe. Anything else a hook returns is ignored. A deny stops the hooks after it.
+// * **A hook that throws or runs past its `timeoutMs`** (10 seconds by default) is skipped and reported
+//   (`onSkipped`, which Settings shows).
+// * **Scope** (§5.1): an entry whose `scope` (or its plugin's) leaves bots out never runs on a bot's session.
+// * **Tool filter:** `tools` takes exact names or patterns with `*` (`hookMatchesTool`).
+// * **Who it runs as:** the session that made the call (R7), so the API calls the hook makes act for that session.
+// * A `command` hook (Claude Code's hook protocol) needs a process in lane C's sandbox; until that lands it is skipped,
+//   reported once per entry.
+import type { Caller } from "@waifucave/clover-protocol";
+import { hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput } from "../../../../plugin-sdk/src/catalogs/hooks";
+import type { PluginHost } from "../../contracts/plugin-host";
+import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
+
+export type { HookEvent, HookInput };
+
+/** The session a hook event is about. */
+export interface HookSession {
+  id: string;
+  kind: "bot" | "side-thread" | "agent" | "coding";
+  caller: Caller;
+  bot?: string;
+  computer: string;
+}
+
+/** What the turn loop asks of the hooks: each event, with what its hooks may change. */
+export interface TurnHooks {
+  toolBefore(s: HookSession, tool: { name: string; callId: string }, input: unknown, signal?: AbortSignal): Promise<{ deny?: string; ask?: string; input: unknown }>;
+  toolAfter(s: HookSession, tool: { name: string; callId: string }, input: unknown, result: unknown, signal?: AbortSignal): Promise<unknown>;
+  messageIn(s: HookSession, text: string, signal?: AbortSignal): Promise<string>;
+  messageOut(s: HookSession, text: string, signal?: AbortSignal): Promise<string>;
+  /** The notes the hooks add to the turn. */
+  turnStart(s: HookSession, signal?: AbortSignal): Promise<{ label: string; text: string; pluginId: string; hook: string }[]>;
+  turnEnd(s: HookSession, text?: string): Promise<void>;
+  compactBefore(s: HookSession): Promise<void>;
+  compactAfter(s: HookSession): Promise<void>;
+  /** Whether any hook is on for `message.out` (replies show only after it runs, §5.3). */
+  rewritesReplies(): boolean;
+}
+
+/** No hooks at all. */
+export const NO_HOOKS: TurnHooks = {
+  toolBefore: async (_s, _t, input) => ({ input }),
+  toolAfter: async (_s, _t, _i, result) => result,
+  messageIn: async (_s, text) => text,
+  messageOut: async (_s, text) => text,
+  turnStart: async () => [],
+  turnEnd: async () => {},
+  compactBefore: async () => {},
+  compactAfter: async () => {},
+  rewritesReplies: () => false,
+};
+
+/** A `hooks` entry as the manifest gives it (`HookSchema`). */
+interface HookEntryValue {
+  id: string;
+  on: readonly HookEvent[];
+  tools?: readonly string[];
+  handler?: string;
+  command?: string;
+  timeoutMs?: number;
+  scope?: "bots" | "agents" | "both";
+}
+
+export interface PluginHooksOptions {
+  registry: Pick<PluginRegistry, "entries" | "get">;
+  host: Pick<PluginHost, "invoke">;
+  /** A hook skipped: it threw, ran past its limit, or can't run here yet. Settings shows it. */
+  onSkipped?(skip: { pluginId: string; hook: string; event: HookEvent; reason: string }): void;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bots" | "agents" | "both" {
+  const own = (c.value as HookEntryValue).scope;
+  if (own !== undefined) return own;
+  const plugin = registry.get(c.pluginId)?.manifest as { scope?: "bots" | "agents" | "both" } | undefined;
+  return plugin?.scope ?? "both";
+}
+
+function servesSession(scope: "bots" | "agents" | "both", kind: HookSession["kind"]): boolean {
+  if (scope === "both") return true;
+  return scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding";
+}
+
+/** The turn loop's hooks over the plugins' `hooks` entries. */
+export function pluginHooks(o: PluginHooksOptions): TurnHooks {
+  const reportedCommand = new Set<string>();
+
+  const hooksFor = (event: HookEvent, s: HookSession, tool?: string): { pluginId: string; entry: HookEntryValue }[] => {
+    const active = o.registry.entries("hooks").filter((c) => c.state === "active");
+    const matching = active.filter((c) => {
+      const v = c.value as HookEntryValue;
+      return Array.isArray(v.on) && v.on.includes(event) && servesSession(scopeOf(c, o.registry), s.kind) && (tool === undefined || hookMatchesTool(v.tools, tool));
+    });
+    return hookOrder(matching.map((c) => ({ pluginId: c.pluginId, entry: c.value as HookEntryValue })));
+  };
+
+  /** Runs each hook in order; `step` folds its (allowed) output into the running value. */
+  async function run<T>(event: HookEvent, s: HookSession, input: Omit<HookInput, "event" | "session" | "bot" | "computer">, initial: T, step: (acc: T, out: Record<string, unknown>, hook: { pluginId: string; id: string }) => { value: T; stop?: boolean }, signal?: AbortSignal, tool?: string): Promise<T> {
+    let acc = initial;
+    for (const { pluginId, entry } of hooksFor(event, s, tool)) {
+      if (entry.handler === undefined) {
+        const key = `${pluginId}/${entry.id}`;
+        if (entry.command !== undefined && !reportedCommand.has(key)) {
+          reportedCommand.add(key);
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "a command hook needs lane C's sandbox, which doesn't run hooks yet" });
+        }
+        continue;
+      }
+      const args: HookInput = {
+        event,
+        session: { id: s.id, kind: s.kind, caller: s.caller },
+        ...(s.bot === undefined ? {} : { bot: s.bot }),
+        computer: s.computer,
+        ...input,
+        ...(event === "message.in" || event === "message.out" ? { text: acc as unknown as string } : {}),
+        ...(event === "tool.before" ? { input: (acc as unknown as { input: unknown }).input } : {}),
+        ...(event === "tool.after" ? { result: acc } : {}),
+      };
+      let out: unknown;
+      try {
+        out = await o.host.invoke({
+          pluginId, handler: entry.handler, args, caller: s.caller, session: s.id,
+          timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, 600_000), ownLimit: true,
+          ...(signal === undefined ? {} : { signal }),
+        });
+      } catch (err) {
+        if (signal?.aborted === true) throw err;
+        o.onSkipped?.({ pluginId, hook: entry.id, event, reason: err instanceof Error ? err.message : String(err) });
+        continue;
+      }
+      if (!isObject(out)) continue;
+      // Only what the event allows (§5.3); `event` in the output, when given, must be this one.
+      if (out.event !== undefined && out.event !== event) continue;
+      const allowed = HOOK_RETURNS[event];
+      const filtered: Record<string, unknown> = {};
+      for (const k of allowed) if (k in out) filtered[k] = out[k];
+      const next = step(acc, filtered, { pluginId, id: entry.id });
+      acc = next.value;
+      if (next.stop === true) break;
+    }
+    return acc;
+  }
+
+  const text = (event: "message.in" | "message.out") => (s: HookSession, t: string, signal?: AbortSignal) =>
+    run<string>(event, s, {}, t, (acc, out) => ({ value: typeof out.text === "string" ? out.text : acc }), signal);
+
+  return {
+    async toolBefore(s, tool, input, signal) {
+      let reason: { deny?: string; ask?: string } = {};
+      const r = await run<{ input: unknown }>("tool.before", s, { tool }, { input }, (acc, out) => {
+        if (isObject(out.deny)) {
+          reason = { deny: typeof out.deny.reason === "string" ? out.deny.reason : "a plugin's hook refused it" };
+          return { value: acc, stop: true };
+        }
+        if (isObject(out.ask) && reason.ask === undefined) reason = { ...reason, ask: typeof out.ask.reason === "string" ? out.ask.reason : "a plugin's hook asks" };
+        return { value: "input" in out ? { input: out.input } : acc };
+      }, signal, tool.name);
+      return { ...reason, input: r.input };
+    },
+    toolAfter: (s, tool, input, result, signal) =>
+      run<unknown>("tool.after", s, { tool, input }, result, (acc, out) => ({ value: "result" in out ? out.result : acc }), signal, tool.name),
+    messageIn: text("message.in"),
+    messageOut: text("message.out"),
+    async turnStart(s, signal) {
+      const notes: { label: string; text: string; pluginId: string; hook: string }[] = [];
+      await run<null>("turn.start", s, {}, null, (acc, out, hook) => {
+        const n = out.note;
+        if (isObject(n) && typeof n.label === "string" && typeof n.text === "string") notes.push({ label: n.label.slice(0, 200), text: n.text.slice(0, 20_000), pluginId: hook.pluginId, hook: hook.id });
+        return { value: acc };
+      }, signal);
+      return notes;
+    },
+    async turnEnd(s, t) {
+      await run<null>("turn.end", s, t === undefined ? {} : { text: t }, null, (acc) => ({ value: acc }));
+    },
+    async compactBefore(s) {
+      await run<null>("compact.before", s, {}, null, (acc) => ({ value: acc }));
+    },
+    async compactAfter(s) {
+      await run<null>("compact.after", s, {}, null, (acc) => ({ value: acc }));
+    },
+    rewritesReplies: () => o.registry.entries("hooks").some((c) => c.state === "active" && (c.value as HookEntryValue).on?.includes("message.out")),
+  };
+}

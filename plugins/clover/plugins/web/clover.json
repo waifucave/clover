@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": "Web search and fetch",
+  "description": "mcp__clover__WebSearch and mcp__clover__WebFetch: a bot's web search (Exa) and page fetch, through the core's fetch.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "host": {
+    "entry": "host/index.ts",
+    "runtime": "bun"
+  },
+  "capabilities": [
+    "network:mcp.exa.ai"
+  ],
+  "contributes": {
+    "mcpServers": {
+      "web": {
+        "type": "host",
+        "tools": {
+          "WebSearch": "preload",
+          "WebFetch": "preload"
+        },
+        "instructions": "instructions.md"
+      }
+    }
+  }
+}

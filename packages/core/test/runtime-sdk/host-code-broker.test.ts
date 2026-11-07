@@ -457,9 +457,9 @@ test("terminal call and disposed generation cannot replay", async () => {
 test("ordinary live children do not require stop/descendant receipts for storage activation", async () => {
   const f = fixture({ active: false, ownedBridge: false, stop: () => new Promise<void>(() => {}) }), g = f.enroll();
   f.spawnGeneration(g); mkdirSync(join(home, "cowork"));
-  const start = Date.now();
-  const remove = await f.service.refreshForStorage(home, { coordinationDir: coordination, coworkStorageActive: true }, 25);
-  try { expect(Date.now() - start).toBeLessThan(500); expect(hostStorageFloorDescriptor(home).denyReadPaths.length).toBeGreaterThan(0); }
+  // a 30 s refresh window: if the never-settling stop were waited on, this would outlast the test timeout and fail
+  const remove = await f.service.refreshForStorage(home, { coordinationDir: coordination, coworkStorageActive: true }, 30_000);
+  try { expect(hostStorageFloorDescriptor(home).denyReadPaths.length).toBeGreaterThan(0); }
   finally { remove(); f.exited.resolve(0); }
 });
 test("activation stays blocked when a logical host policy consumer cannot acknowledge refresh", async () => {

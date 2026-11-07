@@ -84,7 +84,7 @@ export const CLOVER_EXEMPT_PATHS: readonly string[] = [
 
 /** Tracked paths the path pass never moves, though a component spells `winter`. */
 export const CLOVER_KEEP_PATHS: readonly RegExp[] = [
-  /^scripts\/build-winter(\.test)?\.ts$/, // Winter's coding agent's build (`build:winter`); lane K names it
+  /^scripts\/build-winter(\.test|\.darwin\.test)?\.ts$/, // Winter's coding agent's build (`build:winter`); lane K names it
   /(^|\/)helpers\/winter-binary\.ts$/, // the test helpers that need that binary
   /^packages\/core\/src\/computer-use\/browser\/headless\/winter-engine\.ts$/, // the "winter" headless engine (computer use)
   /^scripts\/cu-live\/swift\//, // a Swift fixture for the Winter Computer Use helper
@@ -178,7 +178,7 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
   {
     id: "cu-helper-daemon-identities",
     regex: /\bwinter-core\b|\bcom\.winter\.core\.dev\b/g,
-    files: ["scripts/computer-helper-lib.ts", "scripts/cu-live/build.ts", "scripts/embed-cowork-native.test.ts"],
+    files: ["scripts/computer-helper-lib.ts", "scripts/cu-live/build.ts", "scripts/embed-cowork-native.darwin.test.ts"],
     why: "the daemon identities the Winter Computer Use helper and its browser host accept (`HostIdentity.swift`, `HelperIdentity.swift`), and the kept Cowork launcher names (`CodeIdentity.swift`): Winter's, until opensky replaces them",
   },
   {
@@ -245,9 +245,9 @@ export const CLOVER_ALLOWLIST: readonly AllowlistEntry[] = [
       "scripts/stage-runtimes.ts",
       "scripts/stage-runtimes.test.ts",
       "scripts/embed-runtimes.sh",
-      "scripts/embed-runtimes.test.ts",
+      "scripts/embed-runtimes.darwin.test.ts",
       "scripts/build-winter.ts",
-      "scripts/build-winter.test.ts",
+      "scripts/build-winter.darwin.test.ts",
     ],
     why: "the files that find, build, stage and embed the `winter` binary: there `winter` is that binary's name and its bundle entry (`runtimes/winter`)",
   },

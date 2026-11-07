@@ -10,6 +10,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkPriority, LinkTransport } from "../contracts/link-transport";
 import type { TreeData } from "../contracts/tree";
 import type { Holder, HolderCall } from "./holder";
+import { withAnswer, type AnswerAsker } from "./judge";
 import type { TreeWatchEvent } from "./watch";
 
 /** The notification a holder sends for a watch: `tree.changed`, with the watch's id. */
@@ -56,11 +57,15 @@ export class RemoteHolder implements Holder {
   #offLink: Unsubscribe | null = null;
   #wasUp = true;
 
-  /** `computer` names the holder in errors (it may be renamed while this object lives). */
-  constructor(opts: { transport: LinkTransport; device: string; computer: () => string }) {
+  readonly #ask: AnswerAsker | undefined;
+
+  /** `computer` names the holder in errors (it may be renamed while this object lives). `ask` shows the user the
+   *  holder's card when its level needs their answer (R1). */
+  constructor(opts: { transport: LinkTransport; device: string; computer: () => string; ask?: AnswerAsker }) {
     this.#transport = opts.transport;
     this.#device = opts.device;
     this.#computer = opts.computer;
+    this.#ask = opts.ask;
   }
 
   /** Stops every watch this side holds. */
@@ -119,12 +124,14 @@ export class RemoteHolder implements Holder {
   }
 
   async #call<R>(method: string, params: Record<string, unknown>, priority: LinkPriority = "control"): Promise<R> {
-    try {
-      const link = await this.#transport.connect(this.#device);
-      return await link.request<R>(method, params, { priority });
-    } catch (e) {
-      throw offlineAs(this.#computer(), e);
-    }
+    return withAnswer(params.answer === undefined ? this.#ask : undefined, async (answer) => {
+      try {
+        const link = await this.#transport.connect(this.#device);
+        return await link.request<R>(method, answer ? { ...params, answer } : params, { priority });
+      } catch (e) {
+        throw offlineAs(this.#computer(), e);
+      }
+    });
   }
 
   async stat(path: string, call: HolderCall): Promise<FileStat | null> {
