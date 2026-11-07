@@ -46,6 +46,8 @@ export interface BackendCommand {
 export interface AcpBackendOptions {
   id: string;
   pluginId: string;
+  /** Clover's own bundled `clover/agent-<id>` entry (what the core grants by id applies). */
+  bundled?: boolean;
   /** Its `agentBackends` entry's name, for Settings. */
   name?: string;
   quirks: AgentQuirks;
@@ -110,6 +112,7 @@ export function currentOs(): Os {
 export class AcpAgentBackend implements AgentBackend {
   readonly id: string;
   readonly pluginId: string;
+  readonly bundled: boolean;
   readonly name: string | undefined;
   readonly quirks: AgentQuirks;
   readonly #opts: AcpBackendOptions;
@@ -118,6 +121,7 @@ export class AcpAgentBackend implements AgentBackend {
   constructor(opts: AcpBackendOptions) {
     this.id = opts.id;
     this.pluginId = opts.pluginId;
+    this.bundled = opts.bundled === true;
     this.name = opts.name;
     this.quirks = opts.quirks;
     this.#opts = opts;
