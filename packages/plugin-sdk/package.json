@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./ui": "./src/ui/index.tsx",
     "./ui/bridge": "./src/ui/bridge.ts",
+    "./keys": "./src/manifest/keys.ts",
     "./schemas/*": "./generated/*"
   },
   "scripts": {

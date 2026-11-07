@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
-import { APP_KEYS, appShortcut, EDIT_MENU_KEYS, RESERVED_KEYS, sealedInputAllowed, type AppShortcut } from "../src/main/shortcuts";
+import { APP_KEYS, appShortcut, EDIT_MENU_KEYS, RESERVED_KEYS, sealedInputAllowed, testSwitchAllowed, type AppShortcut } from "../src/main/shortcuts";
 import { mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
@@ -170,14 +170,14 @@ describe("the app's shortcuts", () => {
     expect(sealedInputAllowed({ packaged: false, headless: true })).toBe(true);
   });
 
-  // Every other test switch asks the same gate in apps/desktop/src/main/index.ts (the call sites run only in the
-  // app, so the tests pin the predicate each consults; refused, each falls to its safe default: quit stays quit,
+  // Every other test switch asks the same one helper in apps/desktop/src/main/index.ts (the call sites run only in
+  // the app, so the tests pin the helper each consults; refused, each falls to its safe default: quit stays quit,
   // a paste is denied, a menu pick is null, no page opens, no input is sent).
   for (const name of ["CLOVER_SMOKE_INPUT", "CLOVER_SMOKE_PAGE", "CLOVER_TEST_PASTE_OK", "CLOVER_TEST_MENU_PICK", "CLOVER_TEST_QUIT_CHOICE"] as const) {
     test(`${name} is ignored packaged`, () => {
-      expect(sealedInputAllowed({ packaged: true, headless: true }), name).toBe(false);
-      expect(sealedInputAllowed({ packaged: true, headless: false }), name).toBe(false);
-      expect(sealedInputAllowed({ packaged: false, headless: true }), name).toBe(true);
+      expect(testSwitchAllowed({ packaged: true, headless: true }), name).toBe(false);
+      expect(testSwitchAllowed({ packaged: true, headless: false }), name).toBe(false);
+      expect(testSwitchAllowed({ packaged: false, headless: true }), name).toBe(true);
     });
   }
 

@@ -12,9 +12,17 @@ export function sealedInputAllowed(input: { packaged: boolean; headless: boolean
   return input.packaged !== true && input.headless === true;
 }
 
+/** Every other test switch asks this one helper (CLOVER_SMOKE_INPUT/PAGE, CLOVER_TEST_PASTE_OK/MENU_PICK/QUIT_CHOICE):
+ *  test answers ride unpackaged, headless runs alone, and a packaged run falls to each call site's safe default.
+ *  Pure, so each switch's gate is unit-tested. */
+export function testSwitchAllowed(input: { packaged: boolean; headless: boolean }): boolean {
+  return input.packaged !== true && input.headless === true;
+}
+
 /** The app's own reserved keys, ahead of every layer: lane E keeps the single list in the plugin SDK (F-M3's palette
- *  checks user bindings against it), and the desktop re-exports it for its own tests. */
-export { APP_KEYS, EDIT_MENU_KEYS, RESERVED_KEYS } from "@waifucave/clover-plugin-sdk";
+ *  checks user bindings against it), and the desktop re-exports it for its own tests. Imported from the keys
+ *  subpath, which pulls no zod into the bundle. */
+export { APP_KEYS, EDIT_MENU_KEYS, RESERVED_KEYS } from "@waifucave/clover-plugin-sdk/keys";
 
 export interface KeyInput {
   type: string;

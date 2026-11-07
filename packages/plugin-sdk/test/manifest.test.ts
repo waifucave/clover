@@ -155,7 +155,7 @@ describe("reserved keys (lane E)", () => {
     const cmds = (key: string) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { commands: [{ name: "go", description: "Go", handler: "go", key }] } });
     // The grammar itself is lowercase-only (an uppercase key fails the schema first); every spelling it allows that
     // lands on a reserved chord is refused here, whatever the modifiers' order.
-    for (const bad of ["mod+q", "ctrl+q", "meta+q", "mod+shift+z", "shift+mod+z", "ctrl+c", "meta+c", "ctrl+v", "mod+h", "mod+alt+h", "alt+mod+h", "mod+m"]) {
+    for (const bad of ["mod+q", "ctrl+q", "meta+q", "mod+shift+z", "shift+mod+z", "ctrl+c", "meta+c", "ctrl+v", "mod+h", "mod+alt+h", "alt+mod+h", "mod+m", "mod+alt+shift+v", "ctrl+meta+space"]) {
       const r = cmds(bad);
       expect(has(r, "command_key_reserved", "entry"), bad).toBe(true);
       expect(r.manifest?.contributes?.commands ?? []).toEqual([]);
@@ -168,7 +168,10 @@ describe("reserved keys (lane E)", () => {
   test("reservedCommandKey names the reserved spelling; free chords read undefined", () => {
     expect(reservedCommandKey("ctrl+c")).toBe("mod+c");
     expect(reservedCommandKey("Mod+Q")).toBe("mod+q");
+    expect(reservedCommandKey("ctrl+meta+space")).toBe("ctrl+mod+space");
     expect(reservedCommandKey("mod+k")).toBeUndefined();
+    // A chord that won't normalise is reserved too: refused, never silently taken.
+    expect(reservedCommandKey("mod+cmd+q")).toBe("mod+cmd+q");
   });
 });
 
