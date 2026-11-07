@@ -207,7 +207,7 @@ function errnoOf(e: unknown): number {
  *  the parent when there are no components to walk); the caller closes the returned parent. Returns the
  *  kernel's errno on failure. */
 export function walkToParent(lib: SupervisorLib, baseFd: number, comps: string[]): { parentFd: number; name: string } | { errno: number } {
-  if (comps.length === 0) return { errno: 2 }; // ENOENT, as the kernel for an empty path
+  if (comps.length === 0) { try { closeSync(baseFd); } catch { /* gone */ } return { errno: 2 }; } // ENOENT, as the kernel
   let cur = baseFd;
   for (let i = 0; i < comps.length - 1; i++) {
     const nfd = Number(lib.openat(cur, bufOf(comps[i]!), O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0));

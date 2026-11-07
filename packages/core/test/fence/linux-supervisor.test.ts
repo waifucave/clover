@@ -107,9 +107,9 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       mkdirSync(join(root, "a", "b"), { recursive: true });
       writeFileSync(join(root, "a", "f.txt"), "x");
       symlinkSync(join(root, "a"), join(root, "slink"));
-      const base = openSync(root, 0o200000); // O_RDONLY|O_DIRECTORY
+      const freshBase = () => openSync(root, 0o200000); // O_RDONLY|O_DIRECTORY; each walk consumes its base
       try {
-        const w = walkToParent(l, base, ["a", "b", "c"]);
+        const w = walkToParent(l, freshBase(), ["a", "b", "c"]);
         if (!("parentFd" in w)) throw new Error(`walk failed: ${JSON.stringify(w)}`);
         expect(w.name).toBe("c");
         const id = parentIdentity(w.parentFd);
@@ -117,7 +117,7 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
         const st = lstatSync(join(root, "a", "b"));
         expect({ dev: BigInt(st.dev), ino: BigInt(st.ino) }).toEqual(id);
         // Name with a slash never survives the split: components walk one level each.
-        const w2 = walkToParent(l, base, ["a", "f.txt"]);
+        const w2 = walkToParent(l, freshBase(), ["a", "f.txt"]);
         if (!("parentFd" in w2)) throw new Error("walk failed");
         expect(matchSupervised(w2.parentFd, w2.name, [join(root, "a", "f.txt")])).toBe(true);
         expect(matchSupervised(w2.parentFd, w2.name, [join(root, "a", "other")])).toBe(false);
@@ -125,16 +125,16 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
         try { closeSync(w.parentFd); } catch { /* pinned */ }
         try { closeSync(w2.parentFd); } catch { /* pinned */ }
         // Through a link: refused with ELOOP, never followed.
-        const wl = walkToParent(l, base, ["slink", "b", "c"]);
+        const wl = walkToParent(l, freshBase(), ["slink", "b", "c"]);
         expect(wl).toEqual({ errno: 40 });
         // Dot-dot stays under the base's root (the walk pins it, as the kernel does).
-        const wd = walkToParent(l, base, ["a", "..", "a", "x"]);
+        const wd = walkToParent(l, freshBase(), ["a", "..", "a", "x"]);
         if (!("parentFd" in wd)) throw new Error("walk failed");
         expect(wd.name).toBe("x");
         try { closeSync(wd.parentFd); } catch { /* pinned */ }
         // Empty path is ENOENT, as the kernel.
-        expect(walkToParent(l, base, [])).toEqual({ errno: 2 });
-      } finally { try { closeSync(base); } catch { /* consumed or pinned */ } }
+        expect(walkToParent(l, freshBase(), [])).toEqual({ errno: 2 });
+      } finally { /* each base is consumed by its walk */ }
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
