@@ -46,6 +46,15 @@ export function memoryLedger(): AnswerLedger {
   return { claim: (id) => (seen.has(id) ? false : (seen.add(id), true)) };
 }
 
+/** This computer's device name by default: its host name without the domain (`studio.local` is `studio`), with no
+ *  control characters, cut to the registry's 63 characters; `Computer` when nothing is left. A host name the registry
+ *  can't take as it is (a CI runner's long generated one) must never keep the links from starting. */
+export function defaultDeviceName(host: string): string {
+  const first = host.split(".")[0] ?? "";
+  const clean = [...first.replace(/[\u0000-\u001f\u007f]/gu, "").trim()].slice(0, 63).join("").trim();
+  return clean.length > 0 ? clean : "Computer";
+}
+
 /** The link sidecar beside the daemon's own binary (its links resolved, `bundledLinkBinary`); null when there's none
  *  (a daemon run from source, whose executable is Bun). Never one an environment variable or the PATH names. */
 export function linkSidecarBinary(execPath = process.execPath, platform: NodeJS.Platform = process.platform): string | null {
@@ -112,7 +121,7 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
   const sidecar: NonNullable<DeviceLinksOptions["sidecar"]> = { ...(input.sidecar ?? {}), binary: binary!, onLog: (l: string) => log(`[clover-link] ${l}`) };
   const links = await startDeviceLinks({
     home: input.home, store: input.store, clock: input.clock,
-    self: input.self ?? { name: hostname(), kind: "desktop", os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux" },
+    self: input.self ?? { name: defaultDeviceName(hostname()), kind: "desktop", os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux" },
     ...(input.wire ? { wire: input.wire } : { sidecar }),
     ...(input.directory ? { directory: input.directory } : {}),
     ...(handshake ? { handshake } : {}),
