@@ -130,24 +130,22 @@ export function splitParent(path: string): { dir: string; name: string } {
   return { dir: t.slice(0, i), name: t.slice(i + 1) };
 }
 
-/** Opens the directory holding the final component, letting the KERNEL resolve the path: `openat2` with
- *  IN_ROOT (absolute paths stay under the target's root) and NO_SYMLINKS (no link is ever traversed; `..`
- *  cannot escape the mount namespace, so BENEATH's behavior change for legitimate `..` is skipped on purpose).
- *  Mounts apply exactly as for the target's own calls — unlike a userspace walk, this cannot disagree with the
- *  kernel about what is mounted where. Returns the open parent (caller closes it) or the kernel's errno.
- *  Consumes the base either way. */
-export function openParentDir(lib: SupervisorLib, baseFd: number, dir: string, absolute: boolean): { parentFd: number } | { errno: number } {
+/** Opens the directory holding the final name, component by component with O_NOFOLLOW|O_DIRECTORY, refusing
+ *  links and non-directories. The walk uses only our own fds pinned before the target can change anything; the
+ *  kernel still applies the target's mounts at every step, so the view matches the target's own (verified: a
+ *  file hidden by the sandbox's tmpfs stays hidden, creates land in the sandbox's mounts). The base is consumed;
+ *  the caller closes the returned parent. Returns the kernel's errno on failure. */
+export function openParentDir(lib: SupervisorLib, baseFd: number, dir: string): { parentFd: number } | { errno: number } {
   if (dir === "") return { parentFd: baseFd };
-  const RESOLVE_NO_SYMLINKS = 0x04, RESOLVE_IN_ROOT = 0x10;
-  const resolve = (absolute ? RESOLVE_IN_ROOT : 0) | RESOLVE_NO_SYMLINKS;
-  const how = Buffer.alloc(24);
-  how.writeBigUInt64LE(BigInt(O_PATH | O_DIRECTORY), 0);
-  how.writeBigUInt64LE(0n, 8);
-  how.writeBigUInt64LE(BigInt(resolve), 16);
-  const fd = Number(lib.openat2(baseFd, bufOf(dir), ffiPtr(how), 24));
-  try { closeSync(baseFd); } catch { /* consumed */ }
-  if (fd < 0) return { errno: errNo(lib) };
-  return { parentFd: fd };
+  const comps = dir.split("/").filter((c) => c !== "");
+  let cur = baseFd;
+  for (const c of comps) {
+    const nfd = Number(lib.openat(cur, bufOf(c), O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0));
+    try { closeSync(cur); } catch { /* gone */ }
+    if (nfd < 0) return { errno: errNo(lib) };
+    cur = nfd;
+  }
+  return { parentFd: cur };
 }
 
 /** Dir fds arrive as unsigned 64-bit words: AT_FDCWD (-100) reads as 2^64-100, past Number's exact range.
@@ -237,7 +235,7 @@ function walkOne(lib: SupervisorLib, pid: number, dirfd: number, path: string, a
   const base = resolveBase(lib, pid, absolute, dirfd);
   if (base.fd < 0) return { errno: base.err };
   if (dir === "" && !absolute) return { parentFd: base.fd, name };
-  const w = openParentDir(lib, base.fd, absolute ? (dir.startsWith("/") ? dir : `/${dir}`) : dir, absolute);
+  const w = openParentDir(lib, base.fd, dir);
   if ("errno" in w) return w;
   return { parentFd: w.parentFd, name };
 }
@@ -294,7 +292,6 @@ export function openSupervisorLib(): {
   symlinkat(target: unknown, newdirfd: number, newpath: unknown): number;
   renameat2(olddirfd: number, oldpath: unknown, newdirfd: number, newpath: unknown, flags: number): number;
   fchmodat(dirfd: number, path: unknown, mode: number, flags: number): number;
-  openat2(dirfd: number, path: unknown, how: unknown, size: number): number | bigint;
   process_vm_readv(pid: number, local: unknown, liovcnt: number, remote: unknown, riovcnt: number, flags: number): number | bigint;
   __errno_location(): unknown;
   getpid(): number;
@@ -311,7 +308,6 @@ export function openSupervisorLib(): {
     symlinkat: { args: ["ptr", "i32", "ptr"], returns: "i32" },
     renameat2: { args: ["i32", "ptr", "i32", "ptr", "u32"], returns: "i32" },
     fchmodat: { args: ["i32", "ptr", "u32", "u32"], returns: "i32" },
-    openat2: { args: ["i32", "ptr", "ptr", "u64"], returns: "i64" },
     process_vm_readv: { args: ["i32", "ptr", "u64", "ptr", "u64", "u64"], returns: "i64" },
     __errno_location: { args: [], returns: "ptr" },
     getpid: { args: [], returns: "i32" },
@@ -406,8 +402,9 @@ function injectFd(lib: SupervisorLib, listener: number, id: bigint, localFd: num
 }
 
 /** Opens the final component for lstat-equivalent inspection without following it (`O_PATH|O_NOFOLLOW`), then
- *  stats the fd itself: links, directories and the missing case without ever resolving through a link. */
-export function lstatFinal(lib: SupervisorLib, parentFd: number, name: string): { kind: "missing" | "link" | "dir" | "other" } | { errno: number } {
+ *  stats the fd itself: links, directories and the missing case without ever resolving through a link. The
+ *  device comes along for mountpoint checks. */
+export function lstatFinal(lib: SupervisorLib, parentFd: number, name: string): { kind: "missing" } | { kind: "link" | "dir" | "other"; dev: bigint } | { errno: number } {
   const fd = Number(lib.openat(parentFd, bufOf(name), 0o10000000 | O_NOFOLLOW, 0)); // O_PATH|O_NOFOLLOW
   if (fd < 0) {
     const e = errNo(lib);
@@ -415,9 +412,9 @@ export function lstatFinal(lib: SupervisorLib, parentFd: number, name: string): 
   }
   try {
     const s = fstatSync(fd);
-    if (s.isSymbolicLink()) return { kind: "link" };
-    if (s.isDirectory()) return { kind: "dir" };
-    return { kind: "other" };
+    if (s.isSymbolicLink()) return { kind: "link", dev: BigInt(s.dev) };
+    if (s.isDirectory()) return { kind: "dir", dev: BigInt(s.dev) };
+    return { kind: "other", dev: BigInt(s.dev) };
   } catch (e) { return { errno: errnoOf(e) }; }
   finally { try { closeSync(fd); } catch { /* inspected */ } }
 }
@@ -500,6 +497,14 @@ function performMove(lib: SupervisorLib, pid: number, srcDirfd: number, srcPath:
     return v;
   };
   if (matchSupervised(dst.parentFd, dst.name, unsafe)) return done(VERDICT_DENY);
+  // Mountpoints can never be renamed (the kernel reports EBUSY): a mountpoint's device differs from its
+  // parent's. Checked explicitly so the verdict never depends on mount-table resolution subtleties.
+  const EBUSY = 16;
+  for (const [fd, name] of [[src.parentFd, src.name], [dst.parentFd, dst.name]] as const) {
+    const fin = lstatFinal(lib, fd, name);
+    if ("errno" in fin) { if (fin.errno !== 2) return done(verdictErr(fin.errno)); else continue; } // missing: fine
+    if (fin.kind === "dir" && fin.dev !== parentIdentity(fd)?.dev) return done(verdictErr(EBUSY));
+  }
   const r = move(src.parentFd, src.name, dst.parentFd, dst.name);
   if (r !== 0) return done(verdictErr(errNo(lib)));
   return done({ val: 0, error: 0, cont: false });

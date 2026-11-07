@@ -112,7 +112,7 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       symlinkSync(join(root, "a"), join(root, "slink"));
       const freshBase = () => openSync(root, 0o200000); // O_RDONLY|O_DIRECTORY; each open consumes its base
       // A plain subdir opens; its identity matches lstat.
-      const w = openParentDir(l, freshBase(), "a/b", false);
+      const w = openParentDir(l, freshBase(), "a/b");
       if (!("parentFd" in w)) throw new Error(`open failed: ${JSON.stringify(w)}`);
       const id = parentIdentity(w.parentFd);
       if (id === null) throw new Error("no identity for a kernel-opened dir");
@@ -120,22 +120,23 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       expect({ dev: BigInt(st.dev), ino: BigInt(st.ino) }).toEqual(id);
       try { closeSync(w.parentFd); } catch { /* pinned */ }
       // Through a link: refused with ELOOP, never followed.
-      expect(openParentDir(l, freshBase(), "slink/b", false)).toEqual({ errno: 40 });
+      // Through a link: refused, never followed (O_NOFOLLOW|O_DIRECTORY on a link reports ENOTDIR).
+      expect(openParentDir(l, freshBase(), "slink/b")).toEqual({ errno: 20 });
       // Dot-dot resolves normally (.. cannot leave the mount namespace; links stay refused).
-      const wd = openParentDir(l, freshBase(), "a/../..", false);
+      const wd = openParentDir(l, freshBase(), "a/../..");
       if (!("parentFd" in wd)) throw new Error(`dot-dot failed: ${JSON.stringify(wd)}`);
       const up = lstatSync(join(root, ".."));
       expect(parentIdentity(wd.parentFd)).toEqual({ dev: BigInt(up.dev), ino: BigInt(up.ino) });
       try { closeSync(wd.parentFd); } catch { /* pinned */ }
       // An absolute path stays under the host root (IN_ROOT).
       const hostRoot = openSync("/", 0o200000);
-      const wa = openParentDir(l, hostRoot, `${root}/a`, true);
+      const wa = openParentDir(l, hostRoot, root.slice(1) + "/a");
       if (!("parentFd" in wa)) throw new Error("absolute open failed");
       const ast = lstatSync(join(root, "a"));
       expect(parentIdentity(wa.parentFd)).toEqual({ dev: BigInt(ast.dev), ino: BigInt(ast.ino) });
       try { closeSync(wa.parentFd); } catch { /* pinned */ }
       // Identity matching against a supervised list.
-      const wb = openParentDir(l, freshBase(), "a", false);
+      const wb = openParentDir(l, freshBase(), "a");
       if (!("parentFd" in wb)) throw new Error("open failed");
       expect(matchSupervised(wb.parentFd, "f.txt", [join(root, "a", "f.txt")])).toBe(true);
       expect(matchSupervised(wb.parentFd, "f.txt", [join(root, "a", "other")])).toBe(false);
@@ -154,9 +155,9 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       const base = openSync(root, 0o200000);
       try {
         expect(lstatFinal(l, base, "missing")).toEqual({ kind: "missing" });
-        expect(lstatFinal(l, base, "s")).toEqual({ kind: "link" }); // not followed to f
-        expect(lstatFinal(l, base, "d")).toEqual({ kind: "dir" });
-        expect(lstatFinal(l, base, "f")).toEqual({ kind: "other" });
+        expect(lstatFinal(l, base, "s")).toMatchObject({ kind: "link" }); // not followed to f
+        expect(lstatFinal(l, base, "d")).toMatchObject({ kind: "dir" });
+        expect(lstatFinal(l, base, "f")).toMatchObject({ kind: "other" });
       } finally { try { closeSync(base); } catch { /* pinned */ } }
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
