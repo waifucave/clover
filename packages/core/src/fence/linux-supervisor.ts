@@ -432,13 +432,15 @@ export function lstatFinal(lib: SupervisorLib, parentFd: number, name: string): 
  *  opens of an existing file without O_CREAT continue (the ruling); everything else is performed or refused —
  *  the kernel never re-reads the target's pointers. */
 function performOpen(lib: SupervisorLib, listener: number, id: bigint, pid: number, dirfd: number, path: string, absolute: boolean, flags: bigint, mode: number, unsafe: readonly string[], umask: number): SuperviseVerdict {
+  const f = Number(flags & 0xffffffffffffffffn);
+  // Reads never need the walk: continue, so the kernel handles even paths no walk could name (like `/` itself).
+  if (!openWrites(flags)) return VERDICT_CONT;
   const w = walkOne(lib, pid, dirfd, path, absolute);
   if ("errno" in w) return verdictErr(w.errno);
   const { parentFd, name } = w;
   const done = (v: SuperviseVerdict): SuperviseVerdict => { try { closeSync(parentFd); } catch { /* answered */ } return v; };
   const fin = lstatFinal(lib, parentFd, name);
   if ("errno" in fin) return done(verdictErr(fin.errno)); // missing without O_CREAT lands here as ENOENT
-  const f = Number(flags & 0xffffffffffffffffn);
   if (fin.kind === "link") return done((f & O_NOFOLLOW) !== 0 ? verdictErr(40) : VERDICT_DENY); // ELOOP, or refused
   if (fin.kind !== "missing" && (f & O_CREAT) === 0) return done(VERDICT_CONT); // an existing file without O_CREAT may continue
   if (matchSupervised(parentFd, name, unsafe)) return done(VERDICT_DENY);
