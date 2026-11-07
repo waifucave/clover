@@ -1,7 +1,7 @@
 // The static outside-reach check `clover plugin validate` errors on (#234's review, F2 (c)): the cheap cases the
 // runtime guard also stops.
 import { describe, expect, test } from "bun:test";
-import { loaderReach } from "../loader-config";
+import { loaderOutsideIssues, loaderReach } from "../loader-config";
 
 const reach = (tree: Record<string, unknown>) => {
   const text = Object.fromEntries(Object.entries(tree).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
@@ -62,6 +62,10 @@ describe("loaderReach's outside cases", () => {
     // A path import climbing out of the plugin, an absolute one, or a URL reaches outside.
     expect(reach({ "host/a.ts": "import \"../../outside/noext\";\nimport \"/Users/me/node_modules/evil/index\";\nimport \"file:///x\";\nimport \"./fine\";\n" }).outside.map((o) => o.target))
       .toEqual(["../../outside/noext", "/Users/me/node_modules/evil/index", "file:///x"]);
+    // The error names the module and the file that wants it, so the author can ship it.
+    const issues = loaderOutsideIssues(reach(tree)).filter((i) => i.code === "dependency_missing").map((i) => [i.file, i.message]);
+    expect(issues[0]).toEqual(["node_modules/dep/lib.js", expect.stringContaining("node_modules/dep/lib.js imports \"bufferutil\", which the plugin doesn't ship: add \"bufferutil\"")]);
+    expect(issues.at(-1)).toEqual(["package.json", expect.stringContaining("package.json declares \"gone\" in optionalDependencies")]);
     // A script too big to read can't be checked.
     expect(loaderReach(["host/big.js"], () => undefined, () => undefined).missing).toEqual([{ file: "host/big.js", field: "size", target: "" }]);
   });

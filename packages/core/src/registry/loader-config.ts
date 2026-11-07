@@ -38,7 +38,9 @@ export function loaderOutsideIssues(reach: LoaderReach): ValidationIssue[] {
       severity: "error", refuses: "plugin", code: "dependency_missing", file: m.file, path: "",
       message: m.field === "size"
         ? `${m.file} is too big for its imports to be checked`
-        : `${m.file}'s ${m.field} names "${m.target}", which the plugin doesn't ship in its own node_modules; a missing dependency would be looked for in the folders above it`,
+        : m.field === "import"
+          ? `${m.file} imports "${m.target}", which the plugin doesn't ship: add "${m.target}" to the plugin's own node_modules (an optional import in a try/catch counts too, since Bun would look for it in the folders above the plugin)`
+          : `${m.file} declares "${m.target}" in ${m.field}, which the plugin doesn't ship: add "${m.target}" to the plugin's own node_modules`,
     })),
   ];
 }
