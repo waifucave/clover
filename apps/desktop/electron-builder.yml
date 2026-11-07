@@ -40,14 +40,10 @@ extraResources:
   # stages none, and packages the app without them.
   - from: out/plugins
     to: plugins
+    # The stage is the BUILT tree (lane B's buildPluginForShipping, from the committed source): its node_modules hold
+    # the natives, so only what never ships, built or not, is left out here.
     filter:
       - "**/*"
-      - "!**/node_modules/**"
-      - "!**/test/**"
-      - "!**/tests/**"
-      - "!**/*.test.ts"
-      - "!**/*.test.tsx"
-      - "!**/tsconfig*.json"
       - "!**/.env"
       - "!**/.env.*"
       - "!**/.DS_Store"

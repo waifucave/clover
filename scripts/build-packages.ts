@@ -27,8 +27,8 @@ import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
 import { runNameScan } from "./release/name-scan";
 import { sealProblems } from "./seal-bun-doors";
 import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writePluginBunAssets, writePluginsAssets, writeServedCopies, type Channel } from "./release/lib";
-import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree, writeStagedManifest } from "./release/bundled-plugins";
-import { BUNDLED_MANIFEST_FILE } from "../packages/core/src/bundled-plugins-dir";
+import { buildBundledPlugins, bundledPluginsProblems, STAGED_PLUGINS, walkTree, writeStagedManifest } from "./release/bundled-plugins";
+import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../packages/core/src/bundled-plugins-dir";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -185,7 +185,7 @@ function checkBuilt(outDir: string, arch: LinuxArch, formats: readonly LinuxForm
   return problems;
 }
 
-export function main(argv: readonly string[], root: string): number {
+export async function main(argv: readonly string[], root: string): Promise<number> {
   let args: BuildPackagesArgs;
   try {
     args = parseBuildPackagesArgs(argv, process.arch);
@@ -204,17 +204,19 @@ export function main(argv: readonly string[], root: string): number {
   const manifestFile = join(desktop, "out", BUNDLED_MANIFEST_FILE);
   // `stage`: this architecture's daemon and sidecar go where electron-builder.yml's extraResources reads them, just
   // before packaging.
-  const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch }> = [
+  // `plugins`: this architecture's bundled plugins, built and measured into the manifest its daemon carries.
+  const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch; plugins?: LinuxArch }> = [
     { say: "the app", cmd: ["bun", "run", "build"], cwd: desktop },
     { say: "the link sidecar, clover-link", cmd: [...LINK_BUILD], cwd: root },
   ];
   for (const arch of args.arches) {
+    steps.push({ say: `the bundled plugins for linux-${arch}, built (lane B's buildPluginForShipping) and measured`, cmd: [], cwd: root, plugins: arch });
     steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch), "--plugins-manifest", manifestFile], cwd: root });
     steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats, args.channel)], cwd: desktop, stage: arch });
   }
   if (args.dryRun) {
-    console.log(`build-packages: the bundled plugins: plugins/ at HEAD staged in apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
-    for (const s of steps) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
+    console.log(`build-packages: the bundled plugins: plugins/ at HEAD built per architecture into apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
+    for (const s of steps.filter((x) => x.plugins === undefined)) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
     return 0;
   }
   // A release is of one commit, from a fully clean checkout of it (the build reads the whole tree).
@@ -227,15 +229,19 @@ export function main(argv: readonly string[], root: string): number {
   }
   rmSync(outDir, { recursive: true, force: true });
   const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
-  // The bundled plugins: the committed files only, staged where electron-builder.yml packs them and measured into
-  // the manifest each daemon carries; the stages removed however the build ends (a stale stage would go into a later
-  // plain `bun run dist`).
+  // The bundled plugins: built per architecture from the committed files only, where electron-builder.yml packs them,
+  // and measured into the manifest that architecture's daemon carries; the stages removed however the build ends (a
+  // stale stage would go into a later plain `bun run dist`).
+  let manifest: BundledManifest | undefined;
   try {
-    stageBundledPlugins(root, stagedPlugins);
-    const manifest = writeStagedManifest(stagedPlugins, manifestFile);
-    console.log(`build-packages: the bundled plugins: ${Object.keys(manifest.files).length} files staged and measured`);
     for (const s of steps) {
       console.log(`build-packages: ${s.say}…`);
+      if (s.plugins !== undefined) {
+        const built = await buildBundledPlugins(root, stagedPlugins, daemonTargetFor(s.plugins));
+        manifest = writeStagedManifest(stagedPlugins, manifestFile);
+        console.log(`build-packages: the bundled plugins for linux-${s.plugins}: ${built.files.length} files built (${built.natives.length} native addon files), ${Object.keys(manifest.files).length} measured`);
+        continue;
+      }
       if (s.stage !== undefined) {
         rmSync(staged, { recursive: true, force: true });
         mkdirSync(staged, { recursive: true });
@@ -254,7 +260,7 @@ export function main(argv: readonly string[], root: string): number {
       if (s.stage !== undefined) {
         // What electron-builder packed (its unpacked app) is exactly the tree the daemon's manifest names.
         const resources = join(outDir, s.stage === "x64" ? "linux-unpacked" : `linux-${s.stage}-unpacked`, "resources");
-        const problems = bundledPluginsProblems(resources, manifest, existsSync, walkTree);
+        const problems = bundledPluginsProblems(resources, manifest!, existsSync, walkTree);
         for (const p of problems) console.error(`build-packages: ${p} (${s.stage})`);
         if (problems.length > 0) return 1;
         // The same tree for a server on this architecture: the tarball and its update files.
@@ -294,4 +300,4 @@ export function main(argv: readonly string[], root: string): number {
   return 0;
 }
 
-if (import.meta.main) process.exit(main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..")));
+if (import.meta.main) process.exit(await main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..")));

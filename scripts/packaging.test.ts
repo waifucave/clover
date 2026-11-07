@@ -148,7 +148,7 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     const plugins = builder.extraResources[1];
     expect(plugins.from).toBe(STAGED_PLUGINS.split("\\").join("/"));
     expect(plugins.to).toBe(BUNDLED_PLUGINS_DIR);
-    expect(plugins.filter).toEqual(["**/*", "!**/node_modules/**", "!**/test/**", "!**/tests/**", "!**/*.test.ts", "!**/*.test.tsx", "!**/tsconfig*.json", "!**/.env", "!**/.env.*", "!**/.DS_Store"]);
+    expect(plugins.filter).toEqual(["**/*", "!**/.env", "!**/.env.*", "!**/.DS_Store"]);
     // The repository's plugins/ is what gets staged: each top-level subfolder a plugin, each with its manifest.
     for (const id of BUNDLED_PLUGIN_IDS) expect(existsSync(join(ROOT, "plugins", id, "clover.json"))).toBe(true);
     // The Linux packages must hold each manifest.

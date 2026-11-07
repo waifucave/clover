@@ -54,7 +54,7 @@ import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
 import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import { sealProblems } from "../seal-bun-doors";
 import { runNameScan } from "./name-scan";
-import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree, writeStagedManifest } from "./bundled-plugins";
+import { buildBundledPlugins, bundledPluginsProblems, STAGED_PLUGINS, walkTree, writeStagedManifest } from "./bundled-plugins";
 import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
@@ -222,7 +222,7 @@ function verifyWin(outDir: string, version: string, publisher: string): string[]
   return files.flatMap(([name, path]) => authenticodeProblems(name, run(authenticodeCommand(path), outDir).out, publisher));
 }
 
-export function main(argv: readonly string[], root: string): number {
+export async function main(argv: readonly string[], root: string): Promise<number> {
   let a: ReleaseBuildArgs;
   try {
     a = parseReleaseBuildArgs(argv, process.platform, process.arch);
@@ -246,7 +246,7 @@ export function main(argv: readonly string[], root: string): number {
     const shown = builder.map((c) => (c.startsWith("-c.mac.identity=") ? "-c.mac.identity=<CLOVER_MAC_IDENTITY>" : c.startsWith("-c.win.signtoolOptions.publisherName=") ? "-c.win.signtoolOptions.publisherName=<CLOVER_WIN_PUBLISHER>" : c));
     console.log(`release/build: ${a.os} ${version} on ${a.channel}, ${a.sign ? "signed" : "unsigned"}`);
     console.log(`release/build: the app: (in apps/desktop) bun run build`);
-    console.log(`release/build: the bundled plugins: plugins/ at HEAD staged in apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
+    console.log(`release/build: the bundled plugins: plugins/ at HEAD built for ${target} into apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
@@ -270,9 +270,11 @@ export function main(argv: readonly string[], root: string): number {
     const manifestFile = join(desktop, "out", BUNDLED_MANIFEST_FILE);
     let manifest: BundledManifest;
     try {
-      stageBundledPlugins(root, stagedPlugins);
+      // Built for this target from the committed files (lane B's buildPluginForShipping), natives included, then
+      // measured: the manifest the daemon carries names exactly the built tree.
+      const builtPlugins = await buildBundledPlugins(root, stagedPlugins, target);
       manifest = writeStagedManifest(stagedPlugins, manifestFile);
-      console.log(`release/build: the bundled plugins: ${Object.keys(manifest.files).length} files staged and measured`);
+      console.log(`release/build: the bundled plugins: ${builtPlugins.files.length} files built (${builtPlugins.natives.length} native addon files), ${Object.keys(manifest.files).length} measured`);
       if (runScriptLine(`bun scripts/build-daemon.ts --target ${target} --plugins-manifest ${JSON.stringify(manifestFile)}`, root) !== 0) throw new Error("the daemon's build failed");
       must("the link sidecar", LINK_BUILD, root);
       rmSync(staged, { recursive: true, force: true });
@@ -369,4 +371,4 @@ export function main(argv: readonly string[], root: string): number {
   }
 }
 
-if (import.meta.main) process.exit(main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..", "..")));
+if (import.meta.main) process.exit(await main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..", "..")));
