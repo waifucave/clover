@@ -11,6 +11,8 @@ const out = outIndex > 0 ? process.argv[outIndex + 1]! : join(root, "dist");
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 const result = await Bun.build({
+  // Macros off: a `with { type: "macro" }` import would run in this build process (bun-types has no field for it).
+  ...{ macros: false },
   entrypoints: [join(root, "src/main.ts")],
   outdir: out,
   target: "browser",

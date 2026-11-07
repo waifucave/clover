@@ -37,6 +37,7 @@ for (const entry of entries) {
   const outfile = `out/${entry}${process.platform === "win32" ? ".exe" : ""}`;
   const t = performance.now();
   const result = await Bun.build({
+    ...{ macros: false },
     entrypoints: [`src/${entry}.ts`],
     compile: { outfile },
     plugins: [staticDatachannelBinding],

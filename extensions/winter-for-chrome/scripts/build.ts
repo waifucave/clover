@@ -68,6 +68,8 @@ async function buildFlavor(flavor: Flavor, outRoot: string): Promise<string> {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, "icons"), { recursive: true });
   const built = await Bun.build({
+    // Macros off: a `with { type: "macro" }` import would run in this build process (bun-types has no field for it).
+    ...{ macros: false },
     entrypoints: [join(ROOT, "src", "background.ts"), join(ROOT, "src", "popup.ts")],
     outdir: out,
     target: "browser",

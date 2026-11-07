@@ -44,6 +44,8 @@ export async function buildGallery(outdir = join(here, "dist"), options: { produ
   rmSync(outdir, { recursive: true, force: true });
   mkdirSync(outdir, { recursive: true });
   const result = await Bun.build({
+    // Macros off: a plugin file's `with { type: "macro" }` import would run in this process (bun-types has no field for it).
+    ...{ macros: false },
     entrypoints: [join(here, "main.tsx")],
     outdir,
     target: "browser",

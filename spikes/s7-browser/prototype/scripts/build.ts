@@ -11,7 +11,7 @@ const ROOT = resolve(import.meta.dir, "..");
 const out = join(ROOT, "out");
 
 async function bundle(opts: Parameters<typeof Bun.build>[0], what: string): Promise<void> {
-  const r = await Bun.build(opts);
+  const r = await Bun.build({ ...opts, ...{ macros: false } });
   if (!r.success) {
     for (const l of r.logs) console.error(l);
     throw new Error(`build failed: ${what}`);

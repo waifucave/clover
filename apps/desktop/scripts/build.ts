@@ -27,7 +27,8 @@ mkdirSync(join(layerOut, "vendor"), { recursive: true });
 mkdirSync(coreOut, { recursive: true });
 
 async function build(config: Parameters<typeof Bun.build>[0], what: string): Promise<void> {
-  const result = await Bun.build(config);
+  // Macros off: a `with { type: "macro" }` import would run in this build process (bun-types has no field, hence the spread).
+  const result = await Bun.build({ ...config, ...{ macros: false } });
   if (!result.success) {
     console.error(`build: ${what} failed`);
     for (const log of result.logs) console.error(log);
@@ -46,7 +47,7 @@ await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: jo
 {
   const { BROWSER_ASSETS } = await import("../src/main/browser/assets");
   const preloadOut = join(root, BROWSER_ASSETS.preload.out);
-  const built = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"], minify: false });
+  const built = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"], minify: false, ...{ macros: false } });
   if (!built.success || built.outputs.length !== 1) {
     for (const l of built.logs) console.error(l);
     console.error("build: the browser viewport's preload failed");

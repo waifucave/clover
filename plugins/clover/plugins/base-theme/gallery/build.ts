@@ -23,6 +23,8 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
 const result = await Bun.build({
+  // Macros off: a plugin file's `with { type: "macro" }` import would run in this process (bun-types has no field for it).
+  ...{ macros: false },
   entrypoints: [join(here, "src", "main.tsx")],
   outdir: dist,
   target: "browser",

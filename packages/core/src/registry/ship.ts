@@ -17,7 +17,8 @@
 //   `.env` files and `node_modules` are left out, and every other file is copied as it is.
 //
 // The built tree is then validated as a plugin: an error the source tree doesn't have (a file the build dropped) fails
-// the build. Nothing here runs plugin code.
+// the build. Nothing here runs plugin code: the builds run with Bun's macros off (build.ts), so a plugin file's
+// `with { type: "macro" }` import fails the build instead of running in this process.
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
