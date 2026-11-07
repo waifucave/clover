@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { DeviceId } from "@waifucave/clover-protocol";
 import { isContractError } from "../common";
-import { deviceIdFor, verifyKeySignature, type DeviceChange } from "../device-registry";
+import { deviceIdFor, holderFitsAlg, verifyKeySignature, type DeviceChange } from "../device-registry";
 import { FakeClock } from "../fakes/clock";
 import { type FakeDeviceRegistry, type FakeDevice, fromBase64, makeFakeDevice } from "../fakes/device-registry";
 
@@ -86,8 +86,25 @@ export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: 
       expect(await registry.verifyAnswer(enclave.id, new TextEncoder().encode("other"), ecSig)).toBe(false);
       // The same key under no `alg` (Ed25519) doesn't verify, and neither does an Ed25519 signature under `p256`.
       const relabelled = await makeFakeDevice();
-      await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKey, answerKey: { publicKey: ecPublic, held: "secure-enclave" } }, { via: "terminal" });
+      await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKey, answerKey: { publicKey: ecPublic, held: "keychain" } }, { via: "terminal" });
       expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
+    });
+
+    test("a holder that makes keys of one algorithm only takes a key of it: the Secure Enclave, P-256 (lane H's reviewer)", async () => {
+      const { registry } = await make({ clock: new FakeClock() });
+      const answers = await makeFakeDevice();
+      const ed = await makeFakeDevice();
+      const err = await registry.add({ id: ed.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: ed.publicKey, answerKey: { publicKey: answers.publicKey, held: "secure-enclave" } }, { via: "terminal" }).catch((e: unknown) => e);
+      expect(isContractError(err, "invalid")).toBe(true);
+      expect(registry.get(ed.id)).toBeUndefined();
+      const explicit = await registry.add({ id: ed.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: ed.publicKey, answerKey: { publicKey: answers.publicKey, held: "secure-enclave", alg: "ed25519" } }, { via: "terminal" }).catch((e: unknown) => e);
+      expect(isContractError(explicit, "invalid")).toBe(true);
+      // The same Ed25519 key under a holder that keeps either kind is taken.
+      await registry.add({ id: ed.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: ed.publicKey, answerKey: { publicKey: answers.publicKey, held: "keychain" } }, { via: "terminal" });
+      expect(registry.get(ed.id)?.answerKey?.held).toBe("keychain");
+      expect(holderFitsAlg("secure-enclave", "p256")).toBe(true);
+      expect(holderFitsAlg("secure-enclave", undefined)).toBe(false);
+      expect(holderFitsAlg("tpm", undefined)).toBe(true);
     });
 
     test("a phone's record keeps its ios; it answers only with its answer key, never its link key (no fallback)", async () => {

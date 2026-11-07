@@ -89,6 +89,16 @@ export function answerKeyOf(d: Pick<DeviceRecord, "kind" | "publicKey" | "answer
   return undefined;
 }
 
+/** The one algorithm a holder's keys can have, where it has only one: the Secure Enclave makes only P-256 keys, so a
+ *  record saying `secure-enclave` with an Ed25519 key is a mislabel and is refused (`invalid`, lane H's reviewer). */
+export const HOLDER_ALGS: Readonly<Partial<Record<AnswerKeyHolder, AnswerKeyAlg>>> = { "secure-enclave": "p256" };
+
+/** Whether an answer key's holder can hold a key of its algorithm (`alg` absent is `ed25519`). */
+export function holderFitsAlg(held: AnswerKeyHolder, alg: AnswerKeyAlg | undefined): boolean {
+  const only = HOLDER_ALGS[held];
+  return only === undefined || only === (alg ?? "ed25519");
+}
+
 /** The algorithm of the key `answerKeyOf` gives: the answer key's (`ed25519` when absent). */
 export function answerKeyAlgOf(d: Pick<DeviceRecord, "answerKey">): AnswerKeyAlg {
   return d.answerKey?.alg ?? "ed25519";
