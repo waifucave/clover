@@ -238,9 +238,11 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   // removed however the build ends.
   const embed = join(cliDir, ...MANIFEST_EMBED.split("/"));
   let expected = "0 files, sha256 none";
+  let manifestBytes: Uint8Array | undefined;
   if (args.pluginsManifest !== undefined && !args.dryRun) {
     try {
       const text = readFileSync(args.pluginsManifest, "utf8");
+      manifestBytes = new TextEncoder().encode(text);
       expected = `${Object.keys(parseBundledManifest(text).files).length} files, sha256 ${createHash("sha256").update(text).digest("hex")}`;
       mkdirSync(dirname(embed), { recursive: true });
       writeFileSync(embed, text);
@@ -250,7 +252,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     }
   }
   try {
-    return await buildTargets(args, root, cliDir, script, version, host, expected);
+    return await buildTargets(args, root, cliDir, script, version, host, expected, manifestBytes);
   } finally {
     rmSync(embed, { force: true });
   }
@@ -270,7 +272,16 @@ export function embeddedManifestLine(binary: string): string {
   }
 }
 
-async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string, script: string, version: string, host: DaemonTarget | undefined, expected: string): Promise<number> {
+/** How many times `needle` occurs in `binary`: a cross-built core (which this machine can't run) must hold the
+ *  manifest's exact bytes once (Bun stores an embedded file as it is). */
+export function occurrences(binary: Uint8Array, needle: Uint8Array): number {
+  const hay = Buffer.from(binary.buffer, binary.byteOffset, binary.byteLength);
+  let n = 0;
+  for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + 1)) n++;
+  return n;
+}
+
+async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string, script: string, version: string, host: DaemonTarget | undefined, expected: string, manifestBytes: Uint8Array | undefined): Promise<number> {
   for (const target of args.targets) {
     const command = daemonCompileCommand(script, target, args.pluginsManifest !== undefined);
     const output = join(root, ...daemonOutput(target).split("/"));
@@ -295,8 +306,17 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
       return 1;
     }
     console.log(`build:daemon: ${target}: ${daemonOutput(target)} (${(statSync(output).size / 1_048_576).toFixed(1)} MB, sha256 ${sha256(output)})`);
-    // The manifest the binary carries is the one given (on the host, which can run it; a cross build is checked by
-    // the release build that runs on its own OS).
+    // The manifest the binary carries is the one given: the host's binary is asked (`__bundled-manifest`, which reads
+    // it as the daemon does); a cross-built one, which this machine can't run, must hold the manifest's exact bytes
+    // once.
+    if (target !== host && manifestBytes !== undefined) {
+      const n = occurrences(new Uint8Array(readFileSync(output)), manifestBytes);
+      if (n !== 1) {
+        console.error(`build:daemon: ${target}: the binary holds the bundled-plugins manifest ${n} times, not once`);
+        return 1;
+      }
+      console.log(`build:daemon: ${target}: bundled-plugins manifest embedded (cross build: its ${manifestBytes.length} bytes found once; ${expected})`);
+    }
     if (target === host) {
       try {
         const line = embeddedManifestLine(output);
