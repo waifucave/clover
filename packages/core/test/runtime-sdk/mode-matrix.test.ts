@@ -532,13 +532,15 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
   // project's MCP list, both claude settings tiers, agents and the four protected item directories.
   expect(sb.filesystem!.denyWrite).toEqual([
     "/h/run", "/h/runtimes", "/h/cache", "/h/plugins", "/h/permissions",
+    // #234's check 6: the plugin Bun's folder; it also holds a server's self-updating binary (M-M2).
+    "/h/bin",
     "/h/trust.json", "/h/agents",
     "/h/sdk/settings.json", "/h/sdk/.clover.json", "/h/sdk/agents", "/h/sdk/plugins",
     // ComputerV2 wake triggers (2026-10-12): the daemon's computer-use records (the restart file `wakes.json`).
     "/h/computer-use",
     // M-M2: a server's self-update — its binary (and the checked one waiting), the boot count and rollbacks, the marker.
-    // `/h/bin` also covers #234's check 6 (the plugin Bun's folder); the list names it once.
-    "/h/bin", "/h/update", "/h/install.json",
+    // (`/h/bin` is named once, above.)
+    "/h/update", "/h/install.json",
     "/h/permissions.local.json", "/h/settings.json", "/h/settings.local.json",
     // #234's check 4, H1: `node_modules` above each plugins folder, to the root.
     "/h/plugins/node_modules", "/h/node_modules", "/node_modules", "/h/sdk/plugins/node_modules", "/h/sdk/node_modules",
