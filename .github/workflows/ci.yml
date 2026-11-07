@@ -69,6 +69,7 @@ jobs:
       verify: ${{ steps.areas.outputs.verify }}
       tree: ${{ steps.areas.outputs.tree }}
       link: ${{ steps.areas.outputs.link }}
+      srtwin: ${{ steps.areas.outputs.srtwin }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -407,7 +408,153 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
+
+  # srt-win.exe, Bash's fence launcher on Windows (lane C), built from sandbox-runtime's pinned source with a static
+  # CRT (scripts/release/srt-win.ts), for x64 and arm64, twice from clean clones: the two builds must be the same bytes,
+  # since core pins the launcher's hash. It prints the hashes (`--print`: core's pins are set from them, lane C).
+  srt-win:
+    name: srt-win · windows
+    needs: changes
+    if: needs.changes.outputs.srtwin == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: cargo-about, for the notices
+        run: cargo install --locked --features cli cargo-about@0.9.2
+
+      # Lane C's build (scripts/build-srt-win.ps1: sandbox-runtime's pinned commit with Clover's patches, a static CRT,
+      # /BREPRO), x64 as lane C runs it and arm64 cross-built, twice from clean clones: the same bytes both times.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build twice from clean clones, and compare
+        run: |
+          bun scripts/release/srt-win.ts --arch x64,arm64 --print | tee first.log
+          sha256sum dist/srt-win/*/srt-win.exe > first.txt
+          rm -rf dist/srt-win vendor/srt-win-src vendor/srt-win/srt-win.exe
+          bun scripts/release/srt-win.ts --arch x64,arm64 --print
+          sha256sum dist/srt-win/*/srt-win.exe > second.txt
+          diff first.txt second.txt
+          grep authenticode-sha256 first.log
+          grep -q "Apache License" dist/srt-win/THIRD_PARTY_NOTICES.txt
+
+      # The x64 build must be the one core pins (lane C's measured digest): the same source and script, the same bytes.
+      # arm64's digest is printed above for its pin.
+      - name: x64 is the build core pins
+        run: |
+          bun -e "import { authenticodeDigest, parsePins, PIN_FILE } from './scripts/release/srt-win'; import { readFileSync } from 'node:fs'; const got = authenticodeDigest(new Uint8Array(readFileSync('dist/srt-win/x64/srt-win.exe'))); const pin = parsePins(readFileSync(PIN_FILE, 'utf8')).x64; console.log('x64 built ' + got + ', pinned ' + pin); if (got !== pin) process.exit(1);"
+
+      # The installer's elevated step checks a digest with its own PowerShell copy of authenticodeDigest
+      # (packaging/windows/sandbox-elevated.ps1): on real binaries, under the Windows PowerShell the installer runs,
+      # the two must agree. srt-win.exe is unsigned; the runner's git.exe carries an embedded Authenticode
+      # signature (a cert table at the end), the shape the signed clover-core.exe has.
+      - name: The installer's PowerShell digest agrees with the release's
+        shell: powershell
+        run: |
+          $src = Get-Content -Raw packaging/windows/sandbox-elevated.ps1
+          $fn = [regex]::Match($src, '(?s)function Get-CloverDigest.*?\r?\n}\r?\n').Value
+          if (-not $fn) { throw 'no Get-CloverDigest in sandbox-elevated.ps1' }
+          Invoke-Expression $fn
+          $git = (Get-Command git.exe).Source
+          $sig = Get-AuthenticodeSignature -LiteralPath $git
+          if ($sig.SignatureType -ne 'Authenticode' -or $sig.Status -ne 'Valid') { throw "$git has no valid embedded signature ($($sig.SignatureType) $($sig.Status))" }
+          $files = @((Resolve-Path dist/srt-win/x64/srt-win.exe).Path, (Resolve-Path dist/srt-win/arm64/srt-win.exe).Path, $git)
+          foreach ($file in $files) {
+            $ps = Get-CloverDigest $file
+            $env:CLOVER_DIGEST_FILE = $file
+            $ts = (bun -e "import { authenticodeDigest } from './scripts/release/srt-win'; import { readFileSync } from 'node:fs'; console.log(authenticodeDigest(new Uint8Array(readFileSync(process.env.CLOVER_DIGEST_FILE!))))").Trim()
+            Write-Output "$file powershell $ps release $ts"
+            if (-not $ps -or $ps -ne $ts) { throw "the digests differ for $file" }
+          }
+
+      # The elevated step for real on this runner (an elevated admin), run as the installer runs it: its PowerShell
+      # command taken from installer.nsh (the runas included), the script compacted by the release's own sandboxScript,
+      # the runner's git.exe as the payload and its digest as the pin, and everything from running the copy on cut off
+      # (git.exe has no `sandbox` command). The copy must be owned by Administrators with no one else able to write, an
+      # old copy is replaced, one a user can write is refused on remove, a wrong digest and a bad SID are refused.
+      - name: The installer's elevated step protects the copy
+        shell: powershell
+        run: |
+          $src = Get-Content -Raw packaging/windows/sandbox-elevated.ps1
+          $fn = [regex]::Match($src, '(?s)function Get-CloverDigest.*?\r?\n}\r?\n').Value
+          Invoke-Expression $fn
+          $git = (Get-Command git.exe).Source
+          $cut = $src.IndexOf('$p = Start-Process -FilePath $exe')
+          if ($cut -lt 0) { throw 'the script no longer runs the copy where this step cuts it' }
+          $script = Join-Path $env:RUNNER_TEMP 'lane-m-elevated.ps1'
+          Set-Content -LiteralPath $script -Value ($src.Substring(0, $cut) + "exit 0`n") -Encoding UTF8
+          $env:CLOVER_SCRIPT = $script
+          $env:CLOVER_PIN = Get-CloverDigest $git
+          $packed = (bun -e "import { sandboxScript } from './scripts/release/build'; import { readFileSync } from 'node:fs'; console.log(sandboxScript(readFileSync(process.env.CLOVER_SCRIPT!, 'utf8'), process.env.CLOVER_PIN!))").Trim()
+          $nsh = Get-Content -Raw packaging/windows/installer.nsh
+          $line = [regex]::Match($nsh, '(?s)!macro cloverSandbox ACTION.*?-Command "(.*?)"`').Groups[1].Value
+          if (-not $line) { throw 'no elevated command in installer.nsh' }
+          $command = $line.Replace('$$', '$').Replace('${CLOVER_SANDBOX_PS}', $packed)
+          function Run([string]$action, [string]$source) {
+            $env:CLOVERINSTALL_SANDBOX_SOURCE = $source
+            $u = [Text.Encoding]::Unicode
+            $e = [Convert]::ToBase64String($u.GetBytes($command.Replace('${ACTION}', $action)))
+            $p = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $e -NoNewWindow -Wait -PassThru
+            return $p.ExitCode
+          }
+          $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          $exe = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) "Clover Sandbox\$sid\clover-core.exe"
+          function Check-Protected([string]$path) {
+            $acl = Get-Acl -LiteralPath $path
+            $owner = ([Security.Principal.NTAccount]$acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value
+            if ($owner -ne 'S-1-5-32-544') { throw "$path is owned by $owner" }
+            foreach ($ace in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+              $id = $ace.IdentityReference.Value
+              if ($ace.AccessControlType -eq 'Allow' -and $id -ne 'S-1-5-32-544' -and $id -ne 'S-1-5-18' -and ($ace.FileSystemRights -band [Security.AccessControl.FileSystemRights]'Write, Delete, ChangePermissions, TakeOwnership')) { throw "$path lets $id write ($($ace.FileSystemRights))" }
+            }
+          }
+          $r = Run 'setup' $git; if ($r -ne 0) { throw "setup exited $r" }
+          if ((Get-FileHash $exe).Hash -ne (Get-FileHash $git).Hash) { throw 'the copy is not the payload' }
+          Check-Protected (Split-Path $exe); Check-Protected (Split-Path (Split-Path $exe)); Check-Protected $exe
+          # An old copy a user could write: refused on remove, and replaced on setup by a new one, born protected.
+          icacls $exe /grant '*S-1-5-32-545:(M)' | Out-Null
+          $r = Run 'remove' $git; if ($r -ne 6) { throw "remove ran a copy users can write (exit $r)" }
+          $r = Run 'setup' $git; if ($r -ne 0) { throw "setup over an old copy exited $r" }
+          Check-Protected $exe
+          $r = Run 'remove' $git; if ($r -ne 0) { throw "remove of a protected copy exited $r" }
+          # A payload that isn't the pinned build: refused, and nothing left behind.
+          $r = Run 'setup' (Join-Path ([Environment]::SystemDirectory) 'cmd.exe'); if ($r -ne 5) { throw "a wrong digest exited $r" }
+          if (Test-Path -LiteralPath $exe) { throw 'the wrong copy was left behind' }
+          # A SID with a newline after it (`$` would let it through; `\z` doesn't), passed straight to the script.
+          $u = [Text.Encoding]::Unicode
+          $b = { param($t) [Convert]::ToBase64String($u.GetBytes($t)) }
+          $direct = '& {' + (Get-Content -Raw $script).Replace('__CLOVER_CORE_DIGEST__', $env:CLOVER_PIN) + "} -Action setup -SourceB64 '" + (& $b $git) + "' -UserB64 '" + (& $b "$sid`n") + "'"
+          $e = [Convert]::ToBase64String($u.GetBytes($direct))
+          $p = Start-Process -FilePath (Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell\v1.0\powershell.exe') -ArgumentList '-NoProfile', '-NonInteractive', '-EncodedCommand', $e -NoNewWindow -Wait -PassThru
+          if ($p.ExitCode -ne 7) { throw "a bad SID exited $($p.ExitCode)" }
+          Write-Output 'the elevated step: the copy and its folders are protected, an old copy is replaced, a writable one refused, a wrong digest and a bad SID refused'
+
+      # The NSIS installer itself: the unsigned release build (scripts/release/build.ts) with the srt-win.exe just built
+      # beside the daemon (checked against core's pin) and the elevated step's script compacted into it, every update
+      # file checked against what it names. Nothing is signed or uploaded.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: The installer builds (unsigned)
+        run: |
+          bun scripts/release/build.ts --channel latest
+          ls -l apps/desktop/out/dist
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
@@ -609,6 +756,7 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
       - name: verify:workflow
@@ -864,7 +1012,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, tree, link, gallery, typecheck, lockfiles, test-extension, macos, scripts, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, tree, link, srt-win, gallery, typecheck, lockfiles, test-extension, macos, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, LAUNCHD_LABEL, autostartArgs } from "../packaging/installer-hooks";
+import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, LAUNCHD_LABEL, SANDBOX_EXIT, SANDBOX_SUBCOMMAND, autostartArgs, sandboxArgs } from "../packaging/installer-hooks";
 import { linkBinaryName } from "../packages/core/src/links/sidecar-binary";
 import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, LINK_BUILD, LINK_OUTPUT, packageArchNames, parseBuildPackagesArgs, parseListing, REQUIRED_FILES } from "./build-packages";
 import { caskFrom } from "./release-lib";
@@ -83,6 +83,27 @@ describe("the installers' hooks", () => {
     expect(code).not.toContain("ExecWait");
   });
 
+  test("the Windows installer sets Bash's sandbox up once, elevated, on a first install only, and removes it on a real uninstall", () => {
+    const text = read("packaging/windows/installer.nsh");
+    const code = codeLines(text, ";");
+    // The one elevated call: Windows' own prompt (runas), hidden, its exit code kept, 1223 when declined; what runs
+    // elevated is the release build's encoded script (scripts/release/release.test.ts checks it), never the install folder.
+    const macro = text.slice(text.indexOf("!macro cloverSandbox"), text.indexOf("!macroend", text.indexOf("!macro cloverSandbox")));
+    expect(macro).toContain("-Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $$p.ExitCode");
+    expect(macro).toContain(`catch { exit ${SANDBOX_EXIT.declined} }`);
+    expect(macro).toContain("-Action ${ACTION} -SourceB64 ' + $$a + $$src + $$a + ' -UserB64 ' + $$a + $$sid + $$a");
+    const install = text.slice(text.indexOf("!macro customInstall"), text.indexOf("!macroend", text.indexOf("!macro customInstall")));
+    expect(install).toContain("${ifNot} ${isUpdated}");
+    expect(install).toContain(`nsExec::ExecToLog '"$INSTDIR\\resources\\daemon\\clover-core.exe" ${sandboxArgs("status").join(" ")}'`);
+    expect(install.indexOf(sandboxArgs("status").join(" "))).toBeLessThan(install.indexOf("!insertmacro cloverSandbox setup"));
+    const uninstall = text.slice(text.indexOf("!macro customUnInstall"), text.indexOf("!macroend", text.indexOf("!macro customUnInstall")));
+    expect(uninstall).toContain("${ifNot} ${isUpdated}");
+    expect(uninstall.indexOf(autostartArgs("remove").join(" "))).toBeLessThan(uninstall.indexOf("!insertmacro cloverSandbox remove"));
+    // Only setup and remove are ever elevated, and the installer passes no flags.
+    expect([...text.matchAll(/!insertmacro cloverSandbox (\w+)/g)].map((m) => m[1])).toEqual(["setup", "remove"]);
+    expect(code.join("\n")).not.toMatch(/sandbox (setup|remove) --/);
+  });
+
   test("none reaches systemctl or Task Scheduler itself, launchctl only in the cask's fallback, and none turns it on", () => {
     for (const [rel, comment] of [["packaging/clover.rb.tmpl", "#"], ["packaging/windows/installer.nsh", ";"], ["packaging/linux/after-install.sh", "#"], ["packaging/linux/after-remove.sh", "#"]] as const) {
       const code = codeLines(read(rel), comment).filter((l) => !(rel.endsWith(".rb.tmpl") && l === `uninstall launchctl: "${LAUNCHD_LABEL}",`)).join("\n");
@@ -147,7 +168,7 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
   });
 
   test("the daemon and its link sidecar go in every package's resources, side by side, from where build-packages.ts stages them", () => {
-    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe", "clover-link", "clover-link.exe"] }]);
+    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe", "clover-link", "clover-link.exe", "srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"] }]);
     // Beside the daemon, where the core looks for it (packages/core/src/links/sidecar-binary.ts).
     expect(REQUIRED_FILES as readonly string[]).toContain(`/opt/Clover/resources/daemon/${linkBinaryName("linux")}`);
     expect(LINK_OUTPUT.endsWith(`/${linkBinaryName("linux")}`)).toBe(true);
@@ -213,8 +234,9 @@ describe("the Homebrew cask", () => {
 
 describe("build-packages.ts", () => {
   test("arguments: the host's architecture by default, every format, and nothing unknown", () => {
-    expect(parseBuildPackagesArgs([], "x64")).toEqual({ arches: ["x64"], formats: ["deb", "rpm", "AppImage"], check: false, dryRun: false });
-    expect(parseBuildPackagesArgs(["--arch", "arm64", "--formats=deb", "--check"], "arm64")).toEqual({ arches: ["arm64"], formats: ["deb"], check: true, dryRun: false });
+    expect(parseBuildPackagesArgs([], "x64")).toEqual({ arches: ["x64"], formats: ["deb", "rpm", "AppImage"], channel: "latest", check: false, dryRun: false });
+    expect(parseBuildPackagesArgs(["--arch", "arm64", "--formats=deb", "--channel", "beta", "--check"], "arm64")).toEqual({ arches: ["arm64"], formats: ["deb"], channel: "beta", check: true, dryRun: false });
+    expect(() => parseBuildPackagesArgs(["--channel", "nightly"], "x64")).toThrow(/latest or beta/);
     // One machine builds its own architecture (clover-link builds natively); a dry run may print any.
     expect(() => parseBuildPackagesArgs(["--arch", "x64,arm64"], "x64")).toThrow(/build arm64 on a machine of that architecture/);
     expect(parseBuildPackagesArgs(["--arch", "x64,arm64", "--dry-run"], "x64").arches).toEqual(["x64", "arm64"]);
@@ -224,7 +246,8 @@ describe("build-packages.ts", () => {
   });
 
   test("electron-builder packages one architecture at a time and never publishes", () => {
-    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never"]);
+    expect(electronBuilderArgs("arm64", ["deb", "rpm"])).toEqual(["electron-builder", "--linux", "deb", "rpm", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
+    expect(electronBuilderArgs("x64", ["AppImage"], "beta")).toEqual(["electron-builder", "--linux", "AppImage", "--x64", "--publish", "never", "-c.publish.channel=beta"]);
     expect(packageArchNames("x64")).toEqual({ deb: "amd64", rpm: "x86_64", appImage: "x86_64" });
     expect(packageArchNames("arm64")).toEqual({ deb: "arm64", rpm: "aarch64", appImage: "arm64" });
   });

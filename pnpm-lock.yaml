@@ -86,6 +86,9 @@ importers:
       '@waifucave/clover-protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@waifucave/clover-update-feed':
+        specifier: workspace:*
+        version: link:../update-feed
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -196,6 +199,8 @@ importers:
       '@supabase/supabase-js':
         specifier: 2.118.0
         version: 2.118.0
+
+  packages/update-feed: {}
 
   plugins/alpha/tab:
     devDependencies:

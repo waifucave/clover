@@ -4,7 +4,7 @@
 // E-M1's app starts the daemon and the daemon its sidecar. The dmg and the Windows installer come with E-M1's app;
 // signing and updates are M2.
 //
-//   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run]
+//   bun scripts/build-packages.ts [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--channel latest|beta] [--check] [--dry-run]
 //
 // Linux only: electron-builder makes the deb and the rpm with fpm, and the rpm needs rpmbuild (`apt-get install rpm`).
 // An architecture builds on its own machine (CI runs one job per architecture): clover-link is Rust with ring's C,
@@ -21,6 +21,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, st
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
+import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeServedCopies, type Channel } from "./release/lib";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -30,6 +31,7 @@ export type LinuxFormat = (typeof LINUX_FORMATS)[number];
 export interface BuildPackagesArgs {
   arches: LinuxArch[];
   formats: LinuxFormat[];
+  channel: Channel;
   check: boolean;
   dryRun: boolean;
 }
@@ -46,6 +48,7 @@ function listOf<T extends string>(flag: string, value: string | undefined, allow
 export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string): BuildPackagesArgs {
   let arches: LinuxArch[] | undefined;
   let formats: LinuxFormat[] = [...LINUX_FORMATS];
+  let channel: Channel = "latest";
   let check = false;
   let dryRun = false;
   for (let i = 0; i < argv.length; i++) {
@@ -55,7 +58,8 @@ export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--arch" || a.startsWith("--arch=")) arches = listOf("--arch", value("--arch"), LINUX_ARCHES);
     else if (a === "--formats" || a.startsWith("--formats=")) formats = listOf("--formats", value("--formats"), LINUX_FORMATS);
-    else throw new Error(`unknown argument ${a} (usage: build-packages [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--check] [--dry-run])`);
+    else if (a === "--channel" || a.startsWith("--channel=")) channel = parseChannel(value("--channel"));
+    else throw new Error(`unknown argument ${a} (usage: build-packages [--arch x64|arm64[,…]] [--formats deb,rpm,AppImage] [--channel latest|beta] [--check] [--dry-run])`);
   }
   if (arches === undefined) {
     if (!LINUX_ARCHES.includes(hostArch as LinuxArch)) throw new Error(`this machine is ${hostArch}: name an architecture with --arch`);
@@ -63,7 +67,7 @@ export function parseBuildPackagesArgs(argv: readonly string[], hostArch: string
   }
   const foreign = arches.filter((a) => a !== hostArch);
   if (!dryRun && foreign.length > 0) throw new Error(`this machine is ${hostArch}: build ${foreign.join(", ")} on ${foreign.length === 1 ? "a machine" : "machines"} of ${foreign.length === 1 ? "that architecture" : "those architectures"} (clover-link, the link sidecar, builds for the machine it is on)`);
-  return { arches, formats, check, dryRun };
+  return { arches, formats, channel, check, dryRun };
 }
 
 export function daemonTargetFor(arch: LinuxArch): DaemonTarget {
@@ -75,9 +79,10 @@ export function packageArchNames(arch: LinuxArch): { deb: string; rpm: string; a
   return arch === "x64" ? { deb: "amd64", rpm: "x86_64", appImage: "x86_64" } : { deb: "arm64", rpm: "aarch64", appImage: "arm64" };
 }
 
-/** The electron-builder command for one architecture, run in apps/desktop. */
-export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxFormat[]): string[] {
-  return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never"];
+/** The electron-builder command for one architecture, run in apps/desktop: never publishing, with the update files
+ *  written for `channel` (scripts/release/lib.ts). */
+export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxFormat[], channel: Channel = "latest"): string[] {
+  return ["electron-builder", "--linux", ...formats, `--${arch}`, "--publish", "never", ...channelArgs(channel)];
 }
 
 /** The link sidecar's build (native/link), relative to the repo root: one for this machine. */
@@ -193,7 +198,7 @@ export function main(argv: readonly string[], root: string): number {
   ];
   for (const arch of args.arches) {
     steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch)], cwd: root });
-    steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats)], cwd: desktop, stage: arch });
+    steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats, args.channel)], cwd: desktop, stage: arch });
   }
   if (args.dryRun) {
     for (const s of steps) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
@@ -213,6 +218,11 @@ export function main(argv: readonly string[], root: string): number {
     if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
   }
   rmSync(staged, { recursive: true, force: true });
+  // A full release serves beta users too: its update files under the beta names.
+  writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
+  // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).
+  const commit = checkoutCommit(root, false);
+  for (const a of args.arches) writeBuildCommit(outDir, a === "x64" ? "linux-x64" : "linux-arm64", commit);
   if (args.check) {
     const problems = args.arches.flatMap((arch) => checkBuilt(outDir, arch, args.formats));
     for (const p of problems) console.error(`build-packages: ${p}`);

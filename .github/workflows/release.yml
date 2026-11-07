@@ -1,0 +1,152 @@
+name: release
+
+# Clover's release builds (plan §4 M-M2), run by hand: every OS's installers and update files for a channel, kept as
+# this run's artifacts. Unsigned, with no secret but the workflow's own token for the install, and nothing is
+# published: the owner signs and notarizes the macOS build on their Mac (scripts/release/build.ts, signing) and
+# gathers it with these into a draft release (scripts/release/publish.ts), which they publish themselves.
+#   macOS     the dmg and its update zip (Apple silicon); this run's is unsigned, for checking, not for release
+#   Windows   the per-user installer (x64), unsigned (spec §13)
+#   Linux     deb, rpm and AppImage for x64 and arm64, each built and checked on its own architecture
+# Only from main: every job refuses another ref first. Each build records the commit it is of
+# (BUILD-COMMIT-<os>.txt), and the owner's step tags the release at it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: The update channel the files are written for
+        type: choice
+        options: [latest, beta]
+        default: latest
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  RUST_TOOLCHAIN: 1.99.1
+  CARGO_TERM_COLOR: never
+
+jobs:
+  desktop:
+    name: release · ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: mac, runner: macos-latest }
+          - { os: win, runner: windows-latest }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Only from main
+        env:
+          REF: ${{ github.ref }}
+        run: test "$REF" = refs/heads/main || { echo "::error::a release builds from main, not $REF"; exit 1; }
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: cargo-about, and Bash's fence launcher (Windows)
+        if: matrix.os == 'win'
+        run: |
+          cargo install --locked --features cli cargo-about@0.9.2
+          bun scripts/release/srt-win.ts --arch x64
+
+      - name: Build the release (unsigned)
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          bun scripts/release/build.ts --channel "$CHANNEL"
+          test "$(cat apps/desktop/out/dist/BUILD-COMMIT-${{ matrix.os }}.txt)" = "$GITHUB_SHA"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clover-${{ matrix.os }}-${{ inputs.channel }}
+          path: |
+            apps/desktop/out/dist/*.dmg
+            apps/desktop/out/dist/*.zip
+            apps/desktop/out/dist/*.exe
+            apps/desktop/out/dist/*.yml
+            apps/desktop/out/dist/*.blockmap
+            apps/desktop/out/dist/SHA256SUMS-*.txt
+            apps/desktop/out/dist/BUILD-COMMIT-*.txt
+          if-no-files-found: error
+
+  linux:
+    name: release · linux-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    steps:
+      - name: Only from main
+        env:
+          REF: ${{ github.ref }}
+        run: test "$REF" = refs/heads/main || { echo "::error::a release builds from main, not $REF"; exit 1; }
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; the version is RUST_TOOLCHAIN
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: rpmbuild, for the rpm
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends rpm
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and check the packages
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          bun scripts/build-packages.ts --arch ${{ matrix.arch }} --channel "$CHANNEL" --check
+          cd apps/desktop/out/dist && sha256sum *.deb *.rpm *.AppImage *.yml > SHA256SUMS-linux-${{ matrix.arch }}.txt
+          test "$(cat BUILD-COMMIT-linux-${{ matrix.arch }}.txt)" = "$GITHUB_SHA"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clover-linux-${{ matrix.arch }}-${{ inputs.channel }}
+          path: |
+            apps/desktop/out/dist/*.deb
+            apps/desktop/out/dist/*.rpm
+            apps/desktop/out/dist/*.AppImage
+            apps/desktop/out/dist/*.yml
+            apps/desktop/out/dist/*.blockmap
+            apps/desktop/out/dist/SHA256SUMS-*.txt
+            apps/desktop/out/dist/BUILD-COMMIT-*.txt
+          if-no-files-found: error

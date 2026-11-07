@@ -86,9 +86,25 @@ describe("ci-changes", () => {
 
   test("the link job runs for the sidecar, the links, and the devices and identity under them; the sidecar's change builds the packages too", () => {
     expect(on(["native/link/src/main.rs"])).toEqual(["workspaces", "packages", "link"]);
-    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts"]) expect(on([f]), f).toContain("link");
+    for (const f of ["packages/core/src/links/sidecar-wire.ts", "packages/core/src/devices/registry.ts", "packages/core/src/identity/account.ts",
+      "packages/core/src/contracts/link-transport.ts", "packages/core/src/clock/system-clock.ts", "packages/protocol/src/index.ts"]) expect(on([f]), f).toContain("link");
     expect(on(["packages/core/src/daemon.ts"])).not.toContain("link");
     expect(on(["native/link-sidecar/src/main.rs"])).not.toContain("link");
+  });
+
+  test("every CI step that runs the link tests requires the sidecar, so a missing build fails instead of skipping", () => {
+    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { steps?: Array<{ run?: string; env?: Record<string, string> }> }> }).jobs;
+    const steps = Object.values(jobs).flatMap((j) => j.steps ?? []).filter((s) => /bun test\b.*\bsrc\/links\b/.test(s.run ?? ""));
+    expect(steps.length).toBe(2);
+    for (const s of steps) expect(s.env?.CLOVER_LINK_REQUIRE_BINARY).toBe("1");
+  });
+
+  test("the fence launcher's build runs for its script and its notices' settings alone", () => {
+    expect(on(["scripts/release/srt-win.ts"])).toContain("srtwin");
+    expect(on(["packaging/windows/about.toml"])).toContain("srtwin");
+    // Lane C's build script, its patches and core's pin run it too.
+    for (const f of ["scripts/build-srt-win.ps1", "vendor/srt-win/patches/0001-per-principal-setup-records.patch", "packages/core/src/fence/windows-launcher.ts"]) expect(on([f]), f).toContain("srtwin");
+    expect(on(["packaging/windows/installer.nsh"])).not.toContain("srtwin");
   });
 
   test("the services' shared source and the sign-in stub run the core's suite (its account tests import them)", () => {

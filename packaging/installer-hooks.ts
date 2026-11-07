@@ -24,6 +24,24 @@ export function autostartArgs(action: AutostartAction): string[] {
   return [AUTOSTART_SUBCOMMAND, action];
 }
 
+/** Bash's sandbox principal on Windows, lane C's: `clover-core sandbox setup|remove|status`, no flags (its name, its
+ *  WFP sublayer and its profile rules are compiled in). `setup` is idempotent; `remove` exits 0 when nothing is left.
+ *  The Windows installer runs `setup` elevated once on a first install and `remove` elevated on a real uninstall
+ *  (packaging/windows/installer.nsh); updates never do. */
+export const SANDBOX_SUBCOMMAND = "sandbox";
+export type SandboxAction = "setup" | "remove" | "status";
+export function sandboxArgs(action: SandboxAction): string[] {
+  return [SANDBOX_SUBCOMMAND, action];
+}
+/**
+ * `sandbox`'s exit codes (lane C, 0–3), the elevated script's own (4–7: the source missing, the copy not the pinned
+ * build, a Program Files folder a user can write to or not owned by the system, an argument that does not decode),
+ * and Windows' own for a declined elevation prompt.
+ */
+export const SANDBOX_EXIT = { ok: 0, failed: 1, notElevated: 2, launcherMismatch: 3, exeMissing: 4, copyNotPinned: 5, notProtected: 6, badArgument: 7, declined: 1223 } as const;
+/** The daemon's stop (lane C's): unelevated, no flags; 0 stopped or not running, 1 still running (keep its files). */
+export const DAEMON_STOP_ARGS = ["daemon", "stop"] as const;
+
 export type Installer = "homebrew" | "dmg" | "nsis" | "winget" | "deb" | "rpm" | "appimage";
 
 /** Where each installer leaves the daemon binary, as its own script spells it. */
@@ -50,7 +68,7 @@ export interface InstallerHook {
 export const INSTALLER_HOOKS: Readonly<Record<Installer, InstallerHook>> = {
   homebrew: { onInstall: null, onUninstall: "remove", file: "packaging/clover.rb.tmpl", why: "the cask's uninstall runs as the user, before the app's files are removed, and goes on when the app is already gone" },
   dmg: { onInstall: null, onUninstall: null, file: null, why: "a dmg has no scripts: the app turns login start on at first launch, and Homebrew's uninstall (or the app's own) turns it off" },
-  nsis: { onInstall: null, onUninstall: "remove", file: "packaging/windows/installer.nsh", why: "a per-user installer runs as the user; an upgrade runs the old uninstaller with --updated, which keeps login start (stopping the old daemon there is still open: installer.nsh)" },
+  nsis: { onInstall: null, onUninstall: "remove", file: "packaging/windows/installer.nsh", why: "a per-user installer runs as the user; an upgrade first stops the old daemon (daemon stop) and runs the old uninstaller with --updated, which keeps login start" },
   winget: { onInstall: null, onUninstall: null, file: null, why: "winget runs the NSIS installer and its uninstaller, which carry the hooks" },
   deb: { onInstall: null, onUninstall: null, file: "packaging/linux/after-remove.sh", why: "maintainer scripts run as root, outside every user's systemd session, so they can't reach a user unit" },
   rpm: { onInstall: null, onUninstall: null, file: "packaging/linux/after-remove.sh", why: "as for the deb" },

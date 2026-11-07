@@ -1,7 +1,8 @@
 // The link over real iroh: two `clover-link` sidecars on loopback (no relay, nothing leaves the machine), the
 // transport on top, and pairing through the pair ALPN. Runs when the sidecar is built: `CLOVER_LINK_BIN`, or
-// native/link's release build (the link workflow builds it; locally `cargo build --release` in native/link). The
-// restart's bookkeeping also runs against a fake sidecar process, which needs no build.
+// native/link's release build (CI's link job builds it, and sets CLOVER_LINK_REQUIRE_BINARY=1 so a missing one
+// fails; locally `cargo build --release` in native/link). The restart's bookkeeping also runs against a fake sidecar
+// process, which needs no build.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +23,8 @@ import { CLOSE_LOST, RESET_CONN_LOST, type WireConn, WireOffline, type WireStrea
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
 const built = existsSync(BIN);
+// CI builds the sidecar before these run, and says so: there a missing binary fails the file instead of skipping it.
+if (!built && process.env.CLOVER_LINK_REQUIRE_BINARY === "1") throw new Error(`CLOVER_LINK_REQUIRE_BINARY=1, but there is no clover-link at ${BIN}`);
 const clock = new SystemClock();
 let stops: (() => unknown)[] = [];
 afterEach(async () => {
