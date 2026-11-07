@@ -76,12 +76,14 @@ export function computersApiRoutes(registry: ComputerRegistry): Record<string, A
 
 export function filesApiRoutes(tree: CoreTree): Record<string, ApiRoute> {
   const as = (ctx: { pluginId: string }): { as: Caller } => ({ as: { kind: "plugin", pluginId: ctx.pluginId } });
+  // `noFollow` goes on to the tree, which refuses it until the holder honours it (#234's review, F1): never dropped.
   const range = (o: Record<string, unknown>) => ({
     ...(typeof o.offset === "number" ? { offset: o.offset } : {}),
     ...(typeof o.length === "number" ? { length: o.length } : {}),
+    ...(o.noFollow === true ? { noFollow: true } : {}),
   });
   return {
-    "files.stat": async ([path], ctx) => tree.stat(s(path, "path"), as(ctx)),
+    "files.stat": async ([path, o], ctx) => tree.stat(s(path, "path"), { ...as(ctx), ...(opt(o).noFollow === true ? { noFollow: true } : {}) }),
     "files.readText": async ([path, o], ctx) => {
       const d = await tree.readPart(s(path, "path"), { ...as(ctx), ...range(opt(o)), encoding: "utf8" });
       return d.encoding === "utf8" ? d.text : Buffer.from(d.data, "base64").toString("utf8");

@@ -25,6 +25,7 @@ import {
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
+import { refuseNoFollowUntilHonoured } from "../contracts/tree";
 import { TREE_IO_MAX, type HolderCall, type LocalHolder } from "./holder";
 import type { TreeChangedNotice } from "./remote";
 
@@ -166,9 +167,7 @@ export class TreeService {
     const h = opts.holder;
     // `noFollow` (tree 1.1) is refused until the holder honours it (lane J's #225): taking it and following links
     // anyway would be the very bug it guards against.
-    const noFollowFirst = (p: { noFollow?: boolean }) => {
-      if (p.noFollow) throw new ContractError("unsupported", "this computer can't read without following links yet");
-    };
+    const noFollowFirst = (p: { noFollow?: boolean }) => refuseNoFollowUntilHonoured(p);
     serve("tree.stat", async (p, call) => (noFollowFirst(p), { stat: await h.stat(p.path, call) }));
     serve("tree.read", (p, call) => (noFollowFirst(p), h.read(p.path, {
       ...call, ...(p.encoding === undefined ? {} : { encoding: p.encoding }),

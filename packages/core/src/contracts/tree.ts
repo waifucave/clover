@@ -46,7 +46,7 @@ import {
   type TreeTransferParams,
 } from "@waifucave/clover-protocol";
 import { levelDecision, strictestLevel } from "./approval-broker";
-import type { Unsubscribe } from "./common";
+import { ContractError, type Unsubscribe } from "./common";
 import { foldName } from "./fence";
 
 export type { TreePath };
@@ -129,6 +129,13 @@ export function peerTreeDecision(levels: readonly Level[], callLevel: Level, eff
   const level = strictestLevel([...levels, callLevel])!;
   const d = levelDecision(level, effect);
   return d === "allow" ? "allow" : d === "deny" ? "refuse" : d === "review" ? "review" : "answer";
+}
+
+/** `noFollow` until the holder honours it (lane J's #225): refused (`unsupported`), never dropped, since a read that
+ *  drops it follows links (#234's review, F1). Every door that takes the flag calls this before reading; J's holder
+ *  replaces it with the real walk. */
+export function refuseNoFollowUntilHonoured(opts: { noFollow?: unknown }): void {
+  if (opts.noFollow === true) throw new ContractError("unsupported", "this computer can't read without following links yet");
 }
 
 export interface Tree {

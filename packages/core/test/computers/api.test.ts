@@ -63,6 +63,10 @@ describe("files.* for plugins: the Files panel's data", () => {
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts"], ctx)).toBe("export const a = 1;\n");
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts", { offset: 7, length: 5 }], ctx)).toBe("const");
     expect(isContractError(await rejection(files["files.readText"]!(["home/Laptop1/.clover/run/x"], ctx)), "fenced")).toBe(true);
+    // noFollow reaches the tree, which refuses it until the holder honours it; it is never dropped (#234's review, F1).
+    for (const [name, args] of [["files.stat", ["home/Laptop1/proj/src/a.ts", { noFollow: true }]], ["files.readText", ["home/Laptop1/proj/src/a.ts", { noFollow: true }]], ["files.readBytes", ["home/Laptop1/proj/src/a.ts", { offset: 0, noFollow: true }]]] as const) {
+      expect([name, isContractError(await rejection(files[name]!([...args], ctx)), "unsupported")]).toEqual([name, true]);
+    }
     const events: unknown[] = [];
     const stop = await filesWatch(studio.node.tree, ctx, "home/Laptop1/proj", (e) => events.push(e));
     await Bun.sleep(100);

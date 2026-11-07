@@ -13,7 +13,7 @@ import type { FileStat, Level, Os, SignedCardAnswer } from "@waifucave/clover-pr
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
+import { refuseNoFollowUntilHonoured, splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
 import type { Holder, HolderCall } from "./holder";
 import type { TransferResult } from "./transfer";
 import { foldName } from "./names";
@@ -107,12 +107,14 @@ export class CoreTree implements Tree {
     return `home/${c.name}/${rest.join("/")}`;
   }
 
-  async stat(path: string, opts: TreeCallOptions): Promise<FileStat | null> {
+  async stat(path: string, opts: TreeCallOptions & { noFollow?: boolean }): Promise<FileStat | null> {
+    refuseNoFollowUntilHonoured(opts);
     const { holder, call } = this.#reach([path], opts);
     return holder.stat(path, call);
   }
 
-  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64" }): Promise<TreeData> {
+  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; noFollow?: boolean }): Promise<TreeData> {
+    refuseNoFollowUntilHonoured(opts);
     const { holder, call } = this.#reach([path], opts);
     return holder.read(path, { ...call, ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }) });
   }
@@ -201,7 +203,8 @@ export class CoreTree implements Tree {
   }
 
   /** A file's bytes in parts, for the tool layer: `offset` and `length` reach the holder. */
-  async readPart(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; offset?: number; length?: number }): Promise<TreeData> {
+  async readPart(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; offset?: number; length?: number; noFollow?: boolean }): Promise<TreeData> {
+    refuseNoFollowUntilHonoured(opts);
     const { holder, call } = this.#reach([path], opts);
     return holder.read(path, {
       ...call,

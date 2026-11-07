@@ -9,7 +9,7 @@ import { ContractError, isInside, normalizePosix, type Unsubscribe } from "../co
 import { fenceContextFor, type Fence, type FenceOp } from "../fence";
 import { MemoryAnswerLedger } from "./approval-broker";
 import {
-  peerTreeDecision, splitTreePath, transferChange, treeCallBinding,
+  peerTreeDecision, refuseNoFollowUntilHonoured, splitTreePath, transferChange, treeCallBinding,
   type Tree, type TreeCallOptions, type TreeChange, type TreeData, type TreeLocation, type TreeReviewer, type TreeWatchEvent,
 } from "../tree";
 
@@ -127,13 +127,15 @@ export class FakeTree implements Tree {
     return p === c.home ? `home/${name}` : `home/${name}/${p.slice(c.home.length + 1)}`;
   }
 
-  async stat(path: string, opts: TreeCallOptions): Promise<FileStat | null> {
+  async stat(path: string, opts: TreeCallOptions & { noFollow?: boolean }): Promise<FileStat | null> {
+    refuseNoFollowUntilHonoured(opts);
     const loc = this.#reach(path, { op: "stat", path: "" }, opts);
     const node = this.#fs.get(loc.computer)!.get(loc.path);
     return node ? this.#statOf(path, node) : null;
   }
 
-  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64" }): Promise<TreeData> {
+  async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; noFollow?: boolean }): Promise<TreeData> {
+    refuseNoFollowUntilHonoured(opts);
     const loc = this.#reach(path, { op: "read", path: "" }, opts);
     const node = this.#fs.get(loc.computer)!.get(loc.path);
     if (!node) throw new ContractError("not_found", `${path} doesn't exist`);
