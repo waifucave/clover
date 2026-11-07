@@ -63,7 +63,17 @@ describe("the daemon's links", () => {
     await Promise.all([...hooks].map((fn) => fn()));
     expect(typeof computerNodeLinks(links).memoryChanged).toBe("function");
     // Lane J's node takes the lease too (its fencing token on acts between computers): a lone computer's carries none.
-    expect(computerNodeLinks(links).lease?.state().scope).toBeUndefined();
+    const lease = computerNodeLinks(links).lease;
+    expect(lease).not.toBeNull();
+    expect(lease!.self).toBe(links.key.id);
+    expect(lease!.state().scope).toBeUndefined();
+    // Without a main computer here (no group yet), the node is told so: `null`, never left out (lane J's #237).
+    const bare = await startDeviceLinks({
+      home: mkdtempSync(join(tmpdir(), "clover-h-node-")), store: new MemorySecretStore(), clock, self: { name: "Bare", os: "macos" },
+      wire: (key) => net.endpoint(key.publicKey), mainComputer: false,
+    });
+    stops.push(() => bare.close());
+    expect(computerNodeLinks(bare).lease).toBeNull();
     await links.close();
     expect(hooks.size).toBe(0);
   });
