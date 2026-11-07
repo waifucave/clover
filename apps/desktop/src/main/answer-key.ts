@@ -17,8 +17,7 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-
-export type AnswerKeyHolder = "secure-enclave" | "keystore" | "app-keychain" | "tpm" | "hello" | "none";
+import { answerKeyHolderFor, type AnswerKeyHolder } from "@waifucave/clover-protocol";
 
 /** Where the key's private half is kept. */
 export interface KeyVault {
@@ -35,15 +34,11 @@ export interface SafeStorageLike {
   decryptString(encrypted: Buffer): string;
 }
 
-/** How each OS keeps it from plugin code: only macOS's Keychain, limited to the signed app, does. */
-export function holderFor(platform: NodeJS.Platform): AnswerKeyHolder {
-  return platform === "darwin" ? "app-keychain" : "none";
-}
-
-/** The OS's store, through safeStorage: the file holds only what the OS's own key encrypted. */
+/** The OS's store, through safeStorage: the file holds only what the OS's own key encrypted. Held through the
+ *  protocol's own choice (macOS's Keychain limited to the signed app; nothing elsewhere this app can prove). */
 export function safeStorageVault(file: string, storage: SafeStorageLike, platform: NodeJS.Platform = process.platform): KeyVault {
   return {
-    held: holderFor(platform),
+    held: answerKeyHolderFor(platform, { appKeychain: platform === "darwin" }),
     load() {
       if (!existsSync(file) || !storage.isEncryptionAvailable()) return undefined;
       try {

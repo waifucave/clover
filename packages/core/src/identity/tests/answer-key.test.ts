@@ -13,15 +13,17 @@ import { AnswerKey, answerKeyHolder } from "../answer-key";
 import { DeviceKey } from "../device-key";
 
 describe("answer key", () => {
-  test("held by the Keychain on macOS, the TPM on Windows (never Hello, which prompts), and marked none elsewhere", () => {
+  test("held by the Keychain on macOS, the TPM or DPAPI on Windows, the Secret Service on Linux (never Hello, which prompts)", () => {
     expect(answerKeyHolder("macos", { appKeychain: true })).toBe("app-keychain");
+    expect(answerKeyHolder("macos", { keychain: true, appKeychain: false })).toBe("keychain");
     expect(answerKeyHolder("macos", {})).toBe("none");
-    // Never Windows Hello, which prompts: the TPM, or nothing.
+    // Never Windows Hello, which prompts: the TPM, DPAPI, or nothing.
     expect(answerKeyHolder("windows", { tpm: true })).toBe("tpm");
-    expect(answerKeyHolder("windows", { hello: true, tpm: false } as never)).toBe("none");
-    expect(answerKeyHolder("windows", { tpm: true })).toBe("tpm");
+    expect(answerKeyHolder("windows", { dpapi: true, tpm: false })).toBe("dpapi");
     expect(answerKeyHolder("windows", {})).toBe("none");
-    expect(answerKeyHolder("linux", { tpm: true })).toBe("none");
+    expect(answerKeyHolder("linux", { secretService: true })).toBe("secret-service");
+    expect(answerKeyHolder("linux", { tpm: true, secretService: false })).toBe("none");
+    expect(answerKeyHolder("linux", {})).toBe("none");
   });
 
   test("the app's key reaches the registry with its proof; answers verify with it and never with the link key", async () => {

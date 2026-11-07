@@ -3,10 +3,10 @@
 // the app's main process) can't sign with it where the OS allows:
 // * macOS: a Keychain item only the signed app can read (`app-keychain`; Electron's safeStorage key is one), with no
 //   biometric access control;
-// * Windows: a TPM-held key that needs no PIN or Hello gesture (`tpm`);
-// * otherwise (Linux, Windows without a TPM) the key is kept as well as the OS lets the app (DPAPI, the Secret
-//   Service), and is marked `none`: the owner accepted that a compromised plugin there could approve actions on other
-//   computers.
+// * Windows: a TPM-held key that needs no PIN or Hello gesture (`tpm`), else DPAPI (`dpapi`);
+// * Linux: the Secret Service (`secret-service`);
+// * otherwise the key is marked `none`: the owner accepted that a compromised plugin there could approve actions on
+//   other computers.
 //
 // Nothing here ever asks for Face ID, Touch ID, Windows Hello, a passcode or any other presence check (the owner's
 // decision): a key is protected by where it is stored, and using it never prompts. `held` says where it is stored.
@@ -14,7 +14,8 @@
 // This module is for the app's main process (lane E): it makes or loads the key through storage the app provides,
 // proves it to the core (`registration`, which `FileDeviceRegistry.setOwnAnswerKey` checks), and signs answers.
 // Receivers rebuild the card and compare hashes before they check the signature (`verifySignedAnswer`).
-import type { AnswerKeyHolder, Os } from "@waifucave/clover-protocol";
+import type { AnswerKeyHolder, AnswerKeyProtections, Os } from "@waifucave/clover-protocol";
+import { answerKeyHolderFor } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { Secret } from "../contracts/secret-store";
 import { cardAnswerSigningInput, userMessageHashInput, userMessageSigningInput } from "@waifucave/clover-protocol";
@@ -22,20 +23,13 @@ import { createHash } from "node:crypto";
 import { fromBase64, toBase64, utf8 } from "./bytes";
 import { type Ed25519Key, ed25519FromSeed, generateEd25519 } from "./keys";
 
-/** What the OS offers the app to keep a key from other code on the same computer. */
-export interface AnswerKeyProtections {
-  /** macOS: a Keychain item whose access list names only the signed app. */
-  appKeychain?: boolean;
-  /** Windows: the TPM can hold it, with no PIN or Hello gesture to use it. */
-  tpm?: boolean;
-}
+/** What the OS offers the app to keep a key from other code on the same computer: the protocol's own protections. */
+export type { AnswerKeyProtections };
 
-/** How the key will be held, from the OS and what it offers; `none` when nothing keeps plugin code from it. */
+/** How the key will be held, from the OS and what it offers; `none` when nothing keeps plugin code from it. One
+ *  choice, shared with the desktop through the protocol's own function. */
 export function answerKeyHolder(os: Os, can: AnswerKeyProtections): AnswerKeyHolder {
-  if (os === "macos" && can.appKeychain) return "app-keychain";
-  // Never `hello`: a Windows Hello credential prompts, and nothing in Clover prompts (the owner's decision).
-  if (os === "windows" && can.tpm) return "tpm";
-  return "none";
+  return answerKeyHolderFor(os === "macos" ? "darwin" : os === "windows" ? "win32" : "linux", can);
 }
 
 /** Where the app keeps the key's seed: its Keychain item, its TPM-wrapped blob, or (for `none`) DPAPI, the Secret

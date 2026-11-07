@@ -34,13 +34,47 @@ export type LinkView = z.infer<typeof LinkView>;
 
 /** Who may answer another computer's card with a signature (the owner's decision on review N1): a phone, with its own
  *  key, or any desktop, with a key its app holds apart from the core's link key, so plugin code can't sign with it
- *  where the OS allows: a Keychain item limited to the signed app on macOS, a TPM- or Windows Hello-backed key on
- *  Windows. Where the OS can't keep it from plugin code (Linux, and Windows without either), the owner accepted the
- *  risk: "any desktop may answer; a compromised plugin on a Windows or Linux computer could approve actions on other
- *  computers". Servers, cloud computers and browsers never sign. `none` names a key the OS can't keep apart. */
-export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "app-keychain", "tpm", "hello", "none"] as const;
+ *  where the OS allows: a Keychain item on macOS (`keychain`, limited to the signed app as `app-keychain`), a TPM-held
+ *  key (`tpm`) or DPAPI (`dpapi`) on Windows, the Secret Service (`secret-service`) on Linux. Where the OS can't keep
+ *  it from plugin code, the owner accepted the risk: "any desktop may answer; a compromised plugin on a Windows or
+ *  Linux computer could approve actions on other computers". Servers, cloud computers and browsers never sign. `none`
+ *  names a key the OS can't keep apart. Never `hello`: no biometric or passcode prompts anywhere (the owner's
+ *  decision). */
+export const ANSWER_KEY_HOLDERS = ["secure-enclave", "keystore", "keychain", "app-keychain", "tpm", "dpapi", "secret-service", "none"] as const;
 export const AnswerKeyHolder = z.enum(ANSWER_KEY_HOLDERS);
 export type AnswerKeyHolder = z.infer<typeof AnswerKeyHolder>;
+
+/** What the OS offers the app to keep a key from other code on the same computer. Phones name their own holder at
+ *  pairing; this is the desktop's choice. */
+export interface AnswerKeyProtections {
+  /** macOS: a Keychain item for the key. */
+  keychain?: boolean;
+  /** macOS: a Keychain item whose access list names only the signed app. */
+  appKeychain?: boolean;
+  /** Windows: the TPM can hold it, with no PIN or Hello gesture to use it. */
+  tpm?: boolean;
+  /** Windows: DPAPI encrypts it to this user. */
+  dpapi?: boolean;
+  /** Linux: the Secret Service holds it. */
+  secretService?: boolean;
+}
+
+/** How the key will be held, from the platform and what it offers; `none` when nothing keeps plugin code from it.
+ *  Pure, beside the type, so the core and the desktop choose from one place (no app-to-core dependency). */
+export function answerKeyHolderFor(platform: NodeJS.Platform, available: AnswerKeyProtections): AnswerKeyHolder {
+  if (platform === "darwin") {
+    if (available.appKeychain === true) return "app-keychain";
+    if (available.keychain === true) return "keychain";
+    return "none";
+  }
+  if (platform === "win32") {
+    if (available.tpm === true) return "tpm";
+    if (available.dpapi === true) return "dpapi";
+    return "none";
+  }
+  if (available.secretService === true) return "secret-service";
+  return "none";
+}
 
 /** The answer key's algorithm (lanes H and I): `p256` for a key the Secure Enclave, Windows Hello or a TPM holds (raw
  *  uncompressed point, 65 bytes; signatures are ECDSA over SHA-256, `r‖s`, 64 bytes), `ed25519` for one in software.
