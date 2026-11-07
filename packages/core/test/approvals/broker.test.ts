@@ -3,7 +3,7 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSyn
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Card, TurnOrigin } from "@waifucave/clover-protocol";
-import { CloverApprovalBroker, RESOLVED_KEEP_MS } from "../../src/approvals/broker";
+import { CloverApprovalBroker, RESOLVED_KEEP_MS, UNRESOLVED_PATHS_REASON, type CloverApprovalRequest } from "../../src/approvals/broker";
 import { botApprovalCheck, botToolRequest, effectOf, isBuiltinTool, resolveSessionPath, ruleKeyOf } from "../../src/approvals/bot-check";
 import { fileRuleStore, savedRulesPath } from "../../src/approvals/rule-store";
 import { looksCredentialBearing, plainOf, ruleDisplay, ruleKeyHash, shownCode } from "../../src/approvals/strings";
@@ -22,6 +22,8 @@ const bash = (over: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
   kind: "tool", session: "s1", bot: "luna", origin: "user", computers: ["Studio"], effect: "execute", ruleKey: "Bash(git push)",
   fields: { title: { type: "text", text: "Run a command" }, command: { type: "code", code: "git push", language: "sh" } }, ...over,
 });
+
+const FRAME_OF = (b: CloverApprovalBroker, c: Card) => ({ via: "sealed-frame" as const, frame: b.frameChannel(c.id) ?? "frame_gone", input: "click" as const, at: 1 });
 
 /** Answers the next card through the app's sealed frame, as the app's main process does. */
 function answerNext(b: CloverApprovalBroker, optionId: string): Promise<Card> {
@@ -120,6 +122,43 @@ describe("the real broker's saved rules and records", () => {
     b.cancelSession("s1");
     await Promise.all([pending, own]);
     expect(b.rules()).toEqual([]);
+  });
+
+  test("paths from a session on another computer are unresolved: a card every time, no rule matched or saved", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), localComputer: "Studio", levels: () => "automatic" });
+    const read = (over: Partial<ApprovalRequest> = {}) => bash({ effect: "read", ruleKey: "Read", paths: ["/p/a.ts"], computers: ["Laptop"], ...over });
+    // The local computer's own paths run as the level says.
+    expect(await b.request(read({ computers: ["Studio"] }))).toEqual({ allowed: true, by: "level", level: "automatic" });
+    // Another computer's: a card, with no "always" and the table's reason, even at "automatic" and for a read.
+    let card: Card | undefined;
+    b.watch((e) => { if (e.type === "requested") card = e.card; });
+    const first = answerNext(b, "approve");
+    expect(await b.request(read())).toMatchObject({ allowed: true, by: "card" });
+    await first;
+    expect(card!.options.map((o) => o.id)).toEqual(["approve", "deny"]);
+    expect(card!.fields.reason).toEqual({ type: "text", text: UNRESOLVED_PATHS_REASON });
+    expect(await b.answer(card!.id, { optionId: "always", hash: card!.hash, proof: FRAME_OF(b, card!) }, { role: "app" })).toBe("already-answered");
+    // A request marked unresolved by its requester, on any computer, asks too, and a rule saved for its key doesn't
+    // match it.
+    const asks = new CloverApprovalBroker({ clock: clockAt(), localComputer: "Studio", levels: () => "ask" });
+    const edit = bash({ computers: ["Studio"], ruleKey: "Edit(/p/a.ts)", effect: "edit", paths: ["/p/a.ts"] });
+    const saved = answerNext(asks, "always");
+    expect(await asks.request(edit)).toMatchObject({ allowed: true, remembered: true });
+    await saved;
+    expect(await asks.request(edit)).toEqual({ allowed: true, by: "rule" });
+    const again = answerNext(asks, "deny");
+    expect(await asks.request({ ...edit, paths: ["a.ts"], pathsUnresolved: true } as CloverApprovalRequest)).toMatchObject({ allowed: false, by: "card" });
+    await again;
+    expect(asks.rules().map((r) => r.ruleKey)).toEqual(["Edit(/p/a.ts)"]);
+  });
+
+  test("a bot session on another computer sends its paths as given and marked unresolved", () => {
+    const remote = { botId: "luna", sessionId: "s2", computer: "Laptop", paths: { scratch: "/nowhere" } } as unknown as BotSessionContext;
+    const r = botToolRequest(remote, "user", "Write", { file_path: "notes.md", content: "x" }, { localComputer: "Studio" });
+    expect(r).toMatchObject({ paths: ["notes.md"], pathsUnresolved: true, computers: ["Laptop"] });
+    expect(r.ruleKey).toBeUndefined();
+    const local = botToolRequest({ ...remote, computer: "Studio" } as BotSessionContext, "user", "Bash", { command: "ls" }, { localComputer: "Studio" });
+    expect(local.pathsUnresolved).toBeUndefined();
   });
 
   test("a card past its expiresAt is expired whatever its timer did", async () => {

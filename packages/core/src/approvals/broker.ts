@@ -5,6 +5,9 @@
 //     scrubbed display string, never the raw key (a command can carry a secret); a key that looks like it carries a
 //     credential is never offered "always" nor saved (#267's ruling 4);
 //   * a card past its `expiresAt` is settled as expired whenever the broker next looks at it, whatever its timer did;
+//   * paths are resolved on the computer the session runs on (its daemon builds the request). A request whose paths
+//     weren't (`pathsUnresolved`, or with paths from a session on another computer than `localComputer`) always raises
+//     a card, never matches or saves a rule, and the card says why (the controller's ruling on #267);
 //   * resolved cards are kept for `card.get` for a day, at most 2,000 of them, then dropped oldest first;
 //   * its levels, its fence, the safety reviewer and the device-answer verifier are the daemon's (injected).
 // It runs B's conformance suite (`test/approvals/broker.test.ts`).
@@ -38,6 +41,15 @@ export interface RuleStore {
   save(rules: readonly StoredRule[]): void;
 }
 
+/** A request as Clover's own requesters build it: B's request, plus whether its paths are unresolved (made on a
+ *  computer other than the session's, so not real paths). */
+export interface CloverApprovalRequest extends ApprovalRequest {
+  pathsUnresolved?: boolean;
+}
+
+/** The card's reason for a request whose paths are unresolved, from Clover's own table. */
+export const UNRESOLVED_PATHS_REASON = "These paths weren't checked on the computer that runs this session, so this asks every time.";
+
 /** A saved rule in memory: the raw key only for a rule saved in this run, which `rules()` lists; one read back from
  *  disk lists its display string. */
 interface HeldRule extends StoredRule { ruleKey?: string }
@@ -54,6 +66,8 @@ export interface CloverApprovalBrokerOptions {
   verify?: ProofVerifier;
   /** Saved rules' store (`fileRuleStore(home)`); without one they last as long as the broker. */
   rules?: RuleStore;
+  /** This computer's name: a request with paths that names another computer has paths this one didn't resolve. */
+  localComputer?: string;
   log?: (line: string) => void;
 }
 
@@ -83,6 +97,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   readonly #verify: ProofVerifier;
   readonly #store: RuleStore | undefined;
   readonly #log: (line: string) => void;
+  readonly #localComputer: string | undefined;
   readonly #pending = new Map<string, Pending>();
   readonly #resolved = new Map<string, CardRecord>();
   readonly #rules: HeldRule[];
@@ -96,6 +111,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     this.#verify = opts.verify ?? (() => false);
     this.#store = opts.rules;
     this.#log = opts.log ?? (() => {});
+    this.#localComputer = opts.localComputer;
     let loaded: StoredRule[] = [];
     // A fixed line: the parse error could quote the file.
     try { loaded = this.#store?.load() ?? []; } catch { this.#log("[approvals] the saved rules file is unreadable; starting with no saved rules"); }
@@ -162,7 +178,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     }
     const allowed = option.kind === "approve";
     // A rule names the computers it holds on: a request that names none is never remembered (nor matched, rule 4).
-    const remembered = allowed && option.remember === "always" && rememberable(p.req) && p.req.computers.length > 0;
+    const remembered = allowed && option.remember === "always" && this.#rememberable(p.req);
     if (remembered) this.#saveRule(p.req.ruleKey!, p.req.computers, cardId);
     const device = a.proof.via === "device" ? a.proof.device : undefined;
     this.#settle(p, allowed ? "approved" : "denied", { allowed, by: "card", cardId, optionId: option.id, ...(remembered ? { remembered } : {}) }, option.id, device, children);
@@ -191,11 +207,13 @@ export class CloverApprovalBroker implements ApprovalBroker {
     if (req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" }; // rule 2
     const level = req.level ?? strictestLevel(req.computers.map((c) => this.#levels(c))) ?? DEFAULT_LEVEL;
     // read-only is absolute: only reads run, and no fenced-path card, saved rule or reviewer changes that.
-    if (level === "read-only") return levelDecision(level, req.effect) === "allow" ? { allowed: true, by: "level", level } : { allowed: false, by: "level", level };
+    if (level === "read-only" && levelDecision(level, req.effect) !== "allow") return { allowed: false, by: "level", level };
+    if (this.#unresolved(req)) return undefined; // paths no one resolved: a card every time, whatever rule or level
+    if (level === "read-only") return { allowed: true, by: "level", level };
     if (req.paths?.length && this.#fence) { // rule 3
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }
-    if (rememberable(req) && req.computers.length > 0) { // rule 4: a rule names every computer the request does
+    if (this.#rememberable(req)) { // rule 4: a rule names every computer the request does
       const hash = ruleKeyHash(req.ruleKey!);
       const rule = this.#rules.find((r) => r.keyHash === hash && r.computers.length > 0 && req.computers.every((c) => r.computers.includes(c)));
       if (rule) return { allowed: true, by: "rule" };
@@ -211,7 +229,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const issuedAt = this.#clock.now();
     const expires = cardExpires(req.kind, req.origin); // rule 6
     const once = ALWAYS_CARD_KINDS.includes(req.kind);
-    const options = once || !rememberable(req) || req.computers.length === 0
+    const options = once || !this.#rememberable(req)
       ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)
       : req.options ?? ([
         DEFAULT_OPTIONS[0]!, { id: "always", kind: "approve", label: "Always allow", remember: "always" }, DEFAULT_OPTIONS[1]!,
@@ -227,7 +245,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
       issuedAt,
       expiresAt: expires ? issuedAt + UNATTENDED_CARD_TIMEOUT_MS : null,
       ...(req.change === undefined ? {} : { change: req.change }),
-      fields: structuredClone(req.fields),
+      fields: this.#unresolved(req) ? { ...structuredClone(req.fields), reason: { type: "text", text: UNRESOLVED_PATHS_REASON } } : structuredClone(req.fields),
       options: structuredClone(options),
       ...(req.children === undefined ? {} : { children: structuredClone(req.children) }),
     };
@@ -242,6 +260,19 @@ export class CloverApprovalBroker implements ApprovalBroker {
       this.#listeners.emit({ type: "requested", card: structuredClone(card) });
       if (signal?.aborted) this.#settle(p, "cancelled", { allowed: false, by: "cancelled", cardId: card.id });
     });
+  }
+
+  /** Whether a request's paths weren't resolved where its session runs. */
+  #unresolved(req: ApprovalRequest): boolean {
+    if ((req as CloverApprovalRequest).pathsUnresolved === true) return true;
+    if (!req.paths?.length || this.#localComputer === undefined) return false;
+    return req.computers.some((c) => c !== this.#localComputer);
+  }
+
+  /** Whether a request may be remembered or matched: a key that doesn't look like it carries a credential, at least
+   *  one computer, and paths that were resolved. */
+  #rememberable(req: ApprovalRequest): boolean {
+    return req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey) && req.computers.length > 0 && !this.#unresolved(req);
   }
 
   #expiredNow(p: Pending): boolean {
@@ -289,7 +320,3 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 }
 
-/** Whether a request may be remembered: it has a key, and the key doesn't look like it carries a credential. */
-function rememberable(req: ApprovalRequest): boolean {
-  return req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey);
-}

@@ -321,7 +321,7 @@ export { CloverSecretStore, openCloverSecretStore, secretStoreWarning, probeSyst
 export * as registry from "./registry/index";
 // C-M3: the real approval broker, its saved rules on disk, and the bots' approval check (INT wires them:
 // `canUseTool: botApprovalCheck(broker)`, `openCard: brokerCardOpener(broker)`).
-export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverApprovalBrokerOptions, type RuleStore, type StoredRule } from "./approvals/broker";
+export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverApprovalBrokerOptions, type RuleStore, type StoredRule, type CloverApprovalRequest, UNRESOLVED_PATHS_REASON } from "./approvals/broker";
 export { fileRuleStore, savedRulesPath, SAVED_RULES_VERSION } from "./approvals/rule-store";
 export { botApprovalCheck, botToolRequest, effectOf as botToolEffect, isBuiltinTool, resolveSessionPath, type BotToolRequestOptions } from "./approvals/bot-check";
 export { looksCredentialBearing } from "./approvals/strings";

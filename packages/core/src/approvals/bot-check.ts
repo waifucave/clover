@@ -12,13 +12,16 @@
 // (its scratch folder, where the turn loop starts the runtime), with `~` expanded and links followed (`realpath`, or
 // the nearest folder that exists for a file not made yet), before the request is built, so the fence's rule 3 judges
 // the real place, and an edit rule is keyed on that real path: an "always" for `Write(notes.md)` in one folder never
-// allows another.
+// allows another. Resolving happens on the computer the session runs on: a session on another computer
+// (`localComputer` names this one) has its paths sent as given and marked unresolved, and the broker then asks every
+// time and never matches or saves a rule for them (the controller's ruling on #267).
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { SealedValue, TurnOrigin } from "@waifucave/clover-protocol";
-import type { ActionEffect, ApprovalBroker, ApprovalRequest } from "../contracts/approval-broker";
+import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
+import type { CloverApprovalRequest } from "./broker";
 import type { BotSessionContext } from "../bots/service";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
 
@@ -108,17 +111,23 @@ export interface BotToolRequestOptions {
   hostTools?: ReadonlySet<string>;
   /** The home `~` stands for; the daemon's own by default. */
   home?: string;
+  /** This computer's name: a session on another computer has its paths left unresolved. Unset: every session is
+   *  taken as this computer's. */
+  localComputer?: string;
 }
 
 /** The request for one call, its paths resolved against the session's working folder (`ctx.paths.scratch`). */
 export function botToolRequest(
   ctx: Pick<BotSessionContext, "botId" | "sessionId" | "computer" | "level" | "paths">, origin: TurnOrigin, tool: string,
   input: Record<string, unknown>, opts: BotToolRequestOptions = {},
-): ApprovalRequest {
+): CloverApprovalRequest {
   const builtin = isBuiltinTool(tool, opts.hostTools);
   const effect = effectOf(tool, opts.hostTools);
-  const paths = pathsOf(input).map((p) => resolveSessionPath(p, ctx.paths.scratch, opts.home));
-  const fields: ApprovalRequest["fields"] = {
+  const here = opts.localComputer === undefined || opts.localComputer === ctx.computer;
+  const given = pathsOf(input);
+  const paths = here ? given.map((p) => resolveSessionPath(p, ctx.paths.scratch, opts.home)) : given;
+  const unresolved = !here && paths.length > 0;
+  const fields: CloverApprovalRequest["fields"] = {
     title: { type: "text", text: TITLES[effect] },
     what: builtin ? { type: "text", text: tool } : { type: "code", code: plainOf(tool) },
   };
@@ -129,22 +138,25 @@ export function botToolRequest(
   }
   if (paths.length > 0) fields.paths = { type: "code", code: paths.slice(0, PATHS_MAX).map(plainOf).join("\n") };
   fields.computer = { type: "code", code: plainOf(ctx.computer) };
-  const ruleKey = ruleKeyOf(tool, input, paths, opts.hostTools);
+  const ruleKey = unresolved && builtin && BUILTIN_EFFECTS.get(tool) === "edit" ? undefined : ruleKeyOf(tool, input, paths, opts.hostTools);
   return {
     kind: "tool", session: ctx.sessionId, bot: ctx.botId, origin, computers: [ctx.computer],
     ...(ctx.level !== undefined ? { level: ctx.level } : {}),
-    effect, ...(paths.length > 0 ? { paths } : {}), ...(ruleKey === undefined ? {} : { ruleKey }), fields,
+    effect, ...(paths.length > 0 ? { paths } : {}), ...(unresolved ? { pathsUnresolved: true } : {}),
+    ...(ruleKey === undefined ? {} : { ruleKey }), fields,
   };
 }
 
 /** The turn loop's approval check over `broker`. A turn whose origin isn't known is not the user's, so its card is
  *  denied after 10 minutes unanswered (rule 6). `hostTools(ctx)` names the tools the session's host serves itself. */
 export function botApprovalCheck(
-  broker: Pick<ApprovalBroker, "request">, opts: { hostTools?: (ctx: BotSessionContext) => Iterable<string>; home?: string } = {},
+  broker: Pick<ApprovalBroker, "request">, opts: { hostTools?: (ctx: BotSessionContext) => Iterable<string>; home?: string; localComputer?: string } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
-    const req = botToolRequest(ctx, origin() ?? "bot", tool, input, { hostTools, ...(opts.home === undefined ? {} : { home: opts.home }) });
+    const req = botToolRequest(ctx, origin() ?? "bot", tool, input, {
+      hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
+    });
     const decision = await broker.request(req, { signal: call.signal });
     if (decision.allowed) return { behavior: "allow", updatedInput: input };
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
