@@ -10,8 +10,8 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p .",
-    "compile": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv --no-compile-autoload-tsconfig --no-compile-autoload-package-json src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/clover",
-    "compile:core": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv --no-compile-autoload-tsconfig --no-compile-autoload-package-json src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/clover-core"
+    "compile": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv --no-compile-autoload-tsconfig --no-compile-autoload-package-json --define CLOVER_PLUGIN_RUN_PROBE=false src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/clover",
+    "compile:core": "bun build src/embedded-worker.source.ts --target bun --outfile .build/embedded-worker.bundle.js && bun build src/fd-receiver-worker.source.ts --target bun --outfile .build/fd-receiver-worker.bundle.js && bun build --compile --no-compile-autoload-bunfig --no-compile-autoload-dotenv --no-compile-autoload-tsconfig --no-compile-autoload-package-json --define CLOVER_PLUGIN_RUN_PROBE=false src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts --outfile ../../dist/clover-core"
   },
   "dependencies": {
     "@waifucave/clover-core": "workspace:*",

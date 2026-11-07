@@ -8,7 +8,7 @@
 // * waits alone (`card-styling`) when it changes only how the tree styles approval cards (§5.5);
 // * applies at once (`applies`) otherwise: themes, layouts, CSS, Markdown, assets.
 import { posix } from "node:path";
-import type { Manifest, ManifestReport, TreeEntry, TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import { canonicalJson } from "@waifucave/clover-protocol";
 
 /** What a change since the OK does (the fake's `FakePluginInput.change`). */
@@ -94,6 +94,19 @@ function aliasName(path: string): boolean {
   return path.split("/").some((seg) => /~\d/.test(seg) || seg.includes(":") || /[. ]$/.test(seg));
 }
 
+/** File names that steer how code is resolved, loaded or run (#234's review, F2), compared folded: the runtime reads
+ *  them by name. */
+const LOADER_CONFIG = [
+  /^package\.json$/, /^tsconfig(\..+)?\.json$/, /^jsconfig(\..+)?\.json$/, /^bunfig\.toml$/, /^\.npmrc$/, /^\.env(\..*)?$/,
+  /^deno\.jsonc?$/, /^import_map\.json$/, /^\.yarnrc(\.yml)?$/, /^\.pnpmfile\.cjs$/, /^\.babelrc(\.json)?$/, /^\.swcrc$/,
+];
+
+/** Whether a tree path names a file that steers how code loads, whatever folder it sits in. */
+export function isLoaderConfig(path: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+  return LOADER_CONFIG.some((re) => re.test(name));
+}
+
 /** Whether a file is data: by its extension, and never with its executable bit set. Live2D's `*.motion3.json` and
  *  the like end in `json`, so they count by their last extension. */
 export function isDataFile(entry: Pick<TreeEntry, "path" | "executable">): boolean {
@@ -110,7 +123,9 @@ function runsOf(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string {
     .filter(([, s]) => s.type === "stdio")
     .map(([name, s]) => ({ name, command: s.command, args: s.args ?? [], env: s.env ?? {} }));
   const hooks = (c.hooks ?? []).map((h) => ({ id: h.id, command: h.command, args: h.args, handler: h.handler }));
-  const backends = (c.agentBackends ?? []).map((b) => ({ id: b.id, command: b.command, args: (b as { args?: unknown }).args }));
+  // An agent backend runs what its whole entry says (lane K's ask): its command and args, its handler, its protocol
+  // and its quirks file, which names the command and the env it gets. Only its display name is data.
+  const backends = (c.agentBackends ?? []).map(({ name: _name, ...run }) => run);
   const dotted: Record<string, unknown> = {};
   for (const [point, raw] of Object.entries(c as Record<string, unknown>)) {
     if (!point.includes(".")) continue;
@@ -153,7 +168,7 @@ function runStrings(m: Manifest | undefined, codeFieldsOf: CodeFieldsOf): string
   const c = m.contributes ?? {};
   for (const x of Object.values(c.mcpServers ?? {})) if (x.type === "stdio") deep([x.command, x.args, x.env]);
   for (const h of c.hooks ?? []) deep([h.command, h.args]);
-  for (const b of c.agentBackends ?? []) deep([b.command, (b as { args?: unknown }).args]);
+  for (const { name: _name, ...run } of c.agentBackends ?? []) deep(run); // its quirks file too (lane K's ask)
   for (const [point, raw] of Object.entries(c as Record<string, unknown>)) {
     if (!point.includes(".")) continue;
     const fields = codeFieldsOf(point);
@@ -188,6 +203,15 @@ function pathsNamed(strings: readonly string[], base: string, files: ReadonlySet
       if (w.startsWith("/") || w.includes("${")) continue;
       const p = treeKey(posix.normalize(`${base}${w}`).replace(/\/+$/, ""));
       if (p === "." || p.startsWith("../") || p === "..") continue;
+      // A word that looks like an 8.3 alias (`SERVER~1.TXT`, `LIB~1/x`) can name a file no listing shows by that name, so
+      // the folder it sits in counts as code whole (#197's check 5).
+      const segs = p.split("/");
+      const alias = segs.findIndex((seg) => /~\d/.test(seg));
+      if (alias >= 0) {
+        const folder = segs.slice(0, alias).join("/");
+        out.add(folder === "" ? whole : folder);
+        continue;
+      }
       if (files.has(p) || folders.has(p)) out.add(p);
     }
   }
@@ -252,7 +276,8 @@ function cardsOf(tree: TreeReport, files: readonly TreeEntry[]): string {
 }
 
 /** The snapshot an OK keeps. */
-export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: TreeReport, codeFieldsOf: CodeFieldsOf): OkSnapshot {
+/** `loaderCode`: the files the tree's loader configs reach inside it (`loaderReach`), counted as code. */
+export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: TreeReport, codeFieldsOf: CodeFieldsOf, loaderCode: readonly string[] = []): OkSnapshot {
   const plugins: Record<string, PluginFingerprint> = { "": fingerprintOf(tree.top, codeFieldsOf) };
   for (const c of tree.children) plugins[c.folder] = fingerprintOf(c.report, codeFieldsOf);
   const fileSet = new Set(files.map((f) => treeKey(f.path)));
@@ -261,6 +286,26 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
   for (const c of tree.children) for (const p of pathsNamed(runStrings(c.report.manifest, codeFieldsOf), `plugins/${c.folder}/`, fileSet, folders)) codePaths.add(p);
   for (const p of partDirs(tree.top.manifest, "")) codePaths.add(p);
   for (const c of tree.children) for (const p of partDirs(c.report.manifest, `plugins/${c.folder}/`)) codePaths.add(p);
+  // Files that steer how code loads (#234's review, F2): a tsconfig `paths` entry, a package.json `imports` or `exports`
+  // map, a bunfig preload, an .npmrc registry or a .env file can make the plugin's code run another file, without
+  // their extension saying so. Wherever they sit in the tree, they are code.
+  for (const k of fileSet) if (isLoaderConfig(k)) codePaths.add(k);
+  // And what they reach through `extends`, `paths` and package maps (#234's review, F2).
+  for (const p of loaderCode) codePaths.add(treeKey(p));
+    // A plugin that brings an agent backend has every file of its folder counted as code (lane K, on #233): what the
+  // agent runs with can name a file anywhere in it without a manifest field naming it (a quirks file's `envSet` value,
+  // `NODE_OPTIONS=--require <file>`), so no edit there applies without a new OK.
+  // The manifest itself stays out: its fields are judged one by one above (`runsOf`), so a display name still applies.
+  const runsAgent = (m: Manifest | undefined) => (m?.contributes?.agentBackends?.length ?? 0) > 0;
+  if (runsAgent(tree.top.manifest)) {
+    const childDirs = tree.children.map((c) => treeKey(`plugins/${c.folder}`) + "/");
+    for (const k of fileSet) if (k !== treeKey(MANIFEST_FILE) && !childDirs.some((d) => k.startsWith(d))) codePaths.add(k);
+  }
+  for (const c of tree.children) {
+    if (!runsAgent(c.report.manifest)) continue;
+    const dir = treeKey(`plugins/${c.folder}`) + "/";
+    for (const k of fileSet) if (k.startsWith(dir) && k !== dir + treeKey(MANIFEST_FILE)) codePaths.add(k);
+  }
   return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
 }
 

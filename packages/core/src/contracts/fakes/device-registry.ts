@@ -4,7 +4,7 @@ import type { DeviceKind, Os } from "@waifucave/clover-protocol";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  answerKeyAlgOf, answerKeyOf, deviceIdFor, verifyKeySignature,
+  answerKeyAlgOf, answerKeyOf, deviceIdFor, holderFitsAlg, verifyKeySignature,
   type DeviceChange, type DeviceRecord, type DeviceRegistry, type PairingProof,
 } from "../device-registry";
 
@@ -27,6 +27,20 @@ export async function makeFakeDevice(): Promise<FakeDevice> {
     publicKey: b64(raw),
     sign: async (data) => new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, pair.privateKey, data as Uint8Array<ArrayBuffer>)),
   };
+}
+
+/** A phone as it pairs (no fallback, lane H's ask): its link key (`id`, `publicKey`, `link`) and an answer key apart
+ *  from it (`answerKey`, for its record), which `sign` signs with, since a phone answers only with its answer key. */
+export interface FakePhone extends FakeDevice {
+  answerKey: { publicKey: string; held: "keychain" };
+  link: FakeDevice;
+}
+
+/** Makes a phone: a link key, and an answer key in memory. Pair it with `answerKey: phone.answerKey`. */
+export async function makeFakePhone(): Promise<FakePhone> {
+  const link = await makeFakeDevice();
+  const answers = await makeFakeDevice();
+  return { id: link.id, publicKey: link.publicKey, sign: answers.sign, answerKey: { publicKey: answers.publicKey, held: "keychain" }, link };
 }
 
 export class FakeDeviceRegistry implements DeviceRegistry {
@@ -74,6 +88,7 @@ export class FakeDeviceRegistry implements DeviceRegistry {
     if (existing?.revokedAt !== undefined) throw new ContractError("refused", `${device.id} was revoked; pair it again with a new key`);
     if (proof.via === "self") throw new ContractError("invalid", "only this device is added as itself");
     if ((await deviceIdFor(unb64(device.publicKey))) !== device.id) throw new ContractError("invalid", "the id doesn't match the key");
+    if (device.answerKey !== undefined && !holderFitsAlg(device.answerKey.held, device.answerKey.alg)) throw new ContractError("invalid", `${device.answerKey.held} holds only P-256 keys`);
     const record: DeviceRecord = { ...device, addedAt: this.#clock.now(), addedBy: proof.via };
     this.#devices.set(device.id, record);
     this.#listeners.emit({ type: "added", device: { ...record } });

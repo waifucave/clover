@@ -20,6 +20,7 @@ import { parseJsonc } from "../jsonc";
 import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, POINT_NAME_RE } from "./fields";
+import { checkArgsSchema } from "./args";
 import { parseInterpolation, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
@@ -59,6 +60,9 @@ export interface ManifestReport {
   settings: string[];
   /** `stdio` commands that fetch code when they run (`npx`, `uvx`, …), which the OK flags (§5.6). */
   fetchesCode: string[];
+  /** It declares programs of its own (a `stdio` server, a helper, or a Node host, Clover's own plugins only), which
+   *  Clover's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
+  ownPrograms: boolean;
   addons: boolean;
   /** The code-loading built-ins its host code may import (`builtins`), which the OK lists. */
   builtins: string[];
@@ -235,6 +239,13 @@ function checkSetting(f: Findings, key: string, s: Record<string, unknown>): voi
   if (!ok) f.error("plugin", "setting_default", [...at, "default"], `the default doesn't fit a \`${type}\` setting`);
 }
 
+/** A declaration as JSON with sorted keys, to tell one spot's repeats apart. */
+function canonicalDecl(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalDecl).join(",")}]`;
+  if (v !== null && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonicalDecl((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v) ?? "null";
+}
+
 /** Checks a point declaration (§5.4): names, the prefix rule, well-known declarations and who may declare a spot. */
 function checkDeclares(f: Findings, topId: string | undefined, declares: unknown, by: Seg[], declarer: { ui?: Record<string, unknown> }, refuses: Exclude<Refuses, "none">, seen: Map<string, string>, out: DeclaredPoint[]): void {
   if (!isObject(declares)) return;
@@ -271,11 +282,15 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
       continue;
     }
     const where = jsonPointer(at);
-    if (seen.has(name)) {
-      f.error(refuses, "point_duplicate", at, `"${name}" is declared twice (also at ${seen.get(name)})`);
+    // A UI spot may be declared on several of a plugin's entries (lane F: its panel and its Files view both declare
+    // `file.preview`), each a place the spot shows, all with the same declaration; any other point is declared once.
+    const key = spot ? `${name}\u0000${canonicalDecl(d)}` : undefined;
+    if (seen.has(name) && !(spot && seen.get(`${name}\u0000spot`) === key)) {
+      f.error(refuses, "point_duplicate", at, `"${name}" is declared twice (also at ${seen.get(name)})${spot ? " with another declaration" : ""}`);
       continue;
     }
-    seen.set(name, where);
+    if (!seen.has(name)) seen.set(name, where);
+    if (key !== undefined) seen.set(`${name}\u0000spot`, key);
     out.push({ name, by: by.length === 1 ? String(by[0]) : by.slice(1).join("/"), shape: d.shape as PointDecl["shape"], spot, wellKnown });
   }
 }
@@ -284,7 +299,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], addons: false, builtins: [], adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], ownPrograms: false, addons: false, builtins: [], adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -371,6 +386,12 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   if (isObject(top.helper) && isObject(top.helper.bin) && Object.keys(top.helper.bin).length === 0) {
     f.error("plugin", "helper_bin", ["helper", "bin"], "a helper names its program for at least one platform");
   }
+  // A host half runs under Bun, where Clover's load guard holds it to its folder (#234's check 3, the controller's
+  // ruling); a program of its own is declared as a `stdio` server or a helper, which the OK covers and Clover doesn't
+  // confine. Only Clover's own plugins keep a Node host (the cloud model plugins' signing).
+  if (isObject(top.host) && top.host.runtime === "node" && topId !== BUNDLED_ROOT_PLUGIN) {
+    f.error("plugin", "host_runtime_bundled_only", ["host", "runtime"], "a plugin's host runs under Bun; a program of its own goes in a `stdio` server or a helper");
+  }
 
   // A built plugin (`built: true`) names JavaScript modules only: TypeScript would mean the build didn't run.
   if (top.built === true && opts.bundled !== true) {
@@ -448,7 +469,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     for (const [key, value] of Object.entries(rawContributes)) {
       const at: Seg[] = ["contributes", key];
       if ((CORE_CONTRIBUTION_KEYS as string[]).includes(key)) {
-        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, topId, id, seenDecl, declared, refusedPathUnder });
+        const result = checkCoreContribution(f, key as CoreContributionKey, value, at, { hasHost, hasClient, isBot, topId, id, namespace, seenDecl, declared, refusedPathUnder });
         if (result !== undefined) kept[key] = result;
       } else if (DOTTED_POINT_NAME_RE.test(key)) {
         const result = checkPluginPointValue(f, key, value, at, { hasHost });
@@ -530,6 +551,8 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
   }
 
+  const ownPrograms = isObject(top.helper) || (isObject(top.host) && top.host.runtime === "node")
+    || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
   const ok = !f.refusesPlugin();
   return {
     ok,
@@ -546,6 +569,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     toolNames,
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
+    ownPrograms,
     addons: top.addons !== undefined,
     builtins: Array.isArray(top.builtins) ? top.builtins.filter((b): b is string => typeof b === "string") : [],
     adult: top.adult === true,
@@ -561,6 +585,8 @@ interface CoreCtx {
   isBot: boolean;
   topId: string | undefined;
   id: string | undefined;
+  /** The plugin's namespace (its top-level plugin's, for a child). */
+  namespace: string | undefined;
   seenDecl: Map<string, string>;
   declared: DeclaredPoint[];
   refusedPathUnder(at: Seg[]): boolean;
@@ -760,7 +786,17 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false) && ok; });
       return ok;
     }
-    case "commands":
+    case "commands": {
+      // A command's args schema in the subset `command.run` enforces (F-M3's review N4), or it takes no call.
+      if (e.args !== undefined) {
+        const schema = checkArgsSchema(e.args);
+        if (!schema.ok) {
+          f.error("entry", "args_schema", [...at, "args", ...schema.path.split("/").slice(1).map((seg) => seg.replace(/~1/g, "/").replace(/~0/g, "~"))], `the args schema uses \`${schema.keyword}\`, which commands don't take or isn't well formed`);
+          return false;
+        }
+      }
+      return needHost("handler");
+    }
     case "triggers":
     case "relays":
     case "notifiers":
@@ -794,7 +830,17 @@ function checkAuthHandlers(f: Findings, auth: unknown, at: Seg[], ctx: CoreCtx):
 
 function checkUi(f: Findings, e: Record<string, unknown>, at: Seg[], ctx: CoreCtx): boolean {
   const kinds = ["component", "web", "style", "hide"].filter((k) => (k === "hide" ? e.hide === true : e[k] !== undefined));
-  if (kinds.length !== 1) {
+  // A message's menu item runs a command, and only one of the plugin's own: another plugin's would run it without
+  // `call:<that plugin>` (the controller's ruling on lane F's F-M3). The app draws the item, so it needs no component.
+  if (e.spot === "menu.message" && e.command !== undefined) {
+    const ns = typeof e.command === "string" ? e.command.slice(0, Math.max(0, e.command.indexOf("."))) : undefined;
+    if (ns === undefined || ns === "" || ns !== ctx.namespace) {
+      f.error("entry", "menu_command_namespace", [...at, "command"], `a message menu item runs one of the plugin's own commands (\`${ctx.namespace ?? "<namespace>"}.<name>\`)`);
+      return false;
+    }
+  }
+  const commandOnly = e.spot === "menu.message" && typeof e.command === "string" && kinds.length === 0;
+  if (kinds.length !== 1 && !commandOnly) {
     f.error("entry", "ui_one_of", at, "a `ui` entry has exactly one of `component`, `web`, `style` or `hide: true`");
     return false;
   }
@@ -936,6 +982,7 @@ export function describeOk(
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
+  if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.builtins.length > 0) lines.push(`Its code can load or run other code, which Clover doesn't check (${report.builtins.join(", ")}).`);
   if (report.adult) lines.push("It may contain adult content.");

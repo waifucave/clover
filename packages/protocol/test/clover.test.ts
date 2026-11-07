@@ -8,7 +8,7 @@ import {
 } from "../src/clover";
 import { CloverSessionEvent, SENT_AT_WINDOW_MS, SessionView, clampSentAt, userMessageHashInput, userMessageSigningInput } from "../src/sessions";
 import { Caller as CallerSchema, DeviceOs, Os, isComputerOs } from "../src/common";
-import { DeviceView, PEER_STREAM_GRANTS } from "../src/devices";
+import { DeviceView, LeaseView, PEER_STREAM_GRANTS } from "../src/devices";
 import { NeedsAnswer } from "../src/computers";
 import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
 import { paramsFor } from "../src/rpc";
@@ -544,6 +544,22 @@ describe("#179's review and H-M1's asks", () => {
     expect([set.roles, set.userOnly]).toEqual([["app"], true]);
     expect(set.params.safeParse({ publicKey: "A".repeat(43) + "=", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(true);
     expect(set.params.safeParse({ publicKey: "not base64!", held: "app-keychain", signature: "B".repeat(86) + "==" }).success).toBe(false);
+    // Only holders that never prompt (the owner's rule): no Windows Hello; DPAPI, the Secret Service and a plain
+    // Keychain item instead.
+    for (const held of ["keychain", "dpapi", "secret-service"]) {
+      expect([held, set.params.safeParse({ publicKey: "A".repeat(43) + "=", held, signature: "B".repeat(86) + "==" }).success]).toEqual([held, true]);
+    }
+    expect(set.params.safeParse({ publicKey: "A".repeat(43) + "=", held: "hello", signature: "B".repeat(86) + "==" }).success).toBe(false);
+  });
+
+  test("the lease view names its holder for a client: this device, a computer it knows, or one it doesn't (lane H)", () => {
+    const lease = { main: null, holder: "desk0000000000000001", epoch: 3, expiresAt: 1, refresher: null, state: "held" };
+    for (const heldBy of [{ kind: "self" }, { kind: "computer", computer: "Studio" }, { kind: "unknown" }, null]) {
+      expect(LeaseView.safeParse({ ...lease, heldBy }).success).toBe(true);
+    }
+    expect(LeaseView.safeParse(lease).success).toBe(true);
+    expect(LeaseView.safeParse({ ...lease, heldBy: { kind: "unknown", computer: "Studio" } }).data?.heldBy).toEqual({ kind: "unknown" });
+    expect(LeaseView.safeParse({ ...lease, heldBy: { kind: "stranger" } }).success).toBe(false);
   });
 });
 
@@ -639,5 +655,39 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
   test("F: the plugin list says whether the user already confirmed they're 18 or older", () => {
     expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [], adultConfirmed: true }).success).toBe(true);
     expect(CLOVER_METHODS.get("plugin.list")!.result.safeParse({ plugins: [], adultConfirmed: "yes" }).success).toBe(false);
+  });
+});
+
+describe("the tree protocol version (lane J's noFollow, #225)", () => {
+  test("noFollow is a tree.stat and tree.read param, and needs tree 1.1 of the peer", async () => {
+    const { CLOVER_METHODS: M, TREE_PROTOCOL, peerTakesTreeCall, treeFeature, treeProtocolOf } = await import("../src/index");
+    expect(M.get("tree.stat")!.params.safeParse({ path: "home/Studio/a", noFollow: true }).success).toBe(true);
+    expect(M.get("tree.read")!.params.safeParse({ path: "home/Studio/a", noFollow: true }).success).toBe(true);
+    expect(M.get("tree.read")!.params.safeParse({ path: "home/Studio/a", noFollow: "yes" }).success).toBe(false);
+    expect(TREE_PROTOCOL).toEqual({ major: 1, minor: 1 });
+    expect(treeFeature()).toBe("tree/1.1");
+    expect(treeProtocolOf(undefined)).toEqual({ major: 1, minor: 0 });
+    expect(treeProtocolOf(["x", "tree/1.1", "tree/1.0"])).toEqual({ major: 1, minor: 1 });
+    expect(treeProtocolOf(["tree/1.x", "tree/"])).toEqual({ major: 1, minor: 0 });
+    expect(peerTakesTreeCall("tree.stat", { path: "a", noFollow: true }, [])).toBe(false);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/1.0"])).toBe(false);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/1.1"])).toBe(true);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/1.2"])).toBe(true);
+    expect(peerTakesTreeCall("tree.read", { path: "a", noFollow: true }, ["tree/2.0"])).toBe(false);
+    expect(peerTakesTreeCall("tree.read", { path: "a" }, [])).toBe(true);
+    expect(peerTakesTreeCall("tree.list", { path: "a", noFollow: true }, [])).toBe(true);
+  });
+});
+
+describe("lane F's F-M3 asks of B", () => {
+  test("ui.set keeps appearance and textSize; a plugin's setting view carries options, min and max", async () => {
+    const { CLOVER_METHODS: M, PluginSettingView, UiSettings } = await import("../src/index");
+    const patch = M.get("ui.set")!.params.parse({ patch: { appearance: "dark", textSize: "large" } }) as { patch: Record<string, unknown> };
+    expect(patch.patch).toEqual({ appearance: "dark", textSize: "large" });
+    expect(UiSettings.partial().safeParse({ appearance: "dim" }).success).toBe(false);
+    expect(UiSettings.partial().safeParse({ textSize: 14 }).success).toBe(false);
+    const view = { key: "region", type: "enum", title: "Region", scope: "account", required: false, set: false };
+    expect(PluginSettingView.parse({ ...view, options: ["eu", { value: "us", title: "United States" }] }).options).toEqual(["eu", { value: "us", title: "United States" }]);
+    expect(PluginSettingView.parse({ ...view, type: "number", min: 1, max: 10 })).toMatchObject({ min: 1, max: 10 });
   });
 });

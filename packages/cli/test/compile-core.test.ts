@@ -65,6 +65,8 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
     for (const name of ["compile", "compile:core"]) {
       const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/))[2]!;
       expect([name, compile.includes("--no-compile-autoload-bunfig"), compile.includes("--no-compile-autoload-dotenv")]).toEqual([name, true, true]);
+      // #234's check 5: the plugin-run probe route is in no release build; only verify:fd-receiver flips this.
+      expect([name, compile.join(" ").includes("--define CLOVER_PLUGIN_RUN_PROBE=false")]).toEqual([name, true]);
     }
   });
 
