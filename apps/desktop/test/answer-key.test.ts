@@ -6,7 +6,7 @@ import { createPublicKey, verify } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AnswerKey, answerKeyStatement, holderFor, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
+import { AnswerKey, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
 
 const SPKI_ED25519 = Buffer.from("302a300506032b6570032100", "hex");
 const verifier = (publicKey: string) => createPublicKey({ key: Buffer.concat([SPKI_ED25519, Buffer.from(publicKey, "base64")]), format: "der", type: "spki" });
@@ -49,16 +49,16 @@ describe("the answer key", () => {
   });
 
   test("only macOS's Keychain keeps it from plugin code; elsewhere the core hears so", () => {
-    expect(holderFor("darwin")).toBe("app-keychain");
-    expect(holderFor("win32")).toBe("none");
-    expect(holderFor("linux")).toBe("none");
+    expect(safeStorageVault("/x", fakeStorage, "darwin").held).toBe("app-keychain");
+    expect(safeStorageVault("/x", fakeStorage, "win32").held).toBe("none");
+    expect(safeStorageVault("/x", fakeStorage, "linux").held).toBe("none");
   });
 
   test("the user is never asked for their presence or identity to hold or to use the key (the owner's decision, E-M2)", () => {
     // The holder names: none of them is a prompt-gated one on this side; a Windows Hello key credential and a TPM or
     // Secure Enclave key with a user-presence ACL would ask. What the app holds is safeStorage's Keychain item / DPAPI
     // / Secret Service, which keep it at rest with no ACL, and the stores' names for the core stay honest above.
-    const labels = [holderFor("darwin"), holderFor("win32"), holderFor("linux")];
+    const labels = (["darwin", "win32", "linux"] as const).map((p) => safeStorageVault("/x", fakeStorage, p).held);
     expect(labels).not.toContain("hello");
     expect(labels).not.toContain("tpm");
     // Loading, saving (over a made key) and signing stay free of anything the OS would ask about.
