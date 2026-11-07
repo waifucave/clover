@@ -33,6 +33,7 @@ import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { botSegment, transcriptsDir } from "../sessions/ids";
 import type { SideThreadRun } from "../bots/service";
 import { settingsDir } from "../bots/gate";
+import { readOwnFile } from "../bots/own-file";
 import { parseRoutine, routineHash, triggerSummary, withId, ROUTINE_FILE_MAX_BYTES, type RoutineFile, type RoutineTrigger } from "./file";
 import { firesBetween, nextRunInZone } from "./zone";
 import { isLate, untrusted, WEBHOOK_LATE_MS } from "../../../../plugins/clover/plugins/trigger-webhook/src/webhook";
@@ -102,6 +103,8 @@ export interface RoutineEngineOptions {
   /** Watches the folder for changes; tests turn it off and call `rescan`. */
   watchFiles?: boolean;
   /** Registers a webhook routine with the `webhook.ingress` plugins (webhooks.ts) and gives back its URL. */
+  /** The plugins whose active `triggers` entry has this type: the ones that may fire it (`fire`). */
+  triggerOwners?(type: string): string[];
   /** Registers a webhook routine with its ingress (its trigger's named one, else the first), giving its URL. */
   registerWebhook?(id: string, key: string, ingress?: string): Promise<string>;
   warn?: (message: string) => void;
@@ -265,9 +268,16 @@ export class RoutineEngine {
     return out;
   }
 
-  /** The routines here with a webhook trigger (the ingress registers each). */
-  webhookRoutines(): string[] {
-    return [...this.#loaded.entries()].filter(([key, l]) => !key.includes("@") && l.state === "active" && l.routine.triggers.some((t) => t.type === "webhook")).map(([key]) => key);
+  /** The routines here with a webhook trigger, each with the ingress its trigger names (the ingress registers each,
+   *  and again when the name changes). */
+  webhookRoutines(): { id: string; ingress?: string }[] {
+    const out: { id: string; ingress?: string }[] = [];
+    for (const [key, l] of this.#loaded) {
+      if (key.includes("@") || l.state !== "active") continue;
+      const t = l.routine.triggers.find((x): x is Extract<RoutineTrigger, { type: "webhook" }> => x.type === "webhook");
+      if (t !== undefined) out.push({ id: key, ...(t.ingress === undefined ? {} : { ingress: t.ingress }) });
+    }
+    return out;
   }
 
   /** A delivery an ingress plugin took (its service checked the key's hash): run once per delivery id, with the
@@ -310,7 +320,12 @@ export class RoutineEngine {
   }
 
   /** A plugin trigger fired (lane B's API, for the plugin that armed it). */
-  async fire(id: string, type: string, payload?: string): Promise<void> {
+  /** A plugin's trigger fired a routine. Only a plugin that contributes that trigger type (an active `triggers`
+   *  entry, `triggerOwners`) fires it; the bundled schedule and webhook types are the core's own, never fired so. */
+  async fire(id: string, type: string, from: { pluginId: string }, payload?: string): Promise<void> {
+    if (type === "schedule" || type === "webhook") throw new ContractError("refused", `${type} triggers are the core's own; no plugin fires them`);
+    const owners = this.#o.triggerOwners?.(type) ?? [];
+    if (!owners.includes(from.pluginId)) throw new ContractError("refused", `${from.pluginId} doesn't contribute the ${type} trigger, so it can't fire it`);
     const l = this.#must(id);
     if (!l.routine.triggers.some((t) => t.type === type)) throw new ContractError("refused", `the routine ${id} has no ${type} trigger`);
     if (l.state !== "active") return;
@@ -383,13 +398,15 @@ export class RoutineEngine {
       for (const file of readdirSync(join(root, folder.name)).filter((n) => n.endsWith(".md")).sort()) {
         const path = join(root, folder.name, file);
         try {
-          const st = lstatSync(path);
-          if (!st.isFile() || st.isSymbolicLink()) continue;
-          if (st.size > ROUTINE_FILE_MAX_BYTES) {
-            this.#warn(`${path} is larger than ${ROUTINE_FILE_MAX_BYTES} bytes; it isn't loaded`);
+          // Never through a link the bot left (toward another bot's routine or data, the fence review): the folder and
+          // the file are read as the bot's own, from the Clover home down.
+          const read = readOwnFile(this.#o.home, path, { maxBytes: ROUTINE_FILE_MAX_BYTES, whole: true });
+          if (!read.ok) {
+            if (read.why === "too-large") this.#warn(`${path} is larger than ${ROUTINE_FILE_MAX_BYTES} bytes; it isn't loaded`);
+            else if (read.why === "link" || read.why === "moved") this.#warn(`${path} is a link, or under one; it isn't loaded`);
             continue;
           }
-          let text = readFileSync(path, "utf8");
+          let text = read.data.toString("utf8");
           const parsed = parseRoutine(text, basename(file, ".md"));
           if (!parsed.ok) {
             this.#warn(`${path} isn't loaded: ${parsed.reason}`);
@@ -567,6 +584,9 @@ export class RoutineEngine {
       this.#saveState();
       this.#appendRun(id, run);
       this.#changes.emit({ bot: l.bot });
+      // TODO(B-M2): send the result to the notifier plugins (kind "routine-result", `failed: run.outcome === "failed"`)
+      // once lane B's plugin host (B-M2) carries the core's notifier calls. No core path reaches notifiers on main yet,
+      // so until then no routine result reaches a notifier at all, failed or not.
       return run;
     } catch (err) {
       return this.#record(l, { outcome: "skipped", summary: `It didn't run: ${err instanceof Error ? err.message : String(err)}`.slice(0, 4000) });

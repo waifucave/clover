@@ -60,11 +60,13 @@ export function formatTurnInput(input: TurnInput, kind: "bot" | "side-thread"): 
         label: input.label,
         from: input.by.kind === "core" ? "clover" : input.by.kind === "hook" ? `${input.by.pluginId} (${input.by.hook})` : input.by.pluginId,
       }, input.text);
+    case "task":
+      // A background task of the session's own runtime, handed to the host by `ctx.wake` (lane D's follow-up). Its
+      // text is what the task printed: framed as data, never instructions.
+      return wrap("background-task", { id: input.task, status: input.status }, `${BACKGROUND_TASK_FRAME}\n${input.text}`);
     default: {
-      // Lane D's `{ from: "task" }` (a background task of this session's runtime ended: `ctx.wake`), and any input
-      // kind added after this switch: labelled with where it came from, never read as the user's.
-      const other = input as { from: string; text?: string; task?: string; status?: string };
-      if (other.from === "task") return wrap("background-task", { id: other.task, status: other.status }, `${BACKGROUND_TASK_FRAME}\n${other.text ?? ""}`);
+      // Any input kind added after this switch: labelled with where it came from, never read as the user's.
+      const other = input as { from: string; text?: string };
       return wrap("message", { from: other.from }, other.text ?? "");
     }
   }
