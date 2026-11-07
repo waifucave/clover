@@ -363,6 +363,21 @@ function trackCall(open: Map<string, string>, event: { type: string; [key: strin
   else if (event.type === "tool_result") open.delete(callId);
 }
 
+/** A record as this computer keeps a copy of it: a grant renamed so it grants nothing here, marked late if so. */
+function copied(r: SessionRecord, late: boolean): SessionRecord {
+  let copy = structuredClone(r) as SessionRecord & { late?: true };
+  if (copy.type === "driver" && copy.event.type === "session_grant") copy = { ...copy, event: { ...copy.event, type: COPIED_GRANT_EVENT_TYPE } };
+  if (late) copy.late = true;
+  return copy;
+}
+
+/** Whether a held record is the one copied again: alike but for the late mark (a resend can carry another). */
+function sameRecord(held: SessionRecord, incoming: SessionRecord): boolean {
+  const { late: _a, ...a } = held as SessionRecord & { late?: true };
+  const { late: _b, ...b } = incoming as SessionRecord & { late?: true };
+  return Bun.deepEquals(a, b);
+}
+
 function readMeta(path: string): SessionMeta | undefined {
   const v = readJson(path) as Partial<SessionMeta> | undefined;
   if (v !== undefined && typeof v.meta === "number" && v.meta > SESSION_META_VERSION) {
@@ -658,21 +673,34 @@ export class DurableSessionHost implements SessionHost {
   /** Records copied from the computer running the session (lane H's `SessionRecordSync`), appended to this computer's
    *  log in seq order (`SessionRecordSink.ingest`):
    *  * a session not known here is opened dormant from `view`, with no driver and no record of its own;
-   *  * a record already held (its seq below the head) is skipped, so a repeat is harmless; one past the head is a gap
-   *    and nothing is taken (the sync asks for the history first);
+   *  * a record already held (its seq below the head) is skipped when it is the same record, so a repeat is harmless;
+   *    a different record at a held seq is a fork (two computers wrote that place) and refuses the batch `conflict`;
+   *    one past the head is a gap and nothing is taken (the sync asks for the history first);
    *  * a copied `session_grant` is kept as `session_grant_copied`, which grants nothing here and never reaches clients;
    *  * `late` (from an earlier lease) marks each record it appends;
    *  * no driver ever runs, and nothing is sent on (taps aren't told: the copy isn't this computer's to sync).
-   *  A session this computer runs (it holds its driver) takes no copies. A known session's runner follows `view`. */
+   *  A session this computer runs takes no copies: any session but a bot's main conversation, and that one while the
+   *  lease is here or a turn of its still runs here. A bot's main conversation keeps its driver on every computer (the
+   *  bot side opens it so) and takes copies while the lease is elsewhere; what they queue and a turn they leave open
+   *  are kept as a restart would read them, so a takeover runs what waits and catches the open turn up. A known
+   *  session's runner follows `view`. */
   ingest(view: SessionView, records: SessionRecord[], opts: { from: string; late: boolean }): void {
     let s = this.#sessions.get(view.id);
-    if (s?.driver !== undefined) throw new ContractError("refused", `this computer runs session ${view.id}; its records aren't copied here from ${opts.from}`);
+    if (s !== undefined && s.driver !== undefined && (s.running !== undefined || s.compacting !== undefined || this.#runHere(s))) {
+      throw new ContractError("refused", `this computer runs session ${view.id}; its records aren't copied here from ${opts.from}`);
+    }
     const log = s === undefined ? undefined : this.#logOf(s);
     let next = log?.length ?? 0;
-    // Checked whole before anything is written: a gap or another session's record takes nothing.
+    // Checked whole before anything is written: a gap, a fork or another session's record takes nothing.
     for (const r of records) {
       if (r.sessionId !== view.id) throw new ContractError("invalid", `a record of ${r.sessionId} was copied as ${view.id}'s`);
-      if (r.seq < next) continue;
+      if (r.seq < next) {
+        const held = log!.read(r.seq, r.seq + 1)[0];
+        if (held === undefined || !sameRecord(held, copied(r, false))) {
+          throw new ContractError("conflict", `session ${view.id}: this computer holds another record at seq ${r.seq} than ${opts.from} sent; the two logs forked there`);
+        }
+        continue;
+      }
       if (r.seq > next) throw new ContractError("invalid", `session ${view.id}: a gap before seq ${r.seq} (this computer holds up to ${next - 1}); the history comes first`);
       next++;
     }
@@ -687,26 +715,44 @@ export class DurableSessionHost implements SessionHost {
       file.load();
       s = this.#hosted(meta, file);
       this.#sessions.set(meta.id, s);
-    } else if (view.computer !== s.meta.computer) this.#patchMeta(s, { computer: view.computer });
+    } else if (view.computer !== s.meta.computer) {
+      this.#patchMeta(s, { computer: view.computer });
+      s.view = { ...s.view, computer: view.computer };
+    }
     const hosted = s;
     const target = this.#logOf(hosted);
-    let changed = false;
+    // The copies replayed onto what the session holds now, as a restart would read the whole log.
+    const replay = new Replay();
+    replay.running = hosted.foreignTurn !== undefined;
+    replay.runningOn = hosted.foreignTurn?.on;
+    replay.queue = [...hosted.queue];
+    replay.pending = [...hosted.pending];
+    replay.status = hosted.view.status;
+    replay.failure = hosted.view.failure;
+    for (const [k, v] of hosted.clientIds) replay.clientIds.set(k, v);
+    for (const q of hosted.questions) replay.questions.add(q);
+    let appended = 0;
     for (const r of records) {
       if (r.seq < target.length) continue;
-      let copy = structuredClone(r) as SessionRecord & { late?: true };
-      if (copy.type === "driver" && copy.event.type === "session_grant") copy = { ...copy, event: { ...copy.event, type: COPIED_GRANT_EVENT_TYPE } };
-      if (opts.late) copy.late = true;
+      const copy = copied(r, opts.late);
       target.append(copy, { durable: copy.type !== "driver" });
       hosted.subscribers.emit(structuredClone(copy));
-      if (copy.type === "status") {
-        hosted.view = { ...hosted.view, status: copy.status, ...(copy.failure === undefined ? {} : { failure: copy.failure }) };
-        changed = true;
-      }
-      if (copy.type === "driver" && trackQuestion(hosted.questions, copy.event)) changed = true;
+      replay.apply(copy);
       hosted.view = { ...hosted.view, updatedAt: copy.ts };
+      appended++;
     }
+    if (appended === 0) return;
+    hosted.queue = replay.queue;
+    hosted.pending = replay.pending;
+    for (const [k, v] of replay.clientIds) hosted.clientIds.set(k, v);
+    hosted.questions.clear();
+    for (const q of replay.questions) hosted.questions.add(q);
+    // A turn the runner has open is caught up only if this computer takes the session over.
+    if (replay.running && replay.runningOn !== undefined && replay.runningOn !== this.#computer) hosted.foreignTurn = { on: replay.runningOn };
+    else delete hosted.foreignTurn;
+    hosted.view = { ...hosted.view, status: replay.status, ...(replay.failure === undefined ? {} : { failure: replay.failure }) };
     if (isEnded(hosted.view.status) && hosted.meta.ended === undefined) this.#markEnded(hosted);
-    if (changed || records.length > 0) this.#emitView(hosted);
+    this.#emitView(hosted);
   }
 
   /** How many records the session's log holds. */
@@ -808,6 +854,8 @@ export class DurableSessionHost implements SessionHost {
     }
     if (!this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } })) return 0;
     delete s.foreignTurn;
+    // The status the other computer's turn left (copied with it) ends with that turn, as a restart's would.
+    if (s.view.status === "prompting" || s.view.status === "cancelling" || s.view.status === "starting") this.#setStatus(s, "idle");
     return open.size;
   }
 

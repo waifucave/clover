@@ -96,4 +96,66 @@ describe("ingest: a session's records copied from the computer running it", () =
     const wire = [...projectRecords(records, { kind: "bot" }), ...projectRecords(laptop.history("b_alpha"), { kind: "bot" })];
     expect(wire.some((e) => e.type === "session_grant" || e.type === "session_grant_copied")).toBe(false);
   });
+
+  test("a bot's conversation the lease left keeps its driver and takes copies; a takeover ends the open turn and runs here", async () => {
+    const clock = new FakeClock();
+    let laptopRuns = true;
+    const studio = new DurableSessionHost({ home: tempHome(), clock, computer: "Studio" });
+    const laptop = new DurableSessionHost({ home: tempHome(), clock, computer: "Laptop", runsHere: () => laptopRuns, mayStart: () => laptopRuns });
+    const laptopDriver = new FakeSessionDriver({ canFold: true });
+    // Both computers ran the bot before they paired: each opened its conversation.
+    laptop.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Laptop" }, laptopDriver);
+    const view = studio.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, new FakeSessionDriver({ canFold: true }));
+    // While the lease is here, this computer runs it and takes no copies.
+    const here = await Promise.resolve().then(() => laptop.ingest(view, studio.history("b_alpha"), { from: "studio-device", late: false })).catch((e: unknown) => e);
+    expect(isContractError(here, "refused")).toBe(true);
+    // Studio becomes main: a turn starts there, and a second message waits behind it.
+    laptopRuns = false;
+    await studio.sendUser("b_alpha", { text: "first", device: "studio", sentAt: 1, clientMessageId: "m1" });
+    await studio.sendUser("b_alpha", { text: "second", device: "studio", sentAt: 2, clientMessageId: "m2" });
+    await flush();
+    const records = studio.history("b_alpha");
+    expect(records.some((r) => r.type === "turn_started")).toBe(true);
+    // The opening both wrote alike is the same record, skipped; the rest goes on. Nothing runs here.
+    laptop.ingest(view, records, { from: "studio-device", late: false });
+    laptop.resume();
+    await flush();
+    expect(laptop.head("b_alpha")).toBe(records.length);
+    expect(laptop.get("b_alpha")?.computer).toBe("Studio");
+    expect(laptopDriver.turns).toHaveLength(0);
+    // Studio goes away mid-turn and the lease comes here: the open turn is ended, and the next message runs here.
+    laptopRuns = true;
+    laptop.resume();
+    await flush();
+    const after = laptop.history("b_alpha", { afterSeq: records.length - 1 });
+    expect(after[0]).toMatchObject({ type: "turn_ended", end: { reason: "interrupted" } });
+    // The second message interrupted the first there and its turn was left open: nothing waits, nothing ran here.
+    expect(laptopDriver.turns).toHaveLength(0);
+    expect(laptop.get("b_alpha")?.status).toBe("idle");
+    await laptop.sendUser("b_alpha", { text: "third", device: "laptop", sentAt: 3, clientMessageId: "m3" });
+    await flush();
+    expect(laptopDriver.turns.map((t) => (t.input as { text?: string }).text)).toEqual(["third"]);
+  });
+
+  test("a different record at a held seq is a fork: refused whole, nothing written", async () => {
+    const clock = new FakeClock();
+    const studio = new DurableSessionHost({ home: tempHome(), clock, computer: "Studio" });
+    const laptop = new DurableSessionHost({ home: tempHome(), clock, computer: "Laptop" });
+    const view = studio.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, new FakeSessionDriver({ canFold: true }));
+    await studio.sendUser("b_alpha", { text: "from the studio", device: "studio", sentAt: 1, clientMessageId: "m1" });
+    const records = studio.history("b_alpha");
+    laptop.ingest(view, records.slice(0, 1), { from: "studio-device", late: false });
+    // Another computer's record at seq 1 (the laptop wrote that place itself), then the studio's own batch over it.
+    const theirs = { ...records[1]!, ts: records[1]!.ts + 1 };
+    laptop.ingest(view, [theirs], { from: "studio-device", late: false });
+    const head = laptop.head("b_alpha");
+    const fork = await Promise.resolve().then(() => laptop.ingest(view, records, { from: "studio-device", late: false })).catch((e: unknown) => e);
+    expect(isContractError(fork, "conflict")).toBe(true);
+    expect(laptop.head("b_alpha")).toBe(head);
+    expect(laptop.history("b_alpha")[1]).toEqual(theirs);
+    // A repeat that differs only by its late mark is the same record.
+    laptop.ingest(view, [theirs], { from: "studio-device", late: true });
+    expect(laptop.head("b_alpha")).toBe(head);
+  });
 });
+
