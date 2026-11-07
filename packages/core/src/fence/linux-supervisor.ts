@@ -14,7 +14,7 @@
 ///     not a proof).
 // Where user-notify is unavailable (a kernel or arch this build doesn't cover: only x86-64 today) the sandbox runs
 // without the supervisor and the belt below still quarantines anything planted.
-import { closeSync, existsSync, fchmodSync, fstatSync, lstatSync, openSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, fchmodSync, fstatSync, lstatSync, readFileSync } from "node:fs";
 import { ffiLib, ffiPtr } from "../platform/ffi";
 
 /** This machine's supervisor arch, or null where there is none (x86-64 measured live; arm64 by table). */
@@ -104,7 +104,7 @@ export function buildUserNotifFilter(arch: string = process.arch): Buffer | null
 
 /** Flags that make an open a write (`O_ACCMODE` and the creating/truncating flags). */
 const O_WRONLY = 0o1, O_RDWR = 0o2, O_CREAT = 0o100, O_TRUNC = 0o1000, O_APPEND = 0o2000, O_TMPFILE = 0o20000000;
-const O_RDONLY = 0, O_DIRECTORY = 0o200000, O_NOFOLLOW = 0o400000, O_CLOEXEC = 0o2000000, O_EXCL = 0o200, O_NONBLOCK = 0o4000, O_PATH = 0o10000000;
+const O_NOFOLLOW = 0o400000, O_CLOEXEC = 0o2000000, O_EXCL = 0o200, O_PATH = 0o10000000;
 const AT_FDCWD = -100, AT_SYMLINK_NOFOLLOW = 0x100;
 
 /** Whether an open-like call writes, from its flags word (openat2's comes from its open_how). */
@@ -130,8 +130,8 @@ export function splitParent(path: string): { dir: string; name: string } {
   return { dir: t.slice(0, i), name: t.slice(i + 1) };
 }
 
-/** Opens the directory holding the final name, component by component with O_NOFOLLOW|O_DIRECTORY, refusing
- *  links and non-directories. The walk uses only our own fds pinned before the target can change anything; the
+/** Opens the directory holding the final name, component by component: each step opens with O_PATH|O_NOFOLLOW
+ *  (never following a link, never blocking) and checks it is a directory, refusing anything else. The walk uses only our own fds pinned before the target can change anything; the
  *  kernel still applies the target's mounts at every step, so the view matches the target's own (verified: a
  *  file hidden by the sandbox's tmpfs stays hidden, creates land in the sandbox's mounts). The base is consumed;
  *  the caller closes the returned parent. Returns the kernel's errno on failure. */
@@ -140,9 +140,12 @@ export function openParentDir(lib: SupervisorLib, baseFd: number, dir: string): 
   const comps = dir.split("/").filter((c) => c !== "");
   let cur = baseFd;
   for (const c of comps) {
-    const nfd = Number(lib.openat(cur, bufOf(c), O_RDONLY | O_DIRECTORY | O_NOFOLLOW, 0));
+    const nfd = Number(lib.openat(cur, bufOf(c), O_PATH | O_NOFOLLOW, 0));
     try { closeSync(cur); } catch { /* gone */ }
     if (nfd < 0) return { errno: errNo(lib) };
+    let isDir = false;
+    try { isDir = fstatSync(nfd).isDirectory(); } catch { /* gone */ }
+    if (!isDir) { try { closeSync(nfd); } catch { /* gone */ } return { errno: 20 }; } // ENOTDIR
     cur = nfd;
   }
   return { parentFd: cur };
@@ -195,17 +198,18 @@ export function targetIds(pid: number): TargetIds | null {
   } catch { return null; }
 }
 
-/** Opens the base a trapped path resolves from: the target's cwd, one of its dir fds, or its root. The fd pins
- *  the directory: nothing the target does afterwards (rename, replace, unmount) moves it. Returns -1 on failure,
- *  with the kernel's errno in `err`. */
+/** Opens the base a trapped path resolves from: the target's cwd, one of its dir fds, or its root. Opens with
+ *  O_PATH (never blocking, never needing read permission — this build's FFI refuses O_DIRECTORY on arm64) and
+ *  checks the result is a directory. The fd pins the directory: nothing the target does afterwards (rename,
+ *  replace, unmount) moves it. Returns -1 on failure, with the kernel's errno in `err`. */
 export function resolveBase(lib: SupervisorLib, pid: number, absolute: boolean, dirfd: number): { fd: number; err: number } {
   const openDir = (p: string): { fd: number; err: number } => {
-    let fd = -1;
-    try { fd = openSync(p, O_RDONLY | O_DIRECTORY | O_NONBLOCK); } catch (e) { return { fd: -1, err: errnoOf(e) }; }
+    const fd = Number(lib.openat(AT_FDCWD, bufOf(p), O_PATH, 0));
+    if (fd < 0) return { fd: -1, err: errNo(lib) };
     try {
       if (!fstatSync(fd).isDirectory()) { try { closeSync(fd); } catch { /* gone */ } return { fd: -1, err: 20 }; // ENOTDIR
       }
-    } catch (e) { try { closeSync(fd); } catch { /* gone */ } return { fd: -1, err: errnoOf(e) }; }
+    } catch { try { closeSync(fd); } catch { /* gone */ } return { fd: -1, err: 13 }; }
     return { fd, err: 0 };
   };
   if (absolute) return openDir(`/proc/${pid}/root`);
@@ -280,34 +284,34 @@ const EACCES = 13;
 
 /** libc for the supervisor's own calls. Null where bun:ffi or libc isn't there. */
 export function openSupervisorLib(): {
-  syscall(nr: number, op: number, flags: number, prog: unknown): number | bigint;
+  syscall(nr: number, op: number, flags: number, prog: unknown): number;
   prctl(option: number, arg2: number, arg3: number, arg4: number, arg5: number): number;
   ioctl(fd: number, req: number, arg: unknown): number;
   poll(fds: unknown, nfds: number, timeout: number): number;
-  openat(dirfd: number, path: unknown, flags: number, mode: number): number | bigint;
+  openat(dirfd: number, path: unknown, flags: number, mode: number): number;
   mkdirat(dirfd: number, path: unknown, mode: number): number;
   mknodat(dirfd: number, path: unknown, mode: number, dev: number | bigint): number;
   linkat(olddirfd: number, oldpath: unknown, newdirfd: number, newpath: unknown, flags: number): number;
   symlinkat(target: unknown, newdirfd: number, newpath: unknown): number;
   renameat2(olddirfd: number, oldpath: unknown, newdirfd: number, newpath: unknown, flags: number): number;
   fchmodat(dirfd: number, path: unknown, mode: number, flags: number): number;
-  process_vm_readv(pid: number, local: unknown, liovcnt: number, remote: unknown, riovcnt: number, flags: number): number | bigint;
+  process_vm_readv(pid: number, local: unknown, liovcnt: number, remote: unknown, riovcnt: number, flags: number): number;
   __errno_location(): unknown;
   getpid(): number;
 } | null {
   const lib = ffiLib("linux-supervisor", "libc.so.6", {
-    syscall: { args: ["u64", "u64", "u64", "ptr"], returns: "i64" },
+    syscall: { args: ["u64", "u64", "u64", "ptr"], returns: "i32" },
     prctl: { args: ["i32", "u64", "u64", "u64", "u64"], returns: "i32" },
     ioctl: { args: ["i32", "u64", "ptr"], returns: "i32" },
     poll: { args: ["ptr", "u64", "i32"], returns: "i32" },
-    openat: { args: ["i32", "ptr", "i32", "u32"], returns: "i64" },
+    openat: { args: ["i32", "ptr", "i32", "u32"], returns: "i32" },
     mkdirat: { args: ["i32", "ptr", "u32"], returns: "i32" },
     mknodat: { args: ["i32", "ptr", "u32", "u64"], returns: "i32" },
     linkat: { args: ["i32", "ptr", "i32", "ptr", "i32"], returns: "i32" },
     symlinkat: { args: ["ptr", "i32", "ptr"], returns: "i32" },
     renameat2: { args: ["i32", "ptr", "i32", "ptr", "u32"], returns: "i32" },
     fchmodat: { args: ["i32", "ptr", "u32", "u32"], returns: "i32" },
-    process_vm_readv: { args: ["i32", "ptr", "u64", "ptr", "u64", "u64"], returns: "i64" },
+    process_vm_readv: { args: ["i32", "ptr", "u64", "ptr", "u64", "u64"], returns: "i32" },
     __errno_location: { args: [], returns: "ptr" },
     getpid: { args: [], returns: "i32" },
   });

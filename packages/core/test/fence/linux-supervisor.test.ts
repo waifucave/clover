@@ -110,7 +110,7 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       mkdirSync(join(root, "a", "b"), { recursive: true });
       writeFileSync(join(root, "a", "f.txt"), "x");
       symlinkSync(join(root, "a"), join(root, "slink"));
-      const freshBase = () => openSync(root, 0o200000); // O_RDONLY|O_DIRECTORY; each open consumes its base
+      const freshBase = () => openSync(root, "r"); // plain read; each open consumes its base
       // A plain subdir opens; its identity matches lstat.
       const w = openParentDir(l, freshBase(), "a/b");
       if (!("parentFd" in w)) throw new Error(`open failed: ${JSON.stringify(w)}`);
@@ -129,7 +129,7 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       expect(parentIdentity(wd.parentFd)).toEqual({ dev: BigInt(up.dev), ino: BigInt(up.ino) });
       try { closeSync(wd.parentFd); } catch { /* pinned */ }
       // An absolute path stays under the host root (IN_ROOT).
-      const hostRoot = openSync("/", 0o200000);
+      const hostRoot = openSync("/", "r");
       const wa = openParentDir(l, hostRoot, root.slice(1) + "/a");
       if (!("parentFd" in wa)) throw new Error("absolute open failed");
       const ast = lstatSync(join(root, "a"));
@@ -152,7 +152,7 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       mkdirSync(join(root, "d"));
       writeFileSync(join(root, "f"), "x");
       symlinkSync(join(root, "f"), join(root, "s"));
-      const base = openSync(root, 0o200000);
+      const base = openSync(root, "r");
       try {
         expect(lstatFinal(l, base, "missing")).toEqual({ kind: "missing" });
         expect(lstatFinal(l, base, "s")).toMatchObject({ kind: "link" }); // not followed to f
