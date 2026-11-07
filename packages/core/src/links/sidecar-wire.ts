@@ -406,7 +406,7 @@ export class SidecarWire implements WireEndpoint {
     const sent = { allow: this.#allow, n0Lookup: this.#n0Lookup };
     send(proc, {
       op: "init", seed: toHex(seed), alpns: [...(o.alpns ?? [ALPN_LINK, ALPN_PAIR])], relay: o.relay ?? "default",
-      n0Lookup: sent.n0Lookup, window: STREAM_WINDOW, ...(o.congestion ? { congestion: o.congestion } : {}),
+      n0Lookup: sent.n0Lookup, window: STREAM_WINDOW, incomingWindow: INCOMING_STREAM_WINDOW, ...(o.congestion ? { congestion: o.congestion } : {}),
       ...(o.bind ? { bind: o.bind } : {}), allow: sent.allow.keys, revoked: sent.allow.revoked,
     });
     seed.fill(0);

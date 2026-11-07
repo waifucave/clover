@@ -74,9 +74,6 @@ const RESET_CONN_LOST: u32 = 3;
 const DEFAULT_WINDOW: usize = 2 * 1024 * 1024;
 /// The smallest window a stream may be given (`open`'s or `window`'s): one read's worth of a live stream.
 const MIN_WINDOW: usize = 16 * 1024;
-/// An incoming stream's window until the core reads its header and says (`window`): a live stream's (the core's
-/// `INCOMING_STREAM_WINDOW`), so a live stream's first bytes don't run ahead of its reader.
-const INCOMING_WINDOW: usize = 64 * 1024;
 /// The most read from QUIC at once for the core.
 const READ_CHUNK: usize = 64 * 1024;
 /// QUIC's per-stream receive window: noq's own 1.25 MB, and no more. noq 1.4.0's receive assembler keeps each
@@ -148,6 +145,10 @@ struct Sidecar {
     /// Stream bytes on `out` not yet written to stdout.
     out_bytes: Arc<AtomicUsize>,
     window: usize,
+    /// An incoming stream's window until the core reads its header and says (`window`): `init`'s `incomingWindow` (the
+    /// core's `INCOMING_STREAM_WINDOW`, a live stream's), so a live stream's first bytes don't run ahead of its reader.
+    /// A core that names none (one before per-stream windows) never widens a stream, so it keeps the full window.
+    incoming_window: usize,
     congestion: &'static str,
     n0_lookup: AtomicBool,
     conns: Mutex<HashMap<u64, Connection>>,
@@ -263,6 +264,7 @@ impl Sidecar {
             .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.as_bytes().to_vec())).collect())
             .unwrap_or_else(|| vec![LINK_ALPN.as_bytes().to_vec()]);
         let window = init["window"].as_u64().map(|w| w.clamp(64 * 1024, 64 * 1024 * 1024) as usize).unwrap_or(DEFAULT_WINDOW);
+        let incoming_window = init["incomingWindow"].as_u64().map(|w| (w as usize).clamp(MIN_WINDOW, window)).unwrap_or(window);
         let congestion = match init["congestion"].as_str() {
             None | Some("bbr") => "bbr",
             Some("cubic") => "cubic",
@@ -299,6 +301,7 @@ impl Sidecar {
             out,
             out_bytes,
             window,
+            incoming_window,
             congestion,
             n0_lookup: AtomicBool::new(false),
             conns: Mutex::new(HashMap::new()),
@@ -357,8 +360,8 @@ impl Sidecar {
         tokio::spawn(async move {
             while let Ok((send, recv)) = c.accept_bi().await {
                 let sid = me.next_stream.fetch_add(2, Ordering::Relaxed);
-                // An incoming stream starts with a live stream's window; the core widens it once it read the header.
-                let halves = me.register(sid, id, INCOMING_WINDOW.min(me.window)).await;
+                // An incoming stream starts with init's incomingWindow; the core sets its own once it read the header.
+                let halves = me.register(sid, id, me.incoming_window).await;
                 // The core hears of the stream before its first bytes.
                 emit(&me.out, json!({ "ev": "stream", "conn": id, "stream": sid }));
                 me.run_stream(sid, send, recv, halves);
