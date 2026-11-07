@@ -25,6 +25,7 @@ export async function stored(args, ctx) { return await ctx.api.storage.synced.ge
 export async function chatty() { console.log("hello from the worker", { a: 1 }); return 1; }
 export async function die() { setTimeout(() => { throw new Error("boom"); }, 0); await new Promise(() => {}); }
 export const bytes = (args) => new Uint8Array([1, 2, args.x]);
+export const big = (args) => ({ n: args.data.length, back: new Uint8Array(args.n).fill(7) });
 export const mcp = {
   tools: async (transport, api) => {
     transport.onmessage = async (msg) => {
@@ -77,6 +78,9 @@ describe("a real plugin-host process", () => {
     expect(await host.invoke({ pluginId: "tarot", handler: "hello", args: { name: "fool" }, caller: USER })).toEqual({ hi: "fool", started: 1, computer: "Studio", caller: USER, deadline: true });
     await host.invoke({ pluginId: "tarot", handler: "hello", args: { name: "x" }, caller: USER });
     expect(await host.invoke({ pluginId: "tarot", handler: "bytes", args: { x: 7 }, caller: USER })).toEqual(new Uint8Array([1, 2, 7]));
+    // Megabytes both ways over the pipe (a would-block write is retried, never lost).
+    const big = (await host.invoke({ pluginId: "tarot", handler: "big", args: { data: new Uint8Array(6_000_000).fill(1), n: 6_000_000 }, caller: USER })) as { n: number; back: Uint8Array };
+    expect([big.n, big.back.length, big.back[5_999_999]]).toEqual([6_000_000, 6_000_000, 7]);
     const values: unknown[] = [];
     const s = host.stream({ pluginId: "tarot", handler: "count", args: { n: 3 }, caller: USER });
     for (;;) {

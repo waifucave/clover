@@ -5,6 +5,7 @@
 // `loopbackPeers` joins two ends in one process, copying every message (structured clone, as a pipe would) and
 // delivering it on a microtask: the conformance harness runs the real daemon side against the real host side through
 // it. The process's own pipe (NDJSON JSON-RPC over the stdio it was started with) is `streamPeer`.
+import { writeSync } from "node:fs";
 import { ContractError } from "../contracts/common";
 
 export type RpcHandler = (params: any) => unknown;
@@ -154,6 +155,41 @@ export async function* linesOf(chunks: AsyncIterable<Uint8Array | string>): Asyn
     }
   }
   if (buffered !== "") yield buffered;
+}
+
+/** A link over a descriptor (a socket pair's end, possibly non-blocking): lines read through Bun's file stream, and
+ *  writes queued in order, a would-block (EAGAIN) retried rather than lost. Both ends of the plugin host's fd 3 use it. */
+export function fdLink(fd: number): { lines: AsyncIterable<string>; write(line: string): void } {
+  const queue: Buffer[] = [];
+  let draining = false;
+  const drain = () => {
+    if (draining) return;
+    draining = true;
+    const step = () => {
+      while (queue.length > 0) {
+        const head = queue[0]!;
+        let n: number;
+        try {
+          n = writeSync(fd, head);
+        } catch (err) {
+          if ((err as { code?: string }).code === "EAGAIN") return void setTimeout(step, 1);
+          queue.length = 0; // the other end is gone; the reader's close ends the link
+          break;
+        }
+        if (n < head.length) queue[0] = head.subarray(n);
+        else queue.shift();
+      }
+      draining = false;
+    };
+    step();
+  };
+  return {
+    lines: linesOf(Bun.file(fd).stream() as unknown as AsyncIterable<Uint8Array>),
+    write(line) {
+      queue.push(Buffer.from(line));
+      drain();
+    },
+  };
 }
 
 /** An end over a line stream (NDJSON JSON-RPC 2.0): the plugin-host process's stdio. `write` takes one line. Values
