@@ -36,6 +36,9 @@
 //   (a timer, a `start` task) acts as the plugin. A call's `ctx.api` ends with the call (#179's review, S1): kept and
 //   used later, from a timer or while serving another call, it rejects `closed`, so a plugin can't go on acting as
 //   that session after its call is done.
+// * B-M2's host also: hands a `host` MCP server's handlers the tool call's context (`callerOf(request)`, lane L's ask),
+//   so a tool reads its caller from the call and never from the request; installs the core's identity in the host's
+//   processes (lane A's ask); and serves the whole plugin API, replacing lane A's interim `model-plugins/plugin-api.ts`.
 // * `stream` runs a handler that returns an async iterable (a model adapter's output, a voice's audio; review S16):
 //   values arrive in order, the iterable's return value ends the stream, and `input` feeds a handler that takes one
 //   (a voice's microphone audio) as `ctx.input`. The limits, cancelling, crashes and reloads are `invoke`'s.
@@ -58,12 +61,15 @@ export interface InstallRecord {
   source: PluginSource;
   /** The manifest's `host.runtime`. */
   runtime?: "bun" | "node";
+  /** The manifest's `host.process`: a process of its own under Bun too (lane A's ask). */
+  process?: "own";
 }
 
-/** The process a host half runs in (the owner's answer to S4): a Node or native plugin's own; the `clover` process for
- *  the bundled `clover` tree (installed with the app, top-level id `clover`); the shared one for every other. */
+/** The process a host half runs in (the owner's answer to S4): a Node or native plugin's own, or a Bun one that asks
+ *  for its own (`host.process: "own"`); the `clover` process for the bundled `clover` tree (installed with the app,
+ *  top-level id `clover`); the shared one for every other. */
 export function hostProcessFor(plugin: InstallRecord): HostProcess {
-  if (plugin.runtime === "node") return "own";
+  if (plugin.runtime === "node" || plugin.process === "own") return "own";
   const top = plugin.id.includes("/") ? plugin.id.slice(0, plugin.id.indexOf("/")) : plugin.id;
   return plugin.source === "bundled" && top === BUNDLED_ROOT_PLUGIN ? "clover" : "shared";
 }

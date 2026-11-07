@@ -512,7 +512,7 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
   // (`sandbox/profile.ts`), so the control-plane list stays REAL paths. R.3 I-4: F8's other half — "a glob
   // becomes a literal path that never exists and denies nothing" — stopped holding at agent SDK round 11
   // (`2a118c6`): a glob-shaped entry renders as a recursive seatbelt REGEX on the Clover leg
-  // as on claude (measured: `sandbox-glob-escape-measure.e2e.test.ts`'s R.3 I-4 row). So the
+  // as on claude (measured: `sandbox-glob-escape-measure.e2e.darwin.test.ts`'s R.3 I-4 row). So the
   // child's list ends with the five `<cwd>/**/.clover/<kind>` entries, and those are its ONLY globs.
   const sb = buildCloverOptions(optionsInput({ home: "/h" })).sandbox!;
   expect(sb.enabled).toBe(true);

@@ -2,7 +2,7 @@
 // source of computers, and a peer's command let through by the user's signed answer (review N2).
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   callBindingInput, cardAnswerSigningInput, cardHashInput,
@@ -43,7 +43,10 @@ describe("computers.* for plugins", () => {
     expect(await api["computers.holds"]!(["Studio"], PLUGIN)).toMatchObject({ userWorking: true });
     // Another plugin can't release opensky's hold.
     expect(isContractError(await rejection(api["computers.releaseHold"]!([first.hold.id], { ...PLUGIN, pluginId: "other" })), "refused")).toBe(true);
-    await api["computers.releaseHold"]!([first.hold.id], PLUGIN);
+    // The same plugin outside that session (Mirror installs it everywhere) can't release a session's hold either.
+    expect(isContractError(await rejection(api["computers.releaseHold"]!([first.hold.id], PLUGIN)), "refused")).toBe(true);
+    expect(isContractError(await rejection(api["computers.releaseHold"]!([first.hold.id], inSession("s_b"))), "refused")).toBe(true);
+    await api["computers.releaseHold"]!([first.hold.id], inSession("s_a"));
     cluster.net.partition(cluster.get("Laptop1").device);
     expect(await api["computers.takeHold"]!(["Laptop1", { kind: "app", app: "Excel" }], PLUGIN)).toEqual({ held: false, reason: "computer-offline" });
   });
@@ -69,6 +72,28 @@ describe("files.* for plugins: the Files panel's data", () => {
     writeFileSync(join(laptop.home, "proj", "src", "b.ts"), "x");
     await until(() => JSON.stringify(events).includes("home/Laptop1/proj/src/b.ts"), 3000, "the change");
     stop();
+  });
+
+  test("noFollow reaches the tree: a component showing a file never follows a planted link", async () => {
+    cluster = new Cluster();
+    const studio = await cluster.add("Studio");
+    const laptop = await cluster.add("Laptop1");
+    await cluster.join();
+    mkdirSync(join(laptop.home, "out"), { recursive: true });
+    writeFileSync(join(laptop.home, "out", "plain.md"), "plain");
+    writeFileSync(join(laptop.home, "elsewhere.md"), "elsewhere");
+    symlinkSync(join(laptop.home, "elsewhere.md"), join(laptop.home, "out", "notes.md"), "file");
+    const files = filesApiRoutes(studio.node.tree);
+    const ctx = { pluginId: "clover/shell", caller: { kind: "plugin" as const, pluginId: "clover/shell" } };
+    const nf = { noFollow: true };
+    expect(await files["files.readText"]!(["home/Laptop1/out/plain.md", nf], ctx)).toBe("plain");
+    expect(await files["files.readBytes"]!(["home/Laptop1/out/plain.md", nf], ctx)).toEqual(new Uint8Array(Buffer.from("plain")));
+    expect((await files["files.stat"]!(["home/Laptop1/out/plain.md", nf], ctx)) as { type: string }).toMatchObject({ type: "file" });
+    for (const call of ["files.readText", "files.readBytes", "files.stat"]) {
+      expect(isContractError(await rejection(files[call]!(["home/Laptop1/out/notes.md", nf], ctx)), "refused")).toBe(true);
+    }
+    // Without it, a link inside the home folder is followed as before.
+    expect(await files["files.readText"]!(["home/Laptop1/out/notes.md"], ctx)).toBe("elsewhere");
   });
 });
 

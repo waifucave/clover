@@ -21,11 +21,11 @@ import { RecentApps } from "../../src/computer-use/recent-apps";
 import { ComputerV2Service, visitLine, type ScriptResult } from "../../src/computer-use/service";
 import { AutomationTelemetry } from "../../src/computer-use/telemetry";
 import { desktopRefusalLiftFor, helperDesktopPanel } from "../../src/computer-use/wiring";
-import { sandboxAvailable } from "../../src/workflows/sandbox";
 import type { Settings } from "../../src/settings";
 import { FakeHelper, FakeHelperError } from "./fake-helper";
+import { darwinTest } from "../helpers/darwin-only";
 
-const macOnly = sandboxAvailable() ? test : test.skip;
+const macOnly = darwinTest;
 const NOTES = { bundleId: "com.apple.Notes", name: "Notes" };
 const ALL_POLICIES: SessionApprovalPolicy[] = ["plan", "dont-ask", "ask", "accept-edits", "auto", "bypass"];
 type Card = Extract<NewSessionEvent, { type: "approval_requested" }>;

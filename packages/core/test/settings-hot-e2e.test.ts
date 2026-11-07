@@ -141,13 +141,23 @@ describe("hot-settings P8b: the Clover-leg keys reach the live holder with no re
   // otherwise stop this already-stopped handle a second time.
   afterEach(async () => { const stopping = daemon?.stop(); daemon = undefined; await stopping; });
 
-  /** Polls the live holder past the watcher's debounce (150ms) + fs.watch latency — never a bare
-   *  fixed sleep. Fails loudly with what it was waiting for rather than timing out anonymously. */
-  async function untilSettings(d: RunningDaemon, what: string, ok: (s: ReturnType<RunningDaemon["settings"]>) => boolean): Promise<void> {
-    const deadline = Date.now() + 5000;
+  /** Writes settings.json with `write`, then polls the live holder until `ok` holds — never a bare fixed sleep —
+   *  writing the same file again every REWRITE_MS while it doesn't. The watcher is armed inside `startDaemon`, but
+   *  macOS arms an fs.watch stream asynchronously: a write in the moments right after can raise no event at all
+   *  (macOS CI, #199's run: the advisorModel write straight after boot produced no reload, and the poll ran out
+   *  at 5 s). Writing again until the holder shows it makes the test wait for the watcher rather than race it;
+   *  each rewrite is the same content, so any reload it causes applies the same settings. Bounded at
+   *  SETTLE_MS, failing loudly with what it was waiting for. */
+  const REWRITE_MS = 400;
+  const SETTLE_MS = 8000;
+  async function writeUntil(d: RunningDaemon, what: string, write: () => void, ok: (s: ReturnType<RunningDaemon["settings"]>) => boolean): Promise<void> {
+    write();
+    const deadline = Date.now() + SETTLE_MS;
+    let nextWrite = Date.now() + REWRITE_MS;
     for (;;) {
       if (ok(d.settings())) return;
       if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}; live settings.runtimes = ${JSON.stringify(d.settings()?.runtimes)}`);
+      if (Date.now() >= nextWrite) { write(); nextWrite = Date.now() + REWRITE_MS; }
       await sleep(25);
     }
   }
@@ -178,16 +188,14 @@ describe("hot-settings P8b: the Clover-leg keys reach the live holder with no re
     const winterBin = join(mkdtempSync(join(tmpdir(), "clover-hot-e2e-clover-bin-")), "winter");
     writeFileSync(winterBin, "#!/bin/sh\nexit 0\n");
 
-    writeSettingsFile(home, {
+    await writeUntil(daemon, "the runtimes block to reach the live holder", () => writeSettingsFile(home, {
       runtimes: {
         winterLeg: { chat: true },
         winterExecutable: winterBin,
         winterIdleTimeoutSec: 60,
         retention: { deliveriesDays: 90 },
       },
-    });
-
-    await untilSettings(daemon, "the runtimes block to reach the live holder", (s) => s?.runtimes?.winterLeg?.chat === true);
+    }), (s) => s?.runtimes?.winterLeg?.chat === true);
     const live = daemon.settings()!.runtimes!;
     // Task 9's `legForNewSession` reads exactly this; the helper itself is the policy lane's.
     expect(live.winterLeg).toEqual({ chat: true, dispatch: true, code: true });   // the schema's defaults fill the absent two
@@ -198,15 +206,15 @@ describe("hot-settings P8b: the Clover-leg keys reach the live holder with no re
     expect(live.retention).toEqual({ deliveriesDays: 90, nameLeasesDays: 7 });
 
     // Flipping a leg back OFF is just as hot — a rollback must not need a restart either.
-    writeSettingsFile(home, { runtimes: { winterLeg: { chat: false, code: false, dispatch: false }, winterIdleTimeoutSec: 60 } });
-    await untilSettings(daemon, "the chat leg to flip back off", (s) => s?.runtimes?.winterLeg?.chat === false);
+    await writeUntil(daemon, "the chat leg to flip back off", () => writeSettingsFile(home, { runtimes: { winterLeg: { chat: false, code: false, dispatch: false }, winterIdleTimeoutSec: 60 } }),
+      (s) => s?.runtimes?.winterLeg?.chat === false);
 
     // Task 17: no engine turn to drive — the reload re-wired nothing the daemon owns (pinned below).
 
     // No-restart proof: the same RunningDaemon object and the same socket this test started with.
     expect(daemon).toBe(daemonRef);
     expect(daemon.socketPath).toBe(daemonRef.socketPath);
-  }, 20_000); // two waits on the live holder, each bounded at 5 s by untilSettings: the test's own timeout must sit above both
+  }, 30_000); // two waits on the live holder, each bounded at SETTLE_MS by writeUntil: the test's own timeout must sit above both
 
   test("advisorModel reaches the live holder too — Task 5's create.ts reads it there", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-hot-e2e-advisor-"));
@@ -215,7 +223,7 @@ describe("hot-settings P8b: the Clover-leg keys reach the live holder with no re
     daemon = await startDaemon({ home, secrets, agentProvider: { provider: new FakeProvider(endTurnScript()), model: "fake-1" } });
 
     expect(daemon.settings()?.runtimes?.advisorModel).toBeUndefined();
-    writeSettingsFile(home, { runtimes: { advisorModel: "some-advisor-model" } });
-    await untilSettings(daemon, "advisorModel to reach the live holder", (s) => s?.runtimes?.advisorModel === "some-advisor-model");
-  }, 15_000); // the wait on the live holder is bounded at 5 s by untilSettings: the test's own timeout must sit above it
+    await writeUntil(daemon, "advisorModel to reach the live holder", () => writeSettingsFile(home, { runtimes: { advisorModel: "some-advisor-model" } }),
+      (s) => s?.runtimes?.advisorModel === "some-advisor-model");
+  }, 20_000); // the wait on the live holder is bounded at SETTLE_MS by writeUntil: the test's own timeout must sit above it
 });

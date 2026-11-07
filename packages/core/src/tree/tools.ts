@@ -8,6 +8,8 @@
 // * Bash goes to the holder of its folder: here, to this computer's executor; elsewhere, as `tool.run` over the link,
 //   with its output streaming back as `tool_output`. A leading `cd <folder> &&` picks the folder (`cd home/Desktop1/
 //   project1 && git status` runs git on Desktop1).
+// * A plain `mv A B` or `cp -r A B` whose ends are on different computers (no shell sees both: nothing is mounted)
+//   takes the tree's direct path instead (the owner's item 89): the files go holder to holder.
 // * A computer that is off answers `computer_offline` at once.
 import type { Caller, Level, SessionKind, SignedCardAnswer } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
@@ -17,6 +19,7 @@ import { splitTreePath, type TreeData } from "../contracts/tree";
 import type { LocalHolder } from "./holder";
 import { offlineAs } from "./remote";
 import { runKey, type ToolExecutor } from "./service";
+import { withAnswer, type AnswerAsker } from "./judge";
 import type { CoreTree, TreeDirectory } from "./tree";
 
 /** The tools this layer runs on tree paths. */
@@ -60,6 +63,8 @@ export interface TreeToolsOptions {
   deviceOf(computer: string): string | undefined;
   /** Bash on this computer: its holder (for the folder) and its executor (lanes A and C). */
   local?: { holder: LocalHolder; executor: ToolExecutor };
+  /** Shows the user the holder's card when its level needs their answer, and gives back the signed answer (R1). */
+  ask?: AnswerAsker;
 }
 
 const READ_LIMIT = 2000;
@@ -97,6 +102,23 @@ export function bashTarget(command: string, cwd: string | undefined): { cwd: str
   const folder = treePathFor(m[2] ?? m[3] ?? m[4]!, cwd);
   const rest = m[6]?.trim();
   return { cwd: folder, command: rest ? rest : null };
+}
+
+/** A plain `mv A B` or `cp [-r] A B` between tree paths: no globs, no variables, no options but -r, -R, -a, -f. */
+export function transferCommand(command: string, cwd: string): { move: boolean; recursive: boolean; from: string; to: string } | null {
+  const tok = '("([^"$`\\\\]+)"|\'([^\']+)\'|([^\\s;&|<>()"\'$`\\\\*?[\\]{}~]+))';
+  const m = new RegExp(`^\\s*(mv|cp)((?:\\s+-[rRaf]+)*)\\s+${tok}\\s+${tok}\\s*$`).exec(command);
+  if (!m) return null;
+  const move = m[1] === "mv";
+  const flags = m[2]!.replace(/[\s-]/g, "");
+  if (move && /[rRa]/.test(flags)) return null;
+  try {
+    const from = treePathFor(m[4] ?? m[5] ?? m[6]!, cwd);
+    const to = treePathFor(m[8] ?? m[9] ?? m[10]!, cwd);
+    return { move, recursive: /[rRa]/.test(flags), from, to };
+  } catch {
+    return null;
+  }
 }
 
 export class TreeTools {
@@ -205,6 +227,11 @@ export class TreeTools {
       await this.#o.tree.list(cwd, { as, ...(ctx.level === undefined ? {} : { level: ctx.level }) });
       return { output: "", isError: false, computer: loc.computer, cwd };
     }
+    const direct = transferCommand(command, cwd);
+    if (direct) {
+      const ends = [direct.from, direct.to].map((p) => this.#o.tree.resolve(p).computer);
+      if (ends[0] !== ends[1] || ends[0] !== loc.computer) return this.#transfer(direct, ctx, as, loc.computer, cwd);
+    }
     const timeoutMs = num(i.timeout);
     const input = { command, cwd, ...(timeoutMs === undefined ? {} : { timeoutMs }) };
     const output = ctx.onOutput ?? (() => {});
@@ -236,10 +263,10 @@ export class TreeTools {
     }
     const off = ctx.signal ? onAbort(ctx.signal, () => { void link.request("tool.cancel", { session: ctx.session, callId: ctx.callId }).catch(() => {}); }) : () => {};
     try {
-      const r = await link.request<{ output: unknown; isError: boolean }>("tool.run", {
+      const r = await withAnswer(ctx.answer === undefined ? this.#o.ask : undefined, (answer) => link.request<{ output: unknown; isError: boolean }>("tool.run", {
         session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: "Bash", input, level,
-        ...(ctx.answer === undefined ? {} : { answer: ctx.answer }),
-      }, { priority: "control" });
+        ...((answer ?? ctx.answer) === undefined ? {} : { answer: answer ?? ctx.answer }),
+      }, { priority: "control" }));
       return { ...r, computer: loc.computer, cwd };
     } catch (e) {
       throw offlineAs(loc.computer, e);
@@ -247,6 +274,23 @@ export class TreeTools {
       off();
       this.#outputs.delete(key);
     }
+  }
+  /** `mv` or `cp` between computers by the direct path, answering the way the shell would. */
+  async #transfer(d: { move: boolean; recursive: boolean; from: string; to: string }, ctx: TreeToolContext, as: Caller, computer: string, cwd: string): Promise<TreeToolResult> {
+    const tree = this.#o.tree;
+    const opts = { as, ...(ctx.level === undefined ? {} : { level: ctx.level }), ...(ctx.answer === undefined ? {} : { answer: ctx.answer }) };
+    const verb = d.move ? "mv" : "cp";
+    const src = await tree.stat(d.from, opts);
+    if (!src) return { output: `${verb}: ${d.from}: No such file or directory`, isError: true, computer, cwd };
+    if (!d.move && src.type === "dir" && !d.recursive) return { output: `cp: ${d.from} is a directory (not copied)`, isError: true, computer, cwd };
+    // Into a folder that's there, under the same name, as the shell does.
+    let to = d.to;
+    const there = await tree.stat(to, opts);
+    if (there?.type === "dir") to = `${to}/${d.from.slice(d.from.lastIndexOf("/") + 1)}`;
+    else if (there) return { output: `${verb}: ${d.to} already exists; the direct path between computers doesn't replace files`, isError: true, computer, cwd };
+    if (d.move) await tree.move(d.from, to, opts);
+    else await tree.copy(d.from, to, opts);
+    return { output: "", isError: false, computer, cwd };
   }
 }
 

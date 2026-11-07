@@ -24,8 +24,40 @@ export interface NotifierUpdate {
   at: number;
   notification?: { title: string; body?: string };
   /** Who sent it: the plugin whose `notify.send` asked for a `notification`, or `clover` for the core's own updates
-   *  and notices. Required (B-M1's review); `bundled` false marks a third-party plugin. */
+   *  and notices. Required (B-M1's review); `thirdParty` marks a plugin outside the bundled `clover` tree. */
   sender: NoticeSender;
+  /** A routine's result: whether the routine failed (a field asked of lanes B and D). Absent, the notifier can't tell,
+   *  and shows the result when routine failures are on. */
+  failed?: boolean;
+}
+
+/** The plugin's own settings (clover.json), as Settings → Notifications shows them. Each defaults to on. */
+export interface NotifyPrefs {
+  /** Cards and questions waiting for the user. */
+  needsYou: boolean;
+  /** An agent a bot started has finished. */
+  agentDone: boolean;
+  /** A routine that ran on its own failed. */
+  routineFailed: boolean;
+  /** The OS plays its notification sound; off, the banners are silent. */
+  sounds: boolean;
+}
+
+export const DEFAULT_PREFS: NotifyPrefs = { needsYou: true, agentDone: true, routineFailed: true, sounds: true };
+
+/** Whether the user wants a banner for this update. A message and a plugin's own notification always show. */
+export function wanted(update: NotifierUpdate, prefs: NotifyPrefs): boolean {
+  switch (update.kind) {
+    case "card":
+    case "question":
+      return prefs.needsYou;
+    case "agent-finished":
+      return prefs.agentDone;
+    case "routine-result":
+      return prefs.routineFailed && update.failed !== false;
+    default:
+      return true;
+  }
 }
 
 /** A notification's sender (lane B's, mirrored until B-M1 merges). */
@@ -33,8 +65,8 @@ export interface NoticeSender {
   pluginId: string;
   /** The plugin's name, as its manifest gives it. */
   name: string;
-  /** Whether it comes from the bundled `clover` tree; false is a third-party plugin, which the banner marks. */
-  bundled: boolean;
+  /** True for a plugin outside the bundled `clover` tree, which the banner marks (lane B's `thirdParty`). */
+  thirdParty: boolean;
 }
 
 /** One banner, as the local app's OS notification takes it. */
@@ -47,6 +79,8 @@ export interface DesktopNotice {
   open?: { bot?: string; session?: string };
   /** A request that waits on the user (a card, a question) stays until they act, where the OS allows. */
   urgent: boolean;
+  /** No sound (the `sounds` setting off). */
+  silent: boolean;
 }
 
 /** The local app's notifications: Electron's `Notification` in the main process (lane E). */
@@ -62,6 +96,8 @@ export interface DesktopNotifierOptions {
   /** A bot's name from its id (`bots.read`); the id itself when absent or unknown. */
   botName?: (bot: string) => string | undefined | Promise<string | undefined>;
   log?: (level: "info" | "warn" | "error", message: string) => void;
+  /** The user's settings now; every one on when absent. */
+  prefs?: () => NotifyPrefs;
 }
 
 const KINDS_THAT_WAIT = new Set<NotifierUpdate["kind"]>(["card", "question"]);
@@ -95,7 +131,7 @@ export function noticeWords(update: NotifierUpdate, name: string | undefined): {
     const sender = update.sender as NoticeSender | undefined;
     if (sender?.pluginId === "clover") return { title: own || t("clover.notifications.fallbackTitle"), body: withWaiting(body) };
     const name = cut(shownName(sender?.name ?? "") || sender?.pluginId || t("clover.notifications.aPlugin"), 40);
-    const thirdParty = sender?.bundled !== true;
+    const thirdParty = sender?.thirdParty !== false;
     const from = thirdParty ? t("clover.notifications.plugin", { plugin: name }) : name;
     return { title: own ? t("clover.notifications.fromPlugin", { from, title: own }) : from, body: withWaiting(body) };
   }
@@ -127,6 +163,8 @@ export class DesktopNotifier {
   async notify(update: NotifierUpdate): Promise<void> {
     if (update.seq <= this.lastSeq) return;
     this.lastSeq = update.seq;
+    const prefs = this.options.prefs?.() ?? DEFAULT_PREFS;
+    if (!wanted(update, prefs)) return;
     const id = noticeId(update);
     try {
       if (await this.options.desktop.showing?.({ bot: update.bot, session: update.session, kind: update.kind })) return;
@@ -137,6 +175,7 @@ export class DesktopNotifier {
         ...words,
         open: update.bot || update.session ? { bot: update.bot, session: update.session } : undefined,
         urgent: KINDS_THAT_WAIT.has(update.kind),
+        silent: !prefs.sounds,
       });
       this.shown.add(id);
     } catch (error) {

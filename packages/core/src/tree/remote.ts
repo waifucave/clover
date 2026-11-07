@@ -10,6 +10,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkPriority, LinkTransport } from "../contracts/link-transport";
 import type { TreeData } from "../contracts/tree";
 import type { Holder, HolderCall } from "./holder";
+import { withAnswer, type AnswerAsker } from "./judge";
 import type { TreeWatchEvent } from "./watch";
 
 /** The notification a holder sends for a watch: `tree.changed`, with the watch's id. */
@@ -56,11 +57,15 @@ export class RemoteHolder implements Holder {
   #offLink: Unsubscribe | null = null;
   #wasUp = true;
 
-  /** `computer` names the holder in errors (it may be renamed while this object lives). */
-  constructor(opts: { transport: LinkTransport; device: string; computer: () => string }) {
+  readonly #ask: AnswerAsker | undefined;
+
+  /** `computer` names the holder in errors (it may be renamed while this object lives). `ask` shows the user the
+   *  holder's card when its level needs their answer (R1). */
+  constructor(opts: { transport: LinkTransport; device: string; computer: () => string; ask?: AnswerAsker }) {
     this.#transport = opts.transport;
     this.#device = opts.device;
     this.#computer = opts.computer;
+    this.#ask = opts.ask;
   }
 
   /** Stops every watch this side holds. */
@@ -119,25 +124,41 @@ export class RemoteHolder implements Holder {
   }
 
   async #call<R>(method: string, params: Record<string, unknown>, priority: LinkPriority = "control"): Promise<R> {
-    try {
-      const link = await this.#transport.connect(this.#device);
-      return await link.request<R>(method, params, { priority });
-    } catch (e) {
-      throw offlineAs(this.#computer(), e);
+    return withAnswer(params.answer === undefined ? this.#ask : undefined, async (answer) => {
+      try {
+        const link = await this.#transport.connect(this.#device);
+        return await link.request<R>(method, answer ? { ...params, answer } : params, { priority });
+      } catch (e) {
+        throw offlineAs(this.#computer(), e);
+      }
+    });
+  }
+
+  async stat(path: string, call: HolderCall & { noFollow?: boolean }): Promise<FileStat | null> {
+    const r = await this.#call<{ stat: FileStat | null; noFollow?: boolean }>("tree.stat", { ...viaPeer(call), path, ...(call.noFollow ? { noFollow: true } : {}) });
+    if (call.noFollow) this.#confirmsNoFollow(r, path);
+    return r.stat;
+  }
+
+  /** A `noFollow` answer must say it walked without following links: a computer on a build that drops the flag
+   *  answers as if it weren't there, having followed them (#225's review). */
+  #confirmsNoFollow(r: { noFollow?: unknown }, path: string): void {
+    if (r.noFollow !== true) {
+      throw new ContractError("refused", `${this.#computer()} can't read ${path} without following links (an older build); update Clover there`, { reason: "unsupported" });
     }
   }
 
-  async stat(path: string, call: HolderCall): Promise<FileStat | null> {
-    return (await this.#call<{ stat: FileStat | null }>("tree.stat", { ...viaPeer(call), path })).stat;
-  }
-
-  async read(path: string, call: HolderCall & { encoding?: "utf8" | "base64"; offset?: number; length?: number }): Promise<TreeData> {
-    return this.#call<TreeData>("tree.read", {
-      ...viaPeer(call), path,
+  async read(path: string, call: HolderCall & { encoding?: "utf8" | "base64"; offset?: number; length?: number; noFollow?: boolean }): Promise<TreeData> {
+    const r = await this.#call<TreeData & { noFollow?: boolean }>("tree.read", {
+      ...viaPeer(call), path, ...(call.noFollow ? { noFollow: true } : {}),
       ...(call.encoding === undefined ? {} : { encoding: call.encoding }),
       ...(call.offset === undefined ? {} : { offset: call.offset }),
       ...(call.length === undefined ? {} : { length: call.length }),
     }, "files");
+    if (!call.noFollow) return r;
+    this.#confirmsNoFollow(r, path);
+    const { noFollow: _n, ...data } = r;
+    return data as TreeData;
   }
 
   async write(path: string, data: TreeData, call: HolderCall & { executable?: boolean }): Promise<void> {

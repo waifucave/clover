@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "id": "fixture-dns",
+  "name": "Fixture DNS probe",
+  "description": "S9's DNS-prefetch probe for the app's tests, in a layer of its own.",
+  "engines": { "clover": "^1.0.0" },
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "app.surface", "id": "dns", "component": "DnsProbe", "window": { "type": "window" } }]
+  }
+}
