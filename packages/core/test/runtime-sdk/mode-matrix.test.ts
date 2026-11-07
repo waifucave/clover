@@ -536,6 +536,8 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
     // ComputerV2 wake triggers (2026-10-12): the daemon's computer-use records (the restart file `wakes.json`).
     "/h/computer-use",
     "/h/permissions.local.json", "/h/settings.json", "/h/settings.local.json",
+    // #234's check 4, H1: `node_modules` above each plugins folder, to the root.
+    "/h/plugins/node_modules", "/h/node_modules", "/node_modules", "/h/sdk/plugins/node_modules", "/h/sdk/node_modules",
     // review I7: the protected user tier (a separate list — the write TOOLS get a card, not this deny),
     // for the shared runtime home and the store home this build loads from. R.1: on a run-home build the
     // store home IS the shared runtime home (`sdk/`), so the list names it once (router 0.0.11 added the

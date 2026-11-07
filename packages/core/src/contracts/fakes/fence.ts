@@ -3,7 +3,8 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, isInsideFolded, judge, pluginLoadDenies, READ_DENIED_KINDS,
+  writesPluginLoadDeny, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -52,6 +53,8 @@ export interface FakeFenceOptions {
   bots?: string[];
   /** The app's userData folder (Electron's), which holds the browser's partitions; the OS's usual one by default. */
   userData?: string;
+  /** Other folders plugin code loads from (the app's bundled plugins), for `pluginLoadDenies`. */
+  pluginLoadFolders?: string[];
   /** Replaces the fake's layout for some items. */
   layout?: Partial<Record<FencedKind, string[]>>;
 }
@@ -79,6 +82,7 @@ export class FakeFence implements Fence {
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #agentInstalls: string[];
   readonly #bots: string[];
+  readonly #pluginLoadFolders: string[];
   #devFolders: string[];
   readonly #listeners = new Listeners<void>();
 
@@ -92,6 +96,14 @@ export class FakeFence implements Fence {
     this.#agentInstalls = (opts.agentInstalls ?? []).map(normalizePosix);
     this.#bots = [...(opts.bots ?? [])];
     this.#layout = opts.layout ?? {};
+    this.#pluginLoadFolders = (opts.pluginLoadFolders ?? []).map(normalizePosix);
+  }
+
+  /** `node_modules` above every folder plugin code loads from (`pluginLoadDenies`): the plugins folder, the
+   *  development folders and the others the fake was given. */
+  #pluginLoadDenies(): string[] {
+    const plugins = this.#layout.plugins ?? [`${this.#cloverHome}/${FAKE_FENCE_LAYOUT.plugins}`];
+    return pluginLoadDenies([...plugins, ...(this.#layout["dev-folders"] ?? this.#devFolders), ...this.#pluginLoadFolders]);
   }
 
   fencedSet(): readonly FencedPath[] {
@@ -113,6 +125,8 @@ export class FakeFence implements Fence {
   }
 
   check(op: FenceOp, ctx?: FenceContext): FenceVerdict {
+    const deny = ctx?.user ? undefined : writesPluginLoadDeny(op, this.#pluginLoadDenies(), this.os);
+    if (deny !== undefined) return { allowed: false, reason: "plugins", path: deny };
     return judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome, ...(ctx ? { caller: ctx } : {}) });
   }
 
@@ -148,7 +162,7 @@ export class FakeFence implements Fence {
     // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: [...set.map((i) => i.path), this.#cloverHome],
+      denyWrite: [...set.map((i) => i.path), this.#cloverHome, ...this.#pluginLoadDenies()],
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],

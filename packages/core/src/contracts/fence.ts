@@ -203,6 +203,38 @@ export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string):
   return out;
 }
 
+/** Where a plugin's code could load a dependency it doesn't ship from (#234's check 4, H1): `node_modules` in each
+ *  folder plugin code loads from and in every folder above it, to the root, by the real paths given. A bare import a
+ *  plugin doesn't ship walks those folders, and a file without an extension there skips Clover's load guard (measured
+ *  on Bun 1.4.4), so no runner may write them: they are in every policy's `denyWrite` and `check` refuses writes there,
+ *  on every OS. `folders` are the plugins folder, the development folders and any other folder plugin code loads
+ *  from; `~/node_modules` is the one that matters today. */
+export function pluginLoadDenies(folders: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const folder of folders) {
+    const slashed = folder.replace(/\\/g, "/");
+    const drive = /^[A-Za-z]:/.exec(slashed)?.[0] ?? "";
+    const names = slashed.slice(drive.length).split("/").filter((n) => n !== "" && n !== ".");
+    const stack: string[] = [];
+    for (const n of names) {
+      if (n === "..") stack.pop();
+      else stack.push(n);
+    }
+    for (let i = stack.length; i >= 0; i--) out.add(`${drive}/${[...stack.slice(0, i), "node_modules"].join("/")}`);
+  }
+  return [...out];
+}
+
+/** Whether `op` writes inside one of `denies` (`pluginLoadDenies`). */
+export function writesPluginLoadDeny(op: FenceOp, denies: readonly string[], os?: Os): string | undefined {
+  if (op.op !== "write" && op.op !== "delete" && op.op !== "move") return undefined;
+  for (const path of op.op === "move" ? [op.path, op.to] : [op.path]) {
+    const hit = denies.find((d) => isInsideFolded(path, d, os));
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
+}
+
 /** The reference for how a runner's sandbox applies a policy (`SandboxPolicy.ownMemory`'s order, #197's check 5), over
  *  a resolved real path: whether `op` on `realPath` passes. A real sandbox must agree with it. */
 export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unlink" | "rename", realPath: string, os?: Os): boolean {
@@ -324,7 +356,9 @@ export interface Fence {
    *  on any folder that holds one (renaming an ancestor moves the item); a read only inside a read-denied item. Names
    *  compare folded on every OS (`foldName`), whether or not the item exists yet, and a name that isn't ASCII where
    *  Clover names things under its home is refused (`nonAsciiAlias`). */
-  /** `ctx` is the caller's reach for `caller` items (`forCaller` passes it); without it they are refused. */
+  /** `ctx` is the caller's reach for `caller` items (`forCaller` passes it); without it they are refused. A write,
+   *  delete or move inside `pluginLoadDenies` (a `node_modules` above a folder plugin code loads from) is refused as
+   *  `plugins` for every caller but the user. */
   check(op: FenceOp, ctx?: FenceContext): FenceVerdict;
   /** The first fenced item any of `paths` reaches, for any access: an agent's request touching one is always a card,
    *  at every level (§9.3). */
@@ -336,7 +370,8 @@ export interface Fence {
   /** The fence as one caller meets it (#197's check 3, and the owner's decision on `bot-memory`). */
   forCaller(caller: Caller): CallerFence;
   /** The arrays for one command runner. The pattern items (`bot-memory`, `sessions-runtime`) are denied whoever the
-   *  runner is for, except a bot's own memory for its main conversation's and side threads' runners (`ownMemory`). */
+   *  runner is for, except a bot's own memory for its main conversation's and side threads' runners (`ownMemory`).
+   *  `denyWrite` holds `pluginLoadDenies` too. */
   policy(ctx?: FenceContext): SandboxPolicy;
   /** The set changed: a development folder was added or removed, or a plugin's data folder appeared. */
   watch(fn: () => void): Unsubscribe;

@@ -34,6 +34,28 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
     make({ os, home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders, agentInstalls: [AGENT], bots: ["alpha"] });
 
   describe("Fence", () => {
+    test("no runner writes a node_modules above a folder plugin code loads from, on every OS (#234's check 4, H1)", () => {
+      const session = (bot: string | undefined, sessionKind: "bot" | "agent" | "coding") =>
+        ({ kind: "session", sessionId: `s_${sessionKind}`, sessionKind, ...(bot ? { bot } : {}) }) as const;
+      for (const os of ["macos", "linux", "windows"] as const) {
+        const f = fence(os, [`${HOME}/dev/luna`]);
+        const above = [`${HOME}/node_modules`, `${CLOVER}/node_modules`, `${CLOVER}/plugins/node_modules`, "/Users/node_modules", "/node_modules", `${HOME}/dev/node_modules`];
+        for (const caller of [session("luna", "bot"), session(undefined, "coding"), session("luna", "agent"), { kind: "plugin", pluginId: "tarot" } as const]) {
+          const p = f.forCaller(caller).policy();
+          expect([os, p.denyWrite]).toEqual([os, expect.arrayContaining(above)]);
+          expect(policyAllows(p, "write", `${HOME}/node_modules/dep/package.json`, os)).toBe(false);
+          expect(policyAllows(p, "write", `${HOME}/notes/node_modules.txt`, os)).toBe(true);
+          for (const op of [{ op: "write", path: `${HOME}/node_modules/dep/package.json` }, { op: "write", path: `${HOME}/NODE_MODULES/dep/index` },
+            { op: "move", path: `${HOME}/stuff`, to: `${HOME}/node_modules` }, { op: "delete", path: `${HOME}/dev/node_modules` }] as const) {
+            expect([os, op, f.forCaller(caller).check(op).allowed]).toEqual([os, op, false]);
+          }
+          expect(f.forCaller(caller).check({ op: "write", path: `${HOME}/notes/a.txt` }).allowed).toBe(true);
+        }
+        // The user's own reach isn't judged.
+        expect(f.forCaller({ kind: "user", client: "app" }).check({ op: "write", path: `${HOME}/node_modules/x` }).allowed).toBe(true);
+      }
+    });
+
     test("macOS fences every item but the secrets file and key files, which the Keychain holds", () => {
       const kinds = new Set(fence("macos", [`${HOME}/dev/luna`]).fencedSet().map((i) => i.kind));
       const expected = FENCED_KINDS.filter((k) => k !== "secrets-file" && k !== "key-file");
