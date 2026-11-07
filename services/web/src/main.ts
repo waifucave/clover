@@ -4,7 +4,7 @@
 // the URL is ever parsed as HTML.
 
 import { Companion, type Connection, PairingError, type PairRecord } from "./app";
-import { DEFAULT_ICE_SERVERS, readInvite, type RtcEnvironment } from "../protocol";
+import { DEFAULT_ICE_SERVERS, readInvite, type RtcEnvironment, type StreamCodec } from "../protocol";
 import { IndexedDbStore } from "./store";
 import { type BrowserTab, decodableCodecs, ownerLabel, TabList, TabStreamInbox, tabTitle, TabWatch, type WatchState } from "./tabs";
 
@@ -76,8 +76,18 @@ let companion: Companion;
 let connection: Connection | null = null;
 /** The connection's `browser.stream` streams, to the watched tab (one per link). */
 let inbox: TabStreamInbox | null = null;
-/** What this browser decodes, asked once. */
-let codecs: ReturnType<typeof decodableCodecs> | null = null;
+/** What this browser decodes: asked once, as the page loads, and kept. */
+let codecs: StreamCodec[] | Promise<StreamCodec[]> | null = null;
+function browserCodecs(): StreamCodec[] | Promise<StreamCodec[]> {
+  if (codecs === null) {
+    const asked = decodableCodecs().then(
+      (c) => (codecs = c),
+      () => (codecs = ["jpeg"] as StreamCodec[]),
+    );
+    codecs = asked;
+  }
+  return codecs;
+}
 
 function closeConnection(): void {
   inbox?.close();
@@ -98,6 +108,7 @@ async function main(): Promise<void> {
   const invite = readInvite(location.hash);
   // The invite's secret leaves the address bar at once: it is only needed for this one pairing.
   if (location.hash) history.replaceState(null, "", location.pathname);
+  void browserCodecs();
   if (invite) return pairScreen(invite);
   return home();
 }
@@ -247,7 +258,6 @@ async function tabs(record: PairRecord, botList: BotView[]): Promise<void> {
 async function watch(record: PairRecord, botList: BotView[], tab: BrowserTab): Promise<void> {
   const link = connection!.link;
   inbox ??= new TabStreamInbox(link);
-  codecs ??= decodableCodecs();
   const canvas = el("canvas", { className: "live" });
   canvas.setAttribute("aria-label", `${tabTitle(tab)}, live from ${record.computerName}`);
   const ctx = canvas.getContext("2d");
@@ -259,8 +269,9 @@ async function watch(record: PairRecord, botList: BotView[], tab: BrowserTab): P
       : state.kind === "ended" ? (state.reason === "closed" ? "The tab was closed." : state.reason === "stopped" ? "The stream stopped." : `The stream failed${state.message ? `: ${state.message}` : "."}`)
       : `Can't show this tab: ${state.message}`;
   };
+  // The screen is drawn at once; the watch waits for the codecs itself, and asks nothing if the person left meanwhile.
   const watching = new TabWatch(link, inbox, tab.id, {
-    codecs: await codecs,
+    codecs: browserCodecs(),
     onState: say,
     onPicture: (p) => {
       if (canvas.width !== p.width || canvas.height !== p.height) {

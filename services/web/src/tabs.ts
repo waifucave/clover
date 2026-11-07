@@ -3,9 +3,9 @@
 // (`browser.stream`, decoded by tab-stream.ts). Viewing only: nothing the person does here reaches the tab; input
 // waits for the spec's remote-control rules.
 
-import { type StreamCodec } from "../protocol/browser-stream";
+import { readStreamMeta, STREAM_LINK_LABEL, type StreamCodec } from "../protocol/browser-stream";
 import type { LinkStream } from "../protocol/rtc-link";
-import { decodableCodecs, receiveTabStreams, type TabPicture, type TabStreamDecoders, TabStreamView } from "./tab-stream";
+import { decodableCodecs, type TabPicture, type TabStreamDecoders, TabStreamView } from "./tab-stream";
 
 /** What the tabs need of the link (RtcLink has it; tests fake it). */
 export interface BrowserLink {
@@ -100,6 +100,7 @@ export class TabList {
   #tabs = new Map<string, BrowserTab>();
   #off: (() => void) | undefined;
   #subscribed = false;
+  #closed = false;
 
   constructor(link: BrowserLink, onChange: (tabs: BrowserTab[]) => void) {
     this.#link = link;
@@ -112,9 +113,16 @@ export class TabList {
 
   /** Follows the `browser` area and reads the list. Throws when the computer won't list its tabs. */
   async open(): Promise<void> {
+    this.#closed = false;
     this.#off ??= this.#link.onNotify("core.event", (e) => this.apply(e));
     // The events keep the list current; a computer that won't send them still lists its tabs.
-    this.#subscribed = await this.#link.request("events.subscribe", { areas: ["browser"] }).then(() => true, () => false);
+    const subscribed = await this.#link.request("events.subscribe", { areas: ["browser"] }).then(() => true, () => false);
+    if (this.#closed) {
+      // Closed while the subscribe was in flight: undo it now that it has answered.
+      if (subscribed) await this.#unsubscribe();
+      return;
+    }
+    this.#subscribed = subscribed;
     await this.refresh();
   }
 
@@ -140,12 +148,17 @@ export class TabList {
   }
 
   async close(): Promise<void> {
+    this.#closed = true;
     this.#off?.();
     this.#off = undefined;
     if (this.#subscribed) {
       this.#subscribed = false;
-      await this.#link.request("events.unsubscribe", { areas: ["browser"] }).catch(() => undefined);
+      await this.#unsubscribe();
     }
+  }
+
+  async #unsubscribe(): Promise<void> {
+    await this.#link.request("events.unsubscribe", { areas: ["browser"] }).catch(() => undefined);
   }
 }
 
@@ -157,39 +170,128 @@ export type WatchState =
   /** This side couldn't go on (refused, a codec it can't decode), or the link stream broke. */
   | { kind: "failed"; message: string };
 
-/** The link's `browser.stream` streams, each to the watch of its tab. One per link: a link has one handler per label. */
+/** A link stream held, before `browser.stream` has said which stream is the watch's: what came on it so far. */
+interface Held {
+  stream: LinkStream;
+  id: string;
+  bytes: Uint8Array[];
+  ended: { error?: Error } | undefined;
+  off: () => void;
+}
+
+interface Expected {
+  view: TabStreamView;
+  /** The stream `browser.stream` answered; until then, streams for the tab are held. */
+  stream: string | undefined;
+  claimed: boolean;
+  held: Held[];
+}
+
+/** One watch's place in the inbox. */
+export interface InboxTicket {
+  /** `browser.stream` answered with this stream: a held one that matches is shown, every other is refused. */
+  answered(stream: string): void;
+  release(): void;
+}
+
+/** The link's `browser.stream` streams, each to the watch whose `browser.stream` answered its id (`meta.stream`). One
+ *  per link: a link has one handler per label. A stream for a tab nobody watches, one that isn't the answered stream (a
+ *  late one from an earlier watch of the same tab), or a second copy is refused; one that comes before the answer is
+ *  held until it does. */
 export class TabStreamInbox {
-  readonly #watches = new Map<string, { view: TabStreamView; claimed: boolean }>();
+  readonly #watches = new Map<string, Expected>();
   readonly #off: () => void;
 
   constructor(link: BrowserLink) {
-    this.#off = receiveTabStreams(link, (meta) => {
+    this.#off = link.onStream(STREAM_LINK_LABEL, (stream, raw) => {
+      const meta = readStreamMeta(raw);
+      if (meta === null) return stream.abort("not a stream this reads");
       const w = this.#watches.get(meta.tab);
-      // A stream nobody is watching for, or a second one for the same watch, is refused.
-      if (w === undefined || w.claimed || w.view.closed) return null;
+      if (w === undefined || w.view.closed || w.claimed) return stream.abort("not wanted");
+      if (w.stream === undefined) return this.#hold(w, stream, meta.stream);
+      if (w.stream !== meta.stream) return stream.abort("not wanted");
       w.claimed = true;
-      return w.view;
+      attach(stream, w.view);
     });
   }
 
-  /** The next stream for `tab` goes to `view`. Returns the release. */
-  expect(tab: string, view: TabStreamView): () => void {
-    const entry = { view, claimed: false };
+  /** Streams for `tab` go to `view` once `answered` names one. */
+  expect(tab: string, view: TabStreamView): InboxTicket {
+    const old = this.#watches.get(tab);
+    if (old !== undefined) dropHeld(old);
+    const entry: Expected = { view, stream: undefined, claimed: false, held: [] };
     this.#watches.set(tab, entry);
-    return () => {
-      if (this.#watches.get(tab) === entry) this.#watches.delete(tab);
+    return {
+      answered: (stream) => {
+        if (this.#watches.get(tab) !== entry || entry.stream !== undefined) return;
+        entry.stream = stream;
+        const held = entry.held;
+        entry.held = [];
+        for (const h of held) {
+          h.off();
+          if (h.id !== stream || entry.claimed || view.closed) {
+            if (h.ended === undefined) h.stream.abort("not wanted");
+            continue;
+          }
+          entry.claimed = true;
+          for (const b of h.bytes) view.push(b);
+          if (h.ended !== undefined) view.lose(h.ended.error);
+          else attach(h.stream, view);
+        }
+      },
+      release: () => {
+        if (this.#watches.get(tab) !== entry) return;
+        this.#watches.delete(tab);
+        dropHeld(entry);
+      },
     };
   }
 
   close(): void {
     this.#off();
+    for (const w of this.#watches.values()) dropHeld(w);
     this.#watches.clear();
+  }
+
+  #hold(w: Expected, stream: LinkStream, id: string): void {
+    const h: Held = { stream, id, bytes: [], ended: undefined, off: () => {} };
+    const offData = stream.onData((b) => h.bytes.push(b.slice()));
+    const offEnd = stream.onEnd((error) => (h.ended = error !== undefined ? { error } : {}));
+    h.off = () => {
+      offData();
+      offEnd();
+    };
+    w.held.push(h);
   }
 }
 
+function dropHeld(w: Expected): void {
+  for (const h of w.held) {
+    h.off();
+    if (h.ended === undefined) h.stream.abort("not wanted");
+  }
+  w.held = [];
+}
+
+/** The stream's bytes go to the view until either side ends: this side giving up aborts it; the computer's `ended`
+ *  frame needs nothing more; the stream finishing or breaking first is said by the view. */
+function attach(stream: LinkStream, view: TabStreamView): void {
+  const offData = stream.onData((bytes) => {
+    view.push(bytes);
+    if (view.closed) {
+      offData();
+      if (!view.ended) stream.abort("can't show it");
+    }
+  });
+  stream.onEnd((error) => {
+    offData();
+    view.lose(error);
+  });
+}
+
 export interface TabWatchOptions {
-  /** What this browser decodes (`decodableCodecs()`); asked for once per page. */
-  codecs: StreamCodec[];
+  /** What this browser decodes (`decodableCodecs()`, asked once per page); the watch waits for it before asking. */
+  codecs: StreamCodec[] | Promise<StreamCodec[]>;
   decoders?: TabStreamDecoders;
   onPicture(picture: TabPicture): void;
   onState(state: WatchState): void;
@@ -202,7 +304,7 @@ export class TabWatch {
   readonly #tab: string;
   readonly #o: TabWatchOptions;
   #view: TabStreamView | undefined;
-  #release: (() => void) | undefined;
+  #ticket: InboxTicket | undefined;
   #state: WatchState = { kind: "starting" };
   #asked = false;
   #left = false;
@@ -219,6 +321,11 @@ export class TabWatch {
   }
 
   async start(): Promise<void> {
+    if (this.#left || this.#view !== undefined) return;
+    this.#o.onState(this.#state);
+    const codecs = await this.#o.codecs;
+    // Left while the codecs were worked out: nothing was asked, so nothing to stop.
+    if (this.#left) return;
     const view = new TabStreamView({
       ...(this.#o.decoders ? { decoders: this.#o.decoders } : {}),
       onPicture: (p) => {
@@ -230,23 +337,28 @@ export class TabWatch {
       onError: (message) => this.#finish({ kind: "failed", message }),
     });
     this.#view = view;
-    // Expect the stream before asking: it may come before the answer does.
-    this.#release = this.#inbox.expect(this.#tab, view);
-    this.#o.onState(this.#state);
+    // Expect the stream before asking: it may come before the answer does, and is held until then.
+    const ticket = this.#inbox.expect(this.#tab, view);
+    this.#ticket = ticket;
+    let answer: { stream?: unknown };
     try {
       this.#asked = true;
-      await this.#link.request("browser.stream", { id: this.#tab, on: true, codecs: this.#o.codecs });
+      answer = await this.#link.request<{ stream?: unknown }>("browser.stream", { id: this.#tab, on: true, codecs });
     } catch (e) {
       this.#asked = false;
       this.#finish({ kind: "failed", message: describe(e) });
+      return;
     }
+    if (this.#left) return;
+    if (typeof answer?.stream !== "string") return this.#finish({ kind: "failed", message: "the computer didn't start a stream" });
+    ticket.answered(answer.stream);
   }
 
   /** Stops the stream and lets go of everything; safe to call more than once. */
   async leave(): Promise<void> {
     if (this.#left) return;
     this.#left = true;
-    this.#release?.();
+    this.#ticket?.release();
     this.#view?.close();
     if (this.#asked && this.#state.kind !== "ended") {
       this.#asked = false;
@@ -255,7 +367,7 @@ export class TabWatch {
   }
 
   #finish(state: WatchState): void {
-    this.#release?.();
+    this.#ticket?.release();
     if (this.#state.kind === "ended" || this.#state.kind === "failed") return;
     this.#set(state);
     // A watch this side gave up on (or whose link stream broke) may still have a stream running on the computer.

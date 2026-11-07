@@ -113,6 +113,23 @@ describe("the tab list", () => {
     expect(refused.open()).rejects.toThrow("browser.tabs isn't allowed");
   });
 
+  test("a list closed while its subscribe is in flight unsubscribes once the subscribe answers", async () => {
+    let gate!: () => void;
+    const answered = new Promise<void>((r) => (gate = r));
+    const f = fakeLink({
+      "events.subscribe": async () => (await answered, { ok: true }),
+      "events.unsubscribe": () => ({ ok: true }),
+      "browser.tabs": () => ({ tabs: [] }),
+    });
+    const list = new TabList(f.link, () => {});
+    const opening = list.open();
+    await list.close();
+    expect(f.calls.map((c) => c[0])).toEqual(["events.subscribe"]);
+    gate();
+    await opening;
+    expect(f.calls.map((c) => c[0])).toEqual(["events.subscribe", "events.unsubscribe"]);
+  });
+
   test("tabs are read tolerantly; owners and titles are said plainly", () => {
     expect(readTab({ id: "t", computer: "c", owner: { kind: "alien" } })).toBeNull();
     const t = readTab({ id: "t", computer: "c", owner: { kind: "session", session: "s1" }, place: "elsewhere" }) as BrowserTab;
@@ -217,5 +234,93 @@ describe("watching a tab", () => {
     expect(w.w.state).toEqual({ kind: "failed", message: "the stream broke: the stream's channel closed" });
     await tick();
     expect(f.calls.at(-1)).toEqual(["browser.stream", { id: "t1", on: false }]);
+  });
+
+  test("streams go by id: an old stream arriving late after leaving and watching again is refused", async () => {
+    let n = 0;
+    const f = fakeLink({ "browser.stream": (p) => (p.on === true ? { stream: `st_${++n}` } : {}) });
+    const inbox = new TabStreamInbox(f.link);
+    const first = watcher(f, inbox);
+    await first.w.start();
+    await first.w.leave();
+
+    // Watch again; the first watch's stream turns up only now, before and after the second answer.
+    let gate!: () => void;
+    const answered = new Promise<void>((r) => (gate = r));
+    const g = fakeLink({ "browser.stream": async (p) => (p.on === true ? (await answered, { stream: "st_2" }) : {}) });
+    const inbox2 = new TabStreamInbox(g.link);
+    const again = watcher(g, inbox2);
+    const starting = again.w.start();
+    await tick();
+    const lateBefore = g.open({ v: 1, stream: "st_1", tab: "t1", computer: "Studio" });
+    const mine = g.open({ v: 1, stream: "st_2", tab: "t1", computer: "Studio" });
+    mine.send(config()); // held until the answer
+    mine.send(picture(5));
+    expect(again.pictures).toEqual([]);
+    gate();
+    await starting;
+    await tick();
+    expect(lateBefore.aborted).toEqual(["not wanted"]);
+    expect(mine.aborted).toEqual([]);
+    expect(again.pictures).toEqual([5]); // what was held is shown once the answer names it
+    const lateAfter = g.open({ v: 1, stream: "st_1", tab: "t1", computer: "Studio" });
+    expect(lateAfter.aborted).toEqual(["not wanted"]);
+    mine.send(picture(6));
+    await tick();
+    expect(again.pictures).toEqual([5, 6]);
+
+    // And on the first link: the old stream arriving after the second watch there answered is refused too.
+    const second = watcher(f, inbox);
+    await second.w.start();
+    expect(f.open({ v: 1, stream: "st_1", tab: "t1", computer: "Studio" }).aborted).toEqual(["not wanted"]);
+    const current = f.open({ v: 1, stream: "st_2", tab: "t1", computer: "Studio" });
+    current.send(new Uint8Array([...config(), ...picture(9)]));
+    await tick();
+    expect(second.pictures).toEqual([9]);
+  });
+
+  test("a held stream that ended before the answer is still said; leaving before the answer refuses what was held", async () => {
+    let gate!: () => void;
+    const answered = new Promise<void>((r) => (gate = r));
+    const f = fakeLink({ "browser.stream": async (p) => (p.on === true ? (await answered, { stream: "st" }) : {}) });
+    const inbox = new TabStreamInbox(f.link);
+    const w = watcher(f, inbox);
+    const starting = w.w.start();
+    await tick();
+    const s = f.open({ v: 1, stream: "st", tab: "t1", computer: "Studio" });
+    s.send(new Uint8Array([...config(), ...ended("closed")]));
+    s.finish();
+    gate();
+    await starting;
+    expect(w.w.state).toEqual({ kind: "ended", reason: "closed" });
+
+    let gate2!: () => void;
+    const answered2 = new Promise<void>((r) => (gate2 = r));
+    const g = fakeLink({ "browser.stream": async (p) => (p.on === true ? (await answered2, { stream: "st" }) : {}) });
+    const left = watcher(g, new TabStreamInbox(g.link));
+    const starting2 = left.w.start();
+    await tick();
+    const held = g.open({ v: 1, stream: "st", tab: "t1", computer: "Studio" });
+    await left.w.leave();
+    expect(held.aborted).toEqual(["not wanted"]);
+    gate2();
+    await starting2;
+    expect(g.calls.map((c) => c[1].on)).toEqual([true, false]);
+  });
+
+  test("leaving before the codecs are known asks nothing; an answer without a stream fails", async () => {
+    const f = fakeLink({ "browser.stream": () => ({}) });
+    const inbox = new TabStreamInbox(f.link);
+    let resolve!: (c: ("h264" | "jpeg")[]) => void;
+    const w = new TabWatch(f.link, inbox, "t1", { codecs: new Promise((r) => (resolve = r)), decoders: images(), onState: () => {}, onPicture: () => {} });
+    const starting = w.start();
+    await w.leave();
+    resolve(["jpeg"]);
+    await starting;
+    expect(f.calls).toEqual([]);
+
+    const none = watcher(f, inbox);
+    await none.w.start();
+    expect(none.w.state).toEqual({ kind: "failed", message: "the computer didn't start a stream" });
   });
 });
