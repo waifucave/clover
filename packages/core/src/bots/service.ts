@@ -105,6 +105,16 @@ export interface BotSessionContext {
   /** Whether the cached prompt has expired: the turn starting now rebuilds the harness blocks (the MCP block, the
    *  devices block, the `computer` lists) without compacting (§6.1). */
   cacheCold(): boolean;
+  /** A background task of the session's runtime finished, failed or was stopped (lane A's ask): the driver hands its
+   *  notification here instead of starting a turn itself. The host records it and folds it into the running turn, or
+   *  starts a turn for it (`origin: "task-notification"`) once the pause, the lease and the update gate let one start;
+   *  the driver then runs that turn through `turn()` like any other. Optional (lane A's ask): a driver whose context
+   *  has none keeps holding such a turn until the session may start one. One wake per notification.
+   *  A storm of `event` wakes (a monitor that keeps reporting) never piles up: while a turn runs or one is queued for
+   *  the session (behind the pause, the lease or the update gate too), further events merge into one pending wake per
+   *  task, with that task's latest text and how many came, delivered as that turn ends (the first starts a turn, the
+   *  rest fold into it); it answers `queued` meanwhile. */
+  wake?(input: Omit<Extract<DeliveredInput, { from: "task" }>, "from">): Promise<{ disposition: Disposition; seq: number }>;
 }
 
 /** How a message reaches a bot's conversation on another computer (lane H's link: `peer.session.send`, and a bot's
@@ -175,6 +185,14 @@ export const HAND_BACK_MAX_MS = 10 * 60_000;
 /** The longest result a side thread posts into the main conversation (`RoutineRunView.summary`'s cap). */
 export const SIDE_THREAD_RESULT_MAX_CHARS = 4_000;
 
+type WakeInput = Omit<Extract<DeliveredInput, { from: "task" }>, "from">;
+
+/** A session's merged `event` wakes, one per task, waiting for its turn to end. */
+interface PendingWakes {
+  tasks: Map<string, { text: string; count: number }>;
+  off: () => void;
+}
+
 interface Live {
   plugin: PluginBot;
   mainSession: string;
@@ -196,6 +214,8 @@ export class BotService {
   readonly #o: BotServiceOptions;
   readonly #layers: UserLayerStore;
   readonly #bots = new Map<string, Live>();
+  /** Each session's merged `event` wakes, waiting for its turn to end. */
+  readonly #wakes = new Map<string, PendingWakes>();
   readonly #events = new Listeners<BotServiceEvent>();
   readonly #warn: (message: string) => void;
   #offs: Unsubscribe[] = [];
@@ -239,6 +259,8 @@ export class BotService {
   /** Detaches every bot's sessions, leaving them dormant on disk (a shutdown). */
   async stop(): Promise<void> {
     for (const off of this.#offs.splice(0)) off();
+    for (const w of this.#wakes.values()) w.off();
+    this.#wakes.clear();
     await this.#sync;
     for (const live of this.#bots.values()) {
       await this.#o.host.release(live.mainSession);
@@ -417,11 +439,14 @@ export class BotService {
     await host.deliver(session, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: run.text });
     const end = await ended;
     const summary = sideThreadResult(end);
+    // Only a turn that ended on its own went well; a refusal, a failure (a timeout among them), a stop or a cut-off
+    // didn't (lane G's routineFailed).
+    const failed = end.reason !== "end_turn";
     const main = host.get(live.mainSession);
     if (main !== undefined && main.status !== "stopped" && main.status !== "failed") {
       // To the computer running the bot, wherever that is (the host forwards it, review S1).
       try {
-        await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary });
+        await host.deliver(live.mainSession, { from: "routine", routine: run.routine, name: run.name, sideThread: session, text: summary, failed });
       } catch (err) {
         this.#warn(`the side thread ${session}'s result didn't reach ${live.mainSession}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -429,7 +454,7 @@ export class BotService {
     await host.stop(session, "the run ended");
     return {
       routine: run.routine, session, startedAt, endedAt: this.#o.clock.now(),
-      outcome: end.reason === "end_turn" || end.reason === "refusal" ? "done" : "failed", summary,
+      outcome: failed ? "failed" : "done", summary,
     };
   }
 
@@ -576,7 +601,7 @@ export class BotService {
       try {
         const main = host.get(mainSession);
         if (s.routine !== undefined && main !== undefined && main.status !== "stopped" && main.status !== "failed") {
-          await host.deliver(mainSession, { from: "routine", routine: s.routine, name: s.title ?? s.routine, sideThread: s.id, text: sideThreadResult({ reason: "interrupted" }) });
+          await host.deliver(mainSession, { from: "routine", routine: s.routine, name: s.title ?? s.routine, sideThread: s.id, text: sideThreadResult({ reason: "interrupted" }), failed: true });
         }
         await host.stop(s.id, "the daemon restarted");
       } catch (err) {
@@ -683,7 +708,47 @@ export class BotService {
       mayStart: () => gate.mayStart({ kind }),
       whenMayStart: (signal) => gate.whenMayStart({ kind }, signal),
       cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,
+      wake: (input) => this.#wake(sessionId, input),
     };
+  }
+
+  /** A runtime's background-task wake (`BotSessionContext.wake`): an end goes straight to the host; an `event` merges
+   *  into one pending wake while the session is busy (a turn runs or one waits). */
+  async #wake(id: string, input: WakeInput): Promise<{ disposition: Disposition; seq: number }> {
+    const host = this.#o.host;
+    const busy = host.turnOrigin(id) !== undefined || host.waiting(id) > 0;
+    if (input.status !== "event" || !busy) return host.deliver(id, { from: "task", ...input });
+    let w = this.#wakes.get(id);
+    if (w === undefined) {
+      const fresh: PendingWakes = { tasks: new Map(), off: () => {} };
+      // As the running (or next) turn ends, each task's merged wake goes in: the first starts a turn and the rest
+      // fold into it (a driver that can't fold queues them), so at most one more turn per task, usually one in all.
+      fresh.off = host.subscribe(id, (r) => {
+        if (r.type !== "turn_ended" && !(r.type === "status" && (r.status === "stopped" || r.status === "failed"))) return;
+        const p = this.#wakes.get(id);
+        if (p === undefined) return;
+        this.#wakes.delete(id);
+        p.off();
+        if (r.type === "status") return;
+        // After the host has finished ending the turn (the record comes first), so it starts a turn, not a fold.
+        queueMicrotask(() => {
+          void (async () => {
+            for (const [task, e] of p.tasks) {
+              const text = e.count > 1 ? `${e.text}\n\n(${e.count} events from this task came while you were busy; the latest is shown.)` : e.text;
+              await host.deliver(id, { from: "task", task, status: "event", text }).catch((err: unknown) => {
+                this.#warn(`${id}'s merged events of ${task} weren't delivered: ${err instanceof Error ? err.message : String(err)}`);
+              });
+            }
+          })();
+        });
+      });
+      w = fresh;
+      this.#wakes.set(id, w);
+    }
+    // One pending wake per task: its latest text and how many came.
+    const e = w.tasks.get(input.task);
+    w.tasks.set(input.task, { text: input.text, count: (e?.count ?? 0) + 1 });
+    return { disposition: "queued", seq: host.length(id) };
   }
 
   /** The main session's view follows the bot's name, model and effort. */
