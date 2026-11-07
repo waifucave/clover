@@ -162,6 +162,27 @@ describe("hot-settings P8b: the Clover-leg keys reach the live holder with no re
     }
   }
 
+  /** Polls the live holder until `ok` holds, WITHOUT writing again: for the catch-up test, whose point is that one
+   *  write made before the watch armed is still picked up. Bounded at SETTLE_MS, failing loudly. */
+  async function untilSettings(d: RunningDaemon, what: string, ok: (s: ReturnType<RunningDaemon["settings"]>) => boolean): Promise<void> {
+    const deadline = Date.now() + SETTLE_MS;
+    for (;;) {
+      if (ok(d.settings())) return;
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}; live settings.runtimes = ${JSON.stringify(d.settings()?.runtimes)}`);
+      await sleep(25);
+    }
+  }
+
+  test("an edit written the moment the daemon has started is picked up without a second write (the watch's catch-up)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-hot-e2e-catchup-"));
+    writeSettingsFile(home, { runtimes: undefined });
+    const secrets = new FileSecretStore(join(home, "test-secrets"));
+    // A watch stream that hasn't armed yet, as macOS's FSEvents may not have just after start: no event comes.
+    daemon = await startDaemon({ home, secrets, agentProvider: { provider: new FakeProvider(endTurnScript()), model: "fake-1" }, settingsWatch: () => ({ close() {} }) });
+    writeSettingsFile(home, { runtimes: { winterIdleTimeoutSec: 61 } });
+    await untilSettings(daemon, "winterIdleTimeoutSec = 61", (s) => s?.runtimes?.winterIdleTimeoutSec === 61);
+  });
+
   test("winterLeg.chat, winterExecutable, winterIdleTimeoutSec and retention all flip live on ONE daemon", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-hot-e2e-clover-"));
     writeSettingsFile(home, { runtimes: undefined })   // no block at all: the absent-block state; // no `runtimes` block at all — the shipped default
