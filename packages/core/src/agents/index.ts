@@ -47,7 +47,6 @@ import { ContributedBackendCache, type ContributedBackend } from "./plugin-backe
 import { ADMISSIONS } from "./sandbox/admission";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
-import { inProcessSandboxReady, notAvailableHere } from "./sandbox/in-process";
 import { StallWatchdog } from "./watchdog";
 import { AgentPeers, type AgentPeersOptions } from "./remote";
 import { inProcessAgentBackend, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
@@ -135,10 +134,13 @@ export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor"
   const gate = o.pause ?? OPEN_PAUSE_GATE;
   // The session's own pause when the manager hands one (for an agent run for another computer, that computer's
   // forwarded switch too), else this computer's.
-  const b = inProcessAgentBackend({ ...deps, pauseGateFor: (spec) => (spec as AcpStartSpec).pause ?? gate, privateFoldersFor: () => homeFoldersOf(o.home) });
-  // Its sandbox is the embedded runtime's, which only macOS has for now: elsewhere it isn't available, with the reason.
-  const ready = o.sandboxReady ?? inProcessSandboxReady;
-  return { ...b, start: (spec) => b.start(spec), detect: async () => (ready() ? b.detect() : notAvailableHere(b.id)) };
+  // Its sandbox is the embedded runtime's, which only macOS has for now: the backend's own `detect` says it isn't
+  // available elsewhere, with the reason (`sandboxReady`, the check it reads, passed through).
+  const b = inProcessAgentBackend({
+    ...deps, pauseGateFor: (spec) => (spec as AcpStartSpec).pause ?? gate, privateFoldersFor: () => homeFoldersOf(o.home),
+    ...(o.sandboxReady !== undefined ? { sandboxReady: o.sandboxReady } : {}),
+  });
+  return { ...b, start: (spec) => b.start(spec) };
 }
 
 /** Wires the Agent tool for one daemon: the tokens, the bridge's parts for lane C's Clover server (`clover`: pass
