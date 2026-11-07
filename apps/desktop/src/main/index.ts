@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, DeviceChangedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { housingFor, loadScreens } from "./housing";
@@ -26,13 +26,13 @@ import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
-import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
+import { AnswerKey, AnswerKeyRegistration, memoryVault, safeStorageVault } from "./answer-key";
 import { LayerLinks } from "./layer-links";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { Notifications } from "./notify";
+import { Notifications, notificationOptions } from "./notify";
 import { appShortcut } from "./shortcuts";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
@@ -333,8 +333,11 @@ function makePair(): Pair {
     prove: { pid: process.pid },
     log,
     onConnected: (client, hello) => {
-      // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).
-      void answerKey().register(client, hello.device);
+      // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`). The daemon
+      // takes it only once its keychain store unlocks and the links are up, and `hello.device` is a stand-in id
+      // until then: the registration retries with backoff and on this device's own changes, without a reconnect.
+      if (answerKeyRegistration === undefined) answerKeyRegistration = new AnswerKeyRegistration(answerKey(), log);
+      void answerKeyRegistration.onConnected(client, hello.device);
       signedDevice = hello.device;
       // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones, and the
       // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
@@ -367,7 +370,7 @@ function makePair(): Pair {
     const raw = (params ?? {}) as Record<string, unknown>;
     const parsed = APP_METHODS.appNotify.params.safeParse(raw);
     if (!parsed.success) throw new Error("app.notify needs an id and a title");
-    const r = notifications.notify({ ...parsed.data, ...(raw.urgent === true ? { urgent: true } : {}) }, front());
+    const r = notifications.notify({ ...parsed.data, ...(raw.urgent === true ? { urgent: true } : {}), ...(raw.silent === true ? { silent: true } : {}) }, front());
     return { ok: true, ...r };
   });
   p.handle("app.notify.close", (params) => {
@@ -404,6 +407,16 @@ function makePair(): Pair {
         disarmFallback(parsed.data.id);
       }
     }
+    // This computer's own device record changed (its stand-in id became the unlocked one, or the core took the
+    // answer key): the registration runs again, and the proofs sign under the id the core knows now.
+    if (type === "device_changed") {
+      const parsed = DeviceChangedEvent.safeParse(params);
+      if (parsed.success && parsed.data.device.isThis === true) {
+        signedDevice = parsed.data.device.id;
+        const client = pair.client;
+        if (client !== undefined && answerKeyRegistration !== undefined) void answerKeyRegistration.onDeviceChanged(client, parsed.data.device);
+      }
+    }
     // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback. A card_pending
     // goes only to layers; the app hears card_requested. Nothing else here.
   });
@@ -413,6 +426,8 @@ function makePair(): Pair {
 /** The answer key (a headless run's in memory: it never touches the OS's store) and the no-prompt rule's limits: an
  *  unpackaged app keeps it in memory alone (S4: no Keychain or keyring dialog from a dev build), and a Linux whose
  *  safeStorage would fall back to `basic_text` — no secret store at all — keeps it in memory, said once (S3). */
+/** This desktop's answer key, registered with retries (its keychain store may still be locked at connect). */
+let answerKeyRegistration: AnswerKeyRegistration | undefined;
 let answerKeyValue: AnswerKey | undefined;
 function answerKey(): AnswerKey {
   if (answerKeyValue === undefined) {
@@ -928,7 +943,7 @@ const notifications = new Notifications((req, onClick) => {
     log(`notify: ${headless ? "a headless run shows no notification" : "this desktop has no notifications"} (${req.id})`);
     return undefined;
   }
-  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
+  const n = new Notification(notificationOptions(req, process.platform));
   n.on("click", onClick);
   n.show();
   return n;

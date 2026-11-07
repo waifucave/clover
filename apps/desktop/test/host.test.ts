@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
-import { appShortcut } from "../src/main/shortcuts";
+import { APP_KEYS, appShortcut, EDIT_MENU_KEYS, RESERVED_KEYS, type AppShortcut } from "../src/main/shortcuts";
 import { mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
@@ -142,6 +142,30 @@ describe("the app's shortcuts", () => {
     expect(appShortcut(key("w", { meta: true, shift: true }), "darwin")).toBeUndefined();
     expect(appShortcut(key("q", { meta: true, alt: true }), "darwin")).toBeUndefined();
     expect(appShortcut({ ...key("q", { meta: true }), type: "keyUp" }, "darwin")).toBeUndefined();
+  });
+
+  test("the reserved keys: the app's own chords each take their shortcut, and the Edit menu's ride with them", () => {
+    // Each app chord drives its shortcut on macOS (Mod is ⌘) and elsewhere (Mod is Ctrl).
+    const mod = (platform: NodeJS.Platform) => (platform === "darwin" ? { meta: true } : { control: true });
+    const chord = (c: string, platform: NodeJS.Platform) => {
+      const bits = c.split("+");
+      const k = bits.at(-1)!;
+      return key(k, { ...mod(platform), ...(bits.includes("shift") ? { shift: true } : {}) });
+    };
+    const seen: { chord: (typeof APP_KEYS)[number]; want: AppShortcut }[] = [
+      { chord: "mod+q", want: "quit" },
+      { chord: "mod+w", want: "close-window" },
+      { chord: "mod+,", want: "settings" },
+    ];
+    for (const { chord: c, want } of seen) {
+      expect(APP_KEYS).toContain(c);
+      for (const platform of ["darwin", "win32", "linux"] as const) expect(appShortcut(chord(c, platform), platform)).toBe(want);
+    }
+    // The reserved set is the app's plus the Edit menu's, with no duplicates.
+    expect([...RESERVED_KEYS].sort()).toEqual([...APP_KEYS, ...EDIT_MENU_KEYS].sort());
+    expect(new Set(RESERVED_KEYS).size).toBe(RESERVED_KEYS.length);
+    expect(EDIT_MENU_KEYS).toContain("mod+z");
+    expect(EDIT_MENU_KEYS).toContain("mod+v");
   });
 });
 

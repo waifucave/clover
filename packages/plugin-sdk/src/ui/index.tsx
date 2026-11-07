@@ -691,8 +691,9 @@ function watcher<T>(mount: string, pluginId: string, area: string, type: string,
 }
 
 /** The plugin API in this layer, each call on the part's own plugin's connection, where the daemon checks it as that
- *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, and `conversation`'s `list`, `get` and `answer`.
- *  The rest reaches layers with lane B's host side (B-M2). */
+ *  plugin: `plugin`, `t`, `terminal`, `bots`, `computers`, `devices`, `files` (reads pass their options whole, so
+ *  `noFollow` survives), `storage.synced`, and `conversation`'s `list`, `get` and `answer`. The rest reaches layers
+ *  with lane B's host side (B-M2). */
 export function usePluginApi(): PluginApi {
   const part = usePart();
   const t = useT();
@@ -720,12 +721,36 @@ export function usePluginApi(): PluginApi {
         list: () => call<{ devices: unknown[] }>("device.list", {}).then((r) => r.devices),
         watch: watcher(part.mount, part.entry.pluginId, "devices", "device_changed", "device"),
       } as unknown as PluginApi["devices"],
+      files: {
+        // The options ride whole, never rebuilt from offset and length, so `noFollow` survives to the tree's own
+        // check (a planted link stays refused there).
+        stat: (path: string, opts?: { noFollow?: boolean }) => call("files.stat", [path, ...(opts === undefined ? [] : [opts])]),
+        readText: (path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }) => call("files.readText", [path, ...(opts === undefined ? [] : [opts])]),
+        readBytes: (path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }) => call("files.readBytes", [path, ...(opts === undefined ? [] : [opts])]),
+        write: (path: string, data: string | Uint8Array, opts?: { createDirs?: boolean }) => call("files.write", [path, data, ...(opts === undefined ? [] : [opts])]).then(() => undefined),
+        list: (path: string) => call("files.list", [path]),
+        remove: (path: string, opts?: { recursive?: boolean }) => call("files.remove", [path, ...(opts === undefined ? [] : [opts])]).then(() => undefined),
+        move: (from: string, to: string) => call("files.move", [from, to]).then(() => undefined),
+        glob: (pattern: string, opts: { cwd: string; limit?: number }) => call("files.glob", [pattern, opts]),
+        grep: (pattern: string, opts: { cwd: string; glob?: string; ignoreCase?: boolean; limit?: number }) => call("files.grep", [pattern, opts]),
+        watch: unavailable("files.watch"),
+      } as unknown as PluginApi["files"],
       plugin: { id: part.entry.pluginId } as PluginApi["plugin"],
       points: { list: unavailable("points") } as unknown as PluginApi["points"],
       commands: { list: unavailable("commands"), run: unavailable("commands") } as unknown as PluginApi["commands"],
       host: { call: unavailable("host"), on: () => () => {} } as unknown as PluginApi["host"],
       ui: { send: () => {} } as unknown as PluginApi["ui"],
-      storage: {} as PluginApi["storage"],
+      storage: {
+        // The plugin's synced store (§5.4): over the part's own connection like every other call, so a layer's
+        // shortcut bindings (and anything else it keeps) persist core-side. `watch` reaches layers with the rest.
+        synced: {
+          get: (key: string) => call("storage.synced.get", [key]),
+          set: (key: string, value: unknown) => call("storage.synced.set", [key, value]).then(() => undefined),
+          delete: (key: string) => call("storage.synced.delete", [key]).then(() => undefined),
+          keys: () => call("storage.synced.keys", []),
+          watch: unavailable("storage.synced.watch"),
+        },
+      } as unknown as PluginApi["storage"],
       net: { fetch: unavailable("net.fetch") } as unknown as PluginApi["net"],
       settings: {} as PluginApi["settings"],
       confirm: unavailable("confirm") as unknown as PluginApi["confirm"],

@@ -154,7 +154,7 @@ export const APP_METHODS = {
   }),
   appNotify: defineMethod({
     name: "app.notify", owner: "G", roles: ["app"], direction: "from-daemon",
-    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional() }),
+    params: z.object({ id: utf16(128, 1), title: utf16(256), body: utf16(4000).optional(), session: SessionId.optional(), urgent: z.boolean().optional(), silent: z.boolean().optional() }),
     /** `shown: false` when the app showed nothing because it is in front showing that session already. */
     result: z.object({ shown: z.boolean() }),
     doc: "A desktop notification for the bundled desktop notifier on this computer (`NotifierContext.desktop`); the same `id` replaces it.",

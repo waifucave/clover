@@ -100,8 +100,8 @@ export interface NotifierContext extends HandlerContext {
 
 export interface DesktopNotifications {
   /** Shows or replaces the banner with this id. `shown: false` when the app showed nothing, because it is in front
-   *  showing that session already. */
-  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean }): Promise<{ shown: boolean }>;
+   *  showing that session already. `silent` rides through to the OS banner (lane G's sounds setting). */
+  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }): Promise<{ shown: boolean }>;
   /** Closes one banner, or every banner this notifier showed. */
   close(id?: string): Promise<void>;
 }
@@ -496,11 +496,13 @@ export interface ApprovalsApi {
   watch(listener: (cards: CardMeta[]) => void): Unsubscribe;
 }
 
-/** `files`: the folder tree (§9.1), inside the fence. Paths are tree paths (`home/<Computer>/…`). */
+/** `files`: the folder tree (§9.1), inside the fence. Paths are tree paths (`home/<Computer>/…`). Reads take
+ *  `noFollow` whole: no link anywhere on the way is followed, for a component that shows a file, so a planted link
+ *  stays refused (F-M3's review). */
 export interface FilesApi {
-  stat(path: string): Promise<FileStat | null>;
-  readText(path: string, opts?: { offset?: number; length?: number }): Promise<string>;
-  readBytes(path: string, opts?: { offset?: number; length?: number }): Promise<Uint8Array>;
+  stat(path: string, opts?: { noFollow?: boolean }): Promise<FileStat | null>;
+  readText(path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }): Promise<string>;
+  readBytes(path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }): Promise<Uint8Array>;
   write(path: string, data: string | Uint8Array, opts?: { createDirs?: boolean }): Promise<void>;
   list(path: string): Promise<FileStat[]>;
   remove(path: string, opts?: { recursive?: boolean }): Promise<void>;

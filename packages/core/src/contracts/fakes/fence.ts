@@ -50,8 +50,12 @@ export interface FakeFenceOptions {
   agentInstalls?: string[];
   /** The bots there are, by id (`pack/luna` for a child's), for their memory items. */
   bots?: string[];
-  /** The app's userData folder (Electron's), which holds the browser's partitions; the OS's usual one by default. */
+  /** The app's userData folder (Electron's); the OS's usual one by default. */
   userData?: string;
+  /** The app's sessionData folder (Electron's `app.getPath("sessionData")`): the browser's partitions live under it,
+   *  so it is what the fence fences. The app sets it apart from userData; Electron's own default (and this fake's
+   *  fallback when absent) is userData itself. */
+  sessionData?: string;
   /** Replaces the fake's layout for some items. */
   layout?: Partial<Record<FencedKind, string[]>>;
 }
@@ -76,6 +80,7 @@ export class FakeFence implements Fence {
   readonly #cloverHome: string;
   readonly #temp: string;
   readonly #userData: string;
+  readonly #sessionData: string;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #agentInstalls: string[];
   readonly #bots: string[];
@@ -88,6 +93,7 @@ export class FakeFence implements Fence {
     this.#cloverHome = normalizePosix(opts.cloverHome);
     this.#temp = normalizePosix(opts.temp ?? "/tmp");
     this.#userData = normalizePosix(opts.userData ?? defaultUserData(this.os, this.#home));
+    this.#sessionData = normalizePosix(opts.sessionData ?? this.#userData);
     this.#devFolders = (opts.devFolders ?? []).map(normalizePosix);
     this.#agentInstalls = (opts.agentInstalls ?? []).map(normalizePosix);
     this.#bots = [...(opts.bots ?? [])];
@@ -103,7 +109,7 @@ export class FakeFence implements Fence {
       const override = this.#layout[kind];
       if (override) for (const p of override) add(kind, p);
       else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
-      else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
+      else if (kind === "browser-profiles") add(kind, `${this.#sessionData}/Partitions`);
       else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
       else if (kind === "agent-installs") for (const p of this.#agentInstalls) add(kind, p);
       else if (kind === "bot-memory") for (const bot of this.#bots) out.push({ kind, path: `${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`, deny: "caller", bot });

@@ -240,6 +240,19 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       expect(fence("windows").policy().closedDoors).toContain("schtasks");
     });
 
+    test("the browser's partitions are fenced under the app's sessionData, not userData (lane E's follow-up)", () => {
+      // The app sets sessionData apart from userData; Electron's own default (and the fence's fallback) is userData.
+      const session = `${HOME}/Library/Application Support/Clover/session`;
+      const f = make({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders: [], sessionData: session });
+      const paths = f.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path);
+      expect(paths).toEqual([`${session}/Partitions`]);
+      expect(f.check({ op: "read", path: `${session}/Partitions/persist:user` })).toEqual({ allowed: false, reason: "browser-profiles", path: `${session}/Partitions` });
+      expect(f.check({ op: "write", path: `${session}/Partitions/persist:user` }).allowed).toBe(false);
+      // Without a sessionData the fence falls back to userData, as Electron itself does.
+      const d = make({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders: [] });
+      expect(d.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([`${HOME}/Library/Application Support/Clover/Partitions`]);
+    });
+
     test("a fenced name in another case, not on disk yet, is refused on every OS (J-M1's review, B1)", () => {
       for (const os of ["macos", "windows", "linux"] as const) {
         const f = fence(os);
