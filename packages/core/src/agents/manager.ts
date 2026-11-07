@@ -830,5 +830,7 @@ export async function promptOf(input: TurnInput): Promise<{ text: string; images
       return { text: `Message from the plugin ${input.pluginId}:\n\n${input.text}` };
     case "note":
       return { text: `[${input.label}] ${input.text}` };
+    case "task":
+      return { text: input.status === "event" ? `Background task ${input.task} reported an event:\n\n${input.text}` : `Background task ${input.task} ${input.status}:\n\n${input.text}` };
   }
 }

@@ -4,7 +4,7 @@ import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
 import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWiringOptions } from "./cowork/native-wiring";
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
@@ -41,6 +41,8 @@ import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, 
 import { startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
+import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
+import { createHash as createDeviceHash } from "node:crypto";
 import type { DeviceLinks } from "./links/node";
 import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
@@ -131,7 +133,7 @@ import { advanceAuthorityRevision, authorityRevision } from "./authority-revisio
 import { startRuntimeState, runtimeStateOnline, type DaemonRuntimeState } from "./runtime-state/wiring";
 import { restampStep } from "./runtime-state/recovery";
 import { createWinterRuntimeSdk, describeLoadError, type WinterRuntimeSdk } from "./runtime-sdk/create";
-import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
+import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, isCompiledDaemon, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
 import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
@@ -197,6 +199,11 @@ export { CORE_VERSION } from "./version";
 export function sessionPermissionDirs(home: string, primary: string, trust: Pick<TrustStore, "isTrusted">): string[] {
   return loadPermissionDirs(home, projectScopeRootFor(primary), projectScopeTrusted(primary, trust));
 }
+
+/** How long the stop waits for the links, node and bot side to finish starting before it closes what has started. */
+const PARTS_STOP_WAIT_MS = 5_000;
+/** How often the links try a locked secret store again when it says nothing on unlocking. */
+const LOCKED_RETRY_MS = 30_000;
 
 export interface RunningDaemon {
   socketPath: string;
@@ -449,6 +456,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
   parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string };
+  /** TEST ONLY: the contract secret store (a test's store that starts locked). Default: the OS store, or an in-memory
+   *  one when `secrets` is given. */
+  contractSecrets?: ContractSecretStore;
   /** undefined: try settings.json (production default). null: agent disabled (tests, Phase 0
    *  behavior). object: use this provider directly (tests inject FakeProvider). `live`, when
    *  present, is threaded into EngineConfig.provider.live (no-restart model resolution) — tests
@@ -3185,14 +3195,26 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' Clover
   // methods, filled in as their parts come up (H's devices methods once the links are). A test daemon (its own
   // `secrets`) keeps the store in memory, so no test touches the real Keychain.
-  const contractSecrets = opts.secrets !== undefined
+  const contractSecrets: ContractSecretStore = opts.contractSecrets ?? (opts.secrets !== undefined
     ? new CloverSecretStore({ home: dirs.home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } })
-    : await openCloverSecretStore({ home: dirs.home, service: keychainService(profile, home) });
+    : await openCloverSecretStore({ home: dirs.home, service: keychainService(profile, home) }));
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
-  // This device's id is its link key's (H-M1): the one the links below load from the same store.
-  const deviceKey = await DeviceKey.loadOrCreate(contractSecrets);
+  // This device's id is its link key's (H-M1): the one the links below load from the same store. A store that is
+  // still locked (a keyring locked at the login screen) can't give it yet: the hello carries a stand-in id, stable per
+  // home, and the links wait for the store to unlock (below). The boot never waits on it.
+  let liveDeviceId = createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32);
+  const loadDeviceId = async (): Promise<boolean> => {
+    try {
+      liveDeviceId = (await DeviceKey.loadOrCreate(contractSecrets)).id;
+      return true;
+    } catch (err) {
+      console.error(`[links] this device's key can't be read yet (${(err as Error).message}): its links start once the secret store answers`);
+      return false;
+    }
+  };
+  const keyLoaded = await loadDeviceId();
   // The daemon integration: links, then node and bot side, in the background (below); `pair.quit{handOver}` and the
   // stop reach them through these.
   let daemonLinks: DaemonLinks | undefined;
@@ -3208,8 +3230,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
-    deviceId: deviceKey.id,
+    get deviceId() { return liveDeviceId; },
     handOver: async () => { await daemonLinks?.handOver(); },
+    // The link sidecar (lane H): the one local process whose hello may be `remote`, `web` or `peer`.
+    linkPid: () => daemonLinks?.links?.sidecarPid(),
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
@@ -3423,9 +3447,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let partsRegistry: OpenedRegistry | undefined;
   let partsStopping = false;
   const daemonBots = async (): Promise<DaemonBotsInput> => {
-    // The bots come from the plugins folder (B-M1's registry, signed with the store's key). TODO(lanes B and M): the
-    // app's bundled plugins (`bundledDirs`), once they ship beside the daemon.
-    const opened = await openPluginRegistry({ cloverHome, os: hostOs(), secrets: contractSecrets, log: (line) => console.error(`[plugins] ${line}`) });
+    // The bots come from the plugins folder and the app's bundled plugins (B-M1's registry, signed with the store's
+    // key). The bundled ones are lane M's place (#259): `resources/plugins` beside `resources/daemon/` for a compiled
+    // core. From source there are none here: the repository's `plugins/` holds workspace `node_modules` whose links
+    // leave the folder, which the registry refuses (B-M2 decides the dev layout, in the plugin host).
+    const bundled = isCompiledDaemon() ? join(dirname(process.execPath), "..", "plugins") : undefined;
+    mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
+    const opened = await openPluginRegistry({
+      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined && existsSync(bundled) ? { bundledDirs: [bundled] } : {}),
+      log: (line) => console.error(`[plugins] ${line}`),
+    });
     partsRegistry = opened;
     return {
       registry: opened.registry,
@@ -3446,9 +3477,36 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       }),
     };
   };
+  // The stop: it waits up to PARTS_STOP_WAIT_MS for a start under way, then closes whatever has started; anything that
+  // finishes starting after that closes itself as it does (`partsStopping`).
+  let stopRequested: () => void = () => {};
+  const stopSignal = new Promise<void>((resolve) => { stopRequested = resolve; });
+  const closeStarted = async (): Promise<void> => {
+    const parts = daemonParts;
+    daemonParts = undefined;
+    await parts?.close();
+    const registry = partsRegistry;
+    partsRegistry = undefined;
+    registry?.close();
+    const links = daemonLinks;
+    daemonLinks = undefined;
+    await links?.close();
+  };
+  /** A locked store: until it says it unlocked (its status event), a retry for a keyring that says nothing, or the stop. */
+  const untilStoreAnswers = (): Promise<void> => new Promise((resolve) => {
+    const timer = setTimeout(done, LOCKED_RETRY_MS);
+    timer.unref?.();
+    const off = contractSecrets.watch((c) => { if ("status" in c && c.status.state !== "locked") done(); });
+    void stopSignal.then(done);
+    function done() { clearTimeout(timer); off(); resolve(); }
+  });
   const partsReady = (async () => {
     if (opts.links === false) return;
-    daemonLinks = await startDaemonLinks({
+    for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
+      await untilStoreAnswers();
+      if (partsStopping) return;
+    }
+    const started = await startDaemonLinks({
       home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
       // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
@@ -3458,32 +3516,41 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });
-    if (!daemonLinks.links || partsStopping) return;
-    const links = daemonLinks.links;
+    daemonLinks = started;
+    if (partsStopping) return void (await closeStarted());
+    if (!started.links) return;
+    const links = started.links;
     // A node or bot side that can't start leaves the links up (their methods answer), and says why.
     try {
       const p = opts.parts ?? {};
       const bots = p.bots === false ? false : p.bots ?? await daemonBots();
-      if (partsStopping) return;
+      if (partsStopping) return void (await closeStarted());
       // The tree folder only for the default home: a dev or test daemon never makes the shared one.
       const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
       daemonParts = await startDaemonParts({
         cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: cloverLaneHandlers,
         node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
         bots,
+        // The bots' running turns keep an update's restart waiting.
+        updateGate,
         log: (line) => console.error(line),
       });
+      if (partsStopping) return void (await closeStarted());
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
   })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); });
-  const closeParts = (): Promise<void> => {
+  const closeParts = async (): Promise<void> => {
     partsStopping = true;
-    return partsReady.then(async () => {
-      await daemonParts?.close();
-      partsRegistry?.close();
-      await daemonLinks?.close();
-    }).catch((err: unknown) => { console.error(`[links] closing failed: ${(err as Error).message}`); });
+    stopRequested();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      partsReady.then(() => true),
+      new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), PARTS_STOP_WAIT_MS); }),
+    ]);
+    clearTimeout(timer);
+    if (!settled) console.error(`[parts] still starting after ${PARTS_STOP_WAIT_MS / 1000} s: closing what has started; the rest closes as it finishes`);
+    await closeStarted().catch((err: unknown) => { console.error(`[parts] closing failed: ${(err as Error).message}`); });
   };
   return {
     socketPath: dirs.socketPath,
@@ -3519,6 +3586,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pairSide?.dispose();
       cloverServer?.dispose();
       // The bot side, the node and the links close first, the sidecar with them; the stop's promise waits for it.
+      // The drain order: the bot side lets its sessions go (each driver ends its runtime query, and the sessions stay
+      // on disk for the next daemon) while the runtime SDK's own sessions end in `runtimeSdk.dispose()` below; both
+      // run on the embedded host, whose `shutdown` comes after the dispose and terminates any bot Worker still there.
+      // Everything here settles before the session store and runtime-state.db close (`settled` waits for it).
       const partsClosed = opts.links === false ? undefined : closeParts();
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since

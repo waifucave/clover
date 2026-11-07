@@ -11,7 +11,9 @@
 //   stops running the bots, and hands them back to a returning main (`MainComputerHandle.setHandBack`). Its methods
 //   join the Clover server's handlers.
 // * **The update gate** (lane M's `RunningDaemon.updateGate`): the links renew the lease just before an update's
-//   restart (`startDaemonLinks`); the bot side's turns are a busy source once lane D's #246 takes the gate.
+//   restart (`startDaemonLinks`), and the bot side takes the gate itself (lane D's #246): its running turns are the
+//   gate's `bot-turns` source, so an update never restarts the daemon in the middle of one, and no turn starts while
+//   an update closes the gate. Each turn is counted once, there.
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { BotSide, BotSideOptions } from "./bots/wiring";
 import { createBotSide } from "./bots/wiring";
@@ -48,6 +50,8 @@ export interface DaemonPartsInput {
   node?: false | Partial<Pick<ComputerNodeOptions, "treeRoot" | "executor" | "fence" | "reviewer" | "askUser" | "terminals" | "answers" | "cloud">>;
   /** The bot side; false for none. */
   bots?: false | DaemonBotsInput;
+  /** The daemon's update gate: the bot side's running turns keep an update waiting. */
+  updateGate?: BotSideOptions["updateGate"];
   log?(line: string): void;
 }
 
@@ -119,8 +123,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
-        // TODO(#246, lane D): `updateGate: RunningDaemon.updateGate` once createBotSide takes it (its turns a busy
-        // source, none started while an update closes the gate).
+        // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
+        ...(input.updateGate ? { updateGate: input.updateGate } : {}),
         warn: (line) => log(`[bots] ${line}`),
       });
       side = s;

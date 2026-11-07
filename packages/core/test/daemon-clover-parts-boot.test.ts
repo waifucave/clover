@@ -26,6 +26,7 @@ import { startFakeHandshake } from "../src/links/handshake-fake";
 import { MemoryNetwork } from "../src/links/memory-wire";
 import type { DeviceLinks } from "../src/links/node";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../src/secrets/clover-secret-store";
+import { mainSessionIdFor } from "../src/sessions/ids";
 
 const clock = new SystemClock();
 let stops: Array<() => unknown> = [];
@@ -134,6 +135,18 @@ describe("the daemon's Clover parts, booted", () => {
     await daemon.updateGate.prepareRestart();
     expect(leaseNotes.some((l) => l.startsWith("[lease] renewed before an update's restart"))).toBe(true);
 
+    // A bot's running turn holds the restart: the gate stays open while it runs, and closes once it ended.
+    const luna = mainSessionIdFor("luna");
+    await side.host.sendUser(luna, { text: "hello", device: links.key.id, sentAt: Date.now(), clientMessageId: "m1" });
+    await waitFor("Luna's turn", () => bots.fakes.for(luna).running);
+    // Counted once, as the bot side's own source (lane D's), whatever else the daemon registers.
+    expect(daemon.updateGate.verdict()).toMatchObject({ idle: false, busy: ["bot-turns:1"] });
+    expect(await daemon.updateGate.closeForRestart({ timeoutMs: 1_000 })).toBe(false);
+    expect(daemon.updateGate.closed).toBe(false);
+    bots.fakes.for(luna).end();
+    await waitFor("the turn's end", () => side.host.turnOrigin(luna) === undefined);
+    expect(daemon.updateGate.verdict()).toEqual({ idle: true, busy: [] });
+
     // The stop: the bot side, the node and the links close (the laptop's link goes down), and the socket goes.
     const socket = daemon.socketPath;
     await daemon.stop();
@@ -172,6 +185,60 @@ function sidecarChildren(): number[] {
   return out.split("\n").map((l) => l.trim().split(/\s+/)).filter((f) => f.length >= 3 && Number(f[1]) === process.pid && f.slice(2).join(" ").endsWith("clover-link")).map((f) => Number(f[0]));
 }
 
+describe("the daemon's Clover parts at the edges", () => {
+  test("a secret store locked at boot: the daemon answers at once, and the links start once the store unlocks", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" }, locked: "the keyring is locked" });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false, contractSecrets: store,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-"), bots: await fakeBots() },
+    });
+    const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
+    expect(await cloverCall(daemon.socketPath, cli, "update.status", {})).toMatchObject({ idle: true }); // the socket answers meanwhile
+    await Bun.sleep(100);
+    expect(daemon.cloverParts.links()).toBeUndefined();
+    store.unlock();
+    await daemon.cloverParts.ready;
+    const links = daemon.cloverParts.links()!;
+    expect(links).toBeDefined();
+    expect(daemon.cloverParts.bots()).toBeDefined();
+    const listed = await cloverCall(daemon.socketPath, cli, "device.list", {}) as { devices: { id: string; isThis: boolean }[] };
+    expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
+  }, 30_000);
+
+  test("the daemon's own registry and drivers: the bot side starts over the plugins folder, which is made if missing", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+    });
+    await daemon.cloverParts.ready;
+    expect(daemon.cloverParts.bots()?.bots.list()).toEqual([]); // from source: no bundled plugins, none installed
+    expect(existsSync(join(home, "plugins"))).toBe(true);
+  }, 30_000);
+
+  test("a start that never finishes: the stop waits about 5 s, closes what started, and leaves no socket", async () => {
+    const home = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      // The wire never comes up: the links' start hangs.
+      links: { wire: () => new Promise(() => {}), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+    });
+    const socket = daemon.socketPath;
+    const started = Date.now();
+    await daemon.stop();
+    daemon = undefined;
+    const took = Date.now() - started;
+    expect(took).toBeGreaterThanOrEqual(4_500);
+    expect(took).toBeLessThan(10_000);
+    expect(existsSync(socket)).toBe(false);
+  }, 30_000);
+});
+
 describe.skipIf(!built)("the daemon's sidecar", () => {
   test("the stop ends the link sidecar it started: no child is left behind", async () => {
     const home = temp("clover-int-home-");
@@ -183,7 +250,7 @@ describe.skipIf(!built)("the daemon's sidecar", () => {
     });
     await daemon.cloverParts.ready;
     expect(daemon.cloverParts.node()).toBeDefined();
-    expect(sidecarChildren().length).toBe(1);
+    expect(sidecarChildren()).toEqual([daemon.cloverParts.links()!.sidecarPid()!]); // the Clover server's `linkPid`
     await daemon.stop();
     daemon = undefined;
     await waitFor("the sidecar to exit", () => sidecarChildren().length === 0, 10_000);

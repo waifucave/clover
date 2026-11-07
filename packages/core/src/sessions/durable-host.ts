@@ -108,7 +108,7 @@ export function canCompact(driver: SessionDriver): driver is CompactingDriver {
 }
 
 /** What `deliver` takes: every input but the user's. */
-export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "routine", "plugin", "note"]);
+export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "task-notification", "task", "routine", "plugin", "note"]);
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
@@ -668,6 +668,11 @@ export class DurableSessionHost implements SessionHost {
   /** What started the session's running turn, if one runs. */
   turnOrigin(id: string): TurnOrigin | undefined {
     return this.#sessions.get(id)?.running?.origin;
+  }
+
+  /** How many inputs wait for the session's next turn (held by the pause, the lease, the update gate, or a turn). */
+  waiting(id: string): number {
+    return this.#sessions.get(id)?.queue.length ?? 0;
   }
 
   /** Whether the session is compacting now: between turns (`compact`) or inside one (the runtime's own). */
