@@ -44,7 +44,7 @@ class FakeLease implements Lease {
     this.#fns.add(fn);
     return () => void this.#fns.delete(fn);
   }
-  set(holder: string, epoch: number): void {
+  set(holder: string | null, epoch: number): void {
     this.#state = { ...this.#state, main: holder, holder, epoch };
     for (const fn of this.#fns) fn(this.#state);
   }
@@ -132,6 +132,22 @@ describe("the fencing token", () => {
     expect(await code(link.request("terminal.open", { cwd: "home/Laptop1", cols: 80, rows: 24, level: "automatic" }))).toBe("not_main");
     expect(await code(link.request("computer.takeHold", { target: { kind: "app", app: "com.example.app" }, pluginId: "clover/shell" }))).toBe("not_main");
     expect(await code(link.request("mcp.mirror", { server: "blender", config: null, level: "automatic" }))).toBe("not_main");
+  });
+});
+
+describe("a lapsed lease", () => {
+  test("with nobody main, nobody acts: the old holder's token for the lapsed epoch is refused", async () => {
+    const { studio, leases } = await two();
+    await studio.node.tree.write("home/Laptop1/a.txt", utf8("a"), { as: BOT });
+    // Laptop1's own records say the lease lapsed: no holder, same epoch.
+    leases.get("Laptop1")!.set(null, 3);
+    const lapsed = await rejection(studio.node.tree.read("home/Laptop1/a.txt", { as: BOT }));
+    expect(lapsed).toMatchObject({ code: "not_main", detail: { fence: "lapsed" } });
+    expect(await code(studio.node.terminals.open({ computer: "Laptop1", cols: 80, rows: 24 }))).toBe("not_main");
+    // Someone takes it again; Studio's view catches up; acts go through.
+    leases.get("Laptop1")!.set("d_Studio", 4);
+    leases.get("Studio")!.set("d_Studio", 4);
+    expect(await studio.node.tree.read("home/Laptop1/a.txt", { as: BOT })).toEqual(utf8("a"));
   });
 });
 

@@ -47,7 +47,12 @@ export class FenceGuard {
 
   /** This computer's own lease changed (its `watch`). */
   observe(state: LeaseState): void {
-    if (state.scope === undefined) return;
+    // Out of its group (no scope): no view, so nothing it knew of the old group's lease still passes (#237's ruling).
+    if (state.scope === undefined) {
+      this.#own = undefined;
+      this.#seen = false;
+      return;
+    }
     if (this.#own?.scope !== state.scope) this.#seen = false;
     const own = this.#own?.scope === state.scope && this.#own.epoch > state.epoch ? this.#own : { scope: state.scope, epoch: state.epoch, holder: state.holder };
     this.#own = own;

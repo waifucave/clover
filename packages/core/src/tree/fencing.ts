@@ -8,7 +8,9 @@
 // receiver's, so a computer whose view is behind (a main that lost its lease asleep or cut off, or any computer that
 // missed a takeover) can't act through the others. It does not prove the sender is the main: every member of the group
 // carries the same token. A stale token is refused, and when the receiver's own lease has a scope and a holder, so is
-// an act without one, restart or not (the controller's ruling on #237). Lane H's lease feeds it; a node made with
+// an act without one, restart or not; while its own lease has lapsed (no holder) every act is, since with nobody main
+// nobody acts; and a computer out of its group (no scope) keeps no view of the old lease (the controller's rulings on
+// #237). Lane H's lease feeds it; a node made with
 // `lease: null` (no group yet) carries and judges nothing, and says so once in its log.
 import { type FenceVerdict, type FencingToken } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
@@ -41,6 +43,8 @@ export function checkActFence(f: ActFence | undefined, token: unknown, what: str
   const v = f.check(token as FencingToken | undefined);
   if (v === "ok") return;
   throw new ContractError("not_main", v === "missing"
-    ? `${what} came without the main computer's fencing token`
-    : `${what} came from a computer whose lease is over (a stale fencing token)`, { fence: v });
+    ? `${what} came without the group's fencing token`
+    : v === "lapsed"
+      ? `${what} can't run while the group's lease has lapsed: with no main computer, no computer acts`
+      : `${what} came from a computer whose view of the lease is behind (a stale fencing token)`, { fence: v });
 }
