@@ -52,6 +52,8 @@ import {
   markerAllowsSetup,
   markerAllowsRemove,
   poolLockPath,
+  readLeasesDirSecurity,
+  leasesDirAccessProblem,
   minimalChildEnv,
   execArgs,
   profileQueryArgs,
@@ -87,8 +89,8 @@ describe("the pinned launcher", () => {
   });
 
   test("the launcher has Authenticode digest pins for x64 and arm64", () => {
-    expect(SRT_WIN_PINS.x64).toBe("df9ba649b3fe26be5d324a8474db83eb04c5c253c412e63e9533747e682ddc92");
-    expect(SRT_WIN_PINS.arm64).toBe("cf562110127e7612084de53782b0307326074d4e1958ca2c5262a974f6bc19c6");
+    expect(SRT_WIN_PINS.x64).toBe("95b2c474943b9cae55a2521a643e9a09aa34847e05c79796316c6ca819b4ae92");
+    expect(SRT_WIN_PINS.arm64).toBe("bcd117665fe9f64494bd535b9508e4808ae99ad0ff6118fb410a7f60bb47abb9");
   });
 
   test("a missing launcher is missing, and only the exact digest pins", () => {
@@ -754,5 +756,40 @@ describe("the exclusive pool lease (ruling 3)", () => {
     if (!r.ok) throw new Error("expected a win on the second member");
     expect(r.principal).toBe("clover-sb-a-2");
     r.release();
+  });
+});
+
+describe("the leases-dir trust check (Addendum 12)", () => {
+  const self = "S-1-5-21-1-1-1-1000";
+  const ba = "S-1-5-32-544";
+  const sy = "S-1-5-18";
+  const everyone = "S-1-1-0";
+  const users = "S-1-5-32-545";
+
+  test("inside the user's profile nothing is checked", () => {
+    expect(leasesDirAccessProblem("C:\\Users\\amy\\.clover\\sandbox\\leases", { profileRoot: "C:\\Users\\amy", security: null })).toBeNull();
+    expect(leasesDirAccessProblem("C:\\USERS\\AMY\\.clover\\sandbox\\leases", { profileRoot: "c:\\users\\amy", security: null })).toBeNull();
+  });
+
+  test("an owner-only dir outside the profile passes", () => {
+    const ok = { userSid: self, ownerSid: self, allows: [{ sid: self, allow: true }, { sid: sy, allow: true }] };
+    expect(leasesDirAccessProblem("C:\\ProgramData\\Clover Sandbox\\markers", { profileRoot: "C:\\Users\\amy", security: ok })).toBeNull();
+    const admins = { userSid: self, ownerSid: ba, allows: [{ sid: ba, allow: true }, { sid: sy, allow: true }] };
+    expect(leasesDirAccessProblem("D:\\leases", { profileRoot: "C:\\Users\\amy", security: admins })).toBeNull();
+    // Deny entries for anyone do not matter; only allows are gated.
+    const denies = { userSid: self, ownerSid: self, allows: [{ sid: self, allow: true }, { sid: everyone, allow: false }] };
+    expect(leasesDirAccessProblem("D:\\leases", { profileRoot: "C:\\Users\\amy", security: denies })).toBeNull();
+  });
+
+  test("a foreign owner, extra allows, or an unreadable ACL refuse", () => {
+    const foreign = { userSid: self, ownerSid: "S-1-5-21-9-9-9-2000", allows: [{ sid: "S-1-5-21-9-9-9-2000", allow: true }] };
+    expect(leasesDirAccessProblem("D:\\leases", { profileRoot: "C:\\Users\\amy", security: foreign })).toContain("owned by");
+    const shared = { userSid: self, ownerSid: ba, allows: [{ sid: ba, allow: true }, { sid: sy, allow: true }, { sid: everyone, allow: true }] };
+    expect(leasesDirAccessProblem("D:\\leases", { profileRoot: "C:\\Users\\amy", security: shared })).toContain(everyone);
+    // Inherited allows count: the dir is not owner-only however they arrived.
+    const inherited = { userSid: self, ownerSid: ba, allows: [{ sid: ba, allow: true }, { sid: users, allow: true }] };
+    expect(leasesDirAccessProblem("D:\\leases", { profileRoot: "C:\\Users\\amy", security: inherited })).toContain(users);
+    expect(leasesDirAccessProblem("D:\\leases", { profileRoot: "C:\\Users\\amy", security: null })).toContain("could not be read");
+    expect(leasesDirAccessProblem("D:\\leases", { profileRoot: null, security: null })).toContain("could not be read");
   });
 });

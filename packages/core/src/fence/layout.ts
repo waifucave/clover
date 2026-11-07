@@ -33,11 +33,33 @@ export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
  *  suite writes every OS's paths), so the items come back in the form the home was given. */
 const pathFor = (os: Os, home?: string) => (os === "windows" && !(home?.startsWith("/") && !home.includes("\\")) ? win32 : posix);
 
-/** Each kind's paths under `cloverHome` on `os`. */
-export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, string[]> {
+/** The app's userData folder on each OS, under the user's home (main's `defaultUserData`). */
+export function defaultUserData(os: Os, home: string): string {
+  if (os === "macos") return pathFor(os, home).join(home, "Library", "Application Support", "Clover");
+  if (os === "windows") return pathFor(os, home).join(home, "AppData", "Roaming", "Clover");
+  return pathFor(os, home).join(home, ".config", "Clover");
+}
+
+/** The login items that start the daemon at login (main's `loginStartPaths`): macOS's LaunchAgents
+ *  plist, Linux's systemd user unit; Windows keeps its start in Task Scheduler, a closed door. */
+export function loginStartPaths(os: Os, home: string | undefined, cloverHome: string): string[] {
+  if (home === undefined) return [];
+  const p = pathFor(os, home);
+  const u = (...parts: string[]) => p.join(home, ...parts);
+  if (os === "macos") return [u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), pathFor(os, cloverHome).join(cloverHome, "login")];
+  if (os === "linux") return [u(".config", "systemd", "user", "clover-core.service")];
+  return [];
+}
+
+/** Each kind's paths under `cloverHome` on `os`. `home` locates the login items and the default
+ *  userData; `userData` overrides it; `agentInstalls` are the OK'd agents' folders. */
+export function fenceLayout(cloverHome: string, os: Os, o?: {
+  home?: string; userData?: string; agentInstalls?: readonly string[];
+}): Record<LaidOutKind, string[]> {
   const p = pathFor(os, cloverHome);
   const h = (...parts: string[]) => p.join(cloverHome, ...parts);
   const offMac = (path: string) => (os === "macos" ? [] : [path]);
+  const userData = o?.userData ?? (o?.home !== undefined ? defaultUserData(os, o.home) : undefined);
   return {
     settings: [h("settings.json"), h("settings"), h("sdk", "settings.json")],
     levels: [h("levels")],
@@ -54,6 +76,15 @@ export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, str
     "run-folder": [h("run")],
     "secrets-file": offMac(h("secrets.enc")),
     "key-file": offMac(h("secrets.key")),
+    plugins: [h("plugins")],
+    "sessions-runtime": [h("sessions-runtime")],
+    // No static path: enforced by pattern, per bot (`bots/<x>/memory`), in `fencedSet`.
+    "bot-memory": [],
+    transcripts: [h("sessions")],
+    usage: [h("usage")],
+    "browser-profiles": userData === undefined ? [] : [p.join(userData, "Partitions")],
+    "login-start": loginStartPaths(os, o?.home, cloverHome),
+    "agent-installs": [...(o?.agentInstalls ?? [])],
   };
 }
 
