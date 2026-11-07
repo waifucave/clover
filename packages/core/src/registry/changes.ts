@@ -8,7 +8,7 @@
 // * waits alone (`card-styling`) when it changes only how the tree styles approval cards (§5.5);
 // * applies at once (`applies`) otherwise: themes, layouts, CSS, Markdown, assets.
 import { posix } from "node:path";
-import type { Manifest, ManifestReport, TreeEntry, TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, type Manifest, type ManifestReport, type TreeEntry, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import { canonicalJson } from "@waifucave/clover-protocol";
 
 /** What a change since the OK does (the fake's `FakePluginInput.change`). */
@@ -269,6 +269,20 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
   for (const c of tree.children) for (const p of pathsNamed(runStrings(c.report.manifest, codeFieldsOf), `plugins/${c.folder}/`, fileSet, folders)) codePaths.add(p);
   for (const p of partDirs(tree.top.manifest, "")) codePaths.add(p);
   for (const c of tree.children) for (const p of partDirs(c.report.manifest, `plugins/${c.folder}/`)) codePaths.add(p);
+  // A plugin that brings an agent backend has every file of its folder counted as code (lane K, on #233): what the
+  // agent runs with can name a file anywhere in it without a manifest field naming it (a quirks file's `envSet` value,
+  // `NODE_OPTIONS=--require <file>`), so no edit there applies without a new OK.
+  // The manifest itself stays out: its fields are judged one by one above (`runsOf`), so a display name still applies.
+  const runsAgent = (m: Manifest | undefined) => (m?.contributes?.agentBackends?.length ?? 0) > 0;
+  if (runsAgent(tree.top.manifest)) {
+    const childDirs = tree.children.map((c) => treeKey(`plugins/${c.folder}`) + "/");
+    for (const k of fileSet) if (k !== treeKey(MANIFEST_FILE) && !childDirs.some((d) => k.startsWith(d))) codePaths.add(k);
+  }
+  for (const c of tree.children) {
+    if (!runsAgent(c.report.manifest)) continue;
+    const dir = treeKey(`plugins/${c.folder}`) + "/";
+    for (const k of fileSet) if (k.startsWith(dir) && k !== dir + treeKey(MANIFEST_FILE)) codePaths.add(k);
+  }
   return { okHash, files: [...files], plugins, cards: cardsOf(tree, files), codePaths: [...codePaths].sort() };
 }
 

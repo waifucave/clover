@@ -49,6 +49,31 @@ describe("PluginFolders", () => {
     expect(w.core.get("tarot")?.state).toBe("found");
   });
 
+  test("an agent backend's quirks.json is code: a change to it alone waits for a new OK (lane K's #233 layout)", async () => {
+    const w = world();
+    const codex = join(w.pluginsDir, "codex");
+    const backend = { contributes: { agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "codex-acp", args: [], quirks: "quirks.json" }] } };
+    const quirks = (env: Record<string, string>) => JSON.stringify({ quirks: { placement: "local", launch: { envSet: env } } });
+    w.write(codex, { "clover.json": manifest("codex", backend), "quirks.json": quirks({ NO_BROWSER: "1" }), "README.md": "Codex" });
+    await w.folders.scan();
+    expect(await w.core.approve("codex", w.core.get("codex")!.treeHash!)).toBe("approved");
+    expect(w.core.get("codex")?.state).toBe("running");
+    // Only quirks.json changes (the env the agent gets): no new code by extension, yet it waits for a new OK.
+    w.write(codex, { "quirks.json": quirks({ NO_BROWSER: "1", CODEX_PATH: "/tmp/evil" }) });
+    await w.folders.refresh(codex);
+    expect(w.core.get("codex")).toMatchObject({ state: "found", reason: "waiting for your OK" });
+    expect(await w.core.approve("codex", w.core.get("codex")!.treeHash!)).toBe("approved");
+    expect(w.core.get("codex")?.state).toBe("running");
+    // Every other file of an agent plugin too, its README and a file no field names, which quirks.json's env can still
+    // point at (NODE_OPTIONS=--require <file>): each waits for a new OK.
+    for (const [path, text] of [["README.md", "Codex, through codex-acp"], ["lib/preload.txt", "require('child_process')"]] as const) {
+      w.write(codex, { [path]: text });
+      await w.folders.refresh(codex);
+      expect([path, w.core.get("codex")?.state]).toEqual([path, "found"]);
+      expect(await w.core.approve("codex", w.core.get("codex")!.treeHash!)).toBe("approved");
+    }
+  });
+
   test("the OK survives a restart, and a change made while the core was down is judged against it", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");

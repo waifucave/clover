@@ -112,7 +112,8 @@ describe("what runs, whatever its extension (#197's review)", () => {
     expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}" }, {
       "clover.json": manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor CLI", protocol: "acp", command: "cursor-agent", quirks: "quirks/cursor.json" }] } }),
     })).toBe("applies");
-    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "README.md": "a" }, { "README.md": "b" })).toBe("applies");
+    // A plugin with an agent backend has every file counted as code (lane K, #233): a quirks env can point anywhere in it.
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "README.md": "a" }, { "README.md": "b" })).toBe("asks-again");
   });
 
   test("a model's endpoint, an http server's url or headers, and a host from settings ask again", async () => {
