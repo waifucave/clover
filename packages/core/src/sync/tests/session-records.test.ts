@@ -5,10 +5,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { SessionView } from "@waifucave/clover-protocol";
 import { SystemClock } from "../../clock/system-clock";
-import { Listeners } from "../../contracts/common";
+import { ContractError, Listeners } from "../../contracts/common";
 import type { SessionRecord, SessionRecordBody } from "../../contracts/session-host";
 import { makeLinkCluster } from "../../links/testing";
-import { SessionRecordSync, type SessionHostForSync } from "../session-records";
+import { sameRecord, SessionRecordSync, type SessionHostForSync } from "../session-records";
 
 const clock = new SystemClock();
 let stops: (() => unknown)[] = [];
@@ -24,6 +24,11 @@ class MemoryHost implements SessionHostForSync {
 
   open(view: SessionView): void {
     this.sessions.set(view.id, { view, records: [] });
+  }
+
+  /** The bodies of a session's log, in order (what two copies compare). */
+  bodies(id: string): string[] {
+    return (this.sessions.get(id)?.records ?? []).map((r) => JSON.stringify({ ...r, late: undefined }));
   }
 
   record(id: string, body: SessionRecordBody, epoch = 1): SessionRecord {
@@ -56,12 +61,40 @@ class MemoryHost implements SessionHostForSync {
     return this.sessions.get(id)?.records.length ?? 0;
   }
 
+  /** As lane D's host: a record at a held seq is skipped when it's the same, a different one is a fork (`conflict`),
+   *  checked whole before anything is written. */
   ingest(view: SessionView, records: SessionRecord[], opts: { from: string; late: boolean }): void {
     const s = this.sessions.get(view.id) ?? { view, records: [] };
+    for (const r of records) {
+      const held = s.records[r.seq];
+      if (held !== undefined && !sameRecord(held, r)) throw new ContractError("conflict", `a fork at ${r.seq}`);
+    }
     s.view = view;
-    s.records.push(...records);
+    const fresh = records.filter((r) => r.seq >= s.records.length).map((r) => (opts.late ? { ...r, late: true } : r) as SessionRecord);
+    s.records.push(...fresh);
     this.sessions.set(view.id, s);
-    this.ingested.push({ from: opts.from, late: opts.late, n: records.length });
+    this.ingested.push({ from: opts.from, late: opts.late, n: fresh.length });
+  }
+
+  readonly asides: { id: string; from: string; records: SessionRecord[] }[] = [];
+  setAside(id: string, fromSeq: number, opts: { from: string }): SessionRecord[] {
+    const s = this.sessions.get(id)!;
+    const out = s.records.splice(fromSeq);
+    this.asides.push({ id, from: opts.from, records: out });
+    return out;
+  }
+
+  /** As lane D's host: each record's body at the end, marked late, once per (from, seq). */
+  readonly #lateSeen = new Set<string>();
+  appendLate(id: string, records: SessionRecord[], opts: { from: string }): void {
+    const s = this.sessions.get(id)!;
+    for (const r of records) {
+      const k = `${opts.from}\u0000${r.seq}`;
+      if (this.#lateSeen.has(k)) continue;
+      this.#lateSeen.add(k);
+      const { seq: _seq, sessionId: _sid, ts: _ts, epoch: _epoch, late: _late, ...body } = r as SessionRecord & { late?: boolean };
+      this.record(id, { ...body, late: true, lateFrom: { device: opts.from, seq: r.seq } } as unknown as SessionRecordBody, 2);
+    }
   }
 
   /** What lane D's `catchUp` looks for: a turn started and not ended, and its calls with no result. */
@@ -215,5 +248,96 @@ describe("sessions' records across computers", () => {
     studio.record("b_alpha", { type: "turn_started", origin: "user" }, 1);
     await waitFor(() => w.h("Laptop").ingested.length === 1);
     expect(w.h("Laptop").ingested[0]).toMatchObject({ late: true, from: w.c.devices.get("Studio")!.id });
+  });
+
+  test("records from an earlier lease in one batch: only those are marked late", async () => {
+    const w = await world(["Studio", "Laptop"], { stale: (n, e) => n === "Laptop" && e < 2 });
+    const studio = w.h("Studio");
+    studio.open(view("Studio"));
+    studio.record("b_alpha", { type: "turn_started", origin: "user" }, 1);
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "a" } }, 2);
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "b" } }, 2);
+    await w.c.devices.get("Laptop")!.transport.connect(w.c.devices.get("Studio")!.id);
+    await waitFor(() => w.h("Laptop").head("b_alpha") === 3);
+    const late = w.h("Laptop").history("b_alpha").map((r) => (r as { late?: boolean }).late === true);
+    expect(late).toEqual([true, false, false]);
+  });
+});
+
+describe("forks: two computers that wrote the same place", () => {
+  /** Ten records both hold, written by the laptop (the main now) and copied to the studio. */
+  async function shared() {
+    const w = await world(["Studio", "Laptop"], { holder: () => null });
+    const studioDev = w.c.devices.get("Studio")!;
+    const laptopDev = w.c.devices.get("Laptop")!;
+    await laptopDev.transport.connect(studioDev.id);
+    w.h("Laptop").open(view("Laptop"));
+    for (let i = 0; i < 10; i++) w.h("Laptop").record("b_alpha", { type: "driver", event: { type: "assistant_text", text: `shared ${i}` } }, 1);
+    await waitFor(() => w.h("Studio").head("b_alpha") === 10);
+    // Apart: each writes its own.
+    w.c.net.partition(studioDev.key.publicKey, laptopDev.key.publicKey);
+    await waitFor(() => !laptopDev.transport.links().some((l) => l.peer === studioDev.id && l.up));
+    return { w, studioDev, laptopDev };
+  }
+
+  /** The link back after a heal (the dialler may still be backing off). */
+  async function reconnect(from: { transport: { connect(id: string): Promise<unknown> } }, to: { id: string }): Promise<void> {
+    for (let i = 0; ; i++) {
+      try {
+        await from.transport.connect(to.id);
+        return;
+      } catch (e) {
+        if (i > 100) throw e;
+        await Bun.sleep(50);
+      }
+    }
+  }
+
+  test("A10, A11 then B12: the old main's own records are set aside, never mixed under the main's; they reach the main, appended late", async () => {
+    const { w, studioDev, laptopDev } = await shared();
+    const studio = w.h("Studio");
+    const laptop = w.h("Laptop");
+    // The studio, the old main, kept writing (A10, A11); the laptop, the main now, wrote 10, 11 and 12 (B).
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "A10" } }, 1);
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "A11" } }, 1);
+    for (const t of ["B10", "B11", "B12"]) laptop.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: t } }, 2);
+    // Together again.
+    w.c.net.heal(studioDev.key.publicKey, laptopDev.key.publicKey);
+    await reconnect(laptopDev, studioDev);
+    // The laptop's log: its own, then the studio's two at the end, marked late; the studio's copy is the same log.
+    await waitFor(() => laptop.head("b_alpha") === 15 && studio.head("b_alpha") === 15, 10_000);
+    const texts = (h: MemoryHost) => h.history("b_alpha").map((r) => (r as { event?: { text?: string } }).event?.text);
+    expect(texts(laptop).slice(10)).toEqual(["B10", "B11", "B12", "A10", "A11"]);
+    expect(laptop.history("b_alpha").slice(13).every((r) => (r as { late?: boolean }).late === true)).toBe(true);
+    expect(studio.bodies("b_alpha")).toEqual(laptop.bodies("b_alpha"));
+    expect(studio.asides).toEqual([{ id: "b_alpha", from: laptopDev.id, records: [expect.objectContaining({ seq: 10 }), expect.objectContaining({ seq: 11 })] }]);
+    // Live after that, on the one log.
+    laptop.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "B15" } }, 2);
+    await waitFor(() => studio.head("b_alpha") === 16);
+    expect(studio.bodies("b_alpha")).toEqual(laptop.bodies("b_alpha"));
+  });
+
+  test("a computer that holds more than the main: the heads exchange finds it, and its own records go to the main, late", async () => {
+    const { w, studioDev, laptopDev } = await shared();
+    const studio = w.h("Studio");
+    const laptop = w.h("Laptop");
+    // Only the studio wrote while apart (the main wrote nothing).
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "A10" } }, 1);
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "A11" } }, 1);
+    w.c.net.heal(studioDev.key.publicKey, laptopDev.key.publicKey);
+    await reconnect(studioDev, laptopDev);
+    await waitFor(() => laptop.head("b_alpha") === 12 && studio.head("b_alpha") === 12, 10_000);
+    expect(laptop.history("b_alpha").slice(10).map((r) => [(r as { event?: { text?: string } }).event?.text, (r as { late?: boolean }).late])).toEqual([["A10", true], ["A11", true]]);
+    expect(studio.bodies("b_alpha")).toEqual(laptop.bodies("b_alpha"));
+  });
+
+  test("the same records on both sides are no fork: the overlap is skipped", async () => {
+    const { w, studioDev, laptopDev } = await shared();
+    w.c.net.heal(studioDev.key.publicKey, laptopDev.key.publicKey);
+    w.h("Laptop").record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "B10" } }, 2);
+    await reconnect(laptopDev, studioDev);
+    await waitFor(() => w.h("Studio").head("b_alpha") === 11);
+    expect(w.h("Studio").asides).toEqual([]);
+    expect(w.h("Studio").bodies("b_alpha")).toEqual(w.h("Laptop").bodies("b_alpha"));
   });
 });

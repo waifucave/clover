@@ -24,6 +24,13 @@ class LogHost {
   get(id: string) {
     return this.views.get(id);
   }
+  setAside(): SessionRecord[] {
+    return [];
+  }
+  readonly late: SessionRecord[] = [];
+  appendLate(_id: string, records: SessionRecord[]): void {
+    this.late.push(...records);
+  }
   callerOf(_id: string) {
     return { bot: "luna" };
   }
@@ -90,5 +97,15 @@ describe("sessions' records from another computer", () => {
     expect(copiedRecord(r, "dev_studio")).toBe(r);
     const input = record(5, { type: "status", status: "idle" });
     expect(copiedRecord(input, "dev_studio")).toBe(input);
+  });
+});
+
+describe("set-aside records from another computer", () => {
+  test("appended on the computer running the session, a grant among them is converted too", () => {
+    const host = new LogHost();
+    const sink = sinkWithoutCopiedGrants(host);
+    sink.appendLate(view.id, [record(7, { type: "driver", event: { type: "session_grant", key: USER_BROWSER_PARTITION_GRANT, cardId: "card_laptop" } })], { from: "dev_laptop" });
+    expect(host.late[0]).toMatchObject({ event: { type: COPIED_GRANT_EVENT, key: USER_BROWSER_PARTITION_GRANT, from: "dev_laptop" } });
+    expect(JSON.stringify(host.late)).not.toContain("card_laptop");
   });
 });
