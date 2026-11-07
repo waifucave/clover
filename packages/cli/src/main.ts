@@ -4,7 +4,7 @@ import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_U
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1689,7 +1689,8 @@ if (import.meta.main) {
   // account's, before anything else runs — every subcommand, every self-spawned worker. build-kind.ts and
   // startup-guard.ts say why.
   {
-    const refusal = tlsEnvRefusal(process.env, undefined, DIST_BUILD ? rawEnvironment() ?? [] : []) ?? homeRefusal();
+    const raw = DIST_BUILD ? rawEnvironment() ?? [] : [];
+    const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? homeRefusal() ?? dyldRefusal(raw) ?? testKeychainRefusal(process.env, raw);
     if (refusal !== undefined) {
       process.stderr.write(`${refusal}\n`);
       process.exit(TLS_ENV_REFUSAL_EXIT);
@@ -2133,6 +2134,14 @@ if (import.meta.main) {
       // rather than take down every OTHER section this command prints (the findings loop above
       // already ran and printed by the time this executes). Mirrors this function's own settings
       // guard just above — a diagnostic that can crash the diagnostic tool defeats its own purpose.
+      // C-M2: the secret store's status, and a warning when its key sits unsealed (never a silent default).
+      try {
+        const { openCloverSecretStore, secretStoreWarning, keychainService, resolveCloverProfile: profileOf } = await import("@waifucave/clover-core");
+        const st = (await openCloverSecretStore({ home, service: keychainService(profileOf(), home) })).status();
+        console.log(`${AQUA}secrets${RESET} ${DIM}${st.backend}${"keySource" in st && st.keySource ? ` (${st.keySource}${"tpm" in st && st.tpm ? ", TPM" : ""})` : ""}${RESET}`);
+        const warning = secretStoreWarning(st);
+        if (warning) console.log(`  \x1b[33mwarning:\x1b[0m ${warning}`);
+      } catch (err) { console.log(`${AQUA}secrets${RESET} ${DIM}unavailable (${err instanceof Error ? err.message : "unknown error"})${RESET}`); }
       console.log(`${AQUA}runtimes${RESET}`);
       let report: Awaited<ReturnType<typeof diagnoseRuntimes>>;
       try {

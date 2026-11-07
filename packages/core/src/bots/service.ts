@@ -37,7 +37,7 @@
 // The driver of each session comes from `DriverFactory`: lane A's embedded runtime once A-M1 merges; tests use the
 // contracts' FakeSessionDriver.
 import {
-  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type RoutineRunView, type SessionView, type Text, type UserMessageInput,
+  CLOVER_ERR, type BotView, type Caller, type ChangeResult, type Level, type RoutineRunView, type SessionView, type Text, type UserMessageInput,
 } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -81,6 +81,8 @@ export interface BotSessionContext {
   readonly computer: string;
   /** The bot's memory, agents' transcripts and scratch, which the system prompt names (§6.5). */
   readonly paths: BotPaths;
+  /** A side thread's level (its routine's, once its card was answered, §7); undefined: the computer's. */
+  readonly level?: Level;
   /** Who the session is when it calls anything, its bot named (§5.4; the controller's L-M1 answer): the runtime binds
    *  each tool call's caller from this, never from what a plugin says (R7). */
   readonly caller: Extract<Caller, { kind: "session" }>;
@@ -94,6 +96,12 @@ export interface BotSessionContext {
   /** Resolves once `mayAct` says yes: a turn the pause switch holds waits here at its next tool call, and goes on
    *  when the user resumes (the owner's decision of November 6). Rejects when `signal` aborts. */
   whenMayAct(signal?: AbortSignal): Promise<void>;
+  /** Whether a turn may start now (the durable host's `mayStart`): no while paused, and for a bot's conversation while
+   *  this computer isn't the runner or is handing its bots back. A driver asks it of a turn its runtime starts on its
+   *  own (a background task's notification), which no host turn covers; without it, `mayAct` stands in. */
+  mayStart?(): boolean;
+  /** Resolves once `mayStart` says yes; rejects when `signal` aborts. */
+  whenMayStart?(signal?: AbortSignal): Promise<void>;
   /** Whether the cached prompt has expired: the turn starting now rebuilds the harness blocks (the MCP block, the
    *  devices block, the `computer` lists) without compacting (§6.1). */
   cacheCold(): boolean;
@@ -155,6 +163,10 @@ export interface SideThreadRun {
   text: string;
   /** The computer that holds the routine; default this one. */
   computer?: string;
+  /** The level the run gets: the routine's own, once its card was answered, else its computer's (§7). */
+  level?: Level;
+  /** Told the side thread's id as the run starts (`routine.runNow` answers with it). */
+  onSession?(id: string): void;
 }
 
 /** How long a hand-back waits for the bots' running turns to end before it gives up (they stay here). */
@@ -389,7 +401,8 @@ export class BotService {
     host.open({
       id: session, kind: "side-thread", bot: id, parent: live.mainSession, computer, title: run.name, routine: run.routine,
       model: eff.model, ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-    }, this.#o.drivers(this.#context(live, session, "side-thread", computer)));
+    }, this.#o.drivers(this.#context(live, session, "side-thread", computer, run.level)));
+    run.onSession?.(session);
     const ended = new Promise<TurnEnd>((resolve) => {
       const off = host.subscribe(session, (r) => {
         if (r.type === "turn_ended") {
@@ -652,10 +665,11 @@ export class BotService {
     };
   }
 
-  #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string): BotSessionContext {
+  #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string, level?: Level): BotSessionContext {
     const paths = botPaths(this.#o.home, live.plugin.id);
     const gate = this.#o.gate;
     return {
+      ...(level === undefined ? {} : { level }),
       botId: live.plugin.id,
       sessionId,
       kind,
@@ -666,6 +680,8 @@ export class BotService {
       memoryBlock: () => memoryBlock({ paths, computer: kind === "bot" ? this.#runner() : computer }),
       mayAct: () => gate.mayAct({ kind }),
       whenMayAct: (signal) => gate.whenMayAct({ kind }, signal),
+      mayStart: () => gate.mayStart({ kind }),
+      whenMayStart: (signal) => gate.whenMayStart({ kind }, signal),
       cacheCold: () => this.#o.cacheCold?.(sessionId) ?? true,
     };
   }

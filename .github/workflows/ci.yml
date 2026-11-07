@@ -119,6 +119,11 @@ jobs:
       - name: The rename's rules, the layout, the workspaces and the CI areas
         run: bun test scripts/rename/ scripts/layout.test.ts scripts/workspaces.test.ts scripts/ci-changes.test.ts
 
+      # The headless shell's pin (lane L's, plugins/clover/plugins/browser/headless-shell.pins.json) follows the app's
+      # Electron: the same Chromium milestone (spec §12.1). It warns while the file doesn't exist yet.
+      - name: The headless shell's pin follows Electron
+        run: bun scripts/check-headless-pin.ts
+
   # One job per machine (macOS arm64, Linux x64 and arm64, Windows x64), each step run only when this change needs it:
   #  - every workspace package's `test` (docs/clover-layout.md): `scripts/workspaces.ts` runs each one that has the
   #    script, where its `cloverCi.os` allows, and skips core and cli (`cloverCi.ownJob`). On Linux the tests run under
@@ -142,12 +147,10 @@ jobs:
     timeout-minutes: 50
     strategy:
       fail-fast: false
+      # The local gate (owner's ruling, November 7): a pull request's macOS legs run on the lane's own Mac before it
+      # reports a head, so PR runs take no hosted macOS runner. The merge queue (and push, and dispatch) still runs them.
       matrix:
-        include:
-          - { target: darwin-arm64, runner: macos-latest }
-          - { target: linux-x64, runner: ubuntu-24.04 }
-          - { target: linux-arm64, runner: ubuntu-24.04-arm }
-          - { target: windows-x64, runner: windows-latest }
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]' || '[{"target":"darwin-arm64","runner":"macos-latest"},{"target":"linux-x64","runner":"ubuntu-24.04"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"windows-x64","runner":"windows-latest"}]') }}
     env:
       WORKSPACES: ${{ needs.changes.outputs.workspaces }}
       DAEMON: ${{ needs.changes.outputs.daemon }}
@@ -429,6 +432,10 @@ jobs:
         working-directory: packages/core
         run: bun test --timeout 30000 test/tree test/computers src/contracts/tests/tree.test.ts src/contracts/tests/computer-registry.test.ts
 
+      - name: An agent backend's bare command on PATH (its .exe or .cmd on Windows)
+        working-directory: packages/core
+        run: bun test --timeout 30000 src/agents/tests/windows-path.test.ts
+
   # The link sidecar (native/link, lane H's clover-link, iroh) on Windows and Linux, x64 and arm64: it is built, and
   # the core's link tests run over it on loopback (src/links/tests/sidecar.test.ts: pairing, a request, a 3 MiB
   # stream, a revoke, a key the core didn't allow). Nothing leaves the runner: the relay is off and the endpoints bind
@@ -585,7 +592,8 @@ jobs:
   macos:
     name: macOS (core, cli, scripts, verify, link)
     needs: changes
-    if: needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scriptsmac == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true'
+    # Not on a pull request: the lane runs it on its own Mac (the local gate); the merge queue runs it here.
+    if: github.event_name != 'pull_request' && (needs.changes.outputs.core == 'true' || needs.changes.outputs.cli == 'true' || needs.changes.outputs.scriptsmac == 'true' || needs.changes.outputs.verify == 'true' || needs.changes.outputs.link == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
     env:
@@ -640,25 +648,20 @@ jobs:
           cp "${{ steps.clover-package.outputs.bin }}" dist/winter
           chmod +x dist/winter
 
-      - name: Core · test
+      # Only the core's macOS tests: the files named *.darwin.test.ts and the mixed ones that mark theirs with
+      # darwinTest/darwinDescribe (test/helpers/darwin-only.ts). Everything else runs on Linux, in core-linux's shards
+      # (scripts/platform-tests.ts picks each side's files; a clear Bun crash, exit 133 or a signal with no summary, is
+      # re-run once with a ::warning::).
+      # The per-test timeout here and in core-linux's shards is 20 s, not bun's 5 s: an overloaded runner (the merge
+      # queue's Macs above all) took a test that runs in well under a second locally past 5 s and dropped a PR from the
+      # queue for it. Local runs keep the 5 s, so a test that is slow for real still shows there; each run prints its
+      # 10 slowest tests (--slowest), so one creeping toward the limit is seen before it fails.
+      - name: Core · the macOS tests
         if: env.CORE == 'true'
-        working-directory: packages/core
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-        # The suite runs as 3 sequential native shards (`bun test --shard=K/3`, so discovery is bun's
-        # own). They began as a guard against Bun 1.3.14's intermittent Worker use-after-free
-        # ("Segmentation fault at address 0xA", exit 133, in one long process after ~70 Workers); on
-        # 1.4.4 A-M1's dispatch soak ran 20 of 20 clean (6 of 20 crashed on 1.3.14). Memory is not why
-        # they stay: neither Bun hands a terminated Worker's resident pages back (`ps -o rss=`), and on
-        # 1.4.4 its dirty memory (phys_footprint) no longer piles up (packages/core/scripts/test-shards.ts
-        # has the numbers). They stay because a smaller process is cheaper to re-run and keeps a crash to
-        # one shard. Every shard is a fresh process in this directory:
-        # same bunfig preload (per-process temp root, throwaway Keychain service), same env. The
-        # script runs all shards (one that clearly crashed Bun - exit 133 or a signal, with no summary -
-        # is re-run ONCE, with a ::warning::; a second crash fails), then fails the step on any non-zero or signal exit, a missing
-        # "Ran N tests across M files" summary, a 0-file shard, or a file total below the glob count.
-        run: bun scripts/test-shards.ts 3
+        run: bun scripts/platform-tests.ts --root packages/core --cwd packages/core --darwin --timeout 20000 --slowest 10
 
       - name: CLI · test
         if: ${{ !cancelled() && env.CLI == 'true' }}
@@ -666,7 +669,8 @@ jobs:
         env:
           CLOVER_RUNTIME_EXECUTABLE: ${{ github.workspace }}/dist/winter
           CLOVER_RUNTIME_REQUIRE_BINARY: "1"
-        run: bun test test/*.ts
+        # 20 s per test, as the core's shards (see "Core · the macOS tests").
+        run: bun test --timeout 20000 test/*.ts
 
       # Only the repo scripts' macOS tests (`scripts/**/*.darwin.test.ts`: codesign, the predecessor app's bundles,
       # LaunchServices); the rest run on Linux, in the scripts job.
@@ -720,6 +724,46 @@ jobs:
       - name: verify:runtimes
         if: ${{ !cancelled() && env.VERIFY == 'true' }}
         run: bun run verify:runtimes
+
+  # The core suite on Linux, in three shards: every test file but the macOS ones (*.darwin.test.ts), with the mixed
+  # files' darwinTest/darwinDescribe tests skipping. On a private Secret Service (the OS secret store the harness's
+  # throwaway stores use), with bubblewrap for the Bash fence and a git identity for the tests' throwaway repos.
+  # packages/core/test/platform-ci.json holds the reviewed lists: Linux product bugs the shards skip until fixed (shard
+  # 1 runs each and fails if one now passes), the skips Linux may show, and the darwin mentions that gate nothing.
+  core-linux:
+    name: core · linux ${{ matrix.shard }}/3
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      GIT_AUTHOR_NAME: Clover CI
+      GIT_AUTHOR_EMAIL: ci@clover.invalid
+      GIT_COMMITTER_NAME: Clover CI
+      GIT_COMMITTER_EMAIL: ci@clover.invalid
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: The private Secret Service's tools, and bubblewrap
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends dbus gnome-keyring libsecret-1-0 bubblewrap socat
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Core · test
+        run: scripts/with-private-secret-service.sh bun scripts/platform-tests.ts --root packages/core --cwd packages/core --not-darwin --shard ${{ matrix.shard }}/3 --config packages/core/test/platform-ci.json --timeout 20000 --slowest 10 ${{ matrix.shard == 1 && '--check-known-failures' || '' }}
 
   # The repo scripts' tests (`scripts/**/*.test.ts`) on Linux: the layout's conventions, the build, dev and release
   # tools' pure halves, the held scripts, the limiter, the rename's codemod. The few that need macOS are named
@@ -791,7 +835,9 @@ jobs:
   swift:
     name: swift (WinterProtocol + WinterKit + WinterChatKit + WinterBrowserHost)
     needs: changes
-    if: needs.changes.outputs.swift == 'true'
+    # The leftover Swift packages, which Clover's Electron app doesn't use: on demand only (workflow_dispatch), off the gate's
+    # macOS runners (owner's ruling, November 7).
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -935,7 +981,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, installers, tree, link, gallery, typecheck, lockfiles, test-extension, macos, scripts, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, installers, tree, link, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

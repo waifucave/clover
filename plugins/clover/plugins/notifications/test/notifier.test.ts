@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { DesktopNotifier, noticeId, noticeWords, type DesktopNotice, type DesktopNotifications, type NotifierUpdate } from "../src/notifier";
+import { DEFAULT_PREFS, DesktopNotifier, noticeId, noticeWords, wanted, type DesktopNotice, type DesktopNotifications, type NotifierUpdate } from "../src/notifier";
+import { english } from "../src/strings";
 import * as host from "../host/index";
 import { checkManifest } from "../../base-theme/src/manifest-check";
 import manifest from "../clover.json" with { type: "json" };
@@ -17,8 +18,8 @@ function fakeDesktop(showing = false) {
 }
 
 let seq = 0;
-const CLOVER = { pluginId: "clover", name: "Clover", bundled: true };
-const plugin = (pluginId: string, name: string, bundled = false) => ({ pluginId, name, bundled });
+const CLOVER = { pluginId: "clover", name: "Clover", thirdParty: false };
+const plugin = (pluginId: string, name: string, bundled = false) => ({ pluginId, name, thirdParty: !bundled });
 const update = (kind: NotifierUpdate["kind"], more: Partial<NotifierUpdate> = {}): NotifierUpdate => ({ seq: ++seq, kind, unseen: seq, at: 1_000 + seq, sender: CLOVER, ...more });
 const NAMES: Record<string, string> = { alpha: "Alpha", luna: "Luna" };
 
@@ -167,5 +168,58 @@ describe("the host half and the manifest", () => {
     expect(shown.map((s) => s.body)).toEqual(["Vous a envoyé un message · 3 non lus", "Needs your OK"]);
     // Stopped, English again.
     expect(noticeWords(update("message", { unseen: 1 }), "Alpha").body).toBe("Sent you a message");
+  });
+});
+
+describe("the plugin's own settings (Settings → Notifications shows what a notifier declares, F-M3)", () => {
+  test("the manifest declares needsYou, agentDone, routineFailed and sounds: switches, on by default, in the English table's words", () => {
+    const settings = (manifest as { settings?: Record<string, { type: string; title: { en: string }; description: { en: string }; default: unknown }> }).settings!;
+    expect(Object.keys(settings)).toEqual(["needsYou", "agentDone", "routineFailed", "sounds"]);
+    for (const [key, s] of Object.entries(settings)) {
+      expect(s.type).toBe("boolean");
+      expect(s.default).toBe(true);
+      expect(s.default).toBe(DEFAULT_PREFS[key as keyof typeof DEFAULT_PREFS]);
+      // The manifest's text is the locale table's English, so a pack translates the keys and the two never drift.
+      expect(s.title.en).toBe(english(`clover.notifications.setting.${key}`));
+      expect(s.description.en).toBe(english(`clover.notifications.setting.${key}.detail`));
+    }
+  });
+
+  test("each kind follows its switch; a message and a plugin's notice always show", () => {
+    const off = { needsYou: false, agentDone: false, routineFailed: false, sounds: false };
+    for (const kind of ["card", "question", "agent-finished", "routine-result"] as const) {
+      expect([kind, wanted(update(kind), DEFAULT_PREFS)]).toEqual([kind, true]);
+      expect([kind, wanted(update(kind), off)]).toEqual([kind, false]);
+    }
+    expect(wanted(update("message"), off)).toBe(true);
+    expect(wanted(update("notification"), off)).toBe(true);
+    // A routine that ran fine is not a failure, when the core says so.
+    expect(wanted(update("routine-result", { failed: false }), DEFAULT_PREFS)).toBe(false);
+    expect(wanted(update("routine-result", { failed: true }), DEFAULT_PREFS)).toBe(true);
+  });
+
+  test("the host half reads the settings at start and follows changes; sounds off makes every banner silent", async () => {
+    const log = { info: () => {}, warn: () => {}, error: () => {} };
+    const { desktop, shown } = fakeDesktop();
+    const values: Record<string, unknown> = { needsYou: false, sounds: false };
+    let listener: ((key: string) => void) | null = null;
+    const settings = {
+      get: async <T,>(key: string) => values[key] as T | undefined,
+      watch: (_key: string | null, l: (key: string) => void) => ((listener = l), () => (listener = null)),
+    };
+    await host.start({ log, desktop, settings });
+    await host.notifier.notify(update("card", { bot: "alpha", unseen: 1 }));
+    await host.notifier.notify(update("agent-finished", { bot: "alpha", unseen: 1 }));
+    expect(shown.map((s) => [s.body, s.silent])).toEqual([["An agent finished", true]]);
+    // The user turns Needs you back on, and sounds.
+    values.needsYou = true;
+    values.sounds = true;
+    listener!("needsYou");
+    listener!("sounds");
+    await new Promise((r) => setTimeout(r, 0));
+    await host.notifier.notify(update("question", { bot: "alpha", unseen: 1 }));
+    expect(shown.at(-1)).toMatchObject({ body: "Has a question for you", silent: false, urgent: true });
+    await host.stop();
+    expect(listener).toBeNull();
   });
 });

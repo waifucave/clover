@@ -82,7 +82,7 @@ interface Computer {
   shown: string[][];
 }
 
-async function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry } = {}): Promise<Computer> {
+async function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry; connect?: Connect } = {}): Promise<Computer> {
   const registry = options.registry ?? (await FakeRegistry.create());
   const store = options.store ?? new MemoryPairStore();
   const links: RtcLink[] = [];
@@ -97,6 +97,7 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
         headers.set("cf-connecting-ip", address);
         return fetch(new Request(request, { headers }));
       },
+      ...(options.connect ? { connect: options.connect } : {}),
     }),
     webOrigin: "https://clover.test",
     inviteHandshake: harness.url,
@@ -121,7 +122,7 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
   return { host, registry, store, links, shown };
 }
 
-function browser(store = new MemoryStore(), options: { connect?: Connect } = {}): Companion {
+function browser(store = new MemoryStore(), options: { connect?: Connect; fetch?: (request: Request) => Promise<Response> } = {}): Companion {
   return new Companion({ store, rtc, handshake: "https://handshake.invalid", allowedHandshakes: [harness.url], name: "Test browser", ...options });
 }
 
@@ -248,6 +249,43 @@ describe.skipIf(!ready)("the web companion", () => {
     await second.host.start();
     const connection = await b.connect(record);
     expect(await connection.link.request<unknown>("bot.list", {})).toMatchObject({ bots: [{ id: "alpha" }] });
+    connection.close();
+    second.host.stop();
+  }, 30_000);
+
+  test("a computer that restarts slowly is dialled only once it is online, so no signal waits in its inbox", async () => {
+    // The browser's socket is open long before the restarted computer's. Signals sent before then would wait in the
+    // computer's inbox, which keeps the newest 16: an offer with many ICE candidates behind it could be lost.
+    const store = new MemoryPairStore();
+    const first = await computer({ store });
+    await first.host.start();
+    const sent: number[] = [];
+    const b = browser(new MemoryStore(), {
+      fetch: (request) => {
+        if (request.method === "POST" && new URL(request.url).pathname.endsWith("/messages")) sent.push(Date.now());
+        return fetch(request);
+      },
+    });
+    const record = await b.pair(await invite(first), { onWords: () => undefined });
+    first.host.stop();
+    sent.length = 0;
+    // The earliest the service can see the computer online: when its socket starts connecting. The service marks it
+    // present on accepting the upgrade, which can be before this side's connect resolves, so the time is taken before
+    // the connect, never after (a signal may be sent a moment before the client hears its socket opened).
+    let computerUp = Infinity;
+    const second = await computer({
+      store,
+      connect: async (url) => {
+        await Bun.sleep(1500);
+        computerUp = Math.min(computerUp, Date.now());
+        return connectWebSocket(url);
+      },
+    });
+    await second.host.start();
+    const connection = await b.connect(record);
+    expect(await connection.link.request<unknown>("bot.list", {})).toMatchObject({ bots: [{ id: "alpha" }] });
+    expect(sent.length).toBeGreaterThan(0);
+    expect(Math.min(...sent)).toBeGreaterThanOrEqual(computerUp);
     connection.close();
     second.host.stop();
   }, 30_000);

@@ -11,6 +11,7 @@ import { CoworkRepository } from "../../src/cowork/repository";
 import { runtimeStateOnline } from "../../src/runtime-state/wiring";
 import type { CoworkHostPorts } from "../../src/cowork/service";
 import { CoworkError } from "../../src/cowork/types";
+import { onDarwin } from "../helpers/darwin-only";
 let daemon: RunningDaemon | undefined;
 const homes: string[] = [], clients: CloverClient[] = [], sockets: Array<{ end(): void }> = [];
 afterEach(async () => { clients.splice(0).forEach(c => c.close()); sockets.splice(0).forEach(c => c.end()); if (daemon) { await daemon.stop(); daemon = undefined; } homes.splice(0).forEach(h => rmSync(h, { recursive: true, force: true })); });
@@ -104,6 +105,7 @@ test("paired watch methods are refused before shape validation and never silentl
     await until(() => replies.has(id)); expect(replies.get(id).error.code).toBe(-32001);
   }
 });
+// It waits out a real 20 s renewal by design, so it has its own minute: over CI's 20 s per-test limit and bun's 5 s.
 test("TS consumer automatically performs a real Unix renewal after20 seconds and stops on detach", async () => {
   const f = await boot(), observer = await connect(f.home);
   const renewals: Array<{ subscriptionId: string; leaseExpiresAt: string }> = [];
@@ -137,7 +139,7 @@ test("concurrent Project RPC changes reach only each separately subscribed works
   }
   expect(f.records.rs.db.query("SELECT count(*) AS n FROM cowork_conversations").get()).toEqual({ n: 0 });
   await Promise.all([wa.detach(), wb.detach()]);
-});
+}, 60_000);
 test("consumer never installs renewal when detach or disconnect wins before watch acceptance continuation", async () => {
   const f = await boot();
   for (const race of ["detach", "disconnect"] as const) {
@@ -208,8 +210,13 @@ test("W6: authority refusal never retries even if a malformed response claims re
   };
   const originalTimer = globalThis.setTimeout, delays: number[] = [];
   globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
-    if ([20_000, 1000, 2000].includes(args[1] ?? 0)) { delays.push(args[1]!); return originalTimer(args[0], 5, ...args.slice(2)); }
-    return originalTimer(...args);
+    // The in-process daemon owns 20 s timers of its own (lease maintenance, usage ingest), so record only the timers the
+    // watch client files in its renewal map. The microtask runs right after the caller stores the timer, well before
+    // the shortened timer can fire and clear it.
+    if (![20_000, 1000, 2000].includes(args[1] ?? 0)) return originalTimer(...args);
+    const delay = args[1]!, timer = originalTimer(args[0], 5, ...args.slice(2));
+    queueMicrotask(() => { if ([...(observer.client as any).watchRenewals.values()].includes(timer)) delays.push(delay); });
+    return timer;
   }) as typeof setTimeout;
   try {
     const lease = await observer.client.watchWorkspaces(f.ids); await until(() => attempts === 1); await Bun.sleep(30);
@@ -239,7 +246,7 @@ test("W1b: live Unix hints arrive during2s of50ms writes instead of waiting for 
   await lease.detach();
 }, 10_000);
 
-const instructionFiles = process.platform === "darwin" && process.arch === "arm64" && process.env.WINTER_COWORK_INSTRUCTION_FS_FIXTURE === "1" ? test : test.skip;
+const instructionFiles = onDarwin && process.arch === "arm64" && process.env.WINTER_COWORK_INSTRUCTION_FS_FIXTURE === "1" ? test : test.skip;
 instructionFiles("composed real guidance mutation notifies local workspace watch with revision only", async () => {
  const f = await boot(), workspaceId = f.ids[0]!;
  // Trusted disposable provisioning only; no production issuer or RPC seed.

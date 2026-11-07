@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { darwinTest } from "./helpers/darwin-only";
 import { DIST_BUILD, DIST_BUILD_DEFINE, isCompiledBinary, noteIgnoredEnvOverride } from "../src/build-kind";
 
 test("a core run from source is not a dist build (only build-daemon's define makes one)", () => {
@@ -73,19 +74,41 @@ test("a macOS dist build refuses a HOME that isn't the account's own (real path)
   expect(homeRefusal({ ...on, home: "/tmp/planted", platform: "linux" })).toBeUndefined();
 });
 
-test.if(process.platform === "darwin")("the account's home comes from the password database, not HOME; the raw environment is readable", async () => {
-  const { accountHome, rawEnvironment } = await import("../src/startup-guard");
+test("a macOS release refuses any DYLD_ entry (SIP is off if one reached it); other OSes and dev builds don't", async () => {
+  const { dyldRefusal } = await import("../src/startup-guard");
+  const on = { platform: "darwin" as const, distBuild: true };
+  expect(dyldRefusal(["PATH=/usr/bin", "HOME=/Users/me"], on)).toBeUndefined();
+  expect(dyldRefusal(["PATH=/usr/bin", "DYLD_INSERT_LIBRARIES=/tmp/x.dylib"], on)).toContain("DYLD_INSERT_LIBRARIES");
+  expect(dyldRefusal(["DYLD_LRAWBR=--preload=/tmp/p.js"], on)).toContain("SIP is off");
+  expect(dyldRefusal(["DYLD_=1"], on)).toContain("refusing to start");
+  expect(dyldRefusal(["DYLD_X"], on)).toContain("DYLD_X");
+  expect(dyldRefusal(["X=DYLD_Y=1"], on)).toBeUndefined();
+  expect(dyldRefusal(["DYLD_INSERT_LIBRARIES=/x"], { ...on, distBuild: false })).toBeUndefined();
+  expect(dyldRefusal(["DYLD_INSERT_LIBRARIES=/x"], { ...on, platform: "linux" })).toBeUndefined();
+});
+
+test("a release refuses to start with any test-keychain variable set, naming it; a dev build doesn't", async () => {
+  const { testKeychainRefusal } = await import("../src/startup-guard");
+  expect(testKeychainRefusal({}, [], true)).toBeUndefined();
+  expect(testKeychainRefusal({ CLOVER_TEST_KEYCHAIN: "/tmp/t.keychain-db" }, [], true)).toContain("CLOVER_TEST_KEYCHAIN is set");
+  expect(testKeychainRefusal({ CLOVER_KEYCHAIN_SERVICE: "x", WINTER_TEST_KEYCHAIN: "memory" }, [], true)).toContain("CLOVER_KEYCHAIN_SERVICE, WINTER_TEST_KEYCHAIN are set");
+  expect(testKeychainRefusal({}, ["CLOVER_TEST_KEYCHAIN="], true)).toContain("CLOVER_TEST_KEYCHAIN is set");
+  expect(testKeychainRefusal({}, ["NOT_CLOVER_TEST_KEYCHAIN=1"], true)).toBeUndefined();
+  expect(testKeychainRefusal({ CLOVER_TEST_KEYCHAIN: "/tmp/t" }, [], false)).toBeUndefined();
+});
+
+darwinTest("the account's home comes from the password database, not HOME", async () => {
+  const { accountHome } = await import("../src/startup-guard");
   const home = accountHome();
   expect(home).toBeString();
   expect(home!.startsWith("/")).toBe(true);
-  const raw = rawEnvironment();
-  expect(raw).toBeArray();
-  expect(raw!.some((e) => e.startsWith("PATH="))).toBe(true);
 });
 
-test.if(process.platform === "linux")("the raw environment comes from /proc/self/environ", async () => {
+test("the raw environment is readable (macOS _NSGetEnviron, Linux /proc/self/environ; none on Windows)", async () => {
   const { rawEnvironment } = await import("../src/startup-guard");
-  expect(rawEnvironment()!.some((e) => e.startsWith("PATH="))).toBe(true);
+  const raw = rawEnvironment();
+  if (process.platform === "win32") expect(raw).toBeUndefined();
+  else expect(raw!.some((e) => e.startsWith("PATH="))).toBe(true);
 });
 
 test("a compiled macOS core without the process holder beside it names the missing path; anything else says nothing", async () => {

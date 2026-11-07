@@ -163,6 +163,8 @@ describeWithEmbeddedRuntime("chat on the Clover leg — the built binary through
   let home: string;
   let daemon: RunningDaemon | undefined;
   let rt: RuntimeStateWiring;
+  /** The boot steps in the order they finished (`bootOrderForTests`): the order itself, never two clocks compared. */
+  const bootSteps: string[] = [];
   let client: TestClient;
   const signaturesBefore = new Map<string, string>();
   const projectsBefore = new Map<string, string>();
@@ -170,7 +172,8 @@ describeWithEmbeddedRuntime("chat on the Clover leg — the built binary through
   const transcriptFile = (sid: string): string => join(transcriptDir(sid), `${backendOf(sid)}.jsonl`);
   const transcripts = (sid: string): string[] => (existsSync(transcriptDir(sid)) ? readdirSync(transcriptDir(sid)).filter((n) => n.endsWith(".jsonl")).sort() : []);
   const bootDaemon = async (): Promise<void> => {
-    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null });
+    bootSteps.length = 0;
+    daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "test-secrets")), agentProvider: null, bootOrderForTests: (step) => bootSteps.push(step) });
     if ("unavailable" in daemon.runtimeState) throw daemon.runtimeState.unavailable;
     rt = daemon.runtimeState;
     client = await TestClient.connect(daemon.socketPath);
@@ -231,7 +234,9 @@ describeWithEmbeddedRuntime("chat on the Clover leg — the built binary through
   };
 
   test("the boot order: recovery finished before the socket existed (no projector precedes the sweep)", () => {
-    expect(new Date(rt.lastRecovery.finishedAt).getTime()).toBeLessThanOrEqual(statSync(daemon!.socketPath).ctimeMs);
+    expect(rt.lastRecovery.ok).toBe(true);
+    expect(bootSteps.indexOf("runtime-state-recovered")).toBeGreaterThanOrEqual(0);
+    expect(bootSteps.indexOf("runtime-state-recovered")).toBeLessThan(bootSteps.indexOf("socket-bound"));
   });
 
   test("(a) create → a Clover-leg record with a backend uuid; send 'hello' → the ordered turn with ONE terminal", async () => {

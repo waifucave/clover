@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { doors, envNamesIn, refusalDoors } from "./verify-sealed-core";
+import { doors, dyldDoor, envNamesIn, hostedRunner, refusalDoors, unprovableVerdict } from "./verify-sealed-core";
 import { TLS_TRUST_ENV } from "../packages/core/src/build-kind";
 import { SEALED_ENV_NAMES } from "./seal-bun-doors";
 
@@ -61,5 +61,25 @@ describe("verify:sealed-core", () => {
       expect(all.some((d) => d.env !== undefined && name in d.env && d.raw === undefined)).toBe(true);
     }
     expect(all.some((d) => d.env?.HOME === "$PLANTED_HOME" && d.os?.join() === "darwin")).toBe(true);
+  });
+  test("the doors SIP decides are exactly the DYLD ones; UNPROVABLE passes only on a GitHub-hosted runner", () => {
+    const decided = doors().filter((d) => dyldDoor(d.name)).map((d) => d.name);
+    expect(decided).toContain("DYLD_INSERT_LIBRARIES (hardened runtime)");
+    expect(decided).toContain("raw DYLD_=1 <script>");
+    for (const name of SEALED_ENV_NAMES) expect(decided.some((n) => n.startsWith(`${name}'s macOS replacement DYLD_`))).toBe(true);
+    // Nothing else: every other door is proven on any machine.
+    for (const d of doors()) if (!decided.includes(d.name)) expect(d.name.includes("DYLD")).toBe(false);
+    expect(hostedRunner({ GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted" })).toBe(true);
+    expect(hostedRunner({ GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "self-hosted" })).toBe(false);
+    expect(hostedRunner({})).toBe(false);
+  });
+  test("UNPROVABLE: a notice only on a hosted runner without --require-proof; --require-proof fails it anywhere", () => {
+    const u = ["DYLD_INSERT_LIBRARIES (hardened runtime): UNPROVABLE (SIP disabled)"];
+    expect(unprovableVerdict(u, { hosted: true, requireProof: false })).toEqual({ problems: [], notices: [expect.stringContaining("requires SIP on")] });
+    const required = unprovableVerdict(u, { hosted: true, requireProof: true });
+    expect(required.notices).toEqual([]);
+    expect(required.problems[0]).toContain("--require-proof");
+    expect(unprovableVerdict(u, { hosted: false, requireProof: false }).problems).toHaveLength(1);
+    expect(unprovableVerdict([], { hosted: false, requireProof: true })).toEqual({ problems: [], notices: [] });
   });
 });

@@ -33,11 +33,14 @@ import { ensureOutdir } from "./sessions/outdir";
 import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
-import { createCloverServer, type CloverServer } from "./ipc/clover";
+import { createCloverServer, type CloverHandler, type CloverServer } from "./ipc/clover";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { claimDaemonChildren } from "./platform/daemon-children";
+import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
+import { startDaemonLinks, type DaemonLinks } from "./ipc/device-links";
+import { SystemClock } from "./clock/system-clock";
 import { createHash as createDeviceHash } from "node:crypto";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
@@ -425,6 +428,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
+  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none). */
+  links?: false;
   /** undefined: try settings.json (production default). null: agent disabled (tests, Phase 0
    *  behavior). object: use this provider directly (tests inject FakeProvider). `live`, when
    *  present, is threaded into EngineConfig.provider.live (no-restart model resolution) — tests
@@ -470,10 +475,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  unless `CLOVER_LOGIN_SHELL_PATH=off` (both test preloads set it). `false`: skipped. An object:
    *  the test seam (a fake runner and/or env to update). */
   loginShellPath?: LoginShellPathDeps | false;
+  /** Test seam: how `settings.json` is watched (default `fs.watch`). A test passes a stream that never fires to
+   *  stand in for one macOS hasn't armed yet, and so proves the watcher's catch-up re-read. */
+  settingsWatch?: (path: string, cb: () => void) => { close(): void };
   /** TEST ONLY (WS-21 ordering contract): stands in for the router's `reconcileRootForRecovery` in the boot
    *  sweep and in Migration C's phase 2 — when set it takes precedence over the linked router's own door, so
    *  a test can observe the reconcile's ordering or make it fail. A production caller never sets it. */
   runRootReconcileForTests?: RootReconcile;
+  /** TEST ONLY: told each boot step the ordering tests pin, as it finishes (`runtime-state-recovered`: §13's recovery;
+   *  `directory-parked`: the directory's recovery and its crash-left rows parked; `socket-bound`: the IPC socket is
+   *  listening), so they assert the order itself rather than compare clocks. A production caller never sets it. */
+  bootOrderForTests?: (step: "runtime-state-recovered" | "directory-parked" | "socket-bound") => void;
   /** WS-25 §7 TEST SEAM: the MCP OAuth store sessions' `mcp-oauth:<id>` sign-ins are brokered from (a
    *  memory store). Absent: production reads `daemonMcpOAuthStore(<this home's Keychain service>)`, and a
    *  caller that injected its own `secrets` gets a per-daemon MEMORY store (WS-25 integration: shared by the
@@ -840,6 +852,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     ...(linkedRouterSupportsRunHome() ? { recovery: { deferClaudeResumeSweep: true } } : {}),
   });
   const runtime = runtimeStateOnline(runtimeState);
+  opts.bootOrderForTests?.("runtime-state-recovered");
   const coworkRecords = runtime ? new CoworkRepository(runtime.db) : undefined;
   const onStoredSessionDeleted = createCoworkSessionDeletionHook(coworkRecords, runtime?.onSessionDeleted);
 
@@ -1785,6 +1798,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // so the sweep parks them all. A Clover session is resumed by its DRIVER from the 8a record
       // (which keeps its own backend id), never by the messaging layer.
       const parked = await parkRecoveredSessions(runtimeSdk, (line) => console.error(`runtime-sdk: ${line}`));
+      opts.bootOrderForTests?.("directory-parked");
       console.error(
         `runtime-sdk: directory recovery — ${recovered.entriesLoaded} entr(ies), ${recovered.staleMarked} stale, ` +
           `${recovered.cursorsRestored} cursor(s), ${recovered.heldMessagesFound} held, ${parked} parked`,
@@ -2919,6 +2933,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       onChangeObserved: () => advanceAuthorityRevision(cloverHome),
       load: loadSettings,
       apply,
+      ...(opts.settingsWatch ? { watch: opts.settingsWatch } : {}),
       log: (msg) => console.error(`settings-watcher: ${msg}`),
     });
     settingsWatcher.start(settings);
@@ -3155,7 +3170,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
   let selfUpdate: SelfUpdate | undefined;
+  // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' Clover
+  // methods, filled in as their parts come up (H's devices methods once the links are). A test daemon (its own
+  // `secrets`) keeps the store in memory, so no test touches the real Keychain.
+  const contractSecrets = opts.secrets !== undefined
+    ? new CloverSecretStore({ home: dirs.home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } })
+    : await openCloverSecretStore({ home: dirs.home, service: keychainService(profile, home) });
+  const storeWarning = secretStoreWarning(contractSecrets.status());
+  if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
+  const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // M-M2b: the update methods (`update.*`) go into the one lanes map, never a second `handlers` key.
+  Object.assign(cloverLaneHandlers, updateHandlers({
+    gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
+    channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
+  }));
   cloverServer = createCloverServer({
+    handlers: cloverLaneHandlers,
     tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
@@ -3164,10 +3194,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
-    handlers: updateHandlers({
-      gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
-      channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
-    }),
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,
@@ -3361,6 +3387,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }))(runtimeSdk)),
     ...opts.server,
   });
+  opts.bootOrderForTests?.("socket-bound");
 
   console.error(`clover-core ${CORE_VERSION} listening on ${dirs.socketPath}`);
   try {
@@ -3368,6 +3395,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   } catch (err) {
     console.error(`[browser-host] could not listen on ${join(dirs.runDir, BROWSER_HOST_SOCKET_NAME)}: ${err instanceof Error ? err.message : String(err)}`);
   }
+  // C-M2: H's links, started in the background so a slow sidecar never holds the daemon's start; their methods join
+  // the Clover server's handlers when they're up.
+  let daemonLinks: DaemonLinks | undefined;
+  const linksReady = (opts.links === false ? Promise.resolve(undefined) : startDaemonLinks({
+    home: dirs.home, store: contractSecrets, clock: new SystemClock(), handlers: cloverLaneHandlers,
+    dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
+    log: (line) => console.error(line),
+  })).then((d) => { daemonLinks = d; return d; }, (err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); return undefined; });
   return {
     socketPath: dirs.socketPath,
     ...(pairSide ? { pair: pairSide } : {}),
@@ -3400,6 +3435,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pairSide?.pair.quit("quit");
       pairSide?.dispose();
       cloverServer?.dispose();
+      void linksReady.then(() => daemonLinks?.close()).catch(() => undefined);
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since
       // the `void stopAll()` graceful path below is async and process.exit(0) (direct-run path) drops

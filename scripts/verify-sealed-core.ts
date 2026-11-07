@@ -29,10 +29,21 @@
 // follows a redirect (a local 302 to a second listener must reach nothing).
 // A door that could not run at all (the binary missing, the raw helper's execve failing) is an ERROR, never "closed"
 // or "OPEN", and any ERROR fails the gate.
+// The macOS seal needs System Integrity Protection ON: with SIP off dyld leaves `DYLD_*` variables in a hardened
+// process, so DYLD_INSERT_LIBRARIES and the seal's `DYLD_…` names are open, and any library can be injected before
+// `main`. The gate prints `csrutil status` and proves the premise itself (a `DYLD_SEAL_PROBE=1` entry must not reach
+// the hardened copy, which refuses any DYLD_ entry); when it can't, the DYLD doors are UNPROVABLE (SIP disabled), never
+// closed and never OPEN. Likewise a macOS OS-store check that plain Bun fails the same way on this machine is
+// UNPROVABLE (runner trust store). An UNPROVABLE result passes with a notice on a GitHub-hosted runner only (whose
+// macOS images run with SIP off); anywhere else, such as the owner's Mac, it fails the gate. `--require-proof` fails
+// it everywhere, whatever the environment says (those are plain variables): the owner's proof run and the release
+// step (scripts/release/publish.ts --create-draft) use it.
 //
 //   bun run verify:sealed-core                      build this machine's target (scripts/build-daemon.ts), then check
 //   bun run verify:sealed-core --binary <path>      check an existing binary (signed already: add --signed)
 //   … --no-sweep                                    skip the sweep (a quicker local run)
+//   … --require-proof                               fail on any UNPROVABLE result, on any machine
+//   bun run verify:sealed-core:proof                the owner's proof on a SIP-on Mac (= --require-proof)
 //
 // Nothing here starts a daemon or reads a secret store: every run is `--version`, `bridge` without its session,
 // `__runtimes-probe` or `__fetch-probe` to a local server (or Apple's), on a temp CLOVER_HOME and no HOME, with no
@@ -137,6 +148,8 @@ export function refusalDoors(): Door[] {
     out.push({ name: `raw ${name} twice, the refused value last`, raw: [`${name}=${harmless}`, `${name}=${bad}`], os: posix });
   }
   out.push({ name: "HOME=<a planted home>", env: { HOME: "$PLANTED_HOME" }, os: ["darwin"] });
+  // A test's keychain variables: a release refuses them at startup, naming them.
+  for (const name of ["CLOVER_TEST_KEYCHAIN", "CLOVER_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN"]) out.push({ name: `${name}=<set>`, env: { [name]: name === "CLOVER_TEST_KEYCHAIN" ? "$CA" : "x" } });
   return out;
 }
 
@@ -236,8 +249,9 @@ async function httpsServer(cert: string, key: string): Promise<{ url: string; cl
  * `--use-system-ca` took. Linux with password-less sudo (CI's runners): a throwaway CA added to the OS store and
  * removed again afterwards is trusted for a local server it signed.
  */
-async function trustChecks(work: string, nonce: string, run: (args: string[]) => Promise<Run>): Promise<string[]> {
+async function trustChecks(work: string, nonce: string, run: (args: string[]) => Promise<Run>): Promise<{ problems: string[]; unprovable: string[] }> {
   const problems: string[] = [];
+  const unprovable: string[] = [];
   const say = (ok: boolean, what: string) => console.log(`verify:sealed-core: ${ok ? "ok    " : "WRONG "} ${what}`);
   const dir = join(work, "tls");
   mkdirSync(dir, { recursive: true });
@@ -258,11 +272,30 @@ async function trustChecks(work: string, nonce: string, run: (args: string[]) =>
     problems.push("openssl is missing: the TLS trust checks can't run");
   }
   if (process.platform === "darwin") {
+    // What this machine's own trust says, to tell a broken build from a runner image without the store: plain Bun
+    // with --use-system-ca (no HOME, as the probe runs) and the system curl (Apple's trust evaluation).
+    let plain: string | undefined;
+    const plainBun = (): string => {
+      if (plain !== undefined) return plain;
+      const r = spawnSync(process.execPath, ["--use-system-ca", "-e", 'fetch("https://gdmf.apple.com/v2/pmv",{redirect:"manual"}).then((r)=>console.log("status "+r.status),(e)=>console.log("failed "+(e.code??e.name)))'], { env: { PATH: process.env.PATH ?? "/usr/bin:/bin" }, encoding: "utf8", timeout: 30_000 });
+      plain = (/^(status \d+|failed .*)$/m.exec(r.stdout)?.[1] ?? `no answer (exit ${r.status})`);
+      const curl = spawnSync("/usr/bin/curl", ["-sS", "-o", "/dev/null", "-w", "%{http_code}", "https://gdmf.apple.com/v2/pmv"], { encoding: "utf8", timeout: 30_000 });
+      console.log(`verify:sealed-core: trust on this machine: plain Bun --use-system-ca: ${plain}; system curl: ${curl.status === 0 ? curl.stdout : `failed (${curl.stderr.trim().slice(0, 120)})`}`);
+      return plain;
+    };
     for (const worker of [false, true]) {
       const got = outcome(await run(["__fetch-probe", "https://gdmf.apple.com/v2/pmv", nonce, ...(worker ? ["--worker"] : [])]));
       const ok = /^\d+$/.test(got);
-      if (!ok) problems.push(`a CA only the OS store holds (Apple's root, gdmf.apple.com) must be trusted${worker ? " from a Worker" : ""} (--use-system-ca): ${got}`);
-      say(ok, `the OS store's CA is trusted${worker ? " from a Worker" : ""} (gdmf.apple.com: ${got})`);
+      const what = `a CA only the OS store holds (Apple's root, gdmf.apple.com) must be trusted${worker ? " from a Worker" : ""} (--use-system-ca)`;
+      if (ok) say(true, `the OS store's CA is trusted${worker ? " from a Worker" : ""} (gdmf.apple.com: ${got})`);
+      else if (!got.startsWith("ERROR") && !plainBun().startsWith("status ")) {
+        // Plain Bun can't use this machine's store either: the store, not the build.
+        unprovable.push(`${what}: UNPROVABLE (runner trust store): the core got ${got}, plain Bun ${plainBun()}`);
+        console.log(`verify:sealed-core: UNPROVABLE (runner trust store) the OS store's CA${worker ? " from a Worker" : ""} (core: ${got}; plain Bun: ${plainBun()})`);
+      } else {
+        problems.push(`${what}: ${got}${plain === undefined ? "" : ` (plain Bun here: ${plain})`}`);
+        say(false, `the OS store's CA is trusted${worker ? " from a Worker" : ""} (gdmf.apple.com: ${got})`);
+      }
     }
   }
   if (process.platform === "linux" && spawnSync("sudo", ["-n", "true"]).status === 0 && existsSync("/usr/local/share/ca-certificates")) {
@@ -290,10 +323,29 @@ async function trustChecks(work: string, nonce: string, run: (args: string[]) =>
       }
     }
   }
-  return problems;
+  return { problems, unprovable };
 }
 
-export async function verifySealedCore(given: string, opts: { signed: boolean; sweep: boolean }): Promise<string[]> {
+/** What UNPROVABLE results come to: notices on a GitHub-hosted runner without `--require-proof`, else problems. */
+export function unprovableVerdict(unprovable: readonly string[], o: { hosted: boolean; requireProof: boolean }): { problems: string[]; notices: string[] } {
+  const premise = "the macOS seal requires SIP on; with SIP off, any library can be injected before main";
+  if (unprovable.length === 0) return { problems: [], notices: [] };
+  if (o.hosted && !o.requireProof) return { problems: [], notices: unprovable.map((u) => `${u} (${premise})`) };
+  const why = o.requireProof ? "--require-proof" : "not a GitHub-hosted runner";
+  return { problems: unprovable.map((u) => `${u}: not proven (${why}; ${premise}); run the gate on a Mac with SIP on`), notices: [] };
+}
+
+/** A GitHub-hosted runner (its macOS images run with SIP off): the only place an UNPROVABLE result may pass. */
+export function hostedRunner(env: Record<string, string | undefined> = process.env): boolean {
+  return env.GITHUB_ACTIONS === "true" && env.RUNNER_ENVIRONMENT === "github-hosted";
+}
+
+/** The doors the macOS seal's premise (SIP on, so dyld strips DYLD_*) decides. */
+export function dyldDoor(name: string): boolean {
+  return name.startsWith("DYLD_INSERT_LIBRARIES") || name.includes("'s macOS replacement DYLD_") || name.startsWith("raw DYLD_");
+}
+
+export async function verifySealedCore(given: string, opts: { signed: boolean; sweep: boolean; requireProof?: boolean }): Promise<string[]> {
   const problems: string[] = [];
   // Absolute: every run has its own temp working folder.
   const binary = resolve(given);
@@ -408,8 +460,30 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
       if (!itself(r)) problems.push(`baseline: \`clover-core --version\` did not answer \`clover ${VERSION}\` (exit ${r.code}): ${(r.stdout + r.stderr).trim().slice(0, 200)}`);
     }
 
+    // The macOS seal's premise: with SIP on, dyld removes DYLD_* from the hardened copy before it starts.
+    let sealProven = true;
+    const unprovable: string[] = [];
+    if (process.platform === "darwin") {
+      const sip = spawnSync("/usr/bin/csrutil", ["status"], { encoding: "utf8" });
+      console.log(`verify:sealed-core: csrutil status: ${`${sip.stdout}${sip.stderr}`.trim().split("\n")[0] ?? "(no answer)"}`);
+      const r = await runDoor({ name: "DYLD_SEAL_PROBE=1" , env: { DYLD_SEAL_PROBE: "1" } }, ["--version"]);
+      if (!errored("the SIP probe (DYLD_SEAL_PROBE=1)", r)) {
+        if (itself(r)) console.log("verify:sealed-core: proven  DYLD_* is removed from the hardened core (SIP on): the macOS seal holds here");
+        else if (r.code === 78 && r.stderr.includes("DYLD_SEAL_PROBE")) {
+          // It survived (SIP off): the release's DYLD_ refusal caught it, which is the cheap guard working.
+          sealProven = false;
+          console.log("verify:sealed-core: refused DYLD_SEAL_PROBE=1 reached the hardened core (SIP off): the release refuses any DYLD_ entry, but the seal can't be proven here");
+        } else problems.push(`the SIP probe (DYLD_SEAL_PROBE=1): neither removed nor refused (exit ${r.code}: ${(r.stdout + r.stderr).trim().slice(0, 160)})`);
+      }
+    }
+
     for (const door of doors()) {
       if (door.os !== undefined && !door.os.includes(process.platform)) continue;
+      if (process.platform === "darwin" && !sealProven && dyldDoor(door.name)) {
+        unprovable.push(`${door.name}: UNPROVABLE (SIP disabled)`);
+        console.log(`verify:sealed-core: UNPROVABLE (SIP disabled) ${door.name}`);
+        continue;
+      }
       if (door.name.startsWith("DYLD_INSERT") && dylib === "") continue;
       if (door.raw !== undefined && (execEnv === "" || !existsSync(execEnv))) continue;
       if (door.bunEnv && !sealed) continue; // Windows: not sealed by design
@@ -504,7 +578,9 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
 
     // Whom TLS trusts (main thread and a Worker, as an embedded session's requests are): the OS store, baked in with
     // `--use-system-ca` (build-daemon.ts) — never a self-signed certificate.
-    problems.push(...(await trustChecks(work, nonce, async (args) => runDoor({ name: "tls" }, args))));
+    const trust = await trustChecks(work, nonce, async (args) => runDoor({ name: "tls" }, args));
+    problems.push(...trust.problems);
+    unprovable.push(...trust.unprovable);
 
     // The debugger: BUN_INSPECT with wait must neither block nor open its port; CONNECT_TO must not connect out.
     if (sealed) {
@@ -563,6 +639,11 @@ export async function verifySealedCore(given: string, opts: { signed: boolean; s
       problems.push(...failures.sort().map((f) => `sweep: ${f}`));
       console.log(`verify:sealed-core: sweep of ${names.length} BUN_*/NODE_* names × ${values.length} values: ${failures.length === 0 ? "all closed" : `${failures.length} open`}`);
     }
+    // UNPROVABLE: a notice on a GitHub-hosted runner, a failure anywhere else (the owner's Mac must prove it).
+    const verdict = unprovableVerdict(unprovable, { hosted: hostedRunner(), requireProof: opts.requireProof === true });
+    for (const n of verdict.notices) console.log(`::notice title=verify:sealed-core UNPROVABLE::${n}`);
+    if (verdict.notices.length > 0) console.log(`verify:sealed-core: ${verdict.notices.length} check(s) UNPROVABLE on this hosted runner, passed with a notice`);
+    problems.push(...verdict.problems);
   } finally {
     http.close();
     rmSync(work, { recursive: true, force: true });
@@ -584,7 +665,7 @@ if (import.meta.main) {
     if (built.status !== 0) process.exit(1);
     binary = join(ROOT, daemonOutput(target));
   }
-  const problems = await verifySealedCore(binary, { signed: argv.includes("--signed"), sweep: !argv.includes("--no-sweep") });
+  const problems = await verifySealedCore(binary, { signed: argv.includes("--signed"), sweep: !argv.includes("--no-sweep"), requireProof: argv.includes("--require-proof") });
   for (const p of problems) console.error(`verify:sealed-core: ${p}`);
   console.log(problems.length === 0 ? "verify:sealed-core: ok — the compiled core runs only its own code and shows no key" : `verify:sealed-core: ${problems.length} problem(s)`);
   process.exit(problems.length === 0 ? 0 : 1);
