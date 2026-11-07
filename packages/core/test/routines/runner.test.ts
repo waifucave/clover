@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../../src/sessions/store";
 import { SessionHub } from "../../src/sessions/hub";
-import { makeDaemonRoutineRunner, type CloverTurnRunner } from "../../src/routines/runner";
+import { makeDaemonRoutineRunner, UPDATE_RETRY_MS, type CloverTurnRunner } from "../../src/routines/runner";
 import { classifyResult } from "../../src/projector/errors";
 
 function makeHome(): string {
@@ -43,6 +43,33 @@ describe("makeDaemonRoutineRunner — runHeadless", () => {
     const log = store.read(seen[0]!.sessionId);
     expect(log.filter((e) => e.type === "user_message")).toHaveLength(1);   // the runner appended none of its own
     expect(store.meta(seen[0]!.sessionId).origin).toBe("routine/r9");
+  });
+
+  test("M-M2: a fire refused while the update gate closes is tried again until the gate reopens; any other refusal fails at once", async () => {
+    const store = new SessionStore(makeHome());
+    const hub = new SessionHub(store);
+    let refusals = 2, tries = 0;
+    const slept: number[] = [];
+    const runner = makeDaemonRoutineRunner({
+      store, hub, sleep: async (ms) => { slept.push(ms); },
+      clover: {
+        async runTurn(sessionId, text, clientName) {
+          tries++;
+          if (refusals-- > 0) throw Object.assign(new Error("Clover is restarting for an update"), { code: "daemon_shutting_down", reason: "update-restarting" });
+          hub.append(sessionId, { type: "user_message", sessionId, threadId: "main", text, clientName });
+          hub.append(sessionId, { type: "assistant_message", sessionId, threadId: "main", text: "after the gate" });
+          hub.append(sessionId, { type: "turn_completed", sessionId, threadId: "main", stopReason: "end_turn", inputTokens: 1, outputTokens: 1 });
+        },
+      },
+    });
+    expect(await runner.runHeadless({ prompt: "p", policy: "auto", cwd: "/tmp", origin: "routine/u" })).toMatchObject({ ok: true, resultText: "after the gate" });
+    expect(tries).toBe(3);
+    expect(slept).toEqual([UPDATE_RETRY_MS, UPDATE_RETRY_MS]);
+    const other = makeDaemonRoutineRunner({
+      store, hub, sleep: async () => { throw new Error("never waits"); },
+      clover: { async runTurn() { throw Object.assign(new Error("Clover is shutting down"), { code: "daemon_shutting_down" }); } },
+    });
+    expect(await other.runHeadless({ prompt: "p", policy: "auto", cwd: "/tmp", origin: "routine/v" })).toMatchObject({ ok: false, error: "Clover is shutting down" });
   });
 
   test("no runtime configured (agent disabled): fails cleanly, no session left dangling on the happy path", async () => {

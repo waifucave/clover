@@ -134,8 +134,11 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     expect(install).toContain("update-alternatives --install '/usr/bin/clover' 'clover' \"$CLI\" 100");
     expect(install).toContain("APPARMOR_PROFILE_TARGET='/etc/apparmor.d/clover'");
     expect(install).toContain("apparmor_parser --replace");
+    // The install marker beside the daemon: a package's daemon never updates itself.
+    expect(install).toContain(`printf '{"kind":"package"}\\n' > "$(dirname "$CLI")/install.json"`);
     const remove = renderLinux("packaging/linux/after-remove.sh");
     expect(remove).toContain("update-alternatives --remove 'clover' \"$CLI\"");
+    expect(remove).toContain('rm -f "$(dirname "$CLI")/install.json"');
     expect(remove).toContain("apparmor_parser --remove");
   });
 
