@@ -9,6 +9,7 @@ import {
   clearStagedDownloads, downloadStagingRoot, newStagingDir, placeDownload, planDownload, quarantineValue, safeDownloadName, type DownloadRoots,
 } from "../../src/computer-use/browser/download-paths";
 import { AutomationFailure } from "../../src/computer-use/errors";
+import { darwinTest } from "../helpers/darwin-only";
 
 function fixture() {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-dl-")));
@@ -85,7 +86,7 @@ describe("planDownload", () => {
 });
 
 describe("placeDownload", () => {
-  test("copies into place, never over a file (report (2).csv), removes the staged copy, sets the quarantine attribute", () => {
+  darwinTest("copies into place, never over a file (report (2).csv), removes the staged copy, sets the quarantine attribute", () => {
     const f = fixture();
     try {
       const plan = planDownload(undefined, "report.csv", f.roots);
@@ -105,7 +106,7 @@ describe("placeDownload", () => {
     } finally { f.done(); }
   });
 
-  test("a link anywhere on the way down is refused and nothing is written there", () => {
+  darwinTest("a link anywhere on the way down is refused and nothing is written there", () => {
     const f = fixture();
     try {
       const outside = join(f.base, "outside");
@@ -122,7 +123,7 @@ describe("placeDownload", () => {
     } finally { f.done(); }
   });
 
-  test("a folder swapped for a link AFTER the walk changes nothing: the file lands in the folder that was checked", () => {
+  darwinTest("a folder swapped for a link AFTER the walk changes nothing: the file lands in the folder that was checked", () => {
     const f = fixture();
     try {
       const outside = join(f.base, "outside");
@@ -138,7 +139,7 @@ describe("placeDownload", () => {
     } finally { f.done(); }
   });
 
-  test("a failure after the file was created removes OUR entry from the checked folder — never a file the swap points at", () => {
+  darwinTest("a failure after the file was created removes OUR entry from the checked folder — never a file the swap points at", () => {
     const f = fixture();
     try {
       const outside = join(f.base, "outside");
@@ -157,7 +158,7 @@ describe("placeDownload", () => {
     } finally { f.done(); }
   });
 
-  test("an incomplete file is refused; the staging root is cleared per session and in all", () => {
+  darwinTest("an incomplete file is refused; the staging root is cleared per session and in all", () => {
     const f = fixture();
     try {
       const plan = planDownload(undefined, "x.bin", f.roots);
