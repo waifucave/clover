@@ -16,6 +16,7 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Os } from "@waifucave/clover-protocol";
+import type { AgentPauseGate } from "./manager";
 import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
@@ -88,6 +89,9 @@ export interface AcpStartSpec extends AgentStartSpec {
   /** For a backend that runs inside the daemon (`inProcess`): the session's bridge as an in-process MCP server, which it
    *  serves in place of the stdio `bridge` (there is no process to bind a token to). */
   inProcessBridge?: McpSdkServerConfigWithInstance;
+  /** The pause this session answers to, for a backend that holds its own tool calls (the in-process ones): the
+   *  manager's switch, and for an agent run for another computer, that computer's forwarded switch too (remote.ts). */
+  pause?: AgentPauseGate;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's

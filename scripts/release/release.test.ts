@@ -8,13 +8,13 @@ import { join } from "node:path";
 import { builderEnv, buildOsFor, CLOVER_APP_REQUIREMENT, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import {
-  channelsServed, checkUpdateInfo, codesignArgs, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
+  channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
-  writeServedCopies,
+  writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys,
 } from "./lib";
-import { generateFeedKey, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
+import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
-import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, proveShippedMacCore, sealProofCommand, sealProofProblem, signFeeds, type ShippedOpeners } from "./publish";
+import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, promotedSignature, RELEASE_OSES, signFeeds, proveShippedMacCore, sealProofCommand, sealProofProblem, type ShippedOpeners } from "./publish";
 
 /** A Keychain of the test's own: the real one is never touched. */
 function memoryStore(): KeyStore & { items: Map<string, string> } {
@@ -53,7 +53,24 @@ describe("the feed and the channels", () => {
     expect(read("packaging/clover.rb.tmpl")).toContain("/releases/download/v#{version}/Clover-#{version}.dmg");
     expect(installers("1.2.3", "mac")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip"]);
     expect(installers("1.2.3", "linux-arm64")).toEqual(["clover_1.2.3_arm64.deb", "clover-1.2.3.arm64.rpm", "Clover-1.2.3-arm64.AppImage"]);
-    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml"]);
+    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml", "clover-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml"]);
+    expect(coreArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-core-1.2.3-linux-arm64", "beta-core-linux-arm64.yml"]);
+  });
+
+  test("the daemon's release files: its binary and an update file naming it, for each channel served", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-core-assets-"));
+    const bin = join(dir, "built-clover-core");
+    writeFileSync(bin, "a daemon");
+    expect(writeCoreAssets(dir, "1.2.3", "mac", "latest", bin)).toEqual(["clover-core-1.2.3-darwin-arm64", "latest-core-darwin-arm64.yml", "beta-core-darwin-arm64.yml"]);
+    const feed = parseCoreFeed(readFileSync(join(dir, "latest-core-darwin-arm64.yml"), "utf8"));
+    expect(feed).toEqual({ version: "1.2.3", file: "clover-core-1.2.3-darwin-arm64", sha512: sha512Base64(utf8("a daemon")), size: 8 });
+    expect(readFileSync(join(dir, "beta-core-darwin-arm64.yml"), "utf8")).toBe(readFileSync(join(dir, "latest-core-darwin-arm64.yml"), "utf8"));
+    const at = (n: string) => (n === feed.file ? utf8("a daemon") : undefined);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", at)).toEqual([]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.4", at)).toEqual(["it is for 1.2.3, not 1.2.4"]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => utf8("another"))).toEqual(["clover-core-1.2.3-darwin-arm64's sha512 doesn't match", "clover-core-1.2.3-darwin-arm64's size is 7, not 8"]);
+    expect(checkCoreFeed(formatCoreFeed(feed), "1.2.3", () => undefined)).toEqual(["clover-core-1.2.3-darwin-arm64 is missing"]);
+    expect(checkCoreFeed("version: 1.2.3\n", "1.2.3", at)).toHaveLength(1);
   });
 
   test("macOS: the hardened runtime, the app's entitlements, notarization off unless the release turns it on, and the resources' binaries left to the release", () => {
@@ -182,6 +199,7 @@ describe("the release build (scripts/release/build.ts)", () => {
 
 describe("the owner's publish step (scripts/release/publish.ts)", () => {
   const version = "1.2.3";
+  const COMMIT = "0123456789abcdef0123456789abcdef01234567";
   const yml = (files: string[], blobs: Map<string, Uint8Array>) => utf8(formatUpdateInfo({ version, files: files.map((url) => ({ url, sha512: sha512Base64(blobs.get(url)!), size: blobs.get(url)!.length })) }));
   function builds(channel: "latest" | "beta") {
     const dirs = new Map<string, Map<string, Uint8Array>>();
@@ -190,6 +208,10 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
       blobs.set(`${installers(version, os)[0]}.blockmap`, utf8("map"));
       const named = os === "mac" ? installers(version, os) : installers(version, os).filter((n) => !n.endsWith(".deb") && !n.endsWith(".rpm"));
       for (const c of channelsServed(channel)) blobs.set(feedFile(c, os), yml(named, blobs));
+      const core = coreBinaryFile(version, CORE_TARGET[os]);
+      blobs.set(core, utf8(`${core} bytes`));
+      for (const c of channelsServed(channel)) blobs.set(coreFeedFile(c, CORE_TARGET[os]), utf8(formatCoreFeed({ version, file: core, sha512: sha512Base64(blobs.get(core)!), size: blobs.get(core)!.length })));
+      blobs.set(buildCommitFile(os), utf8(`${COMMIT}\n`));
       dirs.set(`out/${os}`, blobs);
     }
     return dirs;
@@ -206,6 +228,18 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  test("every OS from one commit, which the release is tagged at", () => {
+    const apart = builds("beta");
+    apart.get("out/win")!.set(buildCommitFile("win"), utf8("fedcba9876543210fedcba9876543210fedcba98\n"));
+    const p = plan(apart, "beta");
+    expect(p.commit).toBeUndefined();
+    expect(p.problems.some((x) => x.startsWith("the builds come from different commits"))).toBe(true);
+    expect(() => draftReleaseArgs(p, "waifucave/clover")).toThrow(/no commit/);
+    const unsaid = builds("beta");
+    unsaid.get("out/linux-x64")!.delete(buildCommitFile("linux-x64"));
+    expect(plan(unsaid, "beta").problems).toContain("BUILD-COMMIT-linux-x64.txt is missing: the linux-x64 build doesn't say which commit it is");
+  });
+
   test("a missing OS, a mismatched update file or a file in two folders stops it", () => {
     const dirs = builds("beta");
     dirs.delete("out/linux-arm64");
@@ -213,19 +247,32 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     const bad = builds("beta");
     bad.get("out/win")!.set("Clover-Setup-1.2.3.exe", utf8("tampered"));
     expect(plan(bad, "beta").problems).toContain("beta.yml: Clover-Setup-1.2.3.exe's sha512 doesn't match");
+    const badCore = builds("beta");
+    badCore.get("out/linux-x64")!.set("clover-core-1.2.3-linux-x64", utf8("tampered"));
+    expect(plan(badCore, "beta").problems).toContain("beta-core-linux-x64.yml: clover-core-1.2.3-linux-x64's sha512 doesn't match");
     const twice = builds("beta");
     twice.get("out/win")!.set("Clover-1.2.3.dmg", utf8("x"));
     expect(plan(twice, "beta").problems.some((x) => x.includes("is in both"))).toBe(true);
   });
 
-  test("each update file is signed with the Keychain's key, checked against the app's, and nothing else is signed", () => {
+  test("each update file and daemon binary is signed with the Keychain's key, checked against the app's, and nothing else is signed", () => {
     const dirs = builds("latest");
     const p = plan(dirs, "latest");
-    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => channelsServed("latest").map((c) => feedFile(c, os))).sort());
+    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => [...channelsServed("latest").flatMap((c) => [feedFile(c, os), coreFeedFile(c, CORE_TARGET[os])]), coreBinaryFile(version, CORE_TARGET[os])]).sort());
     const key = generateFeedKey();
     const sigs = signFeeds(p, (d, n) => dirs.get(d)!.get(n)!, key.privateKey, key.publicKey);
     expect(sigs.map((s) => s.name).sort()).toEqual(p.feeds.map((f) => `${f}.sig`).sort());
-    for (const s of sigs) expect(verifyFeed(dirs.get("out/mac")!.get("latest-mac.yml")!, sigs.find((x) => x.name === "latest-mac.yml.sig")!.signature, key.publicKey)).toEqual({ ok: true });
+    for (const s of sigs) {
+      const name = s.name.slice(0, -".sig".length);
+      const dir = [...dirs.values()].find((d) => d.has(name))!;
+      expect(verifyFeed(name, dir.get(name)!, s.signature, key.publicKey)).toEqual({ ok: true });
+    }
+    // Promoting signs a beta file again under its latest name; the beta signature doesn't hold there.
+    const beta = dirs.get("out/mac")!.get("beta-mac.yml")!;
+    const promoted = promotedSignature("beta-mac.yml", beta, key.privateKey, key.publicKey);
+    expect(promoted.name).toBe("latest-mac.yml");
+    expect(verifyFeed("latest-mac.yml", beta, promoted.signature, key.publicKey)).toEqual({ ok: true });
+    expect(verifyFeed("latest-mac.yml", beta, sigs.find((x) => x.name === "beta-mac.yml.sig")!.signature, key.publicKey)).toEqual({ ok: false, reason: "bad signature" });
     // A key the app doesn't carry signs nothing.
     expect(() => signFeeds(p, (d, n) => dirs.get(d)!.get(n)!, key.privateKey, generateFeedKey().publicKey)).toThrow(/doesn't verify against the app's key/);
   });
@@ -233,7 +280,8 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
   test("the draft: tagged v<version>, a draft always, a pre-release on beta", () => {
     const p = plan(builds("beta"), "beta");
     const args = draftReleaseArgs(p, "waifucave/clover");
-    expect(args.slice(0, 7)).toEqual(["gh", "release", "create", "v1.2.3", "--repo", "waifucave/clover", "--draft"]);
+    expect(p.commit).toBe(COMMIT);
+    expect(args.slice(0, 9)).toEqual(["gh", "release", "create", "v1.2.3", "--repo", "waifucave/clover", "--target", COMMIT, "--draft"]);
     expect(args).toContain("--prerelease");
     expect(draftReleaseArgs(plan(builds("latest"), "latest"), "waifucave/clover")).not.toContain("--prerelease");
     expect(args).not.toContain("--latest");
@@ -248,7 +296,9 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     expect(() => parsePublishArgs(["--promote", "latest"])).toThrow(/a version/);
     expect(promotedName("beta-linux-arm64.yml")).toBe("latest-linux-arm64.yml");
     expect(promotedName("beta.yml")).toBe("latest.yml");
+    expect(promotedName("beta-core-windows-x64.yml")).toBe("latest-core-windows-x64.yml");
     expect(() => promotedName("latest.yml")).toThrow();
+    expect(() => promotedName("clover-core-1.2.3-linux-x64")).toThrow();
   });
 });
 
@@ -270,6 +320,16 @@ describe("the release workflow (.github/workflows/release.yml)", () => {
     const steps = (Object.values(wf.jobs) as Array<{ steps: Array<{ run?: string }> }>).flatMap((j) => j.steps.map((s) => s.run ?? ""));
     expect(steps.some((r) => r.includes("bun scripts/release/build.ts"))).toBe(true);
     expect(steps.some((r) => r.includes("bun scripts/build-packages.ts --arch"))).toBe(true);
+  });
+
+  test("refuses any ref but main in every job, before anything else, and keeps each build's commit", () => {
+    for (const job of Object.values(wf.jobs) as Array<{ steps: Array<{ name?: string; run?: string; env?: Record<string, string> }> }>) {
+      expect(job.steps[0]!.name).toBe("Only from main");
+      expect(job.steps[0]!.env?.REF).toBe("${{ github.ref }}");
+      expect(job.steps[0]!.run).toContain('test "$REF" = refs/heads/main');
+    }
+    expect(text.match(/apps\/desktop\/out\/dist\/BUILD-COMMIT-\*\.txt/g)).toHaveLength(2);
+    expect(text.match(/= "\$GITHUB_SHA"/g)).toHaveLength(2);
   });
 
   test("builds every OS the release holds", () => {
@@ -314,6 +374,24 @@ describe("the update feed's key (scripts/release/feed-key.ts)", () => {
       expect(src, f).not.toMatch(/writeFileSync\([^)]*privateKey/);
       expect(src, f).not.toMatch(/console\.\w+\([^)]*privateKey/);
     }
+  });
+});
+
+describe("the signed builds' checks", () => {
+  test("entitlements are read from codesign's plist, and match the daemon's file exactly", () => {
+    const xml = '<?xml version="1.0"?><plist version="1.0"><dict><key>com.apple.security.cs.allow-jit</key><true/>\n<key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/></dict></plist>';
+    expect(parseEntitlementKeys(xml)).toEqual(["com.apple.security.cs.allow-jit", "com.apple.security.cs.allow-unsigned-executable-memory"]);
+    expect(parseEntitlementKeys(read("scripts/clover-core.entitlements"))).toEqual(parseEntitlementKeys(xml));
+    expect(parseEntitlementKeys("Executable=/x/clover-link\n")).toEqual([]);
+  });
+
+  test("Authenticode: Valid, by the publisher, or named", () => {
+    expect(authenticodeProblems("Clover.exe", "Valid|CN=Example Ltd, O=Example Ltd, C=GB\n", "Example Ltd")).toEqual([]);
+    expect(authenticodeProblems("Clover.exe", 'Valid|CN="Example, Ltd", O=x', "Example, Ltd")).toEqual([]);
+    expect(authenticodeProblems("clover-core.exe", "NotSigned|", "Example Ltd")).toEqual(["clover-core.exe's Authenticode signature is NotSigned, not Valid"]);
+    expect(authenticodeProblems("clover-link.exe", "Valid|CN=Someone Else", "Example Ltd")).toEqual(["clover-link.exe is signed by Someone Else, not Example Ltd"]);
+    expect(authenticodeProblems("x.exe", "", "Example Ltd")).toEqual(["x.exe's Authenticode signature is missing, not Valid"]);
+    expect(authenticodeCommand("C:\\a'b\\Clover.exe").at(-1)).toContain("-LiteralPath 'C:\\a''b\\Clover.exe'");
   });
 });
 
