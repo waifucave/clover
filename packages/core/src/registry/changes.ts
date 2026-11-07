@@ -92,6 +92,19 @@ function aliasName(path: string): boolean {
   return path.split("/").some((seg) => /~\d/.test(seg) || seg.includes(":") || /[. ]$/.test(seg));
 }
 
+/** File names that steer how code is resolved, loaded or run (#234's review, F2), compared folded: the runtime reads
+ *  them by name. */
+const LOADER_CONFIG = [
+  /^package\.json$/, /^tsconfig(\..+)?\.json$/, /^jsconfig(\..+)?\.json$/, /^bunfig\.toml$/, /^\.npmrc$/, /^\.env(\..*)?$/,
+  /^deno\.jsonc?$/, /^import_map\.json$/, /^\.yarnrc(\.yml)?$/, /^\.pnpmfile\.cjs$/, /^\.babelrc(\.json)?$/, /^\.swcrc$/,
+];
+
+/** Whether a tree path names a file that steers how code loads, whatever folder it sits in. */
+export function isLoaderConfig(path: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+  return LOADER_CONFIG.some((re) => re.test(name));
+}
+
 /** Whether a file is data: by its extension, and never with its executable bit set. Live2D's `*.motion3.json` and
  *  the like end in `json`, so they count by their last extension. */
 export function isDataFile(entry: Pick<TreeEntry, "path" | "executable">): boolean {
@@ -260,7 +273,8 @@ function cardsOf(tree: TreeReport, files: readonly TreeEntry[]): string {
 }
 
 /** The snapshot an OK keeps. */
-export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: TreeReport, codeFieldsOf: CodeFieldsOf): OkSnapshot {
+/** `loaderCode`: the files the tree's loader configs reach inside it (`loaderReach`), counted as code. */
+export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: TreeReport, codeFieldsOf: CodeFieldsOf, loaderCode: readonly string[] = []): OkSnapshot {
   const plugins: Record<string, PluginFingerprint> = { "": fingerprintOf(tree.top, codeFieldsOf) };
   for (const c of tree.children) plugins[c.folder] = fingerprintOf(c.report, codeFieldsOf);
   const fileSet = new Set(files.map((f) => treeKey(f.path)));
@@ -269,7 +283,13 @@ export function okSnapshot(okHash: string, files: readonly TreeEntry[], tree: Tr
   for (const c of tree.children) for (const p of pathsNamed(runStrings(c.report.manifest, codeFieldsOf), `plugins/${c.folder}/`, fileSet, folders)) codePaths.add(p);
   for (const p of partDirs(tree.top.manifest, "")) codePaths.add(p);
   for (const c of tree.children) for (const p of partDirs(c.report.manifest, `plugins/${c.folder}/`)) codePaths.add(p);
-  // A plugin that brings an agent backend has every file of its folder counted as code (lane K, on #233): what the
+  // Files that steer how code loads (#234's review, F2): a tsconfig `paths` entry, a package.json `imports` or `exports`
+  // map, a bunfig preload, an .npmrc registry or a .env file can make the plugin's code run another file, without
+  // their extension saying so. Wherever they sit in the tree, they are code.
+  for (const k of fileSet) if (isLoaderConfig(k)) codePaths.add(k);
+  // And what they reach through `extends`, `paths` and package maps (#234's review, F2).
+  for (const p of loaderCode) codePaths.add(treeKey(p));
+    // A plugin that brings an agent backend has every file of its folder counted as code (lane K, on #233): what the
   // agent runs with can name a file anywhere in it without a manifest field naming it (a quirks file's `envSet` value,
   // `NODE_OPTIONS=--require <file>`), so no edit there applies without a new OK.
   // The manifest itself stays out: its fields are judged one by one above (`runsOf`), so a display name still applies.

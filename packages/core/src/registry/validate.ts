@@ -6,7 +6,8 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
 import { describeOk, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
-import { TreeProblem, folderReader, folderTreeHash } from "./tree";
+import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
+import { TreeProblem, folderReader, folderTreeHash, treeEntries } from "./tree";
 
 export interface PluginSummaryReport {
   id: string;
@@ -55,6 +56,10 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
   }
   const tree = await validateTree(folderReader(folder), { folderName: name, bundled: opts.bundled ?? false });
   issues.push(...tree.top.issues, ...tree.children.flatMap((c) => c.report.issues), ...tree.issues);
+  // A loader config reaching outside the tree is an error here, whatever folder it is checked in (the controller's
+  // ruling): a plugin built in a development folder, where the registry lets it pass, fails before it ships rather
+  // than going invalid on someone else's computer. Only Clover's own trees (`bundled`) share the repository's config.
+  if (opts.bundled !== true && hash !== undefined) issues.push(...loaderOutsideIssues(folderLoaderReach(folder, treeEntries(folder, { allowHardLinks: true }).map((e) => e.path))));
   const okText = tree.top.manifest ? describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), source: "other", restylesCards: tree.restylesCards }) : [];
   return {
     folder,

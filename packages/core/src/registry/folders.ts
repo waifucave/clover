@@ -30,6 +30,7 @@ export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> =
   bundled: "It ships with Clover.",
 };
 import { TreeProblem, folderReader, treeEntries } from "./tree";
+import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 
 /** How long a folder must be unchanged before it is read (§5.1). */
 export const SETTLE_MS = 2_000;
@@ -92,8 +93,16 @@ export async function readPluginFolder(
   const hash = await treeHash(entries);
   const tree: TreeReport = await validateTree(folderReader(folder), { folderName: name, bundled: opts.bundled ?? false, apiVersion: opts.apiVersion ?? PLUGIN_API_VERSION });
   const id = tree.top.id ?? name;
-  const topIssues = [...tree.top.issues, ...tree.issues.filter((i) => !i.file.startsWith("plugins/"))];
-  const topInvalid = tree.ok ? undefined : (firstError(topIssues) ?? "the plugin doesn't validate");
+  // Loader configs: what their `extends`, `paths` and package maps reach is code; reaching outside the tree makes the
+  // whole plugin invalid (#234's review, F2): a plugin never pulls code or config in from elsewhere.
+  const loader = folderLoaderReach(folder, entries.map((e) => e.path));
+  // Only for an installed plugin: a bundled one ships with the app and a development folder is the user's own, so
+  // neither asks for an OK, and Clover's own trees extend the repository's shared tsconfig.
+  const judged = opts.bundled !== true && opts.dev !== true;
+  const loaderIssues = judged ? loaderOutsideIssues(loader) : [];
+  const topIssues = [...tree.top.issues, ...tree.issues.filter((i) => !i.file.startsWith("plugins/")), ...loaderIssues];
+  const treeOk = tree.ok && loaderIssues.length === 0;
+  const topInvalid = treeOk ? undefined : (firstError(topIssues) ?? "the plugin doesn't validate");
   const top: RegistryInput = {
     ...base, id, manifest: tree.top.manifest ?? placeholder(), treeHash: hash, class: tree.top.class, issues: topIssues,
     ...(topInvalid === undefined ? {} : { invalid: topInvalid }),
@@ -109,7 +118,7 @@ export async function readPluginFolder(
       class: child.report.class, issues, folder: join(folder, "plugins", child.folder), ...(invalid === undefined ? {} : { invalid }),
     });
   }
-  const snapshot = tree.ok ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields) : undefined;
+  const snapshot = treeOk ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields, loader.inside) : undefined;
   return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
