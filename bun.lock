@@ -49,6 +49,7 @@
       "dependencies": {
         "@waifucave/clover-core": "workspace:*",
         "@waifucave/clover-protocol": "workspace:*",
+        "@waifucave/clover-update-feed": "workspace:*",
         "chalk": "^5.6.2",
         "cli-highlight": "^2.1.11",
         "figures": "^6.1.0",
@@ -121,6 +122,10 @@
       "devDependencies": {
         "@supabase/supabase-js": "2.118.0",
       },
+    },
+    "packages/update-feed": {
+      "name": "@waifucave/clover-update-feed",
+      "version": "0.0.0",
     },
     "plugins/alpha/tab": {
       "name": "@waifucave/clover-plugin-alpha-tab",
@@ -1271,6 +1276,8 @@
     "@waifucave/clover-service-web": ["@waifucave/clover-service-web@workspace:services/web"],
 
     "@waifucave/clover-test-harness": ["@waifucave/clover-test-harness@workspace:packages/test-harness"],
+
+    "@waifucave/clover-update-feed": ["@waifucave/clover-update-feed@workspace:packages/update-feed"],
 
     "@waifucave/clover-web": ["@waifucave/clover-web@0.0.67", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.67/d2280f7a9e4775444d77e3cbc0a9865094018fb5", {}, "sha512-msGvuxf0jc/R7jasuqvreNTQ7o90BDMaF3/Knrcrys+nD5E0z38lUJf94NPf3B9fZioBxZuyOdG5fASLXuDp0w=="],
 
