@@ -1,0 +1,38 @@
+{
+  "manifest": 1,
+  "name": { "en": "Google Cloud computers" },
+  "description": {
+    "en": "Makes, resizes and deletes cloud computers in your own Google Cloud project, from the cloud computer folders you or your bots write. Each change asks you first. The VMs run Clover's official image with no service account, so no cloud credentials are on them."
+  },
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "capabilities": ["network:compute.googleapis.com"],
+  "settings": {
+    "project": {
+      "type": "string",
+      "title": { "en": "Project ID" },
+      "description": { "en": "The Google Cloud project the computers go in, such as my-clover-123456. The Compute Engine API must be on." },
+      "required": true
+    }
+  },
+  "contributes": {
+    "computerProviders": [
+      {
+        "id": "gcp",
+        "name": { "en": "Google Cloud" },
+        "auth": [
+          {
+            "method": "oauth-pkce",
+            "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+            "tokenUrl": "https://oauth2.googleapis.com/token",
+            "clientId": "clover-gcp-client-id-set-at-the-live-gate",
+            "scopes": ["https://www.googleapis.com/auth/compute"],
+            "secret": "gcp-oauth",
+            "placement": { "header": "authorization", "scheme": "Bearer" }
+          }
+        ],
+        "handler": "provider"
+      }
+    ]
+  }
+}

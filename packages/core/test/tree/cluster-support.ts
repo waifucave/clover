@@ -121,6 +121,8 @@ export interface ClusterOptions {
   terminals?: (name: string) => { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> } | undefined;
   mcp?: (name: string) => ComputerNodeOptions["mcp"] | undefined;
   lease?: (name: string) => ComputerNodeOptions["lease"] | undefined;
+  cloud?: (name: string) => ComputerNodeOptions["cloud"] | undefined;
+  memoryChanged?: (name: string) => ComputerNodeOptions["memoryChanged"] | undefined;
 }
 
 export class Cluster {
@@ -162,6 +164,8 @@ export class Cluster {
     const terminals = opts.terminals?.(name);
     const mcp = opts.mcp?.(name);
     const lease = opts.lease?.(name);
+    const cloud = opts.cloud?.(name);
+    const memoryChanged = opts.memoryChanged?.(name);
     const node = startComputerNode({
       clock,
       transport: this.net.endpoint(device),
@@ -178,6 +182,8 @@ export class Cluster {
       ...(terminals ? { terminals } : {}),
       ...(mcp ? { mcp } : {}),
       lease: lease ?? null,
+      ...(cloud ? { cloud } : {}),
+      ...(memoryChanged ? { memoryChanged } : {}),
     });
     const c: TestComputer = { name, device, home, cloverHome, node, bots };
     this.computers.set(name, c);
