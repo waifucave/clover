@@ -1,6 +1,6 @@
 // WS-27: the pure halves of `scripts/dev-daemon.ts` (unit-tested in `dev-daemon.test.ts`).
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { otherInstallHome, realPathOf } from "../packages/core/src/other-installs";
 
 export type DevOs = "macos" | "linux" | "windows";
@@ -67,6 +67,7 @@ export function describeDevDaemonPlan(plan: DevDaemonPlan): string[] {
   else {
     lines.push(`  build    (in packages/cli) ${plan.build.command}`);
     lines.push(`  seal     scripts/seal-bun-doors.ts: Bun's BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT* and NODE_PATH doors closed, then the byte check`);
+    lines.push(`  beside   ${dirname(plan.binary)}/clover-plugin-bun${plan.os === "windows" ? ".exe" : ""}${plan.os === "macos" ? " and clover-process-holder, each signed under its own .dev identifier" : ""} (scripts/bundled-binaries.ts)`);
     lines.push(plan.build.sign
       ? `  sign     codesign as ${DEV_DAEMON_IDENTIFIER} with Clover's team, then the __keychain-ffi-probe, then rename to ${plan.binary}`
       : `  sign     none (the dev binary is unsigned on ${plan.os}); rename to ${plan.binary}`);

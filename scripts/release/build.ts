@@ -6,17 +6,18 @@
 //
 // It runs on the OS it builds for (macOS on Apple silicon, Windows x64):
 //   1. builds the app (apps/desktop's `build`), the daemon (scripts/build-daemon.ts) and clover-link (cargo)
-//   2. stages the daemon and the sidecar in apps/desktop/out/daemon/, where electron-builder.yml's extraResources
-//      picks them up
-//   3. with --sign on macOS, signs the two staged binaries with the Developer ID (hardened runtime, timestamp, each
-//      its own identifier and entitlements: lib.ts's RESOURCE_BINARIES)
+//   2. stages the daemon, the sidecar, plugin Bun and (macOS) the process holder in apps/desktop/out/daemon/, where
+//      electron-builder.yml's extraResources picks them up
+//   3. with --sign on macOS, signs the staged binaries with the Developer ID (hardened runtime, timestamp, each its own
+//      identifier and entitlements: lib.ts's RESOURCE_BINARIES), then the package gate (scripts/bundled-binaries.ts:
+//      plugin Bun and the holder there, under their own identifiers), again on the built app
 //   4. runs electron-builder for the OS's targets (`--publish never`, always) with the channel; with --sign, the
 //      identity and notarization on macOS, and forced signing and the update publisher on Windows
 //   5. with --sign on macOS: signs, notarizes and staples the dmg, measures the update file's dmg entry again,
 //      and checks the app and the app inside the update zip (every signature, the daemon's and the sidecar's
 //      entitlements, the seal, Gatekeeper's verdict, the staple) and the dmg (its signature, its staple, Gatekeeper
-//      on opening it); on Windows, the Authenticode signatures of the installer, Clover.exe, clover-core.exe and
-//      clover-link.exe, by the publisher
+//      on opening it); on Windows, the Authenticode signatures of the installer, Clover.exe, clover-core.exe,
+//      clover-link.exe and clover-plugin-bun.exe, by the publisher
 //   6. copies the daemon out of the app (signed with it, on a signed build) as clover-core-<version>-<target>, with its
 //      update file for each channel served (lib.ts's `writeCoreAssets`), for a server's daemon to update itself from
 //   7. records the commit it built (BUILD-COMMIT-<os>.txt; a signed build needs a clean checkout), on latest copies
@@ -40,6 +41,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
+import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import {
   authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
@@ -194,6 +196,7 @@ function verifyWin(outDir: string, version: string, publisher: string): string[]
     ["Clover.exe", join(unpacked, "Clover.exe")],
     ["clover-core.exe", join(unpacked, "resources", "daemon", "clover-core.exe")],
     ["clover-link.exe", join(unpacked, "resources", "daemon", "clover-link.exe")],
+    ["clover-plugin-bun.exe", join(unpacked, "resources", "daemon", "clover-plugin-bun.exe")],
   ] as const;
   return files.flatMap(([name, path]) => authenticodeProblems(name, run(authenticodeCommand(path), outDir).out, publisher));
 }
@@ -244,13 +247,21 @@ export function main(argv: readonly string[], root: string): number {
     mkdirSync(staged, { recursive: true });
     copyFileSync(join(root, ...daemonOutput(target).split("/")), join(staged, `clover-core${exe}`));
     copyFileSync(join(root, ...`${LINK_OUTPUT}${exe}`.split("/")), join(staged, `clover-link${exe}`));
+    const built = dirname(join(root, ...daemonOutput(target).split("/")));
+    for (const f of bundledFiles(target)) if (existsSync(join(built, f))) copyFileSync(join(built, f), join(staged, f));
     for (const f of readdirSync(staged)) chmodSync(join(staged, f), 0o755);
     if (a.sign && a.os === "mac") {
       for (const b of RESOURCE_BINARIES) {
         must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
       }
     }
+    // The package gate (scripts/bundled-binaries.ts): plugin Bun beside the core, and on macOS the process holder,
+    // each under its own identifier — a packaged build never falls back to process-group tracking.
+    const staging = bundledBinaryProblems(staged, target, { kind: "dist" });
+    if (staging.length > 0) throw new Error(`the package gate: ${staging.join("; ")}`);
     must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, builderEnv(a, process.env));
+    const inApp = bundledBinaryProblems(dirname(daemonInApp(outDir, a.os)), target, { kind: "dist" });
+    if (inApp.length > 0) throw new Error(`the package gate, in the built app: ${inApp.join("; ")}`);
     rmSync(staged, { recursive: true, force: true });
 
     if (a.sign && a.os === "mac") {

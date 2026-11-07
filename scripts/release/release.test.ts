@@ -81,6 +81,10 @@ describe("the feed and the channels", () => {
     expect(ent).toContain("com.apple.security.cs.allow-jit");
     expect(ent).not.toContain("disable-library-validation");
     expect(RESOURCE_BINARIES.map((b) => b.file)).toEqual(builder.extraResources[0].filter.filter((f: string) => !f.endsWith(".exe")));
+    // Each its own identifier; only the core's is the core's.
+    expect(new Set(RESOURCE_BINARIES.map((b) => b.identifier)).size).toBe(RESOURCE_BINARIES.length);
+    expect(RESOURCE_BINARIES.find((b) => b.file === "clover-plugin-bun")?.entitlements).toBe("scripts/clover-plugin-bun.entitlements");
+    expect(RESOURCE_BINARIES.find((b) => b.file === "clover-process-holder")?.entitlements).toBeUndefined();
     expect(read("scripts/clover-core.entitlements")).toContain("com.apple.security.cs.allow-jit");
   });
 });

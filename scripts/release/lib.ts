@@ -232,11 +232,17 @@ export function identityTeam(identity: string): string {
  * The binaries Clover's own build puts in the app's resources, which it signs itself (electron-builder.yml's
  * `signIgnore` leaves them to it): each with the hardened runtime, a secure timestamp, its own identifier, and
  * only the entitlements it needs. The daemon is Bun, whose JIT needs `allow-jit` and, until the SIP-on check drops
- * it, `allow-unsigned-executable-memory` (scripts/clover-core.entitlements); the link sidecar is Rust and needs none.
+ * it, `allow-unsigned-executable-memory` (scripts/clover-core.entitlements); the link sidecar is Rust and needs none;
+ * plugin Bun also loads plugins' native addons; the process holder is C on libSystem and needs none. All of them are
+ * inside the app that notarization submits, so each is notarized with it.
  */
 export const RESOURCE_BINARIES = [
   { file: "clover-core", identifier: "com.waifucave.clover.core", entitlements: "scripts/clover-core.entitlements" },
   { file: "clover-link", identifier: "com.waifucave.clover.link", entitlements: undefined },
+  // The binaries that run code not the core's own (scripts/bundled-binaries.ts), never under the core's identifier:
+  // plain Bun for plugins (JIT, bun:ffi, native addons), and lane A's process holder (none).
+  { file: "clover-plugin-bun", identifier: "com.waifucave.clover.plugin-bun", entitlements: "scripts/clover-plugin-bun.entitlements" },
+  { file: "clover-process-holder", identifier: "com.waifucave.clover.process-holder", entitlements: undefined },
 ] as const;
 
 export function codesignArgs(path: string, identity: string, identifier: string, entitlements?: string): string[] {

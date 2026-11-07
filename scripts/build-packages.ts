@@ -21,6 +21,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSy
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
+import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
 import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writeServedCopies, type Channel } from "./release/lib";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
@@ -91,13 +92,14 @@ export const LINK_OUTPUT = "native/link/target/release/clover-link";
 
 /** What a package must hold: the daemon, its link sidecar beside it, and the AppArmor profile in the app's resources. */
 export const REQUIRED_FILES = [
-  "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
+  "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun",
+  "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
 ] as const;
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
 export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
 
 /** The executables a package runs as root's files: the app, the daemon and the sidecar, `rwxr-xr-x root root`. */
-export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link"] as const;
+export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun"] as const;
 
 export interface PackageEntry {
   mode: string;
@@ -213,6 +215,12 @@ export function main(argv: readonly string[], root: string): number {
       copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
       copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
       chmodSync(join(staged, "clover-link"), 0o755);
+      // Plain Bun for plugins, beside the core (scripts/bundled-binaries.ts); the package gate before packaging.
+      const target = daemonTargetFor(s.stage);
+      const built = dirname(join(root, ...daemonOutput(target).split("/")));
+      for (const f of bundledFiles(target)) if (existsSync(join(built, f))) { copyFileSync(join(built, f), join(staged, f)); chmodSync(join(staged, f), 0o755); }
+      const gate = bundledBinaryProblems(staged, target);
+      if (gate.length > 0) { console.error(`build-packages: the package gate: ${gate.join("; ")}`); return 1; }
     }
     const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
     if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
