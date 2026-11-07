@@ -130,3 +130,68 @@ export class AnswerKey {
     }
   }
 }
+
+/** A timer the retry waits on: Node unrefs it, so a wait never holds the app open; the tests drive it by hand. */
+export interface RetryTimer {
+  cancel(): void;
+}
+
+/** The answer key's registration, retried: the daemon takes `device.answerKey.set` only once its keychain store
+ *  unlocks and the links are up, and `hello.device` is a stand-in id until then. The app registers on every
+ *  connection, again when its own device id changes (`device_changed` with `isThis`), and with backoff until the
+ *  core answers — never blocking, never holding the app open. Pure apart from the timers, so the retry is
+ *  unit-tested (the follow-up's own case: connected while locked, unlocked later, registered with no reconnect). */
+export class AnswerKeyRegistration {
+  private device: string | undefined;
+  private accepted: { device: string; key: string } | undefined;
+  private failures = 0;
+  private cancelTimer: (() => void) | undefined;
+  constructor(
+    private readonly key: AnswerKey,
+    private readonly log: (line: string) => void = () => {},
+    private readonly schedule: (ms: number, fn: () => void) => RetryTimer = (ms, fn) => {
+      const t = setTimeout(fn, ms);
+      t.unref?.();
+      return { cancel: () => clearTimeout(t) };
+    },
+  ) {}
+
+  /** Connected (or reconnected): this connection's device id, registered at once. A new connection means unknown
+   *  core state (a restarted daemon kept nothing), so an earlier acceptance never carries over. */
+  async onConnected(client: AnswerKeyClient, deviceId: string): Promise<void> {
+    this.device = deviceId;
+    this.accepted = undefined;
+    await this.attempt(client);
+  }
+
+  /** A device changed: ours (a new id, or still unregistered) registers again. Anyone else's is none of ours. */
+  async onDeviceChanged(client: AnswerKeyClient, device: { id: string; isThis: boolean }): Promise<void> {
+    if (device.isThis !== true) return;
+    if (device.id !== this.device) {
+      this.device = device.id;
+      this.accepted = undefined;
+    }
+    await this.attempt(client);
+  }
+
+  private async attempt(client: AnswerKeyClient): Promise<void> {
+    const device = this.device;
+    if (device === undefined) return;
+    this.cancelTimer?.();
+    this.cancelTimer = undefined;
+    const key = this.key.publicKey();
+    if (this.accepted !== undefined && this.accepted.device === device && this.accepted.key === key) return;
+    if (await this.key.register(client, device)) {
+      this.accepted = { device, key };
+      this.failures = 0;
+      return;
+    }
+    const ms = Math.min(300_000, 2000 * 2 ** this.failures);
+    this.failures += 1;
+    const t = this.schedule(ms, () => {
+      this.cancelTimer = undefined;
+      void this.attempt(client);
+    });
+    this.cancelTimer = () => t.cancel();
+  }
+}
