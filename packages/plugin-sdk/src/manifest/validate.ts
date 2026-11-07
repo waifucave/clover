@@ -60,6 +60,9 @@ export interface ManifestReport {
   settings: string[];
   /** `stdio` commands that fetch code when they run (`npx`, `uvx`, …), which the OK flags (§5.6). */
   fetchesCode: string[];
+  /** It declares programs of its own (a `stdio` server, a helper, or a Node host, Clover's own plugins only), which
+   *  Clover's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
+  ownPrograms: boolean;
   addons: boolean;
   adult: boolean;
   bot: boolean;
@@ -294,7 +297,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -380,6 +383,12 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
   if (isObject(top.settings)) for (const [k, s] of Object.entries(top.settings)) if (isObject(s)) checkSetting(f, k, s);
   if (isObject(top.helper) && isObject(top.helper.bin) && Object.keys(top.helper.bin).length === 0) {
     f.error("plugin", "helper_bin", ["helper", "bin"], "a helper names its program for at least one platform");
+  }
+  // A host half runs under Bun, where Clover's load guard holds it to its folder (#234's check 3, the controller's
+  // ruling); a program of its own is declared as a `stdio` server or a helper, which the OK covers and Clover doesn't
+  // confine. Only Clover's own plugins keep a Node host (the cloud model plugins' signing).
+  if (isObject(top.host) && top.host.runtime === "node" && topId !== BUNDLED_ROOT_PLUGIN) {
+    f.error("plugin", "host_runtime_bundled_only", ["host", "runtime"], "a plugin's host runs under Bun; a program of its own goes in a `stdio` server or a helper");
   }
 
   // Paths stay inside the folder (§5.9), lexically.
@@ -530,6 +539,8 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
   }
 
+  const ownPrograms = isObject(top.helper) || (isObject(top.host) && top.host.runtime === "node")
+    || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
   const ok = !f.refusesPlugin();
   return {
     ok,
@@ -546,6 +557,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     toolNames,
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
+    ownPrograms,
     addons: top.addons !== undefined,
     adult: top.adult === true,
     bot: kept.bot !== undefined,
@@ -957,6 +969,7 @@ export function describeOk(
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
+  if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
   if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");

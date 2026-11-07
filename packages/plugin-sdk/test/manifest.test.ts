@@ -427,3 +427,18 @@ describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun proce
     expect(issues({ host: { entry: "host/index.ts", process: "shared" } }).length).toBeGreaterThan(0);
   });
 });
+
+describe("a host runs under Bun (#234's check 3)", () => {
+  test("a Node host is refused outside Clover's own plugins; programs of its own say so in the OK", () => {
+    const node = { ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.js", runtime: "node" } };
+    expect(has(validateManifest(node), "host_runtime_bundled_only", "plugin")).toBe(true);
+    const own = validateManifest({ ...node, id: "clover" }, { bundled: true });
+    expect([has(own, "host_runtime_bundled_only"), own.ownPrograms]).toEqual([false, true]);
+    const bun = validateManifest({ ...node, host: { entry: "host/index.ts" } });
+    expect([bun.ok, bun.ownPrograms, describeOk(bun).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, false, false]);
+    for (const extra of [{ contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } }, { helper: { bin: { macos: "bin/helper" } } }]) {
+      const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra });
+      expect([r.ownPrograms, describeOk(r).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    }
+  });
+});
