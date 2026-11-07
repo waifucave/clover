@@ -21,7 +21,9 @@
 //   refuses a different one (`conflict`); the heads exchange compares the epoch at the writer's head too, for a
 //   receiver that holds more than the writer. On a fork, the computer that isn't the writer walks back to where the
 //   logs part, sets its own records from there aside (`setAside`), and takes the writer's; the set-aside records go to
-//   the writer (`sync.push` with `late`), which appends them at the end of its log, marked late (`appendLate`). A log
+//   the writer (`sync.push` with `late`), which appends them at the end of its log, marked late (`appendLate`). The
+//   host keeps what it set aside (`earlier`) until the writer has it (`ackEarlier`): what a restart or a lost link left
+//   undelivered goes again when the sync starts and whenever a link comes up (the writer adds nothing twice). A log
 //   is never mixed: no computer ends up with the old main's records under the new main's.
 // * **Late, per record:** in a batch, only the records from an earlier lease are marked late.
 import type { SessionView } from "@waifucave/clover-protocol";
@@ -56,7 +58,12 @@ export interface SessionRecordSink {
   setAside(id: string, fromSeq: number, opts: { from: string }): SessionRecord[];
   /** On the computer running the session: another computer's set-aside records, appended at the end marked late.
    *  The same records again add nothing. */
-  appendLate(id: string, records: SessionRecord[], opts: { from: string }): void;
+  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string }): unknown;
+  /** What this computer set aside for a session, and whether the writer has it yet. */
+  earlier(id: string): { id: string; delivered?: number }[];
+  readEarlier(id: string, earlierId: string): SessionRecord[];
+  /** The writer has these: they aren't sent again. */
+  ackEarlier(id: string, earlierId: string): void;
 }
 
 export type SessionHostForSync = SessionRecordSource & SessionRecordSink;
@@ -90,8 +97,8 @@ export class SessionRecordSync {
   readonly #resend = new Map<string, Set<string>>();
   /** Sessions whose fork is being resolved now. */
   readonly #forking = new Set<string>();
-  /** Set-aside records still to reach the computer running their session, per session. */
-  readonly #lateOut = new Map<string, SessionRecord[]>();
+  /** Sessions whose set-aside records are being sent now. */
+  readonly #sendingLate = new Set<string>();
 
   constructor(o: SessionRecordSyncOptions) {
     this.#o = o;
@@ -150,10 +157,19 @@ export class SessionRecordSync {
         up.add(v.peer);
         if (this.#isComputer(v.peer)) {
           void this.catchUpFrom(v.peer).catch((e: unknown) => this.#log(`catching up from ${v.peer}: ${errText(e)}`));
-          for (const id of [...this.#lateOut.keys()]) void this.#sendLate(id);
+          void this.#sendAllLate();
         }
       } else if (!v.up) up.delete(v.peer);
     }));
+    // What an earlier run set aside and couldn't deliver goes now (when the writer is reachable).
+    queueMicrotask(() => void this.#sendAllLate());
+  }
+
+  /** Every session's set-aside records the writer doesn't have yet (at start, and when a link comes up). */
+  async #sendAllLate(): Promise<void> {
+    for (const v of this.#o.host.list()) {
+      if (this.#o.host.earlier(v.id).some((e) => e.delivered === undefined)) await this.#sendLate(v.id);
+    }
   }
 
   /** Pulls what `peer` holds beyond this computer's copies. */
@@ -343,7 +359,6 @@ export class SessionRecordSync {
       }
       const aside = this.#o.host.setAside(id, from, { from: peer });
       this.#log(`session ${id}: its log here parted from ${peer}'s at ${from}; ${aside.length} record(s) set aside for the computer running it`);
-      if (aside.length > 0) this.#lateOut.set(id, [...(this.#lateOut.get(id) ?? []), ...aside]);
       this.#forking.delete(id);
       // The writer's records from there.
       for (;;) {
@@ -370,25 +385,35 @@ export class SessionRecordSync {
     await this.#forks.get(id);
   }
 
-  /** Sends a session's set-aside records to the computer running it; kept for its next link if that fails. */
+  /** Sends a session's set-aside records the writer doesn't have yet to the computer running it, each batch acked
+   *  once it took them; the rest wait for the next link. */
   async #sendLate(id: string): Promise<void> {
-    const records = this.#lateOut.get(id);
-    const view = this.#o.host.get(id);
-    if (!records || records.length === 0 || !view) return;
-    if (view.computer === this.#o.computer()) {
-      // This computer runs it now: its own set-aside records go at the end of its own log.
-      this.#o.host.appendLate(id, records, { from: this.#o.self });
-      this.#lateOut.delete(id);
-      return;
-    }
-    const runner = this.#o.registry.list().find((d) => d.computer === view.computer && d.runsCore && d.revokedAt === undefined);
-    if (!runner) return;
+    if (this.#sendingLate.has(id)) return;
+    this.#sendingLate.add(id);
     try {
-      const link = await this.#o.transport.connect(runner.id);
-      const r = await link.request<{ ok: boolean }>("sync.push", { stream: `${PREFIX}${id}`, late: true, entries: records.map((rec) => this.#entry(rec, undefined)) });
-      if (r.ok && this.#lateOut.get(id) === records) this.#lateOut.delete(id);
+      for (const e of this.#o.host.earlier(id)) {
+        if (e.delivered !== undefined) continue;
+        const view = this.#o.host.get(id);
+        if (!view) return;
+        const records = this.#o.host.readEarlier(id, e.id);
+        if (records.length > 0) {
+          if (view.computer === this.#o.computer()) {
+            // This computer runs it now: its own set-aside records go at the end of its own log.
+            this.#o.host.appendLate(id, records, { from: this.#o.self, computer: this.#o.computer() });
+          } else {
+            const runner = this.#o.registry.list().find((d) => d.computer === view.computer && d.runsCore && d.revokedAt === undefined);
+            if (!runner) return;
+            const link = await this.#o.transport.connect(runner.id);
+            const r = await link.request<{ ok: boolean }>("sync.push", { stream: `${PREFIX}${id}`, late: true, entries: records.map((rec) => this.#entry(rec, undefined)) });
+            if (!r.ok) return;
+          }
+        }
+        this.#o.host.ackEarlier(id, e.id);
+      }
     } catch {
       // Sent again when a link comes up.
+    } finally {
+      this.#sendingLate.delete(id);
     }
   }
 
@@ -403,7 +428,9 @@ export class SessionRecordSync {
       if (!r || r.sessionId !== id) return { ok: false, reason: "refused" };
       records.push(r);
     }
-    this.#o.host.appendLate(id, records, { from });
+    const computer = this.#o.registry.get(from)?.computer;
+    if (computer === undefined) return { ok: false, reason: "refused" };
+    this.#o.host.appendLate(id, records, { from, computer });
     return { ok: true };
   }
 

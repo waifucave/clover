@@ -37,6 +37,9 @@ export function sinkWithoutCopiedGrants(host: SessionRecordSink): SessionRecordS
     setAside: (id, fromSeq, opts) => host.setAside(id, fromSeq, opts),
     // Another computer's set-aside records are copies too: a grant among them never grants here.
     appendLate: (id, records, opts) => host.appendLate(id, records.map((r) => copiedRecord(r, opts.from)), opts),
+    earlier: (id) => host.earlier(id),
+    readEarlier: (id, earlierId) => host.readEarlier(id, earlierId),
+    ackEarlier: (id, earlierId) => host.ackEarlier(id, earlierId),
   };
 }
 
@@ -52,5 +55,8 @@ export function hostForSync(host: SessionHostForSync): SessionHostForSync {
     ingest: sink.ingest,
     setAside: sink.setAside,
     appendLate: sink.appendLate,
+    earlier: sink.earlier,
+    readEarlier: sink.readEarlier,
+    ackEarlier: sink.ackEarlier,
   };
 }

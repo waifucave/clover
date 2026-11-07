@@ -31,6 +31,13 @@ class LogHost {
   appendLate(_id: string, records: SessionRecord[]): void {
     this.late.push(...records);
   }
+  earlier() {
+    return [];
+  }
+  readEarlier(): SessionRecord[] {
+    return [];
+  }
+  ackEarlier(): void {}
   callerOf(_id: string) {
     return { bot: "luna" };
   }
@@ -104,7 +111,7 @@ describe("set-aside records from another computer", () => {
   test("appended on the computer running the session, a grant among them is converted too", () => {
     const host = new LogHost();
     const sink = sinkWithoutCopiedGrants(host);
-    sink.appendLate(view.id, [record(7, { type: "driver", event: { type: "session_grant", key: USER_BROWSER_PARTITION_GRANT, cardId: "card_laptop" } })], { from: "dev_laptop" });
+    sink.appendLate(view.id, [record(7, { type: "driver", event: { type: "session_grant", key: USER_BROWSER_PARTITION_GRANT, cardId: "card_laptop" } })], { from: "dev_laptop", computer: "Laptop" });
     expect(host.late[0]).toMatchObject({ event: { type: COPIED_GRANT_EVENT, key: USER_BROWSER_PARTITION_GRANT, from: "dev_laptop" } });
     expect(JSON.stringify(host.late)).not.toContain("card_laptop");
   });

@@ -76,17 +76,27 @@ class MemoryHost implements SessionHostForSync {
     this.ingested.push({ from: opts.from, late: opts.late, n: fresh.length });
   }
 
-  readonly asides: { id: string; from: string; records: SessionRecord[] }[] = [];
+  readonly asides: { id: string; from: string; records: SessionRecord[]; earlierId: string; delivered?: number }[] = [];
   setAside(id: string, fromSeq: number, opts: { from: string }): SessionRecord[] {
     const s = this.sessions.get(id)!;
     const out = s.records.splice(fromSeq);
-    this.asides.push({ id, from: opts.from, records: out });
+    if (out.length > 0) this.asides.push({ id, from: opts.from, records: out, earlierId: `e${this.asides.length}` });
     return out;
+  }
+  earlier(id: string) {
+    return this.asides.filter((a) => a.id === id).map((a) => ({ id: a.earlierId, ...(a.delivered !== undefined ? { delivered: a.delivered } : {}) }));
+  }
+  readEarlier(id: string, earlierId: string): SessionRecord[] {
+    return this.asides.find((a) => a.id === id && a.earlierId === earlierId)?.records ?? [];
+  }
+  ackEarlier(id: string, earlierId: string): void {
+    const a = this.asides.find((x) => x.id === id && x.earlierId === earlierId);
+    if (a) a.delivered ??= Date.now();
   }
 
   /** As lane D's host: each record's body at the end, marked late, once per (from, seq). */
   readonly #lateSeen = new Set<string>();
-  appendLate(id: string, records: SessionRecord[], opts: { from: string }): void {
+  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string }): void {
     const s = this.sessions.get(id)!;
     for (const r of records) {
       const k = `${opts.from}\u0000${r.seq}`;
@@ -310,7 +320,7 @@ describe("forks: two computers that wrote the same place", () => {
     expect(texts(laptop).slice(10)).toEqual(["B10", "B11", "B12", "A10", "A11"]);
     expect(laptop.history("b_alpha").slice(13).every((r) => (r as { late?: boolean }).late === true)).toBe(true);
     expect(studio.bodies("b_alpha")).toEqual(laptop.bodies("b_alpha"));
-    expect(studio.asides).toEqual([{ id: "b_alpha", from: laptopDev.id, records: [expect.objectContaining({ seq: 10 }), expect.objectContaining({ seq: 11 })] }]);
+    expect(studio.asides).toEqual([{ id: "b_alpha", from: laptopDev.id, earlierId: "e0", delivered: expect.any(Number), records: [expect.objectContaining({ seq: 10 }), expect.objectContaining({ seq: 11 })] }]);
     // Live after that, on the one log.
     laptop.record("b_alpha", { type: "driver", event: { type: "assistant_text", text: "B15" } }, 2);
     await waitFor(() => studio.head("b_alpha") === 16);
