@@ -1,6 +1,7 @@
 // FakeFence: the fenced set laid out under a Clover home, POSIX paths, prefix semantics. The layout is the fake's;
 // lane C owns the real one, and a test can override any item.
 import type { Caller, Os } from "@waifucave/clover-protocol";
+import { isAnyPluginId } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
   CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, isInsideFolded, judge, pluginLoadDenies, READ_DENIED_KINDS,
@@ -159,11 +160,13 @@ export class FakeFence implements Fence {
 
   policy(ctx?: FenceContext): SandboxPolicy {
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
-    // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
+    const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: [...set.map((i) => i.path), this.#cloverHome, ...this.#pluginLoadDenies()],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), this.#cloverHome],
+      // The whole Clover home, for every runner (the home default-deny), and the bots folder and the pattern items by
+      // name (C's base); the runner's own folders come back below (`ownFoldersOf`, its own memory included).
+      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns, this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",

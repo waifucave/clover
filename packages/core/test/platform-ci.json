@@ -27,6 +27,7 @@
     }
   },
   "linuxSkips": {
+    "src/agents/tests/windows-path.test.ts": "an agent backend's bare command found as its .exe or .cmd on PATH: Windows only (the tree job runs it there)",
     "src/clock/tests/shared-clock.test.ts": "one live SNTP query against the public servers runs only with CLOVER_LIVE_TIME=1, on every OS",
     "src/links/tests/sidecar.test.ts": "needs the built clover-link sidecar: the link job builds it and runs these on Linux, Windows and macOS",
     "test/agent/browser-gates.test.ts": "holds no tests on any OS: its gate walk retired with the engine (Task 17); the capability's sequence is pinned in test/capabilities",
@@ -34,6 +35,8 @@
     "test/cowork/guest-runtime.test.ts": "one test needs the candidate SDK's confined fixture, on every OS",
     "test/cowork/guided-reader-adapter.test.ts": "one opt-in drift guard against the SDK source, on every OS",
     "test/cowork/provider-broker.integration.test.ts": "an opt-in integration run (its env), skipped on every OS by default",
+    "test/fence/fence.test.ts": "one test needs Win32 path semantics (a `..` after a real NTFS junction); it runs on the Windows tree job",
+    "test/fence/spawn.test.ts": "two tests need Windows hook shells (cmd and Git Bash); they run on the Windows tree job",
     "test/ipc/session-set-model-review.test.ts": "one live model-convergence case runs only with its env, on every OS",
     "test/platform/win-job.test.ts": "Windows' job objects: Windows only",
     "test/platform/win-pipe.test.ts": "Windows' named pipes: Windows only",

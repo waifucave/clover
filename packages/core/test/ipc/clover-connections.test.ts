@@ -14,6 +14,7 @@ import { FileSecretStore } from "../../src/auth/secret-store";
 import { TokenAuthority } from "../../src/auth/tokens";
 import { DaemonPair } from "../../src/platform/pair/policy";
 import type { PeerFacts } from "../../src/platform/caller-probe";
+import type { PeerHandle } from "../../src/platform/peer-handle";
 import { resolveEndpoint } from "../../src/platform/transport";
 import { commandMethods } from "../../src/registry/commands";
 
@@ -113,6 +114,7 @@ describe("Clover connections (C-M1)", () => {
       tellAppQuit: (reason, to) => { quits.push({ reason, to }); clover.tellAppQuit(reason, to); },
     }, { desktop: true, graceMs: 60_000 });
     const killed: number[] = [];
+    const killedVia: Array<PeerHandle | undefined> = [];
     const calls: Array<{ method: string; sessionId: string; params?: unknown }> = [];
     const bridge = opts.bridge ? {
       gate: opts.bridge,
@@ -148,10 +150,10 @@ describe("Clover connections (C-M1)", () => {
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken,
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
-      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid) => { killed.push(pid); } });
+      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
-    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, calls, unfollowed, clover, setPeer: (p: PeerFacts) => { peer = p; } };
+    return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, killedVia, calls, unfollowed, clover, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("command.run over the socket: args that fit reach the handler; args that don't answer invalid_args with the path", async () => {
@@ -352,6 +354,23 @@ describe("Clover connections (C-M1)", () => {
     expect(b.pair.status().safeMode).toBe(true);
   });
 
+  test("the heartbeat ends the app through its connection's handle, never a pid alone (review S5)", async () => {
+    const b = await boot({ heartbeat: { intervalMs: 20, timeoutMs: 100 }, realPeer: true });
+    const hung = await Client.connect(b.socketPath);
+    hung.answerPings = false;
+    await hung.hello("app", b.appToken);
+    for (let i = 0; i < 100 && b.killed.length === 0; i++) await Bun.sleep(10);
+    expect(b.killed).toEqual([process.pid]); // this test is the app's process here, so the kill is a spy
+    const handle = b.killedVia[0];
+    expect(handle?.pid).toBe(process.pid);
+    if (process.platform === "darwin") expect(handle?.via).toBe("token");
+    if (process.platform === "linux") expect(["pidfd", "pid"]).toContain(handle!.via);
+    expect(handle?.alive()).toBe(true);
+    hung.close();
+    for (let i = 0; i < 100 && b.pair.status().appConnected; i++) await Bun.sleep(5);
+    if (handle?.via === "pidfd") expect(handle.alive()).toBe(false); // closed with its connection
+  });
+
   test("bridge (K): K's tokens check it with the peer's pid; its four methods only, bound to its session; one live connection", async () => {
     const gate = new FakeBridgeTokens("t".repeat(43), "s-agent", (pid) => pid === 4242);
     const b = await boot({ bridge: gate });
@@ -359,6 +378,7 @@ describe("Clover connections (C-M1)", () => {
     const r = await c.hello("bridge", gate.token, { agentSessionId: "s-agent" });
     expect(r.result.caller).toEqual({ kind: "session", sessionId: "s-agent", sessionKind: "agent", bot: "alpha" });
     expect(gate.seen).toEqual([4242]);
+    expect(b.clover.connections().find((x) => x.role === "bridge")?.bridgeConnection).toBe(1); // K's accept's number
     expect((await c.request("bridge.tools", {})).result).toEqual({ tools: [], instructions: "hi" });
     expect((await c.request("bridge.sendMessage", { text: "done" })).result).toEqual({ ok: true });
     expect((await c.request("glossary.query", { query: "x" })).result).toEqual({ results: [], loaded: [] });

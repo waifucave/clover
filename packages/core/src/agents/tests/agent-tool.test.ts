@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { AgentQuirks } from "../../contracts/agent-backend";
 import { S5_ANTIGRAVITY_QUIRKS, S5_CURSOR_QUIRKS, WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { advanceAndSettle } from "../../contracts/fakes/clock";
-import { FakeSessionHost } from "../../contracts/fakes/session-host";
+import { FakeSessionDriver, FakeSessionHost } from "../../contracts/fakes/session-host";
 import { isContractError } from "../../contracts/common";
 import { UserSelections } from "../acp/selections";
 import { MAX_OPEN_ASKS } from "../acp/session";
@@ -18,7 +18,11 @@ import { serveClover } from "../testing/clover-endpoint";
 import { bridgeCommand } from "../bridge/main";
 import { BridgeTokens } from "../bridge/tokens";
 import { AgentManager } from "../manager";
-import { QUIRKS } from "../quirks";
+import { bundledBackends } from "../testing/bundled-backends";
+
+// The bundled backends' rows, as their plugins hold them.
+const ROWS = bundledBackends();
+const QUIRKS = Object.fromEntries(Object.entries(ROWS).map(([id, r]) => [id, r.quirks]));
 import { agentMethods } from "../rpc";
 import { FAKE_AGENT_PATH, fakeLaunch } from "../testing/harness";
 import { agentToolDefs } from "../tools";
@@ -448,6 +452,42 @@ describe("models and sessions", () => {
     expect(w.approvals.cards()).toEqual([]);
   });
 
+  test("a reattach never hands a session to another plugin that took its backend's id since (#233's review)", async () => {
+    const w = make({ script: [[{ say: "first done" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    const view = w.host.get(r.sessionId)!;
+    expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ backend: "fake", pluginId: "clover/agent-fake" });
+    const started = w.report("started").length;
+    // Clover's own plugin is off and a third party's holds the id now.
+    const { m2, host2 } = await restart(w, WELL_BEHAVED_QUIRKS, "someone/agents");
+    host2.open({ id: r.sessionId, kind: "agent", bot: "alpha", parent: "s_alpha", computer: "Studio", backend: "fake", root: view.root! }, new FakeSessionDriver());
+    expect(m2.reattach({ ...view, status: "idle" })).toBe(false);
+    // The session ends, saying why; the third party's program never started, so it never saw the session id or root.
+    await waitFor(() => host2.get(r.sessionId)?.status === "stopped", "the session ended");
+    expect(JSON.stringify(host2.history(r.sessionId))).toContain("plugin changed");
+    expect(w.report("started")).toHaveLength(started);
+  });
+
+  test("a record from before the plugin was kept reattaches only to Clover's own backend, and keeps it from then on", async () => {
+    for (const bundled of [true, false]) {
+      const w = make({ script: [[{ say: "first done" }]] });
+      const r = await w.delegate();
+      await waitFor(() => notification(w), "the first notification");
+      const view = w.host.get(r.sessionId)!;
+      // The record as an older daemon wrote it: no plugin.
+      const file = join(w.cloverHome, "run", "agents", `${r.sessionId}.json`);
+      const { pluginId: _p, ...old } = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      writeFileSync(file, JSON.stringify(old));
+      const { m2 } = await restart(w, WELL_BEHAVED_QUIRKS, bundled ? "clover/agent-fake" : "someone/agents", bundled);
+      expect([bundled, m2.reattach({ ...view, status: "idle" })]).toEqual([bundled, bundled]);
+      if (bundled) expect(readAgentRecord(w.cloverHome, r.sessionId)).toMatchObject({ pluginId: "clover/agent-fake" });
+      else expect(readAgentRecord(w.cloverHome, r.sessionId)?.pluginId).toBeUndefined();
+      for (const f of afterRestart.splice(0)) await f();
+      await w.close();
+    }
+  });
+
   test("a reattach is refused when the daemon's record and the host disagree, or the record is gone", async () => {
     const w = make({ script: [[{ say: "first done" }]] });
     const r = await w.delegate();
@@ -464,7 +504,7 @@ describe("models and sessions", () => {
 
 /** The daemon closes (every agent's process ends, its records stay) and a new one starts: a new host restored the
  *  bot's session (a fresh fake here), new tokens, a new manager. */
-async function restart(w: World, quirks: AgentQuirks) {
+async function restart(w: World, quirks: AgentQuirks, pluginId = "clover/agent-fake", bundled = false) {
   await w.manager.close();
   expect(w.tokens.has(w.host.list({ kind: "agent" })[0]?.id ?? "")).toBe(false);
   const host2 = new FakeSessionHost({ clock: w.clock, approvals: w.approvals });
@@ -472,7 +512,7 @@ async function restart(w: World, quirks: AgentQuirks) {
   const tokens2 = new BridgeTokens();
   let m2!: AgentManager;
   const backend2 = new AcpAgentBackend({
-    id: "fake", pluginId: "clover/agent-fake", quirks: fakeLaunch(quirks), clock: w.clock,
+    id: "fake", pluginId, bundled, quirks: fakeLaunch(quirks), clock: w.clock,
     command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, w.agent.config], acpArgs: ["acp"] }, wire: (id) => m2.wire(id),
     admissions: fakeAdmissions("protected"),
   });
@@ -503,6 +543,10 @@ describe("what never runs quietly", () => {
     const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
     expect(card).toMatchObject({ kind: "change", change: "agent-unsandboxed" });
     expect(card.fields["title"]).toEqual({ type: "text", text: "Start an agent Clover hasn't tested?" });
+    // Every name it gets from the environment, and every one set for it, is on the card (#233's review).
+    const rows = (card.fields["detail"] as { rows: { label: string; value: unknown }[] }).rows;
+    expect(JSON.stringify(rows.find((r) => r.label === "Gets from your environment"))).toContain("PATH, HOME");
+    expect(rows.some((r) => r.label === "Sets in its environment")).toBe(true);
     const deny = card.options.find((o) => o.kind === "deny")!;
     const frame = w.approvals.frameChannel(card.id)!;
     await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" });

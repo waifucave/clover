@@ -314,6 +314,18 @@ export function patternItemAt(path: string, cloverHome: string, os?: Os):
   return same(sub, "memory") ? { kind: "bot-memory", folder: x, root: `${base}/bots/${x}/memory`, inside: true } : undefined;
 }
 
+/** `bots/<x>/…` below the folder itself (agents, notes, anything but the `memory/` the pattern judges): the
+ *  folder's root, or undefined elsewhere (and never inside `memory/` itself — the pattern owns that). */
+export function botsFolderChildAt(path: string, cloverHome: string, os?: Os): string | undefined {
+  const home = segmentsOf(cloverHome);
+  const segs = segmentsOf(path);
+  if (segs.length < home.length + 3 || !home.every((h, i) => foldName(h, os) === foldName(segs[i]!, os))) return undefined;
+  const [area, x, sub] = segs.slice(home.length);
+  if (foldName(area!, os) !== foldName("bots", os) || x === undefined) return undefined;
+  if (sub !== undefined && foldName(sub, os) === foldName("memory", os)) return undefined;
+  return `/${home.join("/")}/bots/${segs[home.length + 1]}`;
+}
+
 /** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal. */
 export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os): boolean {
   if (ctx?.user) return true;
@@ -499,8 +511,16 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
         if (!reachesMemoryFolder(pattern.folder, o.caller, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
         if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
       }
-    } else if (pattern?.kind === "sessions-runtime" && (writes || !o.caller?.user)) {
-      return { allowed: false, reason: "sessions-runtime", path: pattern.root };
+    } else if (pattern?.kind === "sessions-runtime") {
+      const own = pattern.name !== undefined && o.caller?.sessionId !== undefined
+        && foldName(pattern.name.replace(/\.[^.]*$/, ""), o.os) === foldName(o.caller.sessionId, o.os);
+      if (writes || !(o.caller?.user || own)) return { allowed: false, reason: "sessions-runtime", path: pattern.root };
+    } else if (writes && o.caller?.user !== true && o.cloverHome !== undefined) {
+      // Inside `bots/<x>/` but outside the `memory/` the pattern judges above (the agents folder and anything
+      // else a bot keeps there): readable by every caller, writable only by the user and the core. Only
+      // `memory/` is its own bot's to write.
+      const at = botsFolderChildAt(path, o.cloverHome, o.os);
+      if (at !== undefined) return { allowed: false, reason: "bot-memory", path: at };
     }
     for (const item of set) {
       if (item.deny === "caller") continue; // judged by its pattern above

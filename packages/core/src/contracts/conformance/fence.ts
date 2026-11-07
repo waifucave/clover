@@ -155,12 +155,17 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       }
       expect(f.forCaller({ kind: "user", client: "app" }).check({ op: "write", path: log }).allowed).toBe(true);
       expect(f.forCaller({ kind: "core" }).check({ op: "write", path: log }).allowed).toBe(true);
+      expect(reach(main, `${CLOVER}/bots/luna/agents/a_1.jsonl`)).toEqual([true, false]);
       // Runners: every runner is denied the whole Clover home, every bot's memory with it; the owning bot's main
       // conversation and side threads get their own back (`ownMemory`), and no other bot's.
       for (const c of [main, session("luna", "side-thread"), session(undefined, "coding"), session("luna", "agent"), { kind: "plugin", pluginId: "tarot" } as const]) {
         const p = f.forCaller(c).policy();
         expect(p.denyRead).toContain(CLOVER);
         expect(p.denyWrite).toContain(CLOVER);
+        // C's base (J's ruling): every bot's memory by its pattern, known or not, and the agents folder for every runner.
+        expect(p.denyRead).toContain(`${CLOVER}/bots/*/memory`);
+        expect(p.denyWrite).toContain(`${CLOVER}/bots/*/memory`);
+        expect(p.denyWrite.some((d) => `${CLOVER}/bots/luna/agents/a_1.jsonl`.startsWith(d))).toBe(true);
         expect(policyAllows(p, "read", `${mem("alpha")}/MEMORY.md`)).toBe(false);
       }
       expect(f.forCaller(main).policy().ownMemory).toBe(mem("luna"));
@@ -440,6 +445,9 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
         const luna = f.forCaller({ kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" });
         expect(luna.check({ op: "write", path: `${CLOVER}/bots/luna/memory/\u65E5\u8A18.md` }).allowed).toBe(true);
         expect(luna.check({ op: "write", path: `${CLOVER}/scratch/luna/caf\u00E9.md` }).allowed).toBe(true);
+        // A bot's own routines, likewise (C's #205; the home default-deny lets a bot's own sessions alone in).
+        const alpha = f.forCaller({ kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" });
+        expect(alpha.check({ op: "write", path: `${CLOVER}/routines/alpha/caf\u00E9.md` }).allowed).toBe(true);
         expect(f.check({ op: "write", path: `${HOME}/\u017Fettings.json` }).allowed).toBe(true);
       }
       expect(foldName("Stra\u00DFe")).toBe("strasse");

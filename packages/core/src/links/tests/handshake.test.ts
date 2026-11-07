@@ -142,6 +142,17 @@ describe("handshake client", () => {
   });
 });
 
+describe("a handshake request that hangs (H-M3, L11)", () => {
+  test("is given up after its timeout, as offline to the lease, never as the service's answer", async () => {
+    const client = new HandshakeClient({ baseUrl: "http://127.0.0.1:9", clock, timeoutMs: 50, fetch: (req) => new Promise((_resolve, reject) => req.signal.addEventListener("abort", () => reject(req.signal.reason))) });
+    const t0 = Date.now();
+    const err = await client.accountTicket("token").catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(HandshakeError);
+    expect((err as Error).name).toBe("TimeoutError");
+    expect(Date.now() - t0).toBeLessThan(10_000);
+  });
+});
+
 describe("who may hold a group's lease (lane I's lane/i-lease-voter, H-M2's check 3)", () => {
   test("every new tenure needs a member that votes now: a non-voter's acquire of a free lease is refused not_voter; holding on needs no vote", async () => {
     const { admitStatement, joinStatement } = await import("../handshake");

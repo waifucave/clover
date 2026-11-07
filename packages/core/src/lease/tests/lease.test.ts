@@ -88,6 +88,33 @@ describe("MainLease beyond the contract", () => {
     expect(studio.canAct()).toBe(true);
   });
 
+  test("a claim with no service answer within claimAnswerMs stops the holder, and a request that hangs counts as offline (H-M3, L11)", async () => {
+    const clock = new FakeClock();
+    const service = new MemoryLeaseService(clock);
+    const inner = service.scope("studio");
+    let hang = false;
+    const never = new Promise<never>(() => undefined);
+    const studio = new MainLease({
+      self: "studio", clock,
+      scope: () => ({ ...inner, op: (op, e, t) => (hang ? never : inner.op(op, e, t)), read: () => (hang ? never : inner.read()) }),
+    });
+    await studio.acquire();
+    expect(studio.claimAnswerMs).toBe(2_000);
+    expect(studio.requestTimeoutMs).toBe(5_000);
+    hang = true;
+    // A read that hangs: the holder doesn't know the service is gone yet.
+    const read = studio.refresh().catch((e: unknown) => e);
+    expect(studio.peerEpoch(2, undefined, "laptop")).toBe(true);
+    expect(studio.canAct()).toBe(true);
+    // The claim goes unanswered: it stops the holder, well before the deadline.
+    clock.advance(studio.claimAnswerMs);
+    expect(studio.canAct()).toBe(false);
+    // And the hanging read gives up as offline.
+    clock.advance(studio.requestTimeoutMs);
+    expect(isContractError(await read, "offline")).toBe(true);
+    expect(studio.reachable).toBe(false);
+  });
+
   test("an acquire answered after a release gives the lease back instead of holding it unasked (check 3)", async () => {
     const clock = new FakeClock();
     const service = new MemoryLeaseService(clock);
