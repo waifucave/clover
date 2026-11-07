@@ -69,4 +69,22 @@ describe("loaderReach's outside cases", () => {
     // A script too big to read can't be checked.
     expect(loaderReach(["host/big.js"], () => undefined, () => undefined).missing).toEqual([{ file: "host/big.js", field: "size", target: "" }]);
   });
+
+  test("the reviewer's plugins A, B and E are refused statically, and D is fine (#234's check 6, L4)", () => {
+    const missing = (tree: Record<string, unknown>) => reach(tree).missing.map((m) => [m.file, m.target]);
+    // A: a `paths` alias whose target doesn't exist stands in for nothing: Bun goes looking for the bare name above.
+    expect(missing({ "tsconfig.json": { compilerOptions: { paths: { ghost: ["./missing/ghost"] } } }, "host/index.ts": "import \"ghost\";\n" }))
+      .toEqual([["host/index.ts", "ghost"]]);
+    expect(missing({ "tsconfig.json": { compilerOptions: { paths: { ghost: ["./lib/ghost"] } } }, "lib/ghost.ts": "", "host/index.ts": "import \"ghost\";\n" })).toEqual([]);
+    // B: a package's `main` names a file without an extension; its imports are read all the same.
+    expect(missing({ "node_modules/dep/package.json": { name: "dep", main: "lib/index" }, "node_modules/dep/lib/index": "module.exports = require(\"ghost\");\n" }))
+      .toEqual([["node_modules/dep/lib/index", "ghost"]]);
+    // E: an `exports` condition Bun picks (`bun`) names a file of any extension; read too.
+    expect(missing({
+      "node_modules/dep/package.json": { name: "dep", exports: { ".": { bun: "./entry.bun", default: "./index.js" } } },
+      "node_modules/dep/entry.bun": "export * from \"ghost\";\n", "node_modules/dep/index.js": "",
+    })).toEqual([["node_modules/dep/entry.bun", "ghost"]]);
+    // D: a plugin that ships what it imports.
+    expect(missing({ "node_modules/dep/package.json": { name: "dep", main: "index.js" }, "node_modules/dep/index.js": "", "host/index.ts": "import \"dep\";\n" })).toEqual([]);
+  });
 });

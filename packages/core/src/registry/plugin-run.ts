@@ -29,14 +29,14 @@ import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
 
 /** Clover's bunfig for plugin processes: nothing installed at run time. */
 export const PLUGIN_BUNFIG = `# Clover's own config for plugin processes; a plugin's bunfig.toml never applies.\n[install]\nauto = "disable"\n`;
 
 /** The guard, preloaded into every plugin process. It reads its plugin's root and the shared roots from the env. */
 export const PLUGIN_GUARD_SOURCE = String.raw`// Clover's load guard for a plugin process (registry/plugin-run.ts). Generated; do not edit.
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import Module, { createRequire } from "node:module";
 import { dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,6 +56,16 @@ const guardFile = fileURLToPath(import.meta.url);
 // The guard's own folder (its run files) loads too: a worker preloads the guard from there.
 const shared = [...JSON.parse(sharedEnv), dirname(guardFile)].map(real);
 const inside = (p, r) => p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
+// A node_modules above the plugin's folder is where Bun looks for a dependency the plugin doesn't ship, and a file there
+// without an extension skips onLoad (#234's check 6, L4): this process doesn't start beside one, unless it holds
+// Clover's shared packages.
+for (let d = dirname(root); ; d = dirname(d)) {
+  const nm = d.endsWith(sep) ? d + "node_modules" : d + sep + "node_modules";
+  let found = false;
+  try { found = statSync(nm).isDirectory(); } catch {}
+  if (found && !shared.some((s) => inside(s, real(nm)))) fail("a node_modules folder at " + nm + " is above the plugin's folder; remove or move it (or move the plugin)");
+  if (dirname(d) === d) break;
+}
 const allowed = (p) => { const r = real(p); return inside(r, root) || shared.some((s) => inside(r, s)); };
 const refuse = (p) => fail("refused to load " + p + ": it is outside the plugin's own folder");
 // The filter matches every file outside the plugin's root and the shared roots, whatever its name or the loader asked
@@ -334,6 +344,38 @@ export function cloverSharedRoots(): string[] {
   return out;
 }
 
+/** The first `node_modules` folder above `pluginRoot`, to the filesystem root, that doesn't hold one of Clover's shared
+ *  package roots, or undefined (#234's check 6, L4). Bun looks there for a dependency a plugin doesn't ship, including
+ *  one a computed `import()` names, which no static check can read, so a plugin process doesn't start beside one. */
+export function nodeModulesAbove(pluginRoot: string, shared: readonly string[]): string | undefined {
+  let root: string;
+  try {
+    root = realpathSync(pluginRoot);
+  } catch {
+    root = resolve(pluginRoot);
+  }
+  const holds = (folder: string) => shared.some((s) => s === folder || s.startsWith(folder.endsWith(sep) ? folder : folder + sep));
+  for (let d = dirname(root); ; d = dirname(d)) {
+    const nm = join(d, "node_modules");
+    let real: string | undefined;
+    try {
+      real = statSync(nm).isDirectory() ? realpathSync(nm) : undefined;
+    } catch {
+      real = undefined;
+    }
+    if (real !== undefined && !holds(real)) return nm;
+    if (dirname(d) === d) return undefined;
+  }
+}
+
+/** Throws, naming the folder, when a `node_modules` sits above the plugin's folder (`nodeModulesAbove`). */
+export function refuseNodeModulesAbove(pluginRoot: string, shared: readonly string[]): void {
+  const nm = nodeModulesAbove(pluginRoot, shared);
+  if (nm !== undefined) {
+    throw new Error(`a node_modules folder at ${nm} is above the plugin's folder ${pluginRoot}: Bun would look there for a dependency the plugin doesn't ship, so its code doesn't run. Remove or move ${nm}, or move the plugin (a development folder) somewhere without one above it`);
+  }
+}
+
 /** A plugin process's environment: `base` without what changes loading, Clover's flags in `BUN_OPTIONS`, and what the
  *  guard reads. `pluginRoot` is the plugin's top-level folder. */
 export function guardedPluginEnv(base: Readonly<Record<string, string | undefined>>, o: { pluginRoot: string; files: PluginRunFiles; shared?: readonly string[] }): Record<string, string> {
@@ -347,6 +389,8 @@ export function guardedPluginEnv(base: Readonly<Record<string, string | undefine
     root = resolve(o.pluginRoot); // missing: the guard's own realpath fails, and the process loads nothing
   }
   env.CLOVER_PLUGIN_ROOT = root;
-  env.CLOVER_PLUGIN_SHARED = JSON.stringify(o.shared ?? cloverSharedRoots());
+  const shared = o.shared ?? cloverSharedRoots();
+  refuseNodeModulesAbove(root, shared);
+  env.CLOVER_PLUGIN_SHARED = JSON.stringify(shared);
   return env;
 }

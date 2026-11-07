@@ -106,8 +106,16 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
   const inside = new Set<string>();
   const outside: LoaderReach["outside"] = [];
   const missing: LoaderReach["missing"] = [];
+  /** The files Bun may load for a path it was given: the path itself, with a script extension, or its `index`. */
+  const loadCandidates = (path: string): string[] => {
+    const exts = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".json"];
+    return [...exts.map((e) => `${path}${e}`), ...exts.slice(1).map((e) => `${path}/index${e}`)].filter((c) => have.has(c));
+  };
   /** `paths` keys, as patterns: a bare import matching one is the config's alias, not a dependency. */
-  const aliases: RegExp[] = [];
+  const aliases: { pattern: RegExp; targets: string[]; base: string }[] = [];
+  /** Files a package.json entry names (`main`, `module`, `browser`, every `exports` condition, `imports`), whatever
+   *  their extension: Bun loads them, so their imports are read too (#234's check 6, L4). */
+  const named = new Set<string>();
   const seen = new Set<string>();
   const queue = files.filter((f) => TS_CONFIG.test(f));
   const parse = (path: string): Record<string, unknown> | undefined => {
@@ -158,7 +166,11 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     }
     const paths = opts.paths !== null && typeof opts.paths === "object" ? (opts.paths as Record<string, unknown>) : {};
     for (const [key, targets] of Object.entries(paths)) {
-      aliases.push(new RegExp(`^${key.split("*").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`));
+      aliases.push({
+        pattern: new RegExp(`^${key.split("*").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("(.*)")}$`),
+        targets: (Array.isArray(targets) ? targets : []).filter((t): t is string => typeof t === "string"),
+        base,
+      });
       for (const t of Array.isArray(targets) ? targets : []) {
         if (typeof t !== "string") continue;
         // A wildcard target names everything under its prefix.
@@ -220,8 +232,16 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
       const prefix = star < 0 ? target : target.slice(0, star);
       const resolved = climbsAfterStar(target) ? undefined : resolve(dirOf(file), prefix === "" ? "." : prefix);
       if (resolved === undefined) outside.push({ file, field, target });
-      else if (star < 0) inside.add(resolved);
-      else for (const f of files) if (f.startsWith(resolved)) inside.add(f);
+      else if (star < 0) {
+        inside.add(resolved);
+        for (const f of loadCandidates(resolved)) named.add(f);
+      } else {
+        for (const f of files) {
+          if (!f.startsWith(resolved)) continue;
+          inside.add(f);
+          named.add(f);
+        }
+      }
     }
   }
   // The dependencies a script imports and a package.json declares (#234's check 4, H1), shipped in the plugin's own
@@ -235,7 +255,24 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     const name = packageOf(spec);
     return name !== undefined && (SHARED_PLUGIN_PACKAGES.includes(name) || selfNames.has(name) || dependencyFolder(fromDir, spec) !== undefined);
   };
-  for (const file of files.filter((f) => CODE.test(f) && !/\.d\.[mc]?ts$/i.test(f))) {
+  // A `paths` alias stands in for a dependency only when a file it names exists (#234's check 6, L4): otherwise Bun
+  // goes on to look for the bare name in the folders above the plugin.
+  const aliasResolves = (spec: string): boolean | undefined => {
+    let matched = false;
+    for (const a of aliases) {
+      const m = a.pattern.exec(spec);
+      if (m === null) continue;
+      matched = true;
+      for (const t of a.targets) {
+        const target = t.includes("*") ? t.replace("*", m[1] ?? "") : t;
+        const path = climbsAfterStar(t) ? undefined : resolve(a.base, target);
+        if (path !== undefined && loadCandidates(path).length > 0) return true;
+      }
+    }
+    return matched ? false : undefined;
+  };
+  const scanned = files.filter((f) => (CODE.test(f) && !/\.d\.[mc]?ts$/i.test(f)) || named.has(f));
+  for (const file of scanned) {
     const text = readCode(file);
     if (text === undefined) {
       missing.push({ file, field: "size", target: "" });
@@ -254,7 +291,7 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
         if (!spec.startsWith(".") || resolve(dirOf(file), spec) === undefined) outside.push({ file, field: "import", target: spec });
         continue;
       }
-      if (aliases.some((a) => a.test(spec))) continue;
+      if (aliasResolves(spec) === true) continue;
       if (!shipped(dirOf(file), spec)) missing.push({ file, field: "import", target: spec });
     }
   }

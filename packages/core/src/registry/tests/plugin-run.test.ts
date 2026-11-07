@@ -303,6 +303,31 @@ describe("a plugin process loads only its own tree", () => {
     expect([viaShell.stdout.toString().trim(), existsSync(join(w.base, "mark"))]).toEqual(["server ran", false]);
   }, 30_000);
 
+  // C (#234's check 6, L4): a computed import() no static check can read. A node_modules above the plugin's folder is
+  // where it would land, so no plugin process starts beside one: the core refuses, naming the folder, and the guard
+  // refuses too for a process started some other way.
+  test("the reviewer's plugin C: no plugin process starts with a node_modules above its folder", () => {
+    const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-plugin-c-")));
+    const files = ensurePluginRunFiles(join(base, "run"));
+    const mark = join(base, "mark");
+    mkdirSync(join(base, "node_modules", "ghost"), { recursive: true });
+    writeFileSync(join(base, "node_modules", "ghost", "index"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`);
+    writeFileSync(join(base, "node_modules", "ghost", "package.json"), JSON.stringify({ name: "ghost", main: "index" }));
+    const root = join(base, "plugin");
+    mkdirSync(join(root, "host"), { recursive: true });
+    writeFileSync(join(root, "host", "index.ts"), "const name = [\"gh\", \"ost\"].join(\"\");\nawait import(name);\n");
+    expect(() => guardedPluginEnv({ PATH: "/bin" }, { pluginRoot: root, files, shared: [] })).toThrow(new RegExp(`node_modules folder at ${join(base, "node_modules").replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")} is above`));
+    // The guard on its own: the same environment, built without the core's check.
+    const env = { ...process.env, NODE_ENV: undefined, BUN_OPTIONS: pluginBunFlags(files).join(" "), CLOVER_PLUGIN_ROOT: root, CLOVER_PLUGIN_SHARED: "[]" };
+    const r = Bun.spawnSync([process.execPath, "host/index.ts"], { cwd: root, env, stdout: "pipe", stderr: "pipe" });
+    expect([r.exitCode === 0, r.stderr.toString().includes("is above the plugin's folder"), existsSync(mark)]).toEqual([false, true, false]);
+    // A node_modules holding Clover's shared packages is the exception.
+    expect(() => guardedPluginEnv({ PATH: "/bin" }, { pluginRoot: root, files, shared: [join(base, "node_modules", "zod")] })).not.toThrow();
+    // Gone, the plugin starts.
+    rmSync(join(base, "node_modules"), { recursive: true });
+    expect(() => guardedPluginEnv({ PATH: "/bin" }, { pluginRoot: root, files, shared: [] })).not.toThrow();
+  }, 30_000);
+
   test("a hook's bun runs guarded: the outside file never loads", async () => {
     const root = w.plugin("hook", { "hooks/check.ts": "await import(\"../../outside/evil.ts\");\n" });
     const runner = new HookRunner({ files: w.files, shared: [] });
