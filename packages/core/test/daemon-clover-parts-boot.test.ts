@@ -139,12 +139,13 @@ describe("the daemon's Clover parts, booted", () => {
     const luna = mainSessionIdFor("luna");
     await side.host.sendUser(luna, { text: "hello", device: links.key.id, sentAt: Date.now(), clientMessageId: "m1" });
     await waitFor("Luna's turn", () => bots.fakes.for(luna).running);
-    expect(daemon.updateGate.verdict()).toMatchObject({ idle: false, busy: ["bots:1"] });
+    // Counted once, as the bot side's own source (lane D's), whatever else the daemon registers.
+    expect(daemon.updateGate.verdict()).toMatchObject({ idle: false, busy: ["bot-turns:1"] });
     expect(await daemon.updateGate.closeForRestart({ timeoutMs: 1_000 })).toBe(false);
     expect(daemon.updateGate.closed).toBe(false);
     bots.fakes.for(luna).end();
     await waitFor("the turn's end", () => side.host.turnOrigin(luna) === undefined);
-    expect(daemon.updateGate.verdict().busy).not.toContain("bots:1");
+    expect(daemon.updateGate.verdict()).toEqual({ idle: true, busy: [] });
 
     // The stop: the bot side, the node and the links close (the laptop's link goes down), and the socket goes.
     const socket = daemon.socketPath;
@@ -205,6 +206,19 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(daemon.cloverParts.bots()).toBeDefined();
     const listed = await cloverCall(daemon.socketPath, cli, "device.list", {}) as { devices: { id: string; isThis: boolean }[] };
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
+  }, 30_000);
+
+  test("the daemon's own registry and drivers: the bot side starts over the plugins folder, which is made if missing", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+    });
+    await daemon.cloverParts.ready;
+    expect(daemon.cloverParts.bots()?.bots.list()).toEqual([]); // from source: no bundled plugins, none installed
+    expect(existsSync(join(home, "plugins"))).toBe(true);
   }, 30_000);
 
   test("a start that never finishes: the stop waits about 5 s, closes what started, and leaves no socket", async () => {

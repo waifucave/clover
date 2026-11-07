@@ -11,10 +11,9 @@
 //   stops running the bots, and hands them back to a returning main (`MainComputerHandle.setHandBack`). Its methods
 //   join the Clover server's handlers.
 // * **The update gate** (lane M's `RunningDaemon.updateGate`): the links renew the lease just before an update's
-//   restart (`startDaemonLinks`), and the bot side's running turns are a busy source (`bots`), so an update never
-//   restarts the daemon in the middle of one. Lane D's #246 makes the bot side take the gate itself (its own `bot-turns`
-//   source, and no new turn while it is closed); once it lands, the gate goes to `createBotSide` and this source goes,
-//   so no turn is counted twice.
+//   restart (`startDaemonLinks`), and the bot side takes the gate itself (lane D's #246): its running turns are the
+//   gate's `bot-turns` source, so an update never restarts the daemon in the middle of one, and no turn starts while
+//   an update closes the gate. Each turn is counted once, there.
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { BotSide, BotSideOptions } from "./bots/wiring";
 import { createBotSide } from "./bots/wiring";
@@ -25,11 +24,6 @@ import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
-
-/** What the parts use of the daemon's update gate (lane M's `UpdateGate`): a busy source of their own. */
-export interface PartsUpdateGate {
-  register(source: { readonly name: string; count(): number }): () => void;
-}
 
 /** What the bot side needs that the daemon builds: where the bots come from and what drives their sessions. */
 export interface DaemonBotsInput {
@@ -57,7 +51,7 @@ export interface DaemonPartsInput {
   /** The bot side; false for none. */
   bots?: false | DaemonBotsInput;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
-  updateGate?: PartsUpdateGate;
+  updateGate?: BotSideOptions["updateGate"];
   log?(line: string): void;
 }
 
@@ -129,13 +123,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
-        // TODO(#246, lane D): pass `updateGate` here once createBotSide takes it, and drop the `bots` source below.
+        // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
+        ...(input.updateGate ? { updateGate: input.updateGate } : {}),
         warn: (line) => log(`[bots] ${line}`),
       });
       side = s;
       closers.push(() => s.close());
-      // Its running turns (a bot's conversation, a side thread, an agent's) keep an update's restart waiting.
-      if (input.updateGate) closers.push(input.updateGate.register({ name: "bots", count: () => runningTurns(s) }));
       if (links?.main) {
         const handle = links.main;
         handle.setHandBack(() => s.bots.handBack());
@@ -175,9 +168,4 @@ function followMain(node: ComputerNode, main: MainComputer, links: DeviceLinks):
     offLease();
     offReg();
   };
-}
-
-/** The bot side's sessions with a turn running now. */
-export function runningTurns(side: Pick<BotSide, "host">): number {
-  return side.host.list().filter((v) => side.host.turnOrigin(v.id) !== undefined).length;
 }

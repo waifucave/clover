@@ -4,7 +4,7 @@ import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
 import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWiringOptions } from "./cowork/native-wiring";
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
@@ -133,7 +133,7 @@ import { advanceAuthorityRevision, authorityRevision } from "./authority-revisio
 import { startRuntimeState, runtimeStateOnline, type DaemonRuntimeState } from "./runtime-state/wiring";
 import { restampStep } from "./runtime-state/recovery";
 import { createWinterRuntimeSdk, describeLoadError, type WinterRuntimeSdk } from "./runtime-sdk/create";
-import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
+import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, isCompiledDaemon, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
 import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
@@ -3447,9 +3447,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let partsRegistry: OpenedRegistry | undefined;
   let partsStopping = false;
   const daemonBots = async (): Promise<DaemonBotsInput> => {
-    // The bots come from the plugins folder (B-M1's registry, signed with the store's key). TODO(lanes B and M): the
-    // app's bundled plugins (`bundledDirs`), once they ship beside the daemon.
-    const opened = await openPluginRegistry({ cloverHome, os: hostOs(), secrets: contractSecrets, log: (line) => console.error(`[plugins] ${line}`) });
+    // The bots come from the plugins folder and the app's bundled plugins (B-M1's registry, signed with the store's
+    // key). The bundled ones are lane M's place (#259): `resources/plugins` beside `resources/daemon/` for a compiled
+    // core. From source there are none here: the repository's `plugins/` holds workspace `node_modules` whose links
+    // leave the folder, which the registry refuses (B-M2 decides the dev layout, in the plugin host).
+    const bundled = isCompiledDaemon() ? join(dirname(process.execPath), "..", "plugins") : undefined;
+    mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
+    const opened = await openPluginRegistry({
+      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined && existsSync(bundled) ? { bundledDirs: [bundled] } : {}),
+      log: (line) => console.error(`[plugins] ${line}`),
+    });
     partsRegistry = opened;
     return {
       registry: opened.registry,
