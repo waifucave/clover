@@ -11,6 +11,8 @@ import { fileURLToPath } from "node:url";
 
 import { createTestHarness } from "wrangler";
 
+import { workerReady } from "../../../shared/testing/worker-ready.mjs";
+
 const config = JSON.parse(process.env.HANDSHAKE_E2E ?? "{}");
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const accountsRoot = fileURLToPath(new URL("../../../accounts", import.meta.url));
@@ -18,7 +20,7 @@ const accountsRoot = fileURLToPath(new URL("../../../accounts", import.meta.url)
 const accounts = createTestHarness({ root: accountsRoot, workers: [{ configPath: "./wrangler.jsonc" }] });
 const { url: accountsUrl } = await accounts.listen();
 await accounts.update({ root: accountsRoot, workers: [{ configPath: "./wrangler.jsonc", vars: { ISSUER: accountsUrl.origin } }] });
-await accounts.listen();
+await workerReady(await accounts.listen().then((l) => l.url), { label: "accounts (beside the handshake)" });
 
 function worker(origin) {
   return {
@@ -38,7 +40,8 @@ let { url } = await server.listen();
 // Socket URLs are built from HANDSHAKE_ORIGIN, so give it the address it is reachable at.
 await server.update({ root, workers: [worker(url.origin)] });
 ({ url } = await server.listen());
-process.stdout.write(`${JSON.stringify({ url: url.origin, accounts: accountsUrl.origin })}\n`);
+const origin = await workerReady(url, { label: "handshake" });
+process.stdout.write(`${JSON.stringify({ url: origin, accounts: accountsUrl.origin })}\n`);
 
 for await (const _ of createInterface({ input: process.stdin })) {
   // Commands may come later; for now stdin only says when to stop.
