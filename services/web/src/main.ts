@@ -6,6 +6,7 @@
 import { Companion, type Connection, PairingError, type PairRecord } from "./app";
 import { DEFAULT_ICE_SERVERS, readInvite, type RtcEnvironment } from "../protocol";
 import { IndexedDbStore } from "./store";
+import { type BrowserTab, decodableCodecs, ownerLabel, TabList, TabStreamInbox, tabTitle, TabWatch, type WatchState } from "./tabs";
 
 interface PageConfig {
   handshake: string;
@@ -37,9 +38,22 @@ function button(text: string, onClick: () => void, primary = false): HTMLButtonE
   return b;
 }
 
+/** What the current screen lets go of when the page moves on (a tab list's events, a watched tab's stream). */
+let leaveScreen: (() => void) | null = null;
+
 function show(...nodes: Node[]): void {
+  const leave = leaveScreen;
+  leaveScreen = null;
+  leave?.();
   app.replaceChildren(...nodes);
 }
+
+// Closing or leaving the page stops a watched tab's stream on the computer too.
+addEventListener("pagehide", () => {
+  const leave = leaveScreen;
+  leaveScreen = null;
+  leave?.();
+});
 
 function setStatus(text: string): void {
   status.textContent = text;
@@ -60,6 +74,17 @@ const rtc: RtcEnvironment = {
 
 let companion: Companion;
 let connection: Connection | null = null;
+/** The connection's `browser.stream` streams, to the watched tab (one per link). */
+let inbox: TabStreamInbox | null = null;
+/** What this browser decodes, asked once. */
+let codecs: ReturnType<typeof decodableCodecs> | null = null;
+
+function closeConnection(): void {
+  inbox?.close();
+  inbox = null;
+  connection?.close();
+  connection = null;
+}
 
 async function main(): Promise<void> {
   const config = (await (await fetch("/config.json")).json()) as PageConfig;
@@ -137,8 +162,7 @@ function pairScreen(invite: NonNullable<ReturnType<typeof readInvite>>): void {
 }
 
 async function connect(record: PairRecord): Promise<void> {
-  connection?.close();
-  connection = null;
+  closeConnection();
   setStatus(`Connecting to ${record.computerName}…`);
   try {
     connection = await companion.connect(record, { onEnded: () => void home() });
@@ -163,8 +187,7 @@ async function connect(record: PairRecord): Promise<void> {
 }
 
 async function forget(record: PairRecord): Promise<void> {
-  connection?.close();
-  connection = null;
+  closeConnection();
   await companion.forget(record);
   await home();
 }
@@ -175,7 +198,85 @@ async function bots(record: PairRecord): Promise<void> {
   const list = el("ul", { className: "list" });
   for (const bot of bots) list.append(el("li", {}, el("span", { text: bot.name }), button("Open", () => void chat(record, bot), true)));
   if (bots.length === 0) list.append(el("li", { className: "muted", text: "No bots yet." }));
-  show(el("div", { className: "card" }, el("h2", { text: "Bots" }), list), el("div", {}, button("Forget this computer", () => void forget(record))));
+  show(
+    el("div", { className: "card" }, el("h2", { text: "Bots" }), list),
+    el("div", { className: "actions" }, button("Browser tabs", () => void tabs(record, bots)), button("Forget this computer", () => void forget(record))),
+  );
+}
+
+/** The computer's open tabs, kept current; each can be watched live. */
+async function tabs(record: PairRecord, botList: BotView[]): Promise<void> {
+  const link = connection!.link;
+  const names = new Map(botList.map((b) => [b.id, b.name]));
+  const list = el("ul", { className: "list tabs" });
+  const note = el("p", { className: "muted", text: "Loading…" });
+  const draw = (all: BrowserTab[]) => {
+    note.textContent = all.length === 0 ? `No tabs are open on ${record.computerName}.` : "";
+    list.replaceChildren(
+      ...all.map((tab) => {
+        const where = tab.heldByUser ? "In use on the computer" : tab.place === "shown" ? "Shown on the computer" : "";
+        return el(
+          "li",
+          {},
+          el(
+            "div",
+            { className: "tab" },
+            el("span", { className: "title", text: tabTitle(tab) }),
+            el("span", { className: "url", text: tab.url }),
+            el("span", { className: "muted", text: [ownerLabel(tab.owner, names), where].filter(Boolean).join(" · ") }),
+          ),
+          button("Watch", () => void watch(record, botList, tab), true),
+        );
+      }),
+    );
+  };
+  const tabList = new TabList(link, draw);
+  show(
+    el("div", { className: "card" }, el("h2", { text: `Tabs on ${record.computerName}` }), note, list),
+    el("div", { className: "actions" }, button("All bots", () => void bots(record))),
+  );
+  leaveScreen = () => void tabList.close();
+  try {
+    await tabList.open();
+  } catch {
+    note.textContent = `${record.computerName} didn't list its tabs.`;
+  }
+}
+
+/** One tab, live. Viewing only: nothing done here reaches the tab. */
+async function watch(record: PairRecord, botList: BotView[], tab: BrowserTab): Promise<void> {
+  const link = connection!.link;
+  inbox ??= new TabStreamInbox(link);
+  codecs ??= decodableCodecs();
+  const canvas = el("canvas", { className: "live" });
+  canvas.setAttribute("aria-label", `${tabTitle(tab)}, live from ${record.computerName}`);
+  const ctx = canvas.getContext("2d");
+  const said = el("p", { className: "muted", text: "Starting…" });
+  const say = (state: WatchState) => {
+    said.textContent =
+      state.kind === "starting" ? "Starting…"
+      : state.kind === "live" ? `Live from ${record.computerName}. Viewing only.`
+      : state.kind === "ended" ? (state.reason === "closed" ? "The tab was closed." : state.reason === "stopped" ? "The stream stopped." : `The stream failed${state.message ? `: ${state.message}` : "."}`)
+      : `Can't show this tab: ${state.message}`;
+  };
+  const watching = new TabWatch(link, inbox, tab.id, {
+    codecs: await codecs,
+    onState: say,
+    onPicture: (p) => {
+      if (canvas.width !== p.width || canvas.height !== p.height) {
+        canvas.width = p.width;
+        canvas.height = p.height;
+      }
+      ctx?.drawImage(p.image, 0, 0);
+      p.close();
+    },
+  });
+  show(
+    el("div", { className: "card" }, el("h2", { text: tabTitle(tab) }), el("p", { className: "url", text: tab.url }), canvas, said),
+    el("div", { className: "actions" }, button("Back to tabs", () => void tabs(record, botList))),
+  );
+  leaveScreen = () => void watching.leave();
+  await watching.start();
 }
 
 /** One line of the transcript from a session event, when it carries text. */
