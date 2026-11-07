@@ -347,6 +347,41 @@ describe("the user layer", () => {
     await sly.shutdown();
   });
 
+  test("removing a bot's plugin turns its LAN switch off: another plugin later under the same id never gets it", async () => {
+    const { b } = await luna();
+    await b.bots.setUserLayer("luna", { lan: true, theme: "night" }, theUser);
+    expect(b.bots.lanBots()).toEqual(["luna"]);
+    // Switched off and on again: still the same plugin, the switch stays.
+    await b.registry.setEnabled("luna", false);
+    await flush();
+    await b.registry.setEnabled("luna", true);
+    await flush();
+    expect(b.bots.lanBots()).toEqual(["luna"]);
+    // Removed: the switch goes; the rest of the layer survives a reinstall as before.
+    b.registry.remove("luna");
+    await flush();
+    const stored = (h: string) => (existsSync(userLayerFile(h, "luna")) ? JSON.parse(readFileSync(userLayerFile(h, "luna"), "utf8")).fields : {});
+    expect(stored(b.home)).toEqual({ theme: "night" });
+    const dir = writePlugin(tempDir(), "luna", { "clover.json": botManifest("luna", "Not Luna"), "bot/instructions.md": "Someone else." });
+    b.registry.put((await pluginFromFolder(dir)).inputs[0]!);
+    await flush();
+    expect(b.bots.get("luna")).toBeDefined();
+    expect(b.bots.lanBots()).toEqual([]);
+    expect(b.bots.get("luna")).toMatchObject({ name: "Not Luna", theme: "night" });
+    expect(b.bots.get("luna")?.lan).toBeUndefined();
+    await b.shutdown();
+    // Removed while the daemon was off: cleared at the next start, before any plugin takes the id.
+    const { b: again, inputs } = await luna();
+    await again.bots.setUserLayer("luna", { lan: true }, theUser);
+    await again.shutdown();
+    const off = await boot({ home: again.home, plugins: [] });
+    expect(stored(again.home).lan).toBeUndefined();
+    await off.shutdown();
+    const back = await boot({ home: again.home, plugins: inputs });
+    expect(back.bots.lanBots()).toEqual([]);
+    await back.shutdown();
+  });
+
   test("a bad change is refused whole", async () => {
     const { b } = await luna();
     for (const bad of [{ model: "gpt" }, { effort: "very high" }, { instructions: "   " }, { name: 7 }, { unknown: true }]) {

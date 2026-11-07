@@ -564,6 +564,8 @@ export class BotService {
       found.set(load.bot.id, load.bot);
     }
     for (const [id, live] of [...this.#bots]) if (!found.has(id)) await this.#remove(id, live);
+    // A plugin removed while the daemon was off: its bot's LAN switch goes too.
+    for (const id of this.#layers.lanStored()) if (!this.#bots.has(id) && !found.has(id) && this.#o.registry.get(id) === undefined) this.#layers.clearLan(id);
     for (const [id, bot] of found) {
       const live = this.#bots.get(id);
       if (live) this.#update(live, bot);
@@ -625,6 +627,9 @@ export class BotService {
 
   async #remove(id: string, live: Live): Promise<void> {
     this.#bots.delete(id);
+    // Its plugin removed (not just switched off): the LAN switch goes, so it never carries over to whatever plugin
+    // later takes the id. The rest of the user layer survives a reinstall as before.
+    if (this.#o.registry.get(id) === undefined) this.#layers.clearLan(id);
     const host = this.#o.host;
     await host.release(live.mainSession);
     for (const s of host.list({ bot: id, kind: "side-thread" })) {
