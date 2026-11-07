@@ -1327,6 +1327,9 @@ async function smoke(): Promise<void> {
               log(`sealed-click: button rect=${buttonRect.x},${buttonRect.y} ${buttonRect.width}x${buttonRect.height} offset=${offsetX},${offsetY}`);
               const press = (kind: "Down" | "Up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
               log(`sealed-click: press sent at ${centerX},${centerY}`);
+              const hit = await win.webContents.executeJavaScript(
+                `(() => { const el = document.elementFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); if (!el) return "none"; const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.slice(0, 60) : null; const r = el.getBoundingClientRect(); return JSON.stringify({ tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }); })()`, true).catch(() => null) as string | null;
+              log(`sealed-click: root hit-test: ${String(hit ?? "failed").slice(0, 300)}`);
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               press("Down");
