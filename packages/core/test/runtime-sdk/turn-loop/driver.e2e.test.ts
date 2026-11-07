@@ -264,6 +264,32 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("where the host takes wakes (lane D), the runtime's own turn is handed over before any request, as one wake per task", async () => {
+    const home = tempHome();
+    const wakes: { task: string; status: string; text: string }[] = [];
+    const ctx = Object.assign(context(home, "winter-test/calls"), { wake: (w: { task: string; status: string; text: string }) => { wakes.push(w); return { disposition: "turn", seq: 1 }; } });
+    const { frames, query } = tappedQuery();
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query }));
+    try {
+      const end = await driver.turn(user('CALL Bash {"command":"sleep 1; echo finished","run_in_background":true,"description":"wait"}'), control());
+      expect(end.reason).toBe("end_turn");
+      const after = Date.now();
+      for (let i = 0; i < 100 && wakes.length === 0; i++) await Bun.sleep(100);
+      expect(wakes).toHaveLength(1);
+      expect(wakes[0]!.status).toBe("completed");
+      expect(wakes[0]!.task).toBe(String(frames.find((f) => f.msg.subtype === "task_started")!.msg.task_id));
+      expect(wakes[0]!.text.length).toBeGreaterThan(0);
+      // The runtime's own turn ended before any request: no reply, a hook-stopped result.
+      expect(frames.some((f) => f.at > after && f.msg.type === "assistant")).toBe(false);
+      expect(frames.some((f) => f.at > after && f.msg.type === "result" && f.msg.terminal_reason === "hook_stopped")).toBe(true);
+      // The host's turn for it runs through the driver like any other.
+      const next = await driver.turn({ from: "task", task: wakes[0]!.task, status: "completed", text: wakes[0]!.text } as never, control("task-notification" as never));
+      expect(next.reason).toBe("end_turn");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("a hand-back holds a turn the runtime starts on its own (mayStart), though the running turn may still act", async () => {
     const home = tempHome();
     let start = true;

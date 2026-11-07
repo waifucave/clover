@@ -150,9 +150,25 @@ interface Incarnation {
   closed: boolean;
   /** The runtime's background tasks (shells, monitors) still running, by task id. */
   tasks: Set<string>;
+  /** Tasks that ended, in the runtime's order, not yet handed to the host (`#promptHold`, `ctx.wake`). */
+  ended: TaskWake[];
+  /** Wakes for the runtime's own turns `#promptHold` ended: each goes to the host once that turn's result is in, so
+   *  the turn the host starts never takes the ended one's result for its own. */
+  wakes: TaskWake[];
   /** Looks at the pause while `tasks` isn't empty. */
   taskWatch?: ReturnType<typeof setInterval>;
 }
+
+/** A background task of the session's runtime that ended (lane D's `BotSessionContext.wake`). */
+export interface TaskWake {
+  task: string;
+  status: "completed" | "failed" | "stopped";
+  text: string;
+}
+
+/** The session's context, with lane D's `wake` where the host has it: the runtime's own notification turn is handed to
+ *  the host as input instead of running unseen. */
+type WakeContext = BotSessionContext & { wake?(w: TaskWake): unknown };
 
 /** How long the tool hook may run (seconds): a call the pause holds waits inside it (`TOOL_HOLD_MS`). */
 const TOOL_HOOK_TIMEOUT_S = 3600;
@@ -376,7 +392,16 @@ export class BotSessionDriver implements SessionDriver {
         // no while paused, or while this computer isn't the runner or hands its bots back. One the host started, and
         // an input folding into it, ask `mayAct`: a hand-back lets the running turn finish.
         const own = this.#turn === undefined || this.#turn.ended;
-        const ctx = this.#ctx;
+        const ctx = this.#ctx as WakeContext;
+        // A turn of the runtime's own, where the host takes wakes (lane D): it ends here before any request, and the
+        // notification goes to the host, which folds it into a running turn or starts one (through its `mayStart`) that
+        // reaches this driver as any turn does, logged, its usage counted.
+        if (own && typeof ctx.wake === "function") {
+          const inc = this.#inc;
+          const w = inc?.ended.shift() ?? { task: "unknown", status: "completed" as const, text: typeof (raw as { prompt?: unknown }).prompt === "string" ? (raw as { prompt: string }).prompt : "" };
+          inc?.wakes.push(w);
+          return { decision: "block" as const, reason: "Handed to the host as a background task's input." };
+        }
         const may = own && ctx.mayStart !== undefined && ctx.whenMayStart !== undefined
           ? { now: () => ctx.mayStart!(), when: (sig: AbortSignal) => ctx.whenMayStart!(sig) }
           : { now: () => ctx.mayAct(), when: (sig: AbortSignal) => ctx.whenMayAct(sig) };
@@ -546,7 +571,7 @@ export class BotSessionDriver implements SessionDriver {
       now: () => new Date().toISOString(),
       log: { warn: (message, fields) => this.#log(`bot driver ${ctx.sessionId}: ${message} ${fields === undefined ? "" : JSON.stringify(fields)}`.trim()) },
     });
-    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set() };
+    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set(), ended: [], wakes: [] };
     inc.pump = this.#pump(inc);
     this.#rebuild = false;
     return inc;
@@ -573,9 +598,9 @@ export class BotSessionDriver implements SessionDriver {
   #emit(event: { type: string; [k: string]: unknown }): void {
     if (HOST_OWNED.has(event.type)) return;
     const t = this.#turn;
-    // TODO(lane D): a turn the runtime runs on its own (a background task's notification) has no host turn, so its
-    // records (the reply, its tool calls) and its usage are dropped here. Lane D adds a driver contract for
-    // runtime-started turns (or folds them into the next host turn); this driver reports them through it then.
+    // A turn the runtime runs on its own (a background task's notification) has no host turn: where the host takes
+    // wakes (lane D's `ctx.wake`), `#promptHold` hands it over before it runs, and nothing reaches here; where it
+    // doesn't, that turn's records are dropped (it was held while paused, and ran after).
     if (t === undefined || t.ended) return;
     // While a `message.out` hook is on, the bot's text shows only after it ran (§5.3): no streaming deltas, and each
     // record waits its turn behind the reply before it, so the log keeps the runtime's order.
@@ -602,7 +627,16 @@ export class BotSessionDriver implements SessionDriver {
       if (msg.subtype === "task_started") {
         inc.tasks.add(msg.task_id);
         this.#watchTasks(inc);
-      } else if (msg.subtype === "task_notification") inc.tasks.delete(msg.task_id);
+      } else if (msg.subtype === "task_notification") {
+        inc.tasks.delete(msg.task_id);
+        // Its notification reaches the model inside a running turn (after a tool round), or as a turn of the runtime's
+        // own, which `#promptHold` hands to the host. Kept for that.
+        const status = msg.status === "failed" || msg.status === "stopped" ? msg.status : "completed";
+        const summary = typeof msg.summary === "string" ? msg.summary : `Background task ${msg.task_id} ${status}.`;
+        const out = typeof msg.output_file === "string" ? `\nIts output: ${msg.output_file}` : "";
+        inc.ended.push({ task: msg.task_id, status, text: `${summary}${out}` });
+        if (inc.ended.length > 64) inc.ended.splice(0, inc.ended.length - 64);
+      }
     }
     // In-turn compaction: the runtime's own, when the context fills (§6.3).
     if (main && msg.type === "system" && msg.subtype === "status" && msg.status === "compacting") {
@@ -616,6 +650,13 @@ export class BotSessionDriver implements SessionDriver {
     }
     for (const e of batch.broadcast) this.#emit(e as never);
     for (const e of batch.persist) this.#emit(e as never);
+    // The runtime's own turn `#promptHold` ended for the host: its wake goes now, and its result is no host turn's.
+    if (main && msg.type === "result" && msg.terminal_reason === "hook_stopped" && inc.wakes.length > 0) {
+      const w = inc.wakes.shift()!;
+      const ctx = this.#ctx as WakeContext;
+      void Promise.resolve().then(() => ctx.wake?.(w)).catch((err: unknown) => this.#log(`bot driver ${ctx.sessionId}: the host refused a background task's wake: ${err instanceof Error ? err.message : String(err)}`));
+      return;
+    }
     // A turn the runtime ran on its own (a background task's notification), with no host turn: its holds on the
     // computers' screens go at its end too.
     if (main && msg.type === "result" && (t === undefined || t.ended)) {
