@@ -3,14 +3,16 @@
 // back and follows the main; and the main puts the set-aside records after its own, marked late, behind an "Earlier
 // on <computer>" note, as history that never runs.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CloverSessionEvent, SessionEvent } from "@waifucave/clover-protocol";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import { isContractError } from "../../contracts/common";
 import type { SessionRecord } from "../../contracts/session-host";
 import { DurableSessionHost } from "../durable-host";
+import { SessionLogFile } from "../event-log";
 import { SessionGrants, USER_BROWSER_PARTITION_GRANT } from "../grants";
 import { sessionLogPath } from "../ids";
 import { projectRecords } from "../wire";
@@ -103,13 +105,24 @@ describe("a fork: the main's log wins, and the other computer's records go after
     expect(entry).toMatchObject({ fromSeq: shared, records: mine.length, from: "studio-device", at: clock.now() });
     expect(entry!.delivered).toBeUndefined();
     expect(laptop.readEarlier("b_alpha", entry!.id)).toEqual(mine);
-    expect(existsSync(sessionLogPath(laptopHome, "alpha", "b_alpha").replace(/\.ndjson$/, `.earlier-${entry!.id}.json`))).toBe(true);
+    const asideFile = sessionLogPath(laptopHome, "alpha", "b_alpha").replace(/\.ndjson$/, `.earlier-${entry!.id}.json`);
+    expect(existsSync(asideFile)).toBe(true);
+    // It holds a conversation, so only its owner reads it, as the log (review S3).
+    expect(statSync(asideFile).mode & 0o777).toBe(0o600);
     // Setting aside at the head is nothing.
     expect(laptop.setAside("b_alpha", shared, { from: "studio-device" })).toEqual([]);
 
     // The copy follows the main from the fork on.
     laptop.ingest(view, studio.history("b_alpha", { afterSeq: shared - 2 }), { from: "studio-device", late: false });
     expect(bare(laptop.history("b_alpha"))).toEqual(bare(studio.history("b_alpha")));
+
+    // While one of the main's own turns runs, it says try again (review S4); once the turn ends, it takes them.
+    await studio.sendUser("b_alpha", user("busy", "studio", 4));
+    await flush();
+    expect(isContractError(await caught(() => studio.appendLate("b_alpha", aside, { from: "laptop-device", computer: "Laptop" })), "busy")).toBe(true);
+    studioDriver.end({ text: "reply busy" });
+    await flush();
+    laptop.ingest(view, studio.history("b_alpha", { afterSeq: laptop.head("b_alpha") - 2 }), { from: "studio-device", late: false });
 
     // The main puts them after its own, behind a note; a status record is left out.
     const turnsBefore = studioDriver.turns.length;
@@ -131,7 +144,14 @@ describe("a fork: the main's log wins, and the other computer's records go after
     // Clients see the note and the laptop's messages after the main's own.
     const wire = projectRecords(studio.history("b_alpha"), { kind: "bot" });
     const texts = wire.filter((e) => e.type === "user_message" || e.type === "note").map((e) => (e.type === "note" ? `note:${String(e.label)}` : String(e.text)));
-    expect(texts).toEqual(["one", "three", "note:Earlier on Laptop", "two"]);
+    expect(texts).toEqual(["one", "three", "busy", "note:Earlier on Laptop", "two"]);
+    // On the wire they say so (review S1), through the protocol's own schemas; the main's own events don't.
+    const lateWire = wire.filter((e) => e.late === true);
+    expect(lateWire.map((e) => e.type)).toContain("note");
+    expect(lateWire.map((e) => e.type)).toContain("user_message");
+    expect(wire.filter((e) => e.type === "user_message" && e.text !== "two").every((e) => e.late === undefined)).toBe(true);
+    expect(SessionEvent.parse(lateWire.find((e) => e.type === "user_message")).late).toBe(true);
+    expect(CloverSessionEvent.parse(lateWire.find((e) => e.type === "note")).late).toBe(true);
     // History only: nothing runs, the status stays.
     studio.resume();
     await flush();
@@ -175,4 +195,81 @@ describe("a fork: the main's log wins, and the other computer's records go after
     // The once-per-place rule holds across the restart.
     expect(studio2.appendLate("b_alpha", aside, { from: "laptop-device", computer: "Laptop" })).toBe(0);
   });
+
+  test("a second fork from the same device opens its own run, with its own note (review S2)", async () => {
+    const { laptop, studio, laptopDriver, studioDriver, shared, runs, clock } = await forked();
+    const view = studio.get("b_alpha")!;
+    const first = laptop.setAside("b_alpha", shared, { from: "studio-device" });
+    laptop.ingest(view, studio.history("b_alpha", { afterSeq: shared - 2 }), { from: "studio-device", late: false });
+    studio.appendLate("b_alpha", first, { from: "laptop-device", computer: "Laptop" });
+    laptop.ingest(view, studio.history("b_alpha", { afterSeq: laptop.head("b_alpha") - 2 }), { from: "studio-device", late: false });
+    // Both write again (a second split), then the laptop hears.
+    const again = laptop.head("b_alpha");
+    runs.laptop = true;
+    clock.advance(1_000);
+    await laptop.sendUser("b_alpha", user("four", "laptop", 5));
+    await flush();
+    laptopDriver.end({ text: "reply four" });
+    await flush();
+    await studio.sendUser("b_alpha", user("five", "studio", 6));
+    await flush();
+    studioDriver.end({ text: "reply five" });
+    await flush();
+    runs.laptop = false;
+    expect(isContractError(await caught(() => laptop.ingest(view, studio.history("b_alpha", { afterSeq: again - 2 }), { from: "studio-device", late: false })), "conflict")).toBe(true);
+    const second = laptop.setAside("b_alpha", again, { from: "studio-device" });
+    // INT's call names no run: the run is named by its first place, so it gets its own note.
+    studio.appendLate("b_alpha", second, { from: "laptop-device", computer: "Laptop" });
+    const notes = studio.history("b_alpha").filter((r) => r.type === "input" && r.input.from === "note");
+    expect(notes).toHaveLength(2);
+    expect(projectRecords(studio.history("b_alpha"), { kind: "bot" }).filter((e) => e.type === "user_message" || e.type === "note").map((e) => (e.type === "note" ? "note" : String(e.text))))
+      .toEqual(["one", "three", "note", "two", "five", "note", "four"]);
+  });
+
+  test("a crash after the meta lists a run but before the cut: set aside again, appended once", async () => {
+    const { laptop, studio, shared, laptopHome, clock, runs } = await forked();
+    const cut = SessionLogFile.prototype.cut;
+    SessionLogFile.prototype.cut = function () {
+      throw new Error("power cut");
+    };
+    try {
+      expect(() => laptop.setAside("b_alpha", shared, { from: "studio-device" })).toThrow("power cut");
+    } finally {
+      SessionLogFile.prototype.cut = cut;
+    }
+    // The next start: the log is whole, and the run is listed with its file.
+    const laptop2 = new DurableSessionHost({ home: laptopHome, clock, computer: "Laptop", runsHere: () => runs.laptop, mayStart: () => runs.laptop });
+    const [run1] = laptop2.earlier("b_alpha");
+    expect(laptop2.head("b_alpha")).toBe(laptop.head("b_alpha"));
+    const records1 = laptop2.readEarlier("b_alpha", run1!.id);
+    expect(records1.length).toBe(laptop2.head("b_alpha") - shared);
+    // The sync finds the fork again and sets it aside again: a second run of the same records.
+    clock.advance(1);
+    const records2 = laptop2.setAside("b_alpha", shared, { from: "studio-device" });
+    const [, run2] = laptop2.earlier("b_alpha");
+    expect(records2).toEqual(records1);
+    expect(laptop2.head("b_alpha")).toBe(shared);
+    // Both runs reach the main: the records go in once, behind one note.
+    const head = studio.head("b_alpha");
+    const n = studio.appendLate("b_alpha", records1, { from: "laptop-device", computer: "Laptop", earlierId: run1!.id });
+    expect(n).toBe(records1.filter((r) => r.type !== "status").length);
+    expect(studio.appendLate("b_alpha", records2, { from: "laptop-device", computer: "Laptop", earlierId: run2!.id })).toBe(0);
+    expect(studio.appendLate("b_alpha", records2, { from: "laptop-device", computer: "Laptop" })).toBe(0);
+    expect(studio.head("b_alpha")).toBe(head + n + 1);
+  });
+
+  test("records already late from a third computer keep where they came from, and go in once whoever resends them", async () => {
+    const { laptop, studio, shared } = await forked();
+    const aside = laptop.setAside("b_alpha", shared, { from: "studio-device" });
+    const fromDesk = aside.filter((r) => r.type !== "status").map((r, i) => ({ ...r, late: true, lateFrom: { device: "desk-device", computer: "Desk", seq: 100 + i, ts: r.ts } })) as SessionRecord[];
+    const head = studio.head("b_alpha");
+    expect(studio.appendLate("b_alpha", fromDesk, { from: "laptop-device", computer: "Laptop" })).toBe(fromDesk.length);
+    const tail = studio.history("b_alpha", { afterSeq: head - 1 });
+    // Not the laptop's own: no "Earlier on Laptop" note opens them, and each keeps the desk's place.
+    expect(tail).toHaveLength(fromDesk.length);
+    expect(tail.map((r) => (r as { lateFrom?: { device: string; seq: number } }).lateFrom)).toEqual(fromDesk.map((r) => expect.objectContaining({ device: "desk-device", seq: (r as unknown as { lateFrom: { seq: number } }).lateFrom.seq })));
+    expect(studio.appendLate("b_alpha", fromDesk, { from: "other-device", computer: "Other" })).toBe(0);
+    expect(studio.head("b_alpha")).toBe(head + fromDesk.length);
+  });
 });
+
