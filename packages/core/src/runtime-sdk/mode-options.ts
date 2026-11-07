@@ -929,8 +929,6 @@ export function projectScopeAllowRulesFor(cwd: string, deps: {
 export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptions): string[] {
   return [
     join(home, "run"), join(home, "runtimes"), homeCacheDir(home), join(home, "plugins"), approvedProjectRulesDir(home),
-    // The dev profile's plugin Bun and its recorded digest (#234's check 6, L2), and a server's core and plugin Bun.
-    join(home, "bin"),
     trustRecordFile(home), join(home, "agents"),
     join(sdkHomeFor(home), "settings.json"), join(sdkHomeFor(home), ".clover.json"),
     join(sdkHomeFor(home), "agents"), join(sdkHomeFor(home), "plugins"),
@@ -941,6 +939,7 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
     // to replace it (`bin/`, with a package's marker beside it), the boot count and the rolled-back versions after a
     // swap (`update/`), and the install marker that decides whether the daemon updates itself. A planted binary or
     // `.old` + boot count would run unsandboxed as the daemon; a planted marker or rolled-back list stops its updates.
+    // `bin` also holds the dev profile's plugin Bun and its recorded digest (#234's check 6, L2).
     join(home, "bin"), join(home, "update"), join(home, "install.json"),
     ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => join(home, f)),
     ...hostStorageWriteRoots(home, options),
