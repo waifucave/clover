@@ -21,7 +21,9 @@ test.if(onWindows)("a bare command finds its .exe or its .cmd on PATH, never npm
   temps.push(dir);
   // A real program as `exeagent.exe`, and an npm-style bin: `cmdagent.cmd` with its sh script and .ps1 beside it.
   copyFileSync(process.execPath, join(dir, "exeagent.exe"));
-  writeFileSync(join(dir, "cmdagent.cmd"), "@echo off\r\necho cmdagent %1\r\n");
+  // `%~1`: the argument as the program gets it, without the quotes `cmd.exe /s /c` keeps around it (npm's shims pass
+  // `%*` on to node, which reads them the same way).
+  writeFileSync(join(dir, "cmdagent.cmd"), "@echo off\r\necho cmdagent %~1\r\n");
   writeFileSync(join(dir, "cmdagent"), "#!/bin/sh\necho sh\n");
   writeFileSync(join(dir, "cmdagent.ps1"), "echo ps1\n");
   for (const pathext of [process.env["PATHEXT"], undefined]) {
