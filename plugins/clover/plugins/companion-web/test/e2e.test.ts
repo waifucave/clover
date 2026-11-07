@@ -269,14 +269,16 @@ describe.skipIf(!ready)("the web companion", () => {
     const record = await b.pair(await invite(first), { onWords: () => undefined });
     first.host.stop();
     sent.length = 0;
+    // The earliest the service can see the computer online: when its socket starts connecting. The service marks it
+    // present on accepting the upgrade, which can be before this side's connect resolves, so the time is taken before
+    // the connect, never after (a signal may be sent a moment before the client hears its socket opened).
     let computerUp = Infinity;
     const second = await computer({
       store,
       connect: async (url) => {
         await Bun.sleep(1500);
-        const ws = await connectWebSocket(url);
         computerUp = Math.min(computerUp, Date.now());
-        return ws;
+        return connectWebSocket(url);
       },
     });
     await second.host.start();

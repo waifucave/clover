@@ -28,6 +28,7 @@ import { AcpAgentSession, type AgentProcess } from "../acp/session";
 import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
+import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
 
 export const CLOVER_CODE_ID = "clover-code";
 
@@ -75,6 +76,8 @@ export interface CloverCodeDeps {
   selections?: UserSelections;
   /** Test seam. */
   query?: typeof sdkQuery;
+  /** Whether the embedded runtime's sandbox can run here (`inProcessSandboxReady`); a test seam. */
+  sandboxReady?: () => boolean;
   log?(line: string): void;
 }
 
@@ -185,6 +188,7 @@ async function holdWhilePaused(gate: AgentPauseGate | undefined, signal: AbortSi
 export class CloverCodeBackend implements AgentBackend {
   readonly id = CLOVER_CODE_ID;
   readonly pluginId = "clover/agent-clover-code";
+  readonly name = "Clover's coding agent";
   readonly quirks = CLOVER_CODE_QUIRKS;
   /** Tells the manager to hand this backend the session's in-process bridge (`inProcessBridge`). */
   readonly inProcess = true;
@@ -198,7 +202,8 @@ export class CloverCodeBackend implements AgentBackend {
 
   async detect(): Promise<AgentDetection> {
     // Part of the daemon, at the SDK's version; its sandbox is the embedded runtime's, which every in-process session
-    // runs in.
+    // runs in, and which only macOS has for now.
+    if (!(this.#deps.sandboxReady ?? inProcessSandboxReady)()) return notAvailableHere(CLOVER_CODE_ID, SDK_VERSION);
     return { installed: true, version: SDK_VERSION, identityOk: true, versionOk: true, sandboxed: true };
   }
 
@@ -212,7 +217,8 @@ export class CloverCodeBackend implements AgentBackend {
     const abort = new AbortController();
     // Never a bot's own memory (`ownMemory`): an agent's policy denies all of `<home>/bots`.
     const fence = agentPolicyOf(spec.fence);
-    const gate = deps.pause;
+    // The session's own pause (the manager's, with another computer's forwarded switch for an agent run for it).
+    const gate = spec.pause ?? deps.pause;
     const pauseHook: HookCallbackMatcher[] = [{
         failClosed: true,
         timeout: 86_400,

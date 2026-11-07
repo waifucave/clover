@@ -110,6 +110,31 @@ describe("resolveWinterExecutable (P8b-2 ladder, P8d-1 bundle layout)", () => {
 // roots via its `fromUrl` parameter — never against the ambient tree (M1's "never against the
 // ambient tree" instruction) — so these tests pass identically in a tree with the platform
 // package installed and in one without, regardless of what m1's local-pack proof leaves behind.
+describe("a dist build's ladder: no environment override, no package resolution (lane M's door audit)", () => {
+  test("a dist build never resolves CLOVER_RUNTIME_EXECUTABLE, and says so once", () => {
+    const noted: string[] = [];
+    const r = resolveWinterExecutable({ ...base, env: { CLOVER_RUNTIME_EXECUTABLE: "/e/clover" }, exists: exists(["/e/clover", BUNDLE_CLOVER]), distBuild: true, noteIgnored: (n) => noted.push(n) });
+    expect(r).toEqual({ ok: true, path: BUNDLE_CLOVER, source: "bundle" });
+    expect(noted).toEqual(["CLOVER_RUNTIME_EXECUTABLE"]);
+    const none = resolveWinterExecutable({ ...base, env: { CLOVER_RUNTIME_EXECUTABLE: "/e/clover" }, exists: exists(["/e/clover"]), distBuild: true, isCompiled: true, noteIgnored: () => {} });
+    expect(none.ok).toBe(false);
+  });
+  test("the settings rung still holds in a dist build (a setting is the user's, not the environment's)", () => {
+    const r = resolveWinterExecutable({ ...base, setting: "/s/clover", env: { CLOVER_RUNTIME_EXECUTABLE: "/e/clover" }, exists: exists(["/s/clover", "/e/clover"]), distBuild: true, noteIgnored: () => {} });
+    expect(r).toEqual({ ok: true, path: "/s/clover", source: "setting" });
+  });
+  test("a dev or test build keeps the override", () => {
+    const r = resolveWinterExecutable({ ...base, env: { CLOVER_RUNTIME_EXECUTABLE: "/e/clover" }, exists: exists(["/e/clover", BUNDLE_CLOVER]), distBuild: false });
+    expect(r).toEqual({ ok: true, path: "/e/clover", source: "env" });
+  });
+  test("a compiled binary never takes the platform-package rung (NODE_PATH and the working folder's node_modules steered it)", () => {
+    let asked = false;
+    const r = resolveWinterExecutable({ ...base, exists: () => false, isCompiled: true, resolvePlatformPackageBin: () => { asked = true; return "/planted/bin/winter"; } });
+    expect(r.ok).toBe(false);
+    expect(asked).toBe(false);
+  });
+});
+
 describe("resolvePlatformPackageWinter (P9a-9, fix wave C1/M2)", () => {
   const cleanups: Array<() => void> = [];
   afterEach(() => {

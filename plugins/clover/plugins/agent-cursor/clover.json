@@ -1,0 +1,22 @@
+{
+  "manifest": 1,
+  "name": "Cursor",
+  "description": "Cursor's CLI (`cursor-agent acp`) as an agent bots can delegate to.",
+  "engines": {
+    "clover": "^1.0.0"
+  },
+  "contributes": {
+    "agentBackends": [
+      {
+        "id": "cursor",
+        "name": "Cursor",
+        "protocol": "acp",
+        "command": "cursor-agent",
+        "args": [
+          "acp"
+        ],
+        "quirks": "quirks.json"
+      }
+    ]
+  }
+}

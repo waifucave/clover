@@ -104,9 +104,13 @@
                       "voice",
                       "avatar",
                       "theme",
-                      "layout"
+                      "layout",
+                      "lan"
                     ]
                   }
+                },
+                "lan": {
+                  "type": "boolean"
                 },
                 "state": {
                   "type": "string",
@@ -257,9 +261,13 @@
                     "voice",
                     "avatar",
                     "theme",
-                    "layout"
+                    "layout",
+                    "lan"
                   ]
                 }
+              },
+              "lan": {
+                "type": "boolean"
               },
               "state": {
                 "type": "string",
@@ -460,6 +468,12 @@
                   {
                     "type": "null"
                   }
+                ]
+              },
+              "lan": {
+                "type": [
+                  "boolean",
+                  "null"
                 ]
               }
             }
@@ -2336,9 +2350,13 @@
                     "voice",
                     "avatar",
                     "theme",
-                    "layout"
+                    "layout",
+                    "lan"
                   ]
                 }
+              },
+              "lan": {
+                "type": "boolean"
               },
               "state": {
                 "type": "string",
@@ -2949,6 +2967,9 @@
           "text": {
             "type": "string",
             "maxLength": 100000
+          },
+          "failed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2959,7 +2980,8 @@
           "routine",
           "name",
           "sideThread",
-          "text"
+          "text",
+          "failed"
         ]
       }
     },

@@ -325,6 +325,28 @@ describe("the routine engine", () => {
     second.engine.stop();
   });
 
+  test("only a plugin that contributes a trigger type fires it, and never a schedule or a webhook", async () => {
+    const home = tempHome();
+    const clock = new FakeClock();
+    write(home, "slack", "id: r_slack001\ntriggers:\n  - type: slack\n    channel: \"#ops\"");
+    const bots = fakeBots();
+    const engine = new RoutineEngine({
+      home, computer: "Studio", clock, bots: bots.bots, computerLevel: () => "ask-risky", watchFiles: false, userTimeZone: () => "UTC",
+      triggerOwners: (type) => (type === "slack" ? ["pack/slack"] : []),
+    });
+    await engine.start();
+    await flush();
+    await expect(engine.fire("r_slack001", "slack", { pluginId: "pack/other" }, "hi")).rejects.toThrow("doesn't contribute the slack trigger");
+    await expect(engine.fire("r_slack001", "schedule", { pluginId: "pack/slack" })).rejects.toThrow("the core's own");
+    await expect(engine.fire("r_slack001", "webhook", { pluginId: "pack/slack" })).rejects.toThrow("the core's own");
+    expect(bots.runs).toHaveLength(0);
+    await engine.fire("r_slack001", "slack", { pluginId: "pack/slack" }, "deploy failed");
+    await flush();
+    expect(bots.runs).toHaveLength(1);
+    expect(bots.runs[0]!.text).toContain("Untrusted outside content from the slack trigger");
+    engine.stop();
+  });
+
   test("runNow answers with the side thread as it starts; a deleted file goes away", async () => {
     const home = tempHome();
     const clock = new FakeClock();

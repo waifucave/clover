@@ -20,6 +20,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { SessionRecord } from "../contracts/session-host";
 import type { FileDeviceRegistry } from "../devices/registry";
+import { mountSyncStreams } from "./streams";
 
 const PREFIX = "transcript:";
 /** Entries per push or pull. */
@@ -85,39 +86,40 @@ export class SessionRecordSync {
         queueMicrotask(() => void this.#flush());
       }
     }));
-    this.#offs.push(t.handle("sync.heads", (raw, from) => {
-      this.#mustBeComputer(from);
-      const want = (raw as { streams?: unknown } | undefined)?.streams;
-      const names = Array.isArray(want) ? new Set(want.filter((x): x is string => typeof x === "string")) : undefined;
-      const heads: Record<string, { seq: number; epoch: number }> = {};
-      for (const v of o.host.list()) {
-        const stream = `${PREFIX}${v.id}`;
-        if (names && !names.has(stream)) continue;
-        const n = o.host.head(v.id);
-        if (n === 0) continue;
-        const last = o.host.history(v.id, { afterSeq: n - 2, limit: 1 })[0];
-        heads[stream] = { seq: n - 1, epoch: last?.epoch ?? 0 };
-      }
-      return { heads };
-    }));
-    this.#offs.push(t.handle("sync.pull", (raw, from) => {
-      this.#mustBeComputer(from);
-      const p = raw as { stream?: unknown; after?: unknown; limit?: unknown } | undefined;
-      const id = sessionOf(p?.stream);
-      if (!id || typeof p?.after !== "number" || typeof p.limit !== "number") throw new ContractError("invalid", "sync.pull: bad params");
-      const view = o.host.get(id);
-      if (!view) return { entries: [], more: false };
-      const limit = Math.min(Math.max(1, Math.floor(p.limit)), BATCH);
-      const records = o.host.history(id, { afterSeq: p.after, limit: limit + 1 });
-      const page = records.slice(0, limit);
-      return { entries: page.map((r, i) => this.#entry(r, i === 0 ? view : undefined)), more: records.length > limit };
-    }));
-    this.#offs.push(t.handle("sync.push", (raw, from) => {
-      this.#mustBeComputer(from);
-      const p = raw as { stream?: unknown; base?: unknown; entries?: unknown } | undefined;
-      const id = sessionOf(p?.stream);
-      if (!id || typeof p?.base !== "number" || !Array.isArray(p.entries)) throw new ContractError("invalid", "sync.push: bad params");
-      return this.#take(id, p.base, p.entries as Entry[], from);
+    // The sync methods carry other streams too (a bot's memory, `memory.ts`): this owns `transcript:…` (streams.ts).
+    this.#offs.push(mountSyncStreams(t, PREFIX, {
+      heads: ({ streams: names }, from) => {
+        this.#mustBeComputer(from);
+        const heads: Record<string, { seq: number; epoch: number }> = {};
+        for (const v of o.host.list()) {
+          const stream = `${PREFIX}${v.id}`;
+          if (names && !names.has(stream)) continue;
+          const n = o.host.head(v.id);
+          if (n === 0) continue;
+          const last = o.host.history(v.id, { afterSeq: n - 2, limit: 1 })[0];
+          heads[stream] = { seq: n - 1, epoch: last?.epoch ?? 0 };
+        }
+        return heads;
+      },
+      pull: (raw, from) => {
+        this.#mustBeComputer(from);
+        const p = raw as { stream?: unknown; after?: unknown; limit?: unknown } | undefined;
+        const id = sessionOf(p?.stream);
+        if (!id || typeof p?.after !== "number" || typeof p.limit !== "number") throw new ContractError("invalid", "sync.pull: bad params");
+        const view = o.host.get(id);
+        if (!view) return { entries: [], more: false };
+        const limit = Math.min(Math.max(1, Math.floor(p.limit)), BATCH);
+        const records = o.host.history(id, { afterSeq: p.after, limit: limit + 1 });
+        const page = records.slice(0, limit);
+        return { entries: page.map((r, i) => this.#entry(r, i === 0 ? view : undefined)), more: records.length > limit };
+      },
+      push: (raw, from) => {
+        this.#mustBeComputer(from);
+        const p = raw as { stream?: unknown; base?: unknown; entries?: unknown } | undefined;
+        const id = sessionOf(p?.stream);
+        if (!id || typeof p?.base !== "number" || !Array.isArray(p.entries)) throw new ContractError("invalid", "sync.push: bad params");
+        return this.#take(id, p.base, p.entries as Entry[], from);
+      },
     }));
     // A link coming up: catch up from that computer, and offer it what this one writes.
     const up = new Set<string>();
@@ -132,7 +134,7 @@ export class SessionRecordSync {
   /** Pulls what `peer` holds beyond this computer's copies. */
   async catchUpFrom(peer: string): Promise<number> {
     const link = await this.#o.transport.connect(peer);
-    const { heads } = await link.request<{ heads: Record<string, { seq: number; epoch: number }> }>("sync.heads", {});
+    const { heads } = await link.request<{ heads: Record<string, { seq: number; epoch: number }> }>("sync.heads", { prefixes: [PREFIX] });
     let taken = 0;
     for (const [stream, head] of Object.entries(heads)) {
       const id = sessionOf(stream);

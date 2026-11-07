@@ -13,9 +13,10 @@
 // * **A newer epoch from a peer** (its hello, or the announcement each computer sends its links of every new epoch it
 //   learns, coordinator.ts) is a claim that another computer may hold a later lease in the same scope. Until a service
 //   answer to a request sent after it settles it, an open claim stops the holder past its deadline (acting through the
-//   exception), and before it whenever the service can't be reached; while the service answers, the holder acts on and
-//   only reads the record (H-M2's checks 3 to 7, L3 to L10). Newer means newer than the newest the service has shown
-//   this device; a peer's word never raises that.
+//   exception), and before it whenever the service can't be reached or hasn't answered within `claimAnswerMs` of the
+//   claim (a request that hangs; H-M3's L11); while the service answers, the holder acts on and only reads the record
+//   (H-M2's checks 3 to 7, L3 to L10). Newer means newer than the newest the service has shown this device; a peer's
+//   word never raises that. A lease request that takes over `requestTimeoutMs` counts as the service out of reach.
 // * **The fencing token is (scope, epoch)** (H-M2's review): epochs count within one lease record (the account's, a
 //   group's, or this computer's own), so a sign-in or a merge starts a new count. `fence()` is what an act is stamped
 //   with; `isStale(epoch, scope)` tells a receiver to refuse an act from an earlier lease: an older epoch in the
@@ -55,12 +56,20 @@ export interface MainLeaseOptions {
   /** Past the deadline (on the monotonic clock), whether this holder may still act: no other computer could take
    *  over, or it has had a live link to each one that could since before `deadline`. */
   mayOutlast?: (deadline: number) => boolean;
+  /** How long a peer's claim of a later epoch may go without a service answer before it stops the holder: 2 s, or a
+   *  ninetieth of a test lease under 10 s. */
+  claimAnswerMs?: number;
+  /** How long a lease request may take before it counts as the service out of reach: 5 s, or a sixth of a shorter
+   *  test lease. */
+  requestTimeoutMs?: number;
 }
 
 export class MainLease implements Lease {
   readonly self: string;
   readonly ttlMs: number;
   readonly marginMs: number;
+  readonly claimAnswerMs: number;
+  readonly requestTimeoutMs: number;
   readonly #o: MainLeaseOptions;
   readonly #mono: () => number;
   readonly #listeners = new Listeners<LeaseState>();
@@ -73,8 +82,10 @@ export class MainLease implements Lease {
   /** On the monotonic clock: when this device stops acting on its lease, unless an exception holds. */
   #deadline: number | null = null;
   #woke = false;
-  /** Open claims of a newer epoch in this scope, per peer (the newest each named, and when, monotonic). */
-  readonly #claims = new Map<string, { epoch: number; at: number }>();
+  /** Open claims of a newer epoch in this scope, per peer: the newest each named, when it last named one, and since
+   *  when one has been open unanswered (monotonic). */
+  readonly #claims = new Map<string, { epoch: number; at: number; first: number }>();
+  #claimTimer: TimerHandle | undefined;
   /** The last device the record named as holder (a hand-over's or hand-back's sender, after it released). */
   #lastHolder: string | null = null;
   #handingOver = false;
@@ -91,6 +102,9 @@ export class MainLease implements Lease {
     this.self = o.self;
     this.ttlMs = o.ttlMs ?? LEASE_TTL_MS;
     this.marginMs = o.marginMs ?? LEASE_MARGIN_MS;
+    // 2 s on a real lease; a short test lease scales it down, so a hang shows within a few of its samples.
+    this.claimAnswerMs = o.claimAnswerMs ?? (this.ttlMs >= 10_000 ? 2_000 : Math.max(5, Math.round(this.ttlMs / 90)));
+    this.requestTimeoutMs = o.requestTimeoutMs ?? Math.min(5_000, Math.round(this.ttlMs / 6));
     this.#mono = o.monotonic ?? (() => (o.clock as Clock).monotonic());
   }
 
@@ -123,7 +137,7 @@ export class MainLease implements Lease {
     // A peer's open claim of a later lease that the service can't settle stops it at once (check 7, L10); past the
     // deadline, acting only through the exception, any open claim does (L3 to L7).
     const claimed = this.#claimedAbove();
-    if (claimed && !this.#reachable) return false;
+    if (claimed && (!this.#reachable || this.#claimUnanswered())) return false;
     if (this.#mono() < this.#deadline) return true;
     if (claimed) return false;
     return this.#o.mayOutlast?.(this.#deadline) ?? false;
@@ -169,7 +183,7 @@ export class MainLease implements Lease {
     const k = this.#known;
     if (scope && k.holder === this.self) {
       try {
-        this.#observe(await scope.op("release", k.epoch, this.#ttlSec()));
+        this.#observe(await this.#timed(scope.op("release", k.epoch, this.#ttlSec())));
         this.#reachable = true;
       } catch (err) {
         // Refused (someone else holds it now) or unanswered: this device has stopped acting either way, and an
@@ -194,7 +208,9 @@ export class MainLease implements Lease {
     if (this.#local || (scope !== undefined && scope !== this.scopeId())) return false;
     if (epoch <= this.highestEpoch()) return false;
     const prev = this.#claims.get(from);
-    this.#claims.set(from, { epoch: Math.max(prev?.epoch ?? 0, epoch), at: this.#mono() });
+    const now = this.#mono();
+    this.#claims.set(from, { epoch: Math.max(prev?.epoch ?? 0, epoch), at: now, first: prev?.first ?? now });
+    this.#armClaimTimer();
     this.#changed();
     return true;
   }
@@ -210,10 +226,50 @@ export class MainLease implements Lease {
     return false;
   }
 
+  /** Whether a claim has been open longer than `claimAnswerMs` with no service answer since it came. */
+  #claimUnanswered(): boolean {
+    const highest = this.highestEpoch();
+    const now = this.#mono();
+    for (const c of this.#claims.values()) if (c.epoch > highest && now - c.first >= this.claimAnswerMs) return true;
+    return false;
+  }
+
+  /** Tells watchers when the oldest open claim runs out of time for an answer. */
+  #armClaimTimer(): void {
+    if (this.#claimTimer) this.#o.clock.clearTimeout(this.#claimTimer);
+    this.#claimTimer = undefined;
+    let first = Number.POSITIVE_INFINITY;
+    for (const c of this.#claims.values()) first = Math.min(first, c.first);
+    if (first === Number.POSITIVE_INFINITY) return;
+    this.#claimTimer = this.#o.clock.setTimeout(() => {
+      this.#claimTimer = undefined;
+      this.#changed();
+    }, Math.max(0, first + this.claimAnswerMs - this.#mono()));
+  }
+
+  /** A lease request, cut off as `offline` past `requestTimeoutMs` (a request that hangs; H-M3's L11). */
+  #timed<T>(p: Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = this.#o.clock.setTimeout(() => reject(new ContractError("offline", "the handshake didn't answer in time")), this.requestTimeoutMs);
+      p.then((v) => {
+        this.#o.clock.clearTimeout(timer);
+        resolve(v);
+      }, (e: unknown) => {
+        this.#o.clock.clearTimeout(timer);
+        reject(e);
+      });
+    });
+  }
+
   /** The service answered a request sent at `sent` with `epoch`: a claim it covers is settled, and one made before the
    *  request yet above what it shows was false (epochs only rise at the service). A claim made since stays open. */
   #settleClaims(epoch: number, sent: number): void {
-    for (const [from, c] of this.#claims) if (c.epoch <= epoch || c.at < sent) this.#claims.delete(from);
+    for (const [from, c] of this.#claims) {
+      if (c.epoch <= epoch || c.at < sent) this.#claims.delete(from);
+      // Named again since the request went: still open, unanswered only from then.
+      else c.first = c.at;
+    }
+    this.#armClaimTimer();
   }
 
   /** The last device the record named as holder, even once it released. */
@@ -294,7 +350,7 @@ export class MainLease implements Lease {
     if (!scope) return this.state();
     try {
       const sent = this.#mono();
-      const r = await scope.read();
+      const r = await this.#timed(scope.read());
       this.#observe(r);
       if (r.epoch >= this.#known.epoch) this.#settleClaims(r.epoch, sent);
       this.#reachable = true;
@@ -336,6 +392,7 @@ export class MainLease implements Lease {
     this.#known = { holder: null, holderRaw: null, epoch: 0, expiresAt: null };
     this.#lastHolder = null;
     this.#claims.clear();
+    this.#armClaimTimer();
     this.#local = null;
     this.#changed();
   }
@@ -346,6 +403,7 @@ export class MainLease implements Lease {
   }
 
   close(): void {
+    if (this.#claimTimer) this.#o.clock.clearTimeout(this.#claimTimer);
     if (this.#lapseTimer) this.#o.clock.clearTimeout(this.#lapseTimer);
     if (this.#deadlineTimer) this.#o.clock.clearTimeout(this.#deadlineTimer);
   }
@@ -361,7 +419,7 @@ export class MainLease implements Lease {
     const releases = this.#releases;
     let record: ScopeLease;
     try {
-      record = await scope.op(op, this.#known.epoch, this.#ttlSec());
+      record = await this.#timed(scope.op(op, this.#known.epoch, this.#ttlSec()));
     } catch (err) {
       if (err instanceof ContractError && err.code === "conflict") {
         this.#reachable = true;

@@ -34,6 +34,7 @@ import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut, sealedInputAllowed } from "./shortcuts";
+import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
@@ -85,6 +86,34 @@ let tray: AppTray | undefined;
 let mainWindow: BrowserWindow | undefined;
 let leaving = false;
 let shuttingDown = false;
+let updater: Updater | undefined;
+/** When a downloaded update installs (updater.ts): at the daemon's first idle moment, or at the user's Quit. */
+const installs = new InstallGate({
+  status: async () => {
+    const r = await pair?.client?.request<{ idle?: unknown; busy?: unknown }>("update.status", {}, 5_000);
+    return typeof r?.idle === "boolean" ? { idle: r.idle, busy: Array.isArray(r.busy) ? r.busy.map(String) : [] } : undefined;
+  },
+  apply: async () => {
+    const r = await pair?.client?.request<{ at?: unknown }>("update.apply", {}, 15_000);
+    return r?.at === "now" || r?.at === "when-idle" ? r.at : undefined;
+  },
+  exiting: () => pair.exiting("update"),
+  stopApp: () => leaveApp(),
+  daemonGone: () => daemonGone(15_000),
+  install: (relaunch) => updater?.install(relaunch) ?? false,
+  // The app's side is down and no install came: start again (the pair comes back with it), or end a Quit with an error.
+  recover: (relaunch, why) => {
+    log(`updater: ${why}; ${relaunch ? "starting again" : "quitting"}`);
+    if (relaunch) app.relaunch();
+    app.exit(relaunch ? 0 : 1);
+  },
+  after: (ms, fn) => { setTimeout(fn, ms); },
+  every: (ms, fn) => {
+    const t = setInterval(fn, ms);
+    return () => clearInterval(t);
+  },
+  log: (line) => log(line),
+});
 
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
@@ -231,7 +260,20 @@ async function ready(): Promise<void> {
   startBrowser();
   pair = makePair();
   setMenu();
+  // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
+  if (app.isPackaged) writeInstallMarker(home, installKindOf(process.platform, process.env), log);
   if (!headless) {
+    // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
+    void startUpdater({
+      packaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      log,
+      onReady: (version) => {
+        const t = (key: string) => translate(runtime.coreStrings(), `clover.core.update.ready.${key}`, { version });
+        new Notification({ title: t("title"), body: t("body") }).show();
+        void installs.downloaded(version);
+      },
+    }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
     tray = new AppTray(join(here, "tray.png"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
@@ -567,6 +609,8 @@ async function requestQuit(source: string): Promise<void> {
   log(`quit (${source}): ${choice}`);
   if (choice === "cancel") return;
   if (client !== undefined) await pair.quit(choice === "handover");
+  // With an update downloaded, the Quit installs it (the pair has stopped: nothing runs), without starting the app again.
+  if (await installs.quitting()) return;
   exitApp();
 }
 
@@ -579,7 +623,15 @@ async function restart(safe: boolean): Promise<void> {
 }
 
 function exitApp(): void {
+  leaveApp();
+  app.exit(0);
+}
+
+/** Everything of leaving but the exit itself (an update's install quits the app its own way). */
+function leaveApp(): void {
   leaving = true;
+  installs.stop();
+  updater?.stop();
   try {
     browser?.shutdown();
   } catch (err) {
@@ -587,7 +639,19 @@ function exitApp(): void {
   }
   pair?.stop();
   tray?.destroy();
-  app.exit(0);
+  tray = undefined;
+}
+
+/** Resolves once the daemon's endpoint stops answering (it stopped with the pair), or after `maxMs`. */
+async function daemonGone(maxMs: number): Promise<void> {
+  const until = Date.now() + maxMs;
+  while (Date.now() < until) {
+    const c = await dialDaemon(daemonEndpoint(home), 500);
+    if (c === undefined) return;
+    c.close();
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  log(`updater: the daemon was still answering after ${maxMs} ms; installing anyway`);
 }
 
 // ------------------------------------------------------------------------------------------------

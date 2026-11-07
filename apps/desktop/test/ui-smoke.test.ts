@@ -265,7 +265,7 @@ describe.if(enabled)("the app in Electron (UI test: CI, or locally with a backgr
     expectShell(r);
     const web = r.facts!.web as { mount: string; url: string; visible: boolean; text: string }[];
     expect(web, r.output).toHaveLength(1);
-    expect(web[0]!.url).toBe("clover-web://fixture-web/page.html");
+    expect(web[0]!.url, r.all).toBe("clover-web://fixture-web/page.html");
     expect(web[0]!.text).toContain("Fixture web page (scripted)");
     expect(web[0]!.text).toContain("bridge: none; node: none");
     // The view is drawn over its part, in the window (shown, though the window itself never is in a headless run).

@@ -6,6 +6,7 @@
 // A computer that is off answers `computer_offline` at once: the link fails a request fast when no path reaches the
 // peer, and a request in flight when the link drops fails the same way, never after a hang.
 import type { FileStat } from "@waifucave/clover-protocol";
+import { fenceParam, type ActFence } from "./fencing";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkPriority, LinkTransport } from "../contracts/link-transport";
 import type { TreeData } from "../contracts/tree";
@@ -61,7 +62,9 @@ export class RemoteHolder implements Holder {
 
   /** `computer` names the holder in errors (it may be renamed while this object lives). `ask` shows the user the
    *  holder's card when its level needs their answer (R1). */
-  constructor(opts: { transport: LinkTransport; device: string; computer: () => string; ask?: AnswerAsker }) {
+  readonly #fence: ActFence | undefined;
+  constructor(opts: { transport: LinkTransport; device: string; computer: () => string; ask?: AnswerAsker; fence?: ActFence }) {
+    this.#fence = opts.fence;
     this.#transport = opts.transport;
     this.#device = opts.device;
     this.#computer = opts.computer;
@@ -127,7 +130,9 @@ export class RemoteHolder implements Holder {
     return withAnswer(params.answer === undefined ? this.#ask : undefined, async (answer) => {
       try {
         const link = await this.#transport.connect(this.#device);
-        return await link.request<R>(method, answer ? { ...params, answer } : params, { priority });
+        // This computer's fencing token goes with every call (`fencing.ts`).
+        const sent = { ...params, ...fenceParam(this.#fence) };
+        return await link.request<R>(method, answer ? { ...sent, answer } : sent, { priority });
       } catch (e) {
         throw offlineAs(this.#computer(), e);
       }

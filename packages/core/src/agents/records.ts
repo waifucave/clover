@@ -14,6 +14,9 @@ export interface DaemonAgentRecord {
   v: 1;
   sessionId: string;
   backend: string;
+  /** The plugin whose entry the backend was (`clover/agent-cursor`, or `clover` for the core's own): a reattach goes on
+   *  only with the same plugin's backend, never another plugin's that took the id since (#233's review). */
+  pluginId?: string;
   bot?: string;
   parent?: string;
   computer: string;

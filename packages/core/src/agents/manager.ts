@@ -3,8 +3,9 @@
 // the sessions (a background agent is a session like any other), and its task notifications.
 //
 // `start` (the `Agent` tool, and `agent.start` for a coding session the user drives):
-// 1. Local placement only in M1: the computer is this one, and the root folder must be on it. Another computer and
-//    vendor clouds come with K-M3.
+// 1. The computer is this one, or another of the user's (K-M3, remote.ts): there the other computer's manager runs the
+//    agent, and this one keeps its session, transcript and task notification. The root folder must be on the computer
+//    that runs it. Vendor clouds are listed but not started yet.
 // 2. The root is a folder-tree path, resolved to a real path here; the fence refuses a root that holds the Clover home
 //    or a development folder (`checkAgentRoot`, §9.3).
 // 3. A new bridge token, the transcript folder, the daemon's own record (records.ts), and a session opened in the
@@ -33,7 +34,7 @@ import { type ActionEffect, type ApprovalBroker, type ApprovalRequest, acpOutcom
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { Fence } from "../contracts/fence";
-import type { SessionHost, TurnInput } from "../contracts/session-host";
+import type { SessionDriver, SessionHost, TurnInput } from "../contracts/session-host";
 import type { Tree } from "../contracts/tree";
 import type { AcpStartSpec, AgentWire } from "./backend";
 import { BridgeTokens } from "./bridge/tokens";
@@ -48,6 +49,7 @@ import { agentPaths } from "./paths";
 import { agentPolicyOf, homeReach, withHomeDenied } from "./memory";
 import { type DaemonAgentRecord, readAgentRecord, removeAgentRecord, writeAgentRecord } from "./records";
 import { AgentTranscript, type AgentRecordFile } from "./transcript";
+import { peerLevel, peerPromptOf, type AgentPeers, type PeerOpen } from "./remote";
 import type { StallWatchdog } from "./watchdog";
 
 export interface AgentManagerOptions {
@@ -149,6 +151,41 @@ interface Entry {
   /** Aborted when the session ends or the daemon closes: a held call never runs after that. */
   gone: AbortController;
   resumedAt?: number;
+  /** An agent this computer runs for another computer's bot (remote.ts): that computer's device. It keeps the session,
+   *  so this one opens none in its host and writes no transcript of its own. */
+  peer?: { device: string };
+}
+
+/** An agent this computer runs for another computer (B's side of remote.ts). */
+export interface PeerHostedAgent {
+  id: string;
+  driver: AgentDriver;
+  peer: { device: string };
+}
+
+/** An agent this computer's bot placed on another computer (A's side of remote.ts): its session is in this host. */
+export interface RemoteAgentEntry {
+  id: string;
+  computer: string;
+  device: string;
+  backend: string;
+  root: string;
+  bot?: string;
+  parent?: string;
+  level?: Level;
+  model?: string;
+  effort?: string;
+  transcript: AgentTranscript;
+  record: AgentRecordFile;
+  daemon: DaemonAgentRecord;
+  driver: SessionDriver & { open(): Promise<void>; detach(): void };
+  promptOf(input: TurnInput): Promise<{ text: string; images?: { mimeType: string; data: string }[] }>;
+  /** The agent's own session id, once it started there. */
+  started(agentSessionId: string): void;
+  /** The plugin whose backend runs it there, as that computer said at its first open. */
+  pinned(pluginId: string): void;
+  /** The session ended: its records go. */
+  gone(): void;
 }
 
 /** The bridge's server name starts with this; a random suffix follows, new for each session. */
@@ -158,7 +195,11 @@ const MAX_CARD_CODE = 60_000;
 export class AgentManager {
   readonly #o: AgentManagerOptions;
   readonly #entries = new Map<string, Entry>();
+  /** Agents this computer's bots placed on other computers. */
+  readonly #remote = new Map<string, RemoteAgentEntry>();
   readonly #oks: AgentOks;
+  #peers: AgentPeers | undefined;
+  #offPeerPause: (() => void) | undefined;
 
   readonly #unpause: (() => void) | undefined;
 
@@ -171,6 +212,36 @@ export class AgentManager {
       if (opts.pause!.mayAct()) return;
       for (const e of this.#entries.values()) this.#cancelForPause(e);
     });
+  }
+
+  /** Agents on other computers (remote.ts), once the daemon has a link: this computer places agents there and runs the
+   *  ones they place here. */
+  attachPeers(peers: AgentPeers): void {
+    this.#peers = peers;
+    this.#offPeerPause?.();
+    // A computer whose agents run here paused its bots: a busy one that acts without asking is cancelled, as for ours.
+    this.#offPeerPause = peers.watchPeerPause((device) => {
+      if (!peers.peerPaused(device)) return;
+      for (const e of this.#entries.values()) if (e.peer?.device === device) this.#cancelForPause(e);
+    });
+  }
+
+  /** The pause an agent answers to: this computer's switch, and for an agent run for another computer, that
+   *  computer's too (the controller's ruling: either one paused holds it; a dropped link counts as paused). */
+  #gateFor(e: Entry): AgentPauseGate | undefined {
+    const own = this.#o.pause;
+    const peers = this.#peers;
+    if (!e.peer || !peers) return own;
+    // The opener is read at each look, not once: a takeover moves the agent to another device, and the gate handed to
+    // a running in-process session (`spec.pause`) must follow it.
+    return {
+      mayAct: () => (own ? own.mayAct() : true) && !(e.peer !== undefined && peers.peerPaused(e.peer.device)),
+      watch: (fn) => {
+        const a = own?.watch?.(fn);
+        const b = peers.watchPeerPause((d) => { if (d === e.peer?.device) fn(); });
+        return () => { a?.(); b(); };
+      },
+    };
   }
 
   #cancelForPause(e: Entry, toolCallId?: string): void {
@@ -217,6 +288,9 @@ export class AgentManager {
   }
 
   async start(req: AgentRequest): Promise<{ sessionId: string; transcript: string }> {
+    const computer = req.computer ?? this.#o.computer;
+    // On another computer, that computer's backends, root, fence and level apply (remote.ts).
+    if (computer !== this.#o.computer) return this.#startRemote(req, computer);
     const backend = this.#o.backends().find((b) => b.id === req.backend);
     if (!backend) throw new ContractError("not_installed", `no agent backend named ${req.backend}`);
     // Spec §9.3 "Cloud placement": whether the stdio bridge reaches a cloud session, and what the root folder means
@@ -224,10 +298,6 @@ export class AgentManager {
     // started.
     if (backend.quirks.placement !== "local") {
       throw new ContractError("refused", `${req.backend} runs in its vendor's cloud, which doesn't start yet: whether Clover's bridge reaches a cloud session, and what the root folder means there, are still to be settled`);
-    }
-    const computer = req.computer ?? this.#o.computer;
-    if (computer !== this.#o.computer) {
-      throw new ContractError("refused", `placing an agent on ${computer} comes with K-M3; for now an agent runs on ${this.#o.computer}`);
     }
     const rootPath = this.#rootPath(req.root);
 
@@ -238,7 +308,7 @@ export class AgentManager {
     const transcript = new AgentTranscript(this.#o.home, id, bot);
     const startedAt = this.#o.clock.now();
     const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
-    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: backend.id, pluginId: backend.pluginId, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
     writeAgentRecord(this.#o.home, daemon);
     const record: AgentRecordFile = {
       v: 1, sessionId: id, backend: backend.id, computer, root: req.root, startedAt, ...who,
@@ -263,6 +333,139 @@ export class AgentManager {
     return { sessionId: id, transcript: transcript.treeWirePath };
   }
 
+  /** `Agent` on another computer (remote.ts): that computer opens the agent first, checking its backend and root, so a
+   *  refusal reaches the bot at once; then the session opens here, as for a local agent. */
+  async #startRemote(req: AgentRequest, computer: string): Promise<{ sessionId: string; transcript: string }> {
+    const peers = this.#peers;
+    if (!peers) throw new ContractError("refused", `this computer has no link to ${computer} yet, so the agent can't run there`);
+    const loc = this.#o.tree.resolve(req.root);
+    if (loc.area !== "home" || loc.computer !== computer) {
+      throw new ContractError("refused", `an agent on ${computer} works in a folder of ${computer}'s home (home/${computer}/…)`);
+    }
+    const id = `agent_${randomBytes(9).toString("base64url")}`;
+    const bot = req.caller.kind === "bot" ? req.caller.bot : undefined;
+    const parent = req.caller.kind === "bot" ? req.caller.session : undefined;
+    const level = req.caller.kind === "bot" ? req.caller.level : undefined;
+    const startedAt = this.#o.clock.now();
+    const who = { ...(bot === undefined ? {} : { bot }), ...(parent === undefined ? {} : { parent }) };
+    const daemon: DaemonAgentRecord = { v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who, ...(level === undefined ? {} : { level }) };
+    const record: AgentRecordFile = {
+      v: 1, sessionId: id, backend: req.backend, computer, root: req.root, startedAt, ...who,
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+    };
+    const r = this.#remoteEntry(peers, daemon, record);
+    try {
+      await r.driver.open();
+    } catch (err) {
+      peers.forget(id);
+      throw err;
+    }
+    // The record as it stands after the open (the plugin there pinned).
+    writeAgentRecord(this.#o.home, r.daemon);
+    r.transcript.writeRecord(record);
+    this.#remote.set(id, r);
+    this.#o.host.open({
+      id, kind: bot === undefined ? "coding" : "agent", computer, backend: req.backend, root: req.root, ...who,
+      ...(req.title === undefined ? {} : { title: req.title }),
+      ...(req.model === undefined ? {} : { model: req.model }), ...(req.effort === undefined ? {} : { effort: req.effort }),
+    }, r.driver);
+    try {
+      if (req.caller.kind === "bot") await this.#o.host.deliver(id, { from: "bot", bot: req.caller.bot, session: req.caller.session, text: req.prompt });
+      else if (req.prompt.length > 0) await this.#o.host.sendUser(id, { text: req.prompt, device: req.caller.device, clientMessageId: req.caller.clientMessageId, sentAt: req.caller.sentAt ?? this.#o.clock.now() });
+    } catch (err) {
+      await this.#o.host.stop(id, "failed to start").catch(() => {});
+      throw err;
+    }
+    return { sessionId: id, transcript: r.transcript.treeWirePath };
+  }
+
+  #remoteEntry(peers: AgentPeers, daemon: DaemonAgentRecord, record: AgentRecordFile): RemoteAgentEntry {
+    const id = daemon.sessionId;
+    const r: RemoteAgentEntry = {
+      id, computer: daemon.computer, device: "", backend: daemon.backend, root: daemon.root,
+      ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
+      ...(daemon.level === undefined ? {} : { level: daemon.level }),
+      ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
+      transcript: new AgentTranscript(this.#o.home, id, daemon.bot),
+      record, daemon,
+      driver: undefined as unknown as RemoteAgentEntry["driver"],
+      promptOf: (input) => promptOf(input),
+      started: (agentSessionId) => {
+        if (r.daemon.agentSessionId === agentSessionId) return;
+        r.daemon = { ...r.daemon, agentSessionId };
+        writeAgentRecord(this.#o.home, r.daemon);
+        r.record = { ...r.record, agentSessionId };
+        r.transcript.writeRecord(r.record);
+      },
+      pinned: (pluginId) => {
+        if (r.daemon.pluginId === pluginId) return;
+        r.daemon = { ...r.daemon, pluginId };
+        writeAgentRecord(this.#o.home, r.daemon);
+      },
+      gone: () => {
+        if (this.#remote.get(id) !== r) return;
+        this.#remote.delete(id);
+        removeAgentRecord(this.#o.home, id);
+      },
+    };
+    r.driver = peers.driver(r);
+    return r;
+  }
+
+  /** B: opens an agent another computer's bot places here (`agent.open`): this computer's backend, root, fence and
+   *  level apply, and that computer keeps the session. Opening one that is already open is done; opened by another
+   *  device (a new main after a takeover), it moves to that device, and true says so. */
+  openForPeer(o: PeerOpen, device: string): { rebound: boolean; pluginId: string } {
+    const have = this.#entries.get(o.id);
+    if (have) {
+      if (!have.peer) throw new ContractError("refused", `${o.id} is one of this computer's own agents`);
+      if (have.peer.device === device) return { rebound: false, pluginId: have.backend.pluginId };
+      have.peer.device = device;
+      return { rebound: true, pluginId: have.backend.pluginId };
+    }
+    const backend = this.#o.backends().find((b) => b.id === o.backend);
+    if (!backend) throw new ContractError("not_installed", `no agent backend named ${o.backend} on ${this.#o.computer}`);
+    // A re-open goes on only with the plugin whose backend ran it, never another that took the id since (#233).
+    if (o.pluginId !== undefined && o.pluginId !== backend.pluginId) {
+      throw new ContractError("refused", `this agent's plugin changed on ${this.#o.computer} (from ${o.pluginId} to ${backend.pluginId}), so it can't go on; start a new session`);
+    }
+    if (backend.quirks.placement !== "local") throw new ContractError("refused", `${o.backend} runs in its vendor's cloud, which doesn't start yet`);
+    const rootPath = this.#rootPath(o.root);
+    const peers = this.#peers;
+    if (!peers) throw new ContractError("refused", "this computer serves no other computer's agents yet");
+    const transcript = new AgentTranscript(this.#o.home, o.id, o.bot, undefined, { sink: (file, text) => peers.sendTranscript(entry.peer!.device, o.id, file, text) });
+    const who = { ...(o.bot === undefined ? {} : { bot: o.bot }), ...(o.parent === undefined ? {} : { parent: o.parent }) };
+    const daemon: DaemonAgentRecord = {
+      v: 1, sessionId: o.id, backend: backend.id, computer: this.#o.computer, root: o.root, startedAt: this.#o.clock.now(), ...who,
+      ...(o.level === undefined ? {} : { level: o.level }), ...(o.reattach === undefined ? {} : { agentSessionId: o.reattach }),
+    };
+    const record: AgentRecordFile = {
+      v: 1, sessionId: o.id, backend: backend.id, computer: this.#o.computer, root: o.root, startedAt: daemon.startedAt, ...who,
+      ...(o.model === undefined ? {} : { model: o.model }), ...(o.effort === undefined ? {} : { effort: o.effort }),
+    };
+    const entry: Entry = this.#entry(o.id, backend, transcript, record, daemon, rootPath, o.reattach === undefined ? undefined : { agentSessionId: o.reattach }, { device });
+    return { rebound: false, pluginId: backend.pluginId };
+  }
+
+  /** B: whether this computer runs any agent for `device`. */
+  peerHostedBy(device: string): boolean {
+    for (const e of this.#entries.values()) if (e.peer?.device === device) return true;
+    return false;
+  }
+
+  /** B: an agent run here for another computer. */
+  peerHosted(id: string): PeerHostedAgent | undefined {
+    const e = this.#entries.get(id);
+    return e?.peer ? { id, driver: e.driver, peer: e.peer } : undefined;
+  }
+
+  /** A: an agent's `SendMessage` from the computer running it, into its bot's sessions only. */
+  async remoteMessage(id: string, text: string, to?: string): Promise<void> {
+    const r = this.#remote.get(id);
+    if (!r) throw new ContractError("not_found", `no agent ${id}`);
+    await this.#deliverFromAgent(id, r.bot, r.parent, text, to);
+  }
+
   /** Reattaches a background agent or a coding session after a daemon restart: the host restored the session dormant,
    *  and the agent resumes in its next turn, with an honest `resume` or a `load` whose replay is dropped, and a new
    *  token. Who the session is comes from the host's view; the daemon's own record must agree with it and adds only
@@ -275,7 +478,7 @@ export class AgentManager {
       return false;
     };
     if (view.status === "stopped" || view.status === "failed") return refuse("it has ended");
-    if (view.computer !== this.#o.computer) return refuse(`it runs on ${view.computer}`);
+    if (view.computer !== this.#o.computer) return this.#reattachRemote(view, refuse);
     if (!view.backend || !view.root) return refuse("the host's view names no backend or root");
     if ((view.kind === "agent") !== (view.bot !== undefined)) return refuse("its kind and its bot disagree");
     const daemon = readAgentRecord(this.#o.home, view.id);
@@ -285,6 +488,27 @@ export class AgentManager {
     }
     const backend = this.#o.backends().find((b) => b.id === view.backend);
     if (!backend) return refuse(`no backend named ${view.backend}`);
+    // Another plugin that took the id since (the bundled one switched off, a third party's on) never gets the session:
+    // its program would see the agent's session id and root. The session ends, saying why.
+    // A record from before the plugin was kept goes on only with Clover's own backend (the bundled `clover/agent-<id>`,
+    // or a core one), and keeps it from now on.
+    const own = (backend as { bundled?: boolean }).bundled === true || (backend as { inProcess?: boolean }).inProcess === true;
+    if (daemon.pluginId === undefined && own) {
+      daemon.pluginId = backend.pluginId;
+      writeAgentRecord(this.#o.home, daemon);
+    }
+    if (daemon.pluginId !== backend.pluginId) {
+      const why = `its agent's plugin changed (from ${daemon.pluginId ?? "an unknown one"} to ${backend.pluginId}), so it can't go on; start a new session`;
+      if (this.#o.host.get(view.id)) {
+        // A note in its log says why, for the user who opens it; then it ends.
+        const host = this.#o.host;
+        void (async () => {
+          await host.deliver(view.id, { from: "note", label: "Agent", text: `This agent session ended: ${why}.`, by: { kind: "core" } }).catch(() => {});
+          await host.stop(view.id, why).catch(() => {});
+        })();
+      }
+      return refuse(why);
+    }
     let rootPath: string;
     try {
       rootPath = this.#rootPath(view.root);
@@ -307,7 +531,36 @@ export class AgentManager {
     return true;
   }
 
-  #entry(id: string, backend: AgentBackend, transcript: AgentTranscript, record: AgentRecordFile, daemon: DaemonAgentRecord, rootPath: string, reattach?: { agentSessionId: string }): Entry {
+  /** A: an agent this computer's bot placed on another computer, after this daemon restarted: its session is opened
+   *  here again, and its first turn opens the agent there again, resuming its own session. */
+  #reattachRemote(view: SessionView, refuse: (why: string) => boolean): boolean {
+    if (!this.#peers) return refuse(`it runs on ${view.computer}, and this computer has no link yet`);
+    if (this.#remote.has(view.id)) return false;
+    if (!view.backend || !view.root) return refuse("the host's view names no backend or root");
+    if ((view.kind === "agent") !== (view.bot !== undefined)) return refuse("its kind and its bot disagree");
+    const daemon = readAgentRecord(this.#o.home, view.id);
+    if (!daemon) return refuse("the daemon's record of it is missing");
+    if (daemon.backend !== view.backend || daemon.root !== view.root || daemon.computer !== view.computer || daemon.bot !== view.bot || daemon.parent !== view.parent) {
+      return refuse("the daemon's record doesn't match the session");
+    }
+    const record: AgentRecordFile = {
+      v: 1, sessionId: view.id, backend: daemon.backend, computer: daemon.computer, root: daemon.root, startedAt: daemon.startedAt,
+      ...(daemon.agentSessionId === undefined ? {} : { agentSessionId: daemon.agentSessionId }),
+      ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
+      ...(view.model === undefined ? {} : { model: view.model }), ...(view.effort === undefined ? {} : { effort: view.effort }),
+    };
+    const r = this.#remoteEntry(this.#peers, daemon, record);
+    this.#remote.set(view.id, r);
+    this.#o.host.open({
+      id: view.id, kind: view.kind, computer: view.computer, backend: daemon.backend, root: daemon.root,
+      ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
+      ...(view.title === undefined ? {} : { title: view.title }),
+      ...(view.model === undefined ? {} : { model: view.model }), ...(view.effort === undefined ? {} : { effort: view.effort }),
+    }, r.driver);
+    return true;
+  }
+
+  #entry(id: string, backend: AgentBackend, transcript: AgentTranscript, record: AgentRecordFile, daemon: DaemonAgentRecord, rootPath: string, reattach?: { agentSessionId: string }, peer?: { device: string }): Entry {
     const token = this.#o.tokens.mint(id);
     transcript.redact(token);
     const entry = {
@@ -316,10 +569,12 @@ export class AgentManager {
       ...(daemon.bot === undefined ? {} : { bot: daemon.bot }), ...(daemon.parent === undefined ? {} : { parent: daemon.parent }),
       ...(record.model === undefined ? {} : { model: record.model }), ...(record.effort === undefined ? {} : { effort: record.effort }),
       ...(daemon.level === undefined ? {} : { level: daemon.level }),
+      ...(peer === undefined ? {} : { peer }),
     } as Entry;
     entry.driver = new AgentDriver({
       start: () => this.#startAgent(entry, reattach),
-      promptOf: (input) => promptOf(input),
+      // A turn another computer sent carries the prompt it built there (its images read there).
+      promptOf: async (input) => peerPromptOf(input) ?? promptOf(input),
       redact: (v) => transcript.redacted(v),
       // A paused agent is sent no new prompt until the switch is back.
       beforeTurn: async (session) => {
@@ -338,7 +593,7 @@ export class AgentManager {
         this.#o.approvals.cancelSession(id);
         if (this.#entries.get(id) === entry) {
           this.#entries.delete(id);
-          removeAgentRecord(this.#o.home, id);
+          if (!entry.peer) removeAgentRecord(this.#o.home, id);
         }
       },
     });
@@ -348,13 +603,23 @@ export class AgentManager {
 
   /** The level the session's permission requests are judged at: a routine's raised level, or its computer's. */
   #levelOf(e: Entry): Level {
-    return e.level ?? this.#o.levelOf?.(e.computer) ?? "read-only";
+    const own = this.#o.levelOf?.(e.computer) ?? "read-only";
+    // Another computer's routine level counts here only when it isn't above this computer's own (remote.ts).
+    if (e.peer) return peerLevel(e.level, own);
+    return e.level ?? own;
+  }
+
+  /** A routine's level as the broker and the plugin tools see it: for an agent run for another computer, never above
+   *  this computer's own. */
+  #routineLevelOf(e: Entry): Level | undefined {
+    if (e.level === undefined) return undefined;
+    return e.peer ? this.#levelOf(e) : e.level;
   }
 
   /** While paused (the owner's ruling), waits until the switch is back, or the turn is withdrawn. A held agent isn't
    *  stalled. */
   async #hold(e: Entry): Promise<void> {
-    const gate = this.#o.pause;
+    const gate = this.#gateFor(e);
     if (e.gone.signal.aborted) throw new ContractError("closed", "this agent's session has ended");
     if (!gate || gate.mayAct()) return;
     const signals = [e.driver.currentSignal(), e.gone.signal].filter((x): x is AbortSignal => x !== undefined);
@@ -465,6 +730,8 @@ export class AgentManager {
       fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
+      // A backend that holds its own tool calls (the in-process ones, which ask nothing for a read) holds on this.
+      ...(this.#gateFor(e) === undefined ? {} : { pause: this.#gateFor(e)! }),
       admitted,
       // A backend inside the daemon (Clover's coding agent) gets the bridge in-process: its calls check the session's
       // token is still live, as the socket's do.
@@ -477,7 +744,8 @@ export class AgentManager {
     const pid = (session as { pid?: number }).pid;
     if (pid) this.#o.tokens.bind(e.id, pid);
     e.daemon = { ...e.daemon, agentSessionId: session.agentSessionId };
-    writeAgentRecord(this.#o.home, e.daemon);
+    // The computer that keeps the session keeps the record of an agent run for it.
+    if (!e.peer) writeAgentRecord(this.#o.home, e.daemon);
     e.record = { ...e.record, agentSessionId: session.agentSessionId };
     e.transcript.writeRecord(e.record);
     session.onPermission((ask) => this.#permission(e, ask));
@@ -485,7 +753,8 @@ export class AgentManager {
     // its next tool call instead, and the next turn waits for the switch.
     if (e.backend.quirks.marks.includes("unasked-actions")) {
       session.onEvent((ev) => {
-        if (ev.type !== "tool_call" || !this.#o.pause || this.#o.pause.mayAct()) return;
+        const gate = this.#gateFor(e);
+        if (ev.type !== "tool_call" || !gate || gate.mayAct()) return;
         this.#cancelForPause(e, ev.id);
       });
     }
@@ -532,7 +801,13 @@ export class AgentManager {
           { label: "Started by", value: e.bot === undefined ? "You" : sealedText(e.bot, 4000) },
           { label: "Folder", value: sealedText(e.root, 4000) },
         ] },
-        detail: { type: "rows", rows: [{ label: "Why", value: sealedText(reason, 4000) }] },
+        detail: { type: "rows", rows: [
+          { label: "Why", value: sealedText(reason, 4000) },
+          // Every environment name it gets, from this computer's (by name) and set for it: a pattern can't tell every
+          // secret, so the user sees them all (#233's review).
+          { label: "Gets from your environment", value: sealedText(e.backend.quirks.launch.envAllow.join(", ") || "nothing", 4000) },
+          { label: "Sets in its environment", value: sealedText(Object.keys(e.backend.quirks.launch.envSet).join(", ") || "nothing", 4000) },
+        ] },
       },
     }, signal ? { signal } : {});
     if (!decision.allowed) {
@@ -575,7 +850,7 @@ export class AgentManager {
       ...(e.bot === undefined ? {} : { bot: e.bot }),
       origin,
       computers: [e.computer],
-      ...(e.level === undefined ? {} : { level: e.level }),
+      ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }),
       effect: effectOf(ask.toolKind),
       paths: ask.paths,
       ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
@@ -592,6 +867,12 @@ export class AgentManager {
       },
     };
     const decision = await this.#o.approvals.request(req, signal ? { signal } : {});
+    // The turn or the session ended while the card was out: an allow that was already on its way doesn't count, for
+    // every backend, whatever it checks itself.
+    if (decision.allowed && (signal?.aborted === true || e.gone.signal.aborted)) {
+      e.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: ask.toolCallId, toolKind: ask.toolKind, allowed: false, by: "cancelled", ...(decision.cardId ? { cardId: decision.cardId } : {}) });
+      return { outcome: "cancelled" };
+    }
     e.transcript.call({
       ts: this.#o.clock.now(), type: "permission", toolCallId: ask.toolCallId, toolKind: ask.toolKind,
       allowed: decision.allowed, by: decision.by, ...(decision.cardId ? { cardId: decision.cardId } : {}), ...(decision.remembered ? { remembered: true } : {}),
@@ -640,6 +921,13 @@ export class AgentManager {
 
   /** `session.setModel` on an agent or coding session (item 90's model picker). */
   async setModel(sessionId: string, model: string, effort?: string): Promise<void> {
+    const r = this.#remote.get(sessionId);
+    if (r) {
+      await r.driver.setModel?.(model, effort);
+      r.record = { ...r.record, model, ...(effort === undefined ? {} : { effort }) };
+      r.transcript.writeRecord(r.record);
+      return;
+    }
     const e = this.#entries.get(sessionId);
     if (!e) throw new ContractError("not_found", `no agent ${sessionId} on this computer`);
     await e.driver.setModel(model, effort);
@@ -651,6 +939,10 @@ export class AgentManager {
    *  next daemon reattaches the sessions the host restores. */
   async close(): Promise<void> {
     this.#unpause?.();
+    this.#offPeerPause?.();
+    // Agents on other computers stay there for the next daemon, which opens them again.
+    for (const r of this.#remote.values()) r.driver.detach();
+    this.#remote.clear();
     const entries = [...this.#entries.values()];
     this.#entries.clear();
     await Promise.all(entries.map(async (e) => {
@@ -692,7 +984,7 @@ export class AgentManager {
         const signal = e.driver.currentSignal();
         return source.call(id, c, {
           computer: e.computer, origin: e.driver.currentOrigin() ?? "agent",
-          ...(e.bot === undefined ? {} : { bot: e.bot }), ...(e.level === undefined ? {} : { level: e.level }), ...(signal ? { signal } : {}),
+          ...(e.bot === undefined ? {} : { bot: e.bot }), ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }), ...(signal ? { signal } : {}),
         });
       },
       sendMessage: async (id, m) => {
@@ -707,11 +999,20 @@ export class AgentManager {
   async agentMessage(sessionId: string, text: string, to?: string): Promise<void> {
     const e = this.#entries.get(sessionId);
     if (!e) throw new ContractError("not_found", `no agent ${sessionId}`);
-    const target = to ?? e.parent;
+    // An agent run here for another computer's bot: that computer checks where it may go and delivers it.
+    if (e.peer) {
+      if (!this.#peers) throw new ContractError("closed", "this computer has no link to the bot's computer");
+      return this.#peers.sendMessage(e.peer.device, sessionId, text, to);
+    }
+    await this.#deliverFromAgent(sessionId, e.bot, e.parent, text, to);
+  }
+
+  async #deliverFromAgent(sessionId: string, bot: string | undefined, parent: string | undefined, text: string, to?: string): Promise<void> {
+    const target = to ?? parent;
     if (!target) throw new ContractError("refused", "this session has no bot to message");
     if (target === sessionId) throw new ContractError("refused", "that is this agent's own session; SendMessage reaches another one");
     const view = this.#o.host.get(target);
-    if (!view || view.bot === undefined || view.bot !== e.bot) throw new ContractError("refused", "an agent may message only its own bot's sessions");
+    if (!view || view.bot === undefined || view.bot !== bot) throw new ContractError("refused", "an agent may message only its own bot's sessions");
     await this.#o.host.deliver(target, { from: "agent", agent: sessionId, text });
   }
 }
@@ -803,5 +1104,7 @@ export async function promptOf(input: TurnInput): Promise<{ text: string; images
       return { text: `Message from the plugin ${input.pluginId}:\n\n${input.text}` };
     case "note":
       return { text: `[${input.label}] ${input.text}` };
+    case "task":
+      return { text: input.status === "event" ? `Background task ${input.task} reported an event:\n\n${input.text}` : `Background task ${input.task} ${input.status}:\n\n${input.text}` };
   }
 }

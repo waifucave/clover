@@ -11,6 +11,7 @@
 // * A plain `mv A B` or `cp -r A B` whose ends are on different computers (no shell sees both: nothing is mounted)
 //   takes the tree's direct path instead (the owner's item 89): the files go holder to holder.
 // * A computer that is off answers `computer_offline` at once.
+import { fenceParam, type ActFence } from "./fencing";
 import type { Caller, Level, SessionKind, SignedCardAnswer } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
@@ -64,6 +65,8 @@ export interface TreeToolsOptions {
   /** Bash on this computer: its holder (for the folder) and its executor (lanes A and C). */
   local?: { holder: LocalHolder; executor: ToolExecutor };
   /** Shows the user the holder's card when its level needs their answer, and gives back the signed answer (R1). */
+  /** This computer's fencing token, on every call it asks of another (`fencing.ts`). */
+  fence?: ActFence;
   ask?: AnswerAsker;
 }
 
@@ -261,10 +264,10 @@ export class TreeTools {
       this.#outputs.delete(key);
       throw offlineAs(loc.computer, e);
     }
-    const off = ctx.signal ? onAbort(ctx.signal, () => { void link.request("tool.cancel", { session: ctx.session, callId: ctx.callId }).catch(() => {}); }) : () => {};
+    const off = ctx.signal ? onAbort(ctx.signal, () => { void link.request("tool.cancel", { session: ctx.session, callId: ctx.callId, ...fenceParam(this.#o.fence) }).catch(() => {}); }) : () => {};
     try {
       const r = await withAnswer(ctx.answer === undefined ? this.#o.ask : undefined, (answer) => link.request<{ output: unknown; isError: boolean }>("tool.run", {
-        session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: "Bash", input, level,
+        session: ctx.session, callId: ctx.callId, epoch: ctx.epoch ?? 0, tool: "Bash", input, level, ...fenceParam(this.#o.fence),
         ...((answer ?? ctx.answer) === undefined ? {} : { answer: answer ?? ctx.answer }),
       }, { priority: "control" }));
       return { ...r, computer: loc.computer, cwd };

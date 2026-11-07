@@ -16,6 +16,7 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Os } from "@waifucave/clover-protocol";
+import type { AgentPauseGate } from "./manager";
 import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
@@ -46,6 +47,10 @@ export interface BackendCommand {
 export interface AcpBackendOptions {
   id: string;
   pluginId: string;
+  /** Clover's own bundled `clover/agent-<id>` entry (what the core grants by id applies). */
+  bundled?: boolean;
+  /** Its `agentBackends` entry's name, for Settings. */
+  name?: string;
   quirks: AgentQuirks;
   clock: Clock;
   /** Overrides the quirks' command (an `agentBackends` entry's `command` and `args`). */
@@ -71,7 +76,7 @@ export interface AcpBackendOptions {
   selections?: UserSelections;
   /** Makes the Windows job object for one agent; lane C's `AgentJob.create` by default. */
   makeJob?: () => AgentJobLike | null;
-  /** The agent's read-only mode, for an agent that acts without asking (`READ_ONLY_MODES`). */
+  /** The agent's read-only mode, for an agent that acts without asking (its quirks file's `readOnlyMode`). */
   readOnlyMode?: { option: string; values: readonly string[] };
 }
 
@@ -84,6 +89,9 @@ export interface AcpStartSpec extends AgentStartSpec {
   /** For a backend that runs inside the daemon (`inProcess`): the session's bridge as an in-process MCP server, which it
    *  serves in place of the stdio `bridge` (there is no process to bind a token to). */
   inProcessBridge?: McpSdkServerConfigWithInstance;
+  /** The pause this session answers to, for a backend that holds its own tool calls (the in-process ones): the
+   *  manager's switch, and for an agent run for another computer, that computer's forwarded switch too (remote.ts). */
+  pause?: AgentPauseGate;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -108,6 +116,8 @@ export function currentOs(): Os {
 export class AcpAgentBackend implements AgentBackend {
   readonly id: string;
   readonly pluginId: string;
+  readonly bundled: boolean;
+  readonly name: string | undefined;
   readonly quirks: AgentQuirks;
   readonly #opts: AcpBackendOptions;
   readonly #selections: UserSelections;
@@ -115,6 +125,8 @@ export class AcpAgentBackend implements AgentBackend {
   constructor(opts: AcpBackendOptions) {
     this.id = opts.id;
     this.pluginId = opts.pluginId;
+    this.bundled = opts.bundled === true;
+    this.name = opts.name;
     this.quirks = opts.quirks;
     this.#opts = opts;
     this.#selections = opts.selections ?? new UserSelections();

@@ -1848,6 +1848,9 @@
                   "text": {
                     "type": "string",
                     "maxLength": 1000000
+                  },
+                  "failed": {
+                    "type": "boolean"
                   }
                 },
                 "required": [

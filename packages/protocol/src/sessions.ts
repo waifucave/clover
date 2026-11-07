@@ -35,7 +35,10 @@ export const BotView = z.object({
   voice: z.object({ provider: utf16(128), voice: utf16(256), model: utf16(128).optional() }).optional(),
   theme: utf16(256).optional(),
   /** The fields the user layer sets over the plugin's (§6.1). */
-  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout"])),
+  userLayer: z.array(z.enum(["name", "instructions", "model", "effort", "voice", "avatar", "theme", "layout", "lan"])),
+  /** The bot's browser tabs may reach the LAN (private and link-local addresses; never loopback or metadata, lane L's
+   *  #260). Only the person sets it, in the user layer (`bot.setUserLayer`, theirs alone); it is never a plugin's. */
+  lan: z.boolean().optional(),
   state: BotState,
   /** The computer running its main conversation (the main, or the takeover computer). */
   computer: ComputerName.optional(),
@@ -54,6 +57,10 @@ export const UserLayerPatch = z.object({
   avatar: z.object({ file: utf16(4096), format: utf16(32), portrait: utf16(4096).optional() }).nullable().optional(),
   theme: utf16(256).nullable().optional(),
   layout: utf16(4096).nullable().optional(),
+  /** The bot's LAN setting (lane L's `lanBots`): written only by the person, through their own app or terminal, or a
+   *  sealed card a plugin's request becomes. A bot, a session or a plugin never sets it: `bot.setUserLayer` is the
+   *  user's alone, and a plugin's `bot` entry has no such field. */
+  lan: z.boolean().nullable().optional(),
 });
 export type UserLayerPatch = z.infer<typeof UserLayerPatch>;
 
@@ -419,6 +426,9 @@ export const AgentFinishedEvent = sessionEvent("agent_finished", {
 /** A routine run's short result, posted into the bot's main conversation (§7). */
 export const RoutineResultEvent = sessionEvent("routine_result", {
   routine: utf16(128), name: utf16(200), sideThread: SessionId, text: utf16(100_000),
+  /** The run didn't finish well: an error, a timeout, a refusal, or it was stopped or cut off (lane G's notifier shows
+   *  only these when the user asks for routine failures). */
+  failed: z.boolean(),
 });
 /** A labelled note: a plugin's (`conversation.post`), a `turn.start` hook's, or the core's (servers added between
  *  compactions, §6.1). */
@@ -504,7 +514,7 @@ export const SESSIONS_EVENTS = {
   }),
   routineResult: defineEvent({
     type: "routine_result", owner: "D", roles: READERS, capability: "conversation.read", scope: "session", schema: RoutineResultEvent,
-    fixture: { type: "routine_result", seq: 15, sessionId: "s_alpha", ts: 1781270003000, routine: "r_morning", name: "Morning brief", sideThread: "s_side_9", text: "3 new issues, no failed deploys." },
+    fixture: { type: "routine_result", seq: 15, sessionId: "s_alpha", ts: 1781270003000, routine: "r_morning", name: "Morning brief", sideThread: "s_side_9", text: "3 new issues, no failed deploys.", failed: false },
     doc: "A routine run's result in the main conversation.",
   }),
   note: defineEvent({

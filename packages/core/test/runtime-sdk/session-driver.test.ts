@@ -921,6 +921,25 @@ describe("open()'s replay passes the pre-turn credential gate (N2)", () => {
 
   // R.1 ruling 1: a model the catalog RETIRED with no rename (stored before the upgrade) is refused typed at
   // the pre-turn gate — before any child, before the credential question (no key makes it runnable).
+  test("M-M2: while the update gate closes for a restart, a new turn is refused typed (update-restarting), nothing appended; after it reopens the turn runs", async () => {
+    let closing = false;
+    const t = table({ updateClosing: () => closing });
+    try {
+      const sid = t.store.createSession("t", { mode: "chat", model: "winter-test/echo" });
+      const session = await t.drivers.create(sid);
+      closing = true;
+      const before = t.store.read(sid).length;
+      let caught: unknown;
+      try { await session.send("during the restart", "cli"); } catch (err) { caught = err; }
+      expect((caught as { code?: string })?.code).toBe("daemon_shutting_down");
+      expect((caught as { reason?: string })?.reason).toBe("update-restarting");
+      expect((caught as Error).message).toContain("restarting for an update");
+      expect(t.store.read(sid).length).toBe(before);
+      closing = false;
+      expect((await session.send("after it", "cli")).queued).toBe(false);
+    } finally { t.close(); }
+  });
+
   test("a retired catalog tag is refused typed before the turn (model-not-in-catalog), with no child and nothing consumed", async () => {
     const t = table();
     try {

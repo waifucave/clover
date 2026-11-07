@@ -7,6 +7,8 @@ name: release
 #   macOS     the dmg and its update zip (Apple silicon); this run's is unsigned, for checking, not for release
 #   Windows   the per-user installer (x64), unsigned (spec §13)
 #   Linux     deb, rpm and AppImage for x64 and arm64, each built and checked on its own architecture
+# Only from main: every job refuses another ref first. Each build records the commit it is of
+# (BUILD-COMMIT-<os>.txt), and the owner's step tags the release at it.
 
 on:
   workflow_dispatch:
@@ -44,6 +46,11 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Only from main
+        env:
+          REF: ${{ github.ref }}
+        run: test "$REF" = refs/heads/main || { echo "::error::a release builds from main, not $REF"; exit 1; }
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -64,7 +71,9 @@ jobs:
       - name: Build the release (unsigned)
         env:
           CHANNEL: ${{ inputs.channel }}
-        run: bun scripts/release/build.ts --channel "$CHANNEL"
+        run: |
+          bun scripts/release/build.ts --channel "$CHANNEL"
+          test "$(cat apps/desktop/out/dist/BUILD-COMMIT-${{ matrix.os }}.txt)" = "$GITHUB_SHA"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -74,8 +83,10 @@ jobs:
             apps/desktop/out/dist/*.zip
             apps/desktop/out/dist/*.exe
             apps/desktop/out/dist/*.yml
+            apps/desktop/out/dist/clover-core-*
             apps/desktop/out/dist/*.blockmap
             apps/desktop/out/dist/SHA256SUMS-*.txt
+            apps/desktop/out/dist/BUILD-COMMIT-*.txt
           if-no-files-found: error
 
   linux:
@@ -89,6 +100,11 @@ jobs:
           - { arch: x64, runner: ubuntu-24.04 }
           - { arch: arm64, runner: ubuntu-24.04-arm }
     steps:
+      - name: Only from main
+        env:
+          REF: ${{ github.ref }}
+        run: test "$REF" = refs/heads/main || { echo "::error::a release builds from main, not $REF"; exit 1; }
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -114,7 +130,8 @@ jobs:
           CHANNEL: ${{ inputs.channel }}
         run: |
           bun scripts/build-packages.ts --arch ${{ matrix.arch }} --channel "$CHANNEL" --check
-          cd apps/desktop/out/dist && sha256sum *.deb *.rpm *.AppImage *.yml > SHA256SUMS-linux-${{ matrix.arch }}.txt
+          cd apps/desktop/out/dist && sha256sum *.deb *.rpm *.AppImage *.yml clover-core-* > SHA256SUMS-linux-${{ matrix.arch }}.txt
+          test "$(cat BUILD-COMMIT-linux-${{ matrix.arch }}.txt)" = "$GITHUB_SHA"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -124,6 +141,8 @@ jobs:
             apps/desktop/out/dist/*.rpm
             apps/desktop/out/dist/*.AppImage
             apps/desktop/out/dist/*.yml
+            apps/desktop/out/dist/clover-core-*
             apps/desktop/out/dist/*.blockmap
             apps/desktop/out/dist/SHA256SUMS-*.txt
+            apps/desktop/out/dist/BUILD-COMMIT-*.txt
           if-no-files-found: error

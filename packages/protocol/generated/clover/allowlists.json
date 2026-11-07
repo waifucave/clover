@@ -22,7 +22,6 @@
       "browser.report",
       "browser.screenshot",
       "browser.show",
-      "browser.stream",
       "browser.tabs",
       "card.answer",
       "card.frame",

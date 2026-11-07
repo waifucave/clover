@@ -209,7 +209,7 @@ describe("the sessions area's methods", () => {
   });
 
   test("session.stageImage is the user's; a phone names exactly the images it staged in that session, never its own files", async () => {
-    const { b, call, fails } = await setup();
+    const { b, call, fails, home } = await setup();
     const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
     const stage = { id: "b_alpha", mediaType: "image/png", dataBase64: png };
     expect((await fails(M.sessionStageImage, stage, aPlugin)).code).toBe(CLOVER_ERR.NOT_THE_USER);
@@ -231,6 +231,15 @@ describe("the sessions area's methods", () => {
     expect(input?.type === "input" && input.input.from === "user" && input.input.images).toEqual([{ n: 1, path }]);
     // The app here names any staged copy for this session, as before.
     await call(M.sessionSend, send(1, appPath, "p3"));
+    // After a restart (new methods over the same home), the phone still names what it staged.
+    const again = sessionsMethods({ home, computer: "Studio", bots: b.bots, host: b.host, clock: new FakeClock(), localDevice: "studio0000000000000" });
+    await again[M.sessionSend.name]!(send(1, path, "p4"), { caller: thePhone });
+    // A client off this computer that doesn't say which device it is attaches nothing.
+    const nameless: Caller = { kind: "user", client: "ios" };
+    const unnamed = await again[M.sessionStageImage.name]!(stage, { caller: nameless }).catch((e: unknown) => e);
+    expect(unnamed instanceof MethodError && unnamed.message).toContain("says which device it is");
+    const unnamedSend = await again[M.sessionSend.name]!(send(1, path, "p5"), { caller: nameless }).catch((e: unknown) => e);
+    expect(unnamedSend instanceof MethodError && unnamedSend.message).toContain("says which device it is");
     // A session this computer doesn't hold isn't staged for.
     expect((await fails(M.sessionStageImage, { ...stage, id: "s_nosuch" }, thePhone)).code).toBe(ERR.NOT_FOUND);
     b.host.open({ id: "s_box", kind: "agent", bot: "alpha", parent: "b_alpha", computer: "Box", backend: "codex" }, new FakeSessionDriver({ canFold: false }));

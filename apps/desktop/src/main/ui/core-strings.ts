@@ -67,6 +67,10 @@ export const CORE_STRINGS_EN: Readonly<Record<string, LocaleValue>> = {
   "clover.core.tray.safe-mode": "Restart in Safe Mode",
   "clover.core.tray.restart-normally": "Restart Normally",
   "clover.core.tray.manage-plugins": "Manage Plugins…",
+
+  // The app's own update (updater.ts), once downloaded
+  "clover.core.update.ready.title": "Clover {version} is ready",
+  "clover.core.update.ready.body": "It installs when you quit Clover.",
 };
 
 /** The core's built-in tables, by language. */
