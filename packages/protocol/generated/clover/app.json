@@ -1181,7 +1181,7 @@
       }
     },
     "update.status": {
-      "doc": "The app's and the daemon's version and the update waiting, if any.",
+      "doc": "The app's and the daemon's version, the update waiting, if any, and whether the daemon is idle enough to install it (no turn in flight, no live runner, no pending approval).",
       "owner": "M",
       "direction": "to-daemon",
       "roles": [
@@ -1211,18 +1211,31 @@
           },
           "ready": {
             "type": "boolean"
+          },
+          "idle": {
+            "type": "boolean"
+          },
+          "busy": {
+            "maxItems": 32,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            }
           }
         },
         "required": [
           "current",
           "channel",
-          "ready"
+          "ready",
+          "idle",
+          "busy"
         ],
         "additionalProperties": false
       }
     },
     "update.apply": {
-      "doc": "Installs the update once the daemon is between turns and no agent runs (§3.1).",
+      "doc": "Installs the update once the daemon is between turns and no agent runs (§3.1): `now` when it is idle, else `when-idle`.",
       "owner": "M",
       "direction": "to-daemon",
       "roles": [

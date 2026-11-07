@@ -322,15 +322,31 @@ export class Pair {
 
   /** The app leaves on purpose (an update, a restart into safe mode): it tells the daemon first, so the daemon
    *  doesn't restart it (§3.1). */
-  async exiting(reason: "quit" | "update" | "restart"): Promise<void> {
+  async exiting(reason: "quit" | "update" | "restart"): Promise<boolean> {
+    const client = this.client;
+    if (reason === "update") {
+      // An update's exit (lane M): the daemon refuses it unless its update gate is closed and idle, and then the app
+      // stays as it is (connected, not leaving) and asks again at the next idle moment.
+      if (client === undefined) return false;
+      try {
+        await client.request("pair.exiting", { reason }, 3_000);
+      } catch (err) {
+        this.log(`pair: pair.exiting{update} refused or not answered: ${err instanceof Error ? err.message : String(err)}`);
+        return false;
+      }
+      this.leaving = true;
+      this.setState({ kind: "quitting" });
+      return true;
+    }
     this.leaving = true;
     this.setState({ kind: "quitting" });
-    const client = this.client;
-    if (client === undefined) return;
+    if (client === undefined) return false;
     try {
       await client.request("pair.exiting", { reason }, 3_000);
+      return true;
     } catch (err) {
       this.log(`pair: pair.exiting was not answered: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
     }
   }
 

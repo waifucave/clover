@@ -297,7 +297,7 @@ export const DEVICES_METHODS = {
       input: z.discriminatedUnion("from", [
         z.strictObject({ from: z.literal("bot"), bot: BotId, session: SessionId, text: utf16(1_000_000) }),
         z.strictObject({ from: z.literal("agent"), agent: utf16(128, 1), text: utf16(1_000_000) }),
-        z.strictObject({ from: z.literal("routine"), routine: utf16(128, 1), name: utf16(200), sideThread: SessionId, text: utf16(1_000_000) }),
+        z.strictObject({ from: z.literal("routine"), routine: utf16(128, 1), name: utf16(200), sideThread: SessionId, text: utf16(1_000_000), failed: z.boolean().optional() }),
         /** An agent's final report reaching its bot. */
         z.strictObject({
           from: z.literal("task-notification"), agent: utf16(128, 1), backend: utf16(128, 1),

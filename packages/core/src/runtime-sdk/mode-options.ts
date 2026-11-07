@@ -937,6 +937,11 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
     // ComputerV2's own records (`computer-use/`): the wake triggers' restart file (`wakes/persist.ts` — a forged record
     // would put daemon-worded text into another session's turn) and the recently-used apps.
     join(home, "computer-use"),
+    // M-M2: a server's self-update (packages/cli/src/self-update.ts): the daemon's own binary and the checked one waiting
+    // to replace it (`bin/`, with a package's marker beside it), the boot count and the rolled-back versions after a
+    // swap (`update/`), and the install marker that decides whether the daemon updates itself. A planted binary or
+    // `.old` + boot count would run unsandboxed as the daemon; a planted marker or rolled-back list stops its updates.
+    join(home, "bin"), join(home, "update"), join(home, "install.json"),
     ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => join(home, f)),
     ...hostStorageWriteRoots(home, options),
     // #234's check 4, H1: `node_modules` above every folder plugin code loads from (`~/node_modules` among them), by

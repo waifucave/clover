@@ -4,6 +4,9 @@
 // On Windows this loop is the daemon's only restart mechanism, because Task Scheduler does not
 // restart a process the task spawned.
 //
+// A daemon that exits with UPDATE_RESTART_EXIT_CODE (lane M: a server's daemon that swapped in its update, or rolled
+// one back) is started again at once, and that start is not a crash.
+//
 // The app is not the supervisor's business: the daemon starts and restarts the app itself, through
 // the OS (`platform/pair`), so a daemon restarted here starts the app again if it went with it.
 
@@ -29,6 +32,9 @@ export interface SuperviseDeps {
   /** The clock, for the crash window. Default: Date.now. */
   now?(): number;
 }
+
+/** Lane M (M-M2): the daemon's exit for "start me again now": its own update is in place, or rolled back. */
+export const UPDATE_RESTART_EXIT_CODE = 76;
 
 /** Crashes older than this no longer raise the back-off, so a daemon that ran for hours and then
  *  crashed is restarted after 0.5 s again (the same two minutes as the app's restarts). */
@@ -59,6 +65,7 @@ export async function superviseLoop(deps: SuperviseDeps): Promise<SuperviseResul
     const run = deps.spawnDaemon();
     const code = await run.exited;
     if (isClean(code)) { log("daemon exited cleanly; not restarting until next login"); return { starts, crashes, ended: "clean-exit" }; }
+    if (code === UPDATE_RESTART_EXIT_CODE) { log("daemon restarts for its update"); continue; }
     crashes++;
     const t = now();
     recent.push(t);

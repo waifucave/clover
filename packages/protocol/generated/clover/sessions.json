@@ -2949,6 +2949,9 @@
           "text": {
             "type": "string",
             "maxLength": 100000
+          },
+          "failed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2959,7 +2962,8 @@
           "routine",
           "name",
           "sideThread",
-          "text"
+          "text",
+          "failed"
         ]
       }
     },

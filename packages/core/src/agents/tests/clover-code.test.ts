@@ -22,6 +22,10 @@ afterEach(async () => {
 });
 
 const MODEL = "winter-test/calls";
+// The backend's sandbox is macOS-only for now, and off macOS it reports itself not available. These tests check what
+// holds on every OS (no command of theirs needs the sandbox to run), so the backend is told the sandbox can run; the
+// refusal itself is pinned in remote-in-process.test.ts.
+const SANDBOX_READY = () => true;
 const BRIDGE = "clover_testbridge";
 
 /** What lane A's `embeddedSessionOptions` gives every in-process session, for a test model. */
@@ -40,7 +44,7 @@ function make(spawn: SpawnClaudeCodeProcess, o: WorldOptions & { pause?: WorldOp
     ...o,
     bridgeServerName: BRIDGE,
     extraBackends: (wire) => [new CloverCodeBackend({
-      clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL,
+      clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, sandboxReady: SANDBOX_READY,
       baseOptions: (x) => ({ ...baseOptionsFor(w.cloverHome, spawn)(x), ...(o.base ?? {}) }),
       ...(o.pause ? { pause: o.pause } : {}),
       ...(o.query ? { query: o.query } : {}),
@@ -111,7 +115,7 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
 
   test("it lists as an ACP backend of this computer, sandboxed, at the SDK's version", async () => {
     const w = make(spawn);
-    const methods = agentMethods({ manager: w.manager, backends: () => [new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn) })], computer: "Studio" });
+    const methods = agentMethods({ manager: w.manager, backends: () => [new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), sandboxReady: SANDBOX_READY })], computer: "Studio" });
     const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: Record<string, unknown>[] };
     expect(view.backends[0]).toMatchObject({ id: CLOVER_CODE_ID, name: "Clover's coding agent", protocol: "acp", placement: "local", computers: [{ installed: true, sandboxed: true, marks: [] }] });
     expect(existsSync(w.cloverHome)).toBe(true);
@@ -195,7 +199,7 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     await w2.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Host", prompt: "hi", model: MODEL });
     expect(JSON.stringify(await waitFor(() => notification(w2), "the refusal"))).toContain("host messaging");
 
-    const backend = new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), query: fakeQuery });
+    const backend = new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), query: fakeQuery, sandboxReady: SANDBOX_READY });
     const gone = join(w.project, "gone");
     mkdirSync(gone);
     rmSync(gone, { recursive: true });

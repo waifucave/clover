@@ -130,6 +130,9 @@ export interface NotifierUpdate {
   /** When it happened, on the shared clock. */
   at: number;
   notification?: { title: string; body?: string };
+  /** For `kind: "routine-result"`: whether the run failed (an error, a timeout, a refusal, stopped or cut off), so a
+   *  notifier can leave out the ones that went well (lane G's `routineFailed`). */
+  failed?: boolean;
   /** Who the update is from, always (#179's review): `clover` (name "Clover") for the core's own (a message, a card, a
    *  question, a routine's result, an agent finishing, its own notices), or the plugin that called `notify.send`, by id
    *  and name (lane G's ask). `bundled` is false for a plugin outside the bundled `clover` tree: a notifier shows its

@@ -419,6 +419,9 @@ export const AgentFinishedEvent = sessionEvent("agent_finished", {
 /** A routine run's short result, posted into the bot's main conversation (§7). */
 export const RoutineResultEvent = sessionEvent("routine_result", {
   routine: utf16(128), name: utf16(200), sideThread: SessionId, text: utf16(100_000),
+  /** The run didn't finish well: an error, a timeout, a refusal, or it was stopped or cut off (lane G's notifier shows
+   *  only these when the user asks for routine failures). */
+  failed: z.boolean(),
 });
 /** A labelled note: a plugin's (`conversation.post`), a `turn.start` hook's, or the core's (servers added between
  *  compactions, §6.1). */
@@ -504,7 +507,7 @@ export const SESSIONS_EVENTS = {
   }),
   routineResult: defineEvent({
     type: "routine_result", owner: "D", roles: READERS, capability: "conversation.read", scope: "session", schema: RoutineResultEvent,
-    fixture: { type: "routine_result", seq: 15, sessionId: "s_alpha", ts: 1781270003000, routine: "r_morning", name: "Morning brief", sideThread: "s_side_9", text: "3 new issues, no failed deploys." },
+    fixture: { type: "routine_result", seq: 15, sessionId: "s_alpha", ts: 1781270003000, routine: "r_morning", name: "Morning brief", sideThread: "s_side_9", text: "3 new issues, no failed deploys.", failed: false },
     doc: "A routine run's result in the main conversation.",
   }),
   note: defineEvent({

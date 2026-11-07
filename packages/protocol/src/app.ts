@@ -171,13 +171,19 @@ export const APP_METHODS = {
   updateStatus: defineMethod({
     name: "update.status", owner: "M", roles: ["app", "cli"],
     params: Empty,
-    result: z.object({ current: utf16(64), available: utf16(64).optional(), channel: utf16(32), ready: z.boolean() }),
-    doc: "The app's and the daemon's version and the update waiting, if any.",
+    result: z.object({
+      current: utf16(64), available: utf16(64).optional(), channel: utf16(32), ready: z.boolean(),
+      /** The idle gate (§3.1): nothing runs that an update's restart would cut. */
+      idle: z.boolean(),
+      /** What keeps it from idle, `name:count` per kind of work (`turns:1`, `approvals:2`, a lane's own). */
+      busy: z.array(utf16(64)).max(32),
+    }),
+    doc: "The app's and the daemon's version, the update waiting, if any, and whether the daemon is idle enough to install it (no turn in flight, no live runner, no pending approval).",
   }),
   updateApply: defineMethod({
     name: "update.apply", owner: "M", roles: ["app", "cli"], userOnly: true,
     params: Empty, result: z.object({ at: z.enum(["now", "when-idle"]) }),
-    doc: "Installs the update once the daemon is between turns and no agent runs (§3.1).",
+    doc: "Installs the update once the daemon is between turns and no agent runs (§3.1): `now` when it is idle, else `when-idle`.",
   }),
 } as const;
 
