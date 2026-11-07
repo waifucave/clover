@@ -55,8 +55,9 @@ export const FENCED_KINDS = [
   "transcripts",
   /** The usage ledger (`<home>/usage/`, lane C). */
   "usage",
-  /** The Clover Browser's partitions, cookies and logins included (`<userData>/Partitions/`, lanes C and L): denied for
-   *  reading too. */
+  /** The Clover Browser's partitions, cookies and logins included (`<sessionData>/Partitions/`, lanes C and L):
+   *  denied for reading too. `sessionData` is the app's own (`app.getPath("sessionData")`); Electron's default is
+   *  userData itself. */
   "browser-profiles",
   /** The login item that starts the daemon at login (lane C): macOS's LaunchAgents plist and its parked copy, Linux's
    *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. */

@@ -1,7 +1,7 @@
 // Desktop notifications, the app's port (lane G's notifier): shown unless the app is in front showing that session,
 // replaced by the same id, closed one by one or all, and a click opens the session.
 import { describe, expect, test } from "bun:test";
-import { Notifications, shouldShow, type NotifyRequest } from "../src/main/notify";
+import { Notifications, notificationOptions, shouldShow, type NotifyRequest } from "../src/main/notify";
 
 function setup() {
   const shown: { req: NotifyRequest; closed: boolean; click: () => void }[] = [];
@@ -49,5 +49,14 @@ describe("desktop notifications", () => {
   test("where nothing can be shown (a headless run), it says so", () => {
     const n = new Notifications(() => undefined, () => {});
     expect(n.notify({ id: "a", title: "One" }, { focused: false })).toEqual({ shown: false });
+  });
+
+  test("the OS banner's options: silent rides through; urgency stays Linux-only and urgent-only", () => {
+    expect(notificationOptions({ id: "a", title: "One", silent: true }, "darwin")).toEqual({ title: "One", silent: true });
+    expect(notificationOptions({ id: "a", title: "One" }, "darwin")).toEqual({ title: "One" });
+    expect(notificationOptions({ id: "a", title: "One", body: "Two", silent: true }, "win32")).toEqual({ title: "One", body: "Two", silent: true });
+    expect(notificationOptions({ id: "a", title: "One", urgent: true }, "linux")).toEqual({ title: "One", urgency: "critical" });
+    expect(notificationOptions({ id: "a", title: "One", urgent: true }, "darwin")).toEqual({ title: "One" });
+    expect(notificationOptions({ id: "a", title: "One", urgent: true, silent: true }, "linux")).toEqual({ title: "One", urgency: "critical", silent: true });
   });
 });

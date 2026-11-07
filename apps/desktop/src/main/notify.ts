@@ -3,6 +3,7 @@
 // shows nothing while it is in front showing that session already, and says so (`shown: false`), so the notifier can
 // tell. A headless run never shows one: nothing it runs may open a window or play a sound. Pure apart from what it is
 // handed, so the rules are unit-tested.
+import type { NotificationConstructorOptions } from "electron";
 
 export interface NotifyRequest {
   id: string;
@@ -10,6 +11,8 @@ export interface NotifyRequest {
   body?: string;
   session?: string;
   urgent?: boolean;
+  /** No sound with the banner (lane G's sounds setting, through `app.notify`). */
+  silent?: boolean;
 }
 
 /** What the app knows of where the user is looking: is a window of its own in front, and which session it shows. */
@@ -24,6 +27,17 @@ export interface Front {
 export function shouldShow(req: Pick<NotifyRequest, "session">, front: Front): boolean {
   if (!front.focused) return true;
   return req.session === undefined || front.session === undefined || front.session === null || front.session !== req.session;
+}
+
+/** The OS banner's options for a request: `silent` rides through to Electron's own flag, and urgency stays
+ *  Linux-only and urgent-only. Pure, so the mapping is unit-tested (the `new Notification` itself isn't). */
+export function notificationOptions(req: NotifyRequest, platform: NodeJS.Platform): NotificationConstructorOptions {
+  return {
+    title: req.title,
+    ...(req.body !== undefined ? { body: req.body } : {}),
+    ...(platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}),
+    ...(req.silent === true ? { silent: true } : {}),
+  };
 }
 
 export interface Shown {
