@@ -349,13 +349,16 @@ async function main(): Promise<void> {
   const strict = createBrowserHost({ ...hostOpts, newId: () => `tab_s${++n}`, screenReader: { override: false }, network: { log: netLog } });
   await strict.start();
   await step("R13: a bot's tab reaches no loopback address, by number or by name; a coding session's does; neither reaches the metadata address (its proxy wins over --no-proxy-server)", async () => {
-    const loaded = async (h: BrowserHost, id: string) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), 4000)) === "page";
+    // A refused load ends at once in an error page, so 4 s is plenty to see it stay refused. A load that should work
+    // gets 20 s: the coding session's tab is the first in a new persistent partition, and on a busy Windows runner
+    // that partition's first connection can take longer than 4 s (merge-group run 42377725559: no error, just late).
+    const loaded = async (h: BrowserHost, id: string, ms = 4000) => (await until(() => evalIn(h, id, "window.__t ? 'page' : undefined"), ms)) === "page";
     const bot = await strict.open({ id: "tab_s_bot", owner: { kind: "bot", bot: "beta" }, url: `${origin}/page`, place: "headless" });
     const botByNumber = await loaded(strict, bot.id);
     await strict.command(bot.id, { kind: "navigate", url: `http://localhost:${port}/page` }).catch(() => undefined);
     const botByName = await loaded(strict, bot.id);
     const code = await strict.open({ id: "tab_s_code", owner: { kind: "session", session: "sess_fixture" }, url: `http://localhost:${port}/page`, place: "headless" });
-    const codeLoopback = await loaded(strict, code.id);
+    const codeLoopback = await loaded(strict, code.id, 20_000);
     const t0 = Date.now();
     await strict.command(code.id, { kind: "navigate", url: "http://169.254.169.254/latest/meta-data/" }).catch(() => undefined);
     const metadataUrl = await until(async () => { const u = String(await evalIn(strict, code.id, "location.href")); return u.includes("169.254.169.254") || u.startsWith("chrome-error") ? u : undefined; }, 4000);
@@ -415,14 +418,15 @@ async function main(): Promise<void> {
     },
   });
   await proxied.start();
-  const loadedP = async (id: string) => (await until(() => evalIn(proxied, id, "window.__t ? 'page' : undefined"), 4000)) === "page";
-  const go = async (id: string, url: string) => { await proxied.command(id, { kind: "navigate", url }).catch(() => undefined); return loadedP(id); };
+  // As above: 20 s for a load that should work, 4 s to see a refused one stay refused.
+  const loadedP = async (id: string, ms = 4000) => (await until(() => evalIn(proxied, id, "window.__t ? 'page' : undefined"), ms)) === "page";
+  const go = async (id: string, url: string, ms = 4000) => { await proxied.command(id, { kind: "navigate", url }).catch(() => undefined); return loadedP(id, ms); };
   let gamma: TabView | undefined;
 
   await step("R14: with an explicit proxy, a bot's tab loads a public name through it, the proxy asked for the checked address and never the name (under --no-proxy-server); the LAN and loopback stay refused", async () => {
     await proxied.configure({ proxy: { mode: "explicit", url: `http://127.0.0.1:${proxyPort}` }, lanBots: [] });
     gamma = await proxied.open({ id: "tab_p_gamma", owner: { kind: "bot", bot: "gamma" }, url: `http://proxied.test:${port}/page`, place: "headless" });
-    const viaProxy = await loadedP(gamma.id);
+    const viaProxy = await loadedP(gamma.id, 20_000);
     const askedPublic = asked.includes(`${PUBLIC}:${port}`);
     const askedName = asked.some((a) => a.startsWith("proxied.test"));
     const lan = await go(gamma.id, `http://nas.test:${port}/page`);
@@ -434,7 +438,7 @@ async function main(): Promise<void> {
   await step("the bot's LAN setting: its tabs reach the LAN (through the proxy), still never loopback or the metadata address", async () => {
     if (gamma === undefined) return { ok: false, detail: "no tab" };
     await proxied.configure({ proxy: { mode: "explicit", url: `http://127.0.0.1:${proxyPort}` }, lanBots: ["gamma"] });
-    const lan = await go(gamma.id, `http://nas.test:${port}/page`);
+    const lan = await go(gamma.id, `http://nas.test:${port}/page`, 20_000);
     const askedLan = asked.includes(`${LAN}:${port}`);
     const loop = await go(gamma.id, `http://localhost:${port}/page`);
     const meta = await go(gamma.id, "http://169.254.169.254/latest/meta-data/");
