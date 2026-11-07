@@ -225,7 +225,7 @@ export async function simulate(scenario: Scenario, opts: SimOptions = {}): Promi
     wire.step(T, dt);
     await tick();
     while (T >= nextFrame) {
-      const { key } = app.apply(T);
+      const { key } = app.apply(now());
       needKey ||= key;
       if (!configSent) {
         streams.data(app.stream, { kind: "config", codec: "h264", width: 1280, height: 800, codecString: "avc1.42E028" });

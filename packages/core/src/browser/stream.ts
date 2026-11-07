@@ -170,6 +170,11 @@ export interface StreamTuning {
   lowWaterFraction: number;
   /** A keyframe asked for that hasn't come in this long is asked for again. */
   keyframeRetryMs: number;
+  /** When it falls behind, the bitrate also drops to this share of what the link has just taken (bytes the link
+   *  stream finished writing over `goodputWindowMs`), when that is lower than the step: a link with a big buffer shows
+   *  its trouble late, and stepping down only by a factor then takes seconds. 0 turns it off. */
+  goodputFactor: number;
+  goodputWindowMs: number;
 }
 
 export const DEFAULT_STREAM_TUNING: StreamTuning = {
@@ -183,6 +188,8 @@ export const DEFAULT_STREAM_TUNING: StreamTuning = {
   highWaterMinBytes: 64 * 1024,
   lowWaterFraction: 0.25,
   keyframeRetryMs: 1000,
+  goodputFactor: 0,
+  goodputWindowMs: 1500,
 };
 
 export interface TabStreamsOptions {
@@ -228,6 +235,8 @@ interface Viewer {
   kbps: number;
   codecs?: StreamCodec[];
   backlog: number;
+  /** When each write of the last `goodputWindowMs` finished, and its size. */
+  taken: { at: number; bytes: number }[];
   configSent: boolean;
   needKey: boolean;
   /** Since when its backlog has stayed under the low mark. */
@@ -293,7 +302,7 @@ export class TabStreams {
     const now = this.now();
     const viewer: Viewer = {
       id, tab: args.tab, device: args.device, link: stream, group, maxKbps, kbps: maxKbps, ...(codecs !== undefined ? { codecs } : {}),
-      backlog: 0, configSent: false, needKey: true, calmSince: now, done: false, offEnd: () => {}, sent: 0, dropped: 0, lowered: 0, raised: 0,
+      backlog: 0, taken: [], configSent: false, needKey: true, calmSince: now, done: false, offEnd: () => {}, sent: 0, dropped: 0, lowered: 0, raised: 0,
     };
     viewer.offEnd = stream.onEnd((error) => { if (!viewer.done) this.remove(viewer, error === undefined ? "stopped" : "gone", false); });
     group.viewers.add(viewer);
@@ -441,7 +450,16 @@ export class TabStreams {
     v.needKey = true;
     if (v.loweredAt !== undefined && now - v.loweredAt < this.tuning.lowerEveryMs) return;
     const floor = Math.min(v.maxKbps, this.tuning.minKbps);
-    const next = Math.max(floor, Math.round(v.kbps * this.tuning.lowerFactor));
+    let next = Math.max(floor, Math.round(v.kbps * this.tuning.lowerFactor));
+    if (this.tuning.goodputFactor > 0) {
+      const from = now - this.tuning.goodputWindowMs;
+      v.taken = v.taken.filter((t) => t.at >= from);
+      // Only a full window says what the link carries (an empty or short one is a link that just started).
+      if (v.taken.length > 0 && v.taken[0]!.at <= from + this.tuning.goodputWindowMs / 3) {
+        const kbps = (v.taken.reduce((n, t) => n + t.bytes, 0) * 8) / this.tuning.goodputWindowMs;
+        next = Math.max(floor, Math.min(next, Math.round(kbps * this.tuning.goodputFactor)));
+      }
+    }
     if (next < v.kbps) v.lowered++;
     v.kbps = next;
     v.loweredAt = now;
@@ -456,6 +474,8 @@ export class TabStreams {
     v.link.write(bytes).then(
       () => {
         v.backlog -= bytes.byteLength;
+        v.taken.push({ at: this.now(), bytes: bytes.byteLength });
+        if (v.taken.length > 600) v.taken.splice(0, v.taken.length - 600);
         // Caught up while waiting for a keyframe: ask for one now rather than at the next frame.
         if (!v.done && v.needKey && v.configSent && v.backlog <= this.low(v)) this.askKey(v.group, false);
       },
