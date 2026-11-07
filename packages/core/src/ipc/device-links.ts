@@ -77,6 +77,8 @@ export interface DaemonLinksInput {
   handshake?: HandshakeClient | null;
   /** Public time for the shared clock's reference: SNTP by default; null for none (tests never reach the network). */
   publicTime?: DeviceLinksOptions["publicTime"] | null;
+  /** Cloud computers' tokens at the pair door: the computer node's cloud point, once there is one. */
+  cloudTokens?: DeviceLinksOptions["cloudTokens"];
   /** The main computer's timings and clocks, for tests. */
   mainComputer?: DeviceLinksOptions["mainComputer"];
   /** Test seams: the wire and where peers are (no sidecar), the directories' driver, and the network watch. */
@@ -120,6 +122,7 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
     ...(input.mainComputer !== undefined ? { mainComputer: input.mainComputer } : {}),
     ...(input.driver !== undefined ? { driver: input.driver } : {}),
     ...(input.updateGate ? { updateGate: input.updateGate } : {}),
+    ...(input.cloudTokens ? { cloudTokens: input.cloudTokens } : {}),
     openCard,
     log,
   });

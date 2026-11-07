@@ -95,10 +95,17 @@ export class FileCloudStateStore implements CloudStateStore {
   }
 }
 
-/** Pairing tokens that work once (§9.2 "Safety"): 32 random bytes, kept here only as a hash, in memory, until used or
- *  expired. A VM's daemon presents its token when it first links; lane H's pairing asks `consume`. */
+/** Why the pair door refused a cloud token (`PairingTokens.claim`). */
+export type TokenRefusal = "unknown" | "expired" | "used" | "other-device";
+
+/** Pairing tokens that work once (§9.2 "Safety"): 32 random bytes, kept here only as a hash and an expiry, in memory,
+ *  until used or expired. A VM's daemon presents its token at the pair door (lane H's pairing): the door `claim`s it,
+ *  which binds it to the device the link authenticated, and the pairing `consume`s it once it is done. A token bound to
+ *  one device is refused to any other; a used one is refused as used until it would have expired. */
 export class PairingTokens {
-  readonly #byHash = new Map<string, { computer: string; expiresAt: number }>();
+  readonly #byHash = new Map<string, { computer: string; expiresAt: number; device?: string }>();
+  /** Used tokens' hashes, until they would have expired: a second presentation is told apart from a wrong token. */
+  readonly #used = new Map<string, number>();
   readonly #clock: { now(): number };
   readonly #ttlMs: number;
 
@@ -115,22 +122,56 @@ export class PairingTokens {
     return token;
   }
 
-  /** The computer a token was made for, once; null for an unknown, used or expired token. */
-  consume(token: string): string | null {
-    if (typeof token !== "string" || token.length < 32 || token.length > 128) return null;
-    const h = hash(token);
-    for (const [k, v] of this.#byHash) {
-      if (!equal(k, h)) continue;
-      this.#byHash.delete(k);
-      return v.expiresAt >= this.#clock.now() ? v.computer : null;
-    }
-    return null;
+  /** The pair door's check: the computer a token was made for, bound from now on to `device` (the device the link
+   *  authenticated). Refused when unknown, expired, used, or bound to another device. Claiming again from the same
+   *  device (a pairing cut off midway) is fine until it is consumed. */
+  claim(token: string, device: string): { computer: string } | { refused: TokenRefusal } {
+    this.#prune();
+    const found = this.#find(token);
+    if (!found) return { refused: found === null && this.#wasUsed(token) ? "used" : "unknown" };
+    const [, v] = found;
+    if (v.expiresAt < this.#clock.now()) return { refused: "expired" };
+    if (v.device !== undefined && v.device !== device) return { refused: "other-device" };
+    v.device = device;
+    return { computer: v.computer };
+  }
+
+  /** The computer a token was made for, once; null for an unknown, used or expired token, or (with `device`) one
+   *  bound to another device. */
+  consume(token: string, device?: string): string | null {
+    const found = this.#find(token);
+    if (!found) return null;
+    const [k, v] = found;
+    if (device !== undefined && v.device !== undefined && v.device !== device) return null;
+    this.#byHash.delete(k);
+    if (v.expiresAt < this.#clock.now()) return null;
+    this.#used.set(k, v.expiresAt);
+    return v.computer;
   }
 
   /** Whether `computer` has a token waiting. */
   waiting(computer: string): boolean {
     const now = this.#clock.now();
     return [...this.#byHash.values()].some((v) => v.computer === computer && v.expiresAt >= now);
+  }
+
+  /** The held entry for a token (compared in constant time); undefined when there is none, null for a malformed one. */
+  #find(token: string): [string, { computer: string; expiresAt: number; device?: string }] | undefined | null {
+    if (typeof token !== "string" || token.length < 32 || token.length > 128) return undefined;
+    const h = hash(token);
+    for (const [k, v] of this.#byHash) if (equal(k, h)) return [k, v];
+    return null;
+  }
+
+  #wasUsed(token: string): boolean {
+    const h = hash(token);
+    for (const k of this.#used.keys()) if (equal(k, h)) return true;
+    return false;
+  }
+
+  #prune(): void {
+    const now = this.#clock.now();
+    for (const [k, at] of this.#used) if (at < now) this.#used.delete(k);
   }
 }
 
@@ -254,8 +295,8 @@ export class CloudComputers {
 
   /** Lane H's pairing calls this when a VM's daemon presents its token: the computer it was made for, once. Then the
    *  user is asked whether to make it the main computer, unless its folder said `no`. */
-  async paired(token: string, folders: readonly CloudFolder[]): Promise<string | null> {
-    const name = this.pairing.consume(token);
+  async paired(token: string, folders: readonly CloudFolder[], device?: string): Promise<string | null> {
+    const name = this.pairing.consume(token, device);
     if (!name) return null;
     const vm = this.#vms.get(name);
     if (!vm) return null;

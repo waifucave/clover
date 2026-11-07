@@ -113,8 +113,13 @@ export class CloudPoint {
     return p;
   }
 
-  /** Lane H's pairing hands over a VM's token: the computer it was made for, once. */
-  paired(token: string): Promise<string | null> {
-    return this.#cloud.paired(token, cloudFolders(this.#registry).folders);
+  /** The pair door's check of a VM's token, bound to the device the link authenticated (`PairingTokens.claim`). */
+  claim(token: string, device: string): ReturnType<CloudComputers["pairing"]["claim"]> {
+    return this.#cloud.pairing.claim(token, device);
+  }
+
+  /** Lane H's pairing hands over a VM's token once it paired: the computer it was made for, once. */
+  paired(token: string, device?: string): Promise<string | null> {
+    return this.#cloud.paired(token, cloudFolders(this.#registry).folders, device);
   }
 }

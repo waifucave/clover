@@ -55,6 +55,9 @@ export type PairingProof =
   | { via: "code"; card: string }
   /** The user added it in their own terminal (§5.1: no card). */
   | { via: "terminal" }
+  /** A cloud computer the main computer made (§9.2): its daemon presented the single-use pairing token minted for
+   *  `computer`, with the main's signed join ticket. Only a computer that runs the core, and only under that name. */
+  | { via: "cloud-token"; computer: string }
   /** This device itself, at install. */
   | { via: "self" };
 

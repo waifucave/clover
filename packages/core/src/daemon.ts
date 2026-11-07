@@ -3453,6 +3453,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
       // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
       updateGate,
+      // A VM's single-use token at the pair door goes to the node's cloud computers (lane J), on the main computer.
+      cloudTokens: () => daemonParts?.node?.cloud,
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });

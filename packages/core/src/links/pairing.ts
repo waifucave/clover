@@ -24,7 +24,7 @@
 // (never the link key), the pair secret S the handshake's boxes are sealed with, and the registration both signed.
 // Devices without an account also form one group per user for the lease: the host's group if it has one, else the
 // joiner's, else a new one the host founds; the device not yet in it joins, admitted by the other.
-import { hkdfSync } from "node:crypto";
+import { createHash, hkdfSync } from "node:crypto";
 import { AnswerKeyHolder, type PairingView as PairingViewSchema } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { Clock } from "../contracts/clock";
@@ -34,6 +34,7 @@ import type { SecretStore } from "../contracts/secret-store";
 import { type Bytes, constantTimeEqual, fromBase64, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
 import { type AnswerKeyAlg, answerKeyBytes, type Ed25519Key, ed25519FromSecret, generateEd25519, verifyEd25519, verifyKeySignature } from "../identity/keys";
+import type { TokenRefusal } from "../computers/cloud";
 import {
   canonicalRecord, derivePairId, derivePairSecret, finalTranscript, fullTranscript, joinerTranscript, nonceCommitment, PAIR_NONCE_BYTES,
   PAIR_PROOF_HOST, PAIR_PROOF_JOINER, type PairSide, pairProof, sasWords, verifyPairProof,
@@ -51,6 +52,10 @@ type PairingView = z.infer<typeof PairingViewSchema>;
 
 export const PAIRING_TTL_MS = 10 * 60_000;
 const QR_PREFIX = "clover-pair:1:";
+/** A cloud computer's join ticket (§9.2): the main computer's pairing offer, signed with its link key. */
+const TICKET_PREFIX = "clover-join:1:";
+/** How long a join ticket works: as long as the single-use token it travels with (`PairingTokens`, an hour). */
+export const TICKET_TTL_MS = 60 * 60_000;
 const STEP_TIMEOUT_MS = 30_000;
 /** How long an incoming pairing connection has to send its hello. */
 const FIRST_FRAME_MS = 10_000;
@@ -78,6 +83,30 @@ export class MemoryRendezvous implements PairingRendezvous {
   async remove(slot: string): Promise<void> {
     this.slots.delete(slot);
   }
+}
+
+/** Cloud computers at the pair door (§9.2 "Safety": pairing tokens work once). On the main computer: whether it is the
+ *  main computer now (the lease's, never a setting), the door's check of a VM's token, bound to the device the link
+ *  authenticated (`CloudPoint.claim`), and the token used once the VM paired (`CloudPoint.paired`). */
+export interface PairingCloud {
+  isMain(): boolean;
+  claim(token: string, device: string): { computer: string } | { refused: TokenRefusal };
+  paired(token: string, device: string): Promise<unknown>;
+}
+
+/** What the joining VM is told when the main's door refuses its token, by why (never the token itself). */
+const TOKEN_REFUSED: Record<TokenRefusal, string> = {
+  unknown: "the pairing token isn't one the main computer made",
+  expired: "the pairing token has expired",
+  used: "the pairing token was used already",
+  "other-device": "the pairing token was presented by another device first",
+};
+
+/** The statement a join ticket's signature covers: its pairing, the pinned key, its expiry, the computer it is for, and
+ *  (by hash only) the pairing's secret. */
+function ticketStatement(id: string, hostKey: Uint8Array, expiresAt: number, computer: string, secret: Uint8Array): Bytes {
+  const digest = createHash("sha256").update(secret).digest("base64url");
+  return utf8(["clover-join-ticket-v1", id, toBase64Url(hostKey), String(expiresAt), computer, digest].join("\n"));
 }
 
 /** How a confirm is approved: in the user's own terminal (no card), or by a sealed card the caller opened. */
@@ -131,6 +160,9 @@ interface Pending {
   ownConfirm?: { pairSig: Bytes; admit?: Bytes };
   peerConfirm?: { pairSig: Bytes; admit?: Bytes };
   proof?: PairingProof;
+  /** A cloud computer's pairing (§9.2): the computer the ticket is for; on the joiner, its token; on the host, the token
+   *  its door claimed. Confirmed by the token, with no words to compare (a VM has no user at it). */
+  cloud?: { computer: string; token?: string };
   error?: string;
   done?: Promise<void>;
   waiters: ((m: unknown[]) => void)[];
@@ -154,6 +186,9 @@ export interface PairingServiceOptions {
   /** This device moved from its group into the host's in a confirmed pairing (R18): the old group's record, for the
    *  group keeper to ask the old group's computers to follow, each by its own card. */
   onMerged?(old: GroupRecord, via: string): void;
+  /** Cloud computers: join tickets and tokens at the door (the main computer's side). Without it, none is issued and
+   *  every token is refused. */
+  cloud?: PairingCloud;
 }
 
 export class PairingService {
@@ -210,12 +245,62 @@ export class PairingService {
 
   /** Joins another device's pairing by its code or QR (`device.pair.join`): dials it, and both show the same words. */
   async join(input: string): Promise<PairingView> {
-    const offer = await this.#parse(input.trim());
+    return this.#joinOffer(await this.#parse(input.trim()));
+  }
+
+  /** A cloud computer's join ticket (§9.2), for the VM it is made for: the main computer's pairing, signed with its
+   *  link key, which the VM pins. Only the main computer issues one (the lease's, never a setting); it works for
+   *  `TICKET_TTL_MS`, alongside the single-use token minted for the same computer. Synchronous: it goes straight into
+   *  the VM's cloud-init. */
+  issueTicket(computer: string, ttlMs = TICKET_TTL_MS): string {
+    if (!this.#o.cloud?.isMain()) throw new ContractError("refused", "only the main computer issues a join ticket");
+    const id = toBase64Url(randomBytes(16));
+    const expiresAt = this.#o.clock.now() + ttlMs;
+    const secret = randomBytes(32);
+    const target = this.#o.selfTarget();
+    const sig = this.#o.self.sign(ticketStatement(id, this.#o.self.publicKey, expiresAt, computer, secret));
+    const view: PairingView = { pairingId: id, expiresAt };
+    const p = this.#newPending(id, "host", secret, expiresAt, view);
+    p.cloud = { computer };
+    this.#emit(p);
+    return TICKET_PREFIX + toBase64Url(encode([id, secret, this.#o.self.publicKey, target.relay ?? null, [...(target.direct ?? [])], [...(target.lan ?? [])], expiresAt, computer, sig]));
+  }
+
+  /** A VM joins the main computer with its join ticket and single-use token (§9.2): the ticket's key is pinned (the
+   *  link proves the host holds it, and the ticket must be signed by it), the token goes in the hello, and both sides
+   *  confirm by the token, with no words to compare. Resolves once paired. */
+  async joinTicket(ticket: string, token: string): Promise<void> {
+    const offer = parseTicket(ticket.trim());
+    const own = this.#o.registry.self();
+    if (own.computer !== offer.computer) throw new ContractError("refused", `the join ticket is for ${offer.computer}, not this computer`);
+    await this.#joinOffer(offer, { computer: offer.computer, token });
+    // Paired once both confirms crossed; the host's may still be on its way.
+    await new Promise<void>((resolve, reject) => {
+      let off: Unsubscribe = () => undefined;
+      const timer = setTimeout(() => settle(new ContractError("timeout", "the main computer didn't confirm")), STEP_TIMEOUT_MS);
+      const settle = (err?: Error) => {
+        clearTimeout(timer);
+        off();
+        if (err) reject(err);
+        else resolve();
+      };
+      const check = () => {
+        const p = this.#pending.get(offer.id);
+        if (p?.status === "paired") settle();
+        else if (!p || p.status === "failed" || p.status === "cancelled") settle(new ContractError("refused", p?.error ?? "the pairing ended"));
+      };
+      off = this.watch(check);
+      check();
+    });
+  }
+
+  async #joinOffer(offer: { id: string; secret: Bytes; hostKey: Bytes; relay?: string; direct: string[]; lan: string[]; expiresAt: number }, cloud?: { computer: string; token: string }): Promise<PairingView> {
     if (offer.expiresAt <= this.#o.clock.now()) throw new ContractError("refused", "the pairing has expired");
     if (offer.hostKey.length !== 32) throw new ContractError("invalid", "not a pairing code");
     if (toBase64(offer.hostKey) === this.#o.self.publicKeyBase64) throw new ContractError("invalid", "this is this device's own pairing");
     const view: PairingView = { pairingId: offer.id, expiresAt: offer.expiresAt };
     const p = this.#newPending(offer.id, "joiner", offer.secret, offer.expiresAt, view);
+    if (cloud) p.cloud = cloud;
     const conn = await this.#o.wire.dial({ key: offer.hostKey, ...(offer.relay ? { relay: offer.relay } : {}), direct: offer.direct, lan: offer.lan }, { alpn: ALPN_PAIR, timeoutMs: STEP_TIMEOUT_MS }).catch((err: unknown) => {
       this.#fail(p, "the other device can't be reached");
       throw new ContractError("offline", "the other device can't be reached", { cause: String(err) });
@@ -235,6 +320,8 @@ export class PairingService {
     await this.#send(p, ["hello", {
       v: 1, pairingId: p.id, device: own.record, pairKey: own.pairKey, groupKey: own.groupKey, group: own.group, account: own.account,
       ...this.#answerKeyProof(), commit, proof: pairProof(p.secret, PAIR_PROOF_JOINER, joinerPart),
+      // The token rides only to the key the ticket pinned, inside the link's encryption, after the pairing's proof.
+      ...(cloud ? { cloudToken: cloud.token } : {}),
     }]).catch(turnedAway);
     const reply = await this.#next(p).catch(turnedAway);
     if (reply[0] === "refused") {
@@ -267,6 +354,7 @@ export class PairingService {
     // The host's side is fixed now: reveal the nonce it couldn't see, then both show the words.
     await this.#send(p, ["reveal", { nonce: p.nonce }]);
     this.#agreed(p, finalTranscript(transcript, p.nonce));
+    if (p.cloud) await this.#confirmByToken(p);
     return { ...p.view };
   }
 
@@ -294,6 +382,23 @@ export class PairingService {
     } else {
       p.proof = { via: "terminal" };
     }
+    await this.#confirmed(p);
+  }
+
+  /** A cloud computer's pairing is confirmed by its token (the host's door checked it), on both sides at once. */
+  async #confirmByToken(p: Pending): Promise<void> {
+    if (!p.cloud || p.status !== "words") return;
+    p.proof = { via: "cloud-token", computer: p.cloud.computer };
+    try {
+      await this.#confirmed(p);
+    } catch (err) {
+      this.#fail(p, err instanceof Error ? err.message : "the pairing failed");
+      throw err;
+    }
+  }
+
+  async #confirmed(p: Pending): Promise<void> {
+    if (!p.peer) throw new ContractError("conflict", "the pairing isn't showing its words");
     if ((p.status as PairingStatus) === "failed" || (p.status as PairingStatus) === "cancelled") throw new ContractError("refused", p.error ?? "the pairing ended");
     p.status = "confirmed";
     const needsPair = this.#needsPair(p);
@@ -402,11 +507,35 @@ export class PairingService {
     if (this.#o.registry.get(joiner.record.id)?.revokedAt !== undefined) return refuse("this device was revoked: pair it with a new key");
     if (this.#o.registry.get(joiner.record.id)) return refuse("already paired");
     if (!(h.commit instanceof Uint8Array) || h.commit.length !== 32) return refuse("not a pairing");
+    // A cloud computer's pairing takes its token, and an ordinary one never does.
+    if ((p.cloud !== undefined) !== (typeof h.cloudToken === "string")) return refuse(p.cloud ? "a join ticket's pairing needs its token" : "not a cloud pairing");
     const joinerPart = joinerTranscript(p.id, this.#o.self.publicKey, sideForTranscript(joiner), h.commit);
     if (!(h.proof instanceof Uint8Array) || !verifyPairProof(p.secret, PAIR_PROOF_JOINER, joinerPart, h.proof)) {
       // One wrong proof ends the pairing, so a short code can't be guessed at online.
       this.#fail(p, "a device tried the pairing without its secret");
       return refuse("bad proof");
+    }
+    if (p.cloud) {
+      // §9.2: only the main computer takes a VM in, and only the computer its token was made for, under that name. The
+      // token is bound to the device the link authenticated: presented by any other device, it is refused.
+      if (!this.#o.cloud?.isMain()) {
+        this.#fail(p, "this computer isn't the main computer any more");
+        return refuse("this computer isn't the main computer");
+      }
+      if (!joiner.record.runsCore || joiner.record.computer !== p.cloud.computer) {
+        this.#fail(p, `a device that isn't ${p.cloud.computer} presented its ticket`);
+        return refuse(`the join ticket is for ${p.cloud.computer}`);
+      }
+      const claim = this.#o.cloud.claim(h.cloudToken as string, joiner.record.id);
+      if ("refused" in claim) {
+        this.#fail(p, TOKEN_REFUSED[claim.refused]);
+        return refuse(TOKEN_REFUSED[claim.refused]);
+      }
+      if (claim.computer !== p.cloud.computer) {
+        this.#fail(p, "the pairing token was made for another computer");
+        return refuse("the pairing token was made for another computer");
+      }
+      p.cloud = { computer: p.cloud.computer, token: h.cloudToken as string };
     }
     p.conn = conn;
     this.#bind(p, stream, reader, early);
@@ -440,6 +569,7 @@ export class PairingService {
       return;
     }
     this.#agreed(p, finalTranscript(transcript, nonce));
+    if (p.cloud) await this.#confirmByToken(p).catch(() => undefined);
   }
 
   // ---- both sides ----
@@ -512,6 +642,12 @@ export class PairingService {
     p.done = (async () => {
       const peer = p.peer!;
       await this.#o.registry.add(peer.record, p.proof!);
+      // The VM is in: its token is used, bound to the device that presented it (§9.2).
+      if (p.role === "host" && p.cloud?.token !== undefined) {
+        const token = p.cloud.token;
+        delete p.cloud.token;
+        void this.#o.cloud?.paired(token, peer.record.id).catch(() => undefined);
+      }
       if (this.#needsPair(p)) {
         const keys = this.#pairKeys(p);
         await this.#o.store.set(pairKeyRef(keys.pairId), p.pairKey.seed(), { synced: false });
@@ -893,4 +1029,27 @@ function rendezvousKey(part: Uint8Array): Bytes {
 
 function rendezvousContext(slot: string) {
   return { scope: slot, from: "host", to: "joiner", kind: "signal" as const };
+}
+
+/** A join ticket, read and checked: signed by the key it pins, for the computer it names. */
+function parseTicket(input: string): { id: string; secret: Bytes; hostKey: Bytes; relay?: string; direct: string[]; lan: string[]; expiresAt: number; computer: string } {
+  if (!input.startsWith(TICKET_PREFIX)) throw new ContractError("invalid", "not a join ticket");
+  const bytes = fromBase64Url(input.slice(TICKET_PREFIX.length));
+  let v: unknown;
+  try {
+    v = bytes ? decode(bytes) : undefined;
+  } catch {
+    v = undefined;
+  }
+  if (!Array.isArray(v) || v.length !== 9) throw new ContractError("invalid", "not a join ticket");
+  const [id, secret, hostKey, relay, direct, lan, expiresAt, computer, sig] = v as unknown[];
+  if (typeof id !== "string" || !(secret instanceof Uint8Array) || secret.length !== 32 || !(hostKey instanceof Uint8Array) || hostKey.length !== 32
+    || typeof expiresAt !== "number" || typeof computer !== "string" || !(sig instanceof Uint8Array)) throw new ContractError("invalid", "not a join ticket");
+  // The pinned key must have signed it: a ticket whose key was swapped, or one another key made, is refused.
+  if (!verifyEd25519(hostKey, ticketStatement(id, hostKey, expiresAt, computer, secret), sig)) throw new ContractError("refused", "the join ticket isn't signed by the computer it pins");
+  return {
+    id, secret: own(secret), hostKey: own(hostKey), ...(typeof relay === "string" ? { relay } : {}),
+    direct: Array.isArray(direct) ? direct.filter((x): x is string => typeof x === "string") : [],
+    lan: Array.isArray(lan) ? lan.filter((x): x is string => typeof x === "string") : [], expiresAt, computer,
+  };
 }
