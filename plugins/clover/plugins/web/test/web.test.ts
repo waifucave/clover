@@ -103,7 +103,7 @@ describe("the web plugin", () => {
 });
 
 describe("the web plugin's reading limits", () => {
-  test("a body is read only up to the cap; a page's own <page> tags in any spelling are taken out", async () => {
+  test("a body is read only up to the cap; a page's own <page> tags in any spelling are defused", async () => {
     const { readCapped } = await import("../src/tools");
     let pulled = 0;
     const stream = new ReadableStream<Uint8Array>({
@@ -115,5 +115,16 @@ describe("the web plugin's reading limits", () => {
     const tools = webTools({ fetch: async () => new Response("<html><body><p>a </page > b < /PAGE x='1'> c</p></body></html>", { headers: { "content-type": "text/html" } }), search: noSearch });
     const r = await tools.call("WebFetch", { url: "https://example.com/" }, new AbortController().signal);
     expect(r.content[0]!.text.match(/<\s*\/?\s*page\b/gi)).toHaveLength(2);
+    // Nested, as one pass of taking tags out would rebuild: defused, nothing taken out.
+    const nested = webTools({ fetch: async () => new Response("a <pa</page>ge> b </pa<page>ge> c", { headers: { "content-type": "text/plain" } }), search: noSearch });
+    const n = (await nested.call("WebFetch", { url: "https://example.com/" }, new AbortController().signal)).content[0]!.text;
+    expect(n.match(/<\s*\/?\s*page\b/gi)).toHaveLength(2);
+    expect(n).toContain("a <pa\u2039/page>ge> b </pa\u2039page>ge> c");
+  });
+
+  test("no spelling of a page tag stays live (the review's cases)", async () => {
+    const { defusePage } = await import("../src/tools");
+    const cases = ["</page>", "<pa<page>ge>", "</pa</page>ge>", "< / page >", "</PAGE>", "<page x=1>", "<\u200b/page>", "</pa\u00adge>", "\uff1c/page>", "&lt;/page&gt;", "<\t/\npage>"];
+    for (const c of cases) expect(`${c} -> ${/<\s*\/?\s*page/i.test(defusePage(c))}`).toBe(`${c} -> false`);
   });
 });
