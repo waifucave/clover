@@ -20,7 +20,9 @@
 //   2       1     flags: bit 0 = keyframe (kind 2 only); the other bits are 0
 //   3       1     reserved, 0
 //   4       8     timestamp in microseconds, a signed 64-bit integer (kind 2; 0 otherwise)
-//   12      4     payload length in bytes, unsigned
+//   12      4     payload length in bytes, unsigned, at most 16 MiB (`STREAM_MAX_PAYLOAD`): a receiver refuses a
+//                 longer one as a broken stream, and the sender never sends one (it drops the frame and asks for a
+//                 keyframe at a lower bitrate)
 //   16      n     payload:
 //                   config: UTF-8 JSON {"codec":"h264"|"vp8"|"jpeg","width":W,"height":H,"codecString":"avc1.42E028"}
 //                   frame:  the encoded chunk, as the app's VideoEncoder made it: H.264 in Annex B (start codes, the
@@ -28,9 +30,12 @@
 //                   ended:  UTF-8 JSON {"reason":"stopped"|"closed"|"failed","message"?:"…"}
 //
 // A stream starts with a config, then a keyframe. A new config (the tab was resized, or the encoder changed) is
-// followed by a keyframe too. Configure a decoder from the config (`VideoDecoder.configure({ codec: codecString,
-// codedWidth, codedHeight, optimizeForLatency: true })`, or VideoToolbox from the in-band SPS/PPS), and decode each
-// frame in order. A frame is never sent with a gap before it except up to a keyframe, so a receiver never needs to
+// followed by a keyframe too. For `h264` and `vp8`, configure a decoder from the config (`VideoDecoder.configure({
+// codec: codecString, codedWidth, codedHeight, optimizeForLatency: true })`, or VideoToolbox from the in-band
+// SPS/PPS), and decode each frame in order. A `jpeg` stream has no decoder to configure (its codecString is "jpeg",
+// which isn't a WebCodecs codec): every frame is a whole JPEG picture and a keyframe, and the picture's own size is
+// the one to draw at; the config's width and height are the tab's viewport, which the picture may be scaled down
+// from (the headless shell's screencast). A frame is never sent with a gap before it except up to a keyframe, so a receiver never needs to
 // ask for one. An `ended` frame is the last, and the sender ends the stream after it.
 import { randomBytes } from "node:crypto";
 import type { LinkStream, LinkTransport } from "../contracts/link-transport";
@@ -39,6 +44,8 @@ import { BrowserError } from "./policy";
 import type { AppTabPort } from "./service";
 
 export const STREAM_FRAME_VERSION = 1;
+/** The most a frame's payload may be: 16 MiB. A reader refuses more; the sender drops such a frame. */
+export const STREAM_MAX_PAYLOAD = 16 * 1024 * 1024;
 /** The link stream's label: a receiver takes these with `transport.onStream("browser.stream", …)`. */
 export const STREAM_LINK_LABEL = "browser.stream";
 export const STREAM_HEADER_BYTES = 16;
@@ -77,6 +84,7 @@ export function encodeStreamFrame(chunk: StreamChunk): Uint8Array {
       payload = utf8.encode(JSON.stringify(chunk.message !== undefined ? { reason: chunk.reason, message: chunk.message } : { reason: chunk.reason }));
       break;
   }
+  if (payload.byteLength > STREAM_MAX_PAYLOAD) throw new Error(`a stream frame's payload is at most ${STREAM_MAX_PAYLOAD} bytes`);
   const out = new Uint8Array(STREAM_HEADER_BYTES + payload.byteLength);
   const view = new DataView(out.buffer);
   view.setUint8(0, STREAM_FRAME_VERSION);
@@ -96,19 +104,20 @@ export function decodeStreamFrame(bytes: Uint8Array): StreamChunk {
   const version = view.getUint8(0);
   if (version !== STREAM_FRAME_VERSION) throw new Error(`stream frame version ${version} isn't one this reads`);
   const length = view.getUint32(12);
+  if (length > STREAM_MAX_PAYLOAD) throw new Error(`a stream frame's payload is at most ${STREAM_MAX_PAYLOAD} bytes`);
   if (bytes.byteLength !== STREAM_HEADER_BYTES + length) throw new Error("the stream frame's length doesn't match its bytes");
   const payload = bytes.subarray(STREAM_HEADER_BYTES);
   const kind = view.getUint8(1);
   switch (kind) {
     case KIND.config: {
-      const c = JSON.parse(fromUtf8.decode(payload)) as Record<string, unknown>;
+      const c = jsonObject(payload);
       if (!CODECS.includes(c.codec as StreamCodec) || !isSize(c.width) || !isSize(c.height) || typeof c.codecString !== "string") throw new Error("a bad stream config");
       return { kind: "config", codec: c.codec as StreamCodec, width: c.width, height: c.height, codecString: c.codecString };
     }
     case KIND.frame:
       return { kind: "frame", key: (view.getUint8(2) & 1) === 1, timestamp: Number(view.getBigInt64(4)), data: payload.slice() };
     case KIND.ended: {
-      const e = JSON.parse(fromUtf8.decode(payload)) as Record<string, unknown>;
+      const e = jsonObject(payload);
       const reason = REASONS.includes(e.reason as (typeof REASONS)[number]) ? (e.reason as (typeof REASONS)[number]) : "failed";
       return typeof e.message === "string" ? { kind: "ended", reason, message: e.message } : { kind: "ended", reason };
     }
@@ -129,6 +138,8 @@ export class StreamFrameReader {
     let at = 0;
     while (all.byteLength - at >= STREAM_HEADER_BYTES) {
       const length = new DataView(all.buffer, at, STREAM_HEADER_BYTES).getUint32(12);
+      // A length over the cap is a broken stream: refused before anything that long is buffered.
+      if (length > STREAM_MAX_PAYLOAD) throw new Error(`a stream frame's payload is at most ${STREAM_MAX_PAYLOAD} bytes`);
       const end = at + STREAM_HEADER_BYTES + length;
       if (end > all.byteLength) break;
       out.push(decodeStreamFrame(all.subarray(at, end)));
@@ -137,6 +148,18 @@ export class StreamFrameReader {
     this.buffered = all.slice(at);
     return out;
   }
+}
+
+/** A config's or an ended frame's payload: a JSON object, or a format error (lane I's receivers refuse the same). */
+function jsonObject(payload: Uint8Array): Record<string, unknown> {
+  let v: unknown;
+  try {
+    v = JSON.parse(fromUtf8.decode(payload));
+  } catch {
+    throw new Error("a stream frame's JSON doesn't parse");
+  }
+  if (v === null || typeof v !== "object" || Array.isArray(v)) throw new Error("a stream frame's JSON isn't an object");
+  return v as Record<string, unknown>;
 }
 
 function isSize(v: unknown): v is number {
@@ -419,6 +442,16 @@ export class TabStreams {
 
   private frame(group: AppStream, chunk: Extract<StreamChunk, { kind: "frame" }>): void {
     const now = this.now();
+    if (chunk.data.byteLength > STREAM_MAX_PAYLOAD) {
+      // Over the format's cap (a huge picture at a high quality): never sent; every viewer waits for a keyframe at a
+      // lower bitrate.
+      for (const v of group.viewers) {
+        v.dropped++;
+        v.needKey = true;
+        this.fellBehind(v, now);
+      }
+      return;
+    }
     if (chunk.key) group.keyAskedAt = undefined;
     for (const v of group.viewers) {
       if (!v.configSent) {

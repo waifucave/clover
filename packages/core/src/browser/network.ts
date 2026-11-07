@@ -57,9 +57,12 @@ export function policyFor(owner: TabOwner, lanBots?: ReadonlySet<string> | reado
 export type AddressKind = "public" | "loopback" | "private" | "link-local" | "metadata" | "unspecified" | "multicast" | "reserved";
 
 /** Cloud metadata services: AWS, GCP, Azure, Oracle (169.254.169.254), AWS's DNS and ECS (169.254.169.253, .170.2),
- *  Alibaba (100.100.100.200), and AWS's IPv6 one (fd00:ec2::254). */
+ *  Alibaba (100.100.100.200); the IPv6 ones below. */
 const METADATA_V4 = new Set(["169.254.169.254", "169.254.169.253", "169.254.170.2", "100.100.100.200"]);
-const METADATA_V6 = [0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x0254];
+/** IPv6 metadata services: AWS's (fd00:ec2::254) and GCP's (fd20:ce::254). Every address in the fence contract's
+ *  `CLOUD_METADATA_ADDRESSES` (`packages/core/src/contracts/fence.ts`) is one of these; this file can't import it (the
+ *  app shares it and can't import the core), so `test/browser/metadata.test.ts` checks the two agree. */
+const METADATA_V6 = [[0xfd00, 0x0ec2, 0, 0, 0, 0, 0, 0x0254], [0xfd20, 0x00ce, 0, 0, 0, 0, 0, 0x0254]];
 
 function v4Octets(ip: string): number[] | undefined {
   const parts = ip.split(".");
@@ -117,7 +120,7 @@ function v6Groups(ip: string): number[] | undefined {
 
 function classifyV6(g: number[]): AddressKind {
   const embedded = (hi: number, lo: number): AddressKind => classifyV4([hi >> 8, hi & 0xff, lo >> 8, lo & 0xff]);
-  if (g.every((x, i) => x === METADATA_V6[i])) return "metadata";
+  if (METADATA_V6.some((m) => g.every((x, i) => x === m[i]))) return "metadata";
   if (g.every((x) => x === 0)) return "unspecified";
   if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return "loopback";
   // IPv4-mapped (::ffff:a.b.c.d) and NAT64 (64:ff9b::a.b.c.d) reach the IPv4 address inside.
