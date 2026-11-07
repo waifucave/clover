@@ -2003,8 +2003,20 @@ if (import.meta.main) {
     const daemonLog = installDaemonLogFile(resolveCloverHome());
     console.error(`daemon log: ${daemonLog.path}`);
     let daemon: Awaited<ReturnType<typeof startDaemon>>;
+    // A cloud computer's image (spec §9.2, core/src/computers/image.ts) starts it with its name, its single-use pairing
+    // token and the main computer's join ticket, each in a file; `--headless` says there's no app (it runs alone anyway).
+    const runArgs = process.argv.slice(4);
+    const runFlag = (name: string): string | undefined => {
+      const i = runArgs.indexOf(name);
+      return i === -1 ? undefined : runArgs[i + 1];
+    };
+    const cloudJoin = {
+      ...(runFlag("--name-file") ? { nameFile: runFlag("--name-file")! } : {}),
+      ...(runFlag("--pairing-token-file") ? { tokenFile: runFlag("--pairing-token-file")! } : {}),
+      ...(runFlag("--join-file") ? { joinFile: runFlag("--join-file")! } : {}),
+    };
     try {
-      daemon = await startDaemon();
+      daemon = await startDaemon(Object.keys(cloudJoin).length > 0 ? { cloudJoin } : {});
     } catch (err) {
       // Migration B's `MigrationRefused` and (WS-21) Migration C's `MigrationCRefused`: a message and exit 1.
       const { bootRefusalExitCode, migrationRefusalMessage } = await import("./daemon-boot-refusal");
@@ -3590,7 +3602,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
+  daemon run [--headless] [--name-file <p>] [--pairing-token-file <p>] [--join-file <p>] | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)

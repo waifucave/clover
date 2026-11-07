@@ -1,11 +1,17 @@
 // The official image for cloud computers (spec §9.2 "Official image"; plan §4 J, M3), as the cloud-init a provider
 // hands a new VM: Linux running the Clover daemon alone, with Chrome for Testing's headless shell as the bots'
-// browser (§12.1), lingering on so the daemon starts at boot, and the cloud metadata address blocked once the VM is up
+// browser (§12.1), lingering on so the daemon starts at boot, and the cloud metadata address blocked before anything else
 // (§9.2 "Safety": a bot can't lift cloud credentials from inside the VM; the providers give it no service account
 // either). `infra/image/` prints it for a look before a live gate.
 //
+// The metadata block comes first (#254's review, should-fix 3): `bootcmd` applies it as early as cloud-init runs one,
+// when nft is on the image already, and the first `runcmd` lines load it, keep it across boots and enable nftables,
+// before any download and before any user service starts. Loading it twice is harmless (the table is dropped first).
 // The daemon and the browser are downloaded by pinned URL and checked by SHA-256 before anything runs. The pairing
-// token works once: the daemon reads it at first start, pairs, and deletes the file.
+// token works once: the daemon reads it at first start, pairs, and deletes it and the join file
+// (`removeCloudJoinFiles`).
+import { readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { CLOUD_METADATA_ADDRESSES } from "../contracts/fence";
 import { ContractError } from "../contracts/common";
 
@@ -47,6 +53,9 @@ export function cloudInit(o: CloudInitOptions): string {
   const v4 = METADATA_BLOCK.filter((a) => !a.includes(":"));
   const v6 = METADATA_BLOCK.filter((a) => a.includes(":"));
   const nft = [
+    // Made if missing, then dropped, then made: the same rules whether it is loaded once or again.
+    "table inet clover_metadata",
+    "delete table inet clover_metadata",
     "table inet clover_metadata {",
     "  chain output {",
     "    type filter hook output priority 0; policy accept;",
@@ -65,6 +74,9 @@ export function cloudInit(o: CloudInitOptions): string {
     `hostname: ${json(o.name.toLowerCase())}`,
     "package_update: true",
     "packages: [nftables, ca-certificates, curl, unzip, fonts-noto]",
+    // As early as cloud-init runs a command, when the image has nft already (Ubuntu's does).
+    "bootcmd:",
+    `  - ${json(`if command -v nft >/dev/null 2>&1; then printf '%s\\n' '${nft}' | nft -f -; fi`)}`,
     "users:",
     "  - name: clover",
     "    shell: /bin/bash",
@@ -89,6 +101,10 @@ export function cloudInit(o: CloudInitOptions): string {
     "runcmd:",
     ...[
       "set -eu",
+      // First: the metadata address, blocked for everyone, kept across boots, before any download or user service.
+      "nft -f /etc/nftables.d/clover-metadata.nft",
+      "grep -q clover-metadata /etc/nftables.conf || echo 'include \"/etc/nftables.d/clover-metadata.nft\"' >> /etc/nftables.conf",
+      "systemctl enable nftables",
       "mkdir -p /opt/clover",
       ...fetch(o.daemon, "/opt/clover/clover-core.tar.gz"),
       "tar -xzf /opt/clover/clover-core.tar.gz -C /opt/clover",
@@ -101,11 +117,27 @@ export function cloudInit(o: CloudInitOptions): string {
       `printf '%s\\n' ${json("[Unit]")} ${json("Description=Clover")} ${json("[Service]")} ${json("ExecStart=/opt/clover/clover-core daemon run --headless --name-file /etc/clover/name --pairing-token-file /etc/clover/pairing-token --join-file /etc/clover/join")} ${json("Restart=always")} ${json("[Install]")} ${json("WantedBy=default.target")} > /home/clover/.config/systemd/user/clover-core.service`,
       "chown clover:clover /home/clover/.config/systemd/user/clover-core.service",
       "runuser -l clover -c 'XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user daemon-reload && XDG_RUNTIME_DIR=/run/user/$(id -u) systemctl --user enable --now clover-core'",
-      // Last, once cloud-init itself no longer needs it: the metadata address, blocked for everyone, kept across boots.
-      "nft -f /etc/nftables.d/clover-metadata.nft",
-      "grep -q clover-metadata /etc/nftables.conf || echo 'include \"/etc/nftables.d/clover-metadata.nft\"' >> /etc/nftables.conf",
-      "systemctl enable nftables",
     ].map((c) => `  - ${json(c)}`),
   ];
   return `${lines.join("\n")}\n`;
+}
+
+/** Where the official image puts a cloud computer's name, join ticket and pairing token. */
+export const CLOUD_JOIN_DIR = "/etc/clover";
+
+/** What a cloud computer's daemon reads at first start (`--name-file`, `--join-file`, `--pairing-token-file`); null
+ *  once paired (the join ticket and the token are gone). */
+export function readCloudJoinFiles(dir = CLOUD_JOIN_DIR): { name: string; join: string; token: string } | null {
+  try {
+    const read = (f: string) => readFileSync(join(dir, f), "utf8").trim();
+    return { name: read("name"), join: read("join"), token: read("pairing-token") };
+  } catch {
+    return null;
+  }
+}
+
+/** After the daemon paired (#254's review, should-fix 6): the join ticket and the spent token are deleted, so nothing
+ *  on the VM's disk still carries them. The name stays. Lane H's pairing calls it once the main accepted the token. */
+export function removeCloudJoinFiles(dir = CLOUD_JOIN_DIR): void {
+  for (const f of ["join", "pairing-token"]) rmSync(join(dir, f), { force: true });
 }

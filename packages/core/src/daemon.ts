@@ -5,7 +5,8 @@ import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWir
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
 import { dirname, join } from "node:path";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { isContractError } from "./contracts/common";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 import { assertNotOtherInstallHome } from "./other-installs";
@@ -198,6 +199,13 @@ export { CORE_VERSION } from "./version";
  */
 export function sessionPermissionDirs(home: string, primary: string, trust: Pick<TrustStore, "isTrusted">): string[] {
   return loadPermissionDirs(home, projectScopeRootFor(primary), projectScopeTrusted(primary, trust));
+}
+
+/** A file's first line, trimmed; undefined when there is no file (or no path). */
+function readOneLine(path: string | undefined): string | undefined {
+  if (!path || !existsSync(path)) return undefined;
+  const line = readFileSync(path, "utf8").split(/\r?\n/)[0]?.trim();
+  return line ? line : undefined;
 }
 
 /** How long the stop waits for the links, node and bot side to finish starting before it closes what has started. */
@@ -456,6 +464,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
   parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string };
+  /** A cloud computer's first start (§9.2, the official image's `--name-file`, `--pairing-token-file` and `--join-file`):
+   *  this computer's name, its single-use pairing token and the main computer's join ticket, each read from its file.
+   *  Once the links are up, the daemon joins the main with them, and deletes the token file once paired (or once the
+   *  main refused it: a token works once). Neither the token nor the ticket is ever logged. */
+  cloudJoin?: { nameFile?: string; tokenFile?: string; joinFile?: string };
   /** TEST ONLY: the contract secret store (a test's store that starts locked). Default: the OS store, or an in-memory
    *  one when `secrets` is given. */
   contractSecrets?: ContractSecretStore;
@@ -3500,12 +3513,40 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     void stopSignal.then(done);
     function done() { clearTimeout(timer); off(); resolve(); }
   });
+  /** A cloud computer joins the main with its ticket and token (§9.2), retrying while the main can't be reached. */
+  const joinMainComputer = async (links: DeviceLinks, tokenFile: string, joinFile: string): Promise<void> => {
+    for (let attempt = 0; !partsStopping; attempt++) {
+      const token = readOneLine(tokenFile);
+      const ticket = readOneLine(joinFile);
+      if (!token || !ticket) return;
+      if (links.registry.list().some((d) => d.id !== links.key.id && d.runsCore && d.revokedAt === undefined)) {
+        // Paired already (a restart after the join): the token is spent.
+        rmSync(tokenFile, { force: true });
+        return;
+      }
+      try {
+        await links.pairing.joinTicket(ticket, token);
+        rmSync(tokenFile, { force: true });
+        console.error("[cloud] joined the main computer");
+        return;
+      } catch (err) {
+        const offline = isContractError(err, "offline") || isContractError(err, "timeout");
+        console.error(`[cloud] couldn't join the main computer: ${(err as Error).message}${offline ? "; trying again" : ""}`);
+        if (!offline) {
+          rmSync(tokenFile, { force: true });
+          return;
+        }
+      }
+      await Promise.race([stopSignal, new Promise((r) => setTimeout(r, Math.min(30_000, 1_000 * 2 ** attempt)).unref?.())]);
+    }
+  };
   const partsReady = (async () => {
     if (opts.links === false) return;
     for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
       await untilStoreAnswers();
       if (partsStopping) return;
     }
+    const cloudName = readOneLine(opts.cloudJoin?.nameFile);
     const started = await startDaemonLinks({
       home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
@@ -3514,6 +3555,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // A VM's single-use token at the pair door goes to the node's cloud computers (lane J), on the main computer.
       cloudTokens: () => daemonParts?.node?.cloud,
       log: (line) => console.error(line),
+      // A cloud computer is named by its image (`--name-file`): that is its name in the tree.
+      ...(cloudName ? { self: { name: cloudName, computer: cloudName, kind: "desktop" as const, os: hostOs() } } : {}),
       ...(opts.links ?? {}),
     });
     daemonLinks = started;
@@ -3539,6 +3582,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
+    if (opts.cloudJoin?.tokenFile && opts.cloudJoin.joinFile) void joinMainComputer(links, opts.cloudJoin.tokenFile, opts.cloudJoin.joinFile);
   })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); });
   const closeParts = async (): Promise<void> => {
     partsStopping = true;

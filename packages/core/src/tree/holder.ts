@@ -178,6 +178,22 @@ export function diskError(err: unknown, what: string): ContractError {
   }
 }
 
+/** A path's real path, when it exists (`exact`); otherwise its nearest existing folder's real path with the rest
+ *  joined on, which is what it will be once made. */
+function realOrNearest(path: string): { real: string; exact: boolean } {
+  const rest: string[] = [];
+  for (let p = path; ; ) {
+    try {
+      return { real: join(realpathSync.native(p), ...rest.reverse()), exact: rest.length === 0 };
+    } catch {
+      const up = dirname(p);
+      if (up === p) return { real: path, exact: false };
+      rest.push(basename(p));
+      p = up;
+    }
+  }
+}
+
 export class LocalHolder implements Holder {
   readonly os: Os;
   readonly #o: LocalHolderOptions;
@@ -950,15 +966,14 @@ export class LocalHolder implements Holder {
     return { bot: pluginIdFromSegment(seg), rel: rest.join("/") };
   }
 
+  /** The bots' folder's real path. Kept only once the folder exists: before that, its nearest folder that does is
+   *  resolved and the rest joined on, every time, so a Clover home behind a symlink compares right both before and
+   *  after `bots/` is made (#254's review, should-fix 7). */
   #botsRoot(): string {
-    this.#botsRootReal ??= (() => {
-      try {
-        return realpathSync.native(this.#o.botsRoot!);
-      } catch {
-        return this.#o.botsRoot!;
-      }
-    })();
-    return this.#botsRootReal;
+    if (this.#botsRootReal !== undefined) return this.#botsRootReal;
+    const r = realOrNearest(this.#o.botsRoot!);
+    if (r.exact) this.#botsRootReal = r.real;
+    return r.real;
   }
 
   /** Whether `as` may reach a real path as far as bots' memories go: inside `<bots>/<bot>/memory/` only that bot's own
@@ -985,14 +1000,13 @@ export class LocalHolder implements Holder {
   #asciiUnderCloverHome(real: string): void {
     if (!this.#o.cloverHome) return;
     // The home's real path, as the paths it is compared with are (`/var` is `/private/var` on a Mac).
-    this.#cloverHomeReal ??= (() => {
-      try {
-        return realpathSync.native(this.#o.cloverHome!);
-      } catch {
-        return this.#o.cloverHome!;
-      }
-    })();
-    if (nonAsciiAlias(real, this.#o.fence?.fencedSet() ?? [], this.#cloverHomeReal, this.os)) {
+    let home = this.#cloverHomeReal;
+    if (home === undefined) {
+      const r = realOrNearest(this.#o.cloverHome);
+      if (r.exact) this.#cloverHomeReal = r.real;
+      home = r.real;
+    }
+    if (nonAsciiAlias(real, this.#o.fence?.fencedSet() ?? [], home, this.os)) {
       throw new ContractError("fenced", `names Clover keeps under its home are ASCII; ${basename(real)} isn't`, { computer: this.#o.name(), reason: "clover-home" });
     }
   }

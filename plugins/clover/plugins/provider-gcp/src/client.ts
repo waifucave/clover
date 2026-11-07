@@ -10,7 +10,19 @@ export const DEFAULT_IMAGE = "projects/ubuntu-os-cloud/global/images/family/ubun
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 interface Operation { name: string; status: "PENDING" | "RUNNING" | "DONE"; error?: { errors?: { code?: string; message?: string }[] } }
-export interface Instance { name: string; status: string; networkInterfaces?: { accessConfigs?: { natIP?: string }[] }[] }
+export interface Instance {
+  id?: string;
+  name: string;
+  status: string;
+  zone?: string;
+  machineType?: string;
+  labels?: Record<string, string>;
+  metadata?: { fingerprint?: string; items?: { key: string; value?: string }[] };
+  networkInterfaces?: { accessConfigs?: { natIP?: string }[] }[];
+}
+
+/** The label every Clover VM carries, with its folder's id (the core's `CLOUD_LABEL`). */
+export const LABEL = "clover-computer";
 
 export class GcpError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -66,7 +78,7 @@ export class ComputeClient {
     if (err) throw new GcpError(500, err.code ?? "operation_failed", err.message ?? `the operation ${o.name} failed`);
   }
 
-  async insert(o: { name: string; zone: string; machineType: string; image?: string; userData: string }): Promise<void> {
+  async insert(o: { name: string; zone: string; machineType: string; image?: string; userData: string; label: string }): Promise<void> {
     const op = await this.#call<Operation>("POST", `${this.#zone(o.zone)}/instances`, {
       name: o.name,
       machineType: `zones/${o.zone}/machineTypes/${o.machineType}`,
@@ -75,7 +87,7 @@ export class ComputeClient {
       metadata: { items: [{ key: "user-data", value: o.userData }] },
       // No service account: nothing on the VM can act on the user's cloud (spec §9.2 "Safety").
       serviceAccounts: [],
-      labels: { "clover-computer": o.name },
+      labels: { [LABEL]: o.label },
     });
     await this.#wait(o.zone, op);
   }
@@ -87,6 +99,37 @@ export class ComputeClient {
       if (e instanceof GcpError && e.status === 404) return null;
       throw e;
     }
+  }
+
+  /** Every instance with the label, in every zone, every page. */
+  async listLabelled(): Promise<Instance[]> {
+    const out: Instance[] = [];
+    const filter = encodeURIComponent(`labels.${LABEL}:*`);
+    let token: string | undefined;
+    do {
+      const r: { items?: Record<string, { instances?: Instance[] }>; nextPageToken?: string } = await this.#call(
+        "GET", `${COMPUTE_API}/projects/${seg(this.#project)}/aggregated/instances?filter=${filter}&maxResults=500${token ? `&pageToken=${seg(token)}` : ""}`,
+      );
+      for (const scope of Object.values(r.items ?? {})) out.push(...(scope.instances ?? []));
+      token = r.nextPageToken;
+    } while (token);
+    return out;
+  }
+
+  /** The instance in `zone` with that numeric id; null when there is none. */
+  async byId(zone: string, id: string): Promise<Instance | null> {
+    if (!/^\d{1,20}$/.test(id)) throw new GcpError(400, "invalid_id", `${id} isn't an instance id`);
+    const r = await this.#call<{ items?: Instance[] }>("GET", `${this.#zone(zone)}/instances?filter=${encodeURIComponent(`id = ${id}`)}`);
+    return (r.items ?? []).find((i) => i.id === id) ?? null;
+  }
+
+  /** Removes a metadata key (the VM's `user-data`, once it has paired). */
+  async removeMetadata(zone: string, name: string, key: string): Promise<void> {
+    const i = await this.get(zone, name);
+    if (!i) return;
+    const items = (i.metadata?.items ?? []).filter((x) => x.key !== key);
+    if (items.length === (i.metadata?.items ?? []).length) return;
+    await this.#wait(zone, await this.#call<Operation>("POST", `${this.#zone(zone)}/instances/${seg(name)}/setMetadata`, { fingerprint: i.metadata?.fingerprint, items }));
   }
 
   /** A new machine type: Compute Engine changes it only while the instance is stopped. */

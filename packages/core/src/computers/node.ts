@@ -27,7 +27,7 @@ import { leaseFence } from "../tree/fencing";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CloudComputers, FileCloudStateStore, type CloudCard } from "./cloud";
-import { CloudPoint, pluginProviders } from "./cloud-point";
+import { CloudPoint, leaseAuthority, pluginProviders, providerIds } from "./cloud-point";
 import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
@@ -82,8 +82,8 @@ export interface ComputerNodeOptions {
    *  asked of it is judged against it (`fencing.ts`). Required: `null` says, explicitly, that there is no group yet,
    *  and then nothing is carried or judged (logged once at start). */
   lease: Lease | null;
-  /** Cloud computers (§9.2): the plugin registry's `computer` folders and `computerProviders` handlers, run on the
-   *  main computer only. `confirm` shows the user a card (lane C's broker); `userData` is the official image's
+  /** Cloud computers (§9.2): the plugin registry's `computer` folders and `computerProviders` handlers, run by the
+   *  lease's holder only (none without a lease). `confirm` shows the user a card (lane C's broker); `userData` is the official image's
    *  cloud-init (`image.ts`, with lane H's join ticket and lane M's release pins); `makeMain` is lane H's election. */
   cloud?: {
     plugins: PluginRegistry;
@@ -115,7 +115,8 @@ export interface ComputerNode {
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
   treeRootReady(): Promise<void>;
-  /** Cloud computers (with `cloud`): kept in line with their folders while this computer is the main one. */
+  /** Cloud computers (with `cloud` and a lease): kept in line with their folders while this computer holds the lease;
+   *  `cloud.door()` is what lane H's pairing door calls with a VM's token. */
   cloud: CloudPoint | undefined;
   close(): void;
 }
@@ -281,28 +282,32 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       make();
     });
   }
-  // Cloud computers: the main computer alone makes, resizes and deletes VMs, so two computers never act on one folder.
+  // Cloud computers: only the lease's holder makes, resizes and deletes VMs, so two computers never act on one folder
+  // (#254's review, B1). Without a lease (no group yet) there is no main computer, and the cloud never runs.
   let cloud: CloudPoint | undefined;
   let offCloud: (() => void) | undefined;
   let offMain = () => {};
-  if (o.cloud) {
+  if (o.cloud && !o.lease) o.log?.("computers: no lease yet (no group): cloud computers wait for a main computer");
+  if (o.cloud && o.lease) {
     const c = o.cloud;
+    const authority = leaseAuthority(o.lease);
     const vms = new CloudComputers({
-      clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host),
-      confirm: c.confirm, userData: c.userData, ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
+      clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host), providerIds: () => providerIds(c.plugins),
+      authority, confirm: c.confirm, userData: c.userData, isPaired: (name) => registry.get(name) !== undefined,
+      ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
     });
-    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active: () => registry.self().isMain, ...(o.log ? { log: o.log } : {}) });
+    const active = () => authority.canAct() && authority.tenure() !== undefined;
+    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active, ...(o.log ? { log: o.log } : {}) });
     cloud = point;
     const follow = () => {
-      const main = registry.self().isMain;
-      if (main && !offCloud) offCloud = point.start();
-      else if (!main && offCloud) {
+      if (active() && !offCloud) offCloud = point.start();
+      else if (!active() && offCloud) {
         offCloud();
         offCloud = undefined;
       }
     };
     follow();
-    offMain = registry.watch(follow);
+    offMain = o.lease.watch(follow);
   }
   return {
     registry, peers, holder, service, tree, tools, terminals, holds, bulk, mcp: mcpRouter, cloud,

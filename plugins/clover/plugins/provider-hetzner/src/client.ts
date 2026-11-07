@@ -9,7 +9,10 @@ export const DEFAULT_IMAGE = "ubuntu-24.04";
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 interface Action { id: number; status: "running" | "success" | "error"; error?: { code: string; message: string } }
-interface Server { id: number; status: string; public_net?: { ipv4?: { ip?: string } | null; ipv6?: { ip?: string } | null } }
+export interface Server { id: number; name?: string; status: string; labels?: Record<string, string>; server_type?: { name?: string }; datacenter?: { location?: { name?: string } }; public_net?: { ipv4?: { ip?: string } | null; ipv6?: { ip?: string } | null } }
+
+/** The label every Clover VM carries, with its folder's id (the core's `CLOUD_LABEL`). */
+export const LABEL = "clover-computer";
 
 export class HetznerError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -56,15 +59,27 @@ export class HetznerClient {
     if (a.status === "error") throw new HetznerError(500, a.error?.code ?? "action_failed", a.error?.message ?? `Hetzner's action ${a.id} failed`);
   }
 
-  async createServer(o: { name: string; serverType: string; location: string; image?: string; userData: string }): Promise<{ id: string; ipv4?: string }> {
+  async createServer(o: { name: string; serverType: string; location: string; image?: string; userData: string; label: string }): Promise<{ id: string; ipv4?: string }> {
     const r = await this.#call<{ server: Server; action?: Action }>("POST", "/servers", {
       name: o.name, server_type: o.serverType, location: o.location, image: o.image ?? DEFAULT_IMAGE,
       user_data: o.userData, start_after_create: true,
       public_net: { enable_ipv4: true, enable_ipv6: true },
-      labels: { "clover.computer": o.name },
+      labels: { [LABEL]: o.label },
     });
     const ip = r.server.public_net?.ipv4?.ip;
     return { id: String(r.server.id), ...(ip ? { ipv4: ip } : {}) };
+  }
+
+  /** The servers with the label: with that value, or any. Every page. */
+  async listServers(label?: string): Promise<Server[]> {
+    const selector = encodeURIComponent(label === undefined ? LABEL : `${LABEL}==${label}`);
+    const out: Server[] = [];
+    for (let page: number | null = 1; page !== null; ) {
+      const r: { servers: Server[]; meta?: { pagination?: { next_page?: number | null } } } = await this.#call("GET", `/servers?label_selector=${selector}&per_page=50&page=${page}`);
+      out.push(...r.servers);
+      page = r.meta?.pagination?.next_page ?? null;
+    }
+    return out;
   }
 
   async getServer(id: string): Promise<Server | null> {

@@ -28,7 +28,8 @@ import { MemorySync, type MemorySyncOptions } from "../sync/memory";
 import type { CardOpener } from "../devices/rpc";
 import type { HandshakeClient } from "./handshake";
 import { HandshakeDirectory } from "./handshake-directory";
-import { PairingService, type PairingCloud, type PairingRendezvous } from "./pairing";
+import { PairingService, type PairingRendezvous } from "./pairing";
+import type { CloudPairingDoor } from "../computers/cloud";
 import { mountRenameRequests, shareDeviceUpdates } from "./relay";
 import { allowListsOf, followRegistry, SidecarWire, type SidecarWireOptions } from "./sidecar-wire";
 import { CloverLinkTransport, type LinkTransportOptions, type PeerDirectory } from "./transport";
@@ -74,10 +75,10 @@ export interface DeviceLinksOptions {
   /** The daemon's update gate (`RunningDaemon.updateGate`, lane M's #198): the lease renews just before an update's
    *  restart, so the bots stay here through it (`MainComputerHandle.beforeUpdateRestart`). */
   updateGate?: UpdateRestartGate;
-  /** Cloud computers' single-use tokens at the pair door (lane J's `CloudPoint`, which the computer node makes after
-   *  the links), read at each use. Without one every token is refused. Join tickets are issued, and tokens taken, only
+  /** Cloud computers' single-use tokens at the pair door: lane J's `CloudPoint` (its `door()`), which the computer node
+   *  makes after the links, read at each use. Without one every token is refused. Join tickets are issued, and tokens taken, only
    *  while this computer runs the bots (the lease's main computer). */
-  cloudTokens?: () => Pick<PairingCloud, "claim" | "paired"> | undefined;
+  cloudTokens?: () => { door(): CloudPairingDoor } | undefined;
 }
 
 export interface DeviceLinks {
@@ -251,8 +252,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     // is its own main.
     cloud: {
       isMain: () => (main ? main.lease.state().holder === key.id && main.lease.canAct() : true),
-      claim: (token, device) => o.cloudTokens?.()?.claim(token, device) ?? { refused: "unknown" },
-      paired: async (token, device) => o.cloudTokens?.()?.paired(token, device),
+      consume: async (token, device) => (await o.cloudTokens?.()?.door().consume(token, device)) ?? null,
     },
   });
 

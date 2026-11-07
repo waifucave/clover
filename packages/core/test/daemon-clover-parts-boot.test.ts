@@ -9,7 +9,7 @@
 // (no relay, nothing published) when it is built, as lane H's sidecar tests do.
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FileSecretStore } from "../src/auth/secret-store";
@@ -27,6 +27,7 @@ import { MemoryNetwork } from "../src/links/memory-wire";
 import type { DeviceLinks } from "../src/links/node";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../src/secrets/clover-secret-store";
 import { mainSessionIdFor } from "../src/sessions/ids";
+import { PairingTokens } from "../src/computers/cloud";
 
 const clock = new SystemClock();
 let stops: Array<() => unknown> = [];
@@ -219,6 +220,41 @@ describe("the daemon's Clover parts at the edges", () => {
     await daemon.cloverParts.ready;
     expect(daemon.cloverParts.bots()?.bots.list()).toEqual([]); // from source: no bundled plugins, none installed
     expect(existsSync(join(home, "plugins"))).toBe(true);
+  }, 30_000);
+
+  test("a cloud computer's first start: named by its image, it joins the main with its ticket and token, and the token file goes", async () => {
+    const net = new MemoryNetwork();
+    // The main computer, alone (so its own main), with lane J's tokens behind its pair door.
+    const tokens = new PairingTokens({ clock });
+    const mainHome = temp("clover-int-main-");
+    const studio = await startDaemonLinks({
+      home: mainHome, store: new CloverSecretStore({ home: mainHome, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
+      clock, self: { name: "Studio", os: "macos" }, handlers: {}, binary: null, wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null,
+      mainComputer, watch: () => () => {}, dispatch: async () => null,
+      cloudTokens: () => ({ door: () => ({ consume: async (t: string) => { const c = tokens.consume(t); return c === null ? null : { computer: c }; } }) }),
+    });
+    stops.push(() => studio.close());
+    const main = studio.links!;
+    await waitFor("the lone main holding its lease", () => main.main!.lease.state().holder === main.key.id && main.main!.lease.canAct());
+    // What the image writes into /etc/clover/.
+    const etc = temp("clover-int-etc-");
+    writeFileSync(join(etc, "name"), "hetzner-1\n");
+    writeFileSync(join(etc, "pairing-token"), tokens.mint("hetzner-1"));
+    writeFileSync(join(etc, "join"), main.pairing.issueTicket("hetzner-1"));
+    const home = temp("clover-int-vm-");
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      cloudJoin: { nameFile: join(etc, "name"), tokenFile: join(etc, "pairing-token"), joinFile: join(etc, "join") },
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-"), bots: false },
+    });
+    await daemon.cloverParts.ready;
+    const vmLinks = daemon.cloverParts.links()!;
+    expect(vmLinks.registry.self()).toMatchObject({ name: "hetzner-1", computer: "hetzner-1" });
+    await waitFor("the join", () => !existsSync(join(etc, "pairing-token")));
+    expect(main.registry.get(vmLinks.key.id)).toMatchObject({ computer: "hetzner-1", addedBy: "cloud-token" });
+    expect(vmLinks.registry.get(main.key.id)).toMatchObject({ computer: "Studio", addedBy: "cloud-token" });
+    expect(existsSync(join(etc, "join"))).toBe(true); // the ticket stays; it pins the main, and holds no token
   }, 30_000);
 
   test("a start that never finishes: the stop waits about 5 s, closes what started, and leaves no socket", async () => {

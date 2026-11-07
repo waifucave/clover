@@ -4,8 +4,11 @@
 // and lane H's sync is told of every change. For anyone else `home/memory` is no folder (not found), and the memory's
 // real path is fenced (`bot-memory`, as lane B's fence says it).
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LocalHolder } from "../../src/tree/holder";
+import { hostOs } from "../../src/tree/names";
 import { computerNameProblem } from "../../src/computers/registry";
 import { Cluster } from "./cluster-support";
 
@@ -156,5 +159,34 @@ describe("home/memory", () => {
     expect(computerNameProblem("memory")).toContain("home/memory");
     expect(computerNameProblem("Memory")).not.toBeNull();
     expect(computerNameProblem("Memory2")).toBeNull();
+  });
+});
+
+describe("a Clover home behind a link (#254's review, should-fix 7)", () => {
+  test("the bots' folder made after the first check is still fenced, by the link's path and the real one", async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "lane-j-linked-home-")));
+    try {
+      const home = join(root, "home");
+      const elsewhere = join(root, "disk2", "clover");
+      mkdirSync(home, { recursive: true });
+      mkdirSync(elsewhere, { recursive: true });
+      const cloverHome = join(home, ".clover");
+      symlinkSync(elsewhere, cloverHome, process.platform === "win32" ? "junction" : "dir");
+      const h = new LocalHolder({ clock: { now: () => Date.now() }, name: () => "Studio", home, cloverHome, botsRoot: join(cloverHome, "bots"), os: hostOs() });
+      // The first check, while `bots/` isn't there yet.
+      await h.write("home/Studio/.clover/notes.md", utf8("x"), { as: CODING });
+      expect(await code(h.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as: CODING }))).toBe("fenced");
+      // Then the bot's memory is made.
+      mkdirSync(join(elsewhere, "bots", "alpha", "memory"), { recursive: true });
+      writeFileSync(join(elsewhere, "bots", "alpha", "memory", "secret.md"), "alpha's");
+      for (const as of [CODING, LUNA, AGENT]) {
+        expect(await code(h.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe("fenced");
+        expect(await code(h.write("home/Studio/.clover/bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
+      }
+      expect(await h.read("home/memory/secret.md", { as: ALPHA })).toEqual(utf8("alpha's"));
+      expect(readFileSync(join(elsewhere, "bots", "alpha", "memory", "secret.md"), "utf8")).toBe("alpha's");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

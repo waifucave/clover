@@ -34,7 +34,7 @@ import type { SecretStore } from "../contracts/secret-store";
 import { type Bytes, constantTimeEqual, fromBase64, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
 import { type AnswerKeyAlg, answerKeyBytes, type Ed25519Key, ed25519FromSecret, generateEd25519, verifyEd25519, verifyKeySignature } from "../identity/keys";
-import type { TokenRefusal } from "../computers/cloud";
+import type { CloudPairingDoor } from "../computers/cloud";
 import {
   canonicalRecord, derivePairId, derivePairSecret, finalTranscript, fullTranscript, joinerTranscript, nonceCommitment, PAIR_NONCE_BYTES,
   PAIR_PROOF_HOST, PAIR_PROOF_JOINER, type PairSide, pairProof, sasWords, verifyPairProof,
@@ -86,21 +86,15 @@ export class MemoryRendezvous implements PairingRendezvous {
 }
 
 /** Cloud computers at the pair door (§9.2 "Safety": pairing tokens work once). On the main computer: whether it is the
- *  main computer now (the lease's, never a setting), the door's check of a VM's token, bound to the device the link
- *  authenticated (`CloudPoint.claim`), and the token used once the VM paired (`CloudPoint.paired`). */
-export interface PairingCloud {
+ *  main computer now (the lease's, never a setting), and lane J's door (`CloudPoint.door()`), which consumes a VM's
+ *  token once, bound to the device the link authenticated. */
+export interface PairingCloud extends CloudPairingDoor {
   isMain(): boolean;
-  claim(token: string, device: string): { computer: string } | { refused: TokenRefusal };
-  paired(token: string, device: string): Promise<unknown>;
 }
 
-/** What the joining VM is told when the main's door refuses its token, by why (never the token itself). */
-const TOKEN_REFUSED: Record<TokenRefusal, string> = {
-  unknown: "the pairing token isn't one the main computer made",
-  expired: "the pairing token has expired",
-  used: "the pairing token was used already",
-  "other-device": "the pairing token was presented by another device first",
-};
+/** What a VM is told when the main's door turns its token down: unknown, used (by it or another device), expired, or
+ *  minted under another main's lease. Never the token, and never which of these, to a device that may not hold it. */
+export const TOKEN_REFUSED = "the pairing token doesn't hold: it was used already, has expired, or isn't one this main computer made";
 
 /** The statement a join ticket's signature covers: its pairing, the pinned key, its expiry, the computer it is for, and
  *  (by hash only) the pairing's secret. */
@@ -160,8 +154,8 @@ interface Pending {
   ownConfirm?: { pairSig: Bytes; admit?: Bytes };
   peerConfirm?: { pairSig: Bytes; admit?: Bytes };
   proof?: PairingProof;
-  /** A cloud computer's pairing (§9.2): the computer the ticket is for; on the joiner, its token; on the host, the token
-   *  its door claimed. Confirmed by the token, with no words to compare (a VM has no user at it). */
+  /** A cloud computer's pairing (§9.2): the computer the ticket is for, and on the joiner its token. Confirmed by the
+   *  token, which the host's door consumed, with no words to compare (a VM has no user at it). */
   cloud?: { computer: string; token?: string };
   error?: string;
   done?: Promise<void>;
@@ -388,7 +382,10 @@ export class PairingService {
   /** A cloud computer's pairing is confirmed by its token (the host's door checked it), on both sides at once. */
   async #confirmByToken(p: Pending): Promise<void> {
     if (!p.cloud || p.status !== "words") return;
-    p.proof = { via: "cloud-token", computer: p.cloud.computer };
+    // The computer this adds: on the main, the VM its token was made for; on the VM, the main whose ticket it holds.
+    const computer = p.role === "host" ? p.cloud.computer : p.peer?.record.computer;
+    if (computer === undefined) return this.#protocol(p);
+    p.proof = { via: "cloud-token", computer };
     try {
       await this.#confirmed(p);
     } catch (err) {
@@ -526,16 +523,16 @@ export class PairingService {
         this.#fail(p, `a device that isn't ${p.cloud.computer} presented its ticket`);
         return refuse(`the join ticket is for ${p.cloud.computer}`);
       }
-      const claim = this.#o.cloud.claim(h.cloudToken as string, joiner.record.id);
-      if ("refused" in claim) {
-        this.#fail(p, TOKEN_REFUSED[claim.refused]);
-        return refuse(TOKEN_REFUSED[claim.refused]);
+      // Consumed here, once, bound to the device the link authenticated (its id is its key's, checked above).
+      const claim = await this.#o.cloud.consume(h.cloudToken as string, joiner.record.id).catch(() => null);
+      if (!claim) {
+        this.#fail(p, TOKEN_REFUSED);
+        return refuse(TOKEN_REFUSED);
       }
       if (claim.computer !== p.cloud.computer) {
         this.#fail(p, "the pairing token was made for another computer");
         return refuse("the pairing token was made for another computer");
       }
-      p.cloud = { computer: p.cloud.computer, token: h.cloudToken as string };
     }
     p.conn = conn;
     this.#bind(p, stream, reader, early);
@@ -642,12 +639,6 @@ export class PairingService {
     p.done = (async () => {
       const peer = p.peer!;
       await this.#o.registry.add(peer.record, p.proof!);
-      // The VM is in: its token is used, bound to the device that presented it (§9.2).
-      if (p.role === "host" && p.cloud?.token !== undefined) {
-        const token = p.cloud.token;
-        delete p.cloud.token;
-        void this.#o.cloud?.paired(token, peer.record.id).catch(() => undefined);
-      }
       if (this.#needsPair(p)) {
         const keys = this.#pairKeys(p);
         await this.#o.store.set(pairKeyRef(keys.pairId), p.pairKey.seed(), { synced: false });

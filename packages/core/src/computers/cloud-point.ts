@@ -7,11 +7,27 @@
 // * A provider is the active `computerProviders` entry with that id; the core calls its handler (an object with
 //   `create`, `resize`, `delete` and `status`) through the plugin host, on the main computer, as the core. The handler
 //   reaches its cloud only through the keyed fetch, with the user's own credentials.
-// * Every change in the registry runs one reconcile after the one in flight, never two at once.
-import type { Unsubscribe } from "../contracts/common";
+// * Every change in the registry, and every change of the lease, runs one reconcile after the one in flight, never two
+//   at once. Only the lease's holder acts (lane H's lease, not the registry's main flag: #254's review, B1).
+import { isContractError, type Unsubscribe } from "../contracts/common";
+import type { Lease } from "../contracts/lease";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
-import type { CloudComputers, CloudFolder, CloudProviderHandler, ReconcileResult } from "./cloud";
+import type { CloudAuthority, CloudComputers, CloudFolder, CloudPairingDoor, CloudProviderHandler, ReconcileResult } from "./cloud";
+
+/** Lane H's lease as the cloud's authority: this device acts while it can and holds the lease, and its tenure is the
+ *  lease's scope and epoch, so a change started under one epoch never finishes under another. */
+export function leaseAuthority(lease: Lease): CloudAuthority {
+  return {
+    canAct: () => lease.canAct(),
+    tenure: () => {
+      const s = lease.state();
+      return s.holder === lease.self ? `${s.scope ?? "-"}:${s.epoch}` : undefined;
+    },
+  };
+}
+
+const none = (): ReconcileResult => ({ created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [] });
 
 /** How long a provider call may take: a VM's create or resize waits for the cloud's own actions. */
 export const PROVIDER_CALL_TIMEOUT_MS = 10 * 60_000;
@@ -44,6 +60,11 @@ export function cloudFolders(registry: PluginRegistry): { folders: CloudFolder[]
   return { folders, held };
 }
 
+/** The ids of the active `computerProviders` entries. */
+export function providerIds(registry: PluginRegistry): string[] {
+  return registry.entries("computerProviders").flatMap((c) => (c.state === "active" && c.entryId ? [c.entryId] : []));
+}
+
 /** The active `computerProviders` handler with that id, called through the plugin host. */
 export function pluginProviders(registry: PluginRegistry, host: PluginHost): (id: string) => CloudProviderHandler | undefined {
   return (id) => {
@@ -55,9 +76,15 @@ export function pluginProviders(registry: PluginRegistry, host: PluginHost): (id
       host.invoke<R>({ pluginId, handler, method, args, caller: { kind: "core" }, timeoutMs: PROVIDER_CALL_TIMEOUT_MS, ...(signal ? { signal } : {}) });
     return {
       create: (a, ctx) => call("create", a, ctx?.signal),
+      list: (a, ctx) => call("list", a, ctx?.signal),
       resize: (a, ctx) => call("resize", a, ctx?.signal),
       delete: (a, ctx) => call("delete", a, ctx?.signal),
       status: (a, ctx) => call("status", a, ctx?.signal),
+      // A provider without `paired` (Hetzner, whose user-data stays): the plugin host has no such handler; fine.
+      paired: (a, ctx) => call<void>("paired", a, ctx?.signal).catch((e: unknown) => {
+        if (isContractError(e, "not_installed") && /has no handler/.test((e as Error).message)) return;
+        throw e;
+      }),
     };
   };
 }
@@ -72,10 +99,10 @@ export class CloudPoint {
   #running: Promise<ReconcileResult> | undefined;
   #again = false;
 
-  /** `active`: whether this computer acts on cloud computers now (the main computer alone); a sync on any other does
-   *  nothing. */
-  constructor(o: { registry: PluginRegistry; cloud: CloudComputers; active?: () => boolean; log?: (line: string) => void }) {
-    this.#active = o.active ?? (() => true);
+  /** `active`: whether this computer acts on cloud computers now (the lease's holder alone); a sync on any other does
+   *  nothing. `CloudComputers` checks its own authority again around every card and provider call. */
+  constructor(o: { registry: PluginRegistry; cloud: CloudComputers; active: () => boolean; log?: (line: string) => void }) {
+    this.#active = o.active;
     this.#registry = o.registry;
     this.#cloud = o.cloud;
     this.#log = o.log;
@@ -90,13 +117,13 @@ export class CloudPoint {
 
   /** One reconcile, after the one in flight (and only one more, however many changes came meanwhile). */
   sync(): Promise<ReconcileResult> {
-    if (!this.#active()) return Promise.resolve({ created: [], resized: [], deleted: [], declined: [], failed: [] });
+    if (!this.#active()) return Promise.resolve(none());
     if (this.#running) {
       this.#again = true;
       return this.#running;
     }
     const run = async (): Promise<ReconcileResult> => {
-      let last: ReconcileResult = { created: [], resized: [], deleted: [], declined: [], failed: [] };
+      let last = none();
       do {
         this.#again = false;
         if (!this.#active()) break;
@@ -113,13 +140,8 @@ export class CloudPoint {
     return p;
   }
 
-  /** The pair door's check of a VM's token, bound to the device the link authenticated (`PairingTokens.claim`). */
-  claim(token: string, device: string): ReturnType<CloudComputers["pairing"]["claim"]> {
-    return this.#cloud.pairing.claim(token, device);
-  }
-
-  /** Lane H's pairing hands over a VM's token once it paired: the computer it was made for, once. */
-  paired(token: string, device?: string): Promise<string | null> {
-    return this.#cloud.paired(token, cloudFolders(this.#registry).folders, device);
+  /** What lane H's authenticated pairing door calls when a device presents a cloud computer's token. */
+  door(): CloudPairingDoor {
+    return this.#cloud.door(() => cloudFolders(this.#registry).folders);
   }
 }
