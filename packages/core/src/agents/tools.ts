@@ -33,7 +33,14 @@ function str(input: unknown, key: string): string | undefined {
   return typeof v === "string" && v.length > 0 ? v : undefined;
 }
 
-export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, opts: { backends?: () => string[] } = {}): CoreToolDef[] {
+export interface AgentToolOptions {
+  backends?: () => string[];
+  /** The runtime's own `TaskStop`, which this one hides (A-M3's `shadowBuiltins`): a task id that names none of the
+   *  bot's agents is passed on to it, so the bot's background commands and monitors still stop. */
+  stopRuntimeTask?: (taskId: string) => Promise<{ text: string; isError: boolean }>;
+}
+
+export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, opts: AgentToolOptions = {}): CoreToolDef[] {
   const backends = opts.backends?.() ?? [];
   return [
     {
@@ -86,15 +93,27 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
     },
     {
       name: "TaskStop",
-      description: "Stop one of your background agents by its session id: it is cancelled, its process ends, and you get its task notification.",
-      inputSchema: { type: "object", properties: { id: { type: "string", description: "The agent's session id." } }, required: ["id"], additionalProperties: false },
+      description: opts.stopRuntimeTask
+        ? "Stop one of your background agents by its session id (it is cancelled, its process ends, and you get its task notification), or one of your background commands or monitors by its task id."
+        : "Stop one of your background agents by its session id: it is cancelled, its process ends, and you get its task notification.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: opts.stopRuntimeTask ? "The agent's session id, or the background task's id." : "The agent's session id." },
+          ...(opts.stopRuntimeTask ? { task_id: { type: "string", description: "The same as id, as background commands name it." } } : {}),
+        },
+        ...(opts.stopRuntimeTask ? {} : { required: ["id"] }),
+        additionalProperties: false,
+      },
       run: async (input) => {
-        const id = str(input, "id");
+        const id = str(input, "id") ?? (opts.stopRuntimeTask ? str(input, "task_id") : undefined);
         if (!id) return fail(new ContractError("invalid", "TaskStop needs the agent's session id"));
         try {
           await manager.stop(id, { bot: caller.bot });
           return { text: `Stopped ${id}.`, isError: false };
         } catch (err) {
+          // Not one of Clover's agents at all: the runtime's own task (a background command, a monitor), if it has one.
+          if (opts.stopRuntimeTask && isContractError(err) && err.code === "not_found") return opts.stopRuntimeTask(id);
           return fail(err);
         }
       },
