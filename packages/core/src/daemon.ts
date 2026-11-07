@@ -3457,17 +3457,23 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(opts.links ?? {}),
     });
     if (!daemonLinks.links || partsStopping) return;
-    const p = opts.parts ?? {};
-    const bots = p.bots === false ? false : p.bots ?? await daemonBots();
-    if (partsStopping) return;
-    // The tree folder only for the default home: a dev or test daemon never makes the shared one.
-    const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
-    daemonParts = await startDaemonParts({
-      cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links: daemonLinks.links, handlers: cloverLaneHandlers,
-      node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
-      bots,
-      log: (line) => console.error(line),
-    });
+    const links = daemonLinks.links;
+    // A node or bot side that can't start leaves the links up (their methods answer), and says why.
+    try {
+      const p = opts.parts ?? {};
+      const bots = p.bots === false ? false : p.bots ?? await daemonBots();
+      if (partsStopping) return;
+      // The tree folder only for the default home: a dev or test daemon never makes the shared one.
+      const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
+      daemonParts = await startDaemonParts({
+        cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: cloverLaneHandlers,
+        node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
+        bots,
+        log: (line) => console.error(line),
+      });
+    } catch (err) {
+      console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
+    }
   })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); });
   const closeParts = (): Promise<void> => {
     partsStopping = true;
