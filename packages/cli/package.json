@@ -16,6 +16,7 @@
   "dependencies": {
     "@waifucave/clover-core": "workspace:*",
     "@waifucave/clover-protocol": "workspace:*",
+    "@waifucave/clover-update-feed": "workspace:*",
     "chalk": "^5.6.2",
     "cli-highlight": "^2.1.11",
     "figures": "^6.1.0",

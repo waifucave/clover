@@ -14,6 +14,7 @@ import { CoworkError, type CapabilityCeiling } from "../../src/cowork/types";
 import { openRuntimeStateDb } from "../../src/runtime-state/db";
 import { SessionHub } from "../../src/sessions/hub";
 import { SessionStore } from "../../src/sessions/store";
+import { onDarwin } from "../helpers/darwin-only";
 
 const POLICIES: readonly ApprovalPolicy[] = ["plan", "dont-ask", "ask", "accept-edits", "auto", "bypass"];
 const ceiling = (toolClasses: string[], network: "none" | "internet" = "none", hostServices: string[] = [], connectors: string[] = []): CapabilityCeiling => ({ toolClasses, hostServices, connectors, network });
@@ -384,7 +385,7 @@ test("observers cannot affect the transition and can unsubscribe; a malformed in
 
 // ── regression: the shared-instruction edit is denied under dont-ask as well as plan ──────────────────────────────
 
-const supported = process.platform === "darwin" && process.arch === "arm64"; // CoworkInstructions refuses to construct elsewhere
+const supported = onDarwin && process.arch === "arm64"; // CoworkInstructions refuses to construct elsewhere
 const cleanups: Array<() => void> = [];
 afterEach(() => { for (const fn of cleanups.splice(0).reverse()) fn(); });
 const user = { kind: "local-user" as const, id: "user" };
