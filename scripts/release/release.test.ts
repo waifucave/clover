@@ -536,6 +536,40 @@ describe("the name scan (scripts/release/name-scan.ts)", () => {
     expect(trailingProblem(join(dir, "a.cab"), "cab")).toBe("has 4 bytes after its cab's end");
   });
 
+  test("bytes a decoder skips fail the scan: zstd and lz4 skippable frames, a gzip's extra field or comment", async () => {
+    const { gzipEnd, lz4End, trailingProblem, zstdEnd } = await import("./name-scan");
+    const enc = (t: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(t) as Uint8Array<ArrayBuffer>;
+    const dir = mkdtempSync(join(tmpdir(), "clover-name-skipped-"));
+    const z = Bun.zstdCompressSync(enc("zstd words"));
+    const hidden = Bun.gzipSync(enc("hidden PLANTED words"));
+    const skip = (payload: Uint8Array): Uint8Array => { const h = new Uint8Array(8); new DataView(h.buffer).setUint32(0, 0x184d2a5a, true); new DataView(h.buffer).setUint32(4, payload.length, true); return cat(h, payload); };
+    // A zstd with a gzip in a skippable frame: Bun's decoder reads it as the plain stream, the scan refuses it.
+    const withSkip = cat(z, skip(hidden), z);
+    expect(new TextDecoder().decode(Bun.zstdDecompressSync(withSkip))).toBe("zstd wordszstd words");
+    expect(zstdEnd(withSkip)).toEqual({ end: withSkip.length, skippable: 1 });
+    writeFileSync(join(dir, "a.zst"), withSkip);
+    expect(trailingProblem(join(dir, "a.zst"), "zst")).toBe("holds 1 zstd skippable frame(s), bytes its decoder skips");
+    writeFileSync(join(dir, "b.zst"), cat(z, z));
+    expect(trailingProblem(join(dir, "b.zst"), "zst")).toBeUndefined();
+    writeFileSync(join(dir, "c.zst"), cat(z, enc("junk")));
+    expect(trailingProblem(join(dir, "c.zst"), "zst")).toBe("has 4 bytes after its zstd stream's end");
+    // lz4: a frame (no content size, no checksums: one raw block), then a skippable frame.
+    const lz4 = cat(new Uint8Array([0x04, 0x22, 0x4d, 0x18, 0x40, 0x40, 0x00]), new Uint8Array([3, 0, 0, 0x80]), enc("abc"), new Uint8Array(4));
+    expect(lz4End(lz4)).toEqual({ end: lz4.length, skippable: 0 });
+    writeFileSync(join(dir, "a.lz4"), cat(lz4, skip(hidden)));
+    expect(trailingProblem(join(dir, "a.lz4"), "lz4")).toBe("holds 1 lz4 skippable frame(s), bytes its decoder skips");
+    // gzip: an extra field (FEXTRA) carrying a gzip; a comment likewise.
+    const g = Bun.gzipSync(enc("member"));
+    const extra = cat(g.subarray(0, 3), new Uint8Array([g[3]! | 4]), g.subarray(4, 10), new Uint8Array([hidden.length & 0xff, hidden.length >> 8]), hidden, g.subarray(10));
+    expect(gzipEnd(extra)).toEqual({ end: extra.length, skipped: true });
+    writeFileSync(join(dir, "a.gz"), extra);
+    expect(trailingProblem(join(dir, "a.gz"), "gz")).toBe("has a gzip member with an extra field or a comment, bytes gunzip skips");
+    writeFileSync(join(dir, "b.gz"), cat(g, g));
+    expect(trailingProblem(join(dir, "b.gz"), "gz")).toBeUndefined();
+    writeFileSync(join(dir, "c.gz"), cat(g, new Uint8Array(2)));
+    expect(trailingProblem(join(dir, "c.gz"), "gz")).toBe("has 2 bytes after its gzip stream's end");
+  });
+
   test("a gzip member is measured by inflating it, its trailer checked", async () => {
     const { gzipMemberEnd } = await import("./name-scan");
     const g = Bun.gzipSync(new TextEncoder().encode("member one"));

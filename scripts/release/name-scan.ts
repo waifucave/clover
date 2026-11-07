@@ -27,9 +27,10 @@
 //
 // Bytes after a format's end: a file known by its format must be that format to its last byte, or the scan fails
 // (trailingProblem), since bytes a tool skips are bytes nobody opened. Measured by each format's own structure: a
-// gzip by the bytes gunzip consumed (every member), a brotli likewise, a bzip2 by its "trailing garbage" warning, a
-// lzip with --trailing-error, xz, zstd, lzma and lz4 by their tools (which refuse trailing bytes; xz allows its own
-// zero padding), a zip or crx by an end record that is the file's last bytes, a tar by its end-of-archive blocks
+// gzip by its members (each inflated, its trailer checked) and the bytes gunzip consumed, a brotli by the bytes it
+// consumed, a bzip2 by its "trailing garbage" warning, a lzip with --trailing-error, a zstd or lz4 by walking its
+// frames (zstdEnd, lz4End), xz and lzma by their tools (which refuse trailing bytes; xz allows its own zero
+// padding), a zip or crx by an end record that is the file's last bytes, a tar by its end-of-archive blocks
 // (only zeros after them), an ar or deb by its last member, a 7z by its start header, a cab by its header's size, a
 // squashfs or AppImage by its superblock's bytes used (only zeros after), an asar by its last packed file, a dmg by
 // its koly trailer (it ends the file by how it is found). A file read raw (no format), a PE file (its overlay) and
@@ -37,12 +38,15 @@
 // to them (appendedStreams): a gzip, xz, zstd, bzip2 or 7z that starts in the file and runs to its end (checked by
 // decoding it, or by its header's own sizes and CRC), or a zip whose end record ends the file; what it finds is
 // opened as a nested file, and the bytes before it are searched again.
+// Bytes a decoder skips inside a stream fail the scan the same way: a zstd or lz4 skippable frame, and a gzip
+// member's extra field or comment (gunzip skips all three, so a stream hidden there would be opened by nobody). xz,
+// lzma, lzip and bzip2 carry no skipped payload (xz's padding must be zeros, which xz checks).
 //
 // Known limits, not read inside (each is read raw, as every file is):
 //   streams in the middle of a file: zlib inside a PNG or a PDF, Chromium's .pak resources (gzip, brotli), a
 //       compressed section of an executable; only one that runs to the file's end is found
 //   brotli by name only: it has no magic number, so a brotli stream is opened only when it is named .br (none of the
-//       release's builders writes one)
+//       release's builders writes one); its metadata blocks, which the decoder skips, aren't read
 //
 // Accepted (not read by the guard), each for its own reason, and widening this list is a security decision:
 //   resources/daemon/srt-win.THIRD_PARTY_NOTICES.txt   third parties' license texts, with their authors' names and
@@ -311,6 +315,89 @@ export function gzipMemberEnd(b: Uint8Array, off: number): number | undefined {
   }
 }
 
+const isSkippable = (b: Uint8Array, p: number): boolean => p + 8 <= b.length && (u32(b, p) & 0xfffffff0) >>> 0 === 0x184d2a50;
+
+/**
+ * A zstd file walked frame by frame (each frame's header and blocks, its checksum): where the frames end, and how
+ * many skippable frames it holds (bytes the decoder skips). `end` stops at the first bytes that aren't a frame.
+ */
+export function zstdEnd(b: Uint8Array): { end: number; skippable: number } {
+  let p = 0, skippable = 0;
+  const frame = (q: number): number | undefined => {
+    if (isSkippable(b, q)) return q + 8 + u32(b, q + 4);
+    if (!at(b, q, [0x28, 0xb5, 0x2f, 0xfd]) || q + 5 > b.length) return undefined;
+    const fhd = b[q + 4]!;
+    if (fhd & 0x08) return undefined;
+    const single = (fhd >> 5) & 1, fcs = fhd >> 6;
+    let r = q + 5 + (single ? 0 : 1) + [0, 1, 2, 4][fhd & 3]! + (fcs === 0 ? single : [0, 2, 4, 8][fcs]!);
+    for (;;) {
+      if (r + 3 > b.length) return undefined;
+      const h = b[r]! | (b[r + 1]! << 8) | (b[r + 2]! << 16);
+      r += 3;
+      const type = (h >> 1) & 3;
+      if (type === 3) return undefined;
+      r += type === 1 ? 1 : h >>> 3;
+      if (h & 1) break;
+    }
+    return r + ((fhd >> 2) & 1 ? 4 : 0);
+  };
+  while (p < b.length) {
+    const e = frame(p);
+    if (e === undefined || e > b.length) break;
+    if (isSkippable(b, p)) skippable++;
+    p = e;
+  }
+  return { end: p, skippable };
+}
+
+/** An lz4 file walked frame by frame (the frame format, and the legacy one), as zstdEnd. */
+export function lz4End(b: Uint8Array): { end: number; skippable: number } {
+  let p = 0, skippable = 0;
+  const frame = (q: number): number | undefined => {
+    if (isSkippable(b, q)) return q + 8 + u32(b, q + 4);
+    if (at(b, q, [0x02, 0x21, 0x4c, 0x18])) {
+      // Legacy: blocks until the file ends or the next frame starts.
+      let r = q + 4;
+      while (r + 4 <= b.length && !at(b, r, [0x04, 0x22, 0x4d, 0x18]) && !at(b, r, [0x02, 0x21, 0x4c, 0x18]) && !isSkippable(b, r)) r += 4 + u32(b, r);
+      return r;
+    }
+    if (!at(b, q, [0x04, 0x22, 0x4d, 0x18]) || q + 7 > b.length) return undefined;
+    const flg = b[q + 4]!;
+    if (flg >> 6 !== 1 || flg & 0x02) return undefined;
+    let r = q + 6 + (flg & 0x08 ? 8 : 0) + (flg & 0x01 ? 4 : 0) + 1;
+    for (;;) {
+      if (r + 4 > b.length) return undefined;
+      const size = u32(b, r);
+      r += 4;
+      if (size === 0) break;
+      r += (size & 0x7fffffff) + (flg & 0x10 ? 4 : 0);
+    }
+    return r + (flg & 0x04 ? 4 : 0);
+  };
+  while (p < b.length) {
+    const e = frame(p);
+    if (e === undefined || e > b.length) break;
+    if (isSkippable(b, p)) skippable++;
+    p = e;
+  }
+  return { end: p, skippable };
+}
+
+/**
+ * A gzip file walked member by member (gzipMemberEnd): where the members end, and whether any carries an extra field
+ * or a comment (bytes gunzip skips).
+ */
+export function gzipEnd(b: Uint8Array): { end: number; skipped: boolean } {
+  let p = 0, skipped = false;
+  while (p < b.length) {
+    const e = gzipMemberEnd(b, p);
+    if (e === undefined) break;
+    if (b[p + 3]! & (4 | 16)) skipped = true;
+    p = e;
+  }
+  return { end: p, skipped };
+}
+
 /** Every offset where `sig` starts in `b`. */
 function offsetsOf(b: Uint8Array, sig: readonly number[]): number[] {
   const buf = Buffer.from(b.buffer, b.byteOffset, b.byteLength);
@@ -349,7 +436,9 @@ export function appendedStreams(b: Uint8Array, o: { xz?: string; bzip2?: string 
     }
     for (const c of offsetsOf(v, [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])) if (sevenZipEnd(v, c) === end) { take({ offset: c, kind: "7z" }); break; }
     for (const c of offsetsOf(v, [0x28, 0xb5, 0x2f, 0xfd])) {
-      try { Bun.zstdDecompressSync(v.subarray(c)); take({ offset: c, kind: "zst" }); break; } catch { /* not a stream to the end */ }
+      // Frames to the end (skippable ones too: opened, the cut-out zstd fails on them), and a stream that decodes.
+      if (c + zstdEnd(v.subarray(c)).end !== end) continue;
+      try { Bun.zstdDecompressSync(v.subarray(c)); take({ offset: c, kind: "zst" }); break; } catch { /* not a stream */ }
     }
     // xz: a stream header whose CRC checks, in a file ending with a stream footer ("YZ", after zero padding).
     let last = end;
@@ -403,6 +492,17 @@ export function trailingProblem(file: string, how: Opener): string | undefined {
       return `has ${size - end} bytes after its ${what}'s end`;
     };
     switch (how) {
+      case "zst": case "lz4": {
+        const b = new Uint8Array(readFileSync(file));
+        const w = how === "zst" ? zstdEnd(b) : lz4End(b);
+        if (w.skippable > 0) return `holds ${w.skippable} ${how === "zst" ? "zstd" : "lz4"} skippable frame(s), bytes its decoder skips`;
+        return after(how === "zst" ? "zstd stream" : "lz4 stream", w.end);
+      }
+      case "gz": {
+        const w = gzipEnd(new Uint8Array(readFileSync(file)));
+        if (w.skipped) return "has a gzip member with an extra field or a comment, bytes gunzip skips";
+        return after("gzip stream", w.end === 0 ? undefined : w.end);
+      }
       case "zip": case "crx":
         return appendedZip(read(Math.max(0, size - TAIL_BYTES), Math.min(TAIL_BYTES, size))) ? undefined : "has bytes after its zip's end record";
       case "tar": return after("tar archive", tarEnd(read, size), true);
