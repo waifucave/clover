@@ -412,6 +412,7 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
@@ -614,6 +615,7 @@ jobs:
         working-directory: packages/core
         env:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link
+          CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
 
       - name: verify:workflow
