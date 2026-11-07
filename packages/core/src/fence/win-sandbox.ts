@@ -1002,14 +1002,31 @@ export function winCallerRules(o: {
   const denyWrite: string[] = [o.cloverHome];
   const grantRead: string[] = [];
   const grantWrite: string[] = [];
-  const protectDelete: string[] = [];
+  // Unlinking or renaming an own read-write folder itself, or any folder that holds one, is refused
+  // (policyAllows' rule 2). The ACE writer enforces this list with object-only DELETE denies: closing
+  // this list must close `winAllows` in the equivalence test below, which implements the same order as
+  // `policyAllows` and is the reference the ACEs must match exactly. NOTE for that writer: DELETE is
+  // deliberately left out of each own folder's own grant — denying the folder object itself is what
+  // keeps it (and, through it, everything above it up to the home) from being deleted or moved, while
+  // files strictly inside stay writable.
+  const protect = new Set<string>();
+  const hold = (p: string | null) => {
+    if (p === null) return;
+    let cur: string | null = p;
+    while (cur !== null && fold(cur) !== fold(o.cloverHome)) {
+      protect.add(cur);
+      const parent = win32.dirname(cur);
+      cur = parent === cur ? null : parent;
+    }
+  };
+  for (const p of [ownOutputs, ownScratch, ownRoutines, ownPluginData, ownMemory]) hold(p);
 
   // Every bot folder: write-denied to all; read-denied to all but its own bot. The memory folder itself is
   // never deletable or movable, by its own bot either.
   for (const x of o.bots) {
     const folder = win32.join(botsDir, x);
     const memory = win32.join(folder, "memory");
-    protectDelete.push(memory);
+    protect.add(memory);
     if (ownBot !== null && fold(folder) === fold(ownBot)) {
       denyWrite.push(folder);
       grantRead.push(folder);
@@ -1038,6 +1055,7 @@ export function winCallerRules(o: {
   // The bot driver's state: hidden from every runner, its own session included.
   denyRead.push(runtimeDir);
   denyWrite.push(runtimeDir);
+  const protectDelete: string[] = [...protect];
   return { denyRead, denyWrite, grantRead, grantWrite, protectDelete, ownMemory };
 }
 
