@@ -13,6 +13,12 @@
 // * What the core grants by backend id stays with Clover's own plugin: a sandbox admitted for `cursor` (S8) or Claude
 //   Code's placement of plugin parts applies only when the entry is the bundled `clover/agent-<id>`, so another plugin
 //   that takes the id once the bundled one is off gets neither.
+// * Ids (#233's review): the core's own backends' ids (`clover-code`, `clover`) are never a plugin's; while Clover's
+//   bundled `clover/agent-<id>` is on, no other plugin's entry takes that id; among other plugins the first claim, in
+//   the registry's order, wins. Every entry left out is logged.
+// * A plugin that isn't Clover's own is taken at its word for nothing that loosens: its backend counts as acting
+//   without asking (`unasked-actions`, so at read-only it needs a declared read-only mode or doesn't start), and its
+//   `envAllow` may not name anything that looks like a secret (the daemon's environment is passed by name).
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { z } from "zod";
@@ -107,6 +113,14 @@ export function readQuirksFile(folder: string, path: string): QuirksFile {
   return parsed.data as QuirksFile;
 }
 
+/** The core's own backends' ids: Clover's coding agent and lane A's in-process subagents. No plugin contributes them. */
+export const RESERVED_BACKEND_IDS: ReadonlySet<string> = new Set(["clover-code", "clover"]);
+
+/** An environment name that looks like a secret: `*_KEY`, `*_TOKEN`, `*_SECRET*`, `*PASSWORD*`, `*_CREDENTIAL*`. */
+export function looksLikeSecret(name: string): boolean {
+  return /(_KEY$|_TOKEN$|_SECRET|PASSWORD|_CREDENTIAL)/i.test(name);
+}
+
 /** One contributed ACP backend, as the core builds it. */
 export interface ContributedBackend {
   id: string;
@@ -123,7 +137,7 @@ export interface ContributedBackend {
 
 /** The `agentBackends` entries that are on, read into backends' rows; an entry whose file fails is left out. */
 export function contributedBackends(registry: Pick<PluginRegistry, "entries" | "get">, log?: (line: string) => void): ContributedBackend[] {
-  const out: ContributedBackend[] = [];
+  const candidates: ContributedBackend[] = [];
   for (const c of registry.entries("agentBackends")) {
     if (c.state !== "active") continue;
     const v = c.value as { id?: string; name?: string; protocol?: string; command?: string; args?: string[]; quirks?: string };
@@ -142,11 +156,39 @@ export function contributedBackends(registry: Pick<PluginRegistry, "entries" | "
       log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: ${err instanceof Error ? err.message : String(err)}`);
       continue;
     }
+    if (RESERVED_BACKEND_IDS.has(id)) {
+      log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: that id is one of Clover's own backends`);
+      continue;
+    }
+    const bundled = c.pluginId === bundledAgentPluginId(id) && record.provenance.by === "bundled";
+    if (!bundled) {
+      const secret = file.quirks.launch.envAllow.find(looksLikeSecret);
+      if (secret !== undefined) {
+        log?.(`agents: ${c.pluginId}'s backend ${id} isn't offered: it asks for ${secret} from the daemon's environment, which looks like a secret`);
+        continue;
+      }
+    }
     const command = { program: v.command, acpArgs: v.args ?? [] };
-    out.push({
-      id, pluginId: c.pluginId, name: v.name ?? id, bundled: c.pluginId === bundledAgentPluginId(id) && record.provenance.by === "bundled",
-      file, command, quirks: quirksWithCommand(file.quirks, command),
-    });
+    // Another plugin's backend counts as acting without asking, whatever its file says.
+    const fileQuirks: FileQuirks = bundled || file.quirks.marks.includes("unasked-actions") ? file.quirks : { ...file.quirks, marks: [...file.quirks.marks, "unasked-actions"] };
+    candidates.push({ id, pluginId: c.pluginId, name: v.name ?? id, bundled, file, command, quirks: quirksWithCommand(fileQuirks, command) });
+  }
+  // One entry per id: Clover's bundled one while it is on, else the first claim.
+  const out: ContributedBackend[] = [];
+  const bundledIds = new Set(candidates.filter((c) => c.bundled).map((c) => c.id));
+  const taken = new Map<string, string>();
+  for (const c of candidates) {
+    if (bundledIds.has(c.id) && !c.bundled) {
+      log?.(`agents: ${c.pluginId}'s backend ${c.id} isn't offered: Clover's own ${bundledAgentPluginId(c.id)} has that id`);
+      continue;
+    }
+    const first = taken.get(c.id);
+    if (first !== undefined) {
+      log?.(`agents: ${c.pluginId}'s backend ${c.id} isn't offered: ${first} claimed that id first`);
+      continue;
+    }
+    taken.set(c.id, c.pluginId);
+    out.push(c);
   }
   return out;
 }
@@ -160,18 +202,20 @@ export class ContributedBackendCache<B extends AgentBackend> {
     const seen = new Set<string>();
     const out: B[] = [];
     for (const c of contributedBackends(registry, log)) {
-      const key = `${c.pluginId}\u0000${registry.get(c.pluginId)?.treeHash ?? ""}\u0000${JSON.stringify(c.file)}\u0000${JSON.stringify(c.command)}`;
-      seen.add(c.id);
-      const had = this.#built.get(c.id);
+      // Keyed by plugin and id: one object per entry while its plugin's tree and row hold, so a session keeps its backend.
+      const slot = `${c.pluginId}\u0000${c.id}`;
+      const key = `${registry.get(c.pluginId)?.treeHash ?? ""}\u0000${JSON.stringify(c.file)}\u0000${JSON.stringify(c.command)}\u0000${c.bundled}`;
+      seen.add(slot);
+      const had = this.#built.get(slot);
       if (had && had.key === key) {
         out.push(had.backend);
         continue;
       }
       const backend = this.build(c);
-      this.#built.set(c.id, { key, backend });
+      this.#built.set(slot, { key, backend });
       out.push(backend);
     }
-    for (const id of [...this.#built.keys()]) if (!seen.has(id)) this.#built.delete(id);
+    for (const slot of [...this.#built.keys()]) if (!seen.has(slot)) this.#built.delete(slot);
     return out;
   }
 }

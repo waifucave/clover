@@ -507,6 +507,10 @@ describe("what never runs quietly", () => {
     const card = await waitFor(() => w.approvals.cards()[0], "the OK card");
     expect(card).toMatchObject({ kind: "change", change: "agent-unsandboxed" });
     expect(card.fields["title"]).toEqual({ type: "text", text: "Start an agent Clover hasn't tested?" });
+    // Every name it gets from the environment, and every one set for it, is on the card (#233's review).
+    const rows = (card.fields["detail"] as { rows: { label: string; value: unknown }[] }).rows;
+    expect(JSON.stringify(rows.find((r) => r.label === "Gets from your environment"))).toContain("PATH, HOME");
+    expect(rows.some((r) => r.label === "Sets in its environment")).toBe(true);
     const deny = card.options.find((o) => o.kind === "deny")!;
     const frame = w.approvals.frameChannel(card.id)!;
     await w.approvals.answer(card.id, { optionId: deny.id, hash: card.hash, proof: { via: "sealed-frame", frame, input: "click", at: w.clock.now() } }, { role: "app" });
