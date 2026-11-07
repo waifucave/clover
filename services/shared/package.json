@@ -1,0 +1,19 @@
+{
+  "name": "@waifucave/clover-service-shared",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "The source waifucave's Workers share (the account-token check, encodings, HTTP helpers, a test rate limiter), and the account-token check the core's tests verify against. Not a Worker: the Workers include it in their tsconfigs and bundles.",
+  "type": "module",
+  "exports": {
+    "./account-token": "./account-token.ts",
+    "./encoding": "./encoding.ts",
+    "./http": "./http.ts",
+    "./jwks": "./jwks.ts",
+    "./web": "./web.ts",
+    "./testing/step-limiter": "./testing/step-limiter.ts"
+  },
+  "scripts": {
+    "test": "bun test"
+  }
+}

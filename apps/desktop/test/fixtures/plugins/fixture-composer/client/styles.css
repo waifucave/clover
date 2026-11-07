@@ -1,0 +1,2 @@
+.fixture-composer { display: flex; gap: 8px; padding: 12px; border: 1px solid var(--clover-composer-rim); border-radius: var(--clover-composer-radius); background: var(--clover-composer-background); }
+.fixture-composer textarea { flex: 1; min-height: 48px; font: inherit; color: var(--clover-composer-text); background: transparent; border: 0; }

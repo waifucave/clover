@@ -15,7 +15,7 @@
 //   devices, which H-M2's lease uses);
 // * the guided rotation a revocation starts: the synced keys the revoked device held, to be rotated (§8.1).
 import { join } from "node:path";
-import type { DeviceKind, Os } from "@waifucave/clover-protocol";
+import type { DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
 import { AnswerKeyHolder, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -152,7 +152,7 @@ export interface FileDeviceRegistryOptions {
   /** The Clover home; the registry is `devices/registry.json` in it. */
   home: string;
   key: DeviceKey;
-  self: { name: string; kind?: DeviceKind; os?: Os; computer?: string; hasDisplay?: boolean };
+  self: { name: string; kind?: DeviceKind; os?: DeviceOs; computer?: string; hasDisplay?: boolean };
   clock: Pick<Clock, "now">;
   /** For a revocation's rotation list: the synced items in the secret store (names only, never values). */
   syncedSecrets?: () => Promise<SecretMeta[]>;

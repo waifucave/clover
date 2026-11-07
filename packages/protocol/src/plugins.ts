@@ -92,9 +92,12 @@ export const PluginDetail = PluginSummary.extend({
 export type PluginDetail = z.infer<typeof PluginDetail>;
 
 /** Where to install a plugin from (§5.1). Installing only downloads a folder into the plugins directory. */
+const IndexSource = z.object({ from: z.literal("index"), id: TopPluginId, version: SemverVersion.optional(), index: z.string().url().optional() });
+const NpmSource = z.object({ from: z.literal("npm"), name: utf16(214, 1), version: utf16(256).optional() });
+
 export const InstallSource = z.discriminatedUnion("from", [
-  z.object({ from: z.literal("index"), id: TopPluginId, version: SemverVersion.optional(), index: z.string().url().optional() }),
-  z.object({ from: z.literal("npm"), name: utf16(214, 1), version: utf16(256).optional() }),
+  IndexSource,
+  NpmSource,
   z.object({ from: z.literal("folder"), path: utf16(4096, 1) }),
   /** A bare item that the core wraps into a plugin (§5.1): a pasted MCP config, an MCP URL, a skill folder, an agent
    *  file or a Claude Code plugin folder. */
@@ -155,7 +158,7 @@ export type PluginSettingView = z.infer<typeof PluginSettingView>;
 /** One of a plugin's sign-ins (§5.1 "Sign-ins"), by its place in the manifest's `auth` list. */
 export const PluginAuthView = z.object({
   index: z.number().int().min(0).max(31),
-  method: z.enum(["api-key", "oauth-pkce", "custom"]),
+  method: z.enum(["api-key", "oauth-pkce", "custom", "core"]),
   /** The secret it fills. */
   secret: utf16(64).optional(),
   state: z.enum(["signed-out", "signed-in", "expired", "refreshing", "failed"]),
@@ -251,8 +254,11 @@ const IdParams = z.object({ id: AnyPluginId });
 export const PLUGINS_METHODS = {
   pluginList: defineMethod({
     name: "plugin.list", owner: "B", roles: ["app", "cli"],
-    params: Empty, result: z.object({ plugins: z.array(PluginSummary) }),
-    doc: "Every plugin and child plugin on this computer, with its state and reason.",
+    params: Empty,
+    /** `adultConfirmed`: the user already confirmed they are 18 or older (§5.7), so Settings needn't ask again before an
+     *  adult plugin is switched on (lane F's ask). The registry always sends it; absent reads as not confirmed. */
+    result: z.object({ plugins: z.array(PluginSummary), adultConfirmed: z.boolean().optional() }),
+    doc: "Every plugin and child plugin on this computer, with its state and reason, and whether the user confirmed they are 18 or older.",
   }),
   pluginGet: defineMethod({
     name: "plugin.get", owner: "B", roles: ["app", "cli"],
@@ -346,6 +352,8 @@ export const PLUGINS_METHODS = {
      *  `treeHash` and asks y/N in the terminal, and a y is `plugin.setEnabled` with `okHash`. */
     name: "plugin.install", owner: "B", roles: ["app", "cli", "layer"], userOnly: true, capability: "plugins.install",
     params: z.object({ source: InstallSource }),
+    /** A layer installs from an index or npm only, never a folder on disk or a wrapped item (#179's review, check 2). */
+    roleParams: { layer: z.object({ source: z.discriminatedUnion("from", [IndexSource, NpmSource]) }) },
     result: z.object({ id: TopPluginId, state: PluginState, treeHash: TreeHash.optional(), card: CardId.optional() }),
     doc: "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, or the CLI's y.",
   }),

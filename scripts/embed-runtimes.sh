@@ -35,7 +35,7 @@
 # Env (Xcode build-setting names, read exactly as project.yml's other postCompileScripts do):
 #   BUILT_PRODUCTS_DIR, CONTENTS_FOLDER_PATH, CONFIGURATION, EXPANDED_CODE_SIGN_IDENTITY
 #
-# Standalone test invocation (scripts/embed-runtimes.test.ts):
+# Standalone test invocation (scripts/embed-runtimes.darwin.test.ts):
 #   BUILT_PRODUCTS_DIR=<mkdtemp> CONTENTS_FOLDER_PATH=Clover.app/Contents CONFIGURATION=Release \
 #     EXPANDED_CODE_SIGN_IDENTITY=- scripts/embed-runtimes.sh
 # — an ad-hoc identity (`-`) is EXPLICITLY ALLOWED here: this is the standalone build-phase proof,
@@ -56,7 +56,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEST="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/runtimes"
 
 # --- Step 2: stage --------------------------------------------------------------------------
-# CLOVER_STAGE_RUNTIME_PATH is a narrow TEST SEAM ONLY (embed-runtimes.test.ts) — it forwards
+# CLOVER_STAGE_RUNTIME_PATH is a narrow TEST SEAM ONLY (embed-runtimes.darwin.test.ts) — it forwards
 # `--clover <path>` so the standalone proof reuses the pinned `dist/winter` instead of paying for
 # a fresh buildWinter() SDK-checkout build on every test run. A real Release build NEVER sets
 # this: project.yml's postCompileScript invocation always rebuilds winter fresh from the pinned

@@ -6,7 +6,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./embedded-worker": "./src/runtime-sdk/embedded-worker-entry.ts"
+    "./embedded-worker": "./src/runtime-sdk/embedded-worker-entry.ts",
+    "./contracts": "./src/contracts/index.ts",
+    "./contracts/fakes": "./src/contracts/fakes/index.ts",
+    "./contracts/conformance": "./src/contracts/conformance/index.ts"
   },
   "scripts": {
     "test": "bun test",
@@ -22,7 +25,9 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@waifucave/clover-provider-conformance": "0.0.65"
+    "@waifucave/clover-provider-conformance": "0.0.65",
+    "@waifucave/clover-service-shared": "workspace:*",
+    "@waifucave/clover-test-harness": "workspace:*"
   },
   "optionalDependencies": {
     "@yanlinglabs/winter-agent-sdk-darwin-arm64": "0.0.55"

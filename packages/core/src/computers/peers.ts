@@ -7,7 +7,7 @@
 // that runs clover-core); a hello from a device that isn't on it is ignored, and a revoked device leaves the tree at
 // once. `computer.hello` is lane J's addition to the protocol (requested of lane B).
 import { z } from "zod";
-import { ComputerName, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
+import { ComputerName, isComputerOs, Level, Os, SignedCardAnswer, levelAbove, type ComputerView } from "@waifucave/clover-protocol";
 import { utf16 } from "@waifucave/clover-protocol";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { CallCardRenderer } from "../contracts/approval-broker";
@@ -221,7 +221,7 @@ export class ComputerPeers {
     }
     const up = this.#o.transport.links().find((v) => v.peer === d.id)?.up ?? false;
     try {
-      registry.add({ name, device: d.id, ...(d.os ? { os: d.os } : {}), ...(d.hasDisplay === undefined ? {} : { hasDisplay: d.hasDisplay }), state: up ? "online" : "offline" });
+      registry.add({ name, device: d.id, ...(d.os && isComputerOs(d.os) ? { os: d.os } : {}), ...(d.hasDisplay === undefined ? {} : { hasDisplay: d.hasDisplay }), state: up ? "online" : "offline" });
     } catch (e) {
       this.#o.log?.(`computers: device ${d.id} can't join the tree as ${name}: ${(e as Error).message}`);
     }

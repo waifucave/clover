@@ -39,7 +39,7 @@ describe("the contracts' layout", () => {
   test("every contract has its conformance suite, and the contracts' index doesn't load bun:test", () => {
     const runners = Object.keys(conformance).filter((k) => /^run[A-Za-z]+Conformance$/.test(k));
     expect(runners.sort()).toEqual([
-      "runAgentBackendConformance", "runApprovalBrokerConformance", "runBrowserApiConformance", "runComputerRegistryConformance",
+      "runAgentBackendConformance", "runApprovalBrokerConformance", "runBrowserApiConformance", "runCallCardTableConformance", "runComputerRegistryConformance",
       "runDeviceRegistryConformance", "runFenceConformance", "runLeaseConformance", "runLinkTransportConformance",
       "runPluginHostConformance", "runPluginRegistryConformance", "runSecretStoreConformance", "runSessionHostConformance",
       "runTreeConformance",
