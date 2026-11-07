@@ -123,6 +123,24 @@ describe("remote clients over links, on the Clover server", () => {
     expect(ended).toBe(5);
   });
 
+  test("a hello that doesn't parse still spends its token; a device revoked during the hello isn't registered", async () => {
+    const { tokens, server: s } = server();
+    const phone = "p".repeat(32);
+    const size = () => (tokens as unknown as { minted: Map<string, unknown> }).minted.size;
+    const token = tokens.mint({ role: "remote", device: phone });
+    await expect(s.linkHello(1, { role: "remote", device: phone, token }, { device: phone, role: "remote" }, () => {})).rejects.toMatchObject({ code: ERR.INVALID_PARAMS });
+    expect(size()).toBe(0);
+    // Revoked while its token was checked: the door's registry says so by the time it would be registered.
+    const devices = new Map<string, { kind: string; revokedAt?: number }>([[phone, { kind: "phone" }]]);
+    const realVerify = tokens.verify.bind(tokens);
+    tokens.verify = async (h) => { const b = await realVerify(h); devices.set(phone, { kind: "phone", revokedAt: 1 }); return b; };
+    const door = linkClientServer(s, { get: (id) => devices.get(id) as never });
+    const hello = { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "remote", device: phone, clientName: "x", token: tokens.mint({ role: "remote", device: phone }) };
+    await expect(door.hello({ device: phone, link: true }, 2, hello, () => {})).rejects.toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+    expect(s.connections()).toEqual([]);
+    expect(size()).toBe(0);
+  });
+
   test("revoking a device drops the tokens still minted for it and closes its connections", async () => {
     const { tokens, server: s } = server();
     const phone = "p".repeat(32), other = "o".repeat(32);
