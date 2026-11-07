@@ -76,16 +76,30 @@ function deps(home: string, spawn: SpawnClaudeCodeProcess, over: Partial<BotDriv
 }
 
 /** The SDK's `query`, with every frame the runtime sends recorded and timed. */
-function tappedQuery(over: Record<string, (target: never) => unknown> = {}): { frames: { at: number; msg: Record<string, unknown> }[]; query: typeof sdkQuery } {
+function tappedQuery(over: Record<string, (target: never) => unknown> = {}): { frames: { at: number; msg: Record<string, unknown> }[]; query: typeof sdkQuery; inject(frame: Record<string, unknown>): void } {
   const frames: { at: number; msg: Record<string, unknown> }[] = [];
+  // Frames a test adds to the runtime's stream (the runtime's own `next` is kept across them, never lost).
+  const injected: Record<string, unknown>[] = [];
+  let wake: (() => void) | undefined;
   const query: typeof sdkQuery = (args) => {
     const q = sdkQuery(args);
     const it = q[Symbol.asyncIterator]();
+    let pending: Promise<IteratorResult<unknown>> | undefined;
     const tapped: AsyncIterator<unknown> & AsyncIterable<unknown> = {
       async next() {
-        const n = await it.next();
-        if (n.done !== true) frames.push({ at: Date.now(), msg: n.value as Record<string, unknown> });
-        return n;
+        for (;;) {
+          const extra = injected.shift();
+          if (extra !== undefined) {
+            frames.push({ at: Date.now(), msg: extra });
+            return { done: false, value: extra };
+          }
+          pending ??= it.next();
+          const r = await Promise.race([pending.then((v) => ({ v })), new Promise<null>((res) => { wake = () => res(null); })]);
+          if (r === null) continue;
+          pending = undefined;
+          if (r.v.done !== true) frames.push({ at: Date.now(), msg: r.v.value as Record<string, unknown> });
+          return r.v;
+        }
       },
       return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
       [Symbol.asyncIterator]() { return this; },
@@ -99,7 +113,7 @@ function tappedQuery(over: Record<string, (target: never) => unknown> = {}): { f
       },
     });
   };
-  return { frames, query };
+  return { frames, query, inject: (frame) => { injected.push(frame); wake?.(); } };
 }
 
 const results = (end: { text?: string }) => JSON.parse(end.text ?? "[]") as { name: string | null; isError: boolean; content: string }[];
@@ -319,6 +333,46 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(existsSync(marker)).toBe(true);
       s.resume();
       expect((await p).reason).toBe("end_turn");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("review F7: the pause stops a task whose start doesn't say it's in the background (a WebSocket monitor), never a foreground command", async () => {
+    // The runtime refuses a loopback WebSocket (a deliberate rule), so the monitor's start frame is the runtime's own
+    // shape added to the stream: `monitor_ws` carries no `is_backgrounded`. What the pause stops is what reaches
+    // `stopTask`. (A real foreground command finishing through the pause is review P7's test.)
+    const home = tempHome();
+    const { s, ctx } = pausable();
+    const stopped: { id: string; by?: string }[] = [];
+    const { query, inject } = tappedQuery({ stopTask: () => async (id: string, o?: { by?: "host" | "assistant" }) => { stopped.push({ id, ...(o?.by === undefined ? {} : { by: o.by }) }); return { message: "stopped", taskId: id, taskType: "monitor_ws" }; } });
+    const driver = new BotSessionDriver(context(home, "winter-test/echo", ctx), deps(home, spawn, { query, pausePollMs: 100 }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      inject({ type: "system", subtype: "task_started", task_id: "ws-1", description: "socket", task_type: "monitor_ws", uuid: crypto.randomUUID(), session_id: "x" });
+      inject({ type: "system", subtype: "task_started", task_id: "fg-1", description: "build", is_backgrounded: false, task_type: "local_bash", uuid: crypto.randomUUID(), session_id: "x" });
+      await Bun.sleep(300);
+      expect(stopped).toEqual([]);
+      s.may = false;
+      for (let i = 0; i < 30 && stopped.length === 0; i++) await Bun.sleep(100);
+      await Bun.sleep(300);
+      expect(stopped).toEqual([{ id: "ws-1", by: "host" }]);
+    } finally {
+      s.may = true;
+      await driver.stop();
+    }
+  }, 60_000);
+
+  test("compaction is refused while the pause holds (a compaction is a model request)", async () => {
+    const home = tempHome();
+    const { s, ctx } = pausable();
+    const driver = new BotSessionDriver(context(home, "winter-test/echo", ctx), deps(home, spawn));
+    try {
+      for (let i = 0; i < 5; i++) expect((await driver.turn(user(`turn ${i} ${"words ".repeat(50)}`), control())).reason).toBe("end_turn");
+      s.may = false;
+      expect(await driver.compact({ reason: "user", signal: new AbortController().signal })).toEqual({ compacted: false });
+      s.may = true;
+      expect(await driver.compact({ reason: "user", signal: new AbortController().signal })).toEqual({ compacted: true });
     } finally {
       await driver.stop();
     }

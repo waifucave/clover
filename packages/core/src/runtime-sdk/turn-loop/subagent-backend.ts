@@ -253,9 +253,10 @@ class InProcessSession implements AgentSession {
     this.#emit({ type: "progress" });
     if (typeof msg.parent_tool_use_id === "string" && msg.parent_tool_use_id !== "") return;
     if (msg.type === "system" && typeof msg.task_id === "string") {
-      // Background tasks only: a foreground command is a running tool call, which the pause never cuts off.
+      // Every task but a foreground command (`is_backgrounded: false`), a running tool call the pause never cuts off; a
+      // task whose start doesn't say (a WebSocket monitor) counts.
       const patch = msg.subtype === "task_updated" ? (msg.patch as { is_backgrounded?: unknown } | undefined) : undefined;
-      if ((msg.subtype === "task_started" && msg.is_backgrounded === true) || patch?.is_backgrounded === true) {
+      if ((msg.subtype === "task_started" && msg.is_backgrounded !== false) || patch?.is_backgrounded === true) {
         this.#tasks.add(msg.task_id);
         this.#watchPause();
       } else if (msg.subtype === "task_notification") this.#tasks.delete(msg.task_id);

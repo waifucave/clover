@@ -697,10 +697,11 @@ export class BotSessionDriver implements SessionDriver {
     const t = this.#turn;
     const main = !(typeof msg.parent_tool_use_id === "string" && msg.parent_tool_use_id.length > 0);
     if (msg.type === "system" && typeof msg.task_id === "string") {
-      // Background tasks only: a foreground command the runtime tracks (`is_backgrounded: false`) is a running tool
-      // call, which the pause never cuts off; one moved to the background later counts from then.
+      // Every task but a foreground command the runtime tracks (`is_backgrounded: false`), which is a running tool call
+      // the pause never cuts off; one moved to the background later counts from then. A task whose start doesn't say
+      // (a WebSocket monitor) counts.
       const patch = msg.subtype === "task_updated" ? (msg.patch as { is_backgrounded?: unknown } | undefined) : undefined;
-      if ((msg.subtype === "task_started" && msg.is_backgrounded === true) || patch?.is_backgrounded === true) {
+      if ((msg.subtype === "task_started" && msg.is_backgrounded !== false) || patch?.is_backgrounded === true) {
         inc.tasks.add(msg.task_id);
         this.#watchTasks(inc);
       } else if (msg.subtype === "task_notification") {
@@ -955,6 +956,9 @@ export class BotSessionDriver implements SessionDriver {
 
   async compact(req: { reason: "cache" | "full" | "user"; signal: AbortSignal }): Promise<{ compacted: boolean }> {
     if (this.#stopped || req.signal.aborted) return { compacted: false };
+    // A compaction is a model request: none while the pause holds or this computer doesn't run the bot (lane D's host
+    // asks `mayStart` first too).
+    if (!this.#ctx.mayAct()) return { compacted: false };
     const state = this.#readState();
     if (this.#inc === undefined && !(await this.#hasTranscript(state.backendSessionId))) return { compacted: false };
     const inc = await this.#ensureOpen();
