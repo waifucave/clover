@@ -13,7 +13,7 @@ import {
 } from "./lib";
 import { generateFeedKey, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
-import { draftReleaseArgs, macCoreIn, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, sealProofCommand, sealProofProblem, signFeeds } from "./publish";
+import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, RELEASE_OSES, sealProofCommand, sealProofProblem, shippedMacCore, signFeeds, type ShippedOpeners } from "./publish";
 
 /** A Keychain of the test's own: the real one is never touched. */
 function memoryStore(): KeyStore & { items: Map<string, string> } {
@@ -309,24 +309,65 @@ describe("the update feed's key (scripts/release/feed-key.ts)", () => {
   });
 });
 
-describe("no draft without the sealed core's proof (#243 check 4)", () => {
-  test("a release with a macOS build proves the signed app's clover-core with --signed --require-proof first", () => {
-    const dist = mkdtempSync(join(tmpdir(), "clover-publish-proof-"));
-    const daemon = join(dist, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon");
+describe("no draft without the sealed core's proof, on the bytes that ship (#243 checks 4 and 5)", () => {
+  const V = "1.2.3";
+  /** A `Clover.app` whose daemon/clover-core holds `core`, under `dir`. */
+  const app = (dir: string, core: string) => {
+    const daemon = join(dir, "Clover.app", "Contents", "Resources", "daemon");
     mkdirSync(daemon, { recursive: true });
-    writeFileSync(join(daemon, "clover-core"), "");
-    const core = join(daemon, "clover-core");
-    expect(macCoreIn([join(dist, "nowhere"), dist])).toBe(core);
-    expect(sealProofCommand(core, "/repo").slice(1)).toEqual(["/repo/scripts/verify-sealed-core.ts", "--binary", core, "--signed", "--require-proof"]);
+    writeFileSync(join(daemon, "clover-core"), core);
+  };
+  /** A build folder: the unpacked app, the dmg and the zip (stand-ins: their contents are what the openers yield). */
+  function build(o: { app?: string; zip?: string; dmg?: string; apps?: number } = {}) {
+    const dist = mkdtempSync(join(tmpdir(), "clover-publish-proof-"));
+    for (let i = 0; i < (o.apps ?? 1); i++) app(join(dist, i === 0 ? "mac-arm64" : `mac-x${i}`), o.app ?? "core-A");
+    writeFileSync(join(dist, `Clover-${V}.dmg`), "dmg");
+    writeFileSync(join(dist, `Clover-${V}-mac.zip`), "zip");
+    const mounted: string[] = [];
+    const openers: ShippedOpeners = {
+      extractZip: (_zip, dest) => { app(dest, o.zip ?? o.app ?? "core-A"); return true; },
+      mountDmg: (_dmg, mountpoint) => { app(mountpoint, o.dmg ?? o.app ?? "core-A"); mounted.push(mountpoint); return () => { mounted.splice(mounted.indexOf(mountpoint), 1); }; },
+    };
+    return { dist, openers, mounted, core: join(dist, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon", "clover-core") };
+  }
+
+  test("the one app beside the dmg is proven with --signed --require-proof when the zip's and the dmg's cores are its own", () => {
+    const b = build();
+    expect(shippedMacCore(b.dist, V, b.openers)).toEqual({ core: b.core });
+    expect(b.mounted).toEqual([]); // the dmg was detached
+    expect(sealProofCommand(b.core, "/repo").slice(1)).toEqual(["/repo/scripts/verify-sealed-core.ts", "--binary", b.core, "--signed", "--require-proof"]);
     const asked: string[] = [];
-    // Proven: the draft goes ahead.
-    expect(sealProofProblem(true, [dist], (c) => { asked.push(c); return true; })).toBeUndefined();
-    expect(asked).toEqual([core]);
+    expect(sealProofProblem({ dir: b.dist, name: `Clover-${V}.dmg` }, V, (c) => { asked.push(c); return true; }, b.openers)).toBeUndefined();
+    expect(asked).toEqual([b.core]);
     // Not proven (SIP off, an UNPROVABLE door, anything failing): refused.
-    expect(sealProofProblem(true, [dist], () => false)).toContain("no draft without the seal's proof");
-    // No macOS core to prove: refused, never skipped.
-    expect(sealProofProblem(true, [join(dist, "nowhere")], () => true)).toContain("can't be proven");
+    expect(sealProofProblem({ dir: b.dist, name: `Clover-${V}.dmg` }, V, () => false, b.openers)).toContain("no draft without the seal's proof");
     // A release with no macOS build has nothing to prove here.
-    expect(sealProofProblem(false, [dist], () => false)).toBeUndefined();
+    expect(sealProofProblem(undefined, V, () => false, b.openers)).toBeUndefined();
+  });
+
+  test("a stale mac* folder in another --from folder is never what gets proven", () => {
+    const stale = mkdtempSync(join(tmpdir(), "clover-publish-stale-"));
+    app(join(stale, "mac-arm64"), "an old core");
+    const b = build();
+    const asked: string[] = [];
+    // Only the dmg's own folder counts, whatever else --from names first.
+    expect(sealProofProblem({ dir: b.dist, name: `Clover-${V}.dmg` }, V, (c) => { asked.push(c); return true; }, b.openers)).toBeUndefined();
+    expect(asked).toEqual([b.core]);
+    // A dmg folder with no app, or two, is refused.
+    expect(sealProofProblem({ dir: stale, name: `Clover-${V}.dmg` }, V, () => true, b.openers)).toContain("can't be proven");
+    const two = build({ apps: 2 });
+    expect(shippedMacCore(two.dist, V, two.openers)).toEqual({ problem: expect.stringContaining("exactly one mac*/Clover.app") });
+  });
+
+  test("a zip or a dmg whose clover-core differs from the proven one is refused", () => {
+    const zip = build({ zip: "another core" });
+    expect(shippedMacCore(zip.dist, V, zip.openers)).toEqual({ problem: expect.stringContaining(`the clover-core in ${join(zip.dist, `Clover-${V}-mac.zip`)} is not the one`) });
+    expect(sealProofProblem({ dir: zip.dist, name: `Clover-${V}.dmg` }, V, () => true, zip.openers)).toContain("can't be proven");
+    const dmg = build({ dmg: "another core" });
+    expect(shippedMacCore(dmg.dist, V, dmg.openers)).toEqual({ problem: expect.stringContaining(`the clover-core in ${join(dmg.dist, `Clover-${V}.dmg`)} is not the one`) });
+    expect(dmg.mounted).toEqual([]); // detached even when refused
+    // A dmg that won't mount is refused, not skipped.
+    const b = build();
+    expect(shippedMacCore(b.dist, V, { ...b.openers, mountDmg: () => undefined })).toEqual({ problem: expect.stringContaining("could not be mounted") });
   });
 });
