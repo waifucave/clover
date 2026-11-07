@@ -158,25 +158,53 @@ const LOOKALIKES: Readonly<Record<string, string>> = Object.fromEntries([
   // Cherokee capitals (a small letter is upper-cased to its capital first)
   ..."ᎪaᏴbᏟcᎠdᎬeᏀgᎻhᏆlᎫjᏦkᏞlᎷmᏢpᏒrᏚsᎢtᏙvᎳwᏔwᎩyᏃz".match(/../gu)!.map((p) => [...p] as [string, string]),
 ]);
-const CHEROKEE_SMALL = /[\uAB70-\uABBF\u13F8-\u13FD]/u;
+/** The island's own lookalike tables (lane G, before #264), folded in so the manifest check refuses everything the
+ *  island did: Cyrillic, Greek, Armenian and Cherokee letters that read as Latin ones, in both cases, and Latin's
+ *  small capitals. One entry of theirs is left out as too loose: Greek η, which reads as an "n" only in some faces. */
+const ISLAND_LOOKALIKES: Readonly<Record<string, string>> = Object.fromEntries([
+  // Cyrillic capitals and small letters
+  ..."АaВbЕeЁeЗ3КkМmНhОoРpСcТtУyХxЅsІlЇlЈjҮyԚqԜwӀlꙆl".match(/../gu)!.map((p) => [...p] as [string, string]),
+  ..."аaвbеeёeгrз3кkмmнhоoпnрpсcтtуyхxѕsіlїlјjԁdһhӏlԛqԝwүyҽeѵvꙇl".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Greek capitals and small letters (σ and ς read as "o" and "c"; ϲ, Ϲ and ϳ, Ϳ too)
+  ..."ΑaΒbΕeΖzΗhΙlΚkΜmΝnΟoΡpΤtΥyΧxϹcͿj".match(/../gu)!.map((p) => [...p] as [string, string]),
+  ..."αaβbγyεeιlκkνvοoρpσoτtυuχxϲcϳjςc".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Armenian capitals and small letters
+  ..."ՏsՕoՍuաwզqհhոnսuօo".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Cherokee capitals (a small letter is upper-cased to its capital first)
+  ..."ᎪaᏴbᏟcᎠdᎬeᏀgᎻhᎥlᎫjᏦkᏞlᎷmᏫoᏢpᏚsᎢtᏙvᎳwᏃz".match(/../gu)!.map((p) => [...p] as [string, string]),
+  // Latin lookalikes
+  ..."ɑaɡgıiȷjɩiʋuɣyꞵbǀl".match(/../gu)!.map((p) => [...p] as [string, string]),
+]);
+
+/** Every lookalike, one map: the confusables, the small capitals and Latin letters with a stroke, and the island's. */
+const LOOKALIKE: Readonly<Record<string, string>> = { ...ISLAND_LOOKALIKES, ...LOOKALIKES, ...CONFUSABLES };
+
+function mapLookalikes(text: string): string {
+  let out = "";
+  for (const ch of text) out += LOOKALIKE[ch] ?? ch;
+  return out;
+}
+
+const CHEROKEE_SMALL = /[\uAB70-\uABBF\u13F8-\u13FD]/gu;
 /** ™ ® © ℠ ℗, and Lisu's tone marks (U+A4F8–A4FD), which read as nothing. */
 const DROPPED_MARKS = /[\u2122\u00AE\u00A9\u2120\u2117\uA4F8-\uA4FD]/gu;
 
 /** A title as reserved titles, plugin names that could pose as them, and bot names compare it (#179's review; lane
- *  G's island comparison): NFKC (width folded), invisible characters dropped (zero-width spaces and joiners, bidi
- *  marks, variation selectors), each letter's confusable skeleton (a Cyrillic "о" is "o"; small capitals and Cherokee
- *  letters too), accents dropped, case folded, every run of anything but letters and digits dropped, so a missing or
- *  invisible space changes nothing ("Needsyou" is "Needs you"), and then I, i, 1, | and l as one letter (Greek and
- *  Cyrillic Ι, І and і with them), "rn" as "m", "vv" as "w" and "cl" as "d" (lane G's island folds the same, so the
- *  two agree exactly: "Iris" is "iris" is "lris"). Folding too much only reserves more. */
+ *  G's island comparison, #264): compatibility forms decomposed (NFKD: width, mathematical letters, ligatures) and every
+ *  accent and other mark dropped, invisible characters dropped (zero-width spaces and joiners, bidi marks, variation
+ *  selectors), each letter's lookalike folded to its Latin letter (a Cyrillic "о" is "o"; small capitals, Cherokee,
+ *  Armenian and Greek letters too), case folded, and the lookalikes folded once more, so a capital whose small form is
+ *  in the table is caught ("Ї" is "ї" is "l"). Then every run of anything but letters and digits is dropped, so a
+ *  missing or invisible space changes nothing ("Needsyou" is "Needs you"), and I, i, 1, | and l read as one letter,
+ *  "rn" as "m", "vv" as "w" and "cl" as "d" ("Iris" is "iris" is "lris"). Folding too much only reserves more. */
 export function foldTitle(title: string): string {
-  // Marks that NFKC would spell out as letters (™ as "TM") are dropped first, with Lisu's tone marks.
-  const visible = title.replace(DROPPED_MARKS, "").replace(/[\u03F2\u03F9]/gu, "c").normalize("NFKC").replace(INVISIBLE, "").replace(DROPPED_MARKS, "");
-  const skeleton = [...visible].map((ch) => {
-    const c = CHEROKEE_SMALL.test(ch) ? ch.toUpperCase() : ch;
-    return CONFUSABLES[c] ?? LOOKALIKES[c] ?? c;
-  }).join("");
-  return skeleton.normalize("NFD").replace(/\p{M}/gu, "").toUpperCase().toLowerCase()
+  // Marks that NFKD would spell out as letters (™ as "TM") go first, with Lisu's tone marks; the lunate sigmas, which
+  // NFKD turns into Σ and ς, read as "c".
+  const bare = title.replace(DROPPED_MARKS, "").replace(/[\u03F2\u03F9]/gu, "c")
+    .normalize("NFKD").replace(/\p{M}/gu, "").replace(INVISIBLE, "").replace(DROPPED_MARKS, "")
+    .replace(CHEROKEE_SMALL, (ch) => ch.toUpperCase());
+  const folded = mapLookalikes(mapLookalikes(bare).toUpperCase().toLowerCase());
+  return mapLookalikes(folded.normalize("NFKD").replace(/\p{M}/gu, ""))
     .replace(/[^\p{L}\p{N}]+/gu, "")
     .replace(/[il1|]/g, "l")
     .replace(/rn/g, "m")
