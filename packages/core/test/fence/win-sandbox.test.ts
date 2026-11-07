@@ -236,7 +236,7 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     const plan = winLaunchPlan({
       policy,
       cloverHome: home,
-      caller: { sessionId: "s1", bot: "luna", botsOwnSession: true },
+      caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
       bots: ["luna", "sol"],
       entries,
     });
@@ -275,7 +275,7 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
     const plan = winLaunchPlan({
       policy,
       cloverHome: home,
-      caller: { sessionId: "s9" },
+      caller: { kind: "session", sessionId: "s9", sessionKind: "coding" },
       bots: ["luna"],
       entries,
     });

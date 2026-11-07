@@ -1513,7 +1513,15 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
   });
   if (r !== "timed-out") return r;
   await stopThroughOs(spec, bunRunner);
-  return "stopped through the OS";
+  // Windows: a daemon the app started isn't the task's, so `schtasks /End` can't reach it; it is ended by its
+  // pid, and only while that pid is still the daemon's binary (review M5).
+  if (spec.os === "win32" && alive() && isDaemonImage(processImage(pid), spec.bin)) { try { process.kill(pid); } catch { /* gone */ } }
+  // Done only when its endpoint is gone and the lock holder with it (an upgrade replaces the files next).
+  for (let i = 0; i < 75; i++) {
+    if (!alive() && !(await endpointAnswers(socketPath()))) return "stopped through the OS";
+    await Bun.sleep(200);
+  }
+  return "still running";
 }
 
 /** `clover autostart enable|disable|stop|remove|start|status [--json] [--app <path>]`: login start on this OS. The
@@ -1569,6 +1577,7 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
       // version starts at the next login or `autostart start`. Succeeds when nothing is running.
       const stopped = await stopRunningDaemon(spec);
       console.log(`the daemon: ${stopped}; autostart unchanged (${spec.profile})`);
+      if (stopped === "still running") process.exitCode = 1;
       break;
     }
     case "remove": {
@@ -3192,6 +3201,13 @@ if (import.meta.main) {
     await runDaemonStart();
     break;
   }
+  case "daemon stop": {
+    // An upgrade's first step (lane M): `autostart stop` under the daemon's own name. The running daemon stops
+    // cleanly (pair.quit, else SIGTERM to its binary, else the OS's stop) and this waits until its endpoint is
+    // gone; login start is left as it is. Exit 0 when it stopped or none was running, 1 when it is still running.
+    await runAutostartCommand("stop");
+    break;
+  }
   case "daemon check-server": {
     // Before a client sends its token: is this home's endpoint served by this user's daemon (and,
     // with --image, by that binary)? The app runs it before its hello (E-M1's review). Exit 0 when ok.
@@ -3862,7 +3878,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
+  daemon run | daemon start | daemon stop | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)

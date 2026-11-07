@@ -19,7 +19,8 @@ import { dlopen, FFIType } from "bun:ffi";
 import { callerPlaces } from "./per-caller";
 import type { CallerPlaces } from "./per-caller";
 import type { SandboxPolicy } from "../contracts/fence";
-import type { FenceCaller } from "./per-caller";
+import type { Caller } from "@waifucave/clover-protocol";
+import { fenceContextFor, folderName } from "../contracts/fence";
 import { botSegment } from "../sessions/ids";
 import { SRT_WIN_PINS, launcherDigest, launcherProblem, srtWinArch, srtWinPath, type SrtWinArch } from "./windows-launcher";
 
@@ -972,22 +973,24 @@ export interface WinCallerRules {
  *  another session holds can't be read from this one. `entries` is the disk (tests pass a fake). */
 export function winCallerRules(o: {
   cloverHome: string;
-  caller: FenceCaller;
+  caller: Caller;
   bots: readonly string[];
   entries?: (dir: string) => readonly string[];
 }): WinCallerRules {
-  const places: CallerPlaces = callerPlaces(o.cloverHome, "windows", {
-    ...(o.caller.sessionId !== undefined ? { sessionId: o.caller.sessionId } : {}),
-    ...(o.caller.bot !== undefined ? { bot: o.caller.bot } : {}),
-    ...(o.caller.botsOwnSession === true ? { botsOwnSession: true as const } : {}),
-  });
+  const ctx = fenceContextFor(o.caller);
+  const places: CallerPlaces = callerPlaces(o.cloverHome, "windows", ctx);
+  // `callerPlaces` joins POSIX-style; the Windows fence compares and emits win32 paths.
+  const botsDir = win32.normalize(places.bots);
+  const runtimeDir = win32.normalize(places.runtime);
+  const ownMemoryWin = places.ownMemory === null ? null : win32.normalize(places.ownMemory);
   const entries = o.entries ?? (() => []);
   const fold = (s: string) => s.toUpperCase();
-  const ownBot = places.ownMemory === null ? null : win32.dirname(places.ownMemory);
+  const ownBot = ownMemoryWin === null ? null : win32.dirname(ownMemoryWin);
   const outputs = win32.join(o.cloverHome, "outputs");
   const scratch = win32.join(o.cloverHome, "scratch");
-  const ownOutputs = o.caller.sessionId !== undefined ? win32.join(outputs, o.caller.sessionId) : null;
-  const ownScratch = o.caller.bot !== undefined ? win32.join(scratch, botSegment(o.caller.bot)) : null;
+  // Only a valid single-segment id names an own folder (`..` would climb out): same rule as `folderName`.
+  const ownOutputs = ctx.sessionId !== undefined && folderName(ctx.sessionId) ? win32.join(outputs, ctx.sessionId) : null;
+  const ownScratch = ctx.memoryOf !== undefined ? win32.join(scratch, botSegment(ctx.memoryOf)) : null;
 
   // The home itself: default-deny, both ways.
   const denyRead: string[] = [o.cloverHome];
@@ -999,7 +1002,7 @@ export function winCallerRules(o: {
   // Every bot folder: write-denied to all; read-denied to all but its own bot. The memory folder itself is
   // never deletable or movable, by its own bot either.
   for (const x of o.bots) {
-    const folder = win32.join(places.bots, x);
+    const folder = win32.join(botsDir, x);
     const memory = win32.join(folder, "memory");
     protectDelete.push(memory);
     if (ownBot !== null && fold(folder) === fold(ownBot)) {
@@ -1023,11 +1026,15 @@ export function winCallerRules(o: {
   }
   if (ownOutputs !== null) grantWrite.push(ownOutputs);
   if (ownScratch !== null) grantWrite.push(ownScratch);
-  // The bot driver's state: hidden, its own file readable.
-  denyRead.push(places.runtime);
-  denyWrite.push(places.runtime);
-  if (places.ownRuntime !== null) grantRead.push(places.ownRuntime);
-  return { denyRead, denyWrite, grantRead, grantWrite, protectDelete, ownMemory: places.ownMemory, ownRuntime: places.ownRuntime };
+  // The bot driver's state: hidden, its own file readable. Only a valid single-segment
+  // session id names its own file (`<sessionId>.json`); anything else reaches nothing.
+  denyRead.push(runtimeDir);
+  denyWrite.push(runtimeDir);
+  const ownRuntime = ctx.sessionId !== undefined && folderName(ctx.sessionId)
+    ? win32.join(runtimeDir, `${ctx.sessionId}.json`)
+    : null;
+  if (ownRuntime !== null) grantRead.push(ownRuntime);
+  return { denyRead, denyWrite, grantRead, grantWrite, protectDelete, ownMemory: ownMemoryWin, ownRuntime };
 }
 
 /** The full per-launch plan: the fence's set (deny ACEs on every fenced item, so Bash can never write the
@@ -1035,7 +1042,7 @@ export function winCallerRules(o: {
 export function winLaunchPlan(o: {
   policy: SandboxPolicy;
   cloverHome: string;
-  caller: FenceCaller;
+  caller: Caller;
   bots: readonly string[];
   entries?: (dir: string) => readonly string[];
 }): WinCallerRules {

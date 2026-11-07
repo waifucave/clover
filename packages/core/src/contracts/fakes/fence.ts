@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -64,10 +64,38 @@ function defaultUserData(os: Os, home: string): string {
 }
 
 /** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
+/** The login-start places: every folder and file a planted write could run later, outside the sandbox (spec item
+ *  1116, the controller's ruling) — Clover's own login item first, then the shells and their logout scripts, SSH and
+ *  git config, the folders that come ahead on PATH, and the desktop's autostart, systemd and session-script folders.
+ *  Lane C's layout lists the same. */
 function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
-  if (os === "macos") return [`${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`];
-  if (os === "linux") return [`${home}/.config/systemd/user/clover-core.service`];
-  return [];
+  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
+    ".bash_logout", ".zlogout", ".logout"];
+  const shells = [...shell.map((f) => `${home}/${f}`), `${home}/.config/fish`];
+  const pathAhead = [`${home}/.local/bin`, `${home}/bin`];
+  const sshGit = [`${home}/.ssh`, `${home}/.gitconfig`, `${home}/.config/git`];
+  if (os === "macos") {
+    return [
+      `${home}/Library/LaunchAgents/com.waifucave.clover.core.plist`, `${cloverHome}/login`,
+      `${home}/Library/LaunchAgents`, `${home}/Library/LaunchDaemons`, `${home}/Library/StartupItems`,
+      `${home}/Library/Application Support/com.apple.backgroundtaskmanagementagent`,
+      ...shells, ...pathAhead, ...sshGit,
+      `${home}/.config/environment.d`,
+    ];
+  }
+  if (os === "linux") {
+    return [
+      `${home}/.config/systemd/user`, `${home}/.config/autostart`, `${home}/.local/share/systemd/user`,
+      `${home}/.config/environment.d`, `${home}/.pam_environment`, `${home}/.xprofile`, `${home}/.xsessionrc`, `${home}/.xinitrc`,
+      `${home}/.config/autostart-scripts`, `${home}/.config/plasma-workspace/env`, `${home}/.config/plasma-workspace/shutdown`,
+      ...shells, ...pathAhead, ...sshGit,
+    ];
+  }
+  return [
+    `${home}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup`,
+    `${home}/Documents/PowerShell`, `${home}/Documents/WindowsPowerShell`,
+    `${home}/.bashrc`, `${home}/.bash_profile`, `${home}/.profile`, `${home}/.minttyrc`,
+  ];
 }
 
 export class FakeFence implements Fence {
@@ -145,17 +173,18 @@ export class FakeFence implements Fence {
 
   policy(ctx?: FenceContext): SandboxPolicy {
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
-    const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
+    // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
     return {
       allowWrite: [this.#home, this.#temp],
-      denyWrite: [...set.map((i) => i.path), patterns[0]!],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
+      denyWrite: [...set.map((i) => i.path), this.#cloverHome],
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
-      ...(ctx?.memoryOf !== undefined ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
+      ...ownFoldersOf(ctx, this.#cloverHome),
     };
   }
+
 
   forCaller(caller: Caller): CallerFence {
     const context = fenceContextFor(caller);

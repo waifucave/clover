@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { win32 } from "node:path";
 import { AgentJob } from "../platform/win-job";
-import type { Os } from "@waifucave/clover-protocol";
+import type { Caller, Os } from "@waifucave/clover-protocol";
 
 export interface FencedRun {
   /** A shell command line, run by the platform's shell: `/bin/sh -c` on macOS and Linux; on Windows Git Bash
@@ -22,11 +22,9 @@ export interface FencedRun {
   readonly stdin?: string;
   readonly timeoutMs: number;
   readonly signal?: AbortSignal;
-  /** Whose run it is: the fence's set and the network rule are this caller's. */
+  /** Whose run it is: the fence's set, the home default-deny's allows, and the network rule are this caller's. */
   readonly who: {
-    readonly sessionId: string; readonly bot?: string; readonly pluginId?: string; readonly hook?: string;
-    /** The bot's own main conversation or side thread: the only runner its memory opens to. */
-    readonly botsOwnSession?: boolean;
+    readonly caller: Caller; readonly hook?: string;
   };
 }
 
