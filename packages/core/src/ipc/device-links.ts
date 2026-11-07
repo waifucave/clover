@@ -5,8 +5,11 @@
 //     with its links resolved (`bundledLinkBinary`), never one an environment variable or the PATH names: the sidecar
 //     is handed the device key. Without it the daemon runs with no links, and says so.
 //   - The device key and box key live in the contract secret store (`CloverSecretStore`), as device items.
-//   - The handshake (`https://handshake.waifucave.com`) finds peers and keeps the main computer's lease on the group's
-//     record; public time servers set the shared clock's reference.
+//   - The handshake (`https://handshake.waifucave.com`, or the dev/test build's `CLOVER_HANDSHAKE_URL`) finds peers and
+//     keeps the main computer's lease on the group's record; public time servers set the shared clock's reference.
+//   - The waifucave account and short codes' rendezvous come from lane I's settings (`waifucaveAccount`: the
+//     environment in dev and test builds only, `<clover home>/account.json`, then production's). The daemon never
+//     passes `distBuild` or an environment of its own: the compile-time build kind decides.
 //   - A sensitive device change (add, revoke, the main computer) made in the user's own terminal goes through; any
 //     other opens a card through `openCard`, which refuses until C-M3's approval broker raises it (the controller's
 //     ruling: `refuseUntilBroker`; C-M3 passes `brokerCardOpener(broker)`).
@@ -15,8 +18,7 @@
 //   - `peer.call` runs through the Clover server's `dispatch`. A call that needs the user's signed answer is refused
 //     until C-M3's cards render (`renderNothing`), so verifySignedAnswer fails closed.
 // Still to come: the sidecar's spawn under the fence (with C-M2's Bash fence: UDP and its pipes only), H-M2's
-// `mountRemoteClients` (lane I's phone over the link), the account (lane I's service and its config), and the devices
-// area's events (`devicesEvents`), once the Clover server sends `core.event`s.
+// `mountRemoteClients` (lane I's phone over the link), and the devices area's events (`devicesEvents`), once the Clover server sends `core.event`s.
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import type { Caller, CloverRole } from "@waifucave/clover-protocol";
@@ -24,7 +26,7 @@ import type { Clock } from "../contracts/clock";
 import type { SecretStore } from "../contracts/secret-store";
 import type { AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import { SntpTimeSource } from "../clock/shared-clock";
-import { WAIFUCAVE_DEVICE_SERVICES } from "../devices/account-devices";
+import { waifucaveAccount, type WaifucaveAccount } from "../identity/account-config";
 import { devicesMethods, mountMainChoiceRequests, type CardOpener } from "../devices/rpc";
 import type { UpdateRestartGate } from "../lease/main";
 import { HandshakeClient } from "../links/handshake";
@@ -72,9 +74,13 @@ export interface DaemonLinksInput {
   openCard?: CardOpener;
   /** The daemon's update gate (`RunningDaemon.updateGate`, lane M): the lease renews just before an update's restart. */
   updateGate?: UpdateRestartGate;
-  /** The handshake: production's (`WAIFUCAVE_DEVICE_SERVICES.handshake`) by default; a test's local stand-in, or null
-   *  for none. */
+  /** The handshake: at the account settings' `handshakeUrl` (production's unless a dev or test build overrides it) by
+   *  default; a test's local stand-in, or null for none. */
   handshake?: HandshakeClient | null;
+  /** The account and short codes' rendezvous: `waifucaveAccount`'s by default; a test's own, or null for neither (signed
+   *  out, no short codes). Only with the default handshake: the rendezvous lives at the handshake, so a test that
+   *  passes its own handshake (or none) passes its own account and rendezvous too, or has neither. */
+  account?: Pick<WaifucaveAccount, "account" | "rendezvous"> | null;
   /** Public time for the shared clock's reference: SNTP by default; null for none (tests never reach the network). */
   publicTime?: DeviceLinksOptions["publicTime"] | null;
   /** The main computer's timings and clocks, for tests. */
@@ -104,8 +110,12 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
     log("[links] no link sidecar (clover-link) beside the daemon: this computer runs without links to its devices");
     return { links: null, handOver: async () => {}, close: async () => {} };
   }
+  const settings = input.handshake === undefined
+    ? await waifucaveAccount({ home: input.home, store: input.store, clock: input.clock, log })
+    : undefined;
+  const account = input.account === undefined ? settings : input.account ?? undefined;
   const handshake = input.handshake === undefined
-    ? new HandshakeClient({ baseUrl: WAIFUCAVE_DEVICE_SERVICES.handshake.url, clock: input.clock })
+    ? new HandshakeClient({ baseUrl: settings!.handshakeUrl, clock: input.clock })
     : input.handshake ?? undefined;
   const publicTime = input.publicTime === undefined ? new SntpTimeSource() : input.publicTime ?? undefined;
   const openCard = input.openCard ?? refuseUntilBroker;
@@ -116,6 +126,8 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
     ...(input.wire ? { wire: input.wire } : { sidecar }),
     ...(input.directory ? { directory: input.directory } : {}),
     ...(handshake ? { handshake } : {}),
+    ...(account?.account ? { account: account.account } : {}),
+    ...(account?.rendezvous ? { rendezvous: account.rendezvous } : {}),
     ...(publicTime ? { publicTime } : {}),
     ...(input.mainComputer !== undefined ? { mainComputer: input.mainComputer } : {}),
     ...(input.driver !== undefined ? { driver: input.driver } : {}),

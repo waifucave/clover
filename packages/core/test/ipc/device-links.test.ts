@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SystemClock } from "../../src/clock/system-clock";
 import { MemoryNetwork } from "../../src/links/memory-wire";
+import { MemoryRendezvous } from "../../src/links/pairing";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../../src/secrets/clover-secret-store";
 import { linkSidecarBinary, refuseUntilBroker, startDaemonLinks, type DaemonLinks } from "../../src/ipc/device-links";
 import type { CloverHandler } from "../../src/ipc/clover";
@@ -73,4 +74,70 @@ describe("the daemon's links (H-M1 wiring)", () => {
     expect(a.dispatched[0]).toMatchObject({ method: "session.list", role: "remote", caller: { kind: "peer", device: lb.key.id } });
     a.netChange(); // no throw; the transport re-dials
   }, 30_000);
+
+  // Lane I's account settings (#258): the default handshake, the account and short codes' rendezvous all come from
+  // `waifucaveAccount` (here `<clover home>/account.json`, read as a test build reads it), at a local stand-in.
+  async function accountBoot(settings: Record<string, string>) {
+    const seen: string[] = [];
+    const server = Bun.serve({
+      hostname: "127.0.0.1", port: 0,
+      fetch(req) {
+        const u = new URL(req.url);
+        seen.push(`${req.method} ${u.pathname}`);
+        if (u.pathname.startsWith("/v1/rendezvous/") && req.method === "PUT") return new Response(null, { status: 201 });
+        return Response.json({ error: "not_found" }, { status: 404 });
+      },
+    });
+    stops.push(async () => void server.stop(true));
+    const url = `http://127.0.0.1:${server.port}`;
+    const home = mkdtempSync(join(tmpdir(), "clover-int-account-"));
+    writeFileSync(join(home, "account.json"), JSON.stringify(Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, v.replace("$URL", url)]))));
+    const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+    const lines: string[] = [];
+    const net = new MemoryNetwork();
+    const d = await startDaemonLinks({
+      home, store, clock, self: { name: "Studio", os: "macos" }, handlers: {}, binary: null,
+      publicTime: null, mainComputer: { watchSleep: false }, driver: false,
+      wire: (key) => net.endpoint(key.publicKey),
+      dispatch: async () => null, watch: () => () => {}, log: (l) => lines.push(l),
+    });
+    stops.push(() => d.close());
+    return { d, seen, lines };
+  }
+
+  test.skipIf(process.env.CLOVER_HANDSHAKE_URL !== undefined)("the account settings pick the handshake and the short codes' rendezvous; with no sign-in project the device runs signed out", async () => {
+    const { d, seen, lines } = await accountBoot({ handshakeUrl: "$URL" });
+    const links = d.links!;
+    expect(links.directory).toBeDefined();
+    expect(links.accountDirectory).toBeUndefined();
+    expect(lines.some((l) => /\[account\].*runs signed out/.test(l))).toBe(true);
+    const view = await links.pairing.begin();
+    expect(view.code).toBeDefined();
+    expect(seen.some((r) => r.startsWith("PUT /v1/rendezvous/"))).toBe(true);
+  });
+
+  test.skipIf(process.env.CLOVER_HANDSHAKE_URL !== undefined || process.env.CLOVER_ACCOUNT_AUTH_URL !== undefined)("with a sign-in project the links get the account client (and its devices at the handshake)", async () => {
+    const { d, lines } = await accountBoot({ handshakeUrl: "$URL", authUrl: "$URL/supabase", anonKey: "anon-public-key", serviceUrl: "$URL/auth" });
+    expect(d.links!.accountDirectory).toBeDefined();
+    expect(lines.some((l) => /runs signed out/.test(l))).toBe(false);
+  });
+
+  test("a test's own handshake (or none) has no account or rendezvous unless it passes them", async () => {
+    const net = new MemoryNetwork();
+    const start = async (account?: { rendezvous: MemoryRendezvous }) => {
+      const home = mkdtempSync(join(tmpdir(), "clover-int-account-"));
+      const d = await startDaemonLinks({
+        home, store: new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
+        clock, self: { name: "Studio", os: "macos" }, handlers: {}, binary: null, handshake: null, publicTime: null,
+        mainComputer: { watchSleep: false }, driver: false, wire: (key) => net.endpoint(key.publicKey),
+        dispatch: async () => null, watch: () => () => {}, ...(account ? { account } : {}),
+      });
+      stops.push(() => d.close());
+      return d.links!;
+    };
+    expect((await (await start()).pairing.begin()).code).toBeUndefined();
+    const rendezvous = new MemoryRendezvous();
+    expect((await (await start({ rendezvous })).pairing.begin()).code).toBeDefined();
+    expect(rendezvous.slots.size).toBe(1);
+  });
 });
