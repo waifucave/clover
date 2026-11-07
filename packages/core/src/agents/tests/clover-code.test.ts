@@ -47,7 +47,8 @@ function make(spawn: SpawnClaudeCodeProcess, o: WorldOptions & { pause?: WorldOp
     extraBackends: (wire) => [new CloverCodeBackend({
       clock: { now: () => Date.now() } as never, wire, defaultModel: () => MODEL, sandboxReady: SANDBOX_READY,
       baseOptions: (x) => ({ ...baseOptionsFor(w.cloverHome, spawn)(x), ...(o.base ?? {}) }),
-      ...(o.pause ? { pause: o.pause } : {}),
+      // The core always hands a gate (an open one without a switch); with none the backend fails closed.
+      pause: o.pause ?? { mayAct: () => true },
       ...(o.query ? { query: o.query } : {}),
     })],
   });
@@ -220,10 +221,37 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     expect(pre[3]).toBe(pre[0]);
     expect(pre[4]).toBe(pre[1]);
     expect(await pre[2]!.hooks[0]!({} as never, undefined, { signal: new AbortController().signal })).toEqual({ hookSpecificOutput: { hookEventName: "PreToolUse" } });
-    expect(seen!.hooks!.PostToolUse![0]!.hooks[0]).toBe(post);
+    // After a call, done or failed, the model's next request holds while paused; then the base's own.
+    expect(seen!.hooks!.PostToolUse!.length).toBe(2);
+    expect(seen!.hooks!.PostToolUse![0]!.timeout).toBe(86_400);
+    expect(seen!.hooks!.PostToolUse![1]!.hooks[0]).toBe(post);
+    expect(seen!.hooks!.PostToolUseFailure).toEqual([seen!.hooks!.PostToolUse![0]!]);
     expect(seen!.hooks!.UserPromptSubmit!.length).toBe(1);
+
     // The fence's file-tool denials reach the rules, the bots' folders and the transcript stores among them.
     expect(seen!.permissions!.deny).toEqual(expect.arrayContaining([`Read(/${w.cloverHome}/**)`, `Grep(/${w.cloverHome}/**)`, `Write(/${w.cloverHome}/**)`]));
+
+    // With no gate at all, it fails closed: a model turn's start, a call and the next request after one all hold.
+    let closed: Options | undefined;
+    const closedQuery = ((args: { prompt: AsyncIterable<string>; options: Options }) => {
+      closed = args.options;
+      return (fakeQuery as unknown as (a: typeof args) => unknown)(args);
+    }) as unknown as CloverCodeDeps["query"];
+    const bare = new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), query: closedQuery, sandboxReady: SANDBOX_READY });
+    const s = await bare.start({ sessionId: "s_bare", root: w.project, bridge: { name: BRIDGE, command: "x", args: [], env: {}, tools: [] }, fence: w.fence.policy(), inProcessBridge: { type: "sdk", name: BRIDGE, instance: {} } });
+    try {
+      for (const [event, i] of [["UserPromptSubmit", 0], ["PreToolUse", 0], ["PostToolUse", 0], ["PostToolUseFailure", 0]] as const) {
+        const ctl = new AbortController();
+        let settled = false;
+        const out = closed!.hooks![event]![i]!.hooks[0]!({} as never, undefined, { signal: ctl.signal }).then((v) => { settled = true; return v; });
+        await Bun.sleep(150);
+        expect([event, settled]).toEqual([event, false]);
+        ctl.abort();
+        await out;
+      }
+    } finally {
+      await s.stop();
+    }
 
     const w2 = make(spawn, { query: fakeQuery, base: { hostMessaging: {} as never } });
     await w2.manager.start({ caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" }, backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Host", prompt: "hi", model: MODEL });

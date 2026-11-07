@@ -118,6 +118,12 @@ function inMemoryAgent(serve: (write: (line: string) => void) => AcpAgentServer)
 
 const PAUSED = "Stopped: the user paused bots and their agents.";
 
+/** What a session with no pause gate gets: held, never open (lane A's `CLOSED_GATE`). */
+const CLOSED_GATE: AgentPauseGate = { mayAct: () => false };
+
+/** How often a paused session whose runtime can't stop a task says so. */
+const NO_STOP_LOG_MS = 60_000;
+
 const READ_TOOLS = new Set(["Read", "Glob", "Grep", "NotebookRead"]);
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
@@ -225,7 +231,8 @@ export class CloverCodeBackend implements AgentBackend {
     // Never a bot's own memory (`ownMemory`): an agent's policy denies all of `<home>/bots`.
     const fence = agentPolicyOf(spec.fence);
     // The session's own pause (the manager's, with another computer's forwarded switch for an agent run for it).
-    const gate = spec.pause ?? deps.pause;
+    // With no gate at all it fails closed, as lane A's backend does (`CLOSED_GATE`): the core always hands one.
+    const gate = spec.pause ?? deps.pause ?? CLOSED_GATE;
     const pauseHook: HookCallbackMatcher[] = [{
         failClosed: true,
         timeout: 86_400,
@@ -256,8 +263,17 @@ export class CloverCodeBackend implements AgentBackend {
     }];
     // The base's hooks stay, never allowing; the pause and the fence's check go first, and again last (hooks from
     // sources the runtime ranks higher run before these lists).
-    const ownCalls = [...(gate ? pauseHook : []), ...fenceHook];
-    const hooks = mergedHooks(base.hooks, { PreToolUse: ownCalls, ...(gate ? { UserPromptSubmit: turnHook } : {}) }, { last: { PreToolUse: ownCalls } });
+    // After a call (done or failed), the model's next request waits while the pause holds: the call itself is never cut
+    // off, and its result reaches no model until the user resumes (lane A's `#afterCall`).
+    const afterCall: HookCallbackMatcher[] = [{
+      timeout: 86_400,
+      hooks: [async (_input, _id, { signal }) => {
+        await holdWhilePaused(gate, AbortSignal.any([signal, abort.signal]));
+        return {};
+      }],
+    }];
+    const ownCalls = [...pauseHook, ...fenceHook];
+    const hooks = mergedHooks(base.hooks, { PreToolUse: ownCalls, UserPromptSubmit: turnHook, PostToolUse: afterCall, PostToolUseFailure: afterCall }, { last: { PreToolUse: ownCalls } });
     const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(fence.denyRead, fence.denyWrite)];
     const options: Options = {
       ...base,
@@ -328,6 +344,7 @@ function stoppingTasksWhilePaused(q: AcpQuery, gate: AgentPauseGate | undefined,
   const stopping = new Set<string>();
   let off: (() => void) | undefined;
   let poll: ReturnType<typeof setInterval> | undefined;
+  let saidAt = -Infinity;
   const unwatch = () => {
     off?.();
     off = undefined;
@@ -338,8 +355,13 @@ function stoppingTasksWhilePaused(q: AcpQuery, gate: AgentPauseGate | undefined,
     if (tasks.size === 0 || done.aborted) return unwatch();
     if (gate.mayAct()) return;
     if (typeof stopTask !== "function") {
-      log?.(`clover-code: paused with ${tasks.size} background task(s), and this runtime can't stop a task`);
-      return unwatch();
+      // Said again while it lasts (throttled), and still watched: the tasks may end on their own, or the pause lift.
+      const now = Date.now();
+      if (now - saidAt >= NO_STOP_LOG_MS) {
+        saidAt = now;
+        log?.(`clover-code: paused with ${tasks.size} background task(s), and this runtime can't stop a task`);
+      }
+      return;
     }
     for (const id of [...tasks]) {
       if (stopping.has(id)) continue;
