@@ -119,6 +119,8 @@ export interface CloverServerDeps {
   pairStatusExtras?(): Omit<PairStatus, "safeMode">;
   /** Release the lease so another computer takes the bots (`pair.quit{handOver}`; lanes F and H). */
   handOver?(): Promise<void>;
+  /** Whether any computer-use session is driving this desktop right now (lane E's B3 answer gate). */
+  computerUse?: { acting(): Promise<{ running: boolean; session?: string }> };
   /** The pid the daemon started a plugin-host process with. */
   hostPidOf?(hostProcess: "clover" | "shared" | "own", pluginId?: string): number | undefined;
   /** The link sidecar's pid (lane H): the only local process that says hello as `remote`, `web` or `peer`. */
@@ -296,6 +298,15 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     // A token for one plugin's UI layer, which the app's main process opens a `layer` connection with.
     // The plugin registry (lane B) will check the plugin is installed and has a layer before minting.
     "layer.token": (_conn, p) => ({ token: deps.tokens.mint({ role: "layer", pluginId: (p as { pluginId: string }).pluginId }) }),
+    // Whether any computer-use session is driving this desktop right now (lane E's B3). User and app only:
+    // no plugin asks. With no computer-use service, nothing is acting, so answer `running: false` (check 3: this
+    // replaces the earlier fail-closed-when-absent rule). The app still fails closed when the call itself errors.
+    // Feeding in plugin-run computer use stays with lanes J and H.
+    "computer.acting": async () => {
+      const r = await deps.computerUse?.acting?.();
+      if (r === undefined) return { running: false, session: undefined };
+      return { running: r?.running === true, session: r?.session };
+    },
   };
 
   return {

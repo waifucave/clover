@@ -10,6 +10,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server, type Socket } from "node:net";
 import { join } from "node:path";
+import { CardAnswerProof, Card } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../../src/main/protocol/client";
 
 export interface FakeOptions {
@@ -29,6 +30,16 @@ export interface FakeOptions {
   /** `protocol.prove`: the pid it says it sees at the other end (default: its own, for an app in this process), or
    *  a refusal: `refuse` (an old daemon with no method at all), `peak` (lane C's ambiguous-pid code) or `wrong`. */
   prove?: number | "refuse" | "peak" | "wrong";
+  /** The cards the app sees: whole ones through `card.list` (the app's role), `card_requested` events at makePair's
+   *  notification path, and `card_pending` (ids only) for layers. */
+  cards?: readonly { card: Record<string, unknown> }[];
+  /** `card.answer`'s verdict, one per call: a default accept, or a shape the test sets (a false, a reason...). */
+  answerVerdict?: readonly Record<string, unknown>[];
+  /** `computer.acting`'s answer: is a computer-use session acting on this computer now (default no)? */
+  acting?: boolean;
+  /** Events to send to each newly authed connection (app or layer) right after its hello, as raw JSON-RPC
+   *  notifications. Used to deliver `card_pending` to layers before they open their own channel. */
+  events?: readonly unknown[];
 }
 
 export interface FakeModel {
@@ -76,7 +87,23 @@ export function readCalls(home: string): { event: string; [k: string]: unknown }
 
 const DEFAULT_STATUS = { bots: [], routines: 0, agents: 0, canHandOver: false, safeMode: false };
 
+/** `card.answer`'s有自己的 verdicts (consume in order) and the answers the fake saw, per fake's options root. Each
+ *  `startFakeDaemon` lays its own queue in. */
+const cardVerdict: Record<string, unknown>[] = [];
+const answerRecord: { id?: unknown; option?: unknown; at?: unknown; device?: unknown }[] = [];
+
+/** Send the fake's own initial events to a newly authed connection (app or layer), as raw JSON-RPC notifications.
+ *  Defined inside `startFakeDaemon` so it captures `opts`. */
+let sendInitialEvents: (s: Socket) => void = () => undefined;
+
 export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
+  answerRecord.length = 0;
+  cardVerdict.length = 0;
+  if (opts.answerVerdict !== undefined) cardVerdict.push(...opts.answerVerdict);
+  // Events to deliver to each newly authed connection (app or layer) right after its hello.
+  sendInitialEvents = (s: Socket) => {
+    for (const e of opts.events ?? []) void s.write(`${JSON.stringify(e)}\n`);
+  };
   const endpoint = daemonEndpoint(opts.home);
   mkdirSync(join(opts.home, "run"), { recursive: true });
   if (process.platform !== "win32") rmSync(endpoint, { force: true });
@@ -130,10 +157,12 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
         if (typeof params.token !== "string" || layerTokens.get(params.token) !== params.pluginId) return fail(-32001, "unauthorized");
         authed.add(s);
         layerOf.set(s, params.pluginId as string);
+        void sendInitialEvents(s);
         return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "plugin", pluginId: params.pluginId }, device: "dev_fake", features: [] });
       }
       if (params.role !== "app" || params.token !== token) return fail(-32001, "unauthorized");
       authed.add(s);
+      void sendInitialEvents(s);
       return reply({ ok: true, serverVersion: "fake", protocolVersion: 1, caller: { kind: "user", via: "app" }, device: "dev_fake", features: [] });
     }
     // A layer's calls: what the fake knows a layer may ask (the terminal's, events), answered as that plugin.
@@ -164,6 +193,23 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
     switch (method) {
       case "events.subscribe":
         return reply({ ok: true });
+      case "computer.acting":
+        // Whether a computer-use session drives this computer right now (a test's own control).
+        return reply({ ...(opts.acting === true ? { running: true, session: "s_cu" } : { running: false }) });
+      case "card.list":
+        return reply({ cards: (opts.cards ?? []).map((c) => c.card) });
+      case "card.frame":
+        // A channel minted for one card's sealed frame; a fake's own count of the only shape it holds.
+        return reply({ channel: `fake-card-${String(params.id).slice(-8)}-${randomBytes(8).toString("hex")}` });
+      case "card.answer": {
+        // The protocol's own contracts first (the review's own ask), then the fake's own verdict.
+        const proof = CardAnswerProof.safeParse(params.proof);
+        if (!proof.success) return fail(-32602, `card.answer's proof isn't one: ${proof.error.issues[0]?.message ?? "no proof"}`);
+        const w = proof.data.via === "device" ? { via: proof.data.via, device: proof.data.device, at: proof.data.at } : { via: proof.data.via, frame: proof.data.frame, at: proof.data.at };
+        answerRecord.push({ id: params.id, option: params.option, ...w });
+        const verdict = cardVerdict.length > 0 ? cardVerdict.shift()! : { accepted: true };
+        return reply(verdict);
+      }
       case "pair.status":
         return reply({ ...DEFAULT_STATUS, ...opts.status });
       case "pair.exiting":
