@@ -582,6 +582,16 @@ describe("the stacked asks (C, L, H, F, G, A, I)", () => {
     expect(DeviceView.shape.answers.safeParse({ held: "tpm", alg: "p256" }).success).toBe(true);
   });
 
+  test("lane I's phone: models.list for the remote role, and no session.create", () => {
+    const remote = calls("remote");
+    for (const m of ["models.list", "session.setModel"]) expect([m, remote.has(m)]).toEqual([m, true]);
+    expect(remote.has("session.create")).toBe(false);
+    expect(CLOVER_METHODS.get("models.list")!.userOnly).toBeFalsy();
+    const model = { id: "fireworks/kimi-k3", name: "Kimi K3", provider: "fireworks", providerName: "Fireworks", plugin: "clover/model-fireworks", efforts: ["low", "medium", "high"], images: true, signedIn: true };
+    expect(CLOVER_METHODS.get("models.list")!.result.safeParse({ models: [model], default: "fireworks/kimi-k3" }).success).toBe(true);
+    expect(CLOVER_METHODS.get("models.list")!.params.safeParse({}).success).toBe(true);
+  });
+
   test("H-M2's review and check 2: a fencing token on acts between computers, judged against the receiver's own lease", () => {
     const fence = { scope: "acct_1", epoch: 3, holder: "desk0000000000000001" };
     expect(CLOVER_METHODS.get("peer.call")!.params.safeParse({ method: "session.send", params: {}, as: { kind: "core" }, role: "remote", fence }).success).toBe(true);

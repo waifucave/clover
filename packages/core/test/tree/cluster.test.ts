@@ -71,8 +71,11 @@ describe("one tree across computers", () => {
     await laptop.node.registry.setLevel("Laptop1", "automatic", { via: "terminal" });
     await cluster.join();
     expect(studio.node.tree.resolve("bots/alpha/memory/MEMORY.md")).toMatchObject({ computer: "Laptop1", area: "bot", bot: "alpha" });
-    await studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT });
-    expect(readFileSync(join(laptop.cloverHome, "bots/alpha/memory/MEMORY.md"), "utf8")).toBe("# Memory\n");
+    // A bot's memory is its own sessions' alone (the owner's decision, #197): another computer's call is a peer's, so the
+    // holder refuses it there; the rest of the bot's folder, its agents' transcripts, is reached as before.
+    expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT }))).toBe("fenced");
+    await studio.node.tree.write("bots/alpha/agents/a_1.md", { encoding: "utf8", text: "# Agent\n" }, { as: BOT });
+    expect(readFileSync(join(laptop.cloverHome, "bots/alpha/agents/a_1.md"), "utf8")).toBe("# Agent\n");
     expect(await code(studio.node.tree.read("bots/luna/x", { as: BOT }))).toBe("not_found");
   });
 });

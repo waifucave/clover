@@ -142,6 +142,87 @@ describe("handshake client", () => {
   });
 });
 
+describe("who may hold a group's lease (lane I's lane/i-lease-voter, H-M2's check 3)", () => {
+  test("every new tenure needs a member that votes now: a non-voter's acquire of a free lease is refused not_voter; holding on needs no vote", async () => {
+    const { admitStatement, joinStatement } = await import("../handshake");
+    const hs = service();
+    const client = new HandshakeClient({ baseUrl: hs.url, clock });
+    const [a, b, c] = [generateEd25519(), generateEd25519(), generateEd25519()];
+    const k = (x: typeof a) => toBase64Url(x.publicKey);
+    const group = toBase64Url(randomBytes(16));
+    let t = client.now();
+    expect(await client.createGroup({ group, key: k(a), t, sig: toBase64Url(a.sign(groupStatement(group, k(a), t))) })).toBe(true);
+    // b comes in on the founder's admit, the only voter then: it votes at once. c comes in on one admit of two
+    // voters: it votes in 7 days.
+    for (const x of [b, c]) {
+      t = client.now();
+      expect(await client.joinGroup(group, { key: k(x), t, sig: toBase64Url(x.sign(joinStatement(group, k(x), t))), by: k(a), bysig: toBase64Url(a.sign(admitStatement(group, k(x), t))) })).toBe(true);
+    }
+    const status = (e: unknown) => (e instanceof HandshakeError ? [e.status, e.code] : [(e as { code?: string }).code]);
+    // The lease never held: the non-voter can't take it; the founder can.
+    expect(status(await client.lease(group, c, { op: "acquire", epoch: 0 }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+    const held = await client.lease(group, a, { op: "acquire", epoch: 0 });
+    expect(held.holder).toBe(k(a));
+    // Holding on needs no vote check; a held lease is refused as held (the client's conflict), not as a vote.
+    expect((await client.lease(group, a, { op: "acquire", epoch: held.epoch })).epoch).toBe(held.epoch);
+    expect(status(await client.lease(group, c, { op: "acquire", epoch: 0 }).catch((e: unknown) => e))).toEqual(["conflict"]);
+    // Released: the non-voter still can't, a voter can, and the last holder takes its own back.
+    await client.lease(group, a, { op: "release", epoch: held.epoch });
+    expect(status(await client.lease(group, c, { op: "acquire", epoch: 0 }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+    const again = await client.lease(group, a, { op: "acquire", epoch: held.epoch });
+    expect(again.holder).toBe(k(a));
+    await client.lease(group, a, { op: "release", epoch: again.epoch });
+    const bHeld = await client.lease(group, b, { op: "acquire", epoch: again.epoch });
+    expect(bHeld.holder).toBe(k(b));
+    expect(status(await client.lease(group, c, { op: "takeover", epoch: 0 }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+
+    // A holder that leaves loses its last-holder mark (lane I's 1d4caa6e0). d comes in on both voters' admits, so a
+    // and d vote; b removes itself while it holds the lease, then comes back on a's admit alone, as a non-voter: its
+    // old lease isn't its to take back.
+    const d = generateEd25519();
+    t = client.now();
+    expect(await client.joinGroup(group, {
+      key: k(d), t, sig: toBase64Url(d.sign(joinStatement(group, k(d), t))),
+      admits: [a, b].map((x) => ({ by: k(x), sig: toBase64Url(x.sign(admitStatement(group, k(d), t))) })),
+    })).toBe(true);
+    await client.removeGroupMember(group, b, k(b));
+    expect(hs.groups.get(group)?.lease.holder).toBe(null);
+    await Bun.sleep(5);
+    t = client.now();
+    expect(await client.joinGroup(group, { key: k(b), t, sig: toBase64Url(b.sign(joinStatement(group, k(b), t))), by: k(a), bysig: toBase64Url(a.sign(admitStatement(group, k(b), t))) })).toBe(true);
+    expect(status(await client.lease(group, b, { op: "acquire", epoch: bHeld.epoch }).catch((e: unknown) => e))).toEqual([403, "not_voter"]);
+    expect((await client.lease(group, d, { op: "acquire", epoch: bHeld.epoch })).holder).toBe(k(d));
+  });
+});
+
+describe("a join that moves a key (lane I's #195)", () => {
+  test("the statement names the group it moves from as a fifth line, byte for byte with the service's; a move signed without it is refused", async () => {
+    const { joinStatement, admitStatement } = await import("../handshake");
+    const text = (b: Uint8Array) => new TextDecoder().decode(b);
+    expect(text(joinStatement("g", "k", 1793000000123, "old"))).toBe("clover-handshake-v1 join\ng\nk\n1793000000123\nold");
+    expect(text(joinStatement("g", "k", 1793000000123))).toBe("clover-handshake-v1 join\ng\nk\n1793000000123");
+    const hs = service();
+    const client = new HandshakeClient({ baseUrl: hs.url, clock });
+    const host = generateEd25519();
+    const mover = generateEd25519();
+    const [g1, g2] = [toBase64Url(randomBytes(16)), toBase64Url(randomBytes(16))];
+    const k = (x: typeof host) => toBase64Url(x.publicKey);
+    let t = client.now();
+    for (const [g, key] of [[g1, host], [g2, mover]] as const) {
+      expect(await client.createGroup({ group: g, key: k(key), t, sig: toBase64Url(key.sign(groupStatement(g, k(key), t))) })).toBe(true);
+    }
+    t = client.now();
+    const admit = { by: k(host), bysig: toBase64Url(host.sign(admitStatement(g1, k(mover), t))) };
+    // Signed as a plain join, with `from` sent anyway: refused.
+    const four = await client.joinGroup(g1, { key: k(mover), t, sig: toBase64Url(mover.sign(joinStatement(g1, k(mover), t))), ...admit, from: g2 }).catch((e: unknown) => e);
+    expect((four as HandshakeError).status).toBe(401);
+    // Signed with the group it moves from: in, and out of the old group.
+    expect(await client.joinGroup(g1, { key: k(mover), t, sig: toBase64Url(mover.sign(joinStatement(g1, k(mover), t, g2))), ...admit, from: g2 })).toBe(true);
+    expect(hs.groups.get(g1)?.members.has(k(mover))).toBe(true);
+    expect(hs.groups.has(g2)).toBe(false);
+  });
+});
+
 describe("handshake directory", () => {
   test("paired devices find each other's addresses, sealed, and a dial-now reaches the peer", async () => {
     const hs = service();
@@ -183,6 +264,7 @@ describe("handshake directory", () => {
     close();
     // Revoking ends the pair at the service and removes the member from the group.
     const group = a.registry.group()!.id;
+    await waitFor(() => hs.groups.get(group)?.members.size === 2);
     const out = await revokeDevice({ registry: a.registry, store: a.store, handshake: a.client }, b.key.id);
     expect(out.steps.map((s) => `${s.step}:${s.ok}`).sort()).toEqual(["handshake-group:true", "handshake-pair:true"]);
     expect(hs.ended.size).toBe(1);
@@ -214,6 +296,8 @@ describe("a revocation the service didn't hear (S5 of H-M1's review)", () => {
     await waitFor(() => a.registry.pairWith(b.key.id)?.registeredAt !== undefined);
     const pairId = a.registry.pairWith(b.key.id)!.pairId;
     const group = a.registry.group()!.id;
+    // The laptop's join is in at the service before the network goes.
+    await waitFor(() => hs.groups.get(group)?.members.size === 2);
     down = true;
     const { pairKeyRef, pairSecretRef } = await import("../handshake");
     const { retryRevokes } = await import("../../devices/account-devices");

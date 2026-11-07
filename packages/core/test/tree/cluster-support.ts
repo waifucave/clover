@@ -8,7 +8,7 @@ import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../../src/co
 import type { Unsubscribe } from "../../src/contracts/common";
 import type { DeviceChange, DeviceRecord, DeviceRegistry } from "../../src/contracts/device-registry";
 import { FakeDeviceRegistry } from "../../src/contracts/fakes/device-registry";
-import type { Fence, FenceOp } from "../../src/contracts/fence";
+import type { Fence, FenceContext, FenceOp } from "../../src/contracts/fence";
 import { FakeFence } from "../../src/contracts/fakes/fence";
 import { FakeLinkNetwork } from "../../src/contracts/fakes/link-transport";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "../../src/computers/node";
@@ -60,7 +60,8 @@ export const shellExecutor: ToolExecutor = {
 const posix = (p: string) => p.replace(/\\/g, "/");
 function posixFence(f: Pick<Fence, "check" | "fencedSet">): Pick<Fence, "check" | "fencedSet"> {
   return {
-    check: (op: FenceOp) => f.check(op.op === "move" ? { ...op, path: posix(op.path), to: posix(op.to) } : { ...op, path: posix(op.path) }),
+    // The caller's reach for the pattern items (`bot-memory`, B's #197) goes through as the holder gives it.
+    check: (op: FenceOp, ctx?: FenceContext) => f.check(op.op === "move" ? { ...op, path: posix(op.path), to: posix(op.to) } : { ...op, path: posix(op.path) }, ctx),
     fencedSet: () => f.fencedSet(),
   };
 }
