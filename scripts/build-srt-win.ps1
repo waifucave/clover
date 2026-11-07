@@ -50,7 +50,7 @@ $outExe = Join-Path $outDir "srt-win.exe"
 # Pinned Clover patches (file name -> SHA-256). `Apply-Patches` refuses
 # unknown or extra `*.patch` files and any hash mismatch before building.
 $PinnedPatches = @{
-  "0001-per-principal-setup-records.patch" = "2d3aecb2f286903ad91422bb09e0daf04926a92cc563f9038694095c1168a0fe"
+  "0001-per-principal-setup-records.patch" = "6d5c957e74991553a80b228b290fb9b2f31fb790077fa2524dd05bc481d8fc15"
 }
 
 # What the pinned patch set must change (per-principal records). After

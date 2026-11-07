@@ -4,19 +4,6 @@ Subject: [PATCH] Per-principal setup records plus a --user selector
 
 ---
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 Upstream: anthropics/sandbox-runtime, tag v0.0.81 (c40cf14).
 Reason: one machine-global setup record means only the last install
 can launch (`exec` exit 15 otherwise) and an `uninstall` orphans the
@@ -24,105 +11,39 @@ other installs' records. Clover runs one sandbox principal per
 session from a small per-user pool, so each install needs its own
 record and every launch path needs to name which principal it means.
 
+Files: src/cli.rs, src/install.rs, src/reg.rs, src/user.rs.
+
 What changes, and nothing else:
 - HKLM\SOFTWARE\sandbox-runtime\Users\<principal>\ carries the
   same identity values as the global record (SandboxUser,
   SandboxUserSid, SandboxGroupSid, MarkerVersion, CreatedAt) plus
-  the install's SublayerGuid, and Cred\<principal>\Blob carries
-  that install's DPAPI credential. The global record keeps its
-  exact current semantics (last install wins) so unpatched
-  readers are unaffected; the `--user` selectors read here.
+  the install's SublayerGuid and OwnerSid, and Cred\<principal>\Blob
+  carries that install's DPAPI credential under an owner-only DACL
+  (no Builtin Users read). The global record keeps its exact current
+  semantics (last install wins) so unpatched readers are unaffected;
+  the `--user` selectors read here.
 - install::read_setup_for / require_current_setup_for /
-  read_cred_for take an optional principal; the old fns keep their
-  signatures as the global (None) case.
-- `exec --user <principal>` and `user status --user <principal>`
-  launch against / report that principal's record. Without the flag
-  the behavior is byte-for-byte the old behavior.
+  authorized_setup_for / read_cred_for / authorized_cred_for take an
+  optional principal; the old fns keep their signatures as the global
+  (None) case. The authorized_* variants refuse callers whose token
+  SID is not the stored owner (administrators verified with
+  CheckTokenMembership, SYSTEM excepted); records without an owner
+  refuse non-admins.
+- `install --owner-sid <SID>` records the owner and locks the Cred
+  key down to it. `exec --user <principal>` and
+  `user status --user <principal>` (which now also reports
+  `owner_sid`) go through the caller gate. Without the flags the
+  behavior is byte-for-byte the old behavior.
 - `uninstall --user <principal>` removes only that principal's
-  Users subkey, Cred blob and account, plus the WFP filters under
-  --sublayer as before. The global record is removed only when it
-  names that principal.
+  Users subkey, Cred blob and account (dropping the shared group
+  only when no pool members remain), plus the WFP filters under
+  --sublayer as before; the empty Users parent is removed with the
+  last member. The global record is removed only when it names that
+  principal.
 
 Upstream-ready: the global record is untouched, all new behavior is
-opt-in behind --user, and the default `srt-sandbox` flow is unchanged.
-
- src/cli.rs     |  82 +++++++++++++++++++-----
- src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
- 2 files changed, 215 insertions(+), 34 deletions(-)
-
- src/cli.rs     |  84 +++++++++++++++++++------
- src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
- 2 files changed, 216 insertions(+), 35 deletions(-)
-
- src/cli.rs     | 110 ++++++++++++++++++++++++++------
- src/install.rs | 167 ++++++++++++++++++++++++++++++++++++++++++++-----
- 2 files changed, 240 insertions(+), 37 deletions(-)
-
- src/cli.rs     | 116 ++++++++++++++++++++++++++------
- src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
- src/reg.rs     |  26 ++++++++
- src/user.rs    |  16 +++--
- 4 files changed, 292 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 116 ++++++++++++++++++++++++++------
- src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
- src/reg.rs     |  37 +++++++++++
- src/user.rs    |  16 +++--
- 4 files changed, 303 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 116 ++++++++++++++++++++++++++------
- src/install.rs | 177 ++++++++++++++++++++++++++++++++++++++++++++-----
- src/reg.rs     |  37 +++++++++++
- src/user.rs    |  16 +++--
- 4 files changed, 303 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 116 +++++++++++++++++++++++++------
- src/install.rs | 182 ++++++++++++++++++++++++++++++++++++++++++++-----
- src/reg.rs     |  37 ++++++++++
- src/user.rs    |  16 +++--
- 4 files changed, 308 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 126 ++++++++++++++++++++-----
- src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
- src/reg.rs     |  37 ++++++++
- src/user.rs    |  16 +++-
- 4 files changed, 381 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 126 ++++++++++++++++++++-----
- src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
- src/reg.rs     |  37 ++++++++
- src/user.rs    |  16 +++-
- 4 files changed, 381 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 122 +++++++++++++++++++-----
- src/install.rs | 245 +++++++++++++++++++++++++++++++++++++++++++++----
- src/reg.rs     |  37 ++++++++
- src/user.rs    |  16 +++-
- 4 files changed, 377 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 125 ++++++++++++++++++----
- src/install.rs | 282 ++++++++++++++++++++++++++++++++++++++++++++++---
- src/reg.rs     |  37 +++++++
- src/user.rs    |  16 ++-
- 4 files changed, 417 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 125 ++++++++++++++++++----
- src/install.rs | 279 ++++++++++++++++++++++++++++++++++++++++++++++---
- src/reg.rs     |  37 +++++++
- src/user.rs    |  16 ++-
- 4 files changed, 414 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 125 ++++++++++++++++++----
- src/install.rs | 279 ++++++++++++++++++++++++++++++++++++++++++++++---
- src/reg.rs     |  37 +++++++
- src/user.rs    |  16 ++-
- 4 files changed, 414 insertions(+), 43 deletions(-)
-
- src/cli.rs     | 125 ++++++++++++++++++----
- src/install.rs | 282 ++++++++++++++++++++++++++++++++++++++++++++++---
- src/reg.rs     |  37 +++++++
- src/user.rs    |  16 ++-
- 4 files changed, 417 insertions(+), 43 deletions(-)
+opt-in behind --user/--owner-sid, and the default `srt-sandbox` flow
+is unchanged.
 
 diff --git a/src/cli.rs b/src/cli.rs
 index 8e616e2..992f5f0 100644
@@ -390,7 +311,7 @@ index 8e616e2..992f5f0 100644
  
      /// The typed JSON survives `.context(…)`; other errors yield `None`.
 diff --git a/src/install.rs b/src/install.rs
-index ba0ac37..6d04de0 100644
+index ba0ac37..027cd16 100644
 --- a/src/install.rs
 +++ b/src/install.rs
 @@ -49,19 +49,116 @@ pub fn newer_setup_refusal(marker_version: u32) -> Option<String> {
@@ -541,7 +462,7 @@ index ba0ac37..6d04de0 100644
      let blob = dpapi::protect_machine(u.password.as_bytes())?;
      let (base, _) = crate::reg::Key::create(crate::reg::BASE, None)?;
      // A --force re-install under a DIFFERENT sandbox-user name must
-@@ -191,6 +297,44 @@ pub fn write_setup(u: &user::ProvisionedUser) -> Result<()> {
+@@ -191,6 +297,41 @@ pub fn write_setup(u: &user::ProvisionedUser) -> Result<()> {
              .unwrap_or(0),
      )?;
      base.set_dword("MarkerVersion", SETUP_VERSION)?;
@@ -561,9 +482,6 @@ index ba0ac37..6d04de0 100644
 +            .unwrap_or(0),
 +    )?;
 +    sub.set_sz("SublayerGuid", &format!("{sublayer:?}").to_lowercase())?;
-+    if let Some(owner) = owner_sid.filter(|o| !o.is_empty()) {
-+        sub.set_sz("OwnerSid", owner)?;
-+    }
 +    sub.set_dword("MarkerVersion", SETUP_VERSION)?;
 +    if let Some(owner) = owner_sid.filter(|o| !o.is_empty()) {
 +        sub.set_sz("OwnerSid", owner)?;
@@ -586,7 +504,7 @@ index ba0ac37..6d04de0 100644
      Ok(())
  }
  
-@@ -359,9 +503,49 @@ pub fn read_setup() -> Result<Option<SetupInfo>> {
+@@ -359,9 +500,49 @@ pub fn read_setup() -> Result<Option<SetupInfo>> {
          sandbox_group_sid,
          marker_version,
          created_at_unix: base.get_qword("CreatedAt")?.unwrap_or(0),
@@ -636,7 +554,7 @@ index ba0ac37..6d04de0 100644
  /// Registry value (MULTI_SZ): one `<sublayer guid>=<mode>` line per
  /// sublayer whose filters an install wrote; an uninstall removes the line.
  const LOOPBACK_MODES_VALUE: &str = "LoopbackModes";
-@@ -535,8 +719,13 @@ impl Drop for SandboxCred {
+@@ -535,8 +716,13 @@ impl Drop for SandboxCred {
  /// is DENY'd on it (and on the store directory) and so cannot call
  /// this to learn its own password.
  pub fn read_cred() -> Result<SandboxCred> {
@@ -652,7 +570,7 @@ index ba0ac37..6d04de0 100644
      let pw = String::from_utf8(dpapi::unprotect(&blob)?).context("password is not UTF-8")?;
      Ok(SandboxCred {
          user: info.sandbox_user,
-@@ -548,11 +737,20 @@ pub fn read_cred() -> Result<SandboxCred> {
+@@ -548,11 +734,20 @@ pub fn read_cred() -> Result<SandboxCred> {
  /// means the install is incomplete; the repair is the elevated
  /// re-run either way.
  pub(crate) fn read_cred_blob() -> Result<Vec<u8>> {
@@ -675,7 +593,7 @@ index ba0ac37..6d04de0 100644
          )
      })?;
      key.get_binary("Blob")?.ok_or_else(|| {
-@@ -616,13 +814,13 @@ pub fn trust_ca(der: &crate::cert_store::CertDer, cred: &SandboxCred, sb_sid: &s
+@@ -616,13 +811,13 @@ pub fn trust_ca(der: &crate::cert_store::CertDer, cred: &SandboxCred, sb_sid: &s
  /// removal left failed entries recorded ([`clear_ambient_denies`]'s
  /// retry contract — `status` surfaces them and a later
  /// uninstall/install retries), the base key and `AmbientDenies`
@@ -695,7 +613,7 @@ index ba0ac37..6d04de0 100644
      crate::reg::delete_subtree(crate::reg::CA_SUBKEY)?;
      if let Some(base) = crate::reg::Key::open(crate::reg::BASE, true)? {
          for v in [
-@@ -636,6 +834,56 @@ pub fn clear_setup() -> Result<()> {
+@@ -636,6 +831,56 @@ pub fn clear_setup() -> Result<()> {
              crate::reg::delete_value(&base, v)?;
          }
      }

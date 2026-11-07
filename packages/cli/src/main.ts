@@ -1751,7 +1751,9 @@ async function runSandboxCommand(sub: string | undefined, rest: readonly string[
       for (const dir of [markersRoot, join(markersRoot, "markers")]) {
         const claim = await run([...claimDirArgs(dir)]);
         if (claim.code !== 0) {
-          console.error(`sandbox setup refused: cannot secure ${dir}${claim.out.trim() ? `\n${claim.out.trim().slice(0, 1000)}` : ""}`);
+          const lines = claim.out.split(/\r?\n/).filter((l) => /refusing state dir|Access is denied|denied/i.test(l));
+          const why = (lines.length > 0 ? lines.join(" ") : claim.out.trim()).slice(0, 500);
+          console.error(`sandbox setup refused: cannot secure ${dir}${why ? `\n${why}` : ""}`);
           process.exitCode = 1;
           return;
         }
