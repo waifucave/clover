@@ -8,19 +8,20 @@
 //     the raw command.
 import { createHash } from "node:crypto";
 
-/** C0 and C1 controls but tab and newline, the bidi marks, embeddings, overrides and isolates, and zero-width and
- *  invisible joiners and separators. */
-const UNSAFE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF]/g;
-const UNSAFE_OR_SPACE = /[\u0000-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B-\u200F\u2028-\u202E\u2060-\u2069\uFEFF]/g;
+/** What hides or reorders text: every control and format character (`Cc`, `Cf`: the bidi marks, embeddings,
+ *  overrides and isolates, zero-width marks, the tag characters that can smuggle ASCII), every default-ignorable code
+ *  point (variation selectors, the Hangul fillers, U+034F), the interlinear annotation marks and the line and
+ *  paragraph separators, by property and, for engines that miss one, by name. Tab and newline are kept in code. */
+const HIDING = /[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u034F\u115F\u1160\u3164\uFFA0\u2028\u2029\uFFF9-\uFFFB\uFE00-\uFE0F\u{E0000}-\u{E007F}\u{E0100}-\u{E01EF}]/gu;
 
 /** A single-line name (a non-built-in tool, a path, a device): the hiding characters, tabs and newlines removed. */
 export function plainOf(s: string): string {
-  return s.replace(UNSAFE_OR_SPACE, "");
+  return s.replace(HIDING, "");
 }
 
 /** A command or a call's input as a card shows it: every hiding character as a visible escape. */
 export function shownCode(s: string): string {
-  return s.replace(UNSAFE, (c) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}}`);
+  return s.replace(HIDING, (c) => c === "\n" || c === "\t" ? c : `\\u{${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}}`);
 }
 
 /** Programs that take a password after `-p`, where `-p <word>` is a credential (elsewhere `-p` is a port, a parent

@@ -88,20 +88,27 @@ export function resolveSessionPath(path: string, cwd: string, home: string = hom
   }
 }
 
+/** Each rule key starts with its kind (#267's check 2): a built-in's never shares a key with another tool's, even one
+ *  literally named `Bash(git push)`. */
+export const BUILTIN_KEY = "builtin:";
+export const OTHER_TOOL_KEY = "tool:";
+
 /** The key an "always" saves, or none where no "always" is offered.
  *  * A command tool: the exact command, with no folder in it. That is the contract's design: a command rule allows
  *    that command wherever the session runs it, as the person read it on the card. A command that looks like it
  *    carries a credential gets no key, so no "always" (#267's ruling 4).
  *  * An edit: the tool and the real path (`resolveSessionPath`), so the rule holds for that one file.
- *  * Anything else: the tool, as the host or the SDK names it. */
+ *  * Another built-in: its name.
+ *  * Any other tool: its name as the host, the SDK or a plugin gives it, under `tool:`. */
 export function ruleKeyOf(tool: string, input: Record<string, unknown>, realPaths: readonly string[], hostTools?: ReadonlySet<string>): string | undefined {
   const builtin = isBuiltinTool(tool, hostTools);
-  if (builtin && COMMAND_TOOLS.has(tool)) {
+  if (!builtin) return `${OTHER_TOOL_KEY}${tool}`;
+  if (COMMAND_TOOLS.has(tool)) {
     if (typeof input.command !== "string" || looksCredentialBearing(input.command)) return undefined;
-    return `${tool}(${input.command})`;
+    return `${BUILTIN_KEY}${tool}(${input.command})`;
   }
-  if (builtin && BUILTIN_EFFECTS.get(tool) === "edit") return realPaths.length > 0 ? `${tool}(${realPaths[0]})` : undefined;
-  return tool;
+  if (BUILTIN_EFFECTS.get(tool) === "edit") return realPaths.length > 0 ? `${BUILTIN_KEY}${tool}(${realPaths[0]})` : undefined;
+  return `${BUILTIN_KEY}${tool}`;
 }
 
 const clip = (s: string) => (s.length > CODE_MAX ? `${s.slice(0, CODE_MAX)}\n… (${s.length - CODE_MAX} more characters not shown here)` : s);

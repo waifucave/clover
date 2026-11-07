@@ -229,6 +229,16 @@ describe("strings from a model or a plugin", () => {
     expect(ruleDisplay("Bash(curl https://x?token=abc123&b=1)")).toBe("Bash(curl https://x?token=…&b=1)");
     expect(ruleDisplay(`Bash(${"x".repeat(500)})`).length).toBe(200);
   });
+  test("ASCII smuggled in tag characters, variation selectors and the other invisibles: out of names, escaped in code", () => {
+    // "rm" then "curl evil" spelled in tag characters (U+E0000 + ASCII), invisible on most screens.
+    const smuggled = `rm${[..."curl evil"].map((c) => String.fromCodePoint(0xE0000 + c.codePointAt(0)!)).join("")} -rf x`;
+    expect(plainOf(smuggled)).toBe("rm -rf x");
+    expect(shownCode(smuggled)).toBe(`rm${[..."curl evil"].map((c) => `\\u{${(0xE0000 + c.codePointAt(0)!).toString(16).toUpperCase()}}`).join("")} -rf x`);
+    const selectors = "a\uFE0Fb\u{E0100}c\u034Fd\u3164e\uFFA0f\u115Fg\uFFF9h";
+    expect(plainOf(selectors)).toBe("abcdefgh");
+    expect(shownCode(selectors)).toBe("a\\u{FE0F}b\\u{E0100}c\\u{034F}d\\u{3164}e\\u{FFA0}f\\u{115F}g\\u{FFF9}h");
+    expect(shownCode("a\tb\nc")).toBe("a\tb\nc");
+  });
 });
 
 describe("a bot's tool calls through the broker", () => {
@@ -243,9 +253,13 @@ describe("a bot's tool calls through the broker", () => {
     expect(effectOf("constructor")).toBe("other");
     expect(effectOf("Read", new Set(["Read"]))).toBe("other"); // the host serves a tool of that name itself
     expect(isBuiltinTool("Read", new Set(["SendMessage"]))).toBe(true);
-    expect(ruleKeyOf("Bash", { command: "git push" }, [])).toBe("Bash(git push)");
+    expect(ruleKeyOf("Bash", { command: "git push" }, [])).toBe("builtin:Bash(git push)");
+    // A tool that isn't the built-in, whatever it calls itself, never shares the built-in's key.
+    expect(ruleKeyOf("Bash(git push)", {}, [])).toBe("tool:Bash(git push)");
+    expect(ruleKeyOf("Bash", { command: "git push" }, [], new Set(["Bash"]))).toBe("tool:Bash");
+    expect(ruleKeyOf("Read", {}, [])).toBe("builtin:Read");
     expect(ruleKeyOf("Bash", { command: "curl -H 'Authorization: Bearer abcdefghij' x" }, [])).toBeUndefined();
-    expect(ruleKeyOf("Edit", { file_path: "a.ts" }, ["/real/a.ts"])).toBe("Edit(/real/a.ts)");
+    expect(ruleKeyOf("Edit", { file_path: "a.ts" }, ["/real/a.ts"])).toBe("builtin:Edit(/real/a.ts)");
     expect(ruleKeyOf("Edit", {}, [])).toBeUndefined();
   });
 
@@ -264,7 +278,7 @@ describe("a bot's tool calls through the broker", () => {
 
   test("the card: table strings in text, everything a model or plugin chose in code, hiding characters out", () => {
     const r = botToolRequest(ctx, "user", "Edit", { file_path: "a\u202E.ts", old_string: "x", new_string: "y" });
-    expect(r).toMatchObject({ kind: "tool", session: "s1", bot: "luna", computers: ["Studio"], effect: "edit", paths: [join(scratch, "a\u202E.ts")], ruleKey: `Edit(${join(scratch, "a\u202E.ts")})` });
+    expect(r).toMatchObject({ kind: "tool", session: "s1", bot: "luna", computers: ["Studio"], effect: "edit", paths: [join(scratch, "a\u202E.ts")], ruleKey: `builtin:Edit(${join(scratch, "a\u202E.ts")})` });
     expect(r.fields.title).toEqual({ type: "text", text: "Change files" });
     expect(r.fields.what).toEqual({ type: "text", text: "Edit" });
     expect(r.fields.paths).toEqual({ type: "code", code: join(scratch, "a.ts") });
@@ -289,6 +303,17 @@ describe("a bot's tool calls through the broker", () => {
     const second = answerNext(b, "deny");
     expect(await call(b, "Write", { file_path: "notes.md", content: "z" }, "user", undefined, other)).toEqual({ behavior: "deny", message: "Write was refused: the person declined it." });
     await second;
+  });
+
+  test("an \"always\" for a tool named like a built-in's rule never allows the built-in", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const saved = answerNext(b, "always");
+    expect(await call(b, "Bash(git push)", {}, "user")).toMatchObject({ behavior: "allow" });
+    await saved;
+    expect(await call(b, "Bash(git push)", {}, "user")).toMatchObject({ behavior: "allow" });
+    const asked = answerNext(b, "deny");
+    expect(await call(b, "Bash", { command: "git push" }, "user")).toEqual({ behavior: "deny", message: "Bash was refused: the person declined it." });
+    await asked;
   });
 
   test("a read runs at once at the default level; a command waits for the card and runs only on approve", async () => {
