@@ -131,14 +131,15 @@ export function splitParent(path: string): { dir: string; name: string } {
 }
 
 /** Opens the directory holding the final component, letting the KERNEL resolve the path: `openat2` with
- *  IN_ROOT (absolute paths stay under the target's root), BENEATH (relative paths stay under the base) and
- *  NO_SYMLINKS (no link is ever traversed). Mounts apply exactly as for the target's own calls — unlike a
- *  userspace walk, this cannot disagree with the kernel about what is mounted where. Returns the open parent
- *  (caller closes it) or the kernel's errno. Consumes the base either way. */
+ *  IN_ROOT (absolute paths stay under the target's root) and NO_SYMLINKS (no link is ever traversed; `..`
+ *  cannot escape the mount namespace, so BENEATH's behavior change for legitimate `..` is skipped on purpose).
+ *  Mounts apply exactly as for the target's own calls — unlike a userspace walk, this cannot disagree with the
+ *  kernel about what is mounted where. Returns the open parent (caller closes it) or the kernel's errno.
+ *  Consumes the base either way. */
 export function openParentDir(lib: SupervisorLib, baseFd: number, dir: string, absolute: boolean): { parentFd: number } | { errno: number } {
   if (dir === "") return { parentFd: baseFd };
-  const RESOLVE_NO_SYMLINKS = 0x04, RESOLVE_BENEATH = 0x08, RESOLVE_IN_ROOT = 0x10;
-  const resolve = (absolute ? RESOLVE_IN_ROOT : 0) | RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS;
+  const RESOLVE_NO_SYMLINKS = 0x04, RESOLVE_IN_ROOT = 0x10;
+  const resolve = (absolute ? RESOLVE_IN_ROOT : 0) | RESOLVE_NO_SYMLINKS;
   const how = Buffer.alloc(24);
   how.writeBigUInt64LE(BigInt(O_PATH | O_DIRECTORY), 0);
   how.writeBigUInt64LE(0n, 8);

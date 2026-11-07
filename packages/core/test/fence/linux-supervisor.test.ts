@@ -121,11 +121,15 @@ linuxOnly("the supervisor's walk and identity (Linux: real fds)", () => {
       try { closeSync(w.parentFd); } catch { /* pinned */ }
       // Through a link: refused with ELOOP, never followed.
       expect(openParentDir(l, freshBase(), "slink/b", false)).toEqual({ errno: 40 });
-      // Dot-dot above the base is refused (BENEATH), not escaped.
-      const wd = openParentDir(l, freshBase(), "a/../../..", false);
-      expect("errno" in wd).toBe(true);
-      // An absolute path stays under an absolute base (IN_ROOT).
-      const wa = openParentDir(l, freshBase(), `${root}/a`, true);
+      // Dot-dot resolves normally (.. cannot leave the mount namespace; links stay refused).
+      const wd = openParentDir(l, freshBase(), "a/../..", false);
+      if (!("parentFd" in wd)) throw new Error(`dot-dot failed: ${JSON.stringify(wd)}`);
+      const up = lstatSync(join(root, ".."));
+      expect(parentIdentity(wd.parentFd)).toEqual({ dev: BigInt(up.dev), ino: BigInt(up.ino) });
+      try { closeSync(wd.parentFd); } catch { /* pinned */ }
+      // An absolute path stays under the host root (IN_ROOT).
+      const hostRoot = openSync("/", 0o200000);
+      const wa = openParentDir(l, hostRoot, `${root}/a`, true);
       if (!("parentFd" in wa)) throw new Error("absolute open failed");
       expect(parentIdentity(wa.parentFd)).toEqual(id);
       try { closeSync(wa.parentFd); } catch { /* pinned */ }
