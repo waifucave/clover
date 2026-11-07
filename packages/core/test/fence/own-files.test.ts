@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -58,6 +59,53 @@ describe("the core's own files in a caller's own folders", () => {
     expect(() => readOwnFile(luna, b("luna", "memory", "MEMORY.md"), { realPath: () => b("sol", "memory", "MEMORY.md") })).toThrow(FenceRefused);
     // A matching answer reads through.
     expect(readOwnFile(luna, b("luna", "memory", "MEMORY.md"), { realPath: () => b("luna", "memory", "MEMORY.md") }).toString()).toBe("luna's");
+  });
+
+  test("a FIFO, a socket, a second name and an over-cap file are all refused reads", () => {
+    const mem = b("luna", "memory");
+    const fifo = join(mem, "pipe");
+    execFileSync("mkfifo", [fifo]);
+    expect(() => readOwnFile(luna, fifo)).toThrow(FenceRefused); // never blocks: O_NONBLOCK, then not a file
+    const sock = join(mem, "sock");
+    const server = Bun.listen({ unix: sock, socket: { data() {} } });
+    try {
+      expect(() => readOwnFile(luna, sock)).toThrow(); // the open itself fails: never read through
+    } finally { server.stop(true); }
+    const shared = join(mem, "shared.md");
+    writeOwnFile(luna, shared, "hello");
+    linkSync(shared, join(mem, "shared-alias.md"));
+    expect(() => readOwnFile(luna, shared)).toThrow(FenceRefused); // st_nlink > 1
+    const big = join(mem, "big.bin");
+    writeFileSync(big, Buffer.alloc(1024 * 1024 + 1, 7));
+    expect(() => readOwnFile(luna, big)).toThrow(FenceRefused); // past the cap, not into memory
+    // Ordinary files still read.
+    expect(readOwnFile(luna, b("luna", "memory", "MEMORY.md")).toString()).toBe("luna's");
+  });
+
+  test("a home under a symlinked folder works when callers pass the real path", () => {
+    // /var and /tmp themselves are links on macOS: the fence canonicalizes to the real path, and the link
+    // walk above a real path meets only real folders. A caller passing the unresolved path fails closed.
+    const realRoot = realpathSync(mkdtempSync(join(tmpdir(), "clover-real-")));
+    const link = join(tmpdir(), `clover-link-${process.pid}`);
+    symlinkSync(realRoot, link);
+    try {
+      const home = join(link, "home"), clover = join(home, ".clover");
+      mkdirSync(join(clover, "bots", "luna", "memory"), { recursive: true });
+      writeFileSync(join(clover, "bots", "luna", "memory", "MEMORY.md"), "luna's");
+      const fence = new CloverFence({ home, cloverHome: clover, temp: join(link, "tmp") });
+      expect(fence.home).toBe(join(realRoot, "home")); // canonicalized past the link
+      const l = fence.forCaller(bot("luna", "s1"));
+      const mem = join(realRoot, "home", ".clover", "bots", "luna", "memory");
+      expect(readOwnFile(l, join(mem, "MEMORY.md")).toString()).toBe("luna's");
+      writeOwnFile(l, join(mem, "n.md"), "n");
+      expect(readOwnFile(l, join(mem, "n.md")).toString()).toBe("n");
+      expect(refuseLinksIn(mem)).toBeUndefined();
+      // The unresolved spelling fails closed (a prefix is a link), never misread.
+      expect(() => readOwnFile(l, join(link, "home", ".clover", "bots", "luna", "memory", "MEMORY.md"))).toThrow(FenceRefused);
+    } finally {
+      rmSync(link, { force: true });
+      rmSync(realRoot, { recursive: true, force: true });
+    }
   });
 
   test("refuseLinksIn guards a walked folder", () => {

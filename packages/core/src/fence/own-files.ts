@@ -7,11 +7,11 @@
 // replaced atomically and a link at the target is replaced without being followed. A consumer that walks a folder
 // instead guards it with `refuseLinksIn`.
 import { randomBytes } from "node:crypto";
-import { closeSync, constants, fsyncSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants, fsyncSync, fstatSync, lstatSync, openSync, readdirSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, win32 } from "node:path";
 import { isInsideFolded, type CallerFence } from "../contracts/fence";
 import { foldPath } from "./fold";
-import { fdRealPath, FenceRefused, openChecked } from "./open-checked";
+import { fdRealPath, FenceRefused, openChecked, readCapped } from "./open-checked";
 
 /** Options for the core's own-file access. */
 export interface OwnFileOpts {
@@ -67,14 +67,14 @@ function refuseOutside(caller: CallerFence, real: string, path: string, write: b
   }
 }
 
-/** The whole file in the caller's own folders, read as above. Throws `FenceRefused` for a link on the way in or a
- *  real path outside them. */
+/** The whole file in the caller's own folders, read as above (up to lane D's cap). Throws `FenceRefused`
+ *  for a link on the way in or a real path outside them. */
 export function readOwnFile(caller: CallerFence, path: string, o: OwnFileOpts = {}): Buffer {
   refuseLinkComponents(path);
   const fd = openChecked(caller, path);
   try {
     refuseOutside(caller, handleRealPath(caller, fd, path, o), path, false);
-    return readFileSync(fd);
+    return readCapped(fd, path);
   } finally { closeSync(fd); }
 }
 
