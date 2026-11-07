@@ -248,10 +248,9 @@ describe("the sessions' records across computers", () => {
     await daemon.cloverParts.ready;
     const links = daemon.cloverParts.links()!;
     const side = daemon.cloverParts.bots()!;
-    // A laptop that hasn't run Luna itself (see the report: two computers that each ran a bot before they paired hold
-    // two different logs for its one conversation, which the copy can't merge).
-    const none = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] });
-    const laptop = await peer(net, hs, "Laptop", { registry: none, drivers: () => new Drivers().factory, defaultModel: () => ({ model: "winter-test/calls" }) });
+    // The laptop has Luna too, and opened her conversation before Studio became the main computer: once the lease is
+    // Studio's, the laptop's copy takes Studio's records (lane D's host, #279).
+    const laptop = await peer(net, hs, "Laptop");
     await pair(links, laptop.links);
     const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
     expect(await cloverCall(daemon.socketPath, cli, "main.set", { device: links.key.id })).toEqual({ applied: true });
