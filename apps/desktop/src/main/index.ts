@@ -1186,8 +1186,10 @@ async function smoke(): Promise<void> {
       win.webContents.emit("unresponsive");
     }
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
-    // A sealed run (E-M3) also waits until its click landed: otherwise the loop breaks before the card's frames load.
+    // A sealed run (E-M3) breaks once its click landed, even if the shell's composer never draws: the click needs
+    // only the fixture layer's sealed frames laid out, not the shell.
     const sealedWait = process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+    if (sealedWait && sealedClicked) break;
     if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
     // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
     // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
@@ -1223,11 +1225,12 @@ async function smoke(): Promise<void> {
       const done = await win.webContents.mainFrame.executeJavaScript(js, true).catch(() => false);
       if (done === true) steps.shift();
     }
-    // The sealed UI test's click: once everything has drawn, click the named sealed frame's button so its answer
-    // rides `card.answer` to the fake daemon (unpackaged runs only). Driven with `webContents.sendInputEvent` at the
-    // button's real coordinates, which produces trusted events (no `trust` knob in production). The sealed iframe
-    // sits inside the plugin's layer frame, not the root document, so offsets are summed up through each frame.
-    if (drawn && !sealedClicked) {
+    // The sealed UI test's click: click the named sealed frame's button so its answer rides `card.answer` to the
+    // fake daemon (unpackaged runs only). Driven with `webContents.sendInputEvent` at the button's real coordinates,
+    // which produces trusted events (no `trust` knob in production). The sealed iframe sits inside the plugin's layer
+    // frame, not the root document, so offsets are summed up through each frame. Gated on the sealed frames
+    // themselves, not the shell's composer (which a sealed run never needs).
+    if (!sealedClicked) {
       const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
       if (spec !== undefined) {
         try {
@@ -1313,6 +1316,9 @@ async function smoke(): Promise<void> {
               `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
             if (labelRaw !== null && typeof labelRaw === "object") log(`sealed-click: label html=${String((labelRaw as { html?: unknown }).html ?? "")} hasBold=${String((labelRaw as { hasBold?: unknown }).hasBold ?? "")}`);
             if (buttonRect !== null && chainOk) {
+              if (buttonRect.width <= 0 || buttonRect.height <= 0) {
+                log(`sealed-click: button has no size yet, retrying`);
+              } else {
               const centerX = Math.round(offsetX + buttonRect.x + buttonRect.width / 2);
               const centerY = Math.round(offsetY + buttonRect.y + buttonRect.height / 2);
               const press = (kind: "Down" | "Up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
@@ -1326,6 +1332,7 @@ async function smoke(): Promise<void> {
                 press("Up");
               }
               sealedClicked = true;
+              }
             } else {
               log(`sealed-click: no button rect (button=${buttonRect === null ? "null" : "ok"} chain=${chainOk ? "ok" : "null"})`);
             }
@@ -1336,8 +1343,9 @@ async function smoke(): Promise<void> {
       }
     }
     // The fallback card: if no sealed frame was clicked and the fallback run is enabled, click the fallback window's
-    // Approve button so its answer rides `card.answer` to the fake daemon (unpackaged runs only).
-    if (drawn && !sealedClicked && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") {
+    // Approve button so its answer rides `card.answer` to the fake daemon (unpackaged runs only). Gated on the
+    // fallback window itself, not the shell.
+    if (!sealedClicked && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") {
       for (const w of BrowserWindow.getAllWindows()) {
         if (w === win || w.isDestroyed()) continue;
         if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
