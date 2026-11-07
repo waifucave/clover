@@ -34,6 +34,7 @@
     "test/cowork/guest-runtime.test.ts": "one test needs the candidate SDK's confined fixture, on every OS",
     "test/cowork/guided-reader-adapter.test.ts": "one opt-in drift guard against the SDK source, on every OS",
     "test/cowork/provider-broker.integration.test.ts": "an opt-in integration run (its env), skipped on every OS by default",
+    "test/fence/fence.test.ts": "one test needs Win32 path semantics (a `..` after a real NTFS junction); it runs on the Windows tree job",
     "test/ipc/session-set-model-review.test.ts": "one live model-convergence case runs only with its env, on every OS",
     "test/platform/win-job.test.ts": "Windows' job objects: Windows only",
     "test/platform/win-pipe.test.ts": "Windows' named pipes: Windows only",
