@@ -2,6 +2,7 @@ import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -203,6 +204,9 @@ export interface PluginSupervisorDeps {
   /** Testability seam for PID-reuse identity verification — see `defaultProcessStartedAt` above.
    *  Real `ps` semantics by default; tests inject a fake so they never shell out. */
   processStartedAt?: (pid: number) => string | null;
+  /** Clover's run files for plugin processes (#234, F2): every plugin process runs with Clover's bunfig, no `.env`, and
+   *  the load guard held to its plugin's folder. Default: written into `<runDir>/plugin-run` on first spawn. */
+  pluginRun?: PluginRunGuard;
 }
 
 /** On-disk shape of `<runDir>/plugins/<id>.pid` since the PID-reuse hardening fix: identity-
@@ -308,6 +312,8 @@ export class PluginSupervisor {
   private readonly circuitWindowMs: number;
   private readonly invokeTimeoutMs: number;
   private readonly killGraceMs: number;
+
+  private pluginRun: PluginRunGuard | undefined;
 
   constructor(private readonly deps: PluginSupervisorDeps) {
     this.spawnFn = deps.spawn ?? defaultSpawn;
@@ -762,13 +768,11 @@ export class PluginSupervisor {
       const token = this.deps.mintToken(config.id);
       const cmd = [config.entry.command, ...(config.entry.args ?? [])];
       const cwd = config.entry.cwd ? join(config.dir, config.entry.cwd) : config.dir;
-      const env: Record<string, string> = {
-        ...(process.env as Record<string, string>),
-        CLOVER_PLUGIN_TOKEN: token,
-        CLOVER_SOCKET: this.deps.socketPath,
-        CLOVER_PLUGIN_ID: config.id,
-        CLOVER_PLUGIN_DIR: config.dir,
-      };
+      this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir) };
+      const env = guardedPluginEnv(
+        { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: config.dir },
+        { pluginRoot: config.dir, ...this.pluginRun },
+      );
       proc = this.spawnFn(cmd, { cwd, env });
     } catch (err) {
       rt.pid = undefined;

@@ -1,4 +1,8 @@
 import { noteSpawned } from "../auth/clover-caller";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
 /**
  * HookRunner — pure process mechanics for ONE plugin hook invocation (Phase 4f design §Protocol,
  * plan Task 1). Spawns `sh -c <command>` with the event JSON on stdin, races the exit against a
@@ -105,18 +109,30 @@ async function readCapped(stream: ReadableStream<Uint8Array> | null, cap: number
 }
 
 export class HookRunner {
+  private guard: PluginRunGuard | undefined;
+
+  /** `guard`: Clover's run files for plugin processes (the daemon's, in its run folder). Without it the runner writes
+   *  its own into a fresh private temp folder on first use: a hook never runs unguarded (#234, F2). */
+  constructor(guard?: PluginRunGuard) {
+    this.guard = guard;
+  }
+
+  private guardFor(): PluginRunGuard {
+    this.guard ??= { files: ensurePluginRunFiles(mkdtempSync(join(tmpdir(), "clover-hooks-"))) };
+    return this.guard;
+  }
+
   async run(spec: HookSpec, payload: HookEventPayload): Promise<HookResult> {
     const startTime = Date.now(); // for the stream-read deadline below (remaining timeout budget)
     let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
     try {
       proc = Bun.spawn(["sh", "-c", spec.command], {
         cwd: spec.cwd,
-        env: {
-          ...process.env,
-          CLOVER_SESSION_ID: payload.sessionId,
-          CLOVER_PLUGIN_ID: spec.pluginId,
-          CLOVER_HOOK_EVENT: payload.event,
-        },
+        // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
+        env: guardedPluginEnv(
+          { ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event },
+          { pluginRoot: spec.cwd, ...this.guardFor() },
+        ),
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",

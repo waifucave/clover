@@ -99,6 +99,7 @@ import { PluginSupervisor } from "./plugins/supervisor";
 import { PluginContribRegistry } from "./plugins/contrib";
 import { HookRegistry, HookFacade } from "./plugins/hook-registry";
 import { HookRunner } from "./plugins/hook-runner";
+import { ensurePluginRunFiles, type PluginRunGuard } from "./registry/plugin-run";
 import { BashReviewer } from "./agent/reviewer";
 import { AuditLog } from "./peripheral/audit";
 import { PeripheralBroker, type PeripheralClass } from "./peripheral/broker";
@@ -1274,10 +1275,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `registry` const, which isn't in scope here) so it keeps behaving correctly either way — a safe
   // no-op via optional chaining while `sharedRegistry` is still null (no provider).
   const allPlugins = pluginStore.list();
+  // #234, F2: Clover's bunfig and load guard for every plugin process (supervised hosts and hooks), in the run folder.
+  // On a failure each runner falls back to its own (the supervisor refuses to spawn; a hook uses a private temp one).
+  let pluginRun: PluginRunGuard | undefined;
+  try {
+    pluginRun = { files: ensurePluginRunFiles(dirs.runDir) };
+  } catch (err) {
+    console.error(`plugin run files: ${(err as Error).message}`);
+  }
   // WS-21 (L4 request 2): no boot-time plugin hook build — a plugin's hooks are claude-native
   // `hooks/hooks.json` content the runtimes load themselves (spec §5.1/§5.3).
   const pluginSupervisor = new PluginSupervisor({
     runDir: dirs.runDir,
+    pluginRun,
     socketPath: dirs.socketPath,
     mintToken: (id) => store.mintPluginToken(id),
     settings: settings?.plugins?.supervisor,
@@ -2016,7 +2026,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const hookFacade = new HookFacade({
     registry: hookRegistry,
-    runner: new HookRunner(),
+    runner: new HookRunner(pluginRun),
     hooksEnabled: cloverHooksEnabled,
     cwdForSession: (sid) => { try { return store.meta(sid).cwd ?? undefined; } catch { return undefined; } },
   });

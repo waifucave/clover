@@ -1,0 +1,124 @@
+// A plugin's processes load only its own tree (#234's review, F2, the controller's ruling): the reviewer's probes,
+// each run once as a control without Clover's flags (the outside file runs) and once as Clover runs plugins (it
+// doesn't). Real Bun processes in temp folders; nothing opens a window.
+import { describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { HookRunner } from "../../plugins/hook-runner";
+import { PluginSupervisor } from "../../plugins/supervisor";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, ensurePluginRunFiles, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
+
+function world() {
+  const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
+  const files = ensurePluginRunFiles(join(base, "run"));
+  const outside = join(base, "outside");
+  mkdirSync(join(outside, "jsx"), { recursive: true });
+  const mark = join(base, "mark");
+  const evil = `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\nexport const x = 1;\nexport const jsx = () => null, jsxs = jsx, jsxDEV = jsx, Fragment = 0;\n`;
+  writeFileSync(join(outside, "evil.ts"), evil);
+  writeFileSync(join(outside, "jsx", "jsx-runtime.ts"), evil);
+  writeFileSync(join(outside, "jsx", "jsx-dev-runtime.ts"), evil);
+  const plugin = (name: string, tree: Record<string, string>) => {
+    const root = join(base, name);
+    for (const [path, text] of Object.entries(tree)) {
+      mkdirSync(join(root, path, ".."), { recursive: true });
+      writeFileSync(join(root, path), text.replaceAll("$OUTSIDE", outside));
+    }
+    return root;
+  };
+  /** Runs `entry` in the plugin folder (its cwd, as a hook's): the inner `bun` takes what the env gives it. */
+  const run = (root: string, entry: string, guarded: boolean) => {
+    rmSync(mark, { force: true });
+    // NODE_ENV=test (bun test's) would have Bun read `.env.test` rather than `.env`; a plugin process has none.
+    const plain = { ...process.env, NODE_ENV: undefined };
+    const env = guarded ? guardedPluginEnv(plain, { pluginRoot: root, files, shared: [] }) : { ...plain, BUN_OPTIONS: "" };
+    const r = Bun.spawnSync([process.execPath, entry], { cwd: root, env, stdout: "pipe", stderr: "pipe" });
+    return { ran: existsSync(mark), stderr: r.stderr.toString(), stdout: r.stdout.toString(), code: r.exitCode };
+  };
+  return { base, files, plugin, run };
+}
+
+describe("a plugin process loads only its own tree", () => {
+  const w = world();
+  const probes: [string, Record<string, string>, string][] = [
+    ["a tsconfig paths target with .. after its *", {
+      "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "lib/*": ["./host/a/*/../../../../outside/evil.ts"] } } }),
+      "host/a/x/keep.txt": "", "host/index.ts": "import \"lib/x\";\nconsole.log(\"host ran\");\n",
+    }, "host/index.ts"],
+    ["a dependency's main climbing out of node_modules", {
+      "node_modules/dep/package.json": JSON.stringify({ name: "dep", main: "lib/../../../../outside/evil.ts" }),
+      "host/index.ts": "import \"dep\";\nconsole.log(\"host ran\");\n",
+    }, "host/index.ts"],
+    ["a jsxImportSource outside the plugin", {
+      "host/index.tsx": "/** @jsxImportSource ../../outside/jsx */\nconst a = <div />;\nconsole.log(\"host ran\", a);\n",
+    }, "host/index.tsx"],
+    ["a dynamic import outside the plugin", { "host/index.ts": "await import(\"../../outside/evil.ts\");\nconsole.log(\"host ran\");\n" }, "host/index.ts"],
+    ["a bunfig.toml preload", { "bunfig.toml": "preload = [\"$OUTSIDE/evil.ts\"]\n", "host/index.ts": "console.log(\"host ran\");\n" }, "host/index.ts"],
+  ];
+  // A plugin folder's .env reaches the process's env (Bun loads it), and from there any node a plugin starts runs
+  // its NODE_OPTIONS --require. Without node on the machine, the env itself is the check.
+  test("a .env NODE_OPTIONS never reaches a plugin process, nor a node it starts", () => {
+    writeFileSync(join(w.base, "outside", "evil.cjs"), `require("node:fs").writeFileSync(${JSON.stringify(join(w.base, "mark"))}, "ran");\n`);
+    const node = Bun.which("node");
+    const root = w.plugin("dotenv", {
+      ".env": "NODE_OPTIONS=--require $OUTSIDE/evil.cjs\n",
+      "host/index.ts": `${node ? `Bun.spawnSync([${JSON.stringify(node)}, "-e", "1"], { env: process.env });\n` : ""}console.log(process.env.NODE_OPTIONS ?? "none");\n`,
+    });
+    const control = w.run(root, "host/index.ts", false);
+    expect(control.stdout).toContain("--require");
+    if (node) expect(control.ran).toBe(true);
+    const guarded = w.run(root, "host/index.ts", true);
+    expect([guarded.stdout.trim(), guarded.ran]).toEqual(["none", false]);
+  }, 30_000);
+  for (const [name, tree, entry] of probes) {
+    test(`${name}: runs without Clover's flags, never with them`, () => {
+      const root = w.plugin(name.replace(/[^a-z]+/gi, "-"), tree);
+      expect(w.run(root, entry, false).ran).toBe(true); // the probe is real
+      const guarded = w.run(root, entry, true);
+      expect(guarded.ran).toBe(false);
+    }, 30_000);
+  }
+
+  test("a plugin's own files, its own node_modules and data files still load", () => {
+    const root = w.plugin("fine", {
+      "node_modules/dep/package.json": JSON.stringify({ name: "dep", main: "index.js" }), "node_modules/dep/index.js": "module.exports = 2;\n",
+      "host/lib.ts": "export const y = 1;\n", "host/data.json": "{\"z\":3}", "host/icon.png": "png",
+      "host/index.ts": "import { y } from \"./lib\";\nimport dep from \"dep\";\nimport d from \"./data.json\";\nimport icon from \"./icon.png\";\nconsole.log(\"ok\", y, dep, d.z, typeof icon);\n",
+    });
+    const r = w.run(root, "host/index.ts", true);
+    expect([r.code, r.stdout.trim(), r.stderr]).toEqual([0, "ok 1 2 3 string", ""]);
+  }, 30_000);
+
+  test("a hook's bun runs guarded: the outside file never loads", async () => {
+    const root = w.plugin("hook", { "hooks/check.ts": "await import(\"../../outside/evil.ts\");\n" });
+    const runner = new HookRunner({ files: w.files, shared: [] });
+    const r = await runner.run({ pluginId: "p", command: `${JSON.stringify(process.execPath)} hooks/check.ts`, cwd: root }, { event: "e", sessionId: "s", pluginId: "p", ts: 0 });
+    expect([r.status, existsSync(join(w.base, "mark"))]).toEqual(["error", false]);
+  }, 30_000);
+
+  test("a supervised plugin process gets Clover's flags and its own root", () => {
+    const seen: Record<string, string>[] = [];
+    const sup = new PluginSupervisor({
+      runDir: join(w.base, "sup-run"), socketPath: "/s", mintToken: () => "t",
+      pluginRun: { files: w.files, shared: [] },
+      spawn: (_cmd, o) => { seen.push(o.env); return { pid: 999_999, exited: new Promise<number>(() => {}), kill() {} }; },
+      isAlivePid: () => false, signalPid: () => {}, processStartedAt: () => null,
+    });
+    const root = w.plugin("sup", { "host/index.ts": "" });
+    sup.startAll([{ id: "sup@local", dir: root, entry: { command: "bun", args: ["host/index.ts"] } }]);
+    expect([seen[0]?.BUN_OPTIONS, seen[0]?.CLOVER_PLUGIN_ROOT, seen[0]?.CLOVER_PLUGIN_TOKEN]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t"]);
+    sup.stopAll();
+  });
+
+  test("the env drops what changes loading, and the run files are Clover's own", () => {
+    const env = guardedPluginEnv({ PATH: "/bin", NODE_OPTIONS: "--require x", BUN_OPTIONS: "--preload y", NODE_PATH: "/z", BUN_CONFIG_REGISTRY: "r" }, { pluginRoot: w.base, files: w.files, shared: [] });
+    expect([env.NODE_OPTIONS, env.NODE_PATH, env.BUN_CONFIG_REGISTRY, env.PATH]).toEqual([undefined, undefined, undefined, "/bin"]);
+    expect(env.BUN_OPTIONS).toBe(pluginBunFlags(w.files).join(" "));
+    expect(env.BUN_OPTIONS).not.toMatch(/\s--preload=y/);
+    expect([readFileSync(w.files.bunfig, "utf8"), readFileSync(w.files.guard, "utf8")]).toEqual([PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE]);
+    // A run folder with a space falls back to one without: BUN_OPTIONS takes no quotes.
+    const spaced = ensurePluginRunFiles(join(w.base, "run dir"));
+    expect(/\s/.test(spaced.guard)).toBe(false);
+  });
+});
