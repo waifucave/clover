@@ -1326,6 +1326,7 @@ async function smoke(): Promise<void> {
               const press = (kind: "Down" | "Up") => void win.webContents.sendInputEvent({ type: `mouse${kind}`, x: centerX, y: centerY, button: "left" });
               log(`sealed-click: press sent at ${centerX},${centerY}`);
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
+              await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               press("Down");
               press("Up");
               if (doubleClick === true) {
@@ -1339,6 +1340,9 @@ async function smoke(): Promise<void> {
               const after = await frame.executeJavaScript(
                 `(() => { const s = document.querySelector('.state'); return { state: s ? s.textContent : null, answered: document.body.dataset.answered ?? null, presses: (window.__sealedPresses ?? []).slice(0, 4) }; })()`, true).catch(() => null) as { state: string | null; answered: string | null } | null;
               if (after !== null && typeof after === "object") log(`sealed-click: after press state=${String((after as { state?: unknown }).state ?? "")} answered=${String((after as { answered?: unknown }).answered ?? "")} presses=${JSON.stringify((after as { presses?: unknown }).presses ?? [])}`);
+              const rootAfter = await win.webContents.executeJavaScript(
+                `(() => ({ presses: (window.__rootPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
+              if (rootAfter !== null && typeof rootAfter === "object") log(`sealed-click: root presses=${JSON.stringify((rootAfter as { presses?: unknown }).presses ?? [])}`);
               }
             } else {
               log(`sealed-click: no button rect (button=${buttonRect === null ? "null" : "ok"} chain=${chainOk ? "ok" : "null"})`);
