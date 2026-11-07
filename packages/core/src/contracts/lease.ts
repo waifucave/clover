@@ -38,14 +38,21 @@ export function fencingTokenOf(state: LeaseState): FencingToken | undefined {
 }
 
 /** A receiver's check of the tokens on acts asked of it (check 2): its own lease's view, from its own lease events
- *  (`observe`), and whether it has seen a token for its scope, after which an act without one is refused. */
+ *  (`observe`). An act without a token is refused once it has seen a token for its scope, and outright whenever its own
+ *  lease has a scope and a holder (the controller's ruling on #237): every sender in a group with a lease sends one, so
+ *  a receiver that restarted, and so has seen none yet, still refuses a tokenless act. */
 export class FenceGuard {
   #own: FenceView | undefined;
   #seen = false;
 
   /** This computer's own lease changed (its `watch`). */
   observe(state: LeaseState): void {
-    if (state.scope === undefined) return;
+    // Out of its group (no scope): no view, so nothing it knew of the old group's lease still passes (#237's ruling).
+    if (state.scope === undefined) {
+      this.#own = undefined;
+      this.#seen = false;
+      return;
+    }
     if (this.#own?.scope !== state.scope) this.#seen = false;
     const own = this.#own?.scope === state.scope && this.#own.epoch > state.epoch ? this.#own : { scope: state.scope, epoch: state.epoch, holder: state.holder };
     this.#own = own;
@@ -53,7 +60,8 @@ export class FenceGuard {
 
   /** Judges an act's token. Its view moves only from `observe`, never from a token (#187's check 2). */
   check(token: FencingToken | undefined): FenceVerdict {
-    const v = fenceVerdict(this.#own, token, this.#seen);
+    const held = this.#own !== undefined && this.#own.holder !== null;
+    const v = fenceVerdict(this.#own, token, this.#seen || held);
     if (v === "ok" && token !== undefined) this.#seen = true;
     return v;
   }
