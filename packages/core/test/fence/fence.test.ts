@@ -11,7 +11,7 @@ import { botFolders, loginStartDirs, loginStartPaths, loginStartSafeFiles, login
 import { makeBotFolders } from "../../src/fence/per-caller";
 import { FENCED_SPAWN_NOT_YET } from "../../src/fence/spawn";
 import { linkedRouterSupportsRunHome } from "../../src/runtime-sdk/run-home-support";
-import type { FenceOp } from "../../src/contracts/fence";
+import type { FenceOp, FencedKind } from "../../src/contracts/fence";
 import { diskName, foldName, foldPath, nonAsciiAlias } from "../../src/fence/fold";
 
 // C-M2: the real fence. B's conformance suite runs against it with the suite's own fictional paths (no disk), then
@@ -248,6 +248,39 @@ describe("the real fence on a real disk", () => {
     const kinds = fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path);
     expect(kinds).not.toContain(join(home, "hooked"));
     expect(fence.check({ op: "write", path: join(home, "hooked", "pre-commit") })).toEqual({ allowed: true });
+    void clover;
+  });
+
+  test("lane M's self-update files are a never-own, read-only kind (#198 B1)", () => {
+    // pendingFenced names them under the Clover home on macOS and Linux, in that OS's form (lane M's `<home>`
+    // is the Clover home). Windows keeps its updater in Task Scheduler (a closed door): none.
+    expect(pendingFenced({ home: "/h", cloverHome: "/h/.clover", os: "linux" })["self-update"]).toEqual([
+      "/h/.clover/update",
+      "/h/.clover/bin/clover-core", "/h/.clover/bin/clover-core.new", "/h/.clover/bin/clover-core.old",
+      "/h/.clover/bin/.new", "/h/.clover/bin/.old", "/h/.clover/install.json",
+    ]);
+    expect(pendingFenced({ home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", os: "windows" })["self-update"]).toEqual([]);
+    const { home, clover, fence } = make();
+    const kinds = fence.fencedSet().filter((i) => i.kind === ("self-update" as FencedKind)).map((i) => i.path);
+    expect(kinds).toEqual(expect.arrayContaining([
+      join(clover, "bin", "clover-core"), join(clover, "update"), join(clover, "install.json"),
+    ]));
+    // Never owned: every runner denied, user-context writes too; reads pass (read-only, not read-denied).
+    for (const f of [fence, fence.forCaller(session("luna", "bot", "s1")), fence.forCaller(session(undefined, "coding", "c1")), fence.forCaller({ kind: "plugin", pluginId: "tarot" }), fence.forCaller({ kind: "user", client: "app" })]) {
+      expect(f.check({ op: "write", path: join(clover, "bin", "clover-core") })).toEqual({ allowed: false, reason: "self-update" as FencedKind, path: join(clover, "bin", "clover-core") });
+      expect(f.check({ op: "write", path: join(clover, "update", "boot.json") })).toEqual({ allowed: false, reason: "self-update" as FencedKind, path: join(clover, "update") });
+      expect(f.check({ op: "write", path: join(clover, "install.json") })).toEqual({ allowed: false, reason: "self-update" as FencedKind, path: join(clover, "install.json") });
+      expect(f.check({ op: "delete", path: join(clover, "update", "rolled-back.json") })).toMatchObject({ allowed: false, reason: "self-update" });
+      expect(f.check({ op: "move", path: join(home, "x"), to: join(clover, "bin", "clover-core.new") })).toMatchObject({ allowed: false, reason: "self-update" });
+    }
+    // Read-only as a kind: the kind itself never read-denies. Reads still follow the Clover home default-deny:
+    // the user's own surfaces read freely, runners don't.
+    expect(fence.forCaller({ kind: "user", client: "app" }).check({ op: "read", path: join(clover, "update", "boot.json") })).toEqual({ allowed: true });
+    expect(fence.forCaller(session("luna", "bot", "s1")).check({ op: "read", path: join(clover, "update", "boot.json") })).toMatchObject({ allowed: false, reason: "clover-home" });
+    expect(fence.touches([join(clover, "update", "boot.json")])).toMatchObject({ kind: "self-update", path: join(clover, "update") });
+    expect(fence.policy().denyWrite).toEqual(expect.arrayContaining([join(clover, "update"), join(clover, "install.json")]));
+    // Off for the contract suite: the Clover home's default-deny still refuses (less precise reason).
+    expect(new CloverFence({ home, cloverHome: clover, enforceAhead: false }).check({ op: "write", path: join(clover, "update", "boot.json") })).toMatchObject({ allowed: false });
     void clover;
   });
 

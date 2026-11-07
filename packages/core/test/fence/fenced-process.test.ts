@@ -468,6 +468,12 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
       expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
+      // Lane M's self-update files under the Clover home: the daemon binary, a staged boot record and the
+      // install record are refused (the Clover home default-deny backs the kind).
+      for (const f of [join(w.clover, "bin", "clover-core"), join(w.clover, "update", "boot.json"), join(w.clover, "install.json")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      expect(existsSync(join(w.clover, "install.json"))).toBe(false); // never created, never planted
     } else {
       // The systemd user unit, an autostart entry, and the shell startup files: a bot's session plants none.
       expect(ok(await w.run(`echo x >> '${join(w.home, ".config", "systemd", "user", "clover-core.service")}'`))).toBe(false);
@@ -507,6 +513,13 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       mkdirSync(join(w.home, "project", ".git", "hooks"), { recursive: true });
       expect(ok(await w.run(`echo x > '${join(w.home, "project", ".git", "hooks", "post-checkout")}'`))).toBe(false);
       expect(existsSync(join(w.home, "project", ".git", "hooks", "post-checkout"))).toBe(false);
+      // Lane M's self-update files under the Clover home: the daemon binary and its swap copy, a staged boot
+      // record and the install record are refused; the install record is never created and never planted.
+      for (const f of [join(w.clover, "bin", "clover-core"), join(w.clover, "bin", "clover-core.new"),
+        join(w.clover, "update", "boot.json"), join(w.clover, "install.json")]) {
+        expect(ok(await w.run(`echo x > '${f}'`))).toBe(false);
+      }
+      expect(existsSync(join(w.clover, "install.json"))).toBe(false);
     }
     // A fenced file that isn't there yet can't be made either.
     expect(ok(await w.run(`echo '{}' > '${join(w.clover, "trust.json")}'`))).toBe(false);

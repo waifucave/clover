@@ -37,7 +37,10 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
     test("macOS fences every item but the secrets file and key files, which the Keychain holds", () => {
       const kinds = new Set(fence("macos", [`${HOME}/dev/luna`]).fencedSet().map((i) => i.kind));
       const expected = FENCED_KINDS.filter((k) => k !== "secrets-file" && k !== "key-file");
-      expect([...kinds].sort()).toEqual([...expected].sort());
+      for (const k of expected) expect(kinds.has(k)).toBe(true);
+      // Nothing else but lane M's self-update files, pending until B names the kind (the fake names it; the real
+      // fence only with `enforceAhead`, off for this suite).
+      for (const k of kinds) expect([...expected, "self-update"].includes(k)).toBe(true);
     });
 
     test("Windows and Linux also hide the secrets file and key files from reads", () => {

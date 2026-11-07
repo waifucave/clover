@@ -112,6 +112,20 @@ function loginStartPaths(os: Os, home: string, cloverHome: string): string[] {
   ];
 }
 
+/** Lane M's self-update files under the Clover home (lane C's `layout.ts` lists the same): the `bin/` daemon
+ *  binary, its `.new`/`.old` swap copies, the `update/` folder, and the install record. Never owned, read-only. */
+function selfUpdatePaths(cloverHome: string): string[] {
+  return [
+    `${cloverHome}/bin/clover-core`,
+    `${cloverHome}/bin/clover-core.new`,
+    `${cloverHome}/bin/clover-core.old`,
+    `${cloverHome}/bin/.new`,
+    `${cloverHome}/bin/.old`,
+    `${cloverHome}/update`,
+    `${cloverHome}/install.json`,
+  ];
+}
+
 export class FakeFence implements Fence {
   readonly os: Os;
   readonly #home: string;
@@ -140,6 +154,12 @@ export class FakeFence implements Fence {
     const out: FencedPath[] = [];
     const add = (kind: FencedKind, path: string) =>
       out.push({ kind, path: normalizePosix(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : CALLER_KINDS.includes(kind) ? "caller" : "write" });
+    // Lane M's self-update files first (lane C's `layout.ts` pending `self-update`, pending until B names the
+    // kind): never owned by any caller, read-only. First on purpose: they sit under login-start's `bin/` folder,
+    // and the more specific kind names the attack.
+    for (const p of (this.#layout as Record<string, string[] | undefined>)["self-update"] ?? selfUpdatePaths(this.#cloverHome)) {
+      add("self-update" as FencedKind, p);
+    }
     for (const [kind, rel] of Object.entries(FAKE_FENCE_LAYOUT) as [Exclude<FencedKind, "dev-folders">, string | null][]) {
       if ((kind === "secrets-file" || kind === "key-file") && this.os === "macos") continue; // the Keychain holds them there
       const override = this.#layout[kind];

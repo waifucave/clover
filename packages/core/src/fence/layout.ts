@@ -87,6 +87,10 @@ export function pendingFenced(o: {
     "session-transcripts": [p.join(o.cloverHome, "projects"), ...(linkedRouterSupportsRunHome() ? [p.join(o.cloverHome, "sdk", "projects")] : [])],
     // Windows: the per-user Git for Windows, whose bash runs hooks (#205's S4): a fenced caller can't plant one there.
     "hook-shell": o.os === "windows" ? [u("AppData", "Local", "Programs", "Git")] : [],
+    // Lane M's self-update files: lane M's `<home>` is the Clover home, not the user's. Writing any of them
+    // would let a runner swap in an unsandboxed daemon (#198 review B1). Never owned by any caller, read-only.
+    // `selfUpdateDirs`/`selfUpdateFiles` name the folders and files; `~/bin` stays in login-start as before.
+    "self-update": [...selfUpdateDirs(o.cloverHome, o.os), ...selfUpdateFiles(o.cloverHome, o.os)],
   };
 }
 
@@ -180,6 +184,31 @@ export function loginStartUnsafeFiles(home: string, os: Os): string[] {
   if (os === "macos") return [".bash_profile", ".bash_login", ".vimrc", ".emacs", "Library/Preferences/com.apple.loginwindow.plist"].map((f) => u(...f.split("/")));
   if (os === "linux") return [".bash_profile", ".bash_login", ".xinitrc", ".vimrc", ".emacs"].map((f) => u(...f.split("/")));
   return [];
+}
+
+/** Lane M's self-update folders under the Clover home (`update/`, holding `boot.json`, `rolled-back.json` and
+ *  whatever the updater stages): never owned by any caller, read-only. The Clover home's default-deny already
+ *  covers them, so they never hold anything; inside the default-deny view nothing is created for them. */
+export function selfUpdateDirs(cloverHome: string, os: Os): string[] {
+  if (os === "windows") return [];
+  return [pathFor(os, cloverHome).join(cloverHome, "update")];
+}
+
+/** Lane M's self-update files under the Clover home: the `bin/` daemon binary, its `.new`/`.old` swap copies,
+ *  and the install record. Never owned by any caller, read-only. None is ever created by the sandbox (an install
+ *  record is the installer's to write); the Linux supervisor refuses plants, with the post-command belt behind
+ *  it. */
+export function selfUpdateFiles(cloverHome: string, os: Os): string[] {
+  if (os === "windows") return [];
+  const p = pathFor(os, cloverHome);
+  return [
+    p.join(cloverHome, "bin", "clover-core"),
+    p.join(cloverHome, "bin", "clover-core.new"),
+    p.join(cloverHome, "bin", "clover-core.old"),
+    p.join(cloverHome, "bin", ".new"),
+    p.join(cloverHome, "bin", ".old"),
+    p.join(cloverHome, "install.json"),
+  ];
 }
 
 /** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */
