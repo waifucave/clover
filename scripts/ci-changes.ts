@@ -18,7 +18,7 @@ type Pattern = string;
 
 /** Changes to any of these run every area: CI itself, the toolchain, the root manifest and the lockfiles. */
 export const CI_GLOBAL: readonly Pattern[] = [
-  ".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml",
+  ".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", ".bun-sha256", "package.json", "bun.lock", "pnpm-lock.yaml",
   "pnpm-workspace.yaml", "tsconfig.base.json", "bunfig.toml",
 ];
 
