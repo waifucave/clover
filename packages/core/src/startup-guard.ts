@@ -2,13 +2,13 @@
 // was started with can't choose whom its TLS trusts (build-kind.ts's `tlsEnvRefusal`), and on macOS can't choose its
 // keychains. Both refuse with exit 78 (`EX_CONFIG`).
 //
-// HOME on macOS (#243 check 2, measured read-only with `security`): the Security framework takes the user's keychain
-// search list and the user trust settings from `$HOME/Library/Keychains`. `Bun.secrets` and the core's own keychain
-// calls (auth/keychain-ffi.ts) name no keychain — they search the user's list — so whoever starts the binary with a
-// planted HOME would choose the keychains the core reads (an attacker's look-alike items ahead of the real login
-// keychain) and the trust `--use-system-ca` honours. Neither API lets the core pin the real login keychain, so the
-// guard is this refusal: a set HOME must be the account's own home (`getpwuid(getuid())->pw_dir`, compared by real
-// path). An unset HOME is fine: Security then uses the password database's home itself.
+// HOME on macOS (#243 checks 2 and 3): the Security framework takes the user's keychain search list and the user trust
+// settings from `$HOME/Library/Keychains`. Clover's own items are read and written in the login keychain opened by
+// path (auth/login-keychain.ts, `<pw_dir>/Library/Keychains/login.keychain-db`), so no search list, HOME's or a
+// reordered one, chooses which item is read. This refusal still guards what a path can't: the trust settings
+// `--use-system-ca` honours, and anything else that reads HOME. A set HOME must be the account's own home
+// (`getpwuid(getuid())->pw_dir`, compared by real path). An unset HOME is fine: Security then uses the password
+// database's home itself.
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { DIST_BUILD } from "./build-kind";
 

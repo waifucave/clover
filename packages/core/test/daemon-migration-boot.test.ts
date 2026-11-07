@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
-import { FileSecretStore } from "../src/auth/secret-store";
+import { FileSecretStore, setDefaultSecretsBackendForTests } from "../src/auth/secret-store";
 import { MigrationRefused } from "../src/migration/migrate-b";
 import { readMigrationManifest } from "../src/migration/manifest";
 import { TOKEN_NAMES } from "../src/auth/tokens";
@@ -59,7 +59,8 @@ function captureConsoleError(): { lines: string[]; restore: () => void } {
 // C0 (review S2): spec §12 retires the legacy migrations. A production-shaped boot — no injected `secrets`, no
 // seam — with a legacy home exactly where the profile would look for one never reads it: no legacy Keychain store
 // is built (none of its services is ever asked for), nothing is copied, no manifest is written. `Bun.secrets` is
-// swapped for an in-memory recorder for the boot, so the real Keychain is never reached.
+// swapped for an in-memory recorder for the boot (and so is the default store backend, `setDefaultSecretsBackendForTests`),
+// so the real Keychain is never reached.
 describe("daemon.ts boot hook — a production boot never migrates (C0, review S2)", () => {
   test("legacy home present, no injected secrets: no legacy store, no copy, no manifest", async () => {
     const parent = tempParent();
@@ -77,10 +78,13 @@ describe("daemon.ts boot hook — a production boot never migrates (C0, review S
     const previousLegacyHome = process.env[LEGACY_HOME_ENV];
     process.env[LEGACY_HOME_ENV] = legacyHome; // where `legacyHomeFor` would look
     (Bun as { secrets: unknown }).secrets = recorder;
+    // On macOS production stores use the login keychain by path, not `Bun.secrets`: the recorder goes there too.
+    setDefaultSecretsBackendForTests(recorder);
     try {
       daemon = await startDaemon({ home, agentProvider: null });
     } finally {
       (Bun as { secrets: unknown }).secrets = realSecrets;
+      setDefaultSecretsBackendForTests(undefined);
       if (previousLegacyHome === undefined) delete process.env[LEGACY_HOME_ENV]; else process.env[LEGACY_HOME_ENV] = previousLegacyHome;
     }
     expect(readMigrationManifest(home)).toBeNull();
