@@ -2,7 +2,7 @@
 // "always" on any, and a duplicate offers to delete only when the kept VM ranks strictly above it.
 import { describe, expect, test } from "bun:test";
 import type { Card } from "@waifucave/clover-protocol";
-import { CLOUD_CARD_TEXT, cloudCardConfirm, cloudCardRequest, type CloudCardRequest } from "../../src/approvals/cloud-cards";
+import { CLOUD_CARD_TEXT, CloudCardDesk, cloudCardConfirm, cloudCardRequest, type CloudCardRequest } from "../../src/approvals/cloud-cards";
 import { CloverApprovalBroker } from "../../src/approvals/broker";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { CloudCard } from "../../src/computers/cloud";
@@ -52,7 +52,7 @@ describe("cloud cards", () => {
     expect((r.fields.detail as { code: string }).code).toBe("folder: Projects\nprovider: hetzner\nsize: cx22\nregion: fsn1");
   });
 
-  test("through the broker: approve is yes, deny, report and an unanswered card are no", async () => {
+  test("through the broker: approve is yes, deny and the report's OK are no", async () => {
     const clock = new FakeClock();
     const broker = new CloverApprovalBroker({ clock });
     const confirm = cloudCardConfirm(broker);
@@ -72,10 +72,40 @@ describe("cloud cards", () => {
     shown = answer("ok");
     expect(await confirm(ALL[5]!)).toBe(false);
     await shown;
-    const pending = confirm(ALL[8]!);
+  });
+
+  test("a cloud card waits for the person: no 10-minute deny, whatever started it", async () => {
+    const clock = new FakeClock();
+    const broker = new CloverApprovalBroker({ clock });
+    let card: Card | undefined;
+    broker.watch((e) => { if (e.type === "requested") card = e.card; });
+    const desk = new CloudCardDesk(broker);
+    let settled = false;
+    const pending = desk.ask(ALL[4]!).then((o) => { settled = true; return o; });
     await Bun.sleep(0);
-    clock.advance(10 * 60 * 1000);
-    expect(await pending).toBe(false); // the daemon's own reconcile: denied after 10 minutes unanswered
+    expect(card!.expiresAt).toBeNull();
+    clock.advance(24 * 60 * 60 * 1000);
+    await Bun.sleep(0);
+    expect(settled).toBe(false);
+    expect(broker.cards()).toHaveLength(1);
+    await broker.answer(card!.id, { optionId: "approve", hash: card!.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!.id)!, input: "click", at: 1 } }, { role: "app" });
+    expect(await pending).toBe("approved");
+  });
+
+  test("a card whose VM or folder is gone closes as stale, never as a no; an outer bound gives unanswered", async () => {
+    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const desk = new CloudCardDesk(broker);
+    const dup = desk.ask(ALL[4]!), other = desk.ask(ALL[0]!);
+    await Bun.sleep(0);
+    expect(desk.pending()).toHaveLength(2);
+    expect(desk.stale((c) => c.kind === "cloud-duplicate" && c.serverId === "4711")).toBe(1);
+    expect(await dup).toBe("stale");
+    expect(broker.cards()).toHaveLength(1); // the stale card is closed, the other still waits
+    expect(desk.stale((c) => c.kind === "cloud-create" && c.folder === "Projects")).toBe(1);
+    expect(await other).toBe("stale");
+    const bounded = new CloudCardDesk(broker, { maxWaitMs: 20 });
+    expect(await bounded.ask(ALL[2]!)).toBe("unanswered");
+    expect(broker.cards()).toHaveLength(0);
   });
 
   test("lane J's CloudCard fits the mapping as it is", () => {

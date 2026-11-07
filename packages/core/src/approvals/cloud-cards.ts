@@ -11,6 +11,7 @@
 // reports both VMs, with nothing to delete.
 import type { TurnOrigin } from "@waifucave/clover-protocol";
 import type { ApprovalBroker, ApprovalRequest } from "../contracts/approval-broker";
+import type { CloverApprovalRequest } from "./broker";
 import { plainOf } from "./strings";
 
 /** One VM a duplicate card names. */
@@ -66,10 +67,11 @@ function details(lines: readonly (readonly [string, string | undefined])[]): { t
 
 const pairedText = (p: boolean | undefined) => (p === undefined ? "not known" : p ? "yes" : "no");
 
-/** The broker's request for one cloud card. `origin`: what started it (the reconcile is the daemon's own by default, so
- *  an unanswered card is denied after 10 minutes, rule 6). */
-export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "routine"): ApprovalRequest {
-  const base = { kind: "change" as const, origin, computers: [] as string[], effect: "other" as const };
+/** The broker's request for one cloud card. `origin`: what started it (the reconcile is the daemon's own by default).
+ *  It waits for the person whatever started it (`waitsForUser`): a cloud card is never denied by a timeout, since a
+ *  timeout read as "keep" would bill a duplicate forever (the controller's ruling on #290). */
+export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "routine"): CloverApprovalRequest {
+  const base = { kind: "change" as const, origin, computers: [] as string[], effect: "other" as const, waitsForUser: true };
   const title = (t: string) => ({ type: "text" as const, text: t });
   switch (card.kind) {
     case "cloud-create": {
@@ -120,7 +122,66 @@ export function cloudCardRequest(card: CloudCardRequest, origin: TurnOrigin = "r
   }
 }
 
+/** How a cloud card ended:
+ *  * `approved` / `declined`: the person answered;
+ *  * `stale`: what it asked about is gone (the VM no longer exists, the folder was removed), so it was closed unanswered;
+ *  * `unanswered`: only with an outer bound (`maxWaitMs`): no answer by then. Lane J asks again on a later reconcile (at
+ *    most once a day per server), never reading it as "keep". */
+export type CloudCardOutcome = "approved" | "declined" | "stale" | "unanswered";
+
+interface OpenCloudCard { card: CloudCardRequest; close: (why: "stale" | "unanswered") => void }
+
+/** The cloud cards through the broker, each waiting for the person until it is answered or closed as stale. */
+export class CloudCardDesk {
+  readonly #broker: Pick<ApprovalBroker, "request">;
+  readonly #origin: TurnOrigin;
+  readonly #maxWaitMs: number | undefined;
+  readonly #open = new Set<OpenCloudCard>();
+
+  constructor(broker: Pick<ApprovalBroker, "request">, o: { origin?: TurnOrigin; maxWaitMs?: number } = {}) {
+    this.#broker = broker;
+    this.#origin = o.origin ?? "routine";
+    this.#maxWaitMs = o.maxWaitMs;
+  }
+
+  /** Raises the card and waits for how it ends. */
+  async ask(card: CloudCardRequest): Promise<CloudCardOutcome> {
+    const ac = new AbortController();
+    let closed: "stale" | "unanswered" | undefined;
+    const entry: OpenCloudCard = { card, close: (why) => { closed ??= why; ac.abort(); } };
+    this.#open.add(entry);
+    const timer = this.#maxWaitMs === undefined ? undefined : setTimeout(() => entry.close("unanswered"), this.#maxWaitMs);
+    (timer as { unref?: () => void } | undefined)?.unref?.();
+    try {
+      const d = await this.#broker.request(cloudCardRequest(card, this.#origin), { signal: ac.signal });
+      if (closed !== undefined) return closed;
+      return d.allowed ? "approved" : "declined";
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      this.#open.delete(entry);
+    }
+  }
+
+  /** J's `confirm`: true only when the person approved the card. */
+  async confirm(card: CloudCardRequest): Promise<boolean> {
+    return (await this.ask(card)) === "approved";
+  }
+
+  /** Closes, as `stale`, every open card `gone` picks (its VM no longer exists, its folder was removed); how many. */
+  stale(gone: (card: CloudCardRequest) => boolean): number {
+    let n = 0;
+    for (const e of [...this.#open]) if (gone(e.card)) { e.close("stale"); n++; }
+    return n;
+  }
+
+  /** The cards waiting for the person now. */
+  pending(): CloudCardRequest[] {
+    return [...this.#open].map((e) => e.card);
+  }
+}
+
 /** J's `confirm` over the broker: true only when the person approved the card. */
 export function cloudCardConfirm(broker: Pick<ApprovalBroker, "request">, o: { origin?: TurnOrigin } = {}): (card: CloudCardRequest) => Promise<boolean> {
-  return async (card) => (await broker.request(cloudCardRequest(card, o.origin ?? "routine"))).allowed;
+  const desk = new CloudCardDesk(broker, o);
+  return (card) => desk.confirm(card);
 }
