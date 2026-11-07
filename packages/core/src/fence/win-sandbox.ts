@@ -13,6 +13,7 @@
 // the per-session reset — runs on Windows only, driven by `clover-core sandbox setup|remove|status`.
 import { win32 } from "node:path";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { callerPlaces } from "./per-caller";
 import type { CallerPlaces } from "./per-caller";
 import type { SandboxPolicy } from "../contracts/fence";
@@ -487,6 +488,25 @@ export interface LeaseStore {
   createNew(path: string, content: string): boolean;
   writeText(path: string, content: string): void;
   remove(path: string): void;
+  /** Atomically move `tmpPath` over `finalPath` (same directory). The production
+   *  filesystem implementation is `fs.renameSync`, which is atomic on one directory
+   *  on both NTFS and POSIX; the in-memory test store swaps one `Map` entry. The
+   *  takeover below writes the new lease to a nonce-unique temp file first and only
+   *  then renames it over the lease, so readers of the lease path never see a
+   *  half-written file — and the winner is confirmed by re-reading the lease and
+   *  checking the nonce (see `acquirePoolLease`).
+   *
+   *  Why not an OS-held lock (`CreateFileW` with `dwShareMode = 0` / `LockFileEx`
+   *  via `bun:ffi`, auto-released when the holder dies)? That would need a
+   *  Windows-only handle held open in the daemon for the whole session lifetime,
+   *  plus native PID/start-time plumbing, and it cannot run in core's
+   *  cross-platform unit tests (macOS). The temp-file + atomic-rename + nonce
+   *  re-read gives the same single-winner property for the actual contenders
+   *  (separate `acquirePoolLease` calls interleave only at `await sleep`, never
+   *  between the synchronous read/create/rename/re-read sequence), without native
+   *  code. When the daemon wires the lease into the Windows Bash spawn, its
+   *  filesystem store implements this with `renameSync`. */
+  replaceAtomic(tmpPath: string, finalPath: string): void;
 }
 
 /** A live lease record on disk. */
@@ -499,11 +519,50 @@ export interface PoolLeaseFile {
   readonly lastResetAt: string | null;
 }
 
+/** Start time of a live process (ms since the Unix epoch), or null when unknown.
+ *  This is the default `startTimeOf` for `acquirePoolLease`: it guards against PID
+ *  reuse (a dead holder's PID recycled by an unrelated process). It fails closed —
+ *  null disables only the reuse fast-path; liveness still comes from `isAlive`.
+ *  Windows reads `(Get-Process -Id <pid>).StartTime`; other platforms read `ps`. */
+export function processStartTimeMs(pid: number): number | null {
+  try {
+    if (!Number.isInteger(pid) || pid <= 0) return null;
+    if (process.platform === "win32") {
+      // Synchronous: lease acquisition is rare (once per session). The PID is
+      // validated above, so no interpolation risk beyond the integer.
+      const out = execFileSync(
+        "powershell",
+        ["-NoProfile", "-NoLogo", "-NonInteractive", "-Command", `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().ToString("o")`],
+        { encoding: "utf8", windowsHide: true, timeout: 5000 },
+      ) as string;
+      const t = Date.parse(out.trim());
+      return Number.isNaN(t) ? null : t;
+    }
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 5000 }) as string;
+    const t = Date.parse(out.trim());
+    return Number.isNaN(t) ? null : t;
+  } catch {
+    return null;
+  }
+}
+
 /** Acquire one pool principal exclusively (controller ruling 3). Tries members in order; a missing or
  *  corrupt lease file is free. A live holder blocks; a dead PID — or a start time that differs from
- *  the recorded one — is stale and taken over. When every member is leased by a live holder, waits
- *  until `timeoutMs` and then refuses instead of sharing a principal. `nonce` identifies the holder
- *  for a safe release. */
+ *  the recorded one — is stale and taken over through an atomic step: the new lease is written to a
+ *  nonce-unique temp file, renamed over the lease (`replaceAtomic`, atomic on one directory), then
+ *  re-read — only the contender whose nonce survived the rename wins. A torn file can never be
+ *  observed (the temp is fully written before the rename), and two racers for a dead holder cannot
+ *  both win: the loser's re-read shows the winner's nonce. When every member is leased by a live
+ *  holder, waits until `timeoutMs` and then refuses instead of sharing a principal. `nonce`
+ *  identifies the holder for a safe release.
+ *
+ *  Daemon wiring: no Windows Bash spawn exists in the daemon yet (`execArgs` / `sessionGrantArgs`
+ *  are built and unit-tested here but no production caller passes them to a child process), so no
+ *  production `LeaseStore` exists either. The first daemon caller — the lane that introduces the
+ *  Windows Bash tool spawn — implements `LeaseStore` on the filesystem (`readText`/`createNew` via
+ *  `O_CREAT|O_EXCL`, `replaceAtomic` via `renameSync`) with `sandboxLeasesDir(cloverHome)` as the
+ *  leases dir, `process.pid` as `holderPid`, and the defaults for `isAlive`/`startTimeOf`. Until
+ *  then the lease is measured by unit tests plus a filesystem-backed race on the VM. */
 export async function acquirePoolLease(o: {
   store: LeaseStore;
   leasesDir: string;
@@ -515,14 +574,15 @@ export async function acquirePoolLease(o: {
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   isAlive?: (pid: number) => boolean;
-  /** Start time of a pid (ms epoch), or null when unknown. Guards against PID reuse. */
+  /** Start time of a pid (ms epoch), or null when unknown. Guards against PID reuse.
+   *  Defaults to `processStartTimeMs` (a real source); tests inject fakes. */
   startTimeOf?: (pid: number) => number | null;
 }): Promise<{ ok: true; principal: string } | { ok: false; reason: string }> {
   const pollMs = o.pollMs ?? 250;
   const now = o.now ?? Date.now;
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const isAlive = o.isAlive ?? ((pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } });
-  const startTimeOf = o.startTimeOf ?? (() => null);
+  const startTimeOf = o.startTimeOf ?? processStartTimeMs;
   const holderStart = startTimeOf(o.holderPid);
   const nonce = o.nonce ?? `${o.holderPid}-${now()}-${Math.floor(Math.random() * 1e9)}`;
   const deadline = now() + o.timeoutMs;
@@ -530,32 +590,56 @@ export async function acquirePoolLease(o: {
     for (const member of o.pool) {
       const path = principalLeasePath(o.leasesDir, member.principal);
       const raw = o.store.readText(path);
-      if (raw === null) {
-        const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: null, lastResetAt: null };
-        if (o.store.createNew(path, JSON.stringify(lease))) return { ok: true, principal: member.principal };
+      let cur: PoolLeaseFile | null = null;
+      if (raw !== null) {
+        try {
+          const v = JSON.parse(raw) as Record<string, unknown>;
+          if (typeof v.holderPid === "number" && typeof v.nonce === "string" &&
+            (v.holderStart === null || typeof v.holderStart === "number") &&
+            (v.lastUseAt === null || typeof v.lastUseAt === "number") &&
+            (v.lastResetAt === null || typeof v.lastResetAt === "string")) {
+            cur = v as unknown as PoolLeaseFile;
+          }
+        } catch { /* corrupt: take over below */ }
+        if (cur !== null) {
+          const alive = isAlive(cur.holderPid);
+          const recordedStart = cur.holderStart ?? null;
+          const liveStart = startTimeOf(cur.holderPid);
+          const startDiffers = recordedStart !== null && liveStart !== null && liveStart !== recordedStart;
+          if (alive && !startDiffers) continue; // live holder: try the next member
+        }
+        // Stale (dead holder, changed start time) or corrupt: atomic takeover below,
+        // preserving the reset/use history when the record parsed.
+      }
+      // Free, stale or corrupt: claim atomically. The temp holds the complete lease
+      // before the rename, so no reader ever sees a partial write.
+      const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: cur?.lastUseAt ?? null, lastResetAt: cur?.lastResetAt ?? null };
+      const tmp = `${path}.${nonce}.tmp`;
+      let created = false;
+      try {
+        created = o.store.createNew(tmp, JSON.stringify(lease));
+        if (!created) {
+          // Our own leftover from a failed attempt (same nonce, retried poll):
+          // clear it once and retry the create.
+          try { o.store.remove(tmp); } catch { /* ignore */ }
+          try { created = o.store.createNew(tmp, JSON.stringify(lease)); } catch { created = false; }
+          if (!created) continue;
+        }
+      } catch { continue; }
+      try {
+        o.store.replaceAtomic(tmp, path);
+      } catch {
+        try { o.store.remove(tmp); } catch { /* ignore */ }
         continue;
       }
-      let cur: PoolLeaseFile | null = null;
+      // Only the contender whose rename survived wins: re-read and compare nonces.
+      let won = false;
       try {
-        const v = JSON.parse(raw) as Record<string, unknown>;
-        if (typeof v.holderPid === "number" && typeof v.nonce === "string" &&
-          (v.holderStart === null || typeof v.holderStart === "number") &&
-          (v.lastUseAt === null || typeof v.lastUseAt === "number") &&
-          (v.lastResetAt === null || typeof v.lastResetAt === "string")) {
-          cur = v as unknown as PoolLeaseFile;
-        }
-      } catch { /* corrupt: take over below */ }
-      // Stale when the holder is dead, when the file is corrupt, or when the recorded pid's
-      // current start time differs from the recorded one (the pid was reused by another process).
-      const holderDead = cur === null || !isAlive(cur.holderPid);
-      const recordedStart = cur?.holderStart ?? null;
-      const liveStart = cur === null ? null : startTimeOf(cur.holderPid);
-      const startDiffers = recordedStart !== null && liveStart !== null && liveStart !== recordedStart;
-      if (holderDead || startDiffers) {
-        const lease: PoolLeaseFile = { holderPid: o.holderPid, holderStart, nonce, lastUseAt: cur?.lastUseAt ?? null, lastResetAt: cur?.lastResetAt ?? null };
-        o.store.writeText(path, JSON.stringify(lease));
-        return { ok: true, principal: member.principal };
-      }
+        const reread = o.store.readText(path);
+        if (reread !== null) won = (JSON.parse(reread) as { nonce?: unknown }).nonce === nonce;
+      } catch { won = false; }
+      if (won) return { ok: true, principal: member.principal };
+      // Lost the race to another contender: try the next member.
     }
     if (now() >= deadline) {
       return { ok: false, reason: "the sandbox pool is busy; all 4 principals are leased" };
