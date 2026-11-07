@@ -326,5 +326,9 @@ export { fileRuleStore, savedRulesPath, SAVED_RULES_VERSION } from "./approvals/
 export { botApprovalCheck, botToolRequest, effectOf as botToolEffect, isBuiltinTool, resolveSessionPath, type BotToolRequestOptions } from "./approvals/bot-check";
 export { looksCredentialBearing } from "./approvals/strings";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
+export {
+  bundledManifest, bundledPluginIds, bundledPluginsDir, loadBundledManifest, readBundledFile, readBundledPlugin,
+  type BundledEntry, type BundledManifest, type BundledPluginRead, type BundledRead,
+} from "./bundled-plugins-dir";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
 export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";

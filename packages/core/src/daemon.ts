@@ -1,3 +1,4 @@
+import { loadBundledManifest } from "./bundled-plugins-dir";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -3519,6 +3520,9 @@ export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] =
   const claimed = claimDaemonChildren();
   if (process.platform === "win32" && !claimed.job) throw new Error("the daemon could not make its own job object, so it can't tell its children from the user");
   if (process.platform === "linux" && !claimed.subreaper) console.error("[caller] PR_SET_CHILD_SUBREAPER refused: a double-forked child is told from the user by the floor alone");
+  // #259: the bundled plugins' manifest, from the core's own embedded Blob, before anything asks for a bundled plugin
+  // (empty outside a compiled core; one that doesn't parse leaves nothing bundled, and says why).
+  await loadBundledManifest().catch((err: unknown) => console.error(`[caller] the bundled-plugins manifest is unreadable, so nothing is bundled: ${err instanceof Error ? err.message : String(err)}`));
   let embedded: { shutdown(budgetMs?: number): Promise<void> } | undefined;
   try { return await startDaemonInner(host => { embedded = host; }, opts); }
   catch (error) { void embedded?.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {}); throw error; }
