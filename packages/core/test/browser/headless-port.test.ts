@@ -205,7 +205,7 @@ describe("profiles and flags", () => {
   });
 
   test("the browser's environment: a home of its own, and none of the daemon's own variables", () => {
-    const env = browserEnv("/h/browser", { PATH: "/usr/bin", HOME: "/Users/me", ANTHROPIC_API_KEY: "sk-test", GITHUB_TOKEN: "t", TMPDIR: "/tmp/x", LANG: "en_US.UTF-8" });
+    const env = browserEnv("/h/browser", { PATH: "/usr/bin", HOME: "/Users/me", ANTHROPIC_API_KEY: "sk-test", GITHUB_TOKEN: "t", TMPDIR: "/tmp/x", LANG: "en_US.UTF-8" }, "linux");
     expect(env).toEqual({
       HOME: join("/h/browser", "home"), XDG_CONFIG_HOME: join("/h/browser", "home", ".config"), XDG_CACHE_HOME: join("/h/browser", "home", ".cache"),
       XDG_DATA_HOME: join("/h/browser", "home", ".local", "share"), PATH: "/usr/bin", LANG: "en_US.UTF-8", TMPDIR: "/tmp/x",
@@ -355,7 +355,7 @@ describe("HeadlessBrowser as the core's AppTabPort", () => {
     // A bot's policy: no loopback (R13).
     expect(b.spec.args).toContain("--proxy-server=socks5://127.0.0.1:1000");
     expect(b.spec.args).toContain(`--user-data-dir=${join(dir, "profiles", "bot-alpha")}`);
-    expect(b.spec.env?.HOME).toBe(join(dir, "home"));
+    expect(b.spec.env?.[process.platform === "win32" ? "USERPROFILE" : "HOME"]).toBe(join(dir, "home"));
     // The URL rule, downloads and auto-attach come before the first page.
     const order = b.calls.map((c) => c.method);
     expect(order.indexOf("Fetch.enable")).toBeLessThan(order.indexOf("Target.createTarget"));
