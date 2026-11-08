@@ -22,6 +22,7 @@ import { ContractError } from "../contracts/common";
 import { guardApiRouter, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore } from "../contracts/secret-store";
+import { areasApi, type AreaServices } from "./api/areas";
 import { confirmApi } from "./api/confirm";
 import { pointsApi } from "./api/points";
 import { createApiRouter, type ApiHandlers } from "./api/router";
@@ -63,6 +64,9 @@ export interface StartPluginHostOptions {
   assetUrl?: (pluginId: string, path: string) => string;
   /** The daemon's log, for a process's own output. */
   log?: (line: string) => void;
+  /** The other lanes' services the API's areas run on (`conversation`, `bots`, `computers`, `devices`, `files`,
+   *  `terminal`), each read when a call arrives. */
+  areas?: AreaServices;
   /** Sends a core event to the app (a host half's `ui.send` becomes `plugin_ui_message`). */
   emit?: (event: { type: string; [key: string]: unknown }) => void;
   clock?: Clock;
@@ -166,6 +170,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     storageApi(new SyncedStores(fileSyncedStores(o.home))),
     settingsApi(settings),
     commandsApi(o.registry),
+    ...(o.areas !== undefined ? [areasApi(o.areas)] : []),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     {
       // A component runs one of its plugin's host handlers, as the user, for the session it shows.
