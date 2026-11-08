@@ -1,9 +1,11 @@
 // Lane D's methods of the protocol's usage area (packages/protocol/src/usage.ts): Clover's own rows, per bot and per
-// session. `usage.plans` waits for the inherited plan readers to be mounted on Clover's server, so it isn't here yet.
-// Owner: lane D.
+// session (`usageMethods`), and the user's own apps' plan readings (`usagePlansMethods`, over the inherited usage
+// service's readers). Owner: lane D.
 import { USAGE_METHODS } from "@waifucave/clover-protocol";
 import { handler, type MethodHandler } from "../bots/rpc";
 import type { UsageLedger } from "./ledger";
+import { planWindowKey, type PlanReading as ServicePlanReading } from "./plan";
+import type { PlanReading as WirePlanReading } from "@waifucave/clover-protocol";
 
 export function usageMethods(deps: { ledger: UsageLedger }): Record<string, MethodHandler> {
   const M = USAGE_METHODS;
@@ -26,4 +28,50 @@ export function usageMethods(deps: { ledger: UsageLedger }): Record<string, Meth
       }),
     })),
   };
+}
+
+/** The plan readers `usage.plans` reads (the usage service's: each the user's own app, by its own install). */
+export interface PlanReaders {
+  codexPlan(): Promise<ServicePlanReading>;
+  claudeCodePlan(): Promise<ServicePlanReading>;
+  antigravityPlan(): Promise<ServicePlanReading>;
+}
+
+/** The sources that read nothing (the app isn't here, or the user turned it off). */
+const NO_READING = new Set(["none", "disabled", "not-installed"]);
+
+/** `usage.plans` (§12 "Usage"): the latest reading of each of the user's apps' plan windows on this computer, as the
+ *  Usage tab and the island show them. A source that can't answer is left out, never an error. */
+export function usagePlansMethods(deps: { readers: PlanReaders; computer(): string; now?(): number }): Record<string, MethodHandler> {
+  const M = USAGE_METHODS;
+  return {
+    [M.usagePlans.name]: handler(M.usagePlans, async () => ({ readings: await planReadings(deps) })),
+  };
+}
+
+export async function planReadings(deps: { readers: PlanReaders; computer(): string; now?(): number }): Promise<WirePlanReading[]> {
+  const now = deps.now ?? (() => Date.now());
+  const computer = deps.computer();
+  const read = await Promise.all([
+    // Each at the service's own pace (its throttle and its kept readings): asking never spawns an app every time.
+    deps.readers.codexPlan().catch(() => undefined),
+    deps.readers.claudeCodePlan().catch(() => undefined),
+    deps.readers.antigravityPlan().catch(() => undefined),
+  ]);
+  const out: WirePlanReading[] = [];
+  for (const r of read) {
+    if (r === undefined || NO_READING.has(r.source)) continue;
+    for (const w of r.windows) {
+      out.push({
+        source: r.provider,
+        computer,
+        plan: (r.planType ?? r.provider).slice(0, 128),
+        window: (w.windowKey ?? planWindowKey(w)).slice(0, 32),
+        usedPercent: Math.min(1000, Math.max(0, w.usedPercent)),
+        ...(w.resetsAt === undefined ? {} : { resetsAt: Math.max(0, Math.round(w.resetsAt)) }),
+        readAt: Math.max(0, Math.round(r.at ?? now())),
+      });
+    }
+  }
+  return out;
 }

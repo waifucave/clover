@@ -28,6 +28,7 @@ import { botPaths } from "./paths";
 import { StagedImages } from "./staged-images";
 import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
+import type { QuestionBroker } from "../agent/questions";
 
 // The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
 export { MethodError, handler, requireUser, toMethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
@@ -47,6 +48,8 @@ export interface SessionsMethodsDeps {
   /** `session.setModel` for a background agent or a coding session (lane K's `AgentManager.setModel`); without it the
    *  new model is recorded in the session's view and its driver reads it at the next turn. */
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
+  /** The bot side's questions (questions.ts): `session.answer` resolves the one waiting. Without it, none waits. */
+  questions?: Pick<QuestionBroker, "isPending" | "respond">;
 }
 
 /** How far back a bot conversation's messages are read for the staged copies they still name (never pruned). */
@@ -250,6 +253,17 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
         ? await host.deliver(id, { from: "note", label: (label ?? pluginId).slice(0, 120), text, by: { kind: "plugin", pluginId } })
         : await host.deliver(id, { from: "plugin", pluginId, text });
       return { seq };
+    }),
+
+    // The answer to a session's `AskUserQuestion` (§5.5): the user's, from any of their clients, or a plugin's that
+    // shows the question (`conversation.post`); never a session's, so no bot answers its own or another's.
+    [M.sessionAnswer.name]: handler(M.sessionAnswer, async ({ id, callId, answers, notes }, ctx) => {
+      const caller = ctx.caller;
+      if (caller.kind !== "user" && caller.kind !== "plugin") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user, or a plugin showing the question, answers it");
+      reachable(id);
+      if (deps.questions === undefined || !deps.questions.isPending(id, callId)) throw new ContractError("not_found", `no question ${callId} is waiting in ${id}`);
+      deps.questions.respond(id, callId, answers, caller.kind === "user" ? "user" : `plugin:${caller.pluginId}`, notes);
+      return { ok: true as const };
     }),
 
     [M.sessionInterrupt.name]: handler(M.sessionInterrupt, async ({ id }, ctx) => {

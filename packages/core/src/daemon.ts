@@ -35,6 +35,10 @@ import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
 import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
+import { archiveMethods } from "./sessions/archive-rpc";
+import { usagePlansMethods } from "./usage/rpc";
+import { computerNameFor } from "./devices/registry";
+import { defaultDeviceName } from "./ipc/device-links";
 import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
@@ -54,7 +58,7 @@ import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
 import { hostOs } from "./tree/names";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
@@ -3255,6 +3259,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let daemonLinks: DaemonLinks | undefined;
   let daemonParts: DaemonParts | undefined;
   let selfUpdate: SelfUpdate | undefined;
+  // Lane D's app methods: the archive of the previous app's sessions (this home's own store, read-only), and the user's
+  // own apps' plan readings (the usage service's readers), named for this computer as the tree names it.
+  Object.assign(cloverLaneHandlers, laneMethodHandlers({
+    ...archiveMethods({ store }),
+    ...(usage === undefined ? {} : usagePlansMethods({ readers: usage.service, computer: () => daemonParts?.node?.registry.self().name ?? (computerNameFor(defaultDeviceName(hostname())) || "this-computer") })),
+  }));
   // M-M2: `update.status` and `update.apply` join the lanes' handlers (one map: the links, node and bot side add theirs).
   Object.assign(cloverLaneHandlers, updateHandlers({
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
@@ -3499,8 +3509,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
-        // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked.
-        canUseTool: () => refuseUntilApprovals,
+        // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked. A
+        // bot's `AskUserQuestion` is asked of the user (lane D's questions; `session.answer` answers it).
+        canUseTool: (ctx) => side()?.questions.canUseTool(ctx.sessionId, refuseUntilApprovals) ?? refuseUntilApprovals,
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: opened.registry,
         epoch: () => main.epoch() ?? 0,
