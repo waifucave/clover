@@ -6,6 +6,7 @@
 // NOT the daemon's own workflow worker (`workflows/subprocess-entry.ts`, argv `__workflow-worker`):
 // the runtime's worker speaks the runtime's bridge (`workflowWorkerMain`, R5-15), a different program.
 import { workflowWorkerMain } from "@waifucave/clover-agent-runtime/workflow-worker";
+import { guardScriptProcess } from "../security/no-macros";
 import { refuseUnlessKeychainSandboxed } from "../workflows/sandbox-guard";
 
 /** Run the runtime's workflow worker on this process's stdio, then exit with its code. */
@@ -14,6 +15,8 @@ export async function runRuntimeWorkflowWorker(): Promise<never> {
   refuseUnlessKeychainSandboxed("runtime workflow worker");
   let code: number;
   try {
+    // No Bun macro in any thread, and no thread (security/no-macros.ts), before the model's workflow runs.
+    await guardScriptProcess("the runtime workflow worker");
     code = await workflowWorkerMain(process.argv, { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr });
   } catch (err) {
     process.stderr.write(`clover-core: fatal (runtime workflow worker): ${err instanceof Error ? err.message : String(err)}\n`);
