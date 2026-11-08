@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { backoffMs, superviseLoop, type DaemonRun, type SuperviseDeps } from "../../src/platform/login/supervise";
+import { backoffMs, superviseLoop, UPDATE_RESTART_EXIT_CODE, type DaemonRun, type SuperviseDeps } from "../../src/platform/login/supervise";
 
 function run(code: number | null): DaemonRun {
   return { exited: Promise.resolve(code), stop() {} };
@@ -34,6 +34,20 @@ describe("supervise loop", () => {
     expect(r.crashes).toBe(2);
     expect(r.ended).toBe("clean-exit");
     expect(waits).toEqual([500, 1000]); // back-off after the 1st and 2nd crash
+  });
+
+  test("an update's restart starts the daemon again at once, and is no crash", async () => {
+    const codes = [UPDATE_RESTART_EXIT_CODE, 1, UPDATE_RESTART_EXIT_CODE, 0];
+    let i = 0;
+    const waits: number[] = [];
+    const r = await superviseLoop({
+      spawnDaemon() { return run(codes[i++] ?? 0); },
+      async wait(ms) { waits.push(ms); return true; },
+      shouldContinue: () => true,
+      log: () => {},
+    });
+    expect(r).toEqual({ starts: 4, crashes: 1, ended: "clean-exit" });
+    expect(waits).toEqual([500]);
   });
 
   test("a stop request ends the loop even amid crashes", async () => {

@@ -21,6 +21,7 @@ import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts
 import type { Clock } from "../contracts/clock";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
+import { checkNoFollow } from "../contracts/tree";
 import { TREE_IO_MAX, type HolderCall, type LocalHolder } from "./holder";
 import type { TreeChangedNotice } from "./remote";
 import { judgePeer, type PeerReviewer } from "./judge";
@@ -174,8 +175,9 @@ export class TreeService {
     // A `noFollow` answer says so (`noFollow: true`): the calling computer refuses one that doesn't, from a computer
     // whose build dropped the flag and followed links (#225's review).
     const echo = (p: { noFollow?: boolean | undefined }) => (p.noFollow ? { noFollow: true as const } : {});
-    serve("tree.stat", async (p, call) => ({ stat: await h.stat(p.path, { ...call, ...(p.noFollow ? { noFollow: true } : {}) }), ...echo(p) }));
-    serve("tree.read", async (p, call) => ({
+    // A value other than true or false is refused, never read as false (#234's check 2).
+    serve("tree.stat", async (p, call) => (checkNoFollow(p), { stat: await h.stat(p.path, { ...call, ...(p.noFollow ? { noFollow: true } : {}) }), ...echo(p) }));
+    serve("tree.read", async (p, call) => (checkNoFollow(p), {
       ...(await h.read(p.path, {
         ...call, ...(p.noFollow ? { noFollow: true } : {}), ...(p.encoding === undefined ? {} : { encoding: p.encoding }),
         ...(p.offset === undefined ? {} : { offset: p.offset }), ...(p.length === undefined ? {} : { length: p.length }),

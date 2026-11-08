@@ -233,7 +233,9 @@ describe.skipIf(!RUN)("the daemon's browser where no app runs, for real", () => 
     try {
       const tab = await browser.service.open({ kind: "user" }, { owner: lab, url: `http://127.0.0.1:${server.port}/` });
       let text = "";
-      for (let i = 0; i < 100 && !text.includes("DAEMON-MARKER"); i++) {
+      // The filter checks who connects through the OS's socket and process tables, which Windows takes seconds over
+      // on a loaded runner, so the page may take a while; wait for the marker, not for a guess at how long.
+      for (let i = 0; i < 300 && !text.includes("DAEMON-MARKER"); i++) {
         await Bun.sleep(200);
         const r = (await browser.service.cdp({ kind: "user" }, tab.id, "Runtime.evaluate", { expression: "document.body ? document.body.innerText : ''", returnByValue: true })) as { result?: { value?: string } };
         text = r.result?.value ?? "";
@@ -244,7 +246,8 @@ describe.skipIf(!RUN)("the daemon's browser where no app runs, for real", () => 
       expect(ports.length).toBeGreaterThanOrEqual(3);
       const answer = await new Promise<string>((resolve) => {
         const s = require("node:net").connect(ports[0], "127.0.0.1", () => s.write(Buffer.from([5, 1, 0])));
-        const t = setTimeout(() => { s.destroy(); resolve("no answer"); }, 5000);
+        // The same lookups decide this connection: it is answered or closed once they finish, however long that takes.
+        const t = setTimeout(() => { s.destroy(); resolve("no answer"); }, 45_000);
         s.on("data", () => { clearTimeout(t); s.destroy(); resolve("answered"); });
         s.on("close", () => { clearTimeout(t); resolve("closed"); });
         s.on("error", () => { clearTimeout(t); resolve("closed"); });

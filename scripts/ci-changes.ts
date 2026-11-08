@@ -10,15 +10,15 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 export type CiArea =
-  | "workspaces" | "daemon" | "app" | "packages" | "gallery" | "typecheck" | "lockfiles"
-  | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link";
+  | "workspaces" | "daemon" | "app" | "packages" | "installers" | "gallery" | "typecheck" | "lockfiles"
+  | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link" | "linuxrepo";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
 type Pattern = string;
 
 /** Changes to any of these run every area: CI itself, the toolchain, the root manifest and the lockfiles. */
 export const CI_GLOBAL: readonly Pattern[] = [
-  ".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml",
+  ".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", ".bun-sha256", "package.json", "bun.lock", "pnpm-lock.yaml",
   "pnpm-workspace.yaml", "tsconfig.base.json", "bunfig.toml",
 ];
 
@@ -34,7 +34,11 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   app: ["apps/", "plugins/clover/", "packages/plugin-sdk/"],
   // the Linux packages: the app, its builder config, packaging/, the scripts that build them, and the daemon and the
   // link sidecar they carry (the job installs the deb and runs its `clover`)
-  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", ...CORE, "packages/cli/", "native/link/"],
+  packages: ["apps/desktop/", "packaging/", "scripts/build-packages.ts", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts", "scripts/release/", ...CORE, "packages/cli/", "native/link/"],
+  // the macOS and Windows installers (the unsigned release build: dmg, zip, NSIS), on macOS and Windows machines: only
+  // what makes them, so a code change alone doesn't spend a macOS job on them (the app and daemon jobs build those)
+  installers: ["apps/desktop/electron-builder.yml", "apps/desktop/package.json", "packaging/", "scripts/release/", "scripts/build-daemon.ts", "scripts/seal-bun-doors.ts",
+    "scripts/build-packages.ts", "packages/update-feed/"],
   gallery: ["plugins/"],
   typecheck: ["packages/", "apps/", "plugins/", "services/", "examples/", "scripts/", "**/tsconfig*.json"],
   lockfiles: ["**/package.json"],
@@ -68,6 +72,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
     "packages/core/src/contracts/", "packages/core/src/clock/", "packages/protocol/"],
+  // the Linux repositories' signatures, checked with gpgv and sqv
+  linuxrepo: ["scripts/release/linux-repo.ts", "scripts/release/linux-repo-verify.ts"],
 };
 
 /** The CI_GLOBAL changes that still run the Swift kits: CI's own definition, not the toolchain or the lockfiles. */
@@ -96,12 +102,20 @@ export function matches(path: string, pattern: Pattern): boolean {
   return path === pattern;
 }
 
+/** Areas CI_GLOBAL turns on only through these of its files: the Swift kits through CI's own definition, and the
+ *  installers' release build (a macOS and a Windows machine for a quarter of an hour) through none, so a change keeps
+ *  to three macOS jobs. A push to main still runs every area. */
+export const NARROW_GLOBAL: Readonly<Partial<Record<CiArea, readonly Pattern[]>>> = { swift: SWIFT_GLOBAL, installers: [] };
+
 /** The areas `changed` needs. `undefined` (no diff to go on) runs every area. */
 export function areasFor(changed: readonly string[] | undefined): Record<CiArea, boolean> {
   if (changed === undefined) return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, true])) as Record<CiArea, boolean>;
   const touches = (patterns: readonly Pattern[]): boolean => changed.some((p) => patterns.some((g) => matches(p, g)));
   const all = touches(CI_GLOBAL);
-  return Object.fromEntries(CI_AREA_NAMES.map((a) => [a, a === "swift" ? touches(SWIFT_GLOBAL) || touches(CI_AREAS.swift) : all || touches(CI_AREAS[a])])) as Record<CiArea, boolean>;
+  return Object.fromEntries(CI_AREA_NAMES.map((a) => {
+    const narrow = NARROW_GLOBAL[a];
+    return [a, (narrow === undefined ? all : touches(narrow)) || touches(CI_AREAS[a])];
+  })) as Record<CiArea, boolean>;
 }
 
 function changedSince(base: string): string[] | undefined {

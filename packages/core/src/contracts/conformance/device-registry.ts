@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { DeviceId } from "@waifucave/clover-protocol";
 import { isContractError } from "../common";
-import { deviceIdFor, verifyKeySignature, type DeviceChange } from "../device-registry";
+import { deviceIdFor, holderFitsAlg, verifyKeySignature, type DeviceChange } from "../device-registry";
 import { FakeClock } from "../fakes/clock";
 import { type FakeDeviceRegistry, type FakeDevice, fromBase64, makeFakeDevice } from "../fakes/device-registry";
 
@@ -15,11 +15,10 @@ export type DeviceRegistryHarness = Pick<FakeDeviceRegistry, keyof FakeDeviceReg
 /** Builds the implementation under test, with this device's own key, from the options the fake takes. */
 export type DeviceRegistryFactory = (...args: Parameters<typeof FakeDeviceRegistry.create>) => Promise<{ registry: DeviceRegistryHarness; device: FakeDevice }>;
 
-/** Cases an implementation can run as todo until it has them: `answer-alg`, a P-256 answer key (lanes H and I). */
-/** `phone-answer-key-only`: a phone answers only with its answer key, never its link key (the controller's ruling,
- *  item 91). Lane H's registry keeps it; the fake runs it as todo until lane B's follow-up (fd143e92e on
- *  lane/b-m1-followups) drops the fallback in `answerKeyOf` and gives the test phones answer keys. */
-export type DeviceRegistryPendingCase = "answer-alg" | "phone-answer-key-only";
+/** Cases an implementation can run as todo until it has them: `answer-alg`, a P-256 answer key (lanes H and I). A
+ *  phone answering only with its answer key, never its link key (the controller's ruling, item 91), is no longer one:
+ *  `answerKeyOf` has no fallback, so every implementation runs it. */
+export type DeviceRegistryPendingCase = "answer-alg";
 
 export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: { pending?: readonly DeviceRegistryPendingCase[] } = {}): void {
   const pendingOr = (key: DeviceRegistryPendingCase) => (opts.pending?.includes(key) ? test.todo : test);
@@ -87,22 +86,38 @@ export function runDeviceRegistryConformance(make: DeviceRegistryFactory, opts: 
       expect(await registry.verifyAnswer(enclave.id, new TextEncoder().encode("other"), ecSig)).toBe(false);
       // The same key under no `alg` (Ed25519) doesn't verify, and neither does an Ed25519 signature under `p256`.
       const relabelled = await makeFakeDevice();
-      await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKey, answerKey: { publicKey: ecPublic, held: "secure-enclave" } }, { via: "terminal" });
+      await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKey, answerKey: { publicKey: ecPublic, held: "keychain" } }, { via: "terminal" });
       expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
     });
 
-    pendingOr("phone-answer-key-only")("a phone's record keeps its ios; it answers only with its answer key, never its link key (no fallback)", async () => {
+    test("a holder that makes keys of one algorithm only takes a key of it: the Secure Enclave, P-256 (lane H's reviewer)", async () => {
+      const { registry } = await make({ clock: new FakeClock() });
+      const answers = await makeFakeDevice();
+      const ed = await makeFakeDevice();
+      const err = await registry.add({ id: ed.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: ed.publicKey, answerKey: { publicKey: answers.publicKey, held: "secure-enclave" } }, { via: "terminal" }).catch((e: unknown) => e);
+      expect(isContractError(err, "invalid")).toBe(true);
+      expect(registry.get(ed.id)).toBeUndefined();
+      const explicit = await registry.add({ id: ed.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: ed.publicKey, answerKey: { publicKey: answers.publicKey, held: "secure-enclave", alg: "ed25519" } }, { via: "terminal" }).catch((e: unknown) => e);
+      expect(isContractError(explicit, "invalid")).toBe(true);
+      // The same Ed25519 key under a holder that keeps either kind is taken.
+      await registry.add({ id: ed.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: ed.publicKey, answerKey: { publicKey: answers.publicKey, held: "keychain" } }, { via: "terminal" });
+      expect(registry.get(ed.id)?.answerKey?.held).toBe("keychain");
+      expect(holderFitsAlg("secure-enclave", "p256")).toBe(true);
+      expect(holderFitsAlg("secure-enclave", undefined)).toBe(false);
+      expect(holderFitsAlg("tpm", undefined)).toBe(true);
+    });
+
+    test("a phone's record keeps its ios; it answers only with its answer key, never its link key (no fallback)", async () => {
       const { registry } = await make({ clock: new FakeClock() });
       const phone = await makeFakeDevice();
       await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, os: "ios", publicKey: phone.publicKey }, { via: "code", card: "card_pair02" });
       expect(registry.get(phone.id)?.os).toBe("ios");
-      // No answer key: its link key's signature is refused, so it answers no card (the controller's ruling, item 91;
-      // lane B's follow-up, lane/b-m1-followups fd143e92e, inverts this case the same way).
+      // No answer key: its link key's signature is refused, so it answers no card.
       expect(await registry.verifyAnswer(phone.id, data, await phone.sign(data))).toBe(false);
       // With one, that key answers, and the link key still doesn't.
       const linked = await makeFakeDevice();
       const answers = await makeFakeDevice();
-      await registry.add({ id: linked.id, name: "Phone2", kind: "phone", runsCore: false, os: "ios", publicKey: linked.publicKey, answerKey: { publicKey: answers.publicKey, held: "app-keychain" } }, { via: "code", card: "card_pair03" });
+      await registry.add({ id: linked.id, name: "Phone2", kind: "phone", runsCore: false, os: "ios", publicKey: linked.publicKey, answerKey: { publicKey: answers.publicKey, held: "keychain" } }, { via: "code", card: "card_pair03" });
       expect(await registry.verifyAnswer(linked.id, data, await answers.sign(data))).toBe(true);
       expect(await registry.verifyAnswer(linked.id, data, await linked.sign(data))).toBe(false);
       expect(await verifyKeySignature("p256", fromBase64(answers.publicKey), data, await answers.sign(data))).toBe(false);

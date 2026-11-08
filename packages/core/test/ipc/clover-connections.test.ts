@@ -16,6 +16,7 @@ import { DaemonPair } from "../../src/platform/pair/policy";
 import type { PeerFacts } from "../../src/platform/caller-probe";
 import type { PeerHandle } from "../../src/platform/peer-handle";
 import { resolveEndpoint } from "../../src/platform/transport";
+import { commandMethods } from "../../src/registry/commands";
 
 // C-M1: Clover's roles, tokens, caller check and the pair's methods over the daemon's real endpoint,
 // beside the inherited protocol on the same server.
@@ -93,7 +94,7 @@ describe("Clover connections (C-M1)", () => {
   let stop: (() => void) | undefined;
   afterEach(() => { stop?.(); stop = undefined; });
 
-  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number } } = {}) {
+  async function boot(opts: { peer?: PeerFacts; realPeer?: boolean; bridge?: FakeBridgeTokens; heartbeat?: { intervalMs: number; timeoutMs: number }; acceptUpdateExit?: () => boolean } = {}) {
     const home = mkdtempSync(join(tmpdir(), "clover-conns-"));
     const store = new SessionStore(home);
     const socketPath = resolveEndpoint(join(home, "run")).path;
@@ -137,15 +138,41 @@ describe("Clover connections (C-M1)", () => {
       }),
       "session.list": handler(SESSIONS_METHODS.sessionList, () => { throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user can list", { why: "test" }); }),
       "session.interrupt": handler(SESSIONS_METHODS.sessionInterrupt, (p, ctx) => { calls.push({ method: "session.interrupt", sessionId: p.id, params: ctx.caller }); return { ok: true as const }; }),
+      // B: `command.run`, its args checked against the command's schema before the handler runs.
+      ...commandMethods({
+        registry: { entries: ((point: string) => point !== "commands" ? [] : [{
+          point: "commands", pluginId: "tarot", ref: "commands/0", entryId: "tarot.draw", state: "active",
+          value: { name: "draw", description: "Draw", handler: "draw", args: { type: "object", required: ["cards"], properties: { cards: { type: "integer", minimum: 1, maximum: 3 } } } },
+        }]) as never },
+        host: { invoke: async <R>(req: { handler: string; args: unknown; caller: unknown }) => { calls.push({ method: "command.run", sessionId: req.handler, params: { args: req.args, caller: req.caller } }); return { drawn: req.args } as R; } },
+      }),
     });
     clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), pair, appToken,
       hostPidOf: (hp) => (hp === "shared" ? 4242 : undefined), linkPid: () => 4242,
       ...(opts.realPeer ? {} : { probe: () => peer }), ...(bridge ? { bridge } : {}), handlers: { ...bridgeHandlers, ...laneHandlers },
-      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
+      ...(opts.heartbeat ? { heartbeat: opts.heartbeat } : {}), ...(opts.acceptUpdateExit ? { acceptUpdateExit: opts.acceptUpdateExit } : {}), killApp: (pid, handle) => { killed.push(pid); killedVia.push(handle); } });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); pair.dispose(); server.stop(); store.close(); };
     return { socketPath, appToken, legacy, tokens, processes, pair, stops, quits, killed, killedVia, calls, unfollowed, clover, setPeer: (p: PeerFacts) => { peer = p; } };
   }
+
+  test("command.run over the socket: args that fit reach the handler; args that don't answer invalid_args with the path", async () => {
+    const b = await boot();
+    const c = await Client.connect(b.socketPath);
+    await c.hello("app", b.appToken, { features: ["app.show", "app.quit", "layers"] });
+    const ok = await c.request("command.run", { name: "tarot.draw", args: { cards: 2 } });
+    expect(ok.result).toEqual({ result: { drawn: { cards: 2 } } });
+    expect(b.calls.filter((x) => x.method === "command.run")).toEqual([{ method: "command.run", sessionId: "draw", params: { args: { cards: 2 }, caller: { kind: "user", client: "app" } } }]);
+    for (const [args, path, keyword] of [[{ cards: 9 }, "/cards", "maximum"], [{}, "/cards", "required"], [{ cards: 1, note: "private words" }, "/note", "additionalProperties"]] as const) {
+      const bad = await c.request("command.run", { name: "tarot.draw", args });
+      expect(bad.error).toMatchObject({ code: ERR.INVALID_PARAMS, data: { code: "invalid_args", path, keyword } });
+      expect(JSON.stringify(bad.error)).not.toContain("private words");
+    }
+    expect(b.calls.filter((x) => x.method === "command.run").length).toBe(1);
+    const missing = await c.request("command.run", { name: "tarot.nope" });
+    expect(missing.error.data).toMatchObject({ code: "not_installed" });
+    c.close();
+  });
 
   test("the app says hello with this run's token and counts as the user", async () => {
     const b = await boot();
@@ -296,6 +323,20 @@ describe("Clover connections (C-M1)", () => {
     for (let i = 0; i < 100 && app.fromDaemon.length === 0; i++) await Bun.sleep(10);
     expect(app.fromDaemon[0]).toMatchObject({ jsonrpc: "2.0", method: "app.quit", params: { reason: "quit" } });
     app.close(); cli.close();
+  });
+
+  test("M-M2: an update's exit only once the update gate is closed and idle; a refused one leaves the pair as it was", async () => {
+    let allowed = false;
+    const b = await boot({ acceptUpdateExit: () => allowed });
+    const app = await Client.connect(b.socketPath);
+    await app.hello("app", b.appToken);
+    const refused = await app.request("pair.exiting", { reason: "update" });
+    expect(refused.error).toMatchObject({ code: ERR.RETRY, data: { code: "update_not_ready" } });
+    expect(b.pair.status().stopping).toBeNull();
+    allowed = true;
+    expect((await app.request("pair.exiting", { reason: "update" })).result).toEqual({ ok: true });
+    expect(b.pair.status().stopping).toBe("update");
+    app.close();
   });
 
   test("the pair: an app gone without pair.exiting is a crash, restarted", async () => {

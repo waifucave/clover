@@ -28,7 +28,8 @@ import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
 import { StallWatchdog } from "../watchdog";
-import type { SandboxAdmission } from "../sandbox/admission";
+import type { SandboxAdmission, SandboxWriter } from "../sandbox/admission";
+import type { ModeFloor } from "../acp/session";
 import type { AgentOks } from "../sandbox/oks";
 
 /** The scripted agent's "own sandbox", admitted for the tests: the fenced set written as a file its env names. */
@@ -43,8 +44,9 @@ export const FAKE_PROTECTED: SandboxAdmission = {
 };
 
 /** The scripted agent's admission on every OS. */
-export function fakeAdmissions(sandbox: "protected" | "none") {
-  const row: SandboxAdmission = sandbox === "none" ? { status: "unsupported", reason: "the test's agent has none" } : FAKE_PROTECTED;
+export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level: Level | undefined) => ModeFloor) {
+  const writer: SandboxWriter = (policy, ctx) => ({ ...(FAKE_PROTECTED as { writer: SandboxWriter }).writer(policy, ctx), modeFloor: modeFloor! });
+  const row: SandboxAdmission = sandbox === "none" ? { status: "unsupported", reason: "the test's agent has none" } : modeFloor ? { ...FAKE_PROTECTED, writer } as SandboxAdmission : FAKE_PROTECTED;
   return { fake: { macos: row, linux: row, windows: row } };
 }
 
@@ -63,8 +65,16 @@ export interface WorldOptions {
   /** The plugins' parts for every session, and the backend's placement of them (Claude Code's). */
   pluginParts?: PluginPartsSource;
   place?: AcpBackendOptions["place"];
-  /** The scripted agent's `mode` option values, and the backend's read-only mode. */
+  /** The scripted agent's `mode` option values (the first is current at the start), and the backend's read-only mode. */
   modes?: string[];
+  /** The scripted agent's writer's mode floor, by level. */
+  modeFloor?: (level: Level | undefined) => ModeFloor;
+  /** The scripted agent's ACP session modes, whether its `session/set_mode` stays unconfirmed, whether its edits ask
+   *  by mode (as Claude Code's), and how long the session waits for a mode's confirmation. */
+  acpModes?: string[];
+  silentSetMode?: boolean;
+  editsFollowMode?: boolean;
+  modeConfirmMs?: number;
   readOnlyMode?: { option: string; values: readonly string[] };
   askDuringReplay?: boolean;
   selections?: UserSelections;
@@ -75,6 +85,9 @@ export interface WorldOptions {
   extraBackends?: (wire: (sessionId: string) => ReturnType<AgentManager["wire"]>, world: World) => AgentBackend[];
   /** A fixed bridge server name, for an agent whose script names the bridge's tools. */
   bridgeServerName?: string;
+  /** This computer's name ("Studio" by default), and the other computers' homes its tree knows (agents placed there). */
+  computer?: string;
+  otherComputers?: Record<string, string>;
 }
 
 /** A Unix socket path short enough for macOS's 104-byte limit. */
@@ -111,8 +124,17 @@ export class World {
   readonly backend: AcpAgentBackend;
   readonly agent: FakeAgentRun;
   level: Level;
+  readonly computer: string;
+  readonly #levelWatchers = new Set<() => void>();
+
+  /** Changes the computer's level and tells the manager, as the registry's watch does. */
+  changeLevel(level: Level): void {
+    this.level = level;
+    for (const fn of [...this.#levelWatchers]) fn();
+  }
 
   constructor(o: WorldOptions = {}) {
+    this.computer = o.computer ?? "Studio";
     this.root = realpathSync(mkdtempSync(join(tmpdir(), "clover-k-")));
     this.userHome = join(this.root, "home");
     this.cloverHome = join(this.userHome, ".clover");
@@ -121,7 +143,8 @@ export class World {
     mkdirSync(this.cloverHome, { recursive: true });
     this.level = o.level ?? "automatic";
     this.fence = new FakeFence({ home: this.userHome, cloverHome: this.cloverHome });
-    this.tree = new FakeTree({ clock: this.clock, computers: { Studio: { home: this.userHome } }, botComputer: () => "Studio" });
+    const others = Object.fromEntries(Object.entries(o.otherComputers ?? {}).map(([name, home]) => [name, { home }]));
+    this.tree = new FakeTree({ clock: this.clock, computers: { ...others, [this.computer]: { home: this.userHome } }, botComputer: () => "Studio" });
     this.approvals = new FakeApprovalBroker({ clock: this.clock, levels: () => this.level, fence: () => this.fence });
     this.host = new FakeSessionHost({ clock: this.clock, approvals: this.approvals });
     this.host.open({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio" }, this.parentDriver);
@@ -131,6 +154,7 @@ export class World {
     this.agent = writeFakeAgent(join(this.root, "agent"), {
       quirks, script: o.script ?? [], ...(o.history ? { history: o.history } : {}), version: "fake-agent 1.0.0",
       ...(o.modes ? { modes: o.modes } : {}), ...(o.askDuringReplay ? { askDuringReplay: true } : {}),
+      ...(o.acpModes ? { acpModes: o.acpModes } : {}), ...(o.silentSetMode ? { silentSetMode: true } : {}), ...(o.editsFollowMode ? { editsFollowMode: true } : {}),
     });
     const sock = socketPath(this.root);
     let manager!: AgentManager;
@@ -138,18 +162,23 @@ export class World {
       id: "fake", pluginId: "clover/agent-fake", quirks, clock: this.clock,
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
-      admissions: fakeAdmissions(o.sandbox ?? "protected"),
+      admissions: fakeAdmissions(o.sandbox ?? "protected", o.modeFloor),
+      ...(o.modeConfirmMs === undefined ? {} : { modeConfirmMs: o.modeConfirmMs }),
       ...(o.place ? { place: o.place } : {}),
       ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
     const extra = o.extraBackends?.((id) => manager.wire(id), this) ?? [];
     manager = new AgentManager({
-      home: this.cloverHome, computer: "Studio", host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
+      home: this.cloverHome, computer: this.computer, host: this.host, approvals: this.approvals, tree: this.tree, fence: this.fence,
       backends: () => [this.backend, ...extra], tokens: this.tokens, bridge: { ...bridgeCommand(), socketPath: sock, ...(o.bridgeServerName ? { serverName: o.bridgeServerName } : {}) }, watchdog: this.watchdog, clock: this.clock,
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       levelOf: () => this.level,
+      watchLevels: (fn) => {
+        this.#levelWatchers.add(fn);
+        return () => void this.#levelWatchers.delete(fn);
+      },
       ...(o.pause ? { pause: o.pause } : {}),
     });
     this.manager = manager;

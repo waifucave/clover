@@ -16,6 +16,7 @@ import type { BrowserNetworkConfig } from "./contract";
 import { HeadlessBrowser, type HeadlessBrowserOptions } from "./headless";
 import { bunRun } from "./headless/browser";
 import { NetworkFilter } from "./network";
+import type { RunCommand } from "./proxy";
 import { PeerOwner, processTree } from "./peer-owner";
 import { serveBrowserPeers, type BrowserPeers } from "./peers";
 import { BrowserService, type AppTabPort, type BrowserEvent, type PersonsBrowserGrants } from "./service";
@@ -53,6 +54,11 @@ export interface DaemonBrowser {
   shutdown(): Promise<void>;
 }
 
+/** The socket-table and process-table lookups behind the filter's check of who connects. Windows reads the process table
+ *  through PowerShell, which takes seconds on a loaded machine; the default 5 s limit killed it (exit 143), the table
+ *  "couldn't be read" and the shell's own connection was refused, so a page never loaded. A real hang still ends. */
+const slowRun: RunCommand = (cmd, args) => bunRun(cmd, args, 30_000);
+
 export function startBrowser(o: StartBrowserOptions): DaemonBrowser {
   let headless: HeadlessBrowser | undefined;
   let filter: NetworkFilter | undefined;
@@ -60,8 +66,8 @@ export function startBrowser(o: StartBrowserOptions): DaemonBrowser {
     // Only the headless shells' own processes (and their children, where their network runs) may use the filter.
     const owner = new PeerOwner({
       platform: process.platform,
-      run: bunRun,
-      allowedPids: async () => (headless === undefined ? [] : processTree(headless.browserPids(), { platform: process.platform, run: bunRun })),
+      run: slowRun,
+      allowedPids: async () => (headless === undefined ? [] : processTree(headless.browserPids(), { platform: process.platform, run: slowRun, exclude: [process.pid] })),
       ...(o.log !== undefined ? { log: o.log } : {}),
     });
     filter = new NetworkFilter({ acceptPeer: (peer, port) => owner.accepts(peer, port), ...(o.log !== undefined ? { log: o.log } : {}) });

@@ -159,6 +159,36 @@ describe("writes: <home>/computer-use/** (ComputerV2's own records: wakes.json, 
   });
 });
 
+describe("writes: a server's self-update files (<home>/bin, <home>/update, <home>/install.json) — sandbox, tools and floor", () => {
+  test("no session may plant the daemon's binary, a rollback or the marker; reading them stays free", () => {
+    for (const p of [`${H}/bin`, `${H}/update`, `${H}/install.json`]) {
+      expect(sandboxConfigFor(H).filesystem!.denyWrite).toContain(p);
+      expect(homeFencedDirs(H)).toContain(p);
+    }
+    for (const cmd of [
+      `cp evil ${H}/bin/clover-core`, `cp evil ${H}/bin/clover-core.new`, `mv evil ${H}/bin/clover-core.old`,
+      `echo '{"version":"x","boots":2}' > ${H}/update/boot.json`, `echo '["9.9.9"]' > ${H}/update/rolled-back.json`,
+      `echo '{"kind":"app"}' > ${H}/install.json`, `echo '{"kind":"app"}' > ${H}/bin/install.json`, `rm -rf ${H}/bin`,
+    ]) expect(escapeFloorHit(cmd, H), cmd).toBeDefined();
+    // The write tools: the control-plane fence refuses each.
+    for (const f of [`${H}/bin/clover-core`, `${H}/bin/clover-core.new`, `${H}/bin/daemon/clover-core`, `${H}/bin/daemon/clover-plugin-bun`, `${H}/bin/plugins/clover/host.js`, `${H}/bin/plugins.new/clover/host.js`, `${H}/update/boot.json`, `${H}/install.json`]) {
+      expect(controlPlaneTargetForCall("Write", { file_path: f }, "/", homeFenceFor(H)), f).not.toBeNull();
+    }
+    // <home>/bin holds the code the next start runs: refused on ANY mention, like `runtimes` — a write through an
+    // interpreter has no shape the floor could see.
+    for (const cmd of [
+      `python3 -c "open('${H}/bin/clover-core','wb').write(b'x')"`, `bun -e "Bun.write('${H}/bin/clover-core', 'x')"`,
+      `ls ${H}/bin`, `cat ${H}/bin/clover-core`,
+      // The server layout (#244): the daemon and plain Bun in bin/daemon, the bundled plugins in bin/plugins.
+      `cp evil ${H}/bin/daemon/clover-core`, `cp evil ${H}/bin/daemon/clover-plugin-bun`, `echo x > ${H}/bin/plugins/clover/host.js`,
+      `mv evil ${H}/bin/plugins.new`, `rm -rf ${H}/bin/plugins`,
+    ]) expect(escapeFloorHit(cmd, H), cmd).toBeDefined();
+    // The self-update's records stay write-only there (alone, they could only freeze updates); reads are free.
+    expect(escapeFloorHit(`cat ${H}/install.json`, H)).toBeUndefined();
+    expect(escapeFloorHit(`cat ${H}/update/boot.json`, H)).toBeUndefined();
+  });
+});
+
 describe("writes: claude-resume-* roots — rule glob, not writable by the sandbox, floor write-shaped, hook ✓", () => {
   const staging = join(tmpdir(), `${RESUME_STAGING_PREFIX}8f2a`);
   test("deny rule glob", () => {

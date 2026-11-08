@@ -32,6 +32,7 @@ import type { McpServerConfig } from "@waifucave/clover-agent-sdk";
 import type { McpServerSettingsEntry, Settings } from "../settings";
 import { extractRawMcpServers, parseProjectMcpServers, projectMcpConfigPath } from "../agent/mcp/project-file";
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
+import { guardedMcpServer, type PluginRunGuard } from "../registry/plugin-run";
 
 // The project `.mcp.json` schema/parser now lives in `../agent/mcp/project-file` — shared with
 // `agent/mcp/manager.ts`'s own reader and the CLI's `mcp add/remove --scope project`/`mcp get`
@@ -84,6 +85,18 @@ function stdio(cfg: { command: string; args?: string[]; env?: Record<string, str
     ...(cfg.env === undefined ? {} : { env: { ...cfg.env } }),
     ...negotiation(cfg.versionNegotiation),
   };
+}
+
+/** A plugin's own stdio MCP server as the runtime's config (#234's check 4): through `guardedMcpServer`, so a Bun one
+ *  runs on Clover's Bun with the load guard held to `pluginRoot`. The only door a plugin-sourced stdio entry takes
+ *  into a runtime's config: the daemon's `entries("mcpServers")` wiring uses it. The user's own servers (the three
+ *  scopes below) aren't a plugin's, and take `stdio` as they are. */
+export function pluginStdioMcpServer(
+  entry: { command: string; args?: string[]; env?: Record<string, string>; versionNegotiation?: VersionNegotiation },
+  pluginRoot: string,
+  guard: PluginRunGuard,
+): McpServerConfig {
+  return stdio(guardedMcpServer(entry, pluginRoot, guard));
 }
 
 /** `settings.mcpServers`' own entry shape (already `type`-discriminated by the schema, batch 3 item

@@ -14,7 +14,7 @@ import type { CallCardRenderer } from "../approval-broker";
 import { isContractError } from "../common";
 import { MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock } from "../fakes/clock";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64 } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { type FakeTree } from "../fakes/tree";
 import { RESERVED_COMPUTER_NAMES, isReservedComputerName, memoryTreeRest, splitTreePath, transferBinding, transferChange, transferEndsHold, treeCallBinding, type TreeWatchEvent } from "../tree";
@@ -54,8 +54,8 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
     const clock = new FakeClock();
     const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
     const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-    const phone = await makeFakeDevice();
-    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+    const phone = await makeFakePhone();
+    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
     const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Allow" }, { id: "deny", kind: "deny", label: "Deny" }];
     const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
     // The holder's own card for a tree change, from its built-in tables.
@@ -155,6 +155,22 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect(await tree.stat("home/Laptop1/data", { as: USER })).toBeNull();
     });
 
+    test("noFollow is honoured (lane J's #225): a plain file reached without a link is read, never dropped (#234's review, F1)", async () => {
+      const { tree } = setup();
+      await tree.write("home/Laptop1/data/a.csv", utf8("x"), { as: USER });
+      expect(await tree.read("home/Laptop1/data/a.csv", { as: USER, noFollow: true })).toEqual(utf8("x"));
+      expect((await tree.stat("home/Laptop1/data/a.csv", { as: USER, noFollow: true }))?.type).toBe("file");
+      // Any other value is refused too, never read as false (#234's check 2).
+      for (const v of [1, "true", "false", null, 0, {}]) {
+        const bad = { as: USER, noFollow: v as unknown as boolean };
+        expect([v, isContractError(await rejection(tree.stat("home/Laptop1/data/a.csv", bad)), "invalid")]).toEqual([v, true]);
+        expect([v, isContractError(await rejection(tree.read("home/Laptop1/data/a.csv", bad)), "invalid")]).toEqual([v, true]);
+      }
+      // Without it, or with it false, reads go on as before.
+      expect(await tree.read("home/Laptop1/data/a.csv", { as: USER, noFollow: false })).toEqual(utf8("x"));
+      expect((await tree.stat("home/Laptop1/data/a.csv", { as: USER }))?.type).toBe("file");
+    });
+
     test("a computer that is off answers computer_offline at once", async () => {
       const { tree } = setup();
       tree.setOnline("Laptop1", false);
@@ -171,9 +187,11 @@ export function runTreeConformance(make: TreeFactory, opts: { pending?: readonly
       expect((err as { detail: unknown }).detail).toEqual({ computer: "Laptop1", reason: "settings" });
       expect(isContractError(await rejection(tree.read("home/Laptop1/.clover/secrets.enc", { as: BOT })), "fenced")).toBe(true);
       await tree.write("home/Laptop1/.clover/settings/settings.json", utf8("{}"), { as: USER });
-      // The installed plugins folder is fenced too (#197's check 2); a routine's files aren't.
+      // The installed plugins folder is fenced too (#197's check 2), and the rest of the Clover home with it (the home
+      // default-deny), but for the bot's own ways in: its own routines are its to write, another bot's aren't.
       expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/plugins/luna/clover.json", utf8("{}"), { as: BOT })), "fenced")).toBe(true);
       await tree.write("home/Laptop1/.clover/routines/alpha/morning.md", utf8("# Morning\n"), { as: BOT });
+      expect(isContractError(await rejection(tree.write("home/Laptop1/.clover/routines/luna/morning.md", utf8("# Morning\n"), { as: BOT })), "fenced")).toBe(true);
       await tree.write("bots/alpha/memory/MEMORY.md", utf8("# Memory\n"), { as: BOT });
     });
 

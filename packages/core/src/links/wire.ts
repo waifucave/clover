@@ -19,6 +19,13 @@ export const ALPN_PAIR = "clover/pair/1";
 /** The wire priority of each LinkTransport class, highest first (§8.2). */
 export const WIRE_PRIORITY = { control: 3, tokens: 2, screenshots: 1, files: 0 } as const;
 
+/** A stream's window each way across the pipe to the sidecar (S6.2 of H-M1's review), unless it is narrowed. */
+export const STREAM_WINDOW = 2 * 1024 * 1024;
+
+/** A live stream's window each way (`browser.stream`'s frames, at the `screenshots` priority): a few frames at most,
+ *  so the sender's writes wait on the link rather than on buffers that hide its congestion (L-M3's measurement). */
+export const LIVE_STREAM_WINDOW = 64 * 1024;
+
 /** Stream reset codes. */
 export const RESET_ABORTED = 1;
 export const RESET_NOT_FOUND = 2;
@@ -59,6 +66,10 @@ export interface WireStream {
   onFin(fn: () => void): Unsubscribe;
   /** The peer reset the stream, or the connection was lost (`RESET_CONN_LOST`). */
   onReset(fn: (code: number) => void): Unsubscribe;
+  /** Narrows this stream's window each way (bytes held for it in this core and its sidecar), as the stream's header
+   *  asks: a live stream keeps little queued, so a write's backpressure follows the link. A wire without windows
+   *  ignores it. */
+  setWindow?(bytes: number): void;
 }
 
 export interface WireClose {
@@ -77,7 +88,8 @@ export interface WireConn {
   readonly outbound: boolean;
   path(): PathInfo;
   onPath(fn: (path: PathInfo) => void): Unsubscribe;
-  openStream(priority: number): WireStream;
+  /** `window`: this stream's window each way, smaller than the wire's (a live stream's); the wire's by default. */
+  openStream(priority: number, opts?: { window?: number }): WireStream;
   onStream(fn: (stream: WireStream) => void): Unsubscribe;
   close(code: number, reason: string): void;
   readonly closed: Promise<WireClose>;

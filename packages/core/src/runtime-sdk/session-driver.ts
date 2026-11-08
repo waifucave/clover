@@ -30,6 +30,7 @@ import { registerHostStoragePolicyConsumer } from "./host-storage-fence";
 // record write that fails after the row exists is rolled back by the caller (the row is deleted —
 // it was never announced to any client). Every refusal is a `CloverLegRefusal` whose `code` the IPC
 // layer forwards as the JSON-RPC error's `data.code`.
+import { UPDATE_RESTARTING_MESSAGE } from "../update/gate";
 import type { ConnectorPermissionSource } from "../agent/mcp/connector-permissions";
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
@@ -109,7 +110,7 @@ import { projectScopeTrusted, projectScopeRootFor, type RunHomeSessionFacts } fr
 import { readCloverTasks } from "./tasks-reader";
 import { keychainService } from "../profile";
 import type { McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
-import { createHostCredentialBroker, sessionCredentialAllowlist, type ProviderRefresher } from "./host-credentials";
+import { createHostCredentialBroker, sessionCredentialAllowlist, type HostCredentialBroker, type ProviderRefresher } from "./host-credentials";
 import { SESSION_REPLACED } from "./session-replaced";
 import { COWORK_SESSION_UNSUPPORTED_CODE, isUnrunnableStoredMode, runnableModeOf, unrunnableModeMessage, type DrivableSessionMode } from "../sessions/session-mode";
 import { type HostCodeAuthority } from "./host-code-broker";
@@ -340,6 +341,8 @@ function noteStaleEffortOnce(model: string, effort: string): void {
 
 export interface CloverLegDeps {
   home: string;
+  /** M-M2: true while the update gate is closing for a restart (`update/gate.ts`): no new turn starts then. */
+  updateClosing?: () => boolean;
   /** `CLOVER_PROFILE` for the child (`""` on dist). */
   profile?: string;
   /** THE LIVE settings holder. */
@@ -494,6 +497,11 @@ export interface CloverLegDeps {
    * Absent: nothing is renewed, and a `minGeneration` the store cannot meet answers `stale`.
    */
   credentialRefreshers?: Readonly<Record<string, ProviderRefresher>>;
+  /**
+   * The daemon's one credential broker, shared with the bots' sessions (`turn-loop/provider-fill.ts`), so a renewal is
+   * one grant whoever asks. Absent: the table builds its own from `secrets`, `mcpOAuthStore` and `credentialRefreshers`.
+   */
+  hostCredentials?: HostCredentialBroker;
   /**
    * WS-25 (review r1 (i)): the http/sse MCP servers the enabled plugins ship (`external-mcp.ts`'s
    * `pluginMcpServersFor`), read live per incarnation. A run-home child loads plugins natively, so their
@@ -738,7 +746,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
   const sdkVersion = CLOVER_PEER_VERSIONS.winterAgentSdk;
   // WS-25 §7: ONE broker for the whole table — its generation registry and its refresh single-flights are
   // per item, not per session, so two sessions asking for the same Console bearer share one `ant` run.
-  const hostCredentials = createHostCredentialBroker({
+  const hostCredentials = deps.hostCredentials ?? createHostCredentialBroker({
     secrets: deps.secrets,
     keychainService: keychainService(undefined, deps.home),
     ...(deps.mcpOAuthStore === undefined ? {} : { mcpOAuthStore: deps.mcpOAuthStore }),
@@ -1397,6 +1405,9 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
      * (`apiKeyProviderIsUnauthenticated`) — never a settings-field special case.
      */
     const beforeTurn = async (): Promise<void> => {
+      // M-M2: the daemon is about to restart for an update; nothing is appended, and sending again after it works.
+      // The gate's own check (`UpdateGate.beforeTurn`, which the bots' host shares), as the driver's typed refusal.
+      if (deps.updateClosing?.() === true) throw new CloverLegRefusal("daemon_shutting_down", UPDATE_RESTARTING_MESSAGE, "update-restarting");
       const live = deps.store.meta(sessionId);
       const settings = deps.settings();
       const model = mode === "dispatch" ? (live.model ?? pinsFor(settings).dispatch) : (live.model ?? settings?.provider?.model);
@@ -1443,6 +1454,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
       sessionId, backendSessionId, mode, runtime,
       options: optionsFor,
       beforeTurn,
+      ...(deps.updateClosing ? { updateClosing: deps.updateClosing } : {}),
       spawnRefusal: () => (shuttingDown ? shutdownRefusal() : undefined),
       endedWhileOpeningRefusal: () => new CloverLegRefusal(SESSION_REPLACED, "this session's runtime was replaced while it was starting; send again"),
       projector: projectorFor,

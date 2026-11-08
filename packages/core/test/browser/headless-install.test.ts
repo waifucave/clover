@@ -6,7 +6,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  HEADLESS_PIN, InstallError, pinFrom, type HeadlessShellPins, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, stageForLaunch, treeDigestOfArchive,
+  HEADLESS_PIN, InstallError, pinFrom, type HeadlessShellPins, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, renameIntoPlace, stageForLaunch, treeDigestOfArchive,
   type HeadlessPin,
 } from "../../src/browser/headless";
 
@@ -231,6 +231,8 @@ describe("the install, failing closed", () => {
     expect(existsSync(join(installed, `chrome-headless-shell-${PLAT}`, "libextra.so"))).toBe(false);
     expect(s.urls.length).toBe(3);
 
+    // A mode change is a change only where files have POSIX modes: on Windows the tree digest records none (`-`), as
+    // the archive's tree does for a Windows platform, so there is no mode to change.
     if (process.platform !== "win32") {
       chmodSync(join(installed, `chrome-headless-shell-${PLAT}`, "resources.pak"), 0o755);
       expect((await installHeadlessShell({ dir, pin, platform: PLAT, fetch: s.fetch })).reused).toBe(false);
@@ -288,5 +290,29 @@ describe("the install, failing closed", () => {
     expect(existsSync(join(dir, "run", "2147483646-dead"))).toBe(false);
     expect(existsSync(join(dir, "run", `${process.pid}-alive`))).toBe(true);
     staged.release();
+  });
+});
+
+describe("renameIntoPlace (the install's swap)", () => {
+  const fail = (code: string) => Object.assign(new Error(code), { code });
+  test("on Windows a rename that fails for a moment (a pending delete, a file still held) is retried, then lands", async () => {
+    let tries = 0;
+    const slept: number[] = [];
+    await renameIntoPlace("staging", "dir", {
+      platform: "win32", remove: () => {}, sleep: async (ms) => void slept.push(ms),
+      rename: () => { if (++tries < 3) throw fail("EPERM"); },
+    });
+    expect([tries, slept]).toEqual([3, [50, 100]]);
+  });
+  test("it gives up after its tries on Windows, and never retries elsewhere or another error", async () => {
+    const always = (code: string) => () => { throw fail(code); };
+    const sleep = async () => {};
+    expect(await renameIntoPlace("s", "d", { platform: "win32", remove: () => {}, sleep, rename: always("EPERM") }).catch((e: Error) => e.message)).toBe("EPERM");
+    let tries = 0;
+    await renameIntoPlace("s", "d", { platform: "linux", remove: () => {}, sleep, rename: () => { tries++; throw fail("EPERM"); } }).catch(() => {});
+    expect(tries).toBe(1);
+    tries = 0;
+    await renameIntoPlace("s", "d", { platform: "win32", remove: () => {}, sleep, rename: () => { tries++; throw fail("ENOENT"); } }).catch(() => {});
+    expect(tries).toBe(1);
   });
 });

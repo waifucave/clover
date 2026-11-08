@@ -1,0 +1,12 @@
+# The SHA-256 of each Bun binary scripts/pinned-bun may run, per version and release asset (the `bun` inside
+# bun-<asset>.zip, whose own SHA-256 matched the release's SHASUMS256.txt when these were taken). pinned-bun
+# checks its cached binary against this line on every run and fetches it again on a mismatch.
+1.4.4 bun-darwin-aarch64 0a2237cdcfa0d16ef501d9acca9f0026309ef348bea7393a64e8d1e3609565cc
+1.4.4 bun-darwin-x64 c35307c7d45d65c5a385a58c4a6cb0bb9499e4e626abdee207c177a77ba666ab
+1.4.4 bun-darwin-x64-baseline c35307c7d45d65c5a385a58c4a6cb0bb9499e4e626abdee207c177a77ba666ab
+1.4.4 bun-linux-aarch64 354c2b049c716aca07b2e5cddb887928ac58950675d1258bb6312083917793b6
+1.4.4 bun-linux-aarch64-musl a6a3d99a48600b59597070d2d2ff8d37b65975b8aab247ee3479b1eb33d000a6
+1.4.4 bun-linux-x64 10702245766b225e70bbf6235fd6b47214fd94b4760d00ffaed8ab0df57ac235
+1.4.4 bun-linux-x64-baseline 10702245766b225e70bbf6235fd6b47214fd94b4760d00ffaed8ab0df57ac235
+1.4.4 bun-linux-x64-musl 29a31375a72f97c7e3fc25dd57d7dde88da5907aa8970808f57f91e0711bdad2
+1.4.4 bun-linux-x64-musl-baseline 29a31375a72f97c7e3fc25dd57d7dde88da5907aa8970808f57f91e0711bdad2

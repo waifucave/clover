@@ -10,6 +10,7 @@ import { AUTOSTART_SUBCOMMAND, INSTALLER_HOOKS, LAUNCHD_LABEL, autostartArgs } f
 import { linkBinaryName } from "../packages/core/src/links/sidecar-binary";
 import { AFTER_INSTALL_MARK, checkPackage, electronBuilderArgs, LINK_BUILD, LINK_OUTPUT, packageArchNames, parseBuildPackagesArgs, parseListing, REQUIRED_FILES } from "./build-packages";
 import { caskFrom } from "./release-lib";
+import { BUNDLED_PLUGIN_IDS, BUNDLED_PLUGINS_DIR, STAGED_PLUGINS } from "./release/bundled-plugins";
 import { renderWinget, wingetInstallerUrl } from "./winget";
 
 const ROOT = join(import.meta.dir, "..");
@@ -134,9 +135,24 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
     expect(install).toContain("update-alternatives --install '/usr/bin/clover' 'clover' \"$CLI\" 100");
     expect(install).toContain("APPARMOR_PROFILE_TARGET='/etc/apparmor.d/clover'");
     expect(install).toContain("apparmor_parser --replace");
+    // The install marker beside the daemon: a package's daemon never updates itself.
+    expect(install).toContain(`printf '{"kind":"package"}\\n' > "$(dirname "$CLI")/install.json"`);
     const remove = renderLinux("packaging/linux/after-remove.sh");
     expect(remove).toContain("update-alternatives --remove 'clover' \"$CLI\"");
+    expect(remove).toContain('rm -f "$(dirname "$CLI")/install.json"');
     expect(remove).toContain("apparmor_parser --remove");
+  });
+
+  test("the bundled plugins go in every app's resources/plugins (the registry's bundledDirs), beside resources/daemon, from the staged tracked files", () => {
+    expect(builder.extraResources).toHaveLength(2);
+    const plugins = builder.extraResources[1];
+    expect(plugins.from).toBe(STAGED_PLUGINS.split("\\").join("/"));
+    expect(plugins.to).toBe(BUNDLED_PLUGINS_DIR);
+    expect(plugins.filter).toEqual(["**/*", "!**/.env", "!**/.env.*", "!**/.DS_Store"]);
+    // The repository's plugins/ is what gets staged: each top-level subfolder a plugin, each with its manifest.
+    for (const id of BUNDLED_PLUGIN_IDS) expect(existsSync(join(ROOT, "plugins", id, "clover.json"))).toBe(true);
+    // The Linux packages must hold each manifest.
+    for (const id of BUNDLED_PLUGIN_IDS) expect(REQUIRED_FILES as readonly string[]).toContain(`/opt/Clover/resources/${BUNDLED_PLUGINS_DIR}/${id}/clover.json`);
   });
 
   test("the AppArmor profile grants user namespaces to the app's executable alone", () => {
@@ -147,7 +163,7 @@ describe("the Linux packages (electron-builder.yml and packaging/linux)", () => 
   });
 
   test("the daemon and its link sidecar go in every package's resources, side by side, from where build-packages.ts stages them", () => {
-    expect(builder.extraResources).toEqual([{ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe", "clover-link", "clover-link.exe"] }]);
+    expect(builder.extraResources[0]).toEqual({ from: "out/daemon", to: "daemon", filter: ["clover-core", "clover-core.exe", "clover-link", "clover-link.exe", "clover-plugin-bun", "clover-plugin-bun.exe", "clover-process-holder"] });
     // Beside the daemon, where the core looks for it (packages/core/src/links/sidecar-binary.ts).
     expect(REQUIRED_FILES as readonly string[]).toContain(`/opt/Clover/resources/daemon/${linkBinaryName("linux")}`);
     expect(LINK_OUTPUT.endsWith(`/${linkBinaryName("linux")}`)).toBe(true);
@@ -231,13 +247,16 @@ describe("build-packages.ts", () => {
     expect(packageArchNames("arm64")).toEqual({ deb: "arm64", rpm: "aarch64", appImage: "arm64" });
   });
 
-  test("a package is checked for the daemon, the link sidecar, the AppArmor profile and packaging/linux's after-install", () => {
+  test("a package is checked for the daemon, the link sidecar, plugin Bun, the AppArmor profile and packaging/linux's after-install", () => {
     const debListing = [
       "drwxr-xr-x root/root 0 2026-11-05 12:00 ./opt/Clover/",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/clover",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-link",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-plugin-bun",
       "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
+      "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/plugins/clover/clover.json",
+      "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/plugins/alpha/clover.json",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/chrome-sandbox",
       "lrwxrwxrwx root/root 0 2026-11-05 12:00 ./opt/Clover/libvk.so -> libvulkan.so.1",
     ].join("\n");
@@ -247,7 +266,8 @@ describe("build-packages.ts", () => {
       "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
       "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
     ].join("\n");
-    expect(checkPackage("rpm", rpmListing, scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing", "rpm: /opt/Clover/resources/daemon/clover-link is missing"]);
+    expect(checkPackage("rpm", rpmListing, scripts)).toEqual(["rpm: /opt/Clover/resources/daemon/clover-core is missing", "rpm: /opt/Clover/resources/daemon/clover-link is missing", "rpm: /opt/Clover/resources/daemon/clover-plugin-bun is missing",
+      "rpm: /opt/Clover/resources/plugins/clover/clover.json is missing", "rpm: /opt/Clover/resources/plugins/alpha/clover.json is missing"]);
     expect(checkPackage("deb", debListing, "ln -sf /opt/Clover/clover /usr/bin/clover")).toEqual([
       `deb: its after-install script is not packaging/linux/after-install.sh (no ${AFTER_INSTALL_MARK})`,
       "deb: its scripts never load the AppArmor profile",
@@ -260,6 +280,9 @@ describe("build-packages.ts", () => {
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-core",
       "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/apparmor-profile",
       "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-link",
+      "-rwxr-xr-x root/root 100 2026-11-05 12:00 ./opt/Clover/resources/daemon/clover-plugin-bun",
+      "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/plugins/clover/clover.json",
+      "-rw-r--r-- root/root 100 2026-11-05 12:00 ./opt/Clover/resources/plugins/alpha/clover.json",
     ];
     const scripts = `CLI='${AFTER_INSTALL_MARK}'\napparmor_parser --replace x`;
     const swap = (i: number, line: string) => base.map((l, j) => (j === i ? line : l)).join("\n");
@@ -278,12 +301,14 @@ describe("build-packages.ts", () => {
       "-rwxr-xr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/clover",
       "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-core",
       "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-link",
+      "-rwxr-xr-x    1 root     root          100 Nov  5  2026 /opt/Clover/resources/daemon/clover-plugin-bun",
       "-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/apparmor-profile",
       "lrwxrwxrwx    1 root     root           14 Nov  5 12:00 /opt/Clover/libvk.so -> libvulkan.so.1",
       "-rwxr-sr-x    1 root     root          100 Nov  5 12:00 /opt/Clover/helper",
     ].join("\n");
-    expect(parseListing("rpm", rpm).map((e) => e.path)).toEqual(["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/libvk.so", "/opt/Clover/helper"]);
-    expect(checkPackage("rpm", rpm, scripts)).toEqual(["rpm: /opt/Clover/helper is set-user-ID or set-group-ID (-rwxr-sr-x)"]);
+    expect(parseListing("rpm", rpm).map((e) => e.path)).toEqual(["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/libvk.so", "/opt/Clover/helper"]);
+    const plugins = ["clover", "alpha"].map((id) => `-rw-r--r--    1 root     root          100 Nov  5 12:00 /opt/Clover/resources/plugins/${id}/clover.json`);
+    expect(checkPackage("rpm", [rpm, ...plugins].join("\n"), scripts)).toEqual(["rpm: /opt/Clover/helper is set-user-ID or set-group-ID (-rwxr-sr-x)"]);
   });
 
   test("after-remove acts on a removal only, never on an upgrade (the rpm runs it after the new version's after-install)", () => {

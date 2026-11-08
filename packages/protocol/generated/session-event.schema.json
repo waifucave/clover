@@ -18,6 +18,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "workspaceId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
@@ -153,6 +157,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "workspaceId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
@@ -242,6 +250,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "workspaceId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
@@ -312,6 +324,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "workspaceId": {
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
@@ -372,6 +388,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "workspaceId": {
           "type": "string",
@@ -450,6 +470,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "type": {
           "type": "string",
@@ -561,6 +585,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "harness_attached"
@@ -596,6 +624,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "harness_detached"
@@ -630,6 +662,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "type": {
           "type": "string",
@@ -726,6 +762,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -760,6 +800,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -800,6 +844,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -839,6 +887,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -911,6 +963,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -959,6 +1015,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1064,6 +1124,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1103,6 +1167,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1207,6 +1275,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1258,6 +1330,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1340,6 +1416,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1393,6 +1473,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1455,6 +1539,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1496,6 +1584,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1541,6 +1633,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1585,6 +1681,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1628,6 +1728,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1686,6 +1790,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1730,6 +1838,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1832,6 +1944,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -1898,6 +2014,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -1989,6 +2109,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2033,6 +2157,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -2090,6 +2218,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2139,6 +2271,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -2192,6 +2328,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2243,6 +2383,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2288,6 +2432,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2328,6 +2476,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2367,6 +2519,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -2451,6 +2607,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2534,6 +2694,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2598,6 +2762,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2647,6 +2815,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2695,6 +2867,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "type": {
           "type": "string",
@@ -2746,6 +2922,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "shortcut_invoke"
@@ -2781,6 +2961,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "tile_action"
@@ -2815,6 +2999,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -2873,6 +3061,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2929,6 +3121,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -2975,6 +3171,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -3030,6 +3230,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -3076,6 +3280,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -3156,6 +3364,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -3225,6 +3437,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -3283,6 +3499,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -3329,6 +3549,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -3394,6 +3618,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "threadId": {
           "type": "string",
           "minLength": 1
@@ -3437,6 +3665,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -3482,6 +3714,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "session_activity"
@@ -3521,6 +3757,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "type": {
           "type": "string",
@@ -3581,6 +3821,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "panel_tab_closed"
@@ -3616,6 +3860,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "panel_tab_activated"
@@ -3650,6 +3898,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "type": {
           "type": "string",
@@ -3696,6 +3948,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "type": {
           "type": "string",
@@ -3794,6 +4050,10 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "late": {
+          "type": "boolean",
+          "const": true
+        },
         "type": {
           "type": "string",
           "const": "provider_login_progress"
@@ -3833,6 +4093,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "type": {
           "type": "string",
@@ -3876,6 +4140,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",
@@ -3944,6 +4212,10 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "late": {
+          "type": "boolean",
+          "const": true
         },
         "threadId": {
           "type": "string",

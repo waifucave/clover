@@ -114,4 +114,32 @@ describe("PeerOwner", () => {
     const run = async () => "  1     0\n 50     1\n 51    50\n 52    51\n 60     1\n";
     expect((await processTree([50], { platform: "linux", run })).sort()).toEqual([50, 51, 52]);
   });
+
+  test("a Windows id reused by the browser does not make the dead parent's other children its own", async () => {
+    // 70 is the browser (created at 500); 90 names 70 as its parent but was created at 100, before the browser: its real
+    // parent died and the browser took the id. 71 is a true child (created at 600).
+    const run = async () => "70 4 500\n71 70 600\n90 70 100\n";
+    expect((await processTree([70], { platform: "win32", run })).sort()).toEqual([70, 71]);
+  });
+
+  test("a Windows row with no creation time (the idle process) keeps the whole table, and is never aged out", async () => {
+    // "0 0 " trims to two fields: no age check for it. The rest of the table still builds the tree.
+    const run = async () => "0 0 \n70 4 500\n71 70 600\n72 71 \n";
+    expect((await processTree([70], { platform: "win32", run })).sort()).toEqual([70, 71, 72]);
+  });
+
+  test("the Windows table is asked for in UTC, from WMI's own text, and an empty creation time is written as nothing", async () => {
+    let command = "";
+    const run = async (_cmd: string, args: string[]) => ((command = args.at(-1)!), "70 4 500\n");
+    await processTree([70], { platform: "win32", run });
+    expect(command).not.toContain("ToFileTimeUtc"); // a local-time DateTime is ambiguous when the clocks go back
+    expect(command).toContain("if ($_.CreationDate)");
+    expect(command).toContain("Get-WmiObject");
+  });
+
+  test("the caller's own process is never in the tree, nor is anything reached only through it", async () => {
+    const run = async () => "50 1\n51 50\n52 51\n53 52\n";
+    expect((await processTree([50], { platform: "linux", run, exclude: [51] })).sort()).toEqual([50]);
+    expect((await processTree([51], { platform: "linux", run, exclude: [51] }))).toEqual([]);
+  });
 });

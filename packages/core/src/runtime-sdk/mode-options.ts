@@ -1,5 +1,8 @@
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { pluginLoadFoldersOf } from "./plugin-load-folders";
+import { pluginLoadDenies } from "../contracts/fence";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -926,15 +929,39 @@ export function projectScopeAllowRulesFor(cwd: string, deps: {
 export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptions): string[] {
   return [
     join(home, "run"), join(home, "runtimes"), homeCacheDir(home), join(home, "plugins"), approvedProjectRulesDir(home),
+    // The dev profile's plugin Bun and its recorded digest (#234's check 6, L2), and a server's core and plugin Bun.
+    join(home, "bin"),
     trustRecordFile(home), join(home, "agents"),
     join(sdkHomeFor(home), "settings.json"), join(sdkHomeFor(home), ".clover.json"),
     join(sdkHomeFor(home), "agents"), join(sdkHomeFor(home), "plugins"),
     // ComputerV2's own records (`computer-use/`): the wake triggers' restart file (`wakes/persist.ts` — a forged record
     // would put daemon-worded text into another session's turn) and the recently-used apps.
     join(home, "computer-use"),
+    // M-M2: a server's self-update (packages/cli/src/self-update.ts): the daemon's own binary and the checked one waiting
+    // to replace it (`bin/`, with a package's marker beside it), the boot count and the rolled-back versions after a
+    // swap (`update/`), and the install marker that decides whether the daemon updates itself. A planted binary or
+    // `.old` + boot count would run unsandboxed as the daemon; a planted marker or rolled-back list stops its updates.
+    join(home, "bin"), join(home, "update"), join(home, "install.json"),
     ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => join(home, f)),
     ...hostStorageWriteRoots(home, options),
+    // #234's check 4, H1: `node_modules` above every folder plugin code loads from (`~/node_modules` among them), by
+    // real path: a bare import a plugin doesn't ship walks those, and a file there without an extension skips Clover's
+    // load guard.
+    // The development folders and the bundled plugins too (#234's check 5, K3), read live: a folder added now is in the
+    // next call's list, for the write tools, the escape floor and every runner started after it.
+    ...pluginLoadDenies([join(home, "plugins"), join(sdkHomeFor(home), "plugins"), ...pluginLoadFoldersOf(home)].map(realOrNearest)),
   ];
+}
+
+
+/** A path's real path, or its nearest existing ancestor's real path with the rest appended. */
+function realOrNearest(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realOrNearest(parent), basename(path));
+  }
 }
 
 /**

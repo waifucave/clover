@@ -10,20 +10,30 @@ overrides:
   '@types/node': 25.9.3
   sharp: 0.35.5
   undici: 7.30.1
+  minimatch@>=7 <11.0.1: 11.0.1
 
 importers:
 
   .:
     devDependencies:
+      '@electron/asar':
+        specifier: 3.4.1
+        version: 3.4.1
       '@resvg/resvg-js':
         specifier: ^2.6.2
         version: 2.6.2
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
+      openpgp:
+        specifier: 6.3.2
+        version: 6.3.2
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
 
   apps/desktop:
     devDependencies:
@@ -51,12 +61,18 @@ importers:
       '@waifucave/clover-protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@waifucave/clover-update-feed':
+        specifier: workspace:*
+        version: link:../../packages/update-feed
       electron:
         specifier: 45.2.3
         version: 45.2.3
       electron-builder:
         specifier: 26.18.0
         version: 26.18.0(electron-builder-squirrel-windows@26.18.0)
+      electron-updater:
+        specifier: 6.8.11
+        version: 6.8.11
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -124,11 +140,11 @@ importers:
   packages/core:
     dependencies:
       '@waifucave/clover-agent-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-agent-sdk':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
@@ -136,11 +152,11 @@ importers:
         specifier: workspace:*
         version: link:../protocol
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       unpdf:
         specifier: ^1.6.2
         version: 1.6.2
@@ -149,8 +165,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@waifucave/clover-provider-conformance':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-service-shared':
         specifier: workspace:*
         version: link:../../services/shared
@@ -495,6 +511,10 @@ importers:
         version: 5.9.3
 
   plugins/clover/plugins/island:
+    dependencies:
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: 21.0.4
@@ -567,11 +587,11 @@ importers:
   plugins/clover/plugins/model-azure-openai:
     dependencies:
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -583,11 +603,11 @@ importers:
   plugins/clover/plugins/model-bedrock:
     dependencies:
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -599,11 +619,11 @@ importers:
   plugins/clover/plugins/model-codex-oauth:
     dependencies:
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -615,11 +635,11 @@ importers:
   plugins/clover/plugins/model-google:
     dependencies:
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -631,11 +651,11 @@ importers:
   plugins/clover/plugins/model-vertex:
     dependencies:
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -647,11 +667,11 @@ importers:
   plugins/clover/plugins/model-xai-oauth:
     dependencies:
       '@waifucave/clover-provider-catalog':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
       '@waifucave/clover-provider-runtime':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -875,6 +895,30 @@ importers:
       '@types/react-dom':
         specifier: 19.3.0
         version: 19.3.0(@types/react@19.3.0)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/provider-gcp:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  plugins/clover/plugins/provider-hetzner:
+    devDependencies:
+      '@types/bun':
+        specifier: 1.4.4
+        version: 1.4.4
+      '@waifucave/clover-plugin-sdk':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-sdk
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -1106,8 +1150,8 @@ importers:
   plugins/clover/plugins/web:
     dependencies:
       '@waifucave/clover-web':
-        specifier: 0.0.71
-        version: 0.0.71
+        specifier: 0.0.72
+        version: 0.0.72
     devDependencies:
       '@types/bun':
         specifier: 1.4.4
@@ -1764,6 +1808,9 @@ packages:
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
 
+  '@isaacs/nonrecursive-glob-match@1.1.0':
+    resolution: {integrity: sha512-GPm/Dbvk5RLmhRnxXIa7nTpK0xtl4E0wj0MslsuNiJ1FIROU+2+9lgUC/dgF7Ey4QCWhfEsgxilMRMCdHPfDfw==}
+
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
     engines: {node: '>=6.0.0'}
@@ -2299,34 +2346,34 @@ packages:
   '@vitest/utils@4.1.12':
     resolution: {integrity: sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA==}
 
-  '@waifucave/clover-agent-runtime@0.0.71':
-    resolution: {integrity: sha512-kmTtUQQC1/pivudcJQPTcw7QNq9Py4j4jaZKkG6hUZps5I6rQgzSD4RV/FiLBBOkeQxdx3xV/qvq+rcSiSMBKA==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.71/34ab2af4d1b4c475af94bfa3462da3dde6e456a7}
+  '@waifucave/clover-agent-runtime@0.0.72':
+    resolution: {integrity: sha512-PQwP/y/b1sdiStv66KpqrglpfmBzpN+OQ7GBoi/hTpUQMffOA3YZ4P2aWf86t+31xzoH0USMWtfOhyqsFI1nEQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.72/e984c8c7ba2f24a429cec1b5323dc19590f8d207}
     engines: {bun: '>=1.3'}
 
-  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.71':
-    resolution: {integrity: sha512-B+UotHAc6iJmpkXvRZpv8wCsw1QHrTjWnZVX/Vz/YVQ7LPIj/PwRAJ2zCdKreRSp2LZCjqs+N4TFasrl/cAIpw==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.71/06c13e5ebbdee8bc10d7ab4834f071b872f18108}
+  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.72':
+    resolution: {integrity: sha512-9va9dsaiqRDOcicLVym/E0yRXZDvSZmGWR1xM+e/iTljf4SgRmDnmnL0oQqmohSF3eBOKSNJl0K/HPxyH/V52Q==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.72/3c129d673f2097e257bcb60136dc462c284cbf1d}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@waifucave/clover-agent-sdk@0.0.71':
-    resolution: {integrity: sha512-rq6K4vNy1qEbIxtiSJCGHwy6ltIyV8JsPGH5j1Umdt+YfqEvLOm8BpzPI3Qp+ukaJc2SedpYY5wYLZl/2qZOog==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.71/af0fc4eb64f697130214826e29d4d5f7b9956444}
+  '@waifucave/clover-agent-sdk@0.0.72':
+    resolution: {integrity: sha512-Zt0RKmlq+hu9CFrPjyPfIUA3aY9HlodJLSWT/AheiVe7S3Sh76+4QdCXyo1hNEhauGPUOHexDp9BN2oCiCAzkg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.72/b951baea940452bcc8d488c9dccb159f45d0f09f}
     engines: {node: '>=18'}
 
-  '@waifucave/clover-provider-catalog@0.0.71':
-    resolution: {integrity: sha512-/RW3v6u1W/3k3gYsP8q4oJISM+8ySYuxw0YuoK1t9tK1zlAHP7FejcF0yHKT1pmpTcCW8CFUo4/WCDk4WgbCtQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.71/a978676107945f0117adb9f5ccfe040c158c899b}
+  '@waifucave/clover-provider-catalog@0.0.72':
+    resolution: {integrity: sha512-c8E9KdjrFCmlXIQrBjmYY3jQK+vatJD8gBwZaUMhZpsMlF481MzYsWeCoiTg5WxDw6b/KWIWdZBTZNJQ/OUQGg==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.72/34192848111aa14b2a413b377bc023a6b1bef7c0}
     engines: {node: '>=18'}
 
-  '@waifucave/clover-provider-conformance@0.0.71':
-    resolution: {integrity: sha512-VYXiTXstGQqKnTxvjnFbwAMo9D0qHDjFcQhNIIPIfeH/PNNFvi3P5dEgPwu/WOis5KuVgfPQuA2QhlXozl93RQ==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.71/8bc7209f4c8c279296ff84b856e44f98cce0a42f}
+  '@waifucave/clover-provider-conformance@0.0.72':
+    resolution: {integrity: sha512-McqSRF2grcJ+Msa5XJXx4iF6Fy4EN0trSY7Gfp5HNRx4HjRGeaxsWZIJSbu3wyzDbbJo18sZG/bbl1O6/rEI5A==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.72/26521871f1372c5bce24e9a63076b64dc12251ba}
     engines: {bun: '>=1.2'}
 
-  '@waifucave/clover-provider-runtime@0.0.71':
-    resolution: {integrity: sha512-cQ1erq9cTiELz0DojMUt09urYdWYUjhQGQrnEZo7n3m6EOUDIsuV0n9m6ycn27B2IEiZH4VaDhYTuUQcfYtYjA==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.71/65fac102d0988e5408a000c78c8d34f86971dedf}
+  '@waifucave/clover-provider-runtime@0.0.72':
+    resolution: {integrity: sha512-YYN/S00MDN41h0YuN8Yl/vUvO+4o55LWc0QWBNLGxIW6Jbe9AqeUf+JuxqjG9dR+OXi7jpM9MyH6JBVtNe+cag==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.72/a2a5f4dad3a7f3bb7b039d335fb2bfa747b1b3b3}
     engines: {node: '>=18'}
 
-  '@waifucave/clover-web@0.0.71':
-    resolution: {integrity: sha512-t7zgahClfxsGHu4JFCuBZj6tS12mgURCqWL0Fi/8guyLVOn6eUmjHmnym4wWqUYiXqWt/x5BGVkTA0pPqIIF2g==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.71/720858fe551966f75952beaf487d396cb26ac00d}
+  '@waifucave/clover-web@0.0.72':
+    resolution: {integrity: sha512-fPQykqtQ6zeEQeRB3g9v6wbN4tdQebg7iuLFdXVQmE7FxI9+6dlrQwu7tto0pa2D2vXoA2cPJfngtnmdcNajYw==, tarball: https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.72/d192589dc9ca937ebf63ba57c5588cf993160a0c}
     engines: {bun: '>=1.3', node: '>=20'}
 
   '@waifucave/mochi2d@0.13.0':
@@ -2719,6 +2766,9 @@ packages:
 
   electron-publish@26.18.0:
     resolution: {integrity: sha512-MagnqaZSALSWjcdKu5HEVhYUZD/2BDL3q7XzrqWwub6gf/UfD3ItMgmthVDv9w5y9E0gH1C3JWqKaXwf6f4ROg==}
+
+  electron-updater@6.8.11:
+    resolution: {integrity: sha512-12U/mbzaIKQS3Q543aQ7DjyAZMXeVJy1Wpu0qdq5ne4RXpIQDpWYm25zRjgXngAoo6swMrm4C4owGyiIipelsg==}
 
   electron-winstaller@5.4.0:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
@@ -3229,6 +3279,13 @@ packages:
     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
     engines: {node: '>= 12.0.0'}
 
+  lodash.escaperegexp@4.1.2:
+    resolution: {integrity: sha512-TM9YBvyC84ZxE3rgfefxUWiQKLilstD6k7PTGt6wfbtXF8ixIJLOL3VYyV/z+ZiPLsVxAsKAFVwWlWeb2Y8Yyw==}
+
+  lodash.isequal@4.5.0:
+    resolution: {integrity: sha512-pDo3lu8Jhfjqls6GkMgpahsF9kCyayhgykjyLMNFTKWrpVdAQtYyB4muAMWozBB4ig/dtWAmsMxLEI8wuz+DYQ==}
+    deprecated: This package is deprecated. Use require('node:util').isDeepStrictEqual instead.
+
   lodash@4.18.1:
     resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
 
@@ -3448,8 +3505,8 @@ packages:
     resolution: {integrity: sha512-SHY8A98gCvmrnBLqABHRTSh3duAL1z+tHPRZu/tqxHFqVARrZ4oQis/ALYwp3XvzHvs6B/ff/CdcCafqP+cOFA==}
     engines: {node: '>=22.0.0'}
 
-  minimatch@10.2.6:
-    resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
+  minimatch@11.0.1:
+    resolution: {integrity: sha512-t+Vn6DX4wPCxS23y03C0uhF7S1jpi1GfqPrnlEipCJaA2ykiNbMkVlDutZtmvLfRcUN6R8AYVlzTsQrT4RZoLQ==}
     engines: {node: 18 || 20 || >=22}
 
   minimatch@3.1.5:
@@ -3458,10 +3515,6 @@ packages:
   minimatch@5.1.9:
     resolution: {integrity: sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw==}
     engines: {node: '>=10'}
-
-  minimatch@9.0.9:
-    resolution: {integrity: sha512-OBwBN9AL4dqmETlpS2zasx+vTeWclWzkblfZk7KTA5j3jeOONz/tRCnZomUyvNg83wL5Zv9Ss6HMJXAgL8R2Yg==}
-    engines: {node: '>=16 || 14 >=14.17'}
 
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
@@ -3535,6 +3588,15 @@ packages:
   onetime@5.1.2:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
+
+  openpgp@6.3.2:
+    resolution: {integrity: sha512-wcZTzHz41LV8Y48zH/JlD1JT8YdNmpWOuMAjQ/podvvCwsjBEU37K3znJh4UQcj3hksE5z9TzvhbUbwzsGvlLQ==}
+    engines: {node: '>= 18.0.0', typescript: '>= 5.0.0'}
+    peerDependencies:
+      '@openpgp/web-stream-tools': ~0.3.0
+    peerDependenciesMeta:
+      '@openpgp/web-stream-tools':
+        optional: true
 
   p-cancelable@2.1.1:
     resolution: {integrity: sha512-BZOr3nRQHOntUjTrH8+Lh54smKHoHyur8We1V8DSMVrl5A2malOOwuJRnKRDjSnkoeBh4at6BwEnb5I7Jl31wg==}
@@ -3930,6 +3992,9 @@ packages:
   tiny-lru@11.4.7:
     resolution: {integrity: sha512-w/Te7uMUVeH0CR8vZIjr+XiN41V+30lkDdK+NRIDCUYKKuL9VcmaUEmaPISuwGhLlrTGh5yu18lENtR9axSxYw==}
     engines: {node: '>=12'}
+
+  tiny-typed-emitter@2.1.0:
+    resolution: {integrity: sha512-qVtvMxeXbVej0cQWKqVSSAHmKZEHAvxdF8HEUBFWts8h+xEo5m/lEiPakuyZ3BnCBjOD8i24kzNOiOLLgsSxhA==}
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
@@ -4424,7 +4489,7 @@ snapshots:
       debug: 4.4.3
       dir-compare: 4.2.0
       fs-extra: 11.4.1
-      minimatch: 9.0.9
+      minimatch: 11.0.1
       plist: 3.1.0
     transitivePeerDependencies:
       - supports-color
@@ -4640,6 +4705,8 @@ snapshots:
   '@isaacs/fs-minipass@4.0.1':
     dependencies:
       minipass: 7.1.3
+
+  '@isaacs/nonrecursive-glob-match@1.1.0': {}
 
   '@jridgewell/resolve-uri@3.1.2': {}
 
@@ -5113,37 +5180,37 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.2.0
 
-  '@waifucave/clover-agent-runtime@0.0.71':
+  '@waifucave/clover-agent-runtime@0.0.72':
     dependencies:
       '@modelcontextprotocol/client': 2.3.1
-      '@waifucave/clover-agent-sdk': 0.0.71
-      '@waifucave/clover-provider-catalog': 0.0.71
-      '@waifucave/clover-provider-runtime': 0.0.71
-      '@waifucave/clover-web': 0.0.71
+      '@waifucave/clover-agent-sdk': 0.0.72
+      '@waifucave/clover-provider-catalog': 0.0.72
+      '@waifucave/clover-provider-runtime': 0.0.72
+      '@waifucave/clover-web': 0.0.72
       ajv: 8.20.0
       ignore: 7.0.5
 
-  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.71':
+  '@waifucave/clover-agent-sdk-darwin-arm64@0.0.72':
     optional: true
 
-  '@waifucave/clover-agent-sdk@0.0.71':
+  '@waifucave/clover-agent-sdk@0.0.72':
     dependencies:
-      '@waifucave/clover-provider-catalog': 0.0.71
+      '@waifucave/clover-provider-catalog': 0.0.72
     optionalDependencies:
-      '@waifucave/clover-agent-sdk-darwin-arm64': 0.0.71
+      '@waifucave/clover-agent-sdk-darwin-arm64': 0.0.72
 
-  '@waifucave/clover-provider-catalog@0.0.71': {}
+  '@waifucave/clover-provider-catalog@0.0.72': {}
 
-  '@waifucave/clover-provider-conformance@0.0.71':
+  '@waifucave/clover-provider-conformance@0.0.72':
     dependencies:
-      '@waifucave/clover-provider-catalog': 0.0.71
-      '@waifucave/clover-provider-runtime': 0.0.71
+      '@waifucave/clover-provider-catalog': 0.0.72
+      '@waifucave/clover-provider-runtime': 0.0.72
 
-  '@waifucave/clover-provider-runtime@0.0.71':
+  '@waifucave/clover-provider-runtime@0.0.72':
     dependencies:
-      '@waifucave/clover-provider-catalog': 0.0.71
+      '@waifucave/clover-provider-catalog': 0.0.72
 
-  '@waifucave/clover-web@0.0.71': {}
+  '@waifucave/clover-web@0.0.72': {}
 
   '@waifucave/mochi2d@0.13.0(pixi.js@8.22.0)(playwright@1.64.1)':
     optionalDependencies:
@@ -5221,7 +5288,7 @@ snapshots:
       js-yaml: 4.3.2
       json5: 2.2.3
       lazy-val: 1.0.5
-      minimatch: 10.2.6
+      minimatch: 11.0.1
       pkijs: 3.4.3
       plist: 3.1.0
       proper-lockfile: 4.1.2
@@ -5571,6 +5638,19 @@ snapshots:
       fs-extra: 10.1.0
       lazy-val: 1.0.5
       mime: 2.6.0
+    transitivePeerDependencies:
+      - supports-color
+
+  electron-updater@6.8.11:
+    dependencies:
+      builder-util-runtime: 9.7.0
+      fs-extra: 10.1.0
+      js-yaml: 4.3.2
+      lazy-val: 1.0.5
+      lodash.escaperegexp: 4.1.2
+      lodash.isequal: 4.5.0
+      semver: 7.7.4
+      tiny-typed-emitter: 2.1.0
     transitivePeerDependencies:
       - supports-color
 
@@ -6143,6 +6223,10 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
 
+  lodash.escaperegexp@4.1.2: {}
+
+  lodash.isequal@4.5.0: {}
+
   lodash@4.18.1: {}
 
   longest-streak@3.1.0: {}
@@ -6576,8 +6660,9 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  minimatch@10.2.6:
+  minimatch@11.0.1:
     dependencies:
+      '@isaacs/nonrecursive-glob-match': 1.1.0
       brace-expansion: 5.0.12
 
   minimatch@3.1.5:
@@ -6585,10 +6670,6 @@ snapshots:
       brace-expansion: 1.1.21
 
   minimatch@5.1.9:
-    dependencies:
-      brace-expansion: 2.1.7
-
-  minimatch@9.0.9:
     dependencies:
       brace-expansion: 2.1.7
 
@@ -6671,6 +6752,8 @@ snapshots:
   onetime@5.1.2:
     dependencies:
       mimic-fn: 2.1.0
+
+  openpgp@6.3.2: {}
 
   p-cancelable@2.1.1: {}
 
@@ -7149,6 +7232,8 @@ snapshots:
 
   tiny-lru@11.4.7:
     optional: true
+
+  tiny-typed-emitter@2.1.0: {}
 
   tinybench@2.9.0: {}
 

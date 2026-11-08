@@ -2,7 +2,7 @@
 // delegation gets the pause gate, and the whole Clover home is out of its reach, by the manager's fence for its Bash
 // sandbox and as private folders for its file tools, as #208 asks of every agent backend.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { HookCallbackMatcher, Options } from "@waifucave/clover-agent-sdk";
 import { join } from "node:path";
@@ -20,12 +20,16 @@ afterEach(async () => {
 });
 
 const MODEL = "winter-test/calls";
+// The backend's sandbox is macOS-only for now, and off macOS it reports itself not available. These tests check what
+// holds on every OS (no command of theirs needs the sandbox to run), so the backend is told the sandbox can run; the
+// refusal itself is pinned in remote-in-process.test.ts.
+const SANDBOX_READY = () => true;
 
 function make(spawn: Parameters<Parameters<typeof describeWithEmbeddedRuntime>[1]>[0], o: WorldOptions = {}): World {
   let w!: World;
   w = new World({
     ...o,
-    extraBackends: (_wire, self) => [inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, ...(o.pause ? { pause: o.pause } : {}) })],
+    extraBackends: (_wire, self) => [inProcessBackend({ home: self.cloverHome, spawn, defaultModel: () => MODEL }, { home: self.cloverHome, sandboxReady: SANDBOX_READY, ...(o.pause ? { pause: o.pause } : {}) })],
   });
   world = w;
   return w;
@@ -123,6 +127,30 @@ describeWithEmbeddedRuntime("the in-process subagents, as the core registers the
     expect(results.match(/Denied by permission rule: Read\(/g)?.length).toBeGreaterThanOrEqual(files.length * 2);
     expect(results).not.toContain(MARK);
     expect(JSON.stringify(notification(w))).not.toContain(MARK);
+  });
+
+  test("an allow that arrives after its turn was interrupted doesn't count: the tool never runs", async () => {
+    const w = make(spawn, { level: "ask" });
+    const file = join(w.project, "never.txt");
+    let id = "";
+    const request = w.approvals.request.bind(w.approvals);
+    // The card is answered "allow" while the user interrupts the turn: the allow is already on its way.
+    w.approvals.request = async (req, opts) => {
+      if (req.kind !== "agent-permission") return request(req, opts);
+      void w.host.interrupt(id);
+      return { allowed: true, by: "card", cardId: "card_late" };
+    };
+    const r = await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user" },
+      backend: IN_PROCESS_BACKEND_ID, root: "home/Studio/project1", title: "Write", model: MODEL,
+      prompt: `CALL Write {"file_path":${JSON.stringify(file)},"content":"no"}`,
+    });
+    id = r.sessionId;
+    await waitFor(() => w.host.get(r.sessionId)?.status === "idle" || notification(w), "the turn's end");
+    await Bun.sleep(300);
+    expect(existsSync(file)).toBe(false);
+    const calls = readFileSync(join(w.cloverHome, "bots", "alpha", "agents", r.sessionId, "calls.ndjson"), "utf8");
+    expect(calls).toContain('"by":"cancelled"');
   });
 
   test("createAgents offers it beside the ACP backends", async () => {

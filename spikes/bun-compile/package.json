@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build --compile src/main.tsx --outfile out/spike",
+    "build": "bun build --compile --no-macros src/main.tsx --outfile out/spike",
     "start": "bun run src/main.tsx"
   },
   "dependencies": {
