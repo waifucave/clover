@@ -166,6 +166,16 @@ describe("points and spots", () => {
     expect(msg.keep).toEqual(["approval"]);
     expect(msg.needs).toEqual(["conversation.read"]);
     expect(new Set(names).size).toBe(names.length);
+    // A message's menu needs nothing to add an item; its `command` runs with the props, the text only for
+    // `conversation.read` (lane F's F-M3).
+    const menu = SPOTS.find((s) => s.name === "menu.message")!;
+    expect(menu.needs).toBeUndefined();
+    expect(menu.gates).toEqual({ "message.text": "conversation.read" });
+    expect(menu.fields.safeParse({ title: "Quote it", command: "reader.quote" }).success).toBe(true);
+    expect(menu.fields.safeParse({ title: "Quote it", command: "quote" }).success).toBe(false);
+    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1" }, role: "bot" }).success).toBe(true);
+    expect(menu.props.safeParse({ bot: { id: "luna", name: "Luna" }, session: "b_luna", message: { id: "m1", text: "hi" }, role: "user" }).success).toBe(true);
+    expect(SPOTS.find((s) => s.name === "panel.view")!.doc).toBe("A spot inside each panel view, keyed by the view's id.");
   });
 
   test("spots inside a bot's tab are the tab's parts; the shell and surfaces are outside", () => {

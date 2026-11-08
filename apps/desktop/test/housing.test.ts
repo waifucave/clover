@@ -1,7 +1,8 @@
 // The camera housing (spec §5.5, lane G's ask): where it is from NSScreen's areas, and the screen add-on itself on a
 // Mac where the build made it (it reads the displays and nothing else; loading it shows nothing on the screen).
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { housingFor, housingOf, loadScreens, type NativeScreen } from "../src/main/housing";
 
@@ -40,5 +41,13 @@ describe("the housing", () => {
         expect(h.x + h.width).toBeLessThanOrEqual(s.frame.width);
       }
     }
+  });
+
+  // The add-on carries no path of the machine that built it: its install name is the fixed @rpath one (the build's
+  // `-install_name`), never the folder it was linked in, which holds the account name.
+  test.if(process.platform === "darwin" && existsSync(built))("the add-on's install name is @rpath/screen.node, not the build folder", () => {
+    const id = spawnSync("otool", ["-D", built], { encoding: "utf8" }).stdout.trim().split("\n").slice(1);
+    expect(id).toEqual(["@rpath/screen.node"]);
+    expect(readFileSync(built).includes(Buffer.from(join(import.meta.dir, "..")))).toBe(false);
   });
 });

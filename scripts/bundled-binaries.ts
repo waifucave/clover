@@ -19,6 +19,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { inflateRawSync } from "node:zlib";
+import { PLUGIN_BUN_FILE as CORE_PLUGIN_BUN_FILE, PLUGIN_BUN_IDENTIFIER, PROCESS_HOLDER_FILE, PROCESS_HOLDER_IDENTIFIER } from "../packages/core/src/bundled-identities";
 import type { DaemonTarget } from "./build-daemon";
 
 /** The Bun that `clover-plugin-bun` is: the release asset per target and its SHA-256, pinned here (not trusted from
@@ -34,15 +35,16 @@ export const PLUGIN_BUN = {
   } satisfies Record<DaemonTarget, { asset: string; sha256: string }>,
 } as const;
 
-export const PLUGIN_BUN_FILE = "clover-plugin-bun";
-export const HOLDER_FILE = "clover-process-holder";
+// One source for the names and identifiers (#234's `packages/core/src/bundled-identities.ts`): the signer here and the
+// core's checker (`pluginBun()`'s requirement) read the same values.
+export const PLUGIN_BUN_FILE = CORE_PLUGIN_BUN_FILE;
+export const HOLDER_FILE = PROCESS_HOLDER_FILE;
 
-/** The identifiers each is signed under: a release's, and the dev daemon's (`.dev`). Never the core's. Lane B's
- *  `packages/core/src/bundled-identities.ts` (#234) holds the same values for `pluginBun()`'s requirement check; once it
- *  lands these come from there, one source for the signer and the checker. */
+/** The identifiers each is signed under: a release's, and the dev daemon's (`.dev`). Never the core's. From the core's
+ *  `bundled-identities.ts`, which `pluginBun()`'s requirement check reads too. */
 export const BUNDLED_IDENTIFIERS = {
-  [PLUGIN_BUN_FILE]: { dist: "com.waifucave.clover.plugin-bun", dev: "com.waifucave.clover.plugin-bun.dev" },
-  [HOLDER_FILE]: { dist: "com.waifucave.clover.process-holder", dev: "com.waifucave.clover.process-holder.dev" },
+  [PLUGIN_BUN_FILE]: PLUGIN_BUN_IDENTIFIER,
+  [HOLDER_FILE]: PROCESS_HOLDER_IDENTIFIER,
 } as const;
 
 /** The core's own identifiers, which none of these may carry. */
@@ -100,12 +102,18 @@ const httpFetch: Fetcher = async (url) => {
   return new Uint8Array(await r.arrayBuffer());
 };
 
-/** The pinned Bun release zip for `target`, from the cache or the release, checked against its pinned SHA-256. */
-export async function pluginBunZip(target: DaemonTarget, fetcher: Fetcher = httpFetch, cache: string = bunCache()): Promise<string> {
+/**
+ * The pinned Bun release zip for `target`, from the cache or the release: its BYTES, the ones checked against the
+ * pinned SHA-256 (read once; never the file again, which a same-user process could swap after the check).
+ */
+export async function pluginBunZip(target: DaemonTarget, fetcher: Fetcher = httpFetch, cache: string = bunCache()): Promise<Uint8Array> {
   const { asset, sha256 } = PLUGIN_BUN.assets[target];
   const zip = join(cache, PLUGIN_BUN.version, "zips", `${asset}.zip`);
   const digest = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
-  if (existsSync(zip) && digest(readFileSync(zip)) === sha256) return zip;
+  if (existsSync(zip)) {
+    const cached = new Uint8Array(readFileSync(zip));
+    if (digest(cached) === sha256) return cached;
+  }
   const base = process.env.CLOVER_BUN_RELEASES ?? "https://github.com/oven-sh/bun/releases/download";
   const bytes = await fetcher(`${base}/bun-v${PLUGIN_BUN.version}/${asset}.zip`);
   const got = digest(bytes);
@@ -114,7 +122,7 @@ export async function pluginBunZip(target: DaemonTarget, fetcher: Fetcher = http
   const tmp = `${zip}.${process.pid}.tmp`;
   writeFileSync(tmp, bytes);
   renameSync(tmp, zip);
-  return zip;
+  return bytes;
 }
 
 /**
@@ -147,7 +155,16 @@ export function zipEntry(zip: Uint8Array, name: string): Uint8Array | undefined 
     const start = local + 30 + u16(local + 26) + u16(local + 28);
     const data = zip.subarray(start, start + csize);
     if (data.length !== csize) throw new Error(`${name} is cut short`);
-    const bytes = method === 0 ? data : method === 8 ? new Uint8Array(inflateRawSync(data)) : undefined;
+    let bytes: Uint8Array | undefined;
+    if (method === 0) bytes = data;
+    else if (method === 8) {
+      // Never more than the entry says it holds: a deflate stream that inflates past it is refused, not allocated.
+      try {
+        bytes = new Uint8Array(inflateRawSync(data, { maxOutputLength: Math.max(1, usize) }));
+      } catch {
+        throw new Error(`${name} doesn't inflate to its stated size (${usize} bytes)`);
+      }
+    }
     if (bytes === undefined) throw new Error(`${name} is compressed with method ${method}, which this reader doesn't take`);
     if (bytes.length !== usize || (Bun.hash.crc32(bytes) >>> 0) !== crc) throw new Error(`${name} doesn't match its size and CRC-32`);
     return bytes;
@@ -155,13 +172,13 @@ export function zipEntry(zip: Uint8Array, name: string): Uint8Array | undefined 
   return undefined;
 }
 
-/** Writes plain Bun for `target` from its release `zip` to `out`, unpacked in-process (zipEntry). */
-export function unpackPluginBun(zip: string, target: DaemonTarget, out: string): void {
+/** Writes plain Bun for `target` from its release zip's checked bytes (pluginBunZip) to `out`, unpacked in-process. */
+export function unpackPluginBun(zip: Uint8Array, target: DaemonTarget, out: string): void {
   const { asset } = PLUGIN_BUN.assets[target];
   const inside = `${asset}/${target.startsWith("windows-") ? "bun.exe" : "bun"}`;
   let bytes: Uint8Array | undefined;
   try {
-    bytes = zipEntry(new Uint8Array(readFileSync(zip)), inside);
+    bytes = zipEntry(zip, inside);
   } catch (e) {
     throw new Error(`could not unpack ${asset}.zip: ${(e as Error).message}`);
   }
@@ -173,8 +190,7 @@ export function unpackPluginBun(zip: string, target: DaemonTarget, out: string):
 
 /** Stages plain Bun for `target` at `out` (`clover-plugin-bun`, `.exe` on Windows). */
 export async function stagePluginBun(target: DaemonTarget, out: string, fetcher?: Fetcher): Promise<void> {
-  const zip = await pluginBunZip(target, fetcher);
-  unpackPluginBun(zip, target, out);
+  unpackPluginBun(await pluginBunZip(target, fetcher), target, out);
   // Oven's signature names Bun; ours names clover-plugin-bun (ad hoc here; a release or the dev daemon signs it for real).
   if (target === "darwin-arm64" && process.platform === "darwin") {
     const entitlements = join(dirname(import.meta.dir), PLUGIN_BUN_ENTITLEMENTS);

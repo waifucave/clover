@@ -4,7 +4,7 @@
 import { PLUGIN_BUN } from "../bundled-binaries";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -554,6 +554,161 @@ describe("the signed builds' checks", () => {
     expect(authenticodeProblems("clover-link.exe", "Valid|CN=Someone Else", "Example Ltd")).toEqual(["clover-link.exe is signed by Someone Else, not Example Ltd"]);
     expect(authenticodeProblems("x.exe", "", "Example Ltd")).toEqual(["x.exe's Authenticode signature is missing, not Valid"]);
     expect(authenticodeCommand("C:\\a'b\\Clover.exe").at(-1)).toContain("-LiteralPath 'C:\\a''b\\Clover.exe'");
+  });
+});
+
+describe("the name scan (scripts/release/name-scan.ts)", () => {
+  test("fails closed without the owner's local guard", async () => {
+    const { nameScan } = await import("./name-scan");
+    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-home-"));
+    const r = nameScan([], [], home);
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain("can't cut a release");
+  });
+
+  test("opens every kind of asset, and what nests inside, without running anything", async () => {
+    const { openerFor, TOOLS } = await import("./name-scan");
+    const names = ["Clover-1.dmg", "Clover-1-mac.zip", "Clover-Setup-1.exe", "clover_1_amd64.deb", "clover-1.x86_64.rpm", "Clover-1-x86_64.AppImage",
+      "data.tar.xz", "control.tar.zst", "x.tar", "app-64.7z", "a.gz", "Clover-1.dmg.blockmap", "b.br", "latest.yml", "clover-core.exe", "app.asar"];
+    expect(names.map(openerFor)).toEqual(["dmg", "zip", "nsis", "deb", "rpm", "appimage", "xz", "zst", "tar", "7z", "gz", "gz", "br", "raw", "raw", "asar"]);
+    const more = ["hidden.tgz", "x.tbz", "x.bz2", "x.lz4", "x.lzma", "x.cab", "x.msi", "x.jar", "x.crx", "x.squashfs", "x.rar", "x.lz", "libx.a"];
+    expect(more.map(openerFor)).toEqual(["gz", "bz2", "bz2", "lz4", "lzma", "cab", "msi", "zip", "crx", "squashfs", "rar", "lzip", "ar"]);
+    expect(TOOLS.dmg).toBe("hdiutil");
+    expect(TOOLS.appimage).toBe("unsquashfs");
+    expect(read("scripts/release/name-scan.ts")).toContain('"hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint"');
+  });
+
+  test("knows a file by its bytes, whatever it is called", async () => {
+    const { magicOf, decompressedName, TOOLS } = await import("./name-scan");
+    const b = (...x: Array<number | string>): Uint8Array => {
+      const out: number[] = [];
+      for (const v of x) typeof v === "string" ? out.push(...[...v].map((c) => c.charCodeAt(0))) : out.push(v);
+      return new Uint8Array(out);
+    };
+    const tar = new Uint8Array(512);
+    tar.set(b("ustar"), 257);
+    const asar = new Uint8Array(40);
+    asar.set([4, 0, 0, 0], 0);
+    asar.set(b('{"files":{}}'), 16);
+    const lzma = b(0x5d, 0, 0, 0x80, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0);
+    const koly = new Uint8Array(512);
+    koly.set(b("koly"), 0);
+    const elfAi = b(0x7f, "ELF", 2, 1, 1, 0, "AI", 2);
+    const cases: Array<[Uint8Array, string | undefined]> = [
+      [b("PK", 3, 4), "zip"], [b("PK", 5, 6), "zip"], [b("Cr24"), "crx"], [b(0x1f, 0x8b, 8), "gz"], [b(0xfd, "7zXZ", 0), "xz"],
+      [b(0x28, 0xb5, 0x2f, 0xfd), "zst"], [b("7z", 0xbc, 0xaf, 0x27, 0x1c), "7z"], [b("BZh9"), "bz2"], [b("!<arch>\n"), "ar"],
+      [b("hsqs"), "squashfs"], [elfAi, "appimage"], [b(0xed, 0xab, 0xee, 0xdb), "rpm"], [b("MSCF", 0, 0, 0, 0), "cab"],
+      [b(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1), "msi"], [b("Rar!", 0x1a, 7), "rar"], [b(4, 0x22, 0x4d, 0x18), "lz4"],
+      [b("LZIP"), "lzip"], [tar, "tar"], [asar, "asar"], [lzma, "lzma"],
+      // Not formats: an ELF that is no AppImage, plain text, "BZh" without a block size, an implausible LZMA header.
+      [b(0x7f, "ELF", 2, 1, 1, 0, 0, 0, 0), undefined], [b("hello"), undefined], [b("BZhx"), undefined], [b(0x5d, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9), undefined],
+    ];
+    for (const [bytes, want] of cases) expect(magicOf(bytes)).toBe(want as never);
+    expect(magicOf(b("x"), koly)).toBe("dmg");
+    expect(decompressedName("hidden.tgz")).toBe("hidden.tar");
+    expect(decompressedName("a.tar.bz2")).toBe("a.tar");
+    expect(decompressedName("blob.bin")).toBe("blob.bin.out");
+    // Every format it knows has a way to open it (in-process, or a tool it checks for, failing when it's missing).
+    expect(TOOLS.lz4).toBe("lz4");
+    expect(TOOLS.cab).toBe("7z");
+  });
+
+  test("an AppImage's squashfs starts where its ELF runtime ends", async () => {
+    const { elfEnd } = await import("./name-scan");
+    const elf = new Uint8Array(128);
+    const v = new DataView(elf.buffer);
+    v.setUint32(0, 0x7f454c46);
+    elf[4] = 2;
+    v.setBigUint64(0x28, 1000n, true);
+    v.setUint16(0x3a, 64, true);
+    v.setUint16(0x3c, 3, true);
+    expect(elfEnd(elf)).toBe(1192);
+    expect(() => elfEnd(new Uint8Array(64))).toThrow(/not an ELF/);
+  });
+
+  test("reads every file, lists every path and link target, refuses an absolute link, and accepts only the shipped notices", async () => {
+    const { walkTree } = await import("./name-scan");
+    const root = mkdtempSync(join(tmpdir(), "clover-name-walk-"));
+    mkdirSync(join(root, "resources", "daemon"), { recursive: true });
+    writeFileSync(join(root, "resources", "daemon", "srt-win.exe"), "x");
+    writeFileSync(join(root, "resources", "daemon", "srt-win.THIRD_PARTY_NOTICES.txt"), "license");
+    writeFileSync(join(root, "srt-win.THIRD_PARTY_NOTICES.txt"), "elsewhere");
+    writeFileSync(join(root, ".DS_Store"), "ds");
+    writeFileSync(join(root, "data.tar.xz"), "xz");
+    symlinkSync("resources/daemon/srt-win.exe", join(root, "rel-link"));
+    symlinkSync("/Users/someone/thing", join(root, "abs-link"));
+    const w = walkTree(root);
+    expect(w.read.map((p) => p.slice(root.length + 1)).sort()).toEqual([".DS_Store", "data.tar.xz", "resources/daemon/srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"]);
+    expect(w.accepted.map((p) => p.slice(root.length + 1))).toEqual(["resources/daemon/srt-win.THIRD_PARTY_NOTICES.txt"]);
+    expect(w.names).toContain("resources/daemon/srt-win.THIRD_PARTY_NOTICES.txt");
+    expect(w.names).toContain("resources/daemon/srt-win.exe");
+    expect(w.names).toContain("/Users/someone/thing");
+    expect(w.problems).toEqual(["abs-link links to an absolute path (/Users/someone/thing)"]);
+    expect(w.nested.map((p) => p.slice(root.length + 1))).toEqual(["data.tar.xz"]);
+  });
+});
+
+describe("the privacy scrub", () => {
+  test("the sidecar's build remaps the cargo home, the checkout and the home folder, after any flags already set", async () => {
+    const { linkBuildEnv } = await import("../build-packages");
+    const env = linkBuildEnv({ HOME: "/Users/someone", RUSTFLAGS: "-C opt-level=3" }, "/Users/someone/Xcode projects/clover");
+    // rustc takes the last match: the home folder first, the paths inside it after; a space stays inside its flag.
+    expect(env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-C", "opt-level=3", "--remap-path-prefix=/Users/someone=/home", "--remap-path-prefix=/Users/someone/.cargo=/cargo", "--remap-path-prefix=/Users/someone/Xcode projects/clover=/clover"]);
+    expect(env.RUSTFLAGS).toBeUndefined();
+    expect(linkBuildEnv({ HOME: "/h", CARGO_HOME: "/c", CARGO_ENCODED_RUSTFLAGS: "-Cx\x1f-Cy" }, "/r").CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-Cx", "-Cy", "--remap-path-prefix=/h=/home", "--remap-path-prefix=/c=/cargo", "--remap-path-prefix=/r=/clover"]);
+  });
+});
+
+describe("the name scan, end to end with a stand-in guard", () => {
+  test("hands the guard the asset, what is inside it (a nested gzip too) and the names list, and reports a hit", async () => {
+    if (process.platform === "win32") return;
+    const { nameScan } = await import("./name-scan");
+    const { createPackage } = await import("@electron/asar");
+    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-e2e-"));
+    const log = join(home, "read.log");
+    mkdirSync(join(home, "norma-private", "git-hooks"), { recursive: true });
+    // The stand-in reads what it's given and "finds" a hit in any file holding PLANTED.
+    writeFileSync(join(home, "norma-private", "git-hooks", "name-guard.sh"), `#!/bin/sh\nshift\nfor f in "$@"; do echo "$f" >> '${log}'; if grep -q PLANTED "$f"; then exit 1; fi; done\n`, { mode: 0o755 });
+    const tree = join(home, "tree");
+    mkdirSync(join(tree, "resources"), { recursive: true });
+    const packed = join(home, "packed");
+    mkdirSync(join(packed, "lib"), { recursive: true });
+    writeFileSync(join(packed, "lib", "inside-asar.txt"), "packed words");
+    writeFileSync(join(packed, "lib", "deeper.gz"), Bun.gzipSync(new TextEncoder().encode("asar PLANTED words")));
+    await createPackage(packed, join(tree, "resources", "app.asar"));
+    const enc = (t: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(t) as Uint8Array<ArrayBuffer>;
+    writeFileSync(join(tree, "notes.txt.gz"), Bun.gzipSync(enc("hidden PLANTED words")));
+    // A gzip by another name, and one by no archive name at all: both are opened by their bytes.
+    const tarDir = join(home, "tgz");
+    mkdirSync(tarDir);
+    writeFileSync(join(tarDir, "in-the-tgz.txt"), "tgz PLANTED words");
+    const tarFile = join(home, "inner.tar");
+    expect(Bun.spawnSync(["bsdtar", "-cf", tarFile, "-C", tarDir, "."]).exitCode).toBe(0);
+    writeFileSync(join(tree, "hidden.tgz"), Bun.gzipSync(new Uint8Array(readFileSync(tarFile))));
+    writeFileSync(join(tree, "blob.bin"), Bun.gzipSync(enc("renamed PLANTED words")));
+    // A format it knows that doesn't open (an LZ4 frame header and nothing after) fails the scan, never read raw only.
+    writeFileSync(join(tree, "junk.bin"), new Uint8Array([4, 0x22, 0x4d, 0x18, 1, 2, 3]));
+    const zip = join(home, "Clover-1.2.3-mac.zip");
+    expect(Bun.spawnSync(["bsdtar", "-a", "-cf", zip, "-C", tree, "."]).exitCode).toBe(0);
+    const r = nameScan([zip], [], home);
+    const seen = readFileSync(log, "utf8");
+    expect(seen).toContain("Clover-1.2.3-mac.zip");
+    expect(seen).toContain("app.asar");
+    expect(seen).toContain("inside-asar.txt");
+    expect(seen).toMatch(/notes\.txt(\n|$)/);
+    expect(seen).toContain("in-the-tgz.txt");
+    expect(seen).toContain("blob.bin.out");
+    expect(seen).toContain("names.txt");
+    expect(r.read).toBeGreaterThanOrEqual(8);
+    const hit = (where: string): boolean => r.problems.some((p) => p.includes(`found the owner's identity in Clover-1.2.3-mac.zip/${where}`));
+    expect(hit("notes.txt.gz")).toBe(true);
+    expect(hit("hidden.tgz/hidden.tar")).toBe(true);
+    expect(hit("blob.bin")).toBe(true);
+    expect(hit("resources/app.asar/asar/lib/deeper.gz")).toBe(true);
+    expect(r.problems.some((p) => p.startsWith("junk.bin ") && /lz4/.test(p) || p === "junk.bin doesn't open for the scan")).toBe(true);
+    // Nothing else failed to open: the asar, the tgz and the renamed gzip all did.
+    expect(r.problems.filter((p) => p.startsWith("junk.bin ")).length).toBe(1);
+    expect(r.problems.filter((p) => !p.startsWith("junk.bin ") && !p.includes("found the owner's identity"))).toEqual([]);
   });
 });
 
