@@ -60,6 +60,21 @@ describe("the bot editor (props)", () => {
     expect((screen.getByRole("combobox", { name: "Model" }) as HTMLSelectElement).value).toBe("local/llama-9");
   });
 
+  test("the LAN switch is off by default, says what it allows, and is the whole field: no Reset even when set", () => {
+    const patches: unknown[] = [];
+    const { rerender } = render(<BotEditor bot={ALPHA} own={[]} model={{ value: "openai/gpt-6", models: MODELS }} avatars={[]} themes={[]} onChange={(p) => patches.push(p)} onBack={noop} />);
+    const lan = screen.getByRole("switch", { name: "Local network" });
+    expect(lan.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText("Lets Alpha's browser tabs open pages on devices on your local network, such as your router or a printer.")).toBeTruthy();
+    fireEvent.click(lan);
+    rerender(<BotEditor bot={ALPHA} own={["lan"]} lan model={{ value: "openai/gpt-6", models: MODELS }} avatars={[]} themes={[]} onChange={(p) => patches.push(p)} onBack={noop} />);
+    expect(screen.getByRole("switch", { name: "Local network" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("button", { name: /^Reset the local network/ })).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Local network" }));
+    // On writes true; off clears the field (never false: off is the default).
+    expect(patches).toEqual([{ lan: true }, { lan: null }]);
+  });
+
   test("with no packs, the avatar row says where they come from", () => {
     render(<BotEditor bot={ALPHA} own={[]} model={{ value: "openai/gpt-6", models: MODELS }} avatars={[]} themes={[]} onChange={noop} onBack={noop} />);
     expect(screen.getByText(/No avatar packs are installed yet/)).toBeTruthy();
@@ -93,6 +108,23 @@ describe("the bot editor on the runtime", () => {
       { id: "alpha", patch: { avatar: { file: "assets/mint.vrm", format: "vrm", portrait: "assets/mint.png" } } },
       { id: "alpha", patch: { theme: null } },
     ]);
+  });
+
+  test("the LAN switch reads the bot's lan and writes it through bot.setUserLayer", async () => {
+    const { core } = await mount();
+    const lan = screen.getByRole("switch", { name: "Local network" });
+    expect(lan.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(lan);
+    await act(() => settle());
+    cleanup();
+    const on = await mount({ ...ALPHA_VIEW, userLayer: ["theme", "lan"], lan: true });
+    expect(screen.getByRole("switch", { name: "Local network" }).getAttribute("aria-checked")).toBe("true");
+    // The user layer's other fields keep their Reset; lan has none.
+    expect(screen.getAllByRole("button", { name: /^Reset the / }).map((b) => b.getAttribute("aria-label"))).toEqual(["Reset the theme"]);
+    fireEvent.click(screen.getByRole("switch", { name: "Local network" }));
+    await act(() => settle());
+    expect(core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params)).toEqual([{ id: "alpha", patch: { lan: true } }]);
+    expect(on.core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params)).toEqual([{ id: "alpha", patch: { lan: null } }]);
   });
 
   test("a change that comes back as a card says so until the card goes", async () => {
