@@ -147,6 +147,9 @@ import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
 import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
+import { ContractError } from "./contracts/common";
+import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
+import { PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -3241,10 +3244,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
-  // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
-  if (opts.modelPluginHost !== undefined) {
-    Object.assign(cloverLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
-  }
   // This device's id is its link key's (H-M1): the one the links below load from the same store. A store that is
   // still locked (a keyring locked at the login screen) can't give it yet: the hello carries a stand-in id, stable per
   // home, and the links wait for the store to unlock (below). The boot never waits on it.
@@ -3492,7 +3491,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
   // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
   let pluginHost: DaemonPluginHost | undefined;
+  // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
+  let pluginMcp: PluginMcp | undefined;
   let partsStopping = false;
+  /** The plugins' host MCP servers as J's computer node's MCP host. */
+  const mcpHostFor = (mcp: PluginMcp) => ({
+    placement: (server: string) => mcp.placement(server),
+    fields: (server: string) => mcp.fields(server),
+    call: mcp.call,
+    scratch: (session: string) => {
+      const bots = daemonParts?.bots?.bots;
+      if (bots === undefined) throw new ContractError("not_found", "the bot side isn't running here");
+      return bots.scratchFor(session);
+    },
+  });
   // B-M2: the plugin registry and the plugin host start once the store answers, whatever the links do (a Mac with no
   // sidecar, a test daemon without links): plugins don't wait on the device links. The bot side takes this registry.
   const stageBundled = async (): Promise<string | undefined> => {
@@ -3540,10 +3552,31 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     Object.assign(cloverLaneHandlers, laneMethodHandlers({
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
     }));
+    const host = pluginHost;
+    // A-M2 on B-M2's host: the model plugins load through it once the store answers, links or not, every session
+    // created once they're up running on them (a test daemon handed `modelPluginHost` started its own at boot). Not
+    // awaited: the links don't wait on plugin processes. One that finishes after a stop closes itself; a failure leaves
+    // the compiled catalog, logged.
+    if (opts.modelPluginHost === undefined && modelPlugins === undefined) {
+      void startModelPlugins({ registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers, log: (line) => console.error(line) }).then(
+        (started) => {
+          if (partsStopping || pluginHost !== host) started.stop();
+          else modelPlugins = started;
+        },
+        (err: unknown) => { console.error(`[model-plugins] not started: ${err instanceof Error ? err.name : typeof err}; sessions use the SDK's compiled catalog`); },
+      );
+    }
+    // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
+    pluginMcp = new PluginMcp({ registry: opened.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`) });
+    void pluginMcp.refresh();
     return opened.registry;
   };
+  const thisComputer = (): string => daemonParts?.node?.registry.self().name ?? (computerNameFor(defaultDeviceName(hostname())) || "Computer");
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
-    // The bots come from the plugin registry (`startPlugins`).
+    // The bots come from the plugin registry (`startPlugins`), and their hooks and MCP servers from its host.
+    const host = pluginHost;
+    const mcp = pluginMcp;
+    if (host === undefined || mcp === undefined) throw new Error("the plugin host isn't running");
     return {
       registry: registry,
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
@@ -3558,6 +3591,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
         provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
+        // A-M3 on B-M2's host: the plugins' hooks, and their host MCP servers, run where J's router places them (this
+        // computer, without a node).
+        hooks: pluginHooks({ registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`) }),
+        mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer) },
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
@@ -3574,6 +3611,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
+    pluginMcp?.close();
+    pluginMcp = undefined;
+    if (opts.modelPluginHost === undefined) {
+      modelPlugins?.stop();
+      modelPlugins = undefined;
+    }
     const host = pluginHost;
     pluginHost = undefined;
     await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
@@ -3630,7 +3673,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
       daemonParts = await startDaemonParts({
         cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: cloverLaneHandlers,
-        node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
+        node: p.node === false ? false : {
+          ...(treeRoot ? { treeRoot } : {}),
+          // A-M3: the plugins' host MCP servers as this computer's MCP host, for J's router (calls here, files saved in
+          // the session's scratch folder, lane D's).
+          ...(pluginMcp ? { mcp: mcpHostFor(pluginMcp) } : {}),
+          ...(p.node ?? {}),
+        },
         bots,
         // The bots' running turns keep an update's restart waiting.
         updateGate,

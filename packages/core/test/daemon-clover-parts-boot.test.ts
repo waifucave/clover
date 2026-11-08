@@ -16,6 +16,8 @@ import { botManifest, Drivers, pluginFromFolder, writePlugin } from "../src/bots
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { SystemClock } from "../src/clock/system-clock";
 import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
+import { FakePluginHost } from "../src/contracts/fakes/plugin-host";
+import type { DaemonPluginHost } from "../src/plugin-host/daemon-host";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { startDaemonParts, type DaemonBotsInput, type DaemonParts } from "../src/daemon-parts";
 import { startDaemonLinks, type DaemonLinks } from "../src/ipc/device-links";
@@ -210,6 +212,36 @@ describe("the daemon's Clover parts at the edges", () => {
     await daemon.cloverParts.ready;
     expect(daemon.cloverParts.bots()?.bots.list()).toEqual([]); // from source: no bundled plugins, none installed
     expect(existsSync(join(home, "plugins"))).toBe(true);
+  }, 30_000);
+
+  test("on the daemon's plugin host (A-M3): the model plugins start, the node's MCP host is the plugins' host servers, and the stop closes them before the host", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const order: string[] = [];
+    let opened = 0;
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: async (registry) => {
+        const host = new FakePluginHost({ clock });
+        const openMcp = host.openMcp.bind(host);
+        host.openMcp = (pluginId, server) => { opened += 1; return openMcp(pluginId, server); };
+        return {
+          host, registry, pluginSecrets: { get: async () => null }, settings: {} as never,
+          close: async () => { order.push("host"); },
+        } as unknown as DaemonPluginHost;
+      },
+    });
+    await daemon.cloverParts.ready;
+    const node = daemon.cloverParts.node();
+    expect(node?.mcp).toBeDefined();
+    // No host server is installed (from source, none bundled): nothing placed, no channel opened.
+    await expect(node!.mcp!.run("web", "WebSearch", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(opened).toBe(0);
+    await daemon.stop();
+    daemon = undefined;
+    expect(order).toEqual(["host"]);
   }, 30_000);
 
   test("a start that never finishes: the stop waits about 5 s, closes what started, and leaves no socket", async () => {
