@@ -27,7 +27,7 @@ export function leaseAuthority(lease: Lease): CloudAuthority {
   };
 }
 
-const none = (): ReconcileResult => ({ created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [], duplicates: [] });
+const none = (): ReconcileResult => ({ created: [], adopted: [], resized: [], deleted: [], repaired: [], declined: [], failed: [], duplicates: [], unanswered: [], waiting: [] });
 
 /** How long a provider call may take: a VM's create or resize waits for the cloud's own actions. */
 export const PROVIDER_CALL_TIMEOUT_MS = 10 * 60_000;
@@ -89,14 +89,16 @@ export function pluginProviders(registry: PluginRegistry, host: PluginHost): (id
   };
 }
 
-/** Keeps `CloudComputers` in line with the registry: one reconcile at a time, and one more after it when anything
- *  changed meanwhile. */
+/** Keeps `CloudComputers` in line with the registry: one pass at a time, and one more after it when anything changed
+ *  meanwhile. A pass starts each computer's change and doesn't wait for it (a card may wait for the person a long
+ *  time); a computer whose change is under way is left alone until it ends. */
 export class CloudPoint {
   readonly #registry: PluginRegistry;
   readonly #cloud: CloudComputers;
   readonly #log: ((line: string) => void) | undefined;
   readonly #active: () => boolean;
   #running: Promise<ReconcileResult> | undefined;
+  #stopped = false;
   #again = false;
 
   /** `active`: whether this computer acts on cloud computers now (the lease's holder alone); a sync on any other does
@@ -108,16 +110,26 @@ export class CloudPoint {
     this.#log = o.log;
   }
 
-  /** Watches the registry; the first sync runs at once. */
+  /** Watches the registry; the first sync runs at once. Stopping it also stops the syncs a change ending would
+   *  start. */
   start(): Unsubscribe {
+    this.#stopped = false;
     const off = this.#registry.watch(() => void this.sync());
     void this.sync();
-    return off;
+    return () => {
+      this.#stopped = true;
+      off();
+    };
+  }
+
+  /** Settles once the changes the syncs started (cards waiting for the person, then the provider) have ended. */
+  settled(): Promise<void> {
+    return this.#cloud.settled();
   }
 
   /** One reconcile, after the one in flight (and only one more, however many changes came meanwhile). */
   sync(): Promise<ReconcileResult> {
-    if (!this.#active()) return Promise.resolve(none());
+    if (!this.#active() || this.#stopped) return Promise.resolve(none());
     if (this.#running) {
       this.#again = true;
       return this.#running;
@@ -128,7 +140,9 @@ export class CloudPoint {
         this.#again = false;
         if (!this.#active()) break;
         const { folders, held } = cloudFolders(this.#registry);
-        last = await this.#cloud.reconcile(folders, held);
+        // Detached: a card waits for the person as long as they take, and must not hold up the other computers. Each
+        // change that ends brings one more sync (what it did may call for the next step).
+        last = await this.#cloud.reconcile(folders, held, { detach: true, onSettled: () => void this.sync() });
         for (const f of last.failed) this.#log?.(`cloud computer ${f.name} not changed: ${f.reason}`);
       } while (this.#again);
       return last;
