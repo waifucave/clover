@@ -16,8 +16,10 @@ files:
   - package.json
 asar: true
 # The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it, and its link sidecar,
-# clover-link (native/link), beside it, where the daemon starts that: scripts/build-packages.ts stages the package
-# target's two binaries in out/daemon first. A plain `bun run dist` has neither, and packages the app alone.
+# clover-link (native/link), beside it, where the daemon starts that, and the binaries that run code not the core's own
+# (scripts/bundled-binaries.ts): clover-plugin-bun, plain Bun for plugins, and on macOS lane A's clover-process-holder.
+# scripts/build-packages.ts and scripts/release/build.ts stage them in out/daemon first. A plain `bun run dist` has
+# none, and packages the app alone.
 extraResources:
   - from: out/daemon
     to: daemon
@@ -26,6 +28,9 @@ extraResources:
       - clover-core.exe
       - clover-link
       - clover-link.exe
+      - clover-plugin-bun
+      - clover-plugin-bun.exe
+      - clover-process-holder
   # The bundled plugins (the registry's `bundledDirs`, packages/core/src/registry): the repository's plugins/ as the
   # app's read-only resources/plugins, each subfolder one top-level plugin (`clover`, `alpha`). Only TRACKED files:
   # the release scripts stage `git ls-files plugins` in out/plugins first (scripts/release/bundled-plugins.ts), so
@@ -35,14 +40,10 @@ extraResources:
   # stages none, and packages the app without them.
   - from: out/plugins
     to: plugins
+    # The stage is the BUILT tree (lane B's buildPluginForShipping, from the committed source): its node_modules hold
+    # the natives, so only what never ships, built or not, is left out here.
     filter:
       - "**/*"
-      - "!**/node_modules/**"
-      - "!**/test/**"
-      - "!**/tests/**"
-      - "!**/*.test.ts"
-      - "!**/*.test.tsx"
-      - "!**/tsconfig*.json"
       - "!**/.env"
       - "!**/.env.*"
       - "!**/.DS_Store"
@@ -74,8 +75,8 @@ mac:
   hardenedRuntime: true
   entitlements: ../../packaging/macos/entitlements.mac.plist
   entitlementsInherit: ../../packaging/macos/entitlements.mac.plist
-  # The daemon and the link sidecar are signed by the release build itself, each with its own identifier and
-  # entitlements (scripts/release/lib.ts, RESOURCE_BINARIES), before the app is sealed over them.
+  # The daemon, the link sidecar, plugin Bun and the process holder are signed by the release build itself, each with
+  # its own identifier and entitlements (scripts/release/lib.ts, RESOURCE_BINARIES), before the app is sealed over them.
   signIgnore:
     - Contents/Resources/daemon/
   # A menu-bar app (spec §3.1: the pair is always on, with no window until the user opens one): no Dock icon.

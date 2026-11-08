@@ -6,7 +6,8 @@ import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { query as sdkQuery, type Options, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
+import { BOT_SANDBOX } from "../../runtime-sdk/turn-loop/driver";
 import type { Level } from "@waifucave/clover-protocol";
 import { CloverTokens } from "../../auth/clover-tokens";
 import { SessionProcesses } from "../../auth/clover-caller";
@@ -78,7 +79,9 @@ async function boot(spawn: SpawnClaudeCodeProcess, level: Level) {
   for (const d of [project, cloverHome, join(root, "run")]) mkdirSync(d, { recursive: true });
   const clock = new FakeClock();
   const host = new FakeSessionHost({ clock });
-  const backend = new CloverCodeBackend({ clock: { now: () => Date.now() } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(cloverHome, spawn), sandboxReady: () => true });
+  const sandboxes: unknown[] = [];
+  const query: typeof sdkQuery = (args) => { sandboxes.push(args.options?.sandbox); return sdkQuery(args); };
+  const backend = new CloverCodeBackend({ clock: { now: () => Date.now() } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(cloverHome, spawn), sandboxReady: () => true, query });
   const service = new CodeAgentService({
     home: cloverHome, computer: "Studio", userHome, host, clock,
     tree: new FakeTree({ clock, computers: { Studio: { home: userHome } }, botComputer: () => "Studio" }),
@@ -96,7 +99,7 @@ async function boot(spawn: SpawnClaudeCodeProcess, level: Level) {
   });
   const server = startIpcServer({ socketPath: endpoint, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
   const stop = () => { clover.dispose(); server.stop(); store.close(); };
-  return { root, userHome, cloverHome, project, host, endpoint, token: legacy.harness, logs, stop };
+  return { root, userHome, cloverHome, project, host, endpoint, token: legacy.harness, logs, sandboxes, stop };
 }
 
 describeWithEmbeddedRuntime("clover-core code-agent end to end", (spawn) => {
@@ -138,6 +141,8 @@ describeWithEmbeddedRuntime("clover-core code-agent end to end", (spawn) => {
       input.push({ jsonrpc: "2.0", id: ask!["id"], result: { outcome: { outcome: "selected", optionId: options.find((o) => o.kind === "allow_once")!.optionId } } });
       expect(((await reply(3))["result"] as { stopReason: string }).stopReason).toBe("end_turn");
       expect(readFileSync(file, "utf8")).toBe("hi");
+      // Its commands run under the same sandbox floor as every agent's (#293): never unsandboxed, launchd closed.
+      expect(b.sandboxes).toEqual([expect.objectContaining(BOT_SANDBOX)]);
       // The client's side closes: the relay exits, and the session ends with the connection.
       input.end();
       expect(await exit).toBe(0);

@@ -179,6 +179,13 @@ jobs:
         if: env.WORKSPACES == 'true' && runner.os == 'Linux'
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
+      # A server's install and self-update on Windows (#244): the cli's suite runs on macOS in its own job, so the
+      # durable flushes (FlushFileBuffers needs write access), the swaps, the recovery and the install run here too.
+      - name: CLI · a server's install and update (Windows)
+        if: ${{ !cancelled() && env.DAEMON == 'true' && runner.os == 'Windows' }}
+        working-directory: packages/cli
+        run: bun test test/durable.test.ts test/self-update.test.ts test/plugins-install.test.ts test/server-install.test.ts test/plugin-bun-install.test.ts
+
       - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
         id: daemon-build
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
@@ -327,7 +334,18 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and check the packages
+        env:
+          # The bundled plugins' inputs are checked against the tarballs bun.lock pins (#285): GitHub Packages needs
+          # the token to read the @waifucave ones, as for the install.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun scripts/build-packages.ts --arch ${{ matrix.arch }} --check
+
+      # A server on this architecture takes the daemon's release file and the bundled plugins' tarball: the tarball is
+      # the tree that daemon embeds the manifest of (#244).
+      - name: The bundled plugins' tarball is the tree the daemon's manifest names
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-linux-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-linux-*.tar.gz)"
 
       - name: Install the deb, check it, and remove it
         run: |
@@ -382,6 +400,10 @@ jobs:
 
       - name: Build the installers (unsigned) and check them
         shell: bash
+        env:
+          # The bundled plugins' inputs are checked against the tarballs bun.lock pins (#285): GitHub Packages needs
+          # the token to read the @waifucave ones, as for the install.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun scripts/release/build.ts --channel latest
           ls -l apps/desktop/out/dist
@@ -398,6 +420,14 @@ jobs:
           said=$(env -i PATH="$PATH" "${extra[@]}" "$bin" --version)
           echo "$bin --version: $said"
           test "$said" = "clover $version"
+
+      # The bundled plugins' tarball for a server is the tree that daemon embeds the manifest of (#244), as the daemon
+      # itself reports it, run as a server's self-update runs it.
+      - name: The bundled plugins' tarball is the tree the daemon's manifest names
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-*.tar.gz)"
 
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
@@ -782,9 +812,11 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # xmllint, for release-lib's appcast checks (macOS has it built in).
-      - name: xmllint
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+      # xmllint, for release-lib's appcast checks, and bsdtar (libarchive-tools), which the name scan opens zips, tars,
+      # debs and rpms with and its tests build their fixtures with. macOS has both built in. The scan itself runs only
+      # in publish.ts on the owner's Mac, so this changes no release behaviour: Linux CI gets the same bsdtar the Mac has.
+      - name: xmllint and bsdtar
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils libarchive-tools
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

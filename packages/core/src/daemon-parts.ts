@@ -19,6 +19,11 @@
 //   switch. Their approvals go through lane C's broker (#267) and their folders through this computer's fence. The
 //   Clover server reaches them through `lateAgentDoors`: `clover-core code-agent` (`codeAgent.*`, K's #291) and the
 //   bridge role, both refused until the agents are up and after they stop.
+// * **The sessions' records** (H's `SessionRecordSync` into D's host, #279): the sessions this computer runs are
+//   copied live to the user's other computers, and theirs land here, so a computer that takes the bots over finds their
+//   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
+//   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
+//   it: a record from an earlier lease is taken as late.
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { DEFAULT_LEVEL } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
@@ -39,6 +44,8 @@ import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
+import { hostForSync } from "./daemon-session-sync";
+import { SessionRecordSync } from "./sync/session-records";
 
 /** What the bot side needs that the daemon builds: where the bots come from and what drives their sessions. */
 export interface DaemonBotsInput {
@@ -267,6 +274,19 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const handle = links.main;
         handle.setHandBack(() => s.bots.handBack());
         closers.push(() => handle.setHandBack(undefined));
+      }
+      if (links) {
+        const lease = links.main?.lease;
+        const sync = new SessionRecordSync({
+          self: links.key.id,
+          computer: () => runner.self,
+          transport: links.transport,
+          registry: links.registry,
+          host: hostForSync(s.host),
+          ...(lease ? { holder: () => lease.state().holder, isStale: (epoch: number, scope?: string) => lease.isStale(epoch, scope), scope: () => lease.scopeId() } : {}),
+          log: (line) => log(`[sessions sync] ${line}`),
+        });
+        closers.push(() => sync.close());
       }
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));

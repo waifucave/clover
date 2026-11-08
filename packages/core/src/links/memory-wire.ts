@@ -223,7 +223,7 @@ class MemoryConn implements WireConn {
     return this.#onPath.add(fn);
   }
 
-  openStream(priority: number): WireStream {
+  openStream(priority: number, _opts?: { window?: number }): WireStream {
     const mine = new MemoryStream(priority);
     if (this.#isClosed || !this.other) {
       mine.lose();

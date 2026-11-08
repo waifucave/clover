@@ -40,6 +40,9 @@ for (const entry of entries) {
     entrypoints: [`src/${entry}.ts`],
     compile: { outfile },
     plugins: [staticDatachannelBinding],
+    // Macros off (bun-types has no field for it, hence the spread): a `with { type: "macro" }` import would run in
+    // this process. LAST, so nothing after it turns them back on.
+    ...{ macros: false },
   });
   if (!result.success) {
     for (const log of result.logs) console.error(log);

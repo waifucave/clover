@@ -12,11 +12,13 @@
 //   - `unshippedPluginDependencies`: what a plugin's package.json needs that nothing ships beside it;
 //   - `builtPluginImportProblems`: the exact check on a release-time-built tree (wired with that build).
 import { spawnSync } from "node:child_process";
-import { chmodSync, lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
-import { dirname, join, posix } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/manifest/schema";
 import { formatBundledManifest, measureBundledTree, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
+import { buildPluginForShipping, untarGz, type ShippedPlugin, type ShipTarget } from "../../packages/core/src/registry/ship";
 
 /** The bundled plugins' folder in the app's resources (electron-builder.yml), beside `daemon/`. */
 export const BUNDLED_PLUGINS_DIR = "plugins";
@@ -34,6 +36,15 @@ export function leftOut(rel: string): string | undefined {
   if (parts.slice(0, -1).some((p) => p === "test" || p === "tests")) return "a test folder";
   if (/\.test\.tsx?$/.test(name)) return "a test file";
   if (/^tsconfig.*\.json$/.test(name)) return "a tsconfig";
+  if (name === ".env" || name.startsWith(".env.")) return "an environment file";
+  if (name === ".DS_Store") return "an OS artifact";
+  return undefined;
+}
+
+/** Why a path in a built tree never ships, or undefined: an environment file or an OS artifact (a built tree's own
+ *  `node_modules` holds the natives, and its packages' tests and configs are theirs). */
+export function neverShips(rel: string): string | undefined {
+  const name = rel.split("/").at(-1)!;
   if (name === ".env" || name.startsWith(".env.")) return "an environment file";
   if (name === ".DS_Store") return "an OS artifact";
   return undefined;
@@ -101,6 +112,25 @@ export function gitPluginsSource(root: string): PluginsSource {
  */
 export function stageBundledPlugins(root: string, dest: string, source: PluginsSource = gitPluginsSource(root)): string[] {
   rmSync(dest, { recursive: true, force: true });
+  const entries = committedPluginEntries(source);
+  try {
+    const blobs = source.blobs(entries.map((e) => e.object));
+    for (const e of entries) {
+      mkdirSync(dirname(join(dest, e.rel)), { recursive: true });
+      writeFileSync(join(dest, e.rel), blobs.get(e.object)!, { flag: "wx" });
+      // git's two file modes, whatever the umask: 100755 stays executable.
+      chmodSync(join(dest, e.rel), e.exec ? 0o755 : 0o644);
+    }
+  } catch (err) {
+    rmSync(dest, { recursive: true, force: true });
+    throw err;
+  }
+  return entries.map((e) => e.rel);
+}
+
+/** The committed files under plugins/ a release may build from (relative to plugins/, less what a release leaves out):
+ *  refuses a plugins/ with any uncommitted change, a committed symlink or submodule, and any other mode. */
+export function committedPluginEntries(source: PluginsSource): Array<{ rel: string; object: string; exec: boolean }> {
   const dirty = source.status().split("\0").filter((e) => e !== "");
   if (dirty.length > 0) throw new Error(`${BUNDLED_PLUGINS_DIR}/ has uncommitted changes, which a release never ships: ${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? ", …" : ""}`);
   const entries: Array<{ rel: string; object: string; exec: boolean }> = [];
@@ -116,19 +146,205 @@ export function stageBundledPlugins(root: string, dest: string, source: PluginsS
     if (leftOut(rel) !== undefined) continue;
     entries.push({ rel, object: object!, exec: mode === "100755" });
   }
-  try {
-    const blobs = source.blobs(entries.map((e) => e.object));
-    for (const e of entries) {
-      mkdirSync(dirname(join(dest, e.rel)), { recursive: true });
-      writeFileSync(join(dest, e.rel), blobs.get(e.object)!, { flag: "wx" });
-      // git's two file modes, whatever the umask: 100755 stays executable.
-      chmodSync(join(dest, e.rel), e.exec ? 0o755 : 0o644);
+  return entries;
+}
+
+/** Lane B's builder (packages/core/src/registry/ship.ts), as the release calls it. */
+export type PluginBuilder = (folder: string, o: { target: ShipTarget; out: string; include: (rel: string) => boolean; bundled: true }) => Promise<ShippedPlugin>;
+
+/** A built bundled tree: every file (relative to it), its modules and its native addons, paths prefixed `<id>/`. */
+export interface BuiltBundle { files: string[]; modules: BuiltModule[]; natives: ShippedNative[] }
+
+/** A package bun.lock pins: where its tarball comes from (empty for npm's registry) and its integrity. */
+export interface LockEntry { registry: string; integrity: string }
+
+/** bun.lock's packages by `name@version` (each entry is `[ "name@version", registry, meta, integrity ]`). */
+export function lockEntries(lockText: string): Map<string, LockEntry> {
+  // bun.lock is JSON with trailing commas.
+  const lock = JSON.parse(lockText.replace(/,(\s*[\]}])/g, "$1")) as { packages?: Record<string, unknown> };
+  const out = new Map<string, LockEntry>();
+  for (const v of Object.values(lock.packages ?? {})) {
+    if (Array.isArray(v) && typeof v[0] === "string") out.set(v[0], { registry: typeof v[1] === "string" ? v[1] : "", integrity: typeof v[3] === "string" ? v[3] : "" });
+  }
+  return out;
+}
+
+/** Every `name@version` bun.lock holds. */
+export function lockedPackages(lockText: string): Set<string> {
+  return new Set(lockEntries(lockText).keys());
+}
+
+/** Where a locked package's tarball is: npm's registry, a registry folder, or the full URL bun.lock keeps. */
+export function tarballUrl(name: string, version: string, registry: string): string {
+  const path = `${name}/-/${name.split("/").pop()}-${version}.tgz`;
+  if (registry === "") return `https://registry.npmjs.org/${path}`;
+  return registry.endsWith("/") ? `${registry}${path}` : registry;
+}
+
+/** Downloads a URL with the given headers. */
+export type Download = (url: string, headers: Record<string, string>) => Promise<Uint8Array>;
+
+const fetchBytes: Download = async (url, headers) => {
+  const res = await fetch(url, { headers, redirect: "follow" });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return new Uint8Array(await res.arrayBuffer());
+};
+
+/**
+ * A locked package's files as its tarball holds them, the tarball checked against bun.lock's integrity (the same
+ * check lane B's builder makes for natives): `files("name@version")`, cached per package. GitHub Packages (the
+ * `@waifucave` scope) needs a token even to read: NODE_AUTH_TOKEN, as `bun install` takes it (bunfig.toml); it is sent
+ * only to npm.pkg.github.com and never appears in a message.
+ */
+export function lockedPackageFiles(entries: ReadonlyMap<string, LockEntry>, o: { download?: Download; token?: string } = {}): (id: string) => Promise<Map<string, Uint8Array>> {
+  const download = o.download ?? fetchBytes;
+  const cache = new Map<string, Promise<Map<string, Uint8Array>>>();
+  const load = async (id: string): Promise<Map<string, Uint8Array>> => {
+    const entry = entries.get(id);
+    if (entry === undefined) throw new Error(`${id} isn't in bun.lock`);
+    const at = id.lastIndexOf("@");
+    const name = id.slice(0, at), version = id.slice(at + 1);
+    const url = tarballUrl(name, version, entry.registry);
+    const headers: Record<string, string> = {};
+    const where = new URL(url);
+    if (where.host === "npm.pkg.github.com") {
+      // The token goes only over TLS, to GitHub Packages' own host.
+      if (where.protocol !== "https:") throw new Error(`${id}: bun.lock names GitHub Packages over ${where.protocol}, and the token goes only over https`);
+      if (o.token === undefined || o.token === "") throw new Error(`${id} comes from GitHub Packages, which needs NODE_AUTH_TOKEN (a GitHub token with read:packages) to download`);
+      headers.Authorization = `Bearer ${o.token}`;
     }
+    const [algo, want] = entry.integrity.split(/-(.*)/s, 2) as [string, string | undefined];
+    if (!["sha512", "sha384", "sha256"].includes(algo) || want === undefined) throw new Error(`${id}: bun.lock has no integrity to check its tarball against`);
+    let bytes: Uint8Array;
+    try {
+      bytes = await download(url, headers);
+    } catch (e) {
+      throw new Error(`${id}: its tarball didn't download (${(e as Error).message})`);
+    }
+    if (createHash(algo).update(bytes).digest("base64") !== want) throw new Error(`${id}: the tarball from ${url} isn't what bun.lock pins (${algo} differs)`);
+    const files = new Map<string, Uint8Array>();
+    for (const f of untarGz(bytes, id)) files.set(f.path, f.bytes);
+    const pkg = JSON.parse(new TextDecoder().decode(files.get("package.json") ?? new Uint8Array())) as { name?: unknown; version?: unknown };
+    if (pkg.name !== name || pkg.version !== version) throw new Error(`${id}: its tarball is ${String(pkg.name)}@${String(pkg.version)}`);
+    return files;
+  };
+  return (id) => {
+    let p = cache.get(id);
+    if (p === undefined) { p = load(id); cache.set(id, p); }
+    return p;
+  };
+}
+
+/**
+ * The files a release build's bundler read that it may not ship, each named with why (none means all are vetted).
+ * The bundler inlines whatever an entry imports, wherever it is: the staging filter limits only what is copied. So
+ * every input (its real path) must be either
+ *   - a file tracked at HEAD under `root`, or
+ *   - a file of a node_modules package under `root` whose package.json names its folder, whose `name@version` bun.lock
+ *     holds, and whose bytes are that file's in the package's tarball (checked against bun.lock's integrity): a file
+ *     added to an installed package, an edited one, or a package that only claims a locked name and version fails.
+ * Anything else (an ignored build output, a file outside the checkout) is refused.
+ */
+export async function unvettedInputs(inputs: readonly string[], o: { root: string; tracked: ReadonlySet<string>; locked: ReadonlySet<string>; packageFiles: (id: string) => Promise<Map<string, Uint8Array>>; read?: (path: string) => string }): Promise<string[]> {
+  const read = o.read ?? ((path: string) => readFileSync(path, "utf8"));
+  const root = realpathSync(o.root);
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const input of inputs) {
+    let real: string;
+    try {
+      real = realpathSync(input);
+    } catch {
+      problems.push(`${input}: the build read it, and it isn't a file here`);
+      continue;
+    }
+    if (seen.has(real)) continue;
+    seen.add(real);
+    const rel = relative(root, real).split(sep).join("/");
+    if (rel === "" || rel.startsWith("../") || isAbsolute(rel)) { problems.push(`${real}: the build read a file outside the checkout`); continue; }
+    const nm = rel.lastIndexOf("node_modules/");
+    if (nm >= 0) {
+      const after = rel.slice(nm + "node_modules/".length).split("/");
+      const scoped = after[0]!.startsWith("@");
+      const name = scoped ? after.slice(0, 2).join("/") : after[0]!;
+      const inPackage = after.slice(scoped ? 2 : 1).join("/");
+      const pkgDir = `${rel.slice(0, nm)}node_modules/${name}`;
+      let pkg: { name?: unknown; version?: unknown } = {};
+      try { pkg = JSON.parse(read(join(root, ...pkgDir.split("/"), "package.json"))); } catch { /* named below */ }
+      const id = `${String(pkg.name)}@${String(pkg.version)}`;
+      if (pkg.name !== name || typeof pkg.version !== "string") { problems.push(`${rel}: in ${pkgDir}, whose package.json doesn't name ${name} with a version`); continue; }
+      if (!o.locked.has(id)) { problems.push(`${rel}: in ${id}, which bun.lock doesn't hold`); continue; }
+      let files: Map<string, Uint8Array>;
+      try {
+        files = await o.packageFiles(id);
+      } catch (e) {
+        problems.push(`${rel}: ${(e as Error).message}`);
+        continue;
+      }
+      const want = files.get(inPackage);
+      if (want === undefined) problems.push(`${rel}: not in ${id}'s tarball (a file added to the installed package)`);
+      else if (!Buffer.from(readFileSync(real)).equals(Buffer.from(want))) problems.push(`${rel}: differs from ${id}'s tarball`);
+      continue;
+    }
+    if (!o.tracked.has(rel)) problems.push(`${rel}: the build read a file that isn't tracked at HEAD`);
+  }
+  return problems;
+}
+
+/**
+ * The repository's own vetting of a release build's inputs (unvettedInputs): HEAD's tracked files, and bun.lock's
+ * packages with their tarballs (`packageFiles`, default lockedPackageFiles with NODE_AUTH_TOKEN from the environment).
+ */
+export function repoInputVetter(root: string, o: { packageFiles?: (id: string) => Promise<Map<string, Uint8Array>>; download?: Download } = {}): (inputs: readonly string[]) => Promise<string[]> {
+  const r = spawnSync("git", ["ls-tree", "-r", "-z", "--name-only", "HEAD"], { cwd: root, maxBuffer: 1 << 30 });
+  if (r.status !== 0) throw new Error(`git ls-tree HEAD failed: ${String(r.stderr).trim()}`);
+  const tracked = new Set(String(r.stdout).split("\0").filter(Boolean));
+  const entries = lockEntries(readFileSync(join(root, "bun.lock"), "utf8"));
+  const locked = new Set(entries.keys());
+  const packageFiles = o.packageFiles ?? lockedPackageFiles(entries, { download: o.download, token: process.env.NODE_AUTH_TOKEN });
+  return (inputs) => unvettedInputs(inputs, { root, tracked, locked, packageFiles });
+}
+
+/**
+ * Builds every bundled plugin for `target` into `dest` (`<dest>/<id>`), as installs carry them (the controller's
+ * ruling of November 6: bundled plugins ship BUILT). Each top-level plugin under plugins/ is built by lane B's
+ * `buildPluginForShipping` from the repository's folder, reading only the COMMITTED files a release may ship (the
+ * staging filter, `leftOut`, applies to that source; a dirty plugins/ is refused, and the release needs a fully clean
+ * checkout, so the working tree is HEAD), with `bundled: true`. Then the release's own checks on the built tree:
+ * every import resolves to what ships (`builtPluginImportProblems`, natives for `target` included) and no package a
+ * plugin names goes unshipped (`unshippedPluginDependencies`), and every file the bundler read into a module is
+ * tracked at HEAD or in a package bun.lock holds (`unvettedInputs`). Any problem throws, and `dest` is removed.
+ */
+export async function buildBundledPlugins(root: string, dest: string, target: ShipTarget, o: { source?: PluginsSource; build?: PluginBuilder; vet?: (inputs: readonly string[]) => Promise<string[]> | string[] } = {}): Promise<BuiltBundle> {
+  const source = o.source ?? gitPluginsSource(root);
+  const build: PluginBuilder = o.build ?? ((folder, opts) => buildPluginForShipping(folder, opts));
+  const vet = o.vet ?? repoInputVetter(root);
+  rmSync(dest, { recursive: true, force: true });
+  const committed = new Set(committedPluginEntries(source).map((e) => e.rel));
+  const ids = [...new Set([...committed].map((rel) => rel.split("/")[0]!))].sort();
+  const out: BuiltBundle = { files: [], modules: [], natives: [] };
+  const inputs = new Set<string>();
+  try {
+    mkdirSync(dest, { recursive: true });
+    for (const id of ids) {
+      const built = await build(join(root, BUNDLED_PLUGINS_DIR, id), { target, out: join(dest, id), include: (rel) => committed.has(`${id}/${rel}`), bundled: true });
+      out.files.push(...built.files.map((f) => `${id}/${f}`));
+      out.modules.push(...built.modules.map((m) => ({ file: `${id}/${m.file}`, kind: m.kind, source: m.source })));
+      for (const m of built.modules) for (const i of m.inputs) inputs.add(i);
+      out.natives.push(...built.natives.map((n) => ({ ...n, file: `${id}/${n.file}` })));
+    }
+    out.files.sort();
+    const problems = [
+      ...(await vet([...inputs].sort())),
+      ...builtPluginImportProblems(out.modules, out.files, { natives: out.natives, target }),
+      ...unshippedPluginDependencies(out.files, (rel) => readFileSync(join(dest, ...rel.split("/")), "utf8")).map((d) => `${d}: a dependency nothing ships`),
+    ];
+    if (problems.length > 0) throw new Error(`the built bundled plugins for ${target}: ${problems.slice(0, 10).join("; ")}${problems.length > 10 ? `; and ${problems.length - 10} more` : ""}`);
+    return out;
   } catch (err) {
     rmSync(dest, { recursive: true, force: true });
     throw err;
   }
-  return entries.map((e) => e.rel);
 }
 
 /** Measures the staged tree and writes its manifest (the text the core embeds) to `file`; answers the manifest. */
@@ -161,7 +377,9 @@ export function bundledPluginsProblems(resources: string, manifest: BundledManif
   const entries = walk(dir);
   const links = entries.filter((e) => e.link).map((e) => e.rel);
   if (links.length > 0) problems.push(`${dir} holds symlinks, which a release never ships: ${links.slice(0, 5).join(", ")}${links.length > 5 ? ", …" : ""}`);
-  const stray = entries.filter((e) => !e.link && leftOut(e.rel) !== undefined).map((e) => e.rel);
+  // The tree is built (natives keep a node_modules), so the source filter doesn't apply; what never ships, built or
+  // not, is an environment file or an OS artifact.
+  const stray = entries.filter((e) => !e.link && neverShips(e.rel) !== undefined).map((e) => e.rel);
   if (stray.length > 0) problems.push(`${dir} holds files a release leaves out: ${stray.slice(0, 5).join(", ")}${stray.length > 5 ? ", …" : ""}`);
   if (links.length === 0) {
     let shipped: BundledManifest | undefined;
@@ -225,7 +443,7 @@ export interface ShippedNative { file: string; package: string; target: string }
  *  reached through another name (`const r = require; r("x")`). */
 export function scanModule(source: string): { specifiers: string[]; computed: number } {
   const specifiers = new Set<string>();
-  for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(source)) specifiers.add(i.path);
+  for (const i of new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source)) specifiers.add(i.path);
   // A bundle calls an external through `__require` (= import.meta.require), which the transpiler doesn't see.
   for (const m of source.matchAll(/(?<![\w$])(?:__require|import\.meta\.require)\s*\(\s*(["'])([^"'\\]+)\1\s*\)/g)) specifiers.add(m[2]!);
   let computed = 0;

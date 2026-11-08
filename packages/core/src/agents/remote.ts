@@ -30,39 +30,14 @@ import { randomBytes } from "node:crypto";
 import { closeSync, constants, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { BotId, FencingToken, Level, levelAbove, SessionFailure as SessionFailureSchema, SessionId, TreePath, TurnOrigin, type FenceVerdict, type SessionFailure } from "@waifucave/clover-protocol";
+import { BotId, FencingToken, Level, levelAbove, SessionFailure as SessionFailureSchema, SessionId, TreePath, TurnOrigin, type SessionFailure } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, isContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../contracts/session-host";
 import type { AgentManager, AgentPauseGate, PeerHostedAgent, RemoteAgentEntry } from "./manager";
+import { checkActFence, fenceParam, type ActFence } from "../tree/fencing";
 
-// -------------------------------------------------------------------------------------------------
-// The fencing token (lane J's #237 `ActFence`, tree/fencing.ts)
-// -------------------------------------------------------------------------------------------------
-
-/** #237's `ActFence`: this computer's token for the acts it asks of another, and its guard for the acts asked of it. */
-export interface AgentActFence {
-  token(): FencingToken | undefined;
-  check(token: FencingToken | undefined): FenceVerdict;
-}
-
-function fenceParam(f: AgentActFence | undefined): { fence?: FencingToken } {
-  const t = f?.token();
-  return t ? { fence: t } : {};
-}
-
-/** #237's `checkActFence`: refuses an act whose token this computer's lease doesn't take (`not_main`). */
-function checkFence(f: AgentActFence | undefined, token: FencingToken | undefined, what: string): void {
-  if (!f) return;
-  const v = f.check(token);
-  if (v === "ok") return;
-  throw new ContractError("not_main", v === "missing"
-    ? `${what} came without the group's fencing token`
-    : (v as string) === "lapsed"
-      ? `${what} can't run while the group's lease has lapsed: with no main computer, no computer acts`
-      : `${what} came from a computer whose view of the lease is behind (a stale fencing token)`, { fence: v });
-}
 
 // -------------------------------------------------------------------------------------------------
 // Bounds and schemas
@@ -161,7 +136,7 @@ export interface AgentPeersOptions {
   /** Paired devices that run a core (lane J's node's `mayCall`). */
   mayCall(device: string): boolean;
   /** This computer's lease fence (#237); left out, nothing is carried or judged. */
-  fence?: AgentActFence;
+  fence?: ActFence;
   /** This computer's pause switch, forwarded to the computers running its bots' agents. */
   pause?: AgentPauseGate;
   clock: Pick<Clock, "now">;
@@ -241,7 +216,7 @@ export class AgentPeers {
     this.#offs.push(t.handle("agent.open", async (raw, from) => {
       guard(from);
       const p = parse(OpenParams, raw, "agent.open");
-      checkFence(o.fence, p.fence, "agent.open");
+      checkActFence(o.fence, p.fence, "agent.open");
       this.#heard(from);
       // Another device opening an agent it didn't open is a takeover: a current token proves only that its view of the
       // lease is current, so it must also be the lease's holder by this computer's own lease (the controller's ruling).
@@ -267,7 +242,7 @@ export class AgentPeers {
     this.#offs.push(t.handle("agent.turn", (raw, from) => {
       guard(from);
       const p = parse(TurnParams, raw, "agent.turn");
-      checkFence(o.fence, p.fence, "agent.turn");
+      checkActFence(o.fence, p.fence, "agent.turn");
       this.#heard(from);
       const e = this.#own(p.id, from);
       this.#stateFrom(from, p.epoch, p.paused);
@@ -299,7 +274,7 @@ export class AgentPeers {
     this.#offs.push(t.handle("agent.interrupt", async (raw, from) => {
       guard(from);
       const p = parse(InterruptParams, raw, "agent.interrupt");
-      checkFence(o.fence, p.fence, "agent.interrupt");
+      checkActFence(o.fence, p.fence, "agent.interrupt");
       this.#heard(from);
       this.#own(p.id, from);
       const run = this.#running.get(p.id);
@@ -310,7 +285,7 @@ export class AgentPeers {
     this.#offs.push(t.handle("agent.stop", async (raw, from) => {
       guard(from);
       const p = parse(IdParams, raw, "agent.stop");
-      checkFence(o.fence, p.fence, "agent.stop");
+      checkActFence(o.fence, p.fence, "agent.stop");
       this.#heard(from);
       const e = this.#manager.peerHosted(p.id);
       // Stopping one that is already gone is done.
@@ -322,7 +297,7 @@ export class AgentPeers {
     this.#offs.push(t.handle("agent.setModel", async (raw, from) => {
       guard(from);
       const p = parse(ModelParams, raw, "agent.setModel");
-      checkFence(o.fence, p.fence, "agent.setModel");
+      checkActFence(o.fence, p.fence, "agent.setModel");
       this.#heard(from);
       this.#own(p.id, from);
       await this.#manager.setModel(p.id, p.model, p.effort);
@@ -340,7 +315,7 @@ export class AgentPeers {
     this.#offs.push(t.handle("agent.state", (raw, from) => {
       guard(from);
       const p = parse(IdParamsLoose, raw, "agent.state");
-      checkFence(o.fence, p.fence, "agent.state");
+      checkActFence(o.fence, p.fence, "agent.state");
       this.#heard(from);
       this.#bumpEpoch(from);
       return { paused: this.#pausedFor(from), epoch: this.epochFor(from) };
@@ -349,7 +324,7 @@ export class AgentPeers {
     this.#offs.push(t.handle("agent.message", async (raw, from) => {
       guard(from);
       const p = parse(MessageParams, raw, "agent.message");
-      checkFence(o.fence, p.fence, "agent.message");
+      checkActFence(o.fence, p.fence, "agent.message");
       this.#heard(from);
       const d = this.#driverFrom(p.id, from);
       if (!d) throw new ContractError("refused", "no agent this computer placed on yours has that id");
@@ -748,7 +723,7 @@ export class AgentPeers {
 
   #fenceOk(token: FencingToken | undefined, what: string): boolean {
     try {
-      checkFence(this.#o.fence, token, what);
+      checkActFence(this.#o.fence, token, what);
       return true;
     } catch (err) {
       this.#o.log?.(`agents: dropped ${what}: ${err instanceof Error ? err.message : String(err)}`);

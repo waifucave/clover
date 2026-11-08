@@ -68,8 +68,9 @@ export const BridgeTool = z.object({
   inputSchema: z.record(z.string(), z.unknown()),
 });
 
-/** The longest ACP line `clover-core code-agent` relays either way (K-M3b): inside a JSON string on one NDJSON line it
- *  stays under the socket's 8 MiB (`NDJSON_MAX_LINE_BYTES`), however it is escaped. */
+/** The longest ACP line `clover-core code-agent` relays either way (K-M3b), in characters. Escaped inside a JSON string,
+ *  a line this long can still pass the socket's 8 MiB (`NDJSON_MAX_LINE_BYTES`), so the relay also checks each request's
+ *  encoded size before it sends it. */
 export const CODE_AGENT_MAX_LINE = 2 * 1024 * 1024;
 
 /** The notification that carries one ACP line from the coding agent to `clover-core code-agent`, on its bound
