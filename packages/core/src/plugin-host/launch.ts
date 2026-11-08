@@ -3,40 +3,16 @@
 // that process hold. The process's stdout and stderr are never read as messages; their lines go to `onOutput` (the
 // plugin host's own log).
 import { fileURLToPath } from "node:url";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { writeHostBundles } from "./bundles";
 import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginBunFlags } from "../registry/plugin-run";
 import { fdLink, linesOf, streamPeer, type RpcPeer } from "./link";
+
+export { writeHostBundles } from "./bundles";
 
 /** The host process's entry, for the launch command. */
 export const HOST_PROCESS_ENTRY = fileURLToPath(new URL("./process-main.ts", import.meta.url));
 
-/** Writes the plugin host's two bundles (the process's thread and a plugin's worker, each one file with everything it
- *  imports) into `dir`, the run folder beside the load guard: a worker's guard lets it load from there and from its
- *  plugin's folder only, never Clover's sources or their node_modules. Rewritten only when the text changes. */
-export async function writeHostBundles(dir: string): Promise<{ host: string; worker: string }> {
-  const out = { host: join(dir, "plugin-host.js"), worker: join(dir, "plugin-worker.js") };
-  const result = await Bun.build({
-    entrypoints: [fileURLToPath(new URL("./process-main.ts", import.meta.url)), fileURLToPath(new URL("./worker-main.ts", import.meta.url))],
-    target: "bun", format: "esm", splitting: false, minify: false, sourcemap: "none", throw: false,
-    // Macros off (#289): an import `with { type: "macro" }` would run in this process. Last, so nothing turns them on.
-    ...{ macros: false },
-  });
-  if (!result.success) throw new Error(`the plugin host's bundles didn't build: ${result.logs.map(String).join("; ")}`);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  for (const o of result.outputs) {
-    const file = o.path.includes("worker-main") ? out.worker : out.host;
-    const text = await o.text();
-    let current: string | undefined;
-    try {
-      current = readFileSync(file, "utf8");
-    } catch {
-      current = undefined;
-    }
-    if (current !== text) writeFileSync(file, text, { mode: 0o600 });
-  }
-  return out;
-}
 
 /** How a plugin-host process starts, guarded (#234's run files, B-M2's host mode): the plugin Bun with Clover's flags
  *  and the load guard preloaded, `CLOVER_PLUGIN_HOST=1` so its own thread runs Clover's bundle unpinned while every

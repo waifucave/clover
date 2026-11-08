@@ -38,6 +38,9 @@ export class HostMux {
       if (w === undefined) throw new ContractError("plugin_stopped", `${pluginId} isn't running here`);
       return w.w.peer;
     };
+    // The cheapest answer a host process gives with no plugin loaded: that it's up, on which Bun, with how many workers
+    // (lane M's compiled-core probe).
+    d.handle("pluginHost.ping", () => ({ ok: true, bun: Bun.version, workers: this.#workers.size }));
     d.handle("pluginHost.start", async (x: StartParams) => {
       if (!this.#workers.has(x.pluginId)) this.#spawn(x);
       try {
