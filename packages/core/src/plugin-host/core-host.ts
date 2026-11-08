@@ -36,6 +36,9 @@ export interface HostedRecord extends InstallRecord {
   root?: string;
   entry: string;
   dataFolder: string;
+  /** A bundled plugin's entry: the SHA-256 its bytes had when staged (`stageBundledPlugins`), which its worker checks
+   *  the bytes it reads against and then runs those bytes; "" when none was recorded, and it doesn't run. */
+  entrySha256?: string;
 }
 
 export interface CorePluginHostOptions {
@@ -409,7 +412,10 @@ export class CorePluginHost implements PluginHost {
     }
     h.process = hostProcessFor(record);
     this.#set(pluginId, h, "starting");
-    const params: StartParams = { pluginId, folder: record.folder, root: record.root ?? record.folder, entry: record.entry, runtime: record.runtime ?? "bun", dataFolder: record.dataFolder, process: h.process };
+    const params: StartParams = {
+      pluginId, folder: record.folder, root: record.root ?? record.folder, entry: record.entry, runtime: record.runtime ?? "bun", dataFolder: record.dataFolder, process: h.process,
+      ...(record.entrySha256 !== undefined ? { entrySha256: record.entrySha256 } : {}),
+    };
     try {
       await this.#peerOf(pluginId, h).request("pluginHost.start", params);
     } catch (err) {

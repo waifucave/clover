@@ -34,6 +34,8 @@ export interface StartParams {
   runtime: "bun" | "node";
   dataFolder: string;
   process: HostProcess;
+  /** A bundled plugin's: the SHA-256 its entry's bytes must have (`HostedRecord.entrySha256`). */
+  entrySha256?: string;
 }
 
 export interface InvokeParams {
