@@ -453,6 +453,24 @@ describe("B-M1's contract asks (lanes E, G, J, K, L)", () => {
     expect(params("browser.open").safeParse({ owner: { kind: "user" }, show: true }).success).toBe(false);
   });
 
+  test("lane E's browser wire: configure, stream commands, and stream chunks (item 5)", () => {
+    // The core's network settings for whoever runs the tabs (R13, R14).
+    expect(params("app.browser.configure").safeParse({ proxy: { mode: "off" }, lanBots: [] }).success).toBe(true);
+    expect(params("app.browser.configure").safeParse({ proxy: { mode: "explicit", url: "http://proxy:8080", bypass: ["*.local"] }, lanBots: ["alpha"] }).success).toBe(true);
+    expect(params("app.browser.configure").safeParse({ proxy: { mode: "explicit" }, lanBots: [] }).success).toBe(false);
+    expect(CLOVER_METHODS.get("app.browser.configure")).toMatchObject({ direction: "from-daemon", roles: ["app"] });
+    // The stream start/stop and tuning ride the tab command the core already sends.
+    expect(params("app.tab.command").safeParse({ id: "tab_1", command: { kind: "stream", stream: "st_1", on: true, maxKbps: 2000, codecs: ["h264"] } }).success).toBe(true);
+    expect(params("app.tab.command").safeParse({ id: "tab_1", command: { kind: "stream-control", stream: "st_1", keyframe: true } }).success).toBe(true);
+    expect(params("app.tab.command").safeParse({ id: "tab_1", command: { kind: "stream", stream: "st_1", on: "yes" } }).success).toBe(false);
+    // The app's chunks back: a config, base64 frames, then ended. Binary never rides the wire.
+    expect(params("browser.streamData").safeParse({ stream: "st_1", chunk: { kind: "config", codec: "h264", width: 1280, height: 800, codecString: "avc1.42E01F" } }).success).toBe(true);
+    expect(params("browser.streamData").safeParse({ stream: "st_1", chunk: { kind: "frame", key: true, timestamp: 1_000, data: Buffer.from([0]).toString("base64") } }).success).toBe(true);
+    expect(params("browser.streamData").safeParse({ stream: "st_1", chunk: { kind: "frame", key: true, timestamp: 1_000, data: new Uint8Array([0]) } }).success).toBe(false);
+    expect(params("browser.streamData").safeParse({ stream: "st_1", chunk: { kind: "ended", reason: "failed", message: "the app stopped" } }).success).toBe(true);
+    expect(CLOVER_METHODS.get("browser.streamData")).toMatchObject({ direction: "to-daemon", roles: ["app"] });
+  });
+
   test("the tree serves lane J's methods to peers and layers, and its notices go to peers only", () => {
     for (const name of ["tree.mkdir", "tree.readlink", "tree.symlink", "tree.watch", "tree.unwatch"]) {
       expect([name, CLOVER_METHODS.get(name)?.roles]).toEqual([name, ["peer", "layer"]]);

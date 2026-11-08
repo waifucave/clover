@@ -109,6 +109,50 @@ export const Screenshot = z.object({
 });
 export type Screenshot = z.infer<typeof Screenshot>;
 
+/** The proxy setting, as Settings stores it (`browser.proxy`): mirrors the core's and the app's
+ *  `BrowserProxySetting` (R14). */
+export const BrowserProxySetting = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("off") }),
+  z.object({ mode: z.literal("system") }),
+  z.object({
+    mode: z.literal("explicit"),
+    url: utf16(2048, 1),
+    bypass: z.array(utf16(256, 1)).max(1024).optional(),
+  }),
+]);
+export type BrowserProxySetting = z.infer<typeof BrowserProxySetting>;
+
+/** The network settings the core sends whoever runs the tabs (`app.browser.configure`): the proxy
+ *  setting (R14) and the bots whose LAN setting is on. */
+export const BrowserNetworkConfig = z.object({
+  proxy: BrowserProxySetting,
+  lanBots: z.array(BotId).max(10_000),
+});
+export type BrowserNetworkConfig = z.infer<typeof BrowserNetworkConfig>;
+
+/** One piece of a tab's stream, from the app to the daemon (`browser.streamData`), which frames it onto
+ *  each viewer's link stream. A frame's bytes ride base64 (JSON-RPC carries no binary). */
+export const StreamChunk = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("config"),
+    codec: z.enum(["h264", "vp8", "jpeg"]),
+    width: z.number().int().positive().max(16_384),
+    height: z.number().int().positive().max(16_384),
+    /** The codec string, e.g. `avc1.42E01F`. */
+    codecString: utf16(256, 1),
+  }),
+  z.object({
+    kind: z.literal("frame"),
+    key: z.boolean(),
+    /** Microseconds. */
+    timestamp: z.number().nonnegative(),
+    /** The encoded chunk, base64. */
+    data: z.string(),
+  }),
+  z.object({ kind: z.literal("ended"), reason: z.enum(["stopped", "closed", "failed"]), message: utf16(1024).optional() }),
+]);
+export type StreamChunk = z.infer<typeof StreamChunk>;
+
 const Tab = z.object({ id: utf16(128, 1) });
 const API = { roles: ["app", "layer"] as const, capability: "browser" };
 
@@ -210,6 +254,12 @@ export const BROWSER_METHODS = {
         z.object({ kind: z.literal("place"), place: TabPlace, view: utf16(128).optional(), viewport: Viewport.optional() }),
         z.object({ kind: z.literal("screenshot"), format: z.enum(["png", "jpeg", "webp"]), quality: z.number().int().min(1).max(100).optional() }),
         z.object({ kind: z.literal("cdp"), method: utf16(128, 3), params: z.record(z.string(), z.unknown()).optional() }),
+        z.object({
+          kind: z.literal("stream"), stream: utf16(128, 1), on: z.boolean(),
+          maxKbps: z.number().int().min(50).max(50_000).optional(),
+          codecs: z.array(z.enum(["h264", "vp8", "jpeg"])).min(1).max(3).optional(),
+        }),
+        z.object({ kind: z.literal("stream-control"), stream: utf16(128, 1), keyframe: z.boolean().optional(), kbps: z.number().int().positive().max(50_000).optional() }),
       ]),
     }),
     result: z.object({ result: z.unknown() }),
@@ -232,6 +282,18 @@ export const BROWSER_METHODS = {
     }),
     result: Ok,
     doc: "The app reports what happened to its tabs; DevTools events only for subscribed, allowlisted methods.",
+  }),
+  appBrowserConfigure: defineMethod({
+    name: "app.browser.configure", owner: "L", roles: ["app"], direction: "from-daemon",
+    params: BrowserNetworkConfig,
+    result: Ok,
+    doc: "The core's network settings for whoever runs the tabs: the proxy setting and the bots whose LAN is on. New connections take the proxy at once; a bot whose LAN changed has its partition re-pointed first.",
+  }),
+  browserStreamData: defineMethod({
+    name: "browser.streamData", owner: "L", roles: ["app"],
+    params: z.object({ stream: utf16(128, 1), chunk: StreamChunk }),
+    result: Ok,
+    doc: "One piece of a tab's stream, from the app to the daemon, tagged with the stream the core named in its `stream` command: a `config`, then frames, then `ended`.",
   }),
 } as const;
 

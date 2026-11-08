@@ -22,6 +22,7 @@
       "browser.report",
       "browser.screenshot",
       "browser.show",
+      "browser.streamData",
       "browser.tabs",
       "card.answer",
       "card.frame",
@@ -158,6 +159,7 @@
       "usage_changed"
     ],
     "daemonSends": [
+      "app.browser.configure",
       "app.notify",
       "app.notify.close",
       "app.ping",

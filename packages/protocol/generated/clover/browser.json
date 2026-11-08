@@ -1852,6 +1852,72 @@
                   "kind",
                   "method"
                 ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "stream"
+                  },
+                  "stream": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "on": {
+                    "type": "boolean"
+                  },
+                  "maxKbps": {
+                    "type": "integer",
+                    "minimum": 50,
+                    "maximum": 50000
+                  },
+                  "codecs": {
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "h264",
+                        "vp8",
+                        "jpeg"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "stream",
+                  "on"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "stream-control"
+                  },
+                  "stream": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "keyframe": {
+                    "type": "boolean"
+                  },
+                  "kbps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 50000
+                  }
+                },
+                "required": [
+                  "kind",
+                  "stream"
+                ]
               }
             ]
           }
@@ -2311,6 +2377,232 @@
         },
         "required": [
           "events"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "app.browser.configure": {
+      "doc": "The core's network settings for whoever runs the tabs: the proxy setting and the bots whose LAN is on. New connections take the proxy at once; a bot whose LAN changed has its partition re-pointed first.",
+      "owner": "L",
+      "direction": "from-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "proxy": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "const": "off"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "const": "system"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "const": "explicit"
+                  },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  },
+                  "bypass": {
+                    "maxItems": 1024,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256
+                    }
+                  }
+                },
+                "required": [
+                  "mode",
+                  "url"
+                ]
+              }
+            ]
+          },
+          "lanBots": {
+            "maxItems": 10000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 81,
+              "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+            }
+          }
+        },
+        "required": [
+          "proxy",
+          "lanBots"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "browser.streamData": {
+      "doc": "One piece of a tab's stream, from the app to the daemon, tagged with the stream the core named in its `stream` command: a `config`, then frames, then `ended`.",
+      "owner": "L",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "stream": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "chunk": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "config"
+                  },
+                  "codec": {
+                    "type": "string",
+                    "enum": [
+                      "h264",
+                      "vp8",
+                      "jpeg"
+                    ]
+                  },
+                  "width": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 16384
+                  },
+                  "height": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 16384
+                  },
+                  "codecString": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "kind",
+                  "codec",
+                  "width",
+                  "height",
+                  "codecString"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "frame"
+                  },
+                  "key": {
+                    "type": "boolean"
+                  },
+                  "timestamp": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "data": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "key",
+                  "timestamp",
+                  "data"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "ended"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "stopped",
+                      "closed",
+                      "failed"
+                    ]
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "kind",
+                  "reason"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "stream",
+          "chunk"
         ]
       },
       "result": {

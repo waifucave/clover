@@ -20,6 +20,8 @@ export interface DaemonPairSideInput {
   /** Stop the daemon on purpose (exit 0). */
   stopDaemon(why: string): void;
   log?(line: string): void;
+  /** The last app connection left: lane INT passes the browser service's `appGone` here. */
+  onAppGone?(): void;
   /** Test seams. */
   readonly run?: Runner;
   readonly launcher?: AppLauncher | null;
@@ -65,6 +67,7 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
     tellAppQuit: input.tellAppQuit,
     stopDaemon: input.stopDaemon,
     ...(input.log ? { log: input.log } : {}),
+    ...(input.onAppGone ? { onAppGone: input.onAppGone } : {}),
   }, { ...input.options, desktop: launcher !== null });
   input.log?.(`[pair] ${launcher === null ? "no app installed: the daemon runs alone" : `the app starts with: ${launcher.how}`}`);
   pair.start();

@@ -279,6 +279,11 @@ function makePair(): Pair {
     return { result: await browserHost().command(a.id, a.command) };
   });
   p.handle("app.tab.list", () => ({ tabs: browserHost().list() }));
+  p.handle("app.browser.configure", async (params) => {
+    const a = BROWSER_METHODS.appBrowserConfigure.params.parse(params);
+    await browserHost().configure({ proxy: a.proxy, lanBots: [...a.lanBots] });
+    return { ok: true };
+  });
   // The heartbeat (ruling R9): answered at once, from the main process, so a hung app goes unanswered.
   p.handle("app.ping", () => ({ ok: true }));
   // Desktop notifications for the bundled notifier (lane G): shown unless the app is in front showing that session.
@@ -878,6 +883,15 @@ function startBrowser(): void {
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
+    // A tab's stream chunks to the daemon (`browser.streamData`): frames ride base64, as the protocol carries them.
+    streamData: (stream, chunk) => send("browser.streamData", {
+      stream,
+      chunk: chunk.kind === "frame" ? { ...chunk, data: Buffer.from(chunk.data).toString("base64") } : chunk,
+    }),
+    streamAssets: {
+      preload: join(here, "..", "..", BROWSER_ASSETS.streamPreload.out),
+      html: join(here, "..", "..", BROWSER_ASSETS.streamHtml.out),
+    },
   });
   void browser.start().catch((err) => log(`browser: start failed: ${err instanceof Error ? err.message : String(err)}`));
 }

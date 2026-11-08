@@ -127,6 +127,12 @@ describe("the guard: no Bun in the main process, no Node in pages", () => {
     const hits = files(join(src, "layer")).concat(files(join(src, "core"))).filter((f) => /from "node:|require\(|\bprocess\.|\bBuffer\b/.test(readFileSync(f, "utf8")));
     expect(hits).toEqual([]);
   });
+
+  test("the browser's pages use no Node API either (sandboxed preloads; only the ipc bridge)", () => {
+    const pages = [join(src, "main", "browser", "stream-page"), join(src, "main", "browser", "viewport-page")];
+    const hits = pages.flatMap(files).filter((f) => /from "node:|\bprocess\.|\bBuffer\b|require\("(?!electron")/.test(readFileSync(f, "utf8")));
+    expect(hits).toEqual([]);
+  });
 });
 
 describe("the app's shortcuts", () => {
