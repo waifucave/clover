@@ -334,6 +334,10 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and check the packages
+        env:
+          # The bundled plugins' inputs are checked against the tarballs bun.lock pins (#285): GitHub Packages needs
+          # the token to read the @waifucave ones, as for the install.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun scripts/build-packages.ts --arch ${{ matrix.arch }} --check
 
       # A server on this architecture takes the daemon's release file and the bundled plugins' tarball: the tarball is
@@ -396,6 +400,10 @@ jobs:
 
       - name: Build the installers (unsigned) and check them
         shell: bash
+        env:
+          # The bundled plugins' inputs are checked against the tarballs bun.lock pins (#285): GitHub Packages needs
+          # the token to read the @waifucave ones, as for the install.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun scripts/release/build.ts --channel latest
           ls -l apps/desktop/out/dist
@@ -804,9 +812,11 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # xmllint, for release-lib's appcast checks (macOS has it built in).
-      - name: xmllint
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+      # xmllint, for release-lib's appcast checks, and bsdtar (libarchive-tools), which the name scan opens zips, tars,
+      # debs and rpms with and its tests build their fixtures with. macOS has both built in. The scan itself runs only
+      # in publish.ts on the owner's Mac, so this changes no release behaviour: Linux CI gets the same bsdtar the Mac has.
+      - name: xmllint and bsdtar
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils libarchive-tools
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
