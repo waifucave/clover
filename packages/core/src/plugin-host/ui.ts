@@ -9,13 +9,15 @@
 //   plugin's layer is its id with `/` written `--`. `ui`, `themes`, `locales` and the bot are its active entries.
 // * `plugin.layer.api` runs as the user (`client: app`), from the `ui` side of the capability gate: only the calls a
 //   component may make, each needing what the plugin's OK granted. `pluginId` is the one the app bound the mount to,
-//   never anything a component said. `host.call` runs one of the plugin's host handlers.
+//   never anything a component said. `args` are the method's parameters in order (the SDK's `ApiCallSignatures`):
+//   `host.call`'s are the handler's name, its args and options, and it runs that host handler for the session.
 // * A host half's `ui.send(event, value)` becomes `plugin_ui_message`, which the app relays to its components' `host.on`.
 import { PLUGINS_EVENTS, PLUGINS_METHODS, type UiPluginView } from "@waifucave/clover-protocol";
 import type { Clock, TimerHandle } from "../contracts/clock";
+import { ContractError } from "../contracts/common";
 import type { ApiRouter } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
-import { handler, type MethodHandler } from "../rpc/handler";
+import { handler, MethodError, toMethodError, type MethodHandler } from "../rpc/handler";
 
 /** The registry states whose plugins show UI: on and running, or waiting for a point. */
 const SHOWN = new Set(["running", "waiting"]);
@@ -104,9 +106,15 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
   return {
     methods: {
       [M.pluginUi.name]: handler(M.pluginUi, () => ({ plugins: uiPluginViews(o.registry) })),
-      [M.pluginLayerApi.name]: handler(M.pluginLayerApi, async (p) => ({
-        result: await o.router({ pluginId: p.pluginId, process: "ui", path: p.call, args: p.args, caller: { kind: "user", client: "app" }, ...(p.session !== undefined ? { session: p.session } : {}) }),
-      })),
+      // A failure names the plugin and the call (never a mount: the app maps them to its own parts).
+      [M.pluginLayerApi.name]: handler(M.pluginLayerApi, async (p) => {
+        try {
+          return { result: await o.router({ pluginId: p.pluginId, process: "ui", path: p.call, args: p.args, caller: { kind: "user", client: "app" }, ...(p.session !== undefined ? { session: p.session } : {}) }) };
+        } catch (err) {
+          const e = toMethodError(err instanceof ContractError || err instanceof MethodError ? err : new ContractError("failed", err instanceof Error ? err.message : String(err)));
+          throw new MethodError(e.code, e.message, { ...(typeof e.data === "object" && e.data !== null ? e.data : {}), pluginId: p.pluginId, call: p.call });
+        }
+      }),
     },
     close() {
       stop();
