@@ -112,7 +112,17 @@ export class BotGate {
 
   /** Resolves once `mayAct` says yes (at once if it does), or rejects when `signal` aborts: a held turn waits here. */
   whenMayAct(view: { kind: SessionKind }, signal?: AbortSignal): Promise<void> {
-    if (this.mayAct(view)) return Promise.resolve();
+    return this.#when(() => this.mayAct(view), signal);
+  }
+
+  /** Resolves once `mayStart` says yes (at once if it does), or rejects when `signal` aborts: a turn the runtime starts
+   *  on its own (a background task's notification) waits here, as the host's own turns wait to start. */
+  whenMayStart(view: { kind: SessionKind }, signal?: AbortSignal): Promise<void> {
+    return this.#when(() => this.mayStart(view), signal);
+  }
+
+  #when(ok: () => boolean, signal?: AbortSignal): Promise<void> {
+    if (ok()) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const done = () => {
         off();
@@ -123,7 +133,7 @@ export class BotGate {
         reject(signal?.reason ?? new Error("aborted"));
       };
       const off = this.#changes.add(() => {
-        if (!this.mayAct(view)) return;
+        if (!ok()) return;
         done();
         resolve();
       });

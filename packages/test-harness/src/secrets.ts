@@ -1,6 +1,7 @@
 // A throwaway secret store for each OS (plan §3), for tests that need the REAL OS store under the daemon's own
 // secret code (`Bun.secrets`): a fresh test service the daemon is pointed at with `CLOVER_KEYCHAIN_SERVICE`.
-//   macOS    the login Keychain, under the test service only
+//   macOS    this test process's throwaway keychain FILE (core's test/test-keychain.ts, `CLOVER_TEST_KEYCHAIN`), under
+//            the test service: Clover's keychain code refuses the real login keychain in any process under a test
 //   Windows  Credential Manager, under the test service only (every test service starts with TEST_SERVICE_PREFIX)
 //   Linux    the Secret Service on a PRIVATE session bus: the test command runs under
 //            scripts/with-private-secret-service.sh, which gives it a dbus-daemon and an unlocked gnome-keyring of its
@@ -8,7 +9,7 @@
 // Everything a store sets is deleted by `dispose`. Most tests need none of this: core's `FileSecretStore`, in the
 // temp home, is the default.
 import { randomBytes } from "node:crypto";
-import { OTHER_INSTALL_KEYCHAIN_SERVICES } from "@waifucave/clover-core";
+import { OTHER_INSTALL_KEYCHAIN_SERVICES, pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "@waifucave/clover-core";
 
 /** Every throwaway service starts with this; it can never equal a real one. */
 export const TEST_SERVICE_PREFIX = "com.waifucave.clover.core.test.";
@@ -63,20 +64,24 @@ export function createThrowawaySecretStore(opts: { id?: string } = {}): Throwawa
   const service = `${TEST_SERVICE_PREFIX}${opts.id ?? `${process.pid}-${randomBytes(4).toString("hex")}`}`;
   assertThrowawayService(service);
   const touched = new Set<string>();
+  // macOS: the same pinned backend the daemon uses, which under a test is this process's throwaway keychain file.
+  const os = backend === "keychain" ? pinnedSecretsBackend() : Bun.secrets;
+  const testKeychain = process.env[TEST_KEYCHAIN_ENV];
+  if (backend === "keychain" && testKeychain === undefined) throw new Error("the throwaway keychain needs the test preload (core's test/test-keychain.ts)");
   return {
     backend,
     service,
-    env: { CLOVER_KEYCHAIN_SERVICE: service },
-    get: (name) => Bun.secrets.get({ service, name }),
+    env: { CLOVER_KEYCHAIN_SERVICE: service, ...(backend === "keychain" ? { [TEST_KEYCHAIN_ENV]: testKeychain! } : {}) },
+    get: (name) => os.get({ service, name }),
     set: async (name, value) => {
       touched.add(name);
-      await Bun.secrets.set({ service, name, value });
+      await os.set({ service, name, value });
     },
-    delete: (name) => Bun.secrets.delete({ service, name }),
+    delete: (name) => os.delete({ service, name }),
     dispose: async () => {
       for (const name of touched) {
         try {
-          await Bun.secrets.delete({ service, name });
+          await os.delete({ service, name });
         } catch {
           /* already gone */
         }

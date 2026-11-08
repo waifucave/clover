@@ -22,6 +22,12 @@ import type { AnswerAsker, PeerReviewer } from "../tree/judge";
 import { LocalTerminals, serveTerminals, TerminalRouter, type ShellLauncher } from "../tree/terminals";
 import { CoreTree } from "../tree/tree";
 import { FolderWatches } from "../tree/watch";
+import type { Lease } from "../contracts/lease";
+import { leaseFence } from "../tree/fencing";
+import type { PluginHost } from "../contracts/plugin-host";
+import type { PluginRegistry } from "../contracts/plugin-registry";
+import { CloudComputers, FileCloudStateStore, type CloudCard } from "./cloud";
+import { CloudPoint, leaseAuthority, pluginProviders, providerIds } from "./cloud-point";
 import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
@@ -67,8 +73,25 @@ export interface ComputerNodeOptions {
     scratch: (session: string) => string;
     install?: McpInstaller;
   };
+  /** Lane H's sync for the bots' memories (`home/memory/`, kept on every computer that runs the core): told of each
+   *  change here once it is on disk, so it reaches the other computers now, or when they are back. */
+  memoryChanged?: (bot: string, rel: string) => void;
   /** The terminal panel's shells here (R4): how a shell starts, and the card for a paste of several lines. */
   terminals?: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> };
+  /** This computer's lease (lane H): its fencing token goes on every act this computer asks of another, and every act
+   *  asked of it is judged against it (`fencing.ts`). Required: `null` says, explicitly, that there is no group yet,
+   *  and then nothing is carried or judged (logged once at start). */
+  lease: Lease | null;
+  /** Cloud computers (§9.2): the plugin registry's `computer` folders and `computerProviders` handlers, run by the
+   *  lease's holder only (none without a lease). `confirm` shows the user a card (lane C's broker); `userData` is the official image's
+   *  cloud-init (`image.ts`, with lane H's join ticket and lane M's release pins); `makeMain` is lane H's election. */
+  cloud?: {
+    plugins: PluginRegistry;
+    host: PluginHost;
+    confirm: (card: CloudCard) => Promise<boolean>;
+    userData: (o: { name: string; token: string }) => string;
+    makeMain?: (name: string) => Promise<void>;
+  };
   log?: (line: string) => void;
 }
 
@@ -92,6 +115,9 @@ export interface ComputerNode {
   mirror(server: string, config: unknown, computers: readonly string[], session?: string): ReturnType<typeof mirror>;
   /** Settles once the tree folder is made (at once without `treeRoot`). */
   treeRootReady(): Promise<void>;
+  /** Cloud computers (with `cloud` and a lease): kept in line with their folders while this computer holds the lease;
+   *  `cloud.door()` is what lane H's pairing door calls with a VM's token. */
+  cloud: CloudPoint | undefined;
   close(): void;
 }
 
@@ -124,7 +150,10 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   });
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);
+  const fence = o.lease ? leaseFence(o.lease) : undefined;
+  if (!o.lease) o.log?.("computers: no lease yet (no group): acts between computers carry no fencing token, and none is judged");
   const peers = new ComputerPeers({
+    ...(fence ? { fence } : {}),
     registry, transport: o.transport, roots: () => ({ home: o.home, botsRoot, os, bots: bots() }), devices: o.devices,
     ...(o.botPlacement ? { placement: o.botPlacement } : {}), ...(o.log ? { log: o.log } : {}),
     ...(o.answers ? { render: o.answers.render } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
@@ -141,6 +170,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     level: () => registry.self().level,
     watches: new FolderWatches(),
     ...(o.reviewer ? { reviewer: o.reviewer } : {}),
+    ...(o.memoryChanged ? { memoryChanged: o.memoryChanged } : {}),
     ...(o.fence ? { fence: o.fence } : {}),
     ...(o.answers ? { answers: o.answers } : {}),
   });
@@ -151,22 +181,23 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   // One set of per-computer bulk slots for the tree service and the direct path (check 2's N3).
   const bulk = new BulkSlots();
   const service = new TreeService({
+    ...(fence ? { fence } : {}),
     bulk,
     transport: o.transport, holder, clock: o.clock, level: () => registry.self().level, mayCall,
     ...(o.answers ? { answers: o.answers } : {}), ...(o.executor ? { tools: o.executor } : {}),
     ...(o.reviewer ? { reviewer: o.reviewer } : {}),
     ...(o.mcp ? { mcp: (call: Parameters<McpRouter["serveHere"]>[0]) => mcpRouter!.serveHere(call) } : {}),
   });
-  const offHolds = serveHolds({ transport: o.transport, registry, mayCall });
-  const holds = new HoldRouter({ registry, transport: o.transport });
+  const offHolds = serveHolds({ transport: o.transport, registry, mayCall, ...(fence ? { fence } : {}) });
+  const holds = new HoldRouter({ registry, transport: o.transport, ...(fence ? { fence } : {}) });
   const offMirror = serveMirror({
-    transport: o.transport, self: () => registry.self().name, mayCall, clock: o.clock,
+    transport: o.transport, self: () => registry.self().name, mayCall, clock: o.clock, ...(fence ? { fence } : {}),
     ...(o.mcp?.install ? { install: o.mcp.install } : {}), ...(o.answers ? { answers: o.answers } : {}),
   });
   const localTerminals = new LocalTerminals(o.terminals ?? {});
   const offTerminals = serveTerminals({
     transport: o.transport, holder, terminals: localTerminals, level: () => registry.self().level, clock: o.clock, mayCall,
-    ...(o.answers ? { answers: o.answers } : {}),
+    ...(o.answers ? { answers: o.answers } : {}), ...(fence ? { fence } : {}),
   });
   const remotes = new Map<string, RemoteHolder>();
   const holderFor = (name: string): Holder => {
@@ -176,7 +207,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     let r = remotes.get(c.device);
     if (!r) {
       const device = c.device;
-      r = new RemoteHolder({ transport: o.transport, device, computer: () => registry.byDevice(device)?.name ?? device, ...(o.askUser ? { ask: o.askUser } : {}) });
+      r = new RemoteHolder({ transport: o.transport, device, computer: () => registry.byDevice(device)?.name ?? device, ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}) });
       remotes.set(device, r);
     }
     return r;
@@ -188,13 +219,14 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     return { computer: c.name, device: c.name === registry.self().name ? null : c.device };
   };
   // The direct path (edit J8, review S1): this computer as the destination or the source of a move or copy.
-  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.resolve(path).computer) });
+  const xfer = serveTransfer({ transport: o.transport, holder, mayCall, bulk, deviceFor: (path) => where(tree.computersFor([path])[0]!), ...(fence ? { fence } : {}) });
   const tree: CoreTree = new CoreTree({
     directory, holder: holderFor, botComputer: (bot) => peers.botComputer(bot),
     transfer: ({ from, to, move, source, destination, call }) => {
       const session = call.as.kind === "session" || call.as.kind === "peer" ? call.as.sessionId : undefined;
       // R1: asks the user up front for each holder whose level needs their answer, then sends the call once.
       return transferAsking({
+        ...(fence ? { fence } : {}),
         transport: o.transport, holder, receiveHere: xfer.receiveHere, as: call.as,
         source: where(source), destination: where(destination),
         params: {
@@ -207,6 +239,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     },
   });
   const tools = new TreeTools({
+    ...(fence ? { fence } : {}),
     tree, directory, transport: o.transport,
     deviceOf: (name) => registry.get(name)?.device,
     ...(o.executor ? { local: { holder, executor: o.executor } } : {}),
@@ -214,6 +247,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   });
   const mcpRouter: McpRouter | undefined = o.mcp
     ? new McpRouter({
+      ...(fence ? { fence } : {}),
       tree, holder, directory, transport: o.transport, deviceOf: (name) => registry.get(name)?.device,
       placement: o.mcp.placement, fields: o.mcp.fields, call: o.mcp.call, scratch: o.mcp.scratch,
       ...(o.askUser ? { ask: o.askUser } : {}),
@@ -221,6 +255,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     : undefined;
   const terminals = new TerminalRouter({
     transport: o.transport,
+    ...(fence ? { fence } : {}),
     self: () => registry.self().name,
     local: { holder, terminals: localTerminals, level: () => registry.self().level },
     computer: (name) => {
@@ -247,15 +282,45 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       make();
     });
   }
+  // Cloud computers: only the lease's holder makes, resizes and deletes VMs, so two computers never act on one folder
+  // (#254's review, B1). Without a lease (no group yet) there is no main computer, and the cloud never runs.
+  let cloud: CloudPoint | undefined;
+  let offCloud: (() => void) | undefined;
+  let offMain = () => {};
+  if (o.cloud && !o.lease) o.log?.("computers: no lease yet (no group): cloud computers wait for a main computer");
+  if (o.cloud && o.lease) {
+    const c = o.cloud;
+    const authority = leaseAuthority(o.lease);
+    const vms = new CloudComputers({
+      clock: o.clock, store: new FileCloudStateStore(o.cloverHome), provider: pluginProviders(c.plugins, c.host), providerIds: () => providerIds(c.plugins),
+      authority, confirm: c.confirm, userData: c.userData, isPaired: (name) => registry.get(name) !== undefined,
+      ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
+    });
+    const active = () => authority.canAct() && authority.tenure() !== undefined;
+    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active, ...(o.log ? { log: o.log } : {}) });
+    cloud = point;
+    const follow = () => {
+      if (active() && !offCloud) offCloud = point.start();
+      else if (!active() && offCloud) {
+        offCloud();
+        offCloud = undefined;
+      }
+    };
+    follow();
+    offMain = o.lease.watch(follow);
+  }
   return {
-    registry, peers, holder, service, tree, tools, terminals, holds, bulk, mcp: mcpRouter,
+    registry, peers, holder, service, tree, tools, terminals, holds, bulk, mcp: mcpRouter, cloud,
     terminalCount: () => localTerminals.count,
     mirror: (server, config, computers, session) => mirror({
       transport: o.transport, directory, deviceOf: (name) => registry.get(name)?.device, server, config, computers,
-      ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
+      ...(session ? { session } : {}), ...(o.askUser ? { ask: o.askUser } : {}), ...(fence ? { fence } : {}),
     }),
     treeRootReady: () => rootReady,
     close: () => {
+      fence?.close();
+      offMain();
+      offCloud?.();
       offRoot();
       terminals.dispose();
       offMirror();

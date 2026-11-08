@@ -133,7 +133,7 @@ describe("SavedScripts (the daemon's store, memory only)", () => {
 type Answer = (m: Extract<WorkerToHost, { op: "call" }>) => { ok: true; value?: unknown } | { ok: false; error: { kind: string; message: string } };
 function runtime(answer: Answer = () => ({ ok: true })) {
   const out: WorkerToHost[] = [];
-  const transpiler = new Bun.Transpiler({ loader: "ts" });
+  const transpiler = new Bun.Transpiler({ loader: "ts", ...({ macro: false } as object) });
   let rt!: AutomationRuntime;
   rt = createAutomationRuntime({
     post: (m) => { out.push(m); if (m.op === "call") setTimeout(() => rt.handle({ op: "reply", id: m.id, ...answer(m) } as never), 1); },

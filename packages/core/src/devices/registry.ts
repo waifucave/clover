@@ -20,7 +20,7 @@ import { AnswerKeyHolder, COMPUTER_NAME_RE } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  answerKeyOf, deviceIdFor, type DeviceChange, type DeviceRecord, type DeviceRegistry, type PairingProof,
+  answerKeyOf, deviceIdFor, holderFitsAlg, type DeviceChange, type DeviceRecord, type DeviceRegistry, type PairingProof,
 } from "../contracts/device-registry";
 import type { SecretMeta } from "../contracts/secret-store";
 import { fromBase64, fromBase64Url, toBase64, utf8 } from "../identity/bytes";
@@ -315,8 +315,9 @@ export class FileDeviceRegistry implements DeviceRegistry {
 
   async verifyAnswer(id: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> {
     const d = this.#find(id);
-    // Never a phone's link key (the controller's ruling, item 91): only the answer key its record names. B's
-    // `answerKeyOf` still falls back to the link key until lane B drops it.
+    // Never a phone's link key (the controller's ruling, item 91): only the answer key its record names. On main,
+    // `answerKeyOf` still falls back to a phone's link key; lane B's #234 drops that fallback, and with it on main the
+    // phone check here is redundant and goes.
     const keyText = d === undefined || (d.kind === "phone" && d.answerKey === undefined) ? undefined : answerKeyOf(d);
     if (keyText === undefined) return false;
     // With the key's own algorithm: a phone's Secure Enclave key is P-256 (B's #187).
@@ -433,12 +434,14 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (k.alg !== undefined && k.alg !== "ed25519" && k.alg !== "p256") throw new ContractError("invalid", `unknown answer key algorithm ${String(k.alg)}`);
     if (typeof k.publicKey !== "string" || fromBase64(k.publicKey) === null) throw new ContractError("invalid", "an answer key is base64");
     if (!AnswerKeyHolder.safeParse(k.held).success) throw new ContractError("invalid", `unknown answer key holder ${k.held}`);
+    if (!holderFitsAlg(k.held as AnswerKeyHolder, k.alg as AnswerKeyAlg | undefined)) throw new ContractError("invalid", `${k.held} holds only P-256 keys; this one is ${String(k.alg ?? "ed25519")}`);
   }
 
   #checkAnswerKey(k: { publicKey: string; held: string; alg?: unknown }): void {
     if (k.alg !== undefined && k.alg !== "ed25519" && k.alg !== "p256") throw new ContractError("invalid", `unknown answer key algorithm ${String(k.alg)}`);
     if (!answerKeyBytes(algOf(k as { alg?: AnswerKeyAlg }), k.publicKey)) throw new ContractError("invalid", "an answer key is a 32-byte Ed25519 key, or a P-256 key's 65-byte point");
     if (!AnswerKeyHolder.safeParse(k.held).success) throw new ContractError("invalid", `unknown answer key holder ${k.held}`);
+    if (!holderFitsAlg(k.held as AnswerKeyHolder, k.alg as AnswerKeyAlg | undefined)) throw new ContractError("invalid", `${k.held} holds only P-256 keys; this one is ${String(k.alg ?? "ed25519")}`);
   }
 
   // ---- pairs and the group (items 81 and 85) ----

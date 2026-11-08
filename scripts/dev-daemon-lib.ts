@@ -1,6 +1,7 @@
 // WS-27: the pure halves of `scripts/dev-daemon.ts` (unit-tested in `dev-daemon.test.ts`).
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { PLUGIN_BUN_FILE, PLUGIN_BUN_IDENTIFIER } from "../packages/core/src/bundled-identities";
+import { dirname, join, resolve, sep } from "node:path";
 import { otherInstallHome, realPathOf } from "../packages/core/src/other-installs";
 
 export type DevOs = "macos" | "linux" | "windows";
@@ -66,6 +67,8 @@ export function describeDevDaemonPlan(plan: DevDaemonPlan): string[] {
   if (plan.build === undefined) lines.push(`  build    none (--no-build): ${plan.binary} as it is`);
   else {
     lines.push(`  build    (in packages/cli) ${plan.build.command}`);
+    lines.push(`  seal     scripts/seal-bun-doors.ts: Bun's BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH doors closed (not on Windows), then the byte check`);
+    if (plan.os === "macos") lines.push(`  beside   ${dirname(plan.binary)}/clover-process-holder, signed under its own .dev identifier (scripts/bundled-binaries.ts); plugin Bun's dev copy goes in the dev home's bin/, where pluginBun() checks it`);
     lines.push(plan.build.sign
       ? `  sign     codesign as ${DEV_DAEMON_IDENTIFIER} with Clover's team, then the __keychain-ffi-probe, then rename to ${plan.binary}`
       : `  sign     none (the dev binary is unsigned on ${plan.os}); rename to ${plan.binary}`);
@@ -89,6 +92,28 @@ export const DEV_DAEMON_IDENTIFIER = "com.waifucave.clover.core.dev";
  */
 export function devDaemonRequirement(teamId: string): string {
   return `identifier "${DEV_DAEMON_IDENTIFIER}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
+}
+
+/** The dev plugin Bun's signing identifier (#234's check 5, lane M's layout): never the core's, so no Keychain item's
+ *  access list (which names the core alone) lets plugin code in. */
+export const DEV_PLUGIN_BUN_IDENTIFIER = PLUGIN_BUN_IDENTIFIER.dev;
+
+/** Where the dev daemon's plugin Bun goes (#234's check 6, L2): `<dev Clover home>/bin/clover-plugin-bun[.exe]`, inside
+ *  the home no runner writes, where `pluginBun()` looks for it in the dev profile. */
+export function devPluginBunPath(devHome: string, platform: NodeJS.Platform = process.platform): string {
+  return join(devHome, "bin", platform === "win32" ? `${PLUGIN_BUN_FILE}.exe` : PLUGIN_BUN_FILE);
+}
+
+/** The ad-hoc signature the dev plugin Bun gets on macOS: its own identifier, the hardened runtime and the release
+ *  copy's entitlements (`scripts/clover-plugin-bun.entitlements`, bundled-binaries.ts's `PLUGIN_BUN_ENTITLEMENTS`). */
+export function devPluginBunSignArgs(path: string, entitlements: string): string[] {
+  return ["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", entitlements, path];
+}
+
+/** Whether the dev plugin Bun must be made again: it's missing, it was made from a Bun other than `sourceHash`'s (the
+ *  stamp beside it records the source's SHA-256), or it isn't the copy whose digest was recorded (swapped). */
+export function devPluginBunStale(o: { exists: boolean; stamp: string | undefined; sourceHash: string; recordedDigest?: string; actualDigest?: string }): boolean {
+  return !o.exists || o.stamp?.trim() !== o.sourceHash || o.recordedDigest === undefined || o.recordedDigest.trim() !== o.actualDigest;
 }
 
 /** `compile:core`'s own output, which the `verify:*` gates overwrite — the dev daemon is never built there. */

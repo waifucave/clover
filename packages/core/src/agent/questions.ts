@@ -7,6 +7,8 @@ export type AskOutcome = { answers: Record<string, string>; notes?: Record<strin
 /** In-flight ask_user questions, keyed by sessionId+callId. First response wins (mirrors ApprovalBroker). */
 export class QuestionBroker {
   private pending = new Map<string, { resolve: (o: AskOutcome) => void; timer: ReturnType<typeof setTimeout> }>();
+  /** M-M2's update gate: questions still waiting for an answer. */
+  pendingCount(): number { return this.pending.size; }
   private key(sessionId: string, callId: string): string { return `${sessionId}:${callId}`; }
 
   wait(sessionId: string, callId: string, timeoutMs: number): Promise<AskOutcome> {

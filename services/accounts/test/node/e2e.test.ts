@@ -111,8 +111,14 @@ describe.skipIf(!harnessReady())("against lane M's sign-in stub", () => {
   test("refuses what the stub refuses", async () => {
     expect((await api("GET", "/v1/devices", "not-a-session")).status).toBe(401);
     const { access } = await signedIn();
-    // The same token with its signature broken.
-    expect((await api("GET", "/v1/devices", `${access.slice(0, -2)}xx`)).status).toBe(401);
+    // The same token with its signature broken. The FIRST signature character carries six real signature bits and is
+    // swapped for a different one, so the signature always differs. The old edit overwrote the last two characters
+    // with "xx": a base64url HMAC ends in a character with unused padding bits, which decode to the same bytes, so the
+    // "broken" token was in fact the real one about once in a thousand runs and answered 200.
+    const [head, payload, signature] = access.split(".") as [string, string, string];
+    const broken = `${head}.${payload}.${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
+    expect(broken).not.toBe(access);
+    expect((await api("GET", "/v1/devices", broken)).status).toBe(401);
     expect((await api("GET", "/v1/devices", access)).status).toBe(200);
   });
 });

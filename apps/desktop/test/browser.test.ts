@@ -18,9 +18,9 @@ interface Step { name: string; ok: boolean; detail: unknown; ms: number }
 interface Result { platform: string; electron: string; steps: Step[]; fatal?: string }
 
 async function build(dir: string): Promise<{ main: string; preload: string; html: string }> {
-  const main = await Bun.build({ entrypoints: [join(import.meta.dir, "browser", "fixture-main.ts")], outdir: dir, target: "node", format: "esm", external: ["electron"], naming: "fixture-main.mjs" });
+  const main = await Bun.build({ entrypoints: [join(import.meta.dir, "browser", "fixture-main.ts")], outdir: dir, target: "node", format: "esm", external: ["electron"], naming: "fixture-main.mjs", ...{ macros: false } });
   if (!main.success) throw new Error(main.logs.map(String).join("\n"));
-  const preload = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], outdir: dir, target: "node", format: "cjs", external: ["electron"], naming: "viewport-preload.cjs" });
+  const preload = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], outdir: dir, target: "node", format: "cjs", external: ["electron"], naming: "viewport-preload.cjs", ...{ macros: false } });
   if (!preload.success) throw new Error(preload.logs.map(String).join("\n"));
   const html = join(dir, "browser-viewport.html");
   copyFileSync(join(root, BROWSER_ASSETS.html.from), html);
@@ -52,7 +52,7 @@ describe.if(enabled)("the Clover Browser in Electron (CI only)", () => {
     expect(result.fatal).toBeUndefined();
     const failed = result.steps.filter((s) => !s.ok);
     expect(failed, `${JSON.stringify(failed, null, 2)}\n--- electron's output, last 3000 characters ---\n${output.slice(-3000)}`).toEqual([]);
-    expect(result.steps.length).toBeGreaterThanOrEqual(21);
+    expect(result.steps.length).toBeGreaterThanOrEqual(25);
 
     // The net log: no WPAD or PAC lookup ran, and no spellchecker dictionary was fetched (lane E's netlogs found both).
     expect(existsSync(netlog), "no net log").toBe(true);

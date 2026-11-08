@@ -16,10 +16,10 @@ import { DeviceKey } from "../../identity/device-key";
 import { FrameReader, MAX_FRAME } from "../frames";
 import { bundledLinkBinary } from "../sidecar-binary";
 import { PairingService } from "../pairing";
-import { followRegistry, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, STREAM_WINDOW } from "../sidecar-wire";
+import { followRegistry, pipeWriter, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, INCOMING_STREAM_WINDOW, STREAM_WINDOW } from "../sidecar-wire";
 import { type DeviceLinks, startDeviceLinks } from "../node";
 import { CloverLinkTransport } from "../transport";
-import { CLOSE_LOST, RESET_CONN_LOST, type WireConn, WireOffline, type WireStream } from "../wire";
+import { CLOSE_LOST, LIVE_STREAM_WINDOW, RESET_CONN_LOST, type WireConn, WireOffline, type WireStream } from "../wire";
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
 const built = existsSync(BIN);
@@ -42,6 +42,16 @@ async function device(name: string, extra: Partial<SidecarWireOptions> = {}) {
   return { name, store, key, registry, wire, direct: report.direct };
 }
 type Dev = Awaited<ReturnType<typeof device>>;
+
+/** Each lets the other's link connections through, and has taken that in before anyone dials. `allow` is a message to
+ *  the sidecar, and a dial that beats it there is closed at the door as unpaired: the dialer's first write then finds
+ *  the connection lost (S6.2's flake on the arm runner). A request answered after it on the same ordered pipe says
+ *  the sidecar has it. */
+async function allowEach(a: Dev, b: Dev): Promise<void> {
+  a.wire.allow([b.key.publicKey]);
+  b.wire.allow([a.key.publicKey]);
+  await Promise.all([a.wire.stats(), b.wire.stats()]);
+}
 
 function transport(d: Dev, peers: Map<string, Dev>) {
   const t = new CloverLinkTransport({
@@ -182,8 +192,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
   test("a big transfer to a slow reader keeps what each side holds within the stream window, and the reader can answer after the writer's FIN (S6.2)", async () => {
     const a = await device("Studio");
     const b = await device("Laptop");
-    a.wire.allow([b.key.publicKey]);
-    b.wire.allow([a.key.publicKey]);
+    await allowEach(a, b);
     const W = STREAM_WINDOW;
     const total = 48 * 1024 * 1024;
     const chunk = 256 * 1024;
@@ -224,6 +233,9 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
       }
       s.finish();
     })();
+    // A failed write fails the test at the next sample, with its own error, not as an unhandled one between tests.
+    let writeFailed: unknown;
+    writing.catch((e: unknown) => (writeFailed = e ?? new Error("the write failed")));
 
     // Nothing is read: the writer is held back after QUIC's stream window and a window on each side of each pipe.
     // What is guaranteed is that bound, never how far the writer gets by a given moment (a loaded runner may be slow to
@@ -231,6 +243,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
     // a sample.
     const ahead = 1_250_000 + 3 * W + chunk;
     const bound = async () => {
+      if (writeFailed !== undefined) throw writeFailed;
       const [sa, sb] = await Promise.all([a.wire.stats(), b.wire.stats()]);
       expect(written - got).toBeLessThanOrEqual(ahead);
       expect(sa.core.queuedWrites).toBeLessThanOrEqual(chunk);
@@ -268,7 +281,8 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
       }
       return n;
     })();
-    const ws = await finished;
+    // A sample that fails ends the wait for the FIN with its error.
+    const ws = await Promise.race([finished, samples.then(() => finished)]);
     await writing;
     sampling = false;
     expect(await samples).toBeGreaterThan(0);
@@ -291,8 +305,7 @@ describe.skipIf(!built)("link sidecar (iroh on loopback)", () => {
   test("a reset gets through while the writer waits on a reader that takes nothing", async () => {
     const a = await device("Studio");
     const b = await device("Laptop");
-    a.wire.allow([b.key.publicKey]);
-    b.wire.allow([a.key.publicKey]);
+    await allowEach(a, b);
     const reset = new Promise<number>((resolve) => {
       b.wire.onIncoming("clover/link/1", (conn) => conn.onStream((ws) => {
         ws.onData(() => new Promise<void>(() => undefined));
@@ -473,7 +486,7 @@ class FakeSidecar implements SidecarProcess {
   #exit!: (n: number) => void;
   #dead = false;
 
-  constructor(readonly publicKey: string, readonly fail = false) {
+  constructor(readonly publicKey: string, readonly fail = false, readonly ready: Record<string, unknown> = {}) {
     this.stdout = new ReadableStream<Uint8Array>({ start: (c) => void (this.#ctl = c) });
     this.exited = new Promise((r) => (this.#exit = r));
   }
@@ -488,7 +501,7 @@ class FakeSidecar implements SidecarProcess {
         if (this.fail) {
           this.emit({ ev: "error", message: "bind failed", fatal: true });
           this.kill();
-        } else this.emit({ ev: "ready", publicKey: this.publicKey, relay: null });
+        } else this.emit({ ev: "ready", publicKey: this.publicKey, relay: null, ...this.ready });
       } else if (m.op === "shutdown") this.kill();
     }
   }
@@ -523,6 +536,66 @@ describe("the link sidecar's binary", () => {
     });
     stops.push(() => wire.close());
     expect(argv).toEqual([[bundledLinkBinary()]]);
+  });
+});
+
+describe("per-stream windows need a sidecar that has them (#288 N1)", () => {
+  for (const has of [true, false]) {
+    test(has ? "a sidecar that says it has them gets the open's window and the window op" : "an older sidecar (its ready says nothing) gets neither: every stream keeps the wire's window", async () => {
+      const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
+      let proc!: FakeSidecar;
+      const wire = await SidecarWire.start({
+        binary: "clover-link", key, relay: "disabled", n0Lookup: false,
+        spawn: () => (proc = new FakeSidecar(toHex(key.publicKey), false, has ? { streamWindows: true } : {})),
+      });
+      stops.push(() => wire.close());
+      expect(wire.streamWindows).toBe(has);
+      const conns: WireConn[] = [];
+      wire.onIncoming("clover/link/1", (c) => conns.push(c));
+      proc.emit({ ev: "incoming", conn: 1, peerKey: toHex(new Uint8Array(32).fill(7)), alpn: "clover/link/1", path: { kind: "lan" } });
+      await waitFor(() => conns.length === 1);
+      // An incoming stream starts small where the sidecar has windows; its header read, it's widened (as a lane is).
+      const streams: WireStream[] = [];
+      conns[0]!.onStream((st) => streams.push(st));
+      proc.emit({ ev: "stream", conn: 1, stream: 1 });
+      await waitFor(() => streams.length === 1);
+      expect((streams[0] as unknown as { window: number }).window).toBe(has ? INCOMING_STREAM_WINDOW : STREAM_WINDOW);
+      streams[0]!.setWindow?.(STREAM_WINDOW);
+      // A stream opened with a live window.
+      const opened = conns[0]!.openStream(1, { window: LIVE_STREAM_WINDOW });
+      await Bun.sleep(20);
+      const window = proc.ops.filter((o) => o.op === "window");
+      const open = proc.ops.find((o) => o.op === "open");
+      if (has) {
+        expect(window).toEqual([expect.objectContaining({ stream: 1, window: STREAM_WINDOW })]);
+        expect(open).toMatchObject({ window: LIVE_STREAM_WINDOW });
+        expect((opened as unknown as { window: number }).window).toBe(LIVE_STREAM_WINDOW);
+      } else {
+        expect(window).toEqual([]);
+        expect(open && "window" in open).toBe(false);
+        expect((opened as unknown as { window: number }).window).toBe(STREAM_WINDOW);
+        expect((streams[0] as unknown as { window: number }).window).toBe(STREAM_WINDOW);
+      }
+    });
+  }
+});
+
+describe("the sidecar's stdin", () => {
+  test("a write to a process that just died never throws, nor leaves a rejection behind (EPIPE, as Windows answers it later)", async () => {
+    let unhandled = 0;
+    const count = () => void unhandled++;
+    process.on("unhandledRejection", count);
+    try {
+      const epipe = () => Object.assign(new Error("EPIPE: broken pipe, write"), { code: "EPIPE" });
+      const later = pipeWriter({ write: () => Promise.reject(epipe()), flush: () => Promise.reject(epipe()) });
+      const now = pipeWriter({ write: () => { throw epipe(); }, flush: () => 0 });
+      later(new Uint8Array(4));
+      now(new Uint8Array(4));
+      await Bun.sleep(20);
+      expect(unhandled).toBe(0);
+    } finally {
+      process.off("unhandledRejection", count);
+    }
   });
 });
 

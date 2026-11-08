@@ -152,7 +152,8 @@ export interface SandboxPolicy {
 export interface FenceContext {
   memoryOf?: string;
   user?: boolean;
-  /** The calling session, whose own `outputs/<session>/` it reaches. */
+  /** The calling session, whose own `outputs/<session>/` it reaches: a bot's session, a side thread, or a coding
+   *  session the user started; never a delegated agent's. */
   sessionId?: string;
   /** The calling plugin's own id, whose own `plugin-data/<id>/` it reaches (a valid plugin id). */
   pluginId?: string;
@@ -165,6 +166,9 @@ export function fenceContextFor(caller: Caller): FenceContext {
   if (caller.kind === "user" || caller.kind === "core") return { user: true };
   if (caller.kind === "plugin") return isAnyPluginId(caller.pluginId) ? { pluginId: caller.pluginId } : {};
   if (caller.kind !== "session") return {};
+  // A delegated agent (an ACP agent a bot started, the bridge's caller) gets no way into the Clover home, its own
+  // outputs included (the controller's ruling on #234's review, F4): its work comes back through its report.
+  if (caller.sessionKind === "agent") return {};
   const own = { sessionId: caller.sessionId };
   // Only a valid bot id (#197's check 5): `..` would climb out of `bots/`, and `LUNA` would land on Luna's folder on a
   // folding disk.
@@ -197,6 +201,64 @@ export function ownFoldersOf(ctx: FenceContext | undefined, cloverHome: string):
     out.ownMemory = memory;
   }
   return out;
+}
+
+/** Where a plugin's code could load a dependency it doesn't ship from (#234's check 4, H1): `node_modules` in each
+ *  folder plugin code loads from and in every folder above it, to the root, by the real paths given. A bare import a
+ *  plugin doesn't ship walks those folders, and a file without an extension there skips Clover's load guard (measured
+ *  on Bun 1.4.4), so no runner may write them: they are in every policy's `denyWrite` and `check` refuses writes there,
+ *  on every OS. `folders` are the plugins folder, the development folders and any other folder plugin code loads
+ *  from; `~/node_modules` is the one that matters today. */
+export function pluginLoadDenies(folders: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const folder of folders) {
+    for (const { root, names, sep } of windowsAwareSpellings(folder)) {
+      const stack: string[] = [];
+      for (const n of names) {
+        if (n === "..") stack.pop();
+        else if (n !== "" && n !== ".") stack.push(n);
+      }
+      for (let i = stack.length; i >= 0; i--) out.add(`${root}${sep}${[...stack.slice(0, i), "node_modules"].join(sep)}`);
+    }
+  }
+  return [...out];
+}
+
+/** A folder's root and names, in each spelling a sandbox may match it by: POSIX (`/a/b`); a drive (`C:\a`, `C:/a`); a
+ *  UNC share (`\\server\share\a`, whose root is the share, never above it); and a `\\?\` path, both as written and as
+ *  its plain form (`\\?\C:\a` and `C:\a`; `\\?\UNC\server\share\a` and `\\server\share\a`), since the Windows sandbox
+ *  compares the plain one. Backslashes stay backslashes. */
+function windowsAwareSpellings(folder: string): { root: string; names: string[]; sep: string }[] {
+  const sep = folder.includes("\\") ? "\\" : "/";
+  const parts = (rest: string) => rest.split(/[\\/]/);
+  const long = /^[\\/]{2}\?[\\/](.*)$/.exec(folder);
+  if (long !== null) {
+    const inner = long[1]!;
+    const unc = /^UNC[\\/]([^\\/]+)[\\/]([^\\/]+)(.*)$/i.exec(inner);
+    if (unc !== null) {
+      return [
+        { root: `\\\\?\\UNC\\${unc[1]}\\${unc[2]}`, names: parts(unc[3]!), sep: "\\" },
+        { root: `\\\\${unc[1]}\\${unc[2]}`, names: parts(unc[3]!), sep: "\\" },
+      ];
+    }
+    const drive = /^([A-Za-z]:)(.*)$/.exec(inner);
+    if (drive !== null) return [{ root: `\\\\?\\${drive[1]}`, names: parts(drive[2]!), sep: "\\" }, { root: drive[1]!, names: parts(drive[2]!), sep: "\\" }];
+  }
+  const unc = /^[\\/]{2}([^\\/?]+)[\\/]([^\\/]+)(.*)$/.exec(folder);
+  if (unc !== null) return [{ root: `${sep}${sep}${unc[1]}${sep}${unc[2]}`, names: parts(unc[3]!), sep }];
+  const drive = /^([A-Za-z]:)(.*)$/.exec(folder);
+  if (drive !== null) return [{ root: drive[1]!, names: parts(drive[2]!), sep }];
+  return [{ root: "", names: parts(folder), sep: "/" }];
+}
+
+/** Whether `op` writes inside one of `denies` (`pluginLoadDenies`). */
+export function writesPluginLoadDeny(op: FenceOp, denies: readonly string[], os?: Os): string | undefined {
+  if (op.op !== "write" && op.op !== "delete" && op.op !== "move") return undefined;
+  for (const path of op.op === "move" ? [op.path, op.to] : [op.path]) {
+    const hit = denies.find((d) => isInsideFolded(path, d, os));
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
 }
 
 /** The reference for how a runner's sandbox applies a policy (`SandboxPolicy.ownMemory`'s order, #197's check 5), over
@@ -320,7 +382,9 @@ export interface Fence {
    *  on any folder that holds one (renaming an ancestor moves the item); a read only inside a read-denied item. Names
    *  compare folded on every OS (`foldName`), whether or not the item exists yet, and a name that isn't ASCII where
    *  Clover names things under its home is refused (`nonAsciiAlias`). */
-  /** `ctx` is the caller's reach for `caller` items (`forCaller` passes it); without it they are refused. */
+  /** `ctx` is the caller's reach for `caller` items (`forCaller` passes it); without it they are refused. A write,
+   *  delete or move inside `pluginLoadDenies` (a `node_modules` above a folder plugin code loads from) is refused as
+   *  `plugins` for every caller but the user. */
   check(op: FenceOp, ctx?: FenceContext): FenceVerdict;
   /** The first fenced item any of `paths` reaches, for any access: an agent's request touching one is always a card,
    *  at every level (§9.3). */
@@ -332,7 +396,8 @@ export interface Fence {
   /** The fence as one caller meets it (#197's check 3, and the owner's decision on `bot-memory`). */
   forCaller(caller: Caller): CallerFence;
   /** The arrays for one command runner. The pattern items (`bot-memory`, `sessions-runtime`) are denied whoever the
-   *  runner is for, except a bot's own memory for its main conversation's and side threads' runners (`ownMemory`). */
+   *  runner is for, except a bot's own memory for its main conversation's and side threads' runners (`ownMemory`).
+   *  `denyWrite` holds `pluginLoadDenies` too. */
   policy(ctx?: FenceContext): SandboxPolicy;
   /** The set changed: a development folder was added or removed, or a plugin's data folder appeared. */
   watch(fn: () => void): Unsubscribe;
@@ -346,7 +411,7 @@ export const CLOSED_DOORS: Record<Os, readonly string[]> = {
 };
 
 /** Cloud metadata endpoints (§9.2): the bash fence blocks them, so a bot can't lift a VM's credentials. */
-export const CLOUD_METADATA_ADDRESSES: readonly string[] = ["169.254.169.254", "fd00:ec2::254", "metadata.google.internal"];
+export const CLOUD_METADATA_ADDRESSES: readonly string[] = ["169.254.169.254", "fd00:ec2::254", "fd20:ce::254", "metadata.google.internal"];
 
 /** One name as a case-folding file system could compare it: Unicode NFC, then upper case and back to lower, then NFC
  *  again. The round trip folds what lower case alone leaves: the long s (`ſettings` opens `settings` on APFS and NTFS),

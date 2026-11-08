@@ -130,6 +130,9 @@ export interface NotifierUpdate {
   /** When it happened, on the shared clock. */
   at: number;
   notification?: { title: string; body?: string };
+  /** For `kind: "routine-result"`: whether the run failed (an error, a timeout, a refusal, stopped or cut off), so a
+   *  notifier can leave out the ones that went well (lane G's `routineFailed`). */
+  failed?: boolean;
   /** Who the update is from, always (#179's review): `clover` (name "Clover") for the core's own (a message, a card, a
    *  question, a routine's result, an agent finishing, its own notices), or the plugin that called `notify.send`, by id
    *  and name (lane G's ask). `bundled` is false for a plugin outside the bundled `clover` tree: a notifier shows its
@@ -496,11 +499,14 @@ export interface ApprovalsApi {
   watch(listener: (cards: CardMeta[]) => void): Unsubscribe;
 }
 
-/** `files`: the folder tree (§9.1), inside the fence. Paths are tree paths (`home/<Computer>/…`). */
+/** `files`: the folder tree (§9.1), inside the fence. Paths are tree paths (`home/<Computer>/…`). `noFollow` (lane J's
+ *  `tree/nofollow.ts`, tree protocol 1.1) follows no link anywhere on the way, refusing one, and reads only a plain file
+ *  reached without one: for a viewer of files a runner may have left a link among. A computer on an older build can't
+ *  honour it, so the call is refused (`unsupported`) rather than sent. */
 export interface FilesApi {
-  stat(path: string): Promise<FileStat | null>;
-  readText(path: string, opts?: { offset?: number; length?: number }): Promise<string>;
-  readBytes(path: string, opts?: { offset?: number; length?: number }): Promise<Uint8Array>;
+  stat(path: string, opts?: { noFollow?: boolean }): Promise<FileStat | null>;
+  readText(path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }): Promise<string>;
+  readBytes(path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }): Promise<Uint8Array>;
   write(path: string, data: string | Uint8Array, opts?: { createDirs?: boolean }): Promise<void>;
   list(path: string): Promise<FileStat[]>;
   remove(path: string, opts?: { recursive?: boolean }): Promise<void>;

@@ -12,9 +12,13 @@
 //   allows, the fenced set denied for reads and writes), as for every in-process session.
 // * **The bridge** is an in-process MCP server for the session (bridge/in-process.ts), in place of the stdio one the
 //   manager names in the spec: there is no process to bind a token to.
-// * **The pause:** while the gate says no, every tool call holds at a fail-closed `PreToolUse` (read-only ones too, which
-//   never ask), and an allow given while it came on waits for the resume. Background commands started before a pause
-//   keep running; only tool calls are held.
+// * **The pause** (lane A's rule, #238): while the gate says no, every model turn holds at its start
+//   (`UserPromptSubmit`, the runtime's own included: a background task's notification starts one), every tool call
+//   holds at a fail-closed `PreToolUse` (read-only ones too, which never ask), an allow given while it came on waits for
+//   the resume, and the agent's background commands are stopped, as the host.
+// * **The hooks** join the base options' with lane A's `mergedHooks`: the pause and the fence's check first, the
+//   base's (never allowing), then the pause and the fence's check again, last. The provider fill is lane A's
+//   `fillProvider`, which may set only the model's own keys.
 import { randomUUID } from "node:crypto";
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -28,8 +32,23 @@ import { AcpAgentSession, type AgentProcess } from "../acp/session";
 import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
+import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
+import { BOT_SANDBOX, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
+import { fillProvider } from "../../runtime-sdk/turn-loop/embedded-session";
+import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
 export const CLOVER_CODE_ID = "clover-code";
+
+/** What `serve` needs: the session's root (a folder that exists), its model and effort, and its fence. */
+export type CodeAgentServeSpec = Pick<AcpStartSpec, "root" | "model" | "effort" | "fence">;
+
+/** The coding agent served to an outside client: the client's lines go in with `feed`; `close` ends it. */
+export interface CodeAgentServed {
+  feed(line: string): void;
+  /** Settles when the agent has ended (closed, or its server failed). */
+  readonly ended: Promise<void>;
+  close(): Promise<void>;
+}
 
 /** The coding agent's tools: the runtime's coding set, with plan mode; the bot's own tools never (messages go through
  *  the bridge). `TaskStop` here is the runtime's own, for the agent's background commands. */
@@ -75,6 +94,8 @@ export interface CloverCodeDeps {
   selections?: UserSelections;
   /** Test seam. */
   query?: typeof sdkQuery;
+  /** Whether the embedded runtime's sandbox can run here (`inProcessSandboxReady`); a test seam. */
+  sandboxReady?: () => boolean;
   log?(line: string): void;
 }
 
@@ -107,6 +128,12 @@ function inMemoryAgent(serve: (write: (line: string) => void) => AcpAgentServer)
 }
 
 const PAUSED = "Stopped: the user paused bots and their agents.";
+
+/** What a session with no pause gate gets: held, never open (lane A's `CLOSED_GATE`). */
+const CLOSED_GATE: AgentPauseGate = { mayAct: () => false };
+
+/** How often a paused session whose runtime can't stop a task says so. */
+const NO_STOP_LOG_MS = 60_000;
 
 const READ_TOOLS = new Set(["Read", "Glob", "Grep", "NotebookRead"]);
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -185,6 +212,7 @@ async function holdWhilePaused(gate: AgentPauseGate | undefined, signal: AbortSi
 export class CloverCodeBackend implements AgentBackend {
   readonly id = CLOVER_CODE_ID;
   readonly pluginId = "clover/agent-clover-code";
+  readonly name = "Clover's coding agent";
   readonly quirks = CLOVER_CODE_QUIRKS;
   /** Tells the manager to hand this backend the session's in-process bridge (`inProcessBridge`). */
   readonly inProcess = true;
@@ -198,7 +226,8 @@ export class CloverCodeBackend implements AgentBackend {
 
   async detect(): Promise<AgentDetection> {
     // Part of the daemon, at the SDK's version; its sandbox is the embedded runtime's, which every in-process session
-    // runs in.
+    // runs in, and which only macOS has for now.
+    if (!(this.#deps.sandboxReady ?? inProcessSandboxReady)()) return notAvailableHere(CLOVER_CODE_ID, SDK_VERSION);
     return { installed: true, version: SDK_VERSION, identityOk: true, versionOk: true, sandboxed: true };
   }
 
@@ -206,64 +235,9 @@ export class CloverCodeBackend implements AgentBackend {
     const deps = this.#deps;
     const bridge = spec.inProcessBridge;
     if (!bridge) throw new ContractError("refused", "Clover's coding agent needs its in-process bridge");
-    // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
-    if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
-    const model = spec.model ?? deps.defaultModel();
-    const abort = new AbortController();
-    // Never a bot's own memory (`ownMemory`): an agent's policy denies all of `<home>/bots`.
-    const fence = agentPolicyOf(spec.fence);
-    const gate = deps.pause;
-    const pauseHook: HookCallbackMatcher[] = [{
-        failClosed: true,
-        timeout: 86_400,
-        hooks: [async (_input, _id, { signal }) => (await holdWhilePaused(gate, AbortSignal.any([signal, abort.signal])))
-          ? {}
-          : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAUSED } }],
-    }];
-    const base = deps.baseOptions({ model, ...(spec.effort === undefined ? {} : { effort: spec.effort }), cwd: spec.root });
-    // The runtime's TaskStop and SendMessage would reach the host's other sessions through host messaging; an agent
-    // reaches its bot through the bridge alone.
-    if ((base as { hostMessaging?: unknown }).hostMessaging !== undefined) throw new ContractError("refused", "Clover's coding agent wasn't started: its options carry host messaging");
-    // Each file tool's path as it really is: the deny rules match a path as written, so a link from the root into a
-    // denied folder (the Clover home) would pass them.
-    const fenceHook: HookCallbackMatcher[] = [{
-      failClosed: true,
-      hooks: [async (input) => {
-        const why = fileToolRefusal(input as { tool_name?: unknown; tool_input?: unknown }, fence, spec.root);
-        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
-      }],
-    }];
-    // The base's hooks stay; the pause goes first in `PreToolUse`, then the fence's check.
-    const hooks: Options["hooks"] = { ...(base.hooks ?? {}), PreToolUse: [...(gate ? pauseHook : []), ...fenceHook, ...(base.hooks?.PreToolUse ?? [])] };
-    const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(fence.denyRead, fence.denyWrite)];
-    const options: Options = {
-      ...base,
-      tools: [...CLOVER_CODE_TOOLS],
-      abortController: abort,
-      hooks,
-      // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
-      sandbox: {
-        enabled: true,
-        filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite], denyRead: [...fence.denyRead] },
-      },
-      // The sandbox holds Bash; the file tools get the same denials as deny rules (the fenced set and bots' memory).
-      ...(denials.length === 0 && base.permissions === undefined ? {} : { permissions: { ...(base.permissions ?? {}), deny: denials } }),
-    };
-    await deps.fillProvider?.(model, options);
-    const run = deps.query ?? sdkQuery;
-    // The ACP agent's query, with the session's in-process bridge in place of the stdio entry it was handed, and an
-    // allow that came while the pause came on waiting for the resume.
-    const query: AcpQueryFn = (args) => {
-      const o = args.options as unknown as Options & { canUseTool: CanUseTool; mcpServers?: Record<string, unknown> };
-      const servers = { ...(o.mcpServers ?? {}), [bridge.name]: bridge as McpSdkServerConfigWithInstance };
-      const ask = o.canUseTool;
-      const canUseTool: CanUseTool = async (name, input, opts) => {
-        const answer = await ask(name, input, opts);
-        if (answer?.behavior === "allow" && !(await holdWhilePaused(gate, AbortSignal.any([opts.signal, abort.signal])))) return { behavior: "deny", message: PAUSED };
-        return answer;
-      };
-      return run({ prompt: args.prompt, options: { ...o, mcpServers: servers as Options["mcpServers"], canUseTool } }) as unknown as AcpQuery;
-    };
+    // The session's own pause (the manager's, with another computer's forwarded switch for an agent run for it). With
+    // no gate at all it fails closed, as lane A's backend does (`CLOSED_GATE`): the core always hands one.
+    const { query, options, abort } = await this.#agentParts(spec, bridge, spec.pause ?? deps.pause ?? CLOSED_GATE);
     const wire = deps.wire?.(spec.sessionId) ?? {};
     const proc = inMemoryAgent((write) => serveAcpAgent({
       query,
@@ -292,4 +266,195 @@ export class CloverCodeBackend implements AgentBackend {
       ...(readOnly ? { readOnly: true } : {}),
     });
   }
+
+  /** The coding agent for an outside ACP client (`clover-core code-agent`, K-M3b): the same agent, options, fence and
+   *  sandbox as `start`, served to the relay's lines in place of Clover's own ACP client. It has no bridge (the user's
+   *  own session has no bot to message) and no MCP server the client names. The relay feeds it the client's lines and
+   *  gets its own back, one at a time and never re-entrantly. */
+  async serve(spec: CodeAgentServeSpec, out: (line: string) => void): Promise<CodeAgentServed> {
+    const deps = this.#deps;
+    // The user's own session: the bots' pause doesn't hold it (an open gate, never none: with none a session fails closed).
+    const { query, options, abort } = await this.#agentParts(spec, undefined, { mayAct: () => true });
+    const server = serveAcpAgent({
+      query,
+      options: options as unknown as Record<string, unknown>,
+      agentInfo: { name: CLOVER_CODE_ID, title: "Clover's coding agent", version: SDK_VERSION },
+      write: (line) => queueMicrotask(() => out(line.endsWith("\n") ? line.slice(0, -1) : line)),
+      newId: () => randomUUID(),
+      ...(deps.log ? { log: deps.log } : {}),
+    });
+    const ended = server.ended.then(() => abort.abort());
+    return {
+      // The server reads a stream: each line goes with its newline.
+      feed: (line) => queueMicrotask(() => server.feed(`${line}\n`)),
+      ended,
+      close: async () => {
+        await server.close();
+        abort.abort();
+      },
+    };
+  }
+
+  /** What `start` and `serve` share: the session's query on the embedded runtime and its options (the coding tools,
+   *  the fence's sandbox and deny rules, the pause and the fence's hooks), checked and filled. */
+  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence">, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController }> {
+    const deps = this.#deps;
+    // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
+    if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
+    const model = spec.model ?? deps.defaultModel();
+    const abort = new AbortController();
+    // Never a bot's own memory (`ownMemory`): an agent's policy denies all of `<home>/bots`.
+    const fence = agentPolicyOf(spec.fence);
+    const pauseHook: HookCallbackMatcher[] = [{
+        failClosed: true,
+        timeout: 86_400,
+        hooks: [async (_input, _id, { signal }) => (await holdWhilePaused(gate, AbortSignal.any([signal, abort.signal])))
+          ? {}
+          : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAUSED } }],
+    }];
+    const base = deps.baseOptions({ model, ...(spec.effort === undefined ? {} : { effort: spec.effort }), cwd: spec.root });
+    // The runtime's TaskStop and SendMessage would reach the host's other sessions through host messaging; an agent
+    // reaches its bot through the bridge alone.
+    if ((base as { hostMessaging?: unknown }).hostMessaging !== undefined) throw new ContractError("refused", "Clover's coding agent wasn't started: its options carry host messaging");
+    // Each file tool's path as it really is: the deny rules match a path as written, so a link from the root into a
+    // denied folder (the Clover home) would pass them.
+    const fenceHook: HookCallbackMatcher[] = [{
+      failClosed: true,
+      hooks: [async (input) => {
+        const why = fileToolRefusal(input as { tool_name?: unknown; tool_input?: unknown }, fence, spec.root);
+        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
+      }],
+    }];
+    // Every model turn holds at its start while paused (the runtime's own turns too); this event doesn't fail closed,
+    // so the hold outlasts any timer (about 24.8 days), and a hold that ends without the resume blocks the turn.
+    const turnHook: HookCallbackMatcher[] = [{
+      timeout: Math.floor(2_147_483_647 / 1000),
+      hooks: [async (_input, _id, { signal }) => (await holdWhilePaused(gate, AbortSignal.any([signal, abort.signal])))
+        ? {}
+        : { decision: "block" as const, reason: PAUSED }],
+    }];
+    // The base's hooks stay, never allowing; the pause and the fence's check go first, and again last (hooks from
+    // sources the runtime ranks higher run before these lists).
+    // After a call (done or failed), the model's next request waits while the pause holds: the call itself is never cut
+    // off, and its result reaches no model until the user resumes (lane A's `#afterCall`).
+    const afterCall: HookCallbackMatcher[] = [{
+      timeout: 86_400,
+      hooks: [async (_input, _id, { signal }) => {
+        await holdWhilePaused(gate, AbortSignal.any([signal, abort.signal]));
+        return {};
+      }],
+    }];
+    const ownCalls = [...pauseHook, ...fenceHook];
+    const hooks = mergedHooks(base.hooks, { PreToolUse: ownCalls, UserPromptSubmit: turnHook, PostToolUse: afterCall, PostToolUseFailure: afterCall }, { last: { PreToolUse: ownCalls } });
+    const denials = [...(base.permissions?.deny ?? []), ...fileToolDenials(fence.denyRead, fence.denyWrite)];
+    const options: Options = {
+      ...base,
+      tools: [...CLOVER_CODE_TOOLS],
+      abortController: abort,
+      hooks,
+      // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
+      sandbox: {
+        filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite], denyRead: [...fence.denyRead] },
+        // On, no unsandboxed command (`dangerouslyDisableSandbox` is refused), and launchd's paths closed (F8): lane A's
+        // floor for bots and in-process agents, set last so nothing here overrides it.
+        ...BOT_SANDBOX,
+      },
+      // The sandbox holds Bash; the file tools get the same denials as deny rules (the fenced set and bots' memory).
+      ...(denials.length === 0 && base.permissions === undefined ? {} : { permissions: { ...(base.permissions ?? {}), deny: denials } }),
+    };
+    await fillProvider(deps.fillProvider ? { provider: (m, o) => deps.fillProvider!(m, o) } : {}, options);
+    const run = deps.query ?? sdkQuery;
+    // The ACP agent's query, with the session's in-process bridge in place of the stdio entry it was handed (served to
+    // an outside client, no MCP server at all), and an allow that came while the pause came on waiting for the resume.
+    const query: AcpQueryFn = (args) => {
+      const o = args.options as unknown as Options & { canUseTool: CanUseTool; mcpServers?: Record<string, unknown> };
+      const servers = bridge ? { ...(o.mcpServers ?? {}), [bridge.name]: bridge as McpSdkServerConfigWithInstance } : {};
+      const ask = o.canUseTool;
+      const canUseTool: CanUseTool = async (name, input, opts) => {
+        const answer = await ask(name, input, opts);
+        if (answer?.behavior === "allow" && !(await holdWhilePaused(gate, AbortSignal.any([opts.signal, abort.signal])))) return { behavior: "deny", message: PAUSED };
+        return answer;
+      };
+      const q = run({ prompt: args.prompt, options: { ...o, mcpServers: servers as Options["mcpServers"], canUseTool } }) as unknown as AcpQuery;
+      return stoppingTasksWhilePaused(q, gate, abort.signal, deps.log);
+    };
+    return { query, options, abort };
+  }
+}
+
+/** The query, with the agent's background tasks stopped while the pause holds (lane A's rule, #238): through the
+ *  runtime's `stopTask`, as the host, tried again while tasks remain and the pause holds; a task the runtime no longer
+ *  has is done with (`isUnknownTask`). A task whose start doesn't say it runs in the foreground counts. */
+function stoppingTasksWhilePaused(q: AcpQuery, gate: AgentPauseGate | undefined, done: AbortSignal, log?: (line: string) => void): AcpQuery {
+  if (!gate) return q;
+  const stopTask = (q as { stopTask?: (id: string, o?: { by?: "host" }) => Promise<unknown> }).stopTask;
+  const tasks = new Set<string>();
+  const stopping = new Set<string>();
+  let off: (() => void) | undefined;
+  let poll: ReturnType<typeof setInterval> | undefined;
+  let saidAt = -Infinity;
+  const unwatch = () => {
+    off?.();
+    off = undefined;
+    if (poll !== undefined) clearInterval(poll);
+    poll = undefined;
+  };
+  const look = () => {
+    if (tasks.size === 0 || done.aborted) return unwatch();
+    if (gate.mayAct()) return;
+    if (typeof stopTask !== "function") {
+      // Said again while it lasts (throttled), and still watched: the tasks may end on their own, or the pause lift.
+      const now = Date.now();
+      if (now - saidAt >= NO_STOP_LOG_MS) {
+        saidAt = now;
+        log?.(`clover-code: paused with ${tasks.size} background task(s), and this runtime can't stop a task`);
+      }
+      return;
+    }
+    for (const id of [...tasks]) {
+      if (stopping.has(id)) continue;
+      stopping.add(id);
+      void stopTask.call(q, id, { by: "host" }).then(
+        () => tasks.delete(id),
+        (err: unknown) => {
+          if (isUnknownTask(err)) tasks.delete(id);
+          else log?.(`clover-code: stopping background task ${id} failed (tried again while paused): ${err instanceof Error ? err.message : String(err)}`);
+        },
+      ).finally(() => stopping.delete(id));
+    }
+  };
+  const watch = () => {
+    if (off !== undefined || poll !== undefined) return;
+    off = gate.watch?.(look);
+    poll = setInterval(look, 1_000);
+    (poll as { unref?: () => void }).unref?.();
+    look();
+  };
+  const observe = (raw: unknown) => {
+    const msg = raw as { type?: unknown; subtype?: unknown; task_id?: unknown; is_backgrounded?: unknown; patch?: { is_backgrounded?: unknown } };
+    if (msg?.type !== "system" || typeof msg.task_id !== "string") return;
+    const patch = msg.subtype === "task_updated" ? msg.patch : undefined;
+    if ((msg.subtype === "task_started" && msg.is_backgrounded !== false) || patch?.is_backgrounded === true) {
+      tasks.add(msg.task_id);
+      watch();
+    } else if (msg.subtype === "task_notification") tasks.delete(msg.task_id);
+  };
+  return new Proxy(q, {
+    get(target, prop, recv) {
+      if (prop === Symbol.asyncIterator) {
+        return () => (async function* () {
+          try {
+            for await (const m of target) {
+              observe(m);
+              yield m;
+            }
+          } finally {
+            unwatch();
+          }
+        })();
+      }
+      const v = Reflect.get(target, prop, recv) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
 }

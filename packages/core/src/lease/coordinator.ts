@@ -56,8 +56,6 @@ const PASSED_ON_MAX = 256;
 /** How many claims from one peer a computer passes on: a burst, then a few a second. */
 const PASS_ON_BURST = 4;
 const PASS_ON_PER_SECOND = 4;
-/** At most one read of the record per this many ms on peers' claims. */
-const CLAIM_READ_EVERY_MS = 3_000;
 
 /** After the service refused a new tenure `not_voter`, how long before trying again. */
 const NOT_VOTER_BACKOFF_MS = 60_000;
@@ -230,12 +228,14 @@ export class LeaseCoordinator {
   /** A peer named this epoch (its hello, or an announcement): a claim of a later lease. The lease holds it open
    *  until the service settles it (lease.ts canAct); this computer passes it on, a few a second from each peer, so a
    *  computer the new holder never paired with hears it too, and reads the record so the service's answer settles it:
-   *  at once, or at the end of the current few seconds when it read lately (checks 6 and 7). */
+   *  at once, or after half the lease's claim-answer time when it read lately (checks 6 and 7, L11). */
   peerEpoch(epoch: number, scope?: string, from?: string): void {
     if (!this.lease.peerEpoch(epoch, scope, from)) return;
     if (from === undefined || this.#passToken(from)) this.#passOn(scope ?? this.lease.scopeId(), epoch, from);
     if (this.#claimReadTimer) return;
-    const wait = Math.max(0, this.#claimReadAt + CLAIM_READ_EVERY_MS - this.#o.clock.monotonic());
+    // Often enough that a reachable service always answers a claim within the lease's `claimAnswerMs` (L8, L11).
+    const every = Math.max(1, Math.floor(this.lease.claimAnswerMs / 2));
+    const wait = Math.max(0, this.#claimReadAt + every - this.#o.clock.monotonic());
     if (wait === 0) this.#log(`${from ?? "a peer"} names lease epoch ${epoch}: reading the record`);
     this.#claimReadTimer = this.#o.clock.setTimeout(() => {
       this.#claimReadTimer = undefined;

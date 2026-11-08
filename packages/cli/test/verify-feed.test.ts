@@ -14,9 +14,14 @@ describe("__verify-feed", () => {
     const bytes = new TextEncoder().encode("version: 1.2.3\nfiles: []\n");
     writeFileSync(file, bytes);
     expect(runVerifyFeed(file, key.publicKey)).toEqual({ code: 1, line: "feed: refused (no signature)" });
-    writeFileSync(`${file}.sig`, signFeed(bytes, key.privateKey));
+    writeFileSync(`${file}.sig`, signFeed("latest-linux.yml", bytes, key.privateKey));
     expect(runVerifyFeed(file, key.publicKey)).toEqual({ code: 0, line: "feed: ok" });
     expect(runVerifyFeed(file, null)).toEqual({ code: 1, line: "feed: refused (no key)" });
+    // The same bytes under another name are refused.
+    const renamed = join(dir, "beta-linux.yml");
+    writeFileSync(renamed, bytes);
+    writeFileSync(`${renamed}.sig`, signFeed("latest-linux.yml", bytes, key.privateKey));
+    expect(runVerifyFeed(renamed, key.publicKey)).toEqual({ code: 1, line: "feed: refused (bad signature)" });
     writeFileSync(file, "version: 9.9.9\nfiles: []\n");
     expect(runVerifyFeed(file, key.publicKey)).toEqual({ code: 1, line: "feed: refused (bad signature)" });
     expect(runVerifyFeed(join(dir, "nope.yml"), key.publicKey).code).toBe(2);

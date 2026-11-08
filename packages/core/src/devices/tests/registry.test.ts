@@ -37,7 +37,7 @@ describe("answer keys by algorithm (B's #187, the conformance case \"answer-alg\
     expect(await registry.verifyAnswer(enclave.id, data, ecSig)).toBe(true);
     expect(await registry.verifyAnswer(enclave.id, new TextEncoder().encode("other"), ecSig)).toBe(false);
     const relabelled = await DeviceKey.loadOrCreate(new MemorySecretStore());
-    await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKeyBase64, answerKey: { publicKey: ecPublic, held: "secure-enclave" } }, { via: "terminal" });
+    await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKeyBase64, answerKey: { publicKey: ecPublic, held: "keychain" } }, { via: "terminal" });
     expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
   });
 });
@@ -150,6 +150,35 @@ describe("FileDeviceRegistry", () => {
     expect(await registry.applyPeerUpdate(p.key.id, u3, p.key.sign(peerUpdateStatement(p.key.id, u3)), { registration: toBase64(next.sign(answerKeyStatement(p.key.id, nextPub, "app-keychain"))), rotations: [rotation] })).toBe(true);
     expect(await registry.verifyAnswer(p.key.id, data, next.sign(data))).toBe(true);
     expect(await registry.verifyAnswer(p.key.id, data, first.sign(data))).toBe(false);
+  });
+
+  test("a phone's P-256 answer key from pairing changes over link.device.update only by the old key's hand-over; its link key never answers", async () => {
+    const { registry, clock } = await open();
+    const { generateKeyPairSync, sign } = await import("node:crypto");
+    const p256 = () => {
+      const pair = generateKeyPairSync("ec", { namedCurve: "P-256" });
+      const jwk = pair.publicKey.export({ format: "jwk" }) as { x: string; y: string };
+      const pub = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url")]).toString("base64");
+      return { pub, sign: (d: Uint8Array) => new Uint8Array(sign("sha256", d, { key: pair.privateKey, dsaEncoding: "ieee-p1363" })) };
+    };
+    const phone = await DeviceKey.fromKey(generateEd25519());
+    const first = p256();
+    // As pairing stores it: the record's answer key, proved by its own signature in the transcript (pairing.test.ts).
+    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKeyBase64, answerKey: { publicKey: first.pub, held: "secure-enclave", alg: "p256" } as never }, { via: "code", card: "card_1" });
+    const data = new TextEncoder().encode("an answer");
+    expect(await registry.verifyAnswer(phone.id, data, first.sign(data))).toBe(true);
+    expect(await registry.verifyAnswer(phone.id, data, phone.sign(data))).toBe(false);
+    // The phone's rotation, as lane I's iOS sends it on a link-up: the new key's registration, the old key's step.
+    const next = p256();
+    const u = { answerKey: { publicKey: next.pub, held: "secure-enclave" as const, alg: "p256" as const }, at: clock.now() + 1 };
+    const registration = toBase64(next.sign(answerKeyStatement(phone.id, next.pub, "secure-enclave", "p256")));
+    const step = { from: first.pub, to: next.pub, at: 9, toAlg: "p256" as const, signature: toBase64(first.sign(answerKeyRotateStatement(phone.id, first.pub, next.pub, 9))) };
+    // Without the old key's step (the link key alone), refused.
+    expect(await registry.applyPeerUpdate(phone.id, u, phone.sign(peerUpdateStatement(phone.id, u)), { registration, rotations: [] })).toBe(false);
+    expect(await registry.applyPeerUpdate(phone.id, u, phone.sign(peerUpdateStatement(phone.id, u)), { registration, rotations: [step] })).toBe(true);
+    expect(registry.get(phone.id)?.answerKey).toEqual({ publicKey: next.pub, held: "secure-enclave", alg: "p256" } as never);
+    expect(await registry.verifyAnswer(phone.id, data, next.sign(data))).toBe(true);
+    expect(await registry.verifyAnswer(phone.id, data, first.sign(data))).toBe(false);
   });
 
   test("removing a peer's answer key takes only its link key, and then no new first key is taken", async () => {

@@ -104,9 +104,13 @@
                       "voice",
                       "avatar",
                       "theme",
-                      "layout"
+                      "layout",
+                      "lan"
                     ]
                   }
+                },
+                "lan": {
+                  "type": "boolean"
                 },
                 "state": {
                   "type": "string",
@@ -257,9 +261,13 @@
                     "voice",
                     "avatar",
                     "theme",
-                    "layout"
+                    "layout",
+                    "lan"
                   ]
                 }
+              },
+              "lan": {
+                "type": "boolean"
               },
               "state": {
                 "type": "string",
@@ -460,6 +468,12 @@
                   {
                     "type": "null"
                   }
+                ]
+              },
+              "lan": {
+                "type": [
+                  "boolean",
+                  "null"
                 ]
               }
             }
@@ -707,6 +721,11 @@
                     "questions"
                   ],
                   "additionalProperties": false
+                },
+                "rebasedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
                 }
               },
               "required": [
@@ -879,6 +898,11 @@
                   "questions"
                 ],
                 "additionalProperties": false
+              },
+              "rebasedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
@@ -2336,9 +2360,13 @@
                     "voice",
                     "avatar",
                     "theme",
-                    "layout"
+                    "layout",
+                    "lan"
                   ]
                 }
+              },
+              "lan": {
+                "type": "boolean"
               },
               "state": {
                 "type": "string",
@@ -2598,6 +2626,11 @@
                   "cards",
                   "questions"
                 ]
+              },
+              "rebasedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               }
             },
             "required": [
@@ -2695,6 +2728,10 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "late": {
+            "type": "boolean",
+            "const": true
+          },
           "from": {
             "type": "string",
             "maxLength": 81,
@@ -2763,6 +2800,10 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "late": {
+            "type": "boolean",
+            "const": true
+          },
           "agent": {
             "type": "string",
             "minLength": 1,
@@ -2824,6 +2865,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "late": {
+            "type": "boolean",
+            "const": true
           },
           "agent": {
             "type": "string",
@@ -2932,6 +2977,10 @@
             "minimum": 0,
             "maximum": 9007199254740991
           },
+          "late": {
+            "type": "boolean",
+            "const": true
+          },
           "routine": {
             "type": "string",
             "maxLength": 128
@@ -2949,6 +2998,9 @@
           "text": {
             "type": "string",
             "maxLength": 100000
+          },
+          "failed": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2959,7 +3011,8 @@
           "routine",
           "name",
           "sideThread",
-          "text"
+          "text",
+          "failed"
         ]
       }
     },
@@ -3003,6 +3056,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "late": {
+            "type": "boolean",
+            "const": true
           },
           "from": {
             "oneOf": [
@@ -3121,6 +3178,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "late": {
+            "type": "boolean",
+            "const": true
           },
           "from": {
             "type": "object",

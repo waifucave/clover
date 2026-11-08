@@ -2,7 +2,8 @@
 // touches the real one under the user's cache folder.
 import { describe, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,17 +11,35 @@ const HEAVY = join(import.meta.dir, "heavy");
 const posix = process.platform !== "win32";
 const PINNED_BUN = readFileSync(join(import.meta.dir, "..", ".bun-version"), "utf8").trim();
 
+const STAND_IN = `#!/bin/sh\necho ${PINNED_BUN}\n`;
+
 /** A pinned-Bun cache that already holds this checkout's pinned version (a stand-in), so no test fetches one. */
 function bunCache(): string {
   const cache = mkdtempSync(join(tmpdir(), "clover-heavy-test-bun-"));
   mkdirSync(join(cache, PINNED_BUN));
-  writeFileSync(join(cache, PINNED_BUN, "bun"), `#!/bin/sh\necho ${PINNED_BUN}\n`, { mode: 0o755 });
+  writeFileSync(join(cache, PINNED_BUN, "bun"), STAND_IN, { mode: 0o755 });
   return cache;
 }
 const CACHE = posix ? bunCache() : "";
 
+/** A throwaway checkout pinning this Bun version, its `.bun-sha256` pinning the stand-in (pinned-bun checks the cached
+ *  binary against it on every run), with this repo's scripts/pinned-bun: heavy run there takes the stand-in. */
+function pinningCheckout(): string {
+  const dir = mkdtempSync(join(tmpdir(), "clover-heavy-test-checkout-"));
+  spawnSync("git", ["init", "-q"], { cwd: dir });
+  writeFileSync(join(dir, ".bun-version"), `${PINNED_BUN}\n`);
+  const sha = createHash("sha256").update(STAND_IN).digest("hex");
+  const assets = ["darwin-aarch64", "darwin-x64", "darwin-x64-baseline", "linux-aarch64", "linux-aarch64-musl", "linux-x64", "linux-x64-baseline", "linux-x64-musl", "linux-x64-musl-baseline"];
+  writeFileSync(join(dir, ".bun-sha256"), `${assets.map((a) => `${PINNED_BUN} bun-${a} ${sha}`).join("\n")}\n`);
+  mkdirSync(join(dir, "scripts"));
+  copyFileSync(join(import.meta.dir, "pinned-bun"), join(dir, "scripts", "pinned-bun"));
+  spawnSync("chmod", ["755", join(dir, "scripts", "pinned-bun")]);
+  return dir;
+}
+
+/** The slot tests run with PATH as it is; the pinned-Bun test turns it on, in a checkout that pins the stand-in. */
 function env(dir: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  return { ...process.env, HEAVY_DIR: dir, HEAVY_POLL_SECONDS: "1", CLOVER_BUN_CACHE: CACHE, CLOVER_PINNED_BUN: "1", ...extra };
+  return { ...process.env, HEAVY_DIR: dir, HEAVY_POLL_SECONDS: "1", CLOVER_BUN_CACHE: CACHE, CLOVER_PINNED_BUN: "0", ...extra };
 }
 
 function slotDir(): string {
@@ -85,13 +104,14 @@ describe.if(posix)("scripts/heavy", () => {
   test("the job runs with the checkout's pinned Bun first on PATH, and CLOVER_PINNED_BUN=0 leaves PATH alone", () => {
     const dir = slotDir();
     const which = ["sh", "-c", "command -v bun; bun --version"];
-    const pinned = spawnSync(HEAVY, which, { cwd: join(import.meta.dir, ".."), env: env(dir), encoding: "utf8" });
+    const checkout = pinningCheckout();
+    const pinned = spawnSync(HEAVY, which, { cwd: checkout, env: env(dir, { CLOVER_PINNED_BUN: "1" }), encoding: "utf8" });
     expect(pinned.status).toBe(0);
     expect(pinned.stdout).toBe(`${join(CACHE, PINNED_BUN, "bun")}\n${PINNED_BUN}\n`);
-    const off = spawnSync(HEAVY, which, { cwd: join(import.meta.dir, ".."), env: env(dir, { CLOVER_PINNED_BUN: "0" }), encoding: "utf8" });
+    const off = spawnSync(HEAVY, which, { cwd: checkout, env: env(dir, { CLOVER_PINNED_BUN: "0" }), encoding: "utf8" });
     expect(off.stdout).not.toContain(CACHE);
     // Outside a checkout that pins a Bun, PATH is left as it is.
-    const elsewhere = spawnSync(HEAVY, which, { cwd: dir, env: env(dir), encoding: "utf8" });
+    const elsewhere = spawnSync(HEAVY, which, { cwd: dir, env: env(dir, { CLOVER_PINNED_BUN: "1" }), encoding: "utf8" });
     expect(elsewhere.stdout).not.toContain(CACHE);
   });
 

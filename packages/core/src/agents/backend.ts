@@ -15,7 +15,9 @@
 //   (sandbox/oks.ts, asked by the manager).
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import type { Os } from "@waifucave/clover-protocol";
+import { homedir } from "node:os";
+import type { Level, Os } from "@waifucave/clover-protocol";
+import type { AgentPauseGate } from "./manager";
 import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
 import type { Clock } from "../contracts/clock";
@@ -46,6 +48,10 @@ export interface BackendCommand {
 export interface AcpBackendOptions {
   id: string;
   pluginId: string;
+  /** Clover's own bundled `clover/agent-<id>` entry (what the core grants by id applies). */
+  bundled?: boolean;
+  /** Its `agentBackends` entry's name, for Settings. */
+  name?: string;
   quirks: AgentQuirks;
   clock: Clock;
   /** Overrides the quirks' command (an `agentBackends` entry's `command` and `args`). */
@@ -59,6 +65,8 @@ export interface AcpBackendOptions {
   table?: ProcessTableReader;
   versionTimeoutMs?: number;
   startTimeoutMs?: number;
+  /** How long an agent has to confirm a mode the floor switched it to (the session's `MODE_CONFIRM_MS`). */
+  modeConfirmMs?: number;
   /** Which sandboxes hold the fence (S8); the built-in table by default. */
   admissions?: Parameters<typeof admissionFor>[0];
   /** Where a session's sandbox files go: a folder inside the fenced run folder (`<home>/run/agents/<session>`). */
@@ -71,7 +79,7 @@ export interface AcpBackendOptions {
   selections?: UserSelections;
   /** Makes the Windows job object for one agent; lane C's `AgentJob.create` by default. */
   makeJob?: () => AgentJobLike | null;
-  /** The agent's read-only mode, for an agent that acts without asking (`READ_ONLY_MODES`). */
+  /** The agent's read-only mode, for an agent that acts without asking (its quirks file's `readOnlyMode`). */
   readOnlyMode?: { option: string; values: readonly string[] };
 }
 
@@ -79,11 +87,16 @@ export interface AcpBackendOptions {
 export interface AcpStartSpec extends AgentStartSpec {
   /** The session runs at read-only: an agent that acts without asking must start in its read-only mode. */
   readOnly?: boolean;
+  /** The session's level, for its sandbox writer (which modes it may run in). */
+  level?: Level;
   /** The program the manager admitted (and the user OK'd, with its file's hash): `start` refuses another. */
   admitted?: { path: string; version?: string; sha256?: string };
   /** For a backend that runs inside the daemon (`inProcess`): the session's bridge as an in-process MCP server, which it
    *  serves in place of the stdio `bridge` (there is no process to bind a token to). */
   inProcessBridge?: McpSdkServerConfigWithInstance;
+  /** The pause this session answers to, for a backend that holds its own tool calls (the in-process ones): the
+   *  manager's switch, and for an agent run for another computer, that computer's forwarded switch too (remote.ts). */
+  pause?: AgentPauseGate;
 }
 
 /** One session's hooks into the daemon: its transcript (the wire and stderr), and `launched`, called with the agent's
@@ -108,6 +121,8 @@ export function currentOs(): Os {
 export class AcpAgentBackend implements AgentBackend {
   readonly id: string;
   readonly pluginId: string;
+  readonly bundled: boolean;
+  readonly name: string | undefined;
   readonly quirks: AgentQuirks;
   readonly #opts: AcpBackendOptions;
   readonly #selections: UserSelections;
@@ -115,6 +130,8 @@ export class AcpAgentBackend implements AgentBackend {
   constructor(opts: AcpBackendOptions) {
     this.id = opts.id;
     this.pluginId = opts.pluginId;
+    this.bundled = opts.bundled === true;
+    this.name = opts.name;
     this.quirks = opts.quirks;
     this.#opts = opts;
     this.#selections = opts.selections ?? new UserSelections();
@@ -188,7 +205,7 @@ export class AcpAgentBackend implements AgentBackend {
       const dir = wire.setupDir ?? this.#opts.setupDir?.(spec.sessionId);
       if (!dir) throw new ContractError("refused", `${this.id}'s sandbox needs a setup folder`);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
-      setup = sandbox.writer(spec.fence, { root: spec.root, dir });
+      setup = sandbox.writer(spec.fence, { root: spec.root, dir, home: homedir(), env: this.#env(), ...(spec.level ? { level: spec.level } : {}) });
       for (const f of setup.files ?? []) writeFileSync(join(dir, f.name), f.content, { mode: 0o600 });
     }
     // The plugins' skills, agents and hooks, where this backend reads its own.
@@ -234,6 +251,8 @@ export class AcpAgentBackend implements AgentBackend {
       selections: { keeper: this.#selections, backend: this.id },
       ...(this.#opts.readOnlyMode ? { readOnlyMode: this.#opts.readOnlyMode } : {}),
       ...(readOnly ? { readOnly: true } : {}),
+      ...(setup.modeFloor ? { modeFloor: setup.modeFloor, ...(spec.level ? { level: spec.level } : {}) } : {}),
+      ...(this.#opts.modeConfirmMs === undefined ? {} : { modeConfirmMs: this.#opts.modeConfirmMs }),
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }

@@ -22,6 +22,8 @@ export const PointDeclSchema = z.strictObject({
   props: JsonSchema.optional(),
   /** Capabilities an entry's plugin must have for the data its props carry (§5.5). */
   needs: z.array(utf16(300, 1)).max(32).optional(),
+  /** A spot's props that reach only a plugin holding a capability, by dotted path (the catalog's `menu.message`). */
+  gates: z.record(utf16(256, 1), utf16(300, 1)).optional(),
   /** Keys that can't be hidden (§5.5). */
   keep: z.array(utf16(256, 1)).max(64).optional(),
   /** The keys the spot offers to `when`, such as "bot". */
@@ -409,6 +411,13 @@ export const ManifestSchema = z.strictObject({
   /** Runs add-ons of its own, in a format it chooses (§5.4). */
   addons: z.strictObject({ description: Text }).optional(),
   contributes: ContributionsSchema.optional(),
+  /** Written by Clover's release build (`buildPluginForShipping`, core `registry/ship.ts`), never by hand: `host.entry`,
+   *  `client.entry` and each program a `stdio` server or agent backend runs with `bun` or `node` name built ES modules
+   *  of JavaScript, with their dependencies bundled in and a client's CSS listed in `client.css`. Honoured only in a
+   *  bundled tree (`clover`, `alpha`), whose bytes the signed core's manifest pins; any other plugin that says it is
+   *  refused (`built_not_bundled`). It spares the registry a rebuild, never a check: the registry scans every client
+   *  entry at load, built or not. */
+  built: z.literal(true).optional(),
   /** A hint; the OK shows the core's own record (§5.6). */
   generated: z.strictObject({
     from: z.enum(["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin", "winter"]),

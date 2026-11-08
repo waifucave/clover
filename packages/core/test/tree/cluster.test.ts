@@ -76,6 +76,11 @@ describe("one tree across computers", () => {
     expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT }))).toBe("fenced");
     expect(await code(studio.node.tree.write("bots/alpha/agents/a_1.md", { encoding: "utf8", text: "# Agent\n" }, { as: BOT }))).toBe("fenced");
     expect(existsSync(join(laptop.cloverHome, "bots/alpha/agents/a_1.md"))).toBe(false);
+    // The folder still lives on Laptop1: written on its disk (as the core). Read from Studio, the call reaches Laptop1
+    // as a peer's, which #234's home default-deny refuses the whole Clover home (the controller's ruling).
+    mkdirSync(join(laptop.cloverHome, "bots/alpha/agents"), { recursive: true });
+    writeFileSync(join(laptop.cloverHome, "bots/alpha/agents/a_1.md"), "# Agent\n");
+    expect(await code(studio.node.tree.read("bots/alpha/agents/a_1.md", { as: BOT }))).toBe("fenced");
     expect(await code(studio.node.tree.read("bots/luna/x", { as: BOT }))).toBe("not_found");
   });
 });

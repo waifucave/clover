@@ -29,10 +29,11 @@ import { constants as FS, promises as fsp } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import { z } from "zod";
-import { Level, SessionId, SignedCardAnswer, TreePath, type Caller } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, TreePath, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { Link, LinkStream, LinkTransport } from "../contracts/link-transport";
-import { transferChange } from "../contracts/tree";
+import { transferChange, transferEndsHold } from "../contracts/tree";
+import { checkActFence, fenceParam, type ActFence } from "./fencing";
 import type { HolderCall, LocalHolder } from "./holder";
 import { atOps } from "./at";
 import { answerNeeded, type AnswerAsker, type NeedsAnswer } from "./judge";
@@ -50,9 +51,11 @@ export const ReceiveParams = z.object({
   /** The one signed answer for the whole operation (ruling R15), which both holders check; the destination passes it
    *  to the source with the stream. */
   answer: SignedCardAnswer.optional(),
+  /** The calling computer's fencing token (`fencing.ts`). */
+  fence: FencingToken.optional(),
 });
 export type ReceiveParams = z.infer<typeof ReceiveParams>;
-const SendMeta = z.object({ from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() });
+const SendMeta = z.object({ from: TreePath, to: TreePath, move: z.boolean(), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional(), fence: FencingToken.optional() });
 
 export interface TransferResult {
   files: number;
@@ -65,9 +68,16 @@ export { transferChange };
 
 /** One holder's part: the destination judges the whole operation, the source a move (a copy only reads there). A
  *  holder whose own rule is stricter (read-only) refuses whatever the answer. */
-async function judgeEnd(holder: LocalHolder, call: HolderCall, role: "source" | "destination", move: boolean, from: string, to: string, source: string, destination: string): Promise<void> {
+async function judgeEnd(
+  holder: LocalHolder, call: HolderCall, role: "source" | "destination", move: boolean, from: string, to: string, source: string, destination: string,
+  /** This holder's own tree, for R15's ends (`transferEndsHold`): `from` on the source, `to` on the destination. */
+  resolve?: (path: string) => { computer: string },
+): Promise<void> {
+  if (resolve && !transferEndsHold({ operation: move ? "move" : "copy", from, to, source, destination }, resolve)) {
+    throw new ContractError("refused", `${from} isn't on ${source}, or ${to} isn't on ${destination}`);
+  }
   if (role === "source" && !move) return;
-  await holder.judge(call, transferChange(move, from, to, source, destination), role === "source" || move ? "move" : "edit", destination);
+  await holder.judge(call, transferChange(move, from, to, source, destination), role === "source" || move ? "move" : "edit");
 }
 
 interface Entry {
@@ -392,6 +402,22 @@ async function cleanUp(staging: string, made: string): Promise<void> {
 }
 
 /** A move or copy whose two ends are on this disk: two holders here (the conformance harness), or one. */
+/** Which of `holders` holds a tree path (its own `realPathOf` takes it, for `as`), for `transferEndsHold`; else
+ *  `fallback`. */
+function heldBy(holders: readonly LocalHolder[], fallback = "", as?: Caller): (path: string) => { computer: string } {
+  return (path) => {
+    for (const h of holders) {
+      try {
+        h.realPathOf(path, as);
+        return { computer: h.name };
+      } catch {
+        // not this holder's
+      }
+    }
+    return { computer: fallback };
+  };
+}
+
 export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: ReceiveParams, as: Caller): Promise<TransferResult> {
   const dcall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
   const scall: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
@@ -400,9 +426,10 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
   const from = await src.realEntry(p.from, scall, p.move ? "delete" : "read");
   if (!from.exists) throw new ContractError("not_found", `${p.from} doesn't exist`);
   if (inside(from.real, to.real)) throw new ContractError("invalid", `${p.to} is inside ${p.from}`);
-  // The whole operation, judged once at each end before anything lands.
-  await judgeEnd(dst, dcall, "destination", p.move, p.from, p.to, src.name, dst.name);
-  if (src !== dst) await judgeEnd(src, scall, "source", p.move, p.from, p.to, src.name, dst.name);
+  // The whole operation, judged once at each end before anything lands; R15's ends by which holder holds each path.
+  const ends = heldBy([src, dst], "", as);
+  await judgeEnd(dst, dcall, "destination", p.move, p.from, p.to, src.name, dst.name, ends);
+  if (src !== dst) await judgeEnd(src, scall, "source", p.move, p.from, p.to, src.name, dst.name, ends);
   const entries = await walk(src, from.real, scall, p.move);
   const kept = await existingAbove(to.real);
   await dst.makeParents(to, p.to);
@@ -428,7 +455,10 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
     await cleanUp(staging, kept);
     throw e;
   }
-  return { files, bytes, kept: p.move ? await removeSent(from.real, entries) : 0 };
+  dst.changedAt(to.real);
+  const changed = p.move ? await removeSent(from.real, entries) : 0;
+  if (p.move) src.changedAt(from.real);
+  return { files, bytes, kept: changed };
 }
 
 // ---- serving both ends --------------------------------------------------------------------------------------------
@@ -436,6 +466,8 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
 export interface TransferOptions {
   transport: LinkTransport;
   holder: LocalHolder;
+  /** This computer's fencing token for the acts it asks, and its guard for the ones asked of it (`fencing.ts`). */
+  fence?: ActFence;
   /** Where a tree path lives: its computer and device, or a null device for this computer. */
   deviceFor: (path: string) => { computer: string; device: string | null };
   /** Whether `device` may call at all: a paired computer, not revoked. */
@@ -445,7 +477,8 @@ export interface TransferOptions {
   bulk: BulkSlots;
 }
 
-const JudgeParams = z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level });
+const SentParams = z.object({ sendId: z.string().min(1).max(128), fence: FencingToken.optional() });
+const JudgeParams = z.object({ from: TreePath, to: TreePath, move: z.boolean(), role: z.enum(["source", "destination"]), session: SessionId.optional(), level: Level, fence: FencingToken.optional() });
 
 /** Ends a `tree.send` stream with the error, so the destination answers with its code. */
 async function refuseStream(stream: LinkStream, e: unknown): Promise<void> {
@@ -465,13 +498,14 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
   const pending = new Map<string, { device: string; real: string; entries: Sent[]; timer: ReturnType<typeof setTimeout> }>();
   const offs: Unsubscribe[] = [];
 
+  const ends = (path: string) => ({ computer: o.deviceFor(path).computer });
   const receiveHere = async (p: ReceiveParams, as: Caller): Promise<TransferResult> => {
     const src = o.deviceFor(p.from);
     if (src.device === null) return localTransfer(o.holder, o.holder, p, as);
     const call: HolderCall = { as, level: p.level, ...(p.answer ? { answer: p.answer } : {}) };
     const dst = await o.holder.realEntry(p.to, call, "write");
     if (dst.exists) throw new ContractError("conflict", `${p.to} already exists`);
-    await judgeEnd(o.holder, call, "destination", p.move, p.from, p.to, src.computer, o.holder.name);
+    await judgeEnd(o.holder, call, "destination", p.move, p.from, p.to, src.computer, o.holder.name, ends);
     const above = await existingAbove(dst.real);
     await o.holder.makeParents(dst, p.to);
     const staging = join(dirname(dst.real), `.clover-receiving-${randomUUID()}`);
@@ -484,12 +518,13 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     }
     const stream = link.openStream("tree.send", "files", {
       from: p.from, to: p.to, move: p.move, level: p.level,
-      ...(p.session ? { session: p.session } : {}), ...(p.answer ? { answer: p.answer } : {}),
+      ...(p.session ? { session: p.session } : {}), ...(p.answer ? { answer: p.answer } : {}), ...fenceParam(o.fence),
     } satisfies z.infer<typeof SendMeta>);
     let got: { sendId: string; files: number; bytes: number };
     try {
       got = await receive(stream, staging);
       await placeInto(staging, dst.real, p.to, dst.root);
+      o.holder.changedAt(dst.real);
     } catch (e) {
       await cleanUp(staging, above);
       throw offlineAs(src.computer, e);
@@ -497,7 +532,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     // In place: the source may let go of what it sent. A source that doesn't hear this keeps it (two copies, never none).
     let kept = 0;
     if (p.move) {
-      const r = await link.request<{ kept?: number }>("tree.sent", { sendId: got.sendId }, { priority: "files" }).catch(() => ({ kept: -1 }));
+      const r = await link.request<{ kept?: number }>("tree.sent", { sendId: got.sendId, ...fenceParam(o.fence) }, { priority: "files" }).catch(() => ({ kept: -1 }));
       kept = r.kept === -1 ? got.files : Math.max(0, Number(r.kept ?? 0));
     }
     return { files: got.files, bytes: got.bytes, kept };
@@ -507,6 +542,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
     const p = ReceiveParams.safeParse(raw);
     if (!p.success) throw new ContractError("invalid", `tree.receive: ${p.error.issues[0]?.message ?? "bad params"}`);
+    checkActFence(o.fence, p.data.fence, "tree.receive");
     // The receiver stamps who the call is for (review N2): a peer, for the session it names.
     const as: Caller = { kind: "peer", device: from, ...(p.data.session ? { sessionId: p.data.session } : {}) };
     return o.bulk.run(from, () => receiveHere(p.data, as));
@@ -519,12 +555,13 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
         const parsed = SendMeta.safeParse(meta);
         if (!parsed.success) throw new ContractError("invalid", "tree.send: bad params");
         const m = parsed.data;
+        checkActFence(o.fence, m.fence, "tree.send");
         if (o.deviceFor(m.from).device !== null) throw new ContractError("invalid", `${m.from} isn't on this computer`);
         const as: Caller = { kind: "peer", device: from, ...(m.session ? { sessionId: m.session } : {}) };
         const call: HolderCall = { as, level: m.level, ...(m.answer ? { answer: m.answer } : {}) };
         const src = await o.holder.realEntry(m.from, call, m.move ? "delete" : "read");
         if (!src.exists) throw new ContractError("not_found", `${m.from} doesn't exist`);
-        await judgeEnd(o.holder, call, "source", m.move, m.from, m.to, o.holder.name, o.deviceFor(m.to).computer);
+        await judgeEnd(o.holder, call, "source", m.move, m.from, m.to, o.holder.name, o.deviceFor(m.to).computer, ends);
         const entries = await walk(o.holder, src.real, call, m.move);
         const sendId = randomUUID();
         if (m.move) {
@@ -544,21 +581,27 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
     const p = JudgeParams.safeParse(raw);
     if (!p.success) throw new ContractError("invalid", `tree.judge: ${p.error.issues[0]?.message ?? "bad params"}`);
+    checkActFence(o.fence, p.data.fence, "tree.judge");
     const as: Caller = { kind: "peer", device: from, ...(p.data.session ? { sessionId: p.data.session } : {}) };
     // No answer goes with it, so none is spent: allowed, refused, or a refusal that names this computer's card.
     const d = p.data;
-    await judgeEnd(o.holder, { as, level: d.level }, d.role, d.move, d.from, d.to, o.deviceFor(d.from).computer, o.deviceFor(d.to).computer);
+    await judgeEnd(o.holder, { as, level: d.level }, d.role, d.move, d.from, d.to, o.deviceFor(d.from).computer, o.deviceFor(d.to).computer, ends);
     return { ok: true };
   }));
 
   offs.push(t.handle("tree.sent", async (raw, from) => {
     if (!o.mayCall(from)) throw new ContractError("refused", "this computer isn't paired with yours");
-    const id = String((raw as { sendId?: unknown } | null)?.sendId ?? "");
+    const p = SentParams.safeParse(raw);
+    if (!p.success) throw new ContractError("invalid", `tree.sent: ${p.error.issues[0]?.message ?? "bad params"}`);
+    checkActFence(o.fence, p.data.fence, "tree.sent");
+    const id = p.data.sendId;
     const s = pending.get(id);
     if (!s || s.device !== from) return { kept: 0 };
     pending.delete(id);
     clearTimeout(s.timer);
-    return { kept: await removeSent(s.real, s.entries) };
+    const kept = await removeSent(s.real, s.entries);
+    o.holder.changedAt(s.real);
+    return { kept };
   }));
 
   return {
@@ -610,8 +653,10 @@ export async function transferAsking(o: {
   params: ReceiveParams;
   as: Caller;
   ask?: AnswerAsker;
+  /** This computer's fencing token, on the `tree.judge` and `tree.receive` it asks. */
+  fence?: ActFence;
 }): Promise<TransferResult> {
-  const p: ReceiveParams = { ...o.params };
+  const p: ReceiveParams = { ...o.params, ...fenceParam(o.fence) };
   // One card for the whole operation, whichever holders ask: the same signed answer goes to both.
   const put = (answer: SignedCardAnswer) => {
     p.answer = answer;
@@ -655,7 +700,7 @@ async function judgeAt(o: { transport: LinkTransport; holder: LocalHolder; sourc
   if (end.device === null) {
     // This computer as the source: it will judge the destination's stream as that computer's peer call.
     const as: Caller = { kind: "peer", device: o.destination.device ?? "", ...(p.session ? { sessionId: p.session } : {}) };
-    await judgeEnd(o.holder, { as, level: p.level }, role, p.move, p.from, p.to, o.source.computer, o.destination.computer);
+    await judgeEnd(o.holder, { as, level: p.level }, role, p.move, p.from, p.to, o.source.computer, o.destination.computer, heldBy([o.holder], o.destination.computer));
     return;
   }
   let link: Link;
@@ -665,7 +710,7 @@ async function judgeAt(o: { transport: LinkTransport; holder: LocalHolder; sourc
     throw offlineAs(end.computer, e);
   }
   try {
-    await link.request("tree.judge", { from: p.from, to: p.to, move: p.move, role, level: p.level, ...(p.session ? { session: p.session } : {}) });
+    await link.request("tree.judge", { from: p.from, to: p.to, move: p.move, role, level: p.level, ...(p.session ? { session: p.session } : {}), ...(p.fence ? { fence: p.fence } : {}) });
   } catch (e) {
     throw offlineAs(end.computer, e);
   }

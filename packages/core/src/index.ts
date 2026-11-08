@@ -4,10 +4,10 @@ export { startDaemon, stopOnSignals, CORE_VERSION, type RunningDaemon } from "./
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 export { resolveEndpoint, homePipeId, isPipe, endpointPresent, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
 export {
-  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs,
-  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
+  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, windowsProfilePath, parseProfileImagePath, stopDaemonCleanly, stopThroughOs,
+  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, schtasksFallbackProblem, loginLabel, loginUnitPath,
   systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
-  superviseLoop, backoffMs,
+  superviseLoop, backoffMs, UPDATE_RESTART_EXIT_CODE,
   type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState, type Runner, type DaemonStartResult, type CleanStopResult, type CleanStopDeps,
   type SuperviseDeps, type SuperviseResult, type DaemonRun,
 } from "./platform/login";
@@ -21,7 +21,12 @@ export { callerFloorVerdict, mayBeUser, type SandboxProbe, type FloorVerdict } f
 export { CloverTokens, isRefusal, type CloverBinding, type HelloRefusal } from "./auth/clover-tokens";
 export { resolveCloverCaller, isFencedCaller, gateCloverRequest, SessionProcesses, type SessionRef } from "./auth/clover-caller";
 export { cloverCall } from "./ipc/clover-client";
+export { UpdateGate, UpdateRestartingRefusal, isUpdateRestarting, UPDATE_RESTARTING_MESSAGE, type BusySource, type GateVerdict } from "./update/gate";
+export { type SelfUpdate } from "./update/service";
+export { INSTALL_MARKER, parseInstallMarker, readInstallMarker, removeInstallMarker, updatesItself, writeInstallMarker, type InstallChannel, type InstallKind, type InstallMarker } from "./update/install-marker";
 export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
+export { sendCoreEvent, OWNER_SCOPED_EVENTS, type CoreEventInput, type CoreEventOptions, type CoreEventRouting } from "./ipc/core-events";
+export { approvalCoreEvents } from "./approvals/core-events";
 export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
@@ -335,3 +340,17 @@ export {
 export { installDaemonLogFile, daemonLogPathFor, DAEMON_LOG_FILE, DAEMON_LOG_MAX_BYTES, type DaemonLogFileHandle } from "./daemon-log-file";
 export { CloverSecretStore, openCloverSecretStore, secretStoreWarning, probeSystemdCreds, systemdCredsKey, KeychainValues, EncryptedFileValues, bunVault, memoryVault, vaultKey, keyFileKey, type Vault, type ValueBackend } from "./secrets/clover-secret-store";
 export * as registry from "./registry/index";
+// C-M3: the real approval broker, its saved rules on disk, and the bots' approval check (INT wires them:
+// `canUseTool: botApprovalCheck(broker)`, `openCard: brokerCardOpener(broker)`).
+export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverApprovalBrokerOptions, type RuleStore, type StoredRule, type CloverApprovalRequest, UNRESOLVED_PATHS_REASON } from "./approvals/broker";
+export { fileRuleStore, savedRulesPath, SAVED_RULES_VERSION } from "./approvals/rule-store";
+export { botApprovalCheck, botToolRequest, effectOf as botToolEffect, isBuiltinTool, resolveSessionPath, type BotToolRequestOptions } from "./approvals/bot-check";
+export { looksCredentialBearing } from "./approvals/strings";
+export { cloudCardConfirm, cloudCardRequest, cloudCardSubject, CloudCardDesk, CLOUD_CARD_TEXT, CLOUD_PAIRED_TEXT, CLOUD_VALUE_MAX, type CloudCardOutcome, type CloudCardRequest, type CloudVmRef } from "./approvals/cloud-cards";
+export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
+export {
+  bundledManifest, bundledPluginIds, bundledPluginsDir, formatBundledManifest, loadBundledManifest, measureBundledTree, readBundledFile, readBundledPlugin,
+  type BundledEntry, type BundledManifest, type BundledPluginRead, type BundledRead,
+} from "./bundled-plugins-dir";
+export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
+export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";

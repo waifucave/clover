@@ -17,6 +17,14 @@
 // * **Before each tool call** the driver asks `mayAct()` (§6.4 fencing, §9.2 pause): while the pause switch holds the
 //   session the call waits (`whenMayAct`), and once this computer stops running the bots it is refused. Then the
 //   plugins' `tool.before` hooks run, then the approval check (`canUseTool`), then the call; `tool.after` after it.
+// * **After each tool call** the next request waits while the pause holds (`PostToolUse`): the call is never cut off.
+// * **Before each model turn** too (the runtime's `UserPromptSubmit`): a turn the runtime starts on its own, when a
+//   background task finishes or is stopped and its notification comes in, waits while the pause holds the session, as
+//   does an input about to fold in; the turn starts once the user resumes, and never on a computer that stopped
+//   running the bot.
+// * **The pause stops background work** (the owner's rule: the pause stops everything): once the switch says no, the
+//   session's background shells and monitors are stopped through the runtime (`Query.stopTask`, by the host). Resuming
+//   doesn't restart them; the runtime's own notification of each stop reaches the model once the user resumes.
 // * **At each turn's end** the session lets go of its holds on every computer's screen (J's `releaseSession`); at the
 //   session's end its terminals close (J's `TerminalRouter.closeSession`).
 // * **Compaction:** `compact()` on the host's word (lane D's cache-timed or forced compaction), and the runtime's own
@@ -42,8 +50,10 @@ import { cloverSessions } from "../sessions";
 import { NO_HOOKS, type HookSession, type TurnHooks } from "./hooks";
 import { harnessPrompt, mcpChangesSince, mcpFingerprint, type PromptComputer, type PromptMcpServer } from "./prompt";
 import { coreToolsServer, routedMcpServer, type BotMcpServer, type CallIds, type CoreToolDef, type McpRunner } from "./servers";
-import { formatTurnInput } from "./input";
-import { embeddedSessionOptions } from "./embedded-session";
+import { formatTurnInput, TASK_NOTIFICATION_FRAME } from "./input";
+import { embeddedSessionOptions, fillProvider } from "./embedded-session";
+import { mergedHooks } from "./hook-merge";
+import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
@@ -65,12 +75,19 @@ export const ON_DEMAND_BUILTINS: readonly { name: string; description: string }[
 /** The fields every hook and tool hook sees of a tool call. */
 interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?: string; tool_response?: unknown }
 
+/** What every bot's and agent's sandbox is, whatever the host gives: on, no unsandboxed command (a call's
+ *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
+ *  and in-process agents never run a command unsandboxed (the owner's ruling). */
+export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
+
 export interface BotDriverDeps {
   /** The Clover home: the runtime's own home (`CLOVER_HOME`), its transcripts and this driver's state. */
   home: string;
   profile?: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */
   spawn: SpawnClaudeCodeProcess;
+  /** macOS: the process holder (`EmbeddedSessionDeps.processHolder`); default, the one beside the daemon. */
+  processHolder?: string;
   /** Test seam: the agent SDK's `query`. */
   query?: typeof sdkQuery;
   /** The approval check for a session's tool calls (lanes B and C's broker, through the approval bridge). */
@@ -96,12 +113,17 @@ export interface BotDriverDeps {
   /** Fills what a real model needs (the provider, the credential broker, the model plugins' adapters) into a
    *  session's options; the daemon's. A `winter-test/*` model needs nothing. */
   provider?(model: string, options: Options, ctx: BotSessionContext): void | Promise<void>;
-  /** The Bash sandbox; the runtime's default floor when left out. */
+  /** The Bash sandbox; the runtime's default floor when left out. Whatever it says, a bot's commands run sandboxed
+   *  (`BOT_SANDBOX`). */
   sandbox?(ctx: BotSessionContext): SandboxSettingsConfig | undefined;
   /** Extra environment for the runtime (never secrets). */
   env?: Record<string, string>;
   /** How long `stop` waits for the runtime to end. */
   stopGraceMs?: number;
+  /** How often a session with background tasks looks at the pause (`PAUSE_POLL_MS`); a test's seam. */
+  pausePollMs?: number;
+  /** How long a tool call waits for the pause to lift before it's refused (`TOOL_HOLD_MS`); a test's seam. */
+  toolHoldMs?: number;
   log?(line: string): void;
 }
 
@@ -118,6 +140,10 @@ interface RunningTurn {
   usage: { inputTokens: number; outputTokens: number; contextTokens?: number };
   text?: string;
   interrupted: boolean;
+  /** The text that started the turn: carried into the next one when an interrupt lands while the pause holds it. */
+  first: string;
+  /** Why the pause hold blocked the turn's start (the session ended, or the lease went): it ends `stopped`. */
+  heldOff?: string;
   offFold: Unsubscribe;
   offAbort: () => void;
   /** The last record a `message.out` hook holds back; the turn ends after it. */
@@ -133,10 +159,73 @@ interface Incarnation {
   projector: Projector;
   pump: Promise<void>;
   closed: boolean;
+  /** The runtime's background tasks (shells, monitors) still running, by task id. */
+  tasks: Set<string>;
+  /** Tasks that ended, in the runtime's order, not yet handed to the host (`#promptHold`, `ctx.wake`). */
+  ended: TaskWake[];
+  /** Wakes for the runtime's own turns `#promptHold` ended: each goes to the host once that turn's result is in, so
+   *  the turn the host starts never takes the ended one's result for its own. */
+  wakes: TaskWake[];
+  /** Task ids a stop is under way for. */
+  stopping: Set<string>;
+  /** Looks at the pause while `tasks` isn't empty. */
+  taskWatch?: ReturnType<typeof setInterval>;
 }
+
+/** A background task of the session's runtime that ended (lane D's `BotSessionContext.wake`). */
+export interface TaskWake {
+  task: string;
+  /** How it ended; `event` for a monitor's event, the task still running. */
+  status: "completed" | "failed" | "stopped" | "event";
+  text: string;
+}
+
+/** The wake for the runtime's own turn: the ended task its notification names (by `<task-id>`), else read from the
+ *  notification itself (a monitor's event has no ending of its own). Never another task's. */
+function wakeFor(prompt: string, ended: TaskWake[]): TaskWake {
+  const field = (tag: string) => new RegExp(`<${tag}>([^<]*)</${tag}>`).exec(prompt)?.[1];
+  const id = field("task-id");
+  if (id !== undefined) {
+    const i = ended.findIndex((e) => e.task === id);
+    if (i >= 0) return ended.splice(i, 1)[0]!;
+  }
+  const raw = field("status");
+  const status: TaskWake["status"] = raw === "failed" ? "failed" : raw === "stopped" || raw === "killed" ? "stopped" : raw === "completed" ? "completed" : "event";
+  const event = /<event>([\s\S]*?)<\/event>/.exec(prompt)?.[1];
+  const text = [field("summary"), event].filter((x): x is string => x !== undefined && x !== "").join("\n");
+  return { task: id ?? "unknown", status, text: text !== "" ? text : prompt };
+}
+
+/** The session's context, with lane D's `wake` where the host has it: the runtime's own notification turn is handed to
+ *  the host as input instead of running unseen. */
+type WakeContext = BotSessionContext & { wake?(w: TaskWake): unknown };
+
+/** How long the tool hook may run (seconds): a call the pause holds waits inside it (`TOOL_HOLD_MS`). */
+const TOOL_HOOK_TIMEOUT_S = 3600;
+/** How long a tool call waits for the pause to lift before it's refused, saying why (a minute inside the hook's hour). */
+const TOOL_HOLD_MS = (TOOL_HOOK_TIMEOUT_S - 60) * 1000;
+
+/** Whether `stopTask` failed because the runtime has no such task (it ended, or isn't this session's). */
+export function isUnknownTask(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return code === "unknown_task" || (err instanceof Error && /unknown_task/.test(err.message));
+}
+
+/** How often a session with background tasks looks at the pause switch (it has no event for it). */
+const PAUSE_POLL_MS = 1_000;
 
 /** The events the host projects itself; the runtime's echoes of them are dropped. */
 const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
+
+/** How long the runtime lets the model-turn hold run (seconds): the longest a timer can wait, about 24.8 days. A pause
+ *  that outlasts it ends the held turn blocked, never started. */
+const PROMPT_HOLD_TIMEOUT_S = Math.floor(2_147_483_647 / 1000);
+
+/** A plugin id's top-level tree (`clover` for `clover/web`). */
+const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
+
+/** Names no tree but their own may take, installed or not: the bundled tree's. */
+export const RESERVED_SERVER_NAMES: readonly string[] = ["clover"];
 
 /** Servers that share a name prefix (the bundled tree's children all read `mcp__clover__…`: the browser's, the web
  *  plugin's) are one server to the runtime, with every tool; a tool name two of them give keeps the first, by plugin
@@ -144,18 +233,32 @@ const HOST_OWNED = new Set(["user_message", "turn_started", "turn_completed"]);
  *  enabled plugin per namespace): the name belongs to the plugin tree whose top-level id it is (`clover` for
  *  `mcp__clover__…`), else to the first tree by plugin id; a server of any other tree under it is left out, never merged
  *  in (`onRefused`), so no plugin can slip its tools under another's name. */
-export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: BotMcpServer, holder: string) => void): BotMcpServer[] {
-  const top = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id);
+export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: BotMcpServer, holder: string) => void, reserved: Iterable<string> | ReadonlyMap<string, string> = RESERVED_SERVER_NAMES): BotMcpServer[] {
   const sorted = [...servers].sort((a, b) => (a.plugin < b.plugin ? -1 : a.plugin > b.plugin ? 1 : 0));
-  // Who holds each name: the tree whose top-level id is the name (`clover` holds `mcp__clover__…`), else the first.
+  // Who holds each name, compared without case: an installed tree's namespace is its own even when it gives no server
+  // (`reserved`: name → the tree's top-level id; a plain name is its own tree's), else the tree whose top-level id is
+  // the name (`clover` holds `mcp__clover__…`), else the first by plugin id.
   const holder = new Map<string, string>();
+  for (const entry of reserved) {
+    const [name, tree] = typeof entry === "string" ? [entry, entry] : entry;
+    // The first claim holds: `clover` stays the bundled tree's whatever another tree's id or namespace spells.
+    if (!holder.has(name.toLowerCase())) holder.set(name.toLowerCase(), tree);
+  }
+  const fixed = new Set(holder.keys());
   for (const s of sorted) {
-    const h = holder.get(s.server);
-    if (h === undefined || (top(s.plugin) === s.server && h !== s.server)) holder.set(s.server, top(s.plugin));
+    const key = s.server.toLowerCase();
+    if (fixed.has(key)) continue;
+    const h = holder.get(key);
+    if (h === undefined || (top(s.plugin).toLowerCase() === key && h.toLowerCase() !== key)) holder.set(key, top(s.plugin));
   }
   const out = new Map<string, BotMcpServer>();
   for (const s of sorted) {
-    const h = holder.get(s.server)!;
+    // A server name is a namespace (lane B's wire name): lower-case letters and digits, joined by single hyphens.
+    if (!NAMESPACE_RE.test(s.server)) {
+      onRefused?.(s, "no one (the name isn't a namespace)");
+      continue;
+    }
+    const h = holder.get(s.server.toLowerCase())!;
     if (top(s.plugin) !== h) {
       onRefused?.(s, h);
       continue;
@@ -172,9 +275,9 @@ export function mergedServers(servers: readonly BotMcpServer[], onRefused?: (s: 
 }
 
 /** The servers `mergedServers` keeps, each as its plugin gave it (for the prompt, which lists every server's text). */
-export function keptServers(servers: readonly BotMcpServer[]): BotMcpServer[] {
+export function keptServers(servers: readonly BotMcpServer[], reserved: Iterable<string> | ReadonlyMap<string, string> = RESERVED_SERVER_NAMES): BotMcpServer[] {
   const refused = new Set<BotMcpServer>();
-  mergedServers(servers, (r) => refused.add(r));
+  mergedServers(servers, (r) => refused.add(r), reserved);
   return servers.filter((s) => !refused.has(s));
 }
 
@@ -199,6 +302,8 @@ export class BotSessionDriver implements SessionDriver {
   /** Pushes an interrupt cleared, carried into the next turn ahead of its message. */
   #carry: string[] = [];
   #stopped = false;
+  /** Model turns the pause holds at their start (`#promptHold`), and what let each go other than the resume. */
+  readonly #promptHolds = new Set<{ release: AbortController; why?: "interrupt" | "closing" }>();
   /** The records a `message.out` hook holds back, in order. */
   #recordChain: Promise<void> = Promise.resolve();
   /** The ids of the tool calls starting, by `mcp__<server>__<tool>`, oldest first (`CallIds`). */
@@ -251,6 +356,21 @@ export class BotSessionDriver implements SessionDriver {
     }
   }
 
+  /** Every installed tree's namespace (the registry's, lane B's wire name), and the bundled tree's: names only that
+   *  tree's servers may take, by name → the tree's top-level id. */
+  #reservedNames(): Map<string, string> {
+    const names = new Map<string, string>(RESERVED_SERVER_NAMES.map((n) => [n, n]));
+    try {
+      for (const p of this.#d.registry?.list() ?? []) {
+        const ns = typeof p.namespace === "string" && p.namespace !== "" ? p.namespace.toLowerCase() : top(p.id).toLowerCase();
+        if (!names.has(ns)) names.set(ns, top(p.id));
+      }
+    } catch {
+      // a registry that can't list: the bundled tree's name still holds
+    }
+    return names;
+  }
+
   #promptServers(servers: readonly BotMcpServer[]): PromptMcpServer[] {
     return servers.map((s) => ({
       plugin: s.plugin, server: s.server,
@@ -264,10 +384,18 @@ export class BotSessionDriver implements SessionDriver {
    *  switch holds it; otherwise why the call is refused (the lease went elsewhere, or the turn ended). */
   async #gate(signal: AbortSignal): Promise<string | undefined> {
     if (!this.#ctx.mayAct()) {
+      // Held at most `TOOL_HOLD_MS`, inside the tool hook's own hour: past it the call is refused, saying why.
+      const limit = new AbortController();
+      const timer = setTimeout(() => limit.abort(), this.#d.toolHoldMs ?? TOOL_HOLD_MS);
       try {
-        await this.#ctx.whenMayAct(AbortSignal.any([signal, ...(this.#turn ? [this.#turn.ctl.signal] : [])]));
+        await this.#ctx.whenMayAct(AbortSignal.any([signal, limit.signal, ...(this.#turn ? [this.#turn.ctl.signal] : [])]));
       } catch {
+        if (limit.signal.aborted && !signal.aborted) {
+          return "Not run: the user paused the bots and the pause outlasted how long a call can wait (an hour). Nothing was done; try the call again once the bots are resumed.";
+        }
         return "Stopped: this computer may not act for the bot now (the user paused bots, or another computer runs them).";
+      } finally {
+        clearTimeout(timer);
       }
     }
     return this.#ctx.mayAct() ? undefined : "Stopped: this computer no longer runs the bot.";
@@ -297,12 +425,85 @@ export class BotSessionDriver implements SessionDriver {
     };
   }
 
+  #releasePromptHolds(why: "interrupt" | "closing"): void {
+    for (const h of this.#promptHolds) {
+      h.why ??= why;
+      h.release.abort();
+    }
+  }
+
+  /** The pause at a model turn's start (§9.2: a paused bot starts no model turn). The runtime runs `UserPromptSubmit`
+   *  before every turn's first request, its own included (a background task's notification starts one when the task
+   *  finishes or is stopped, with no host turn asking), and before an input folds in. While the pause holds the
+   *  session it waits; resumed, the turn goes on. The user's interrupt, the session's end and a lease that went
+   *  elsewhere let it go blocked instead, so no request goes out; an interrupted turn's text leads the next turn. */
+  #promptHold(): HookCallbackMatcher {
+    return {
+      timeout: PROMPT_HOLD_TIMEOUT_S,
+      hooks: [async (raw, _id, { signal }) => {
+        // A turn no host turn covers (the runtime's own) asks what a host turn asked before it started: `mayStart`,
+        // no while paused, or while this computer isn't the runner or hands its bots back. One the host started, and
+        // an input folding into it, ask `mayAct`: a hand-back lets the running turn finish.
+        const own = this.#turn === undefined || this.#turn.ended;
+        const ctx = this.#ctx as WakeContext;
+        // A turn of the runtime's own, where the host takes wakes (lane D): it ends here before any request, and the
+        // notification goes to the host, which folds it into a running turn or starts one (through its `mayStart`) that
+        // reaches this driver as any turn does, logged, its usage counted.
+        if (own && typeof ctx.wake === "function") {
+          const inc = this.#inc;
+          const prompt = (raw as { prompt?: unknown }).prompt;
+          // Matched by the task id its notification names: a notification taken inside a host turn leaves an entry
+          // behind (bounded), which no later wake takes for its own.
+          const w = wakeFor(typeof prompt === "string" ? prompt : "", inc?.ended ?? []);
+          inc?.wakes.push(w);
+          return { decision: "block" as const, reason: "Handed to the host as a background task's input." };
+        }
+        const may = own && ctx.mayStart !== undefined && ctx.whenMayStart !== undefined
+          ? { now: () => ctx.mayStart!(), when: (sig: AbortSignal) => ctx.whenMayStart!(sig) }
+          : { now: () => ctx.mayAct(), when: (sig: AbortSignal) => ctx.whenMayAct(sig) };
+        if (may.now()) return {};
+        const hold: { release: AbortController; why?: "interrupt" | "closing" } = { release: new AbortController() };
+        this.#promptHolds.add(hold);
+        try {
+          await may.when(AbortSignal.any([signal, hold.release.signal]));
+        } catch {
+          // let go, timed out, or the lease went elsewhere: decided below
+        } finally {
+          this.#promptHolds.delete(hold);
+        }
+        if (hold.why === undefined && !signal.aborted && !this.#stopped && may.now()) return {};
+        const t = this.#turn;
+        const prompt = (raw as { prompt?: unknown }).prompt;
+        const reason = hold.why === "interrupt" ? "Interrupted while the bots were paused."
+          : hold.why === "closing" || this.#stopped ? "The session ended while the bots were paused."
+            : signal.aborted ? "The bots stayed paused too long." : "Stopped: this computer no longer runs the bot.";
+        if (t !== undefined && typeof prompt === "string" && prompt === t.first) {
+          if (hold.why === "interrupt") this.#carry.push(prompt);
+          else t.heldOff = reason;
+        }
+        return { decision: "block" as const, reason };
+      }],
+    };
+  }
+
+  /** The pause and the lease once more, after every other `PreToolUse` hook (`mergedHooks`' trailing check). */
+  #trailingGate(): HookCallbackMatcher {
+    return {
+      failClosed: true,
+      timeout: TOOL_HOOK_TIMEOUT_S,
+      hooks: [async (_raw, _id, { signal }) => {
+        const stop = await this.#gate(signal);
+        return stop === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
+      }],
+    };
+  }
+
   /** The tool hooks: the pause and the lease first, then the plugins' `tool.before`; `tool.after` after the call. */
-  #toolHooks(): Partial<Record<"PreToolUse" | "PostToolUse" | "PostToolUseFailure", HookCallbackMatcher[]>> {
+  #toolHooks(): Partial<Record<"PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "UserPromptSubmit", HookCallbackMatcher[]>> {
     const pre: HookCallbackMatcher = {
       // A hook that breaks must never wave the call through.
       failClosed: true,
-      timeout: 3600,
+      timeout: TOOL_HOOK_TIMEOUT_S,
       hooks: [async (raw, toolUseId, { signal }) => {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
@@ -311,6 +512,10 @@ export class BotSessionDriver implements SessionDriver {
         if (stop !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
         const r = await this.#hooks.toolBefore(this.#hookSession, { name, callId }, input.tool_input, signal);
         if (r.deny !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: r.deny } };
+        // The plugins' hooks take time: the pause may have come on, or the lease gone, meanwhile. A call that asks no
+        // one (a read-only tool) has no later check (`#gatedCanUseTool`), so the gate is asked again here.
+        const after = await this.#gate(signal);
+        if (after !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: after } };
         // The call id the router gets, queued only for a call that goes on; a refusal after this drops it
         // (`#gatedCanUseTool`, `PostToolUseFailure`), so the next call of the tool never takes a stale one (review S1).
         if (name.startsWith("mcp__") && callId !== "") {
@@ -349,7 +554,16 @@ export class BotSessionDriver implements SessionDriver {
         return {};
       }],
     };
-    return { PreToolUse: [pre], PostToolUse: [post], PostToolUseFailure: [failed] };
+    // After a call (done or failed), the next request waits while the pause holds: the call itself is never cut off,
+    // and no model request goes out until the user resumes (the owner's rule: the pause stops everything).
+    const after: HookCallbackMatcher = {
+      timeout: TOOL_HOOK_TIMEOUT_S,
+      hooks: [async (_raw, _id, { signal }) => {
+        if (!this.#ctx.mayAct()) await this.#gate(signal);
+        return {};
+      }],
+    };
+    return { PreToolUse: [pre], PostToolUse: [post, after], PostToolUseFailure: [failed, after], UserPromptSubmit: [this.#promptHold()] };
   }
 
   readonly #callIdSource: CallIds = {
@@ -369,7 +583,7 @@ export class BotSessionDriver implements SessionDriver {
     const merged = mergedServers(all, (r, holder) => {
       refused.add(`${r.plugin}\u0000${r.server}`);
       this.#log(`bot driver ${ctx.sessionId}: ${r.plugin}'s MCP server ${r.server} is left out: ${holder} holds that name`);
-    });
+    }, this.#reservedNames());
     const servers = all.filter((s) => !refused.has(`${s.plugin}\u0000${s.server}`));
     const promptServers = this.#promptServers(servers);
     const systemPrompt = harnessPrompt({
@@ -384,7 +598,7 @@ export class BotSessionDriver implements SessionDriver {
     // The core tools, and `Glossary` over everything the session has (spec §6.8): it loads the on-demand tools.
     const others = (): readonly CoreToolDef[] => (this.#d.coreTools?.(ctx, origin) ?? []).filter((t) => t.name !== GLOSSARY_TOOL_NAME);
     const glossary = glossaryTool({
-      tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
+      tools: () => [...ON_DEMAND_BUILTINS, ...others(), ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).flatMap((s) => s.tools.map((t) => ({ name: `mcp__${s.server}__${t.name}`, ...(t.description === undefined ? {} : { description: t.description }), inputSchema: t.inputSchema })))],
       ...(this.#d.registry === undefined ? {} : { registry: this.#d.registry }),
     });
     mcpServers.clover_core = coreToolsServer(() => [...others(), glossary]);
@@ -403,8 +617,9 @@ export class BotSessionDriver implements SessionDriver {
     const abort = new AbortController();
     const testProvider = testProviderNameFor(bot.model);
     const sandbox = this.#d.sandbox?.(ctx);
+    const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
-      ...embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd }),
+      ...base,
       systemPrompt,
       tools: [...BOT_BUILTIN_TOOLS],
       // `Glossary` finds and loads what isn't loaded (the agent SDK's `hostToolSearch`); `Glob` and `Grep` start
@@ -414,16 +629,25 @@ export class BotSessionDriver implements SessionDriver {
       deferTools: ON_DEMAND_BUILTINS.map((t) => t.name),
       mcpServers,
       canUseTool: this.#gatedCanUseTool(this.#d.canUseTool(ctx, origin)),
-      hooks: this.#toolHooks(),
+      // The driver's hooks first, the base's kept but never allowing, and the pause and the lease again last, behind any
+      // hook the runtime ranks first (hook-merge.ts).
+      hooks: mergedHooks(base.hooks, this.#toolHooks(), { last: { PreToolUse: [this.#trailingGate()] } }),
       permissionMode: "default",
       abortController: abort,
       includePartialMessages: true,
       stderr: (chunk) => this.#log(`bot driver ${ctx.sessionId}: runtime: ${chunk.trimEnd()}`),
       additionalDirectories: [ctx.paths.root],
-      ...(sandbox === undefined ? {} : { sandbox }),
+      // A bot's commands always run sandboxed: the host's sandbox, or the runtime's default floor, and nothing a host or
+      // a call asks for turns it off (`dangerouslyDisableSandbox` is refused). Their commands never get launchd to
+      // start what the pause can't stop (F8). Set last, so no spread overrides them.
+      sandbox: { ...(sandbox ?? {}), ...BOT_SANDBOX },
+      // Every notification the runtime delivers, a completion or a Monitor event folded into a running turn included,
+      // opens with the same "data, not instructions" frame as the core's own (agent SDK 0.0.71).
+      notificationPreamble: TASK_NOTIFICATION_FRAME,
       ...(resume ? { resume: state.backendSessionId } : { sessionId: state.backendSessionId }),
     };
-    if (testProvider === undefined) await this.#d.provider?.(bot.model, options, ctx);
+    // Through the guarded fill (`fillProvider`): the provider sets the model's own keys and nothing else.
+    if (testProvider === undefined && this.#d.provider !== undefined) await fillProvider({ provider: (m, o) => this.#d.provider!(m, o, ctx) }, options);
     const q = (this.#d.query ?? sdkQuery)({ prompt: queue, options });
     this.#generation += 1;
     let claimed = 0;
@@ -434,7 +658,7 @@ export class BotSessionDriver implements SessionDriver {
       now: () => new Date().toISOString(),
       log: { warn: (message, fields) => this.#log(`bot driver ${ctx.sessionId}: ${message} ${fields === undefined ? "" : JSON.stringify(fields)}`.trim()) },
     });
-    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false };
+    const inc: Incarnation = { query: q, queue, abort, projector, pump: Promise.resolve(), closed: false, tasks: new Set(), stopping: new Set(), ended: [], wakes: [] };
     inc.pump = this.#pump(inc);
     this.#rebuild = false;
     return inc;
@@ -461,6 +685,9 @@ export class BotSessionDriver implements SessionDriver {
   #emit(event: { type: string; [k: string]: unknown }): void {
     if (HOST_OWNED.has(event.type)) return;
     const t = this.#turn;
+    // A turn the runtime runs on its own (a background task's notification) has no host turn: where the host takes
+    // wakes (lane D's `ctx.wake`), `#promptHold` hands it over before it runs, and nothing reaches here; where it
+    // doesn't, that turn's records are dropped (it was held while paused, and ran after).
     if (t === undefined || t.ended) return;
     // While a `message.out` hook is on, the bot's text shows only after it ran (§5.3): no streaming deltas, and each
     // record waits its turn behind the reply before it, so the log keeps the runtime's order.
@@ -483,6 +710,25 @@ export class BotSessionDriver implements SessionDriver {
     const batch = inc.projector.accept(msg as never);
     const t = this.#turn;
     const main = !(typeof msg.parent_tool_use_id === "string" && msg.parent_tool_use_id.length > 0);
+    if (msg.type === "system" && typeof msg.task_id === "string") {
+      // Every task but a foreground command the runtime tracks (`is_backgrounded: false`), which is a running tool call
+      // the pause never cuts off; one moved to the background later counts from then. A task whose start doesn't say
+      // (a WebSocket monitor) counts.
+      const patch = msg.subtype === "task_updated" ? (msg.patch as { is_backgrounded?: unknown } | undefined) : undefined;
+      if ((msg.subtype === "task_started" && msg.is_backgrounded !== false) || patch?.is_backgrounded === true) {
+        inc.tasks.add(msg.task_id);
+        this.#watchTasks(inc);
+      } else if (msg.subtype === "task_notification") {
+        inc.tasks.delete(msg.task_id);
+        // Its notification reaches the model inside a running turn (after a tool round), or as a turn of the runtime's
+        // own, which `#promptHold` hands to the host. Kept for that.
+        const status = msg.status === "failed" || msg.status === "stopped" ? msg.status : "completed";
+        const summary = typeof msg.summary === "string" ? msg.summary : `Background task ${msg.task_id} ${status}.`;
+        const out = typeof msg.output_file === "string" ? `\nIts output: ${msg.output_file}` : "";
+        inc.ended.push({ task: msg.task_id, status, text: `${summary}${out}` });
+        if (inc.ended.length > 64) inc.ended.splice(0, inc.ended.length - 64);
+      }
+    }
     // In-turn compaction: the runtime's own, when the context fills (§6.3).
     if (main && msg.type === "system" && msg.subtype === "status" && msg.status === "compacting") {
       this.#emit({ type: "compaction", phase: "started", reason: "full" });
@@ -495,6 +741,18 @@ export class BotSessionDriver implements SessionDriver {
     }
     for (const e of batch.broadcast) this.#emit(e as never);
     for (const e of batch.persist) this.#emit(e as never);
+    // The runtime's own turn `#promptHold` ended for the host: its wake goes now, and its result is no host turn's.
+    if (main && msg.type === "result" && msg.terminal_reason === "hook_stopped" && inc.wakes.length > 0) {
+      const w = inc.wakes.shift()!;
+      const ctx = this.#ctx as WakeContext;
+      void Promise.resolve().then(() => ctx.wake?.(w)).catch((err: unknown) => this.#log(`bot driver ${ctx.sessionId}: the host refused a background task's wake: ${err instanceof Error ? err.message : String(err)}`));
+      return;
+    }
+    // A turn the runtime ran on its own (a background task's notification), with no host turn: its holds on the
+    // computers' screens go at its end too.
+    if (main && msg.type === "result" && (t === undefined || t.ended)) {
+      void Promise.resolve().then(() => this.#d.holds?.releaseSession(this.#ctx.sessionId)).catch((err: unknown) => this.#log(`bot driver ${this.#ctx.sessionId}: releasing holds failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
     if (t === undefined || t.ended) return;
     const folded = hostInputFoldedCount(msg);
     if (folded !== undefined) {
@@ -522,6 +780,10 @@ export class BotSessionDriver implements SessionDriver {
         return;
       }
       const terminal = msg.terminal_reason;
+      if (terminal === "hook_stopped" && t.heldOff !== undefined) {
+        t.finish({ reason: "stopped", text: t.heldOff });
+        return;
+      }
       const isError = msg.is_error === true || (typeof msg.subtype === "string" && msg.subtype.startsWith("error_"));
       if (terminal === "refusal") t.finish({ reason: "refusal", usage: { ...t.usage }, ...(t.text === undefined ? {} : { text: t.text }) });
       else if (isError) t.finish({ reason: "failed", failure: "error", usage: { ...t.usage }, text: typeof msg.result === "string" && msg.result !== "" ? msg.result : `the turn failed (${String(msg.subtype)})` });
@@ -545,6 +807,9 @@ export class BotSessionDriver implements SessionDriver {
   }
 
   async #closeIncarnation(inc: Incarnation): Promise<void> {
+    this.#releasePromptHolds("closing");
+    if (inc.taskWatch !== undefined) clearInterval(inc.taskWatch);
+    inc.taskWatch = undefined;
     if (!inc.queue.closed) inc.queue.close();
     const grace = this.#d.stopGraceMs ?? 10_000;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -555,6 +820,44 @@ export class BotSessionDriver implements SessionDriver {
       await Promise.race([inc.pump, new Promise<void>((r) => setTimeout(r, 1_000))]);
     }
     if (this.#inc === inc) this.#inc = undefined;
+  }
+
+  /** While background tasks run, looks at the pause; once it says no, they are stopped (`#stopTasks`). */
+  #watchTasks(inc: Incarnation): void {
+    if (inc.taskWatch !== undefined) return;
+    const look = () => {
+      if (inc.closed || inc.tasks.size === 0 || this.#inc !== inc) {
+        if (inc.taskWatch !== undefined) clearInterval(inc.taskWatch);
+        inc.taskWatch = undefined;
+        return;
+      }
+      if (this.#ctx.mayAct()) return;
+      // Kept looking while tasks remain and the pause holds: a stop that failed is tried again at the next look.
+      void this.#stopTasks(inc);
+    };
+    inc.taskWatch = setInterval(look, this.#d.pausePollMs ?? PAUSE_POLL_MS);
+    (inc.taskWatch as { unref?: () => void }).unref?.();
+    look();
+  }
+
+  /** The pause stops the session's background shells and monitors (the owner's rule), as the host (the model is told
+   *  "stopped by the host" when its turn may start again). Resuming doesn't restart them. */
+  async #stopTasks(inc: Incarnation): Promise<void> {
+    for (const id of [...inc.tasks]) {
+      if (inc.stopping.has(id)) continue;
+      inc.stopping.add(id);
+      try {
+        if (typeof inc.query.stopTask !== "function") throw new Error("this runtime can't stop a task (agent SDK 0.0.69's stopTask)");
+        await inc.query.stopTask(id, { by: "host" });
+        inc.tasks.delete(id);
+      } catch (err) {
+        // A task the runtime no longer has (it ended meanwhile) is done with; any other failure is tried again.
+        if (isUnknownTask(err)) inc.tasks.delete(id);
+        else this.#log(`bot driver ${this.#ctx.sessionId}: stopping background task ${id} failed (tried again while paused): ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        inc.stopping.delete(id);
+      }
+    }
   }
 
   #push(inc: Incarnation, text: string): void {
@@ -574,7 +877,7 @@ export class BotSessionDriver implements SessionDriver {
     }
     const notes = await this.#hooks.turnStart(hs, ctl.signal).catch(() => []);
     const first = await this.#hooks.messageIn(hs, formatTurnInput(input, this.#ctx.kind), ctl.signal).catch(() => formatTurnInput(input, this.#ctx.kind));
-    const nowServers = this.#promptServers(keptServers(this.#mcpServers()));
+    const nowServers = this.#promptServers(keptServers(this.#mcpServers(), this.#reservedNames()));
     const mcpNote = mcpChangesSince(this.#builtMcp, nowServers);
     if (mcpNote !== undefined) this.#builtMcp = mcpFingerprint(nowServers);
     const carried = this.#carry.splice(0);
@@ -587,7 +890,7 @@ export class BotSessionDriver implements SessionDriver {
     if (ctl.signal.aborted) return { reason: "interrupted" };
     const end = await new Promise<TurnEnd>((resolve) => {
       const t: RunningTurn = {
-        ctl, owed: 1, unfolded: [], usage: { inputTokens: 0, outputTokens: 0 }, interrupted: false, ended: false,
+        ctl, owed: 1, unfolded: [], usage: { inputTokens: 0, outputTokens: 0 }, interrupted: false, ended: false, first: text,
         offFold: () => {}, offAbort: () => {},
         finish: (e) => {
           if (t.ended) return;
@@ -661,10 +964,15 @@ export class BotSessionDriver implements SessionDriver {
     } catch (err) {
       this.#log(`bot driver ${this.#ctx.sessionId}: interrupt failed: ${err instanceof Error ? err.message : String(err)}`);
     }
+    // A turn the pause holds at its start ends without a request (`#promptHold`).
+    this.#releasePromptHolds("interrupt");
   }
 
   async compact(req: { reason: "cache" | "full" | "user"; signal: AbortSignal }): Promise<{ compacted: boolean }> {
     if (this.#stopped || req.signal.aborted) return { compacted: false };
+    // A compaction is a model request: none while the pause holds or this computer doesn't run the bot (lane D's host
+    // asks `mayStart` first too).
+    if (!this.#ctx.mayAct()) return { compacted: false };
     const state = this.#readState();
     if (this.#inc === undefined && !(await this.#hasTranscript(state.backendSessionId))) return { compacted: false };
     const inc = await this.#ensureOpen();

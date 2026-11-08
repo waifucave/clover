@@ -16,10 +16,14 @@ async function refusal(promise: Promise<unknown>): Promise<HandshakeError> {
 describe("membership", () => {
   test("the founder creates; a member admits a newcomer; the same again is 200; a stranger can't admit", async () => {
     const { group, founder, c } = await createdGroup();
-    const again = await c.createGroup({ group, key: founder.key, t: Date.now(), sig: await signText(founder, groupStatement(group, founder.key, Date.now())) });
+    // One `t` for the request and its statement: read twice, the clock can tick between them and the signature then
+    // covers another time (the 401 seen in merge-group run 42381855476).
+    let t = Date.now();
+    const again = await c.createGroup({ group, key: founder.key, t, sig: await signText(founder, groupStatement(group, founder.key, t)) });
     expect(again).toEqual({ group });
     const someone = await signer();
-    const taken = await refusal(c.createGroup({ group, key: someone.key, t: Date.now(), sig: await signText(someone, groupStatement(group, someone.key, Date.now())) }));
+    t = Date.now();
+    const taken = await refusal(c.createGroup({ group, key: someone.key, t, sig: await signText(someone, groupStatement(group, someone.key, t)) }));
     expect([taken.status, taken.code]).toEqual([409, "conflict"]);
 
     const laptop = await signer();

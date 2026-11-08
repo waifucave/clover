@@ -226,6 +226,9 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
       return { ok: true as const };
     }),
 
+    // TODO(H-M3, lane B's heldBy): once lane B's follow-up (lane/b-m1-followups, fd143e92e) is on main, `LeaseView` has
+    // `heldBy`: fill it here and in `lease_changed` below, from this computer's registry: `self` for this device, a
+    // known computer by its name, `unknown` for a holder it doesn't know (not paired yet, or removed), null with none.
     [M.mainGet.name]: handler(M.mainGet, () => ({ lease: mustMain(deps).lease.state() })),
 
     [M.mainSet.name]: handler(M.mainSet, async (p, ctx): Promise<ChangeResult> => {
@@ -348,6 +351,7 @@ export function devicesEvents(
       const key = JSON.stringify(lease);
       if (key === last) return;
       last = key;
+      // TODO(H-M3, lane B's heldBy): `heldBy` as in `main.get` once B's follow-up is on main.
       emit({ type: "lease_changed", ts: ts(), lease });
     }));
   }

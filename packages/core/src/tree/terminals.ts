@@ -10,7 +10,8 @@
 //   command, at the stricter of the holder's level and the call's: below `automatic` it takes the user's signed answer
 //   bound to that open (`terminal.open` with its folder). A dropped link closes the peer's terminals, as ssh does.
 import { z } from "zod";
-import { Level, SessionId, SignedCardAnswer, TerminalId, TreePath, type Caller } from "@waifucave/clover-protocol";
+import { FencingToken, Level, SessionId, SignedCardAnswer, TerminalId, TreePath, type Caller } from "@waifucave/clover-protocol";
+import { checkActFence, fenceParam, type ActFence } from "./fencing";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { LocalHolder } from "./holder";
@@ -188,10 +189,12 @@ export class LocalTerminals {
  *  and `terminal_output` back to it. */
 /** What another computer's terminal calls carry here (lane J's peer side of B's `terminal.*`): B's params, with the
  *  folder required, plus the session, the calling computer's level and the user's answer. */
-const PeerOpen = z.object({ cwd: TreePath, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional() });
-const PeerWrite = z.object({ terminalId: TerminalId, data: z.string().max(TERMINAL_WRITE_MAX), paste: z.boolean().optional(), session: SessionId.optional() });
-const PeerResize = z.object({ terminalId: TerminalId, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional() });
-const PeerClose = z.object({ terminalId: TerminalId, session: SessionId.optional() });
+/** The calling computer's fencing token, on every terminal call (`fencing.ts`). */
+const Fence = { fence: FencingToken.optional() };
+const PeerOpen = z.object({ cwd: TreePath, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional(), level: Level, answer: SignedCardAnswer.optional(), ...Fence });
+const PeerWrite = z.object({ terminalId: TerminalId, data: z.string().max(TERMINAL_WRITE_MAX), paste: z.boolean().optional(), session: SessionId.optional(), ...Fence });
+const PeerResize = z.object({ terminalId: TerminalId, cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(1000), session: SessionId.optional(), ...Fence });
+const PeerClose = z.object({ terminalId: TerminalId, session: SessionId.optional(), ...Fence });
 
 /** The most terminals one other computer keeps open here. */
 export const TERMINALS_PER_DEVICE = 8;
@@ -282,6 +285,8 @@ export function serveTerminals(o: {
   /** What checks the user's signed answer bound to `terminal.open` with its folder (the holder's own card). */
   answers?: Answers;
   clock: { now(): number };
+  /** This computer's guard for the fencing token on every terminal call asked of it. */
+  fence?: ActFence;
 }): Unsubscribe {
   const t = o.transport;
   const offs: Unsubscribe[] = [];
@@ -291,6 +296,7 @@ export function serveTerminals(o: {
   offs.push(t.handle("terminal.open", async (raw, from) => {
     guard(from);
     const p = parse(PeerOpen, raw, "terminal.open");
+    checkActFence(o.fence, p.fence, "terminal.open");
     // Stamped as tool.run is (review N2): a peer, for the session it names, fenced at the folder.
     const as: Caller = { kind: "peer", device: from, ...(p.session ? { sessionId: p.session } : {}) };
     // At most `TERMINALS_PER_DEVICE` open for one computer here (#177's review).
@@ -311,24 +317,28 @@ export function serveTerminals(o: {
   offs.push(t.handle("terminal.write", async (raw, from) => {
     guard(from);
     const p = parse(PeerWrite, raw, "terminal.write");
+    checkActFence(o.fence, p.fence, "terminal.write");
     await o.terminals.write(p.terminalId, p.data, { paste: p.paste === true, owner: { device: from, session: p.session } });
     return { ok: true };
   }));
   offs.push(t.handle("terminal.resize", (raw, from) => {
     guard(from);
     const p = parse(PeerResize, raw, "terminal.resize");
+    checkActFence(o.fence, p.fence, "terminal.resize");
     o.terminals.resize(p.terminalId, p.cols, p.rows, { device: from, session: p.session });
     return { ok: true };
   }));
   offs.push(t.handle("terminal.close", (raw, from) => {
     guard(from);
     const p = parse(PeerClose, raw, "terminal.close");
+    checkActFence(o.fence, p.fence, "terminal.close");
     o.terminals.close(p.terminalId, { device: from, session: p.session });
     return { ok: true };
   }));
   offs.push(t.handle("terminal.closeSession", (raw, from) => {
     guard(from);
-    const p = parse(z.object({ session: SessionId }), raw, "terminal.closeSession");
+    const p = parse(z.object({ session: SessionId, ...Fence }), raw, "terminal.closeSession");
+    checkActFence(o.fence, p.fence, "terminal.closeSession");
     return { closed: o.terminals.closeSession(p.session, from) };
   }));
   offs.push(t.watch((view) => { if (!view.up) o.terminals.closeDevice(view.peer); }));
@@ -343,6 +353,8 @@ export interface TerminalRouterOptions {
   computer: (name: string) => { computer: string; device: string; online: boolean; level: Level } | undefined;
   /** Shows the user the holder's card for opening a terminal there (R1). */
   ask?: AnswerAsker;
+  /** This computer's fencing token, on every terminal call it asks of another. */
+  fence?: ActFence;
 }
 
 /** The terminals the app and the panel open (B's `terminal.*`, behind the router's `terminal` capability), on any
@@ -391,7 +403,7 @@ export class TerminalRouter {
     try {
       const link = await this.#o.transport.connect(where.device);
       const r = await withAnswer(p.answer ? undefined : this.#o.ask, (answer) => link.request<{ terminalId: string }>("terminal.open", {
-        cwd, cols: p.cols, rows: p.rows, level: where.level,
+        cwd, cols: p.cols, rows: p.rows, level: where.level, ...fenceParam(this.#o.fence),
         ...(p.session ? { session: p.session } : {}), ...((answer ?? p.answer) ? { answer: answer ?? p.answer } : {}),
       }));
       this.#remote.set(r.terminalId, { device: where.device, computer: where.computer, ...(p.session ? { session: p.session } : {}) });
@@ -432,7 +444,7 @@ export class TerminalRouter {
     for (const r of devices.values()) {
       try {
         const link = await this.#o.transport.connect(r.device);
-        n += (await link.request<{ closed: number }>("terminal.closeSession", { session })).closed;
+        n += (await link.request<{ closed: number }>("terminal.closeSession", { session, ...fenceParam(this.#o.fence) })).closed;
       } catch {
         // offline: that computer closed them when the link dropped
       }
@@ -451,7 +463,7 @@ export class TerminalRouter {
   async #request(r: { device: string; computer: string }, method: string, params: unknown): Promise<void> {
     try {
       const link = await this.#o.transport.connect(r.device);
-      await link.request(method, params);
+      await link.request(method, { ...(params as object), ...fenceParam(this.#o.fence) });
     } catch (e) {
       throw offlineAs(r.computer, e);
     }

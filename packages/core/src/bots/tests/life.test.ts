@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { CLOVER_ERR, SESSIONS_METHODS as M, userMessageHashInput, userMessageSigningInput, type Caller } from "@waifucave/clover-protocol";
 import { isContractError } from "../../contracts/common";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../../contracts/fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64 } from "../../contracts/fakes/device-registry";
 import { FakeLeaseAuthority } from "../../contracts/fakes/lease";
 import { FakeSessionDriver } from "../../contracts/fakes/session-host";
 import { LeaseMainComputer, type MainComputer } from "../main-computer";
@@ -257,14 +257,24 @@ describe("the pause switch (§9.2)", () => {
     await flush();
     expect(again.drivers.for("b_alpha").turns).toHaveLength(0);
     let resumed = false;
-    void again.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx.whenMayAct().then(() => {
+    let mayStartAgain = false;
+    const ctx2 = again.drivers.made.find((m) => m.ctx.sessionId === "b_alpha")!.ctx;
+    void ctx2.whenMayAct().then(() => {
       resumed = true;
+    });
+    // A turn the runtime starts on its own asks `mayStart`, as the host's turns do (lane A's driver).
+    expect(ctx2.mayStart!()).toBe(false);
+    void ctx2.whenMayStart!().then(() => {
+      mayStartAgain = true;
     });
     await flush();
     expect(resumed).toBe(false);
+    expect(mayStartAgain).toBe(false);
     await again.bots.setPaused(false, theUser);
     await flush();
     expect(resumed).toBe(true);
+    expect(mayStartAgain).toBe(true);
+    expect(ctx2.mayStart!()).toBe(true);
     expect(again.drivers.for("b_alpha").turns.map((t) => (t.input.from === "user" ? t.input.text : ""))).toEqual(["hello?"]);
     expect(again.bots.get("alpha")!.state).toBe("thinking");
     await again.shutdown();
@@ -576,8 +586,8 @@ describe("the new sessions methods", () => {
     const clock = new FakeClock();
     const b = await boot({ home: tempDir(), plugins: await alpha(), clock });
     const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-    const phone = await makeFakeDevice();
-    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+    const phone = await makeFakePhone();
+    await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
     const peer = peerSessionMethods({ bots: b.bots, host: b.host, clock, devices: registry })["peer.session.send"]!;
     const sha256 = (t: string) => createHash("sha256").update(t).digest("hex");
     const m = { text: "ship it", clientMessageId: "m-ship", sentAt: clock.now() };

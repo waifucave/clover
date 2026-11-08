@@ -16,12 +16,13 @@ import { readInvite, type RtcEnvironment, type RtcLink } from "@waifucave/clover
 
 import { type DeviceChange, type DeviceInput, MemoryPairStore, type PairingProof } from "../src/contracts";
 import { WebLinkHost } from "../src/web-host";
+import { traceRtc, tracedTest } from "./rtc-trace";
 
 const ready = harnessReady();
-const rtc: RtcEnvironment = {
+const rtc: RtcEnvironment = traceRtc({
   createPeerConnection: (config) => new RTCPeerConnection(config) as unknown as ReturnType<RtcEnvironment["createPeerConnection"]>,
   iceServers: [],
-};
+});
 
 /**
  * Lane B's own FakeDeviceRegistry (packages/core/src/contracts/fakes), which checks an added device's id against its
@@ -82,7 +83,7 @@ interface Computer {
   shown: string[][];
 }
 
-async function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry } = {}): Promise<Computer> {
+async function computer(options: { confirm?: boolean; store?: MemoryPairStore; registry?: FakeRegistry; connect?: Connect } = {}): Promise<Computer> {
   const registry = options.registry ?? (await FakeRegistry.create());
   const store = options.store ?? new MemoryPairStore();
   const links: RtcLink[] = [];
@@ -97,6 +98,7 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
         headers.set("cf-connecting-ip", address);
         return fetch(new Request(request, { headers }));
       },
+      ...(options.connect ? { connect: options.connect } : {}),
     }),
     webOrigin: "https://clover.test",
     inviteHandshake: harness.url,
@@ -121,7 +123,7 @@ async function computer(options: { confirm?: boolean; store?: MemoryPairStore; r
   return { host, registry, store, links, shown };
 }
 
-function browser(store = new MemoryStore(), options: { connect?: Connect } = {}): Companion {
+function browser(store = new MemoryStore(), options: { connect?: Connect; fetch?: (request: Request) => Promise<Response> } = {}): Companion {
   return new Companion({ store, rtc, handshake: "https://handshake.invalid", allowedHandshakes: [harness.url], name: "Test browser", ...options });
 }
 
@@ -146,7 +148,7 @@ async function pairUp(c: Computer, b = browser()): Promise<{ record: PairRecord;
 }
 
 describe.skipIf(!ready)("the web companion", () => {
-  test("a browser pairs once: both ends show the same four words, and the computer registers it", async () => {
+  tracedTest("a browser pairs once: both ends show the same four words, and the computer registers it", async () => {
     const c = await computer();
     await c.host.start();
     const { record, words } = await pairUp(c);
@@ -162,7 +164,7 @@ describe.skipIf(!ready)("the web companion", () => {
     c.host.stop();
   }, 30_000);
 
-  test("then connects over WebRTC: requests, notifications and streams both ways", async () => {
+  tracedTest("then connects over WebRTC: requests, notifications and streams both ways", async () => {
     const c = await computer();
     await c.host.start();
     const { record, b } = await pairUp(c);
@@ -194,7 +196,7 @@ describe.skipIf(!ready)("the web companion", () => {
     c.host.stop();
   }, 30_000);
 
-  test("a refusal on the computer refuses the browser; nothing is kept", async () => {
+  tracedTest("a refusal on the computer refuses the browser; nothing is kept", async () => {
     const c = await computer({ confirm: false });
     await c.host.start();
     const err = await pairUp(c).catch((e: unknown) => e);
@@ -205,7 +207,7 @@ describe.skipIf(!ready)("the web companion", () => {
     c.host.stop();
   }, 30_000);
 
-  test("an invite works once; a wrong code is refused", async () => {
+  tracedTest("an invite works once; a wrong code is refused", async () => {
     const c = await computer();
     await c.host.start();
     const first = await invite(c);
@@ -223,7 +225,7 @@ describe.skipIf(!ready)("the web companion", () => {
     c.host.stop();
   }, 30_000);
 
-  test("a browser whose socket opens late still pairs: it asks only once its socket is open", async () => {
+  tracedTest("a browser whose socket opens late still pairs: it asks only once its socket is open", async () => {
     // The computer confirms at once and ends the invite right after `paired`. Had the request gone out before the
     // socket was open, the answers would wait in the invite's inbox, which its end deletes: a "refused" pairing.
     const c = await computer();
@@ -238,7 +240,7 @@ describe.skipIf(!ready)("the web companion", () => {
     c.host.stop();
   }, 30_000);
 
-  test("a restarted computer answers the browsers it already paired", async () => {
+  tracedTest("a restarted computer answers the browsers it already paired", async () => {
     const store = new MemoryPairStore();
     const first = await computer({ store });
     await first.host.start();
@@ -252,7 +254,44 @@ describe.skipIf(!ready)("the web companion", () => {
     second.host.stop();
   }, 30_000);
 
-  test("revoking the browser ends its pairing on both ends; forgetting on the page ends it on the computer", async () => {
+  tracedTest("a computer that restarts slowly is dialled only once it is online, so no signal waits in its inbox", async () => {
+    // The browser's socket is open long before the restarted computer's. Signals sent before then would wait in the
+    // computer's inbox, which keeps the newest 16: an offer with many ICE candidates behind it could be lost.
+    const store = new MemoryPairStore();
+    const first = await computer({ store });
+    await first.host.start();
+    const sent: number[] = [];
+    const b = browser(new MemoryStore(), {
+      fetch: (request) => {
+        if (request.method === "POST" && new URL(request.url).pathname.endsWith("/messages")) sent.push(Date.now());
+        return fetch(request);
+      },
+    });
+    const record = await b.pair(await invite(first), { onWords: () => undefined });
+    first.host.stop();
+    sent.length = 0;
+    // The earliest the service can see the computer online: when its socket starts connecting. The service marks it
+    // present on accepting the upgrade, which can be before this side's connect resolves, so the time is taken before
+    // the connect, never after (a signal may be sent a moment before the client hears its socket opened).
+    let computerUp = Infinity;
+    const second = await computer({
+      store,
+      connect: async (url) => {
+        await Bun.sleep(1500);
+        computerUp = Math.min(computerUp, Date.now());
+        return connectWebSocket(url);
+      },
+    });
+    await second.host.start();
+    const connection = await b.connect(record);
+    expect(await connection.link.request<unknown>("bot.list", {})).toMatchObject({ bots: [{ id: "alpha" }] });
+    expect(sent.length).toBeGreaterThan(0);
+    expect(Math.min(...sent)).toBeGreaterThanOrEqual(computerUp);
+    connection.close();
+    second.host.stop();
+  }, 30_000);
+
+  tracedTest("revoking the browser ends its pairing on both ends; forgetting on the page ends it on the computer", async () => {
     const c = await computer();
     await c.host.start();
     const { record, b } = await pairUp(c);
@@ -273,7 +312,7 @@ describe.skipIf(!ready)("the web companion", () => {
     c.host.stop();
   }, 30_000);
 
-  test("the host half fills the companions entry: the pairing screen's link, through lane B's confirm card", async () => {
+  tracedTest("the host half fills the companions entry: the pairing screen's link, through lane B's confirm card", async () => {
     const host = await import("../host/index");
     const registry = await FakeRegistry.create();
     await host.start({

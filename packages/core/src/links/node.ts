@@ -1,20 +1,22 @@
 // This device's links, put together for the daemon to own (lane J's ask): the device key, the registry, the wire (the
 // link sidecar, or a test's in-memory one), one `LinkTransport` for every peer, pairing, the handshake directories
 // (the pairs' and the account's) and what drives them, the dial policy, and the main computer (its lease over the
-// account's or the group's record, H-M2). Lane C's daemon starts one of these at boot and closes it at shutdown; lane
-// J's computer node takes its `transport` and `registry` (`computerNodeLinks`); lane D's bot side reads `main`.
+// account's or the group's record, H-M2), and the bots' memories kept alike on every computer (H-M3). Lane C's daemon
+// starts one of these at boot and closes it at shutdown; lane J's computer node takes its `transport`, `registry` and
+// `memoryChanged` (`computerNodeLinks`); lane D's bot side reads `main`.
 //
 // What depends on the account (items 79-81): a device without one publishes to n0's address lookup (the relay URL
 // only) and keeps pair credentials at the handshake; a signed-in one does neither. The lookup follows sign-in and
 // sign-out while running (m10 of H-M1's review).
 import type { Clock } from "../contracts/clock";
+import type { Lease, LeaseState } from "../contracts/lease";
 import type { Unsubscribe } from "../contracts/common";
 import type { SecretMeta, SecretStore } from "../contracts/secret-store";
 import type { AccountClient } from "../identity/account";
 import { BoxKey } from "../identity/box-key";
 import { DeviceKey } from "../identity/device-key";
 import { retryRevokes, syncAccountDevices, type RevokeOptions } from "../devices/account-devices";
-import { startMainComputer, type MainComputerHandle, type MainComputerOptions } from "../lease/main";
+import { startMainComputer, type MainComputerHandle, type MainComputerOptions, type UpdateRestartGate } from "../lease/main";
 import { AccountLeaseScope, GroupLeaseScope, type LeaseScope } from "../lease/scope";
 import { SharedClock, type TimeSource } from "../clock/shared-clock";
 import { AccountDirectory } from "./account-directory";
@@ -22,6 +24,7 @@ import { DirectoryDriver, type DirectoryDriverOptions } from "./directory-driver
 import { FileDeviceRegistry, type FileDeviceRegistryOptions } from "../devices/registry";
 import { DialPolicy, type NatMapping } from "./dial-policy";
 import { GroupKeeper } from "./group";
+import { MemorySync, type MemorySyncOptions } from "../sync/memory";
 import type { CardOpener } from "../devices/rpc";
 import type { HandshakeClient } from "./handshake";
 import { HandshakeDirectory } from "./handshake-directory";
@@ -65,6 +68,12 @@ export interface DeviceLinksOptions {
   groupCardTimeoutMs?: number;
   /** The transport's timings, for tests. */
   transport?: Partial<Omit<LinkTransportOptions, "self" | "wire" | "registry" | "directory" | "clock" | "planner">>;
+  /** The bots' memories across computers (sync/memory.ts): on by default; `mailbox` is a relay plugin's mail
+   *  (`relayMailbox`), without which memory reaches a computer only over its link. False for none. */
+  memory?: false | Pick<MemorySyncOptions, "mailbox" | "mailDelayMs" | "entitled" | "limits">;
+  /** The daemon's update gate (`RunningDaemon.updateGate`, lane M's #198): the lease renews just before an update's
+   *  restart, so the bots stay here through it (`MainComputerHandle.beforeUpdateRestart`). */
+  updateGate?: UpdateRestartGate;
 }
 
 export interface DeviceLinks {
@@ -81,6 +90,8 @@ export interface DeviceLinks {
   main?: MainComputerHandle;
   /** The account-less devices' group: merges, voters, recovery (absent without a handshake). */
   groups?: GroupKeeper;
+  /** The bots' memories across computers (absent with `memory: false`). */
+  memory?: MemorySync;
   /** What a revocation needs (devices.revoke, `revokeDevice`), with the group's quorum removal. */
   revokeOptions(): RevokeOptions;
   /** The shared clock (§6.4): the lease's holder is the reference. What every stamp a message carries reads. */
@@ -92,13 +103,43 @@ export interface DeviceLinks {
   networkChanged(): Promise<void>;
   /** Where this device is reached, as the sidecar's last net report said (empty on another wire). */
   localAddresses(): { relay?: string; direct: string[] };
+  /** The link sidecar's pid, while it runs (none on another wire). */
+  sidecarPid(): number | undefined;
   close(): Promise<void>;
 }
 
-/** What lane J's `startComputerNode` takes from the links. */
-export function computerNodeLinks(l: DeviceLinks): { transport: CloverLinkTransport; devices: FileDeviceRegistry; self: { name: string; device: string } } {
+/** What lane J's `startComputerNode` takes from the links, to pass straight through: with `memoryChanged`, the
+ *  holder's hook for a change in a bot's memory on disk (J-M3), which the memory sync sends on; and `lease`, this
+ *  computer's lease, whose fencing token goes on every act it asks of another computer and judges every act asked of
+ *  it (J-M3's `lease` option, required since lane J's #237: `null` with no main computer here, "no group yet"). */
+export function computerNodeLinks(l: DeviceLinks): {
+  transport: CloverLinkTransport; devices: FileDeviceRegistry; self: { name: string; device: string }; memoryChanged?: (bot: string, rel: string) => void;
+  lease: Lease | null;
+} {
   const self = l.registry.self();
-  return { transport: l.transport, devices: l.registry, self: { name: self.computer ?? self.name, device: self.id } };
+  const memory = l.memory;
+  return {
+    transport: l.transport, devices: l.registry, self: { name: self.computer ?? self.name, device: self.id },
+    ...(memory ? { memoryChanged: (bot: string, rel: string) => memory.changed(bot, rel) } : {}),
+    lease: l.main ? fencingLease(l.main.lease) : null,
+  };
+}
+
+/** The lease as a fencing token's source (`fencingTokenOf` reads `scope`, `epoch` and `holder`), a whole `Lease`:
+ *  its state with the record it is on (the account's, or the group's), and no scope for a lease held locally with no
+ *  record, which then carries no token. Everything else is the lease's own. */
+export function fencingLease(lease: MainComputerHandle["lease"]): Lease {
+  const scoped = (s: LeaseState): LeaseState => (lease.hasScope() ? { ...s, scope: lease.scopeId() } : s);
+  return {
+    self: lease.self,
+    state: () => scoped(lease.state()),
+    canAct: () => lease.canAct(),
+    acquire: async (opts) => scoped(await lease.acquire(opts)),
+    renew: async () => scoped(await lease.renew()),
+    release: () => lease.release(),
+    wake: () => lease.wake(),
+    watch: (fn) => lease.watch((s) => fn(scoped(s))),
+  };
 }
 
 export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLinks> {
@@ -263,6 +304,11 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     }));
   }
   sharedClock.start();
+  // An update's restart keeps the lease: it renews just before, and the new daemon renews the same epoch.
+  if (main && o.updateGate) {
+    const m = main;
+    offs.push(o.updateGate.beforeRestart(() => m.beforeUpdateRestart()));
+  }
 
   // The group: members' keys over the links, merges (R18), quorum removals and recovery, fresh signatures.
   const groups = o.handshake
@@ -279,6 +325,16 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     })
     : undefined;
 
+  // The bots' memories (H-M3): versions signed with this device's link key, mail opened with its box key, stamped
+  // with the shared clock.
+  // TODO(B-M2, lane B's plugin host): the daemon passes the relay plugin's mail here, as
+  // `memory: { mailbox: relayMailbox(<the relay plugin's putMail/takeMail/ackMail handlers>) }` (sync/mailbox.ts).
+  // Until it does, memory reaches a computer that is off only over its link once it is back.
+  const memory = o.memory === false ? undefined : await MemorySync.start({
+    home: o.home, self: key.id, key, boxKey, store: o.store, transport, registry, now: () => sharedClock.now(),
+    ...(o.memory ?? {}), ...(o.log ? { log: o.log } : {}),
+  });
+
   const revokeOptions = (): RevokeOptions => ({
     registry, store: o.store, ...(o.handshake ? { handshake: o.handshake } : {}), ...(o.account ? { account: o.account } : {}),
     ...(o.services ? { services: o.services } : {}),
@@ -291,6 +347,8 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     // A revocation's steps the services haven't confirmed yet (S5).
     await retryRevokes(revokeOptions()).catch(() => undefined);
     await resolveScope().catch(() => undefined);
+    // Memory mail for this computer, kept while it was off (the driver calls this at start and on a timer).
+    await memory?.takeMail().catch(() => undefined);
   };
   const driver = o.driver === false ? undefined : new DirectoryDriver({
     registry, ...(directory ? { pairs: directory } : {}), ...(accountDirectory ? { account: accountDirectory } : {}),
@@ -320,7 +378,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   return {
     key, boxKey, registry, wire, transport, pairing, ...(directory ? { directory } : {}),
     ...(accountDirectory ? { accountDirectory } : {}), ...(driver ? { driver } : {}), ...(main ? { main } : {}), clock: sharedClock,
-    ...(groups ? { groups } : {}), revokeOptions,
+    ...(groups ? { groups } : {}), ...(memory ? { memory } : {}), revokeOptions,
     async refresh() {
       if (driver) await driver.refresh();
       else {
@@ -330,9 +388,11 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     },
     networkChanged,
     localAddresses: () => ({ ...local, direct: [...local.direct] }),
+    sidecarPid: () => sidecar?.pid,
     async close() {
       driver?.close();
       groups?.close();
+      memory?.close();
       main?.close();
       sharedClock.close();
       for (const off of offs.splice(0)) off();
