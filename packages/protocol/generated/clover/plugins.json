@@ -2234,6 +2234,27 @@
                   "maxLength": 81,
                   "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
                 },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en"
+                      ],
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
                 "treeHash": {
                   "type": "string",
                   "pattern": "^sha256:[0-9a-f]{64}$"
@@ -2306,6 +2327,10 @@
                       ]
                     },
                     "theme": {
+                      "type": "string",
+                      "maxLength": 4096
+                    },
+                    "layout": {
                       "type": "string",
                       "maxLength": 4096
                     }
@@ -2401,6 +2426,7 @@
               },
               "required": [
                 "pluginId",
+                "name",
                 "treeHash",
                 "layer",
                 "assetBase",
@@ -2415,6 +2441,62 @@
         },
         "required": [
           "plugins"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "plugin.layer.api": {
+      "doc": "A plugin component's plugin API call, which the app makes for it: as the user, through the core's capability gate.",
+      "owner": "B",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "call": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "args": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {}
+          },
+          "bot": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "pluginId",
+          "call",
+          "args"
+        ]
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "result": {}
+        },
+        "required": [
+          "result"
         ],
         "additionalProperties": false
       }
@@ -3926,6 +4008,48 @@
           "ts",
           "id",
           "line"
+        ]
+      }
+    },
+    "plugin_ui_message": {
+      "doc": "A plugin's host half sent its components a message (`ui.send`); the app relays it to their `host.on`.",
+      "owner": "B",
+      "scope": "core",
+      "roles": [
+        "app"
+      ],
+      "transient": true,
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "plugin_ui_message"
+          },
+          "ts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "pluginId": {
+            "type": "string",
+            "maxLength": 81,
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+          },
+          "event": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "value": {}
+        },
+        "required": [
+          "type",
+          "ts",
+          "pluginId",
+          "event",
+          "value"
         ]
       }
     },

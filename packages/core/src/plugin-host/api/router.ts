@@ -4,7 +4,7 @@
 //
 // The router is the one capability gate (fails closed):
 // * a path that isn't in the plugin SDK's `API_CALLS` doesn't exist (`refused`), whatever the plugin declared;
-// * a call needs the capability the catalog names, read from the plugin's own record (the capabilities its OK listed),
+// * a call needs the capability the catalog names, read from the plugin's own record (the capabilities its OK granted,
 //   never from the call: `call:<top-level id>` for `commands.run` (the command's plugin, found by its namespace) and
 //   `network:<host>` for `net.fetch` (the URL's host);
 // * a call where it doesn't exist (`secrets.get` outside a process of the plugin's own, `ui.send` from a component …)
@@ -23,10 +23,12 @@ import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-regist
 /** What a handler gets: the plugin (its record as the core holds it), where the call came from, and whom it acts for. */
 export interface ApiCallContext {
   pluginId: string;
-  process: HostProcess;
+  process: HostProcess | "ui";
   caller: Caller;
   record: PluginRecord;
   path: ApiCallPath;
+  /** A component's call: the session it shows. */
+  session?: string;
 }
 
 export type ApiHandler = (ctx: ApiCallContext, args: readonly unknown[]) => unknown;
@@ -56,12 +58,12 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
       throw new ContractError("plugin_stopped", `${call.pluginId} is ${record.enabled ? record.state : "off"}${record.reason ? `: ${record.reason}` : ""}`);
     }
     const target = targetOf(path, call.args, o.commandOwner);
-    if (!apiCallAllowed(path, call.process, record.capabilities, target, o.allowNetwork)) {
+    if (!apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }
     const fn = handlers[path];
     if (fn === undefined) throw new ContractError("refused", `${path} is not served on this computer`, { call: path });
-    return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path }, call.args);
+    return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}) }, call.args);
   };
 }
 
@@ -87,9 +89,10 @@ function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (n
   return undefined;
 }
 
-function refusal(path: ApiCallPath, process: HostProcess, target?: { plugin?: string; host?: string }): string {
+function refusal(path: ApiCallPath, process: HostProcess | "ui", target?: { plugin?: string; host?: string }): string {
   const info: ApiCallInfo = API_CALLS[path];
   if (info.where === "ui") return `${path} exists only in components`;
+  if (process === "ui" && info.where !== "both") return `${path} exists only in a plugin's host code`;
   if (info.where === "own" && process !== "own") return `${path} exists only in a process of the plugin's own`;
   if (info.where === "clover" && process !== "clover") return `${path} exists only in the clover plugin host`;
   const capability = info.capability === "call:*" ? `call:${target?.plugin ?? "<plugin>"}` : info.capability === "network:*" ? `network:${target?.host ?? "<host>"}` : info.capability;
