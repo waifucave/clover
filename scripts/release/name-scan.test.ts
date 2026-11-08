@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { CLOVER_NAME_SCAN_EXCLUSIONS, countFiles, DMG_ROOT_LINKS, nameGuardPath, runNameScan, walkTree } from "./name-scan";
 
 // A stand-in guard with the real one's interface (`<guard> artifacts <paths…>`, non-zero on a hit), looking for a
@@ -116,7 +117,7 @@ describe("the release's identity scan", () => {
     }
   });
 
-  test.if(process.platform === "darwin")("a real dmg with its Applications link scans clean, and a planted hit inside it still fails", () => {
+  darwinTest("a real dmg with its Applications link scans clean, and a planted hit inside it still fails", () => {
     for (const planted of [false, true]) {
       const out = mkdtempSync(join(tmpdir(), "clover-name-scan-dmg-"));
       const src = mkdtempSync(join(tmpdir(), "clover-name-scan-dmg-src-"));
