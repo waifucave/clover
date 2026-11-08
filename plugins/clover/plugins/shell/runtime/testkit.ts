@@ -93,7 +93,7 @@ export const pluginDetail = (summary: PluginSummary, extra: Partial<PluginDetail
 /** The pending cards a runtime hands its parts, settable by a test. */
 /** A running plugin's UI as `plugin.ui` lists it: its themes and string tables, the rest left plain. */
 export const uiPluginView = (pluginId: string, themes: { id: string; file: string }[] = [], locales: { lang: string; file: string }[] = []): UiPluginView =>
-  ({ pluginId, treeHash: "sha256-test", layer: pluginId.split("/")[0]!, assetBase: `clover-asset://${pluginId}/`, ui: [], themes, locales, bots: "all" });
+  ({ pluginId, name: pluginId, treeHash: "sha256-test", layer: pluginId.split("/")[0]!, assetBase: `clover-asset://${pluginId}/`, ui: [], themes, locales, bots: "all" });
 
 export function fakeApprovals(initial: CardMeta[] = []) {
   let cards = initial;
