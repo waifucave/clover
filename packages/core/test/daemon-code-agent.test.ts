@@ -82,6 +82,8 @@ describeWithEmbeddedRuntime("clover-core code-agent against the real daemon", ()
     expect(agents).toBeDefined();
     expect(agents!.backends().map((b) => b.id)).toEqual(expect.arrayContaining(["clover-code"]));
     const side = daemon.cloverParts.bots()!;
+    // The bot side asks through lane C's broker: its one SessionGrants is there for the browser.
+    expect(side.grants).toBeDefined();
 
     const input = new Lines();
     const out: Record<string, unknown>[] = [];

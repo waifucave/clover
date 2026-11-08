@@ -244,6 +244,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
         drivers: b.drivers({ side: () => side, node, main: runner }),
         defaultModel: b.defaultModel,
+        // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
+        ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
