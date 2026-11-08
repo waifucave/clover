@@ -31,7 +31,8 @@ export interface UserLayer {
 
 /** A model the layer names is a qualified catalog id (`<provider>/<model>`, §5.9); the catalogs live in the model
  *  plugins, so the shape is all the core checks here. */
-const MODEL_ID_RE = /^[a-z0-9][a-z0-9.-]*\/\S+$/;
+/** A qualified model id, `<provider>/<model>`: what a bot's user layer and its plugin's manifest may name (#311 B2). */
+export const MODEL_ID_RE = /^[a-z0-9][a-z0-9.-]*\/\S+$/;
 const EFFORT_RE = /^[a-z0-9][a-z0-9-]*$/;
 
 interface StoredLayer {

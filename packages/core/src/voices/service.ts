@@ -40,6 +40,9 @@ export interface VoiceServiceOptions {
   play(p: VoicePlay): Promise<void> | void;
   /** How long a listening utterance may wait for its next piece before it is dropped. */
   listenIdleMs?: number;
+  /** Whether the bot may use its voice's provider now (lane D's provider check: a voice its plugin chose, on the
+   *  user's stored voice key, asks the user once). A no refuses the call, with its reason. */
+  mayUse?(bot: string): Promise<{ ok: true } | { ok: false; reason: string }>;
   warn?: (message: string) => void;
 }
 
@@ -123,9 +126,15 @@ export class VoiceService {
     return v;
   }
 
+  async #mayUse(bot: string): Promise<void> {
+    const verdict = await this.#o.mayUse?.(bot);
+    if (verdict !== undefined && !verdict.ok) throw new ContractError("refused", verdict.reason);
+  }
+
   /** Speaks a bot's text on the app here, piece by piece. Resolves once the last piece was sent. */
   async speak(o: { bot: string; session: string; text: string; format?: VoicePlay["format"]; signal?: AbortSignal }): Promise<{ utterance: string; bytes: number }> {
     const voice = this.#voice(o.bot);
+    await this.#mayUse(o.bot);
     const entry = this.#entry(voice.provider);
     if (!entry.speak) throw new ContractError("refused", `the voice plugin "${voice.provider}" doesn't speak`);
     const format = o.format ?? "pcm16-24k";
@@ -159,6 +168,7 @@ export class VoiceService {
     if (!l) {
       if (p.seq !== 0) throw new ContractError("invalid", `utterance ${p.utterance} starts at piece 0, not ${p.seq}`);
       const voice = this.#voice(p.bot);
+      await this.#mayUse(p.bot);
       const entry = this.#entry(voice.provider);
       if (!entry.listen) throw new ContractError("refused", `the voice plugin "${voice.provider}" doesn't listen`);
       const pieces = new Pieces();

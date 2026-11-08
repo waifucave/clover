@@ -186,6 +186,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
   const voices = o.voices === undefined ? undefined : new VoiceService({
     ...o.voices,
     voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
+    // A voice the bot's plugin chose, on the user's stored voice key, asks the user once (provider-consent.ts).
+    mayUse: (bot) => bots.checkVoice(bot),
     ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   // Held by an update's restart: started again as the gate reopens.

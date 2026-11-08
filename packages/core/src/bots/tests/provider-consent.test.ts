@@ -5,7 +5,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { ApprovalDecision, ApprovalRequest } from "../../contracts/approval-broker";
 import { flush } from "../../contracts/fakes/clock";
 import { projectRecords } from "../../sessions/wire";
-import { providerGrantKey, providerOfModel } from "../provider-consent";
+import { agentToolDefs } from "../../agents/tools";
+import { providerGrantKey, providerOfModel, voiceGrantKey } from "../provider-consent";
 import { boot, botManifest, pluginFromFolder, removeTemps, tempDir, writePlugin } from "./fixtures";
 
 afterEach(() => removeTemps());
@@ -14,15 +15,24 @@ const theUser = { kind: "user", client: "app" } as const;
 const user = (text: string) => ({ text, device: "studio0000000000000", sentAt: 1, clientMessageId: `m-${text}` });
 
 /** Luna, whose plugin names `model` (or none), on a side whose broker answers each card with what `answer` says. */
-async function luna(model: string | undefined, opts: { broker?: boolean } = {}) {
+async function luna(model: string | undefined, opts: { broker?: boolean; hold?: boolean; voice?: Record<string, unknown> } = {}) {
   const root = tempDir();
   const write = (m: string | undefined) => writePlugin(root, "luna", {
-    "clover.json": botManifest("luna", "Luna", m === undefined ? {} : { model: { default: m } }),
+    "clover.json": botManifest("luna", "Luna", { ...(m === undefined ? {} : { model: { default: m } }), ...(opts.voice === undefined ? {} : { voice: opts.voice }) }),
     "bot/instructions.md": "You are Luna.",
   });
   const asked: ApprovalRequest[] = [];
   const answers: ApprovalDecision[] = [];
-  const approvals = { request: async (req: ApprovalRequest) => (asked.push(req), answers.shift() ?? { allowed: false, by: "card" as const }) };
+  /** With `hold`, each card waits until the test answers it. */
+  const waiting: Array<(d: ApprovalDecision) => void> = [];
+  const approvals = {
+    cancelSession: () => {},
+    request: async (req: ApprovalRequest) => {
+      asked.push(req);
+      if (opts.hold) return new Promise<ApprovalDecision>((resolve) => waiting.push(resolve));
+      return answers.shift() ?? { allowed: false, by: "card" as const };
+    },
+  };
   const b = await boot({
     home: tempDir(), plugins: (await pluginFromFolder(write(model))).inputs, askProvider: true,
     ...(opts.broker === false ? {} : { approvals: approvals as never }),
@@ -44,7 +54,7 @@ async function luna(model: string | undefined, opts: { broker?: boolean } = {}) 
     if (driver().turns.length > 0 && b.host.get("b_luna")?.status === "prompting") driver().end({ text: "ok" });
     await flush();
   };
-  return { b, asked, answers, update, say, driver, end };
+  return { b, asked, answers, waiting, update, say, driver, end };
 }
 
 describe("a provider the bot's plugin chose", () => {
@@ -54,8 +64,12 @@ describe("a provider the bot's plugin chose", () => {
     await say("hi");
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({ kind: "change", change: "bot-provider", session: "b_luna", bot: "luna", computers: [], effect: "other" });
-    expect(asked[0]!.fields.what).toEqual({ type: "text", text: "Luna wants to use anthropic (anthropic/claude-sonnet-5-5) with your stored key." });
-    expect(asked[0]!.fields.source).toMatchObject({ type: "rows" });
+    // Clover's own words; what the plugin wrote only as code values (#311 B2).
+    expect(asked[0]!.fields.title).toEqual({ type: "text", text: "Let this bot use a provider its plugin chose?" });
+    expect(asked[0]!.fields.what).toMatchObject({ type: "text" });
+    expect(asked[0]!.fields.source).toEqual({ type: "code", code: "luna" });
+    expect(asked[0]!.fields.host).toEqual({ type: "code", code: "anthropic" });
+    expect(asked[0]!.fields.command).toEqual({ type: "code", code: "anthropic/claude-sonnet-5-5" });
     expect(driver().turns).toHaveLength(1);
     expect(b.side.grants!.has("b_luna", providerGrantKey("anthropic"))).toBe(true);
     await end();
@@ -105,7 +119,8 @@ describe("a provider the bot's plugin chose", () => {
     await update("openrouter/qwen-4-max");
     await say("new provider");
     expect(asked).toHaveLength(2);
-    expect(asked[1]!.fields.what).toEqual({ type: "text", text: "Luna wants to use openrouter (openrouter/qwen-4-max) with your stored key." });
+    expect(asked[1]!.fields.host).toEqual({ type: "code", code: "openrouter" });
+    expect(asked[1]!.fields.command).toEqual({ type: "code", code: "openrouter/qwen-4-max" });
     expect(driver().turns).toHaveLength(3);
     await end();
     await b.shutdown();
@@ -120,11 +135,11 @@ describe("a provider the bot's plugin chose", () => {
     const log = b.host.history("b_luna");
     const ended = log.find((r) => r.type === "turn_ended");
     expect(ended).toMatchObject({ end: { reason: "failed", failure: "error" } });
-    expect((ended as { end: { text: string } }).end.text).toContain("You didn't let Luna use anthropic (anthropic/claude-sonnet-5-5) with your stored key");
+    expect((ended as { end: { text: string } }).end.text).toContain("You didn't let this bot use a model on a provider you didn't choose with your stored key");
     // The person sees why, and how to change it.
     const shown = projectRecords(log, { kind: "bot" }).find((e) => e.type === "agent_error");
     expect(shown).toMatchObject({ code: "provider_not_allowed" });
-    expect(String(shown?.message)).toContain("Pick a model in the bot's settings");
+    expect(String(shown?.message)).toContain("Pick it in the bot's settings");
     expect(b.side.grants!.has("b_luna", providerGrantKey("anthropic"))).toBe(false);
     // A yes by a level or a rule isn't the person's own: still a no.
     answers.push({ allowed: true, by: "level" });
@@ -158,3 +173,129 @@ describe("a provider the bot's plugin chose", () => {
     expect(providerOfModel("winter-test/calls")).toBeUndefined();
   });
 });
+
+describe("#311's review", () => {
+  test("B1: a plugin that moves to another provider while the card waits is asked about again, and the turn runs pinned to what was allowed", async () => {
+    const { b, asked, waiting, update, say, driver, end } = await luna("anthropic/claude-sonnet-5-5", { hold: true });
+    await say("hi");
+    expect(asked).toHaveLength(1);
+    // While the card for anthropic waits, the plugin (the bot itself can edit it) moves to another provider.
+    await update("openrouter/qwen-4-max");
+    waiting.shift()!({ allowed: true, by: "card", cardId: "card_1" });
+    await flush();
+    await flush();
+    // Not run on the new provider ungranted: asked about it first.
+    expect(asked).toHaveLength(2);
+    expect(asked[1]!.fields.host).toEqual({ type: "code", code: "openrouter" });
+    expect(driver().turns).toHaveLength(0);
+    waiting.shift()!({ allowed: true, by: "card", cardId: "card_2" });
+    await flush();
+    await flush();
+    expect(driver().turns).toHaveLength(1);
+    // Pinned: a change during the turn doesn't reach it; the next turn checks it again.
+    const ctx = b.drivers.made.find((m) => m.ctx.sessionId === "b_luna")!.ctx;
+    expect(ctx.current().model).toBe("openrouter/qwen-4-max");
+    await update("fireworks/kimi-k3");
+    expect(ctx.current().model).toBe("openrouter/qwen-4-max");
+    await end();
+    expect(ctx.current().model).toBe("fireworks/kimi-k3");
+    await b.shutdown();
+  });
+
+  test("B2: a manifest tag that isn't a qualified model id is refused at load; hiding characters never reach the card", async () => {
+    const bad = await luna("Clover checked it");
+    expect(bad.b.bots.has("luna")).toBe(false);
+    expect(bad.b.warnings.some((w) => w.includes("isn't a qualified model id"))).toBe(true);
+    await bad.b.shutdown();
+    // A tag that passes but hides a right-to-left override: the card shows it without.
+    const hidden = await luna("anthropic/claude\u202Etxet-reversed");
+    hidden.answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    await hidden.say("hi");
+    expect(hidden.asked[0]!.fields.command).toEqual({ type: "code", code: "anthropic/claudetxet-reversed" });
+    expect(JSON.stringify(hidden.asked[0]!.fields)).not.toContain("\u202E");
+    await hidden.b.shutdown();
+  });
+
+  test("S2: a no holds until the user's next message of their own: a wake or another bot's message isn't asked about", async () => {
+    const { b, asked, answers, say, driver } = await luna("anthropic/claude-sonnet-5-5");
+    answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    await say("hi");
+    expect(asked).toHaveLength(1);
+    // Another bot's message starts a turn that isn't the user's: no card, the no holds.
+    await b.host.deliver("b_luna", { from: "bot", bot: "sol", session: "b_sol", text: "ping" });
+    await flush();
+    await flush();
+    expect(asked).toHaveLength(1);
+    expect(driver().turns).toHaveLength(0);
+    const ends = b.host.history("b_luna").filter((r) => r.type === "turn_ended");
+    expect(ends).toHaveLength(2);
+    // The user's own next message asks again.
+    answers.push({ allowed: true, by: "card", cardId: "card_2" });
+    await say("again");
+    expect(asked).toHaveLength(2);
+    expect(driver().turns).toHaveLength(1);
+    await b.shutdown();
+  });
+
+  test("S1: an agent the bot starts uses the bot's own user-chosen provider freely; another provider asks the same card", async () => {
+    const { b, asked, answers } = await luna("anthropic/claude-sonnet-5-5");
+    await b.bots.setUserLayer("luna", { model: "openai/gpt-6.1-sol" }, theUser);
+    const ctx = b.drivers.made.find((m) => m.ctx.sessionId === "b_luna")!.ctx;
+    expect(await ctx.providerCheck!("openai/gpt-6.1-mini", "user")).toEqual({ ok: true });
+    expect(await ctx.providerCheck!("sonnet", "user")).toEqual({ ok: true });
+    expect(asked).toHaveLength(0);
+    answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    const refused = await ctx.providerCheck!("openrouter/qwen-4-max", "user");
+    expect(refused.ok).toBe(false);
+    expect(asked[0]).toMatchObject({ kind: "change", change: "bot-provider", session: "b_luna" });
+    expect(asked[0]!.fields.host).toEqual({ type: "code", code: "openrouter" });
+    // Granted for the bot, an agent on it asks nothing more.
+    answers.push({ allowed: true, by: "card", cardId: "card_2" });
+    expect(await ctx.providerCheck!("openrouter/qwen-4-max", "user")).toEqual({ ok: true });
+    expect(await ctx.providerCheck!("openrouter/other", "bot")).toEqual({ ok: true });
+    expect(asked).toHaveLength(2);
+    await b.shutdown();
+  });
+
+  test("S1: the Agent tool refuses a model the check refuses, and never starts the agent", async () => {
+    const started: unknown[] = [];
+    const manager = { start: async (p: unknown) => (started.push(p), { sessionId: "a_1", transcript: "x" }) } as unknown as Parameters<typeof agentToolDefs>[0];
+    const [agent] = agentToolDefs(manager, { bot: "luna", session: "b_luna", origin: "user" }, { checkModel: async () => ({ ok: false, reason: "not allowed" }) });
+    const out = await agent!.run({ prompt: "do it", backend: "clover-code", root: "home/Studio/x", model: "openrouter/qwen-4-max" });
+    expect(out).toEqual({ text: "not allowed", isError: true });
+    expect(started).toHaveLength(0);
+  });
+
+  test("voice: a voice the plugin chose asks once (bot.voice:<provider>); the user's own voice never asks", async () => {
+    const plugin = await luna(undefined, { voice: { provider: "fish-audio", voice: "v1", model: "s2" } });
+    plugin.answers.push({ allowed: true, by: "card", cardId: "card_1" });
+    expect(await plugin.b.bots.checkVoice("luna")).toEqual({ ok: true });
+    expect(plugin.asked[0]).toMatchObject({ kind: "change", change: "bot-provider" });
+    expect(plugin.asked[0]!.fields.title).toEqual({ type: "text", text: "Let this bot use a voice provider its plugin chose?" });
+    expect(plugin.asked[0]!.fields.host).toEqual({ type: "code", code: "fish-audio" });
+    expect(plugin.b.side.grants!.has("b_luna", voiceGrantKey("fish-audio"))).toBe(true);
+    expect(await plugin.b.bots.checkVoice("luna")).toEqual({ ok: true });
+    expect(plugin.asked).toHaveLength(1);
+    await plugin.b.shutdown();
+    const own = await luna(undefined, { voice: { provider: "fish-audio", voice: "v1" } });
+    await own.b.bots.setUserLayer("luna", { voice: { provider: "elevenlabs", voice: "v2" } }, theUser);
+    expect(await own.b.bots.checkVoice("luna")).toEqual({ ok: true });
+    expect(own.asked).toHaveLength(0);
+    await own.b.shutdown();
+  });
+
+  test("the card belongs to the asking session: a side thread's run asks with its own turn's origin", async () => {
+    const { b, asked, answers } = await luna("anthropic/claude-sonnet-5-5");
+    answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    const run = b.bots.runSideThread("luna", { routine: "r_1", name: "Check", text: "Check things." });
+    await flush();
+    await flush();
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.session).toMatch(/^t_/);
+    expect(asked[0]!.origin).toBe(b.host.turnOrigin(asked[0]!.session!) ?? "routine");
+    expect(asked[0]!.origin).not.toBe("user");
+    await run;
+    await b.shutdown();
+  });
+});
+

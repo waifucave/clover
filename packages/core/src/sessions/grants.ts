@@ -51,8 +51,10 @@ export class SessionGrants {
     return this.#grants(session).has(key);
   }
 
-  /** The grant, asking the user with `card` the first time in this session. */
-  async ensure(session: string, key: string, card: GrantCard, opts: { signal?: AbortSignal } = {}): Promise<GrantDecision> {
+  /** The grant, asking the user with `card` the first time in this session. `asker`: the session whose turn asks, when
+   *  another than the one the grant is kept in (a bot's side thread asking for its bot's grant): the card is that
+   *  session's, with its turn's origin, so its interrupt withdraws it and its own turn decides whether it waits. */
+  async ensure(session: string, key: string, card: GrantCard, opts: { signal?: AbortSignal; asker?: string } = {}): Promise<GrantDecision> {
     const view = this.#o.host.get(session);
     if (view === undefined) throw new ContractError("not_found", `no session ${session}`);
     if (view.status === "stopped" || view.status === "failed") throw new ContractError("closed", `session ${session} has ended`);
@@ -64,14 +66,15 @@ export class SessionGrants {
     const asking = `${session}\u0000${key}`;
     const already = this.#asking.get(asking);
     if (already) return already;
-    const caller = this.#o.host.callerOf(session);
+    const asker = opts.asker !== undefined && this.#o.host.get(opts.asker) !== undefined ? opts.asker : session;
+    const caller = this.#o.host.callerOf(asker);
     const { ruleKey: _ruleKey, options: _options, kind, ...rest } = card as GrantCard & Partial<Pick<ApprovalRequest, "ruleKey" | "options">>;
     const request: ApprovalRequest = {
       ...rest,
       kind: kind === "change" ? "change" : "confirm",
-      session,
+      session: asker,
       ...(caller.bot === undefined ? {} : { bot: caller.bot }),
-      origin: this.#o.host.turnOrigin(session) ?? "bot",
+      origin: this.#o.host.turnOrigin(asker) ?? "bot",
     };
     const pending = this.#o.approvals.request(request, opts).then((decision): GrantDecision => {
       // Only the user's yes on the card itself grants (review B1).
