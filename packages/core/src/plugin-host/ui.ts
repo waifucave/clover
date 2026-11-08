@@ -99,6 +99,8 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
     if (timer !== undefined) return;
     timer = o.clock !== undefined ? o.clock.setTimeout(flush, 100) : setTimeout(flush, 100);
   };
+  // Opened: one nudge naming every plugin, so an app that read the empty list while the registry opened reads again.
+  nudge(o.registry.list().map((r) => r.id));
   const stop = o.registry.watch((c) => {
     if (c.type === "plugin" || c.type === "removed") nudge([c.id]);
     else if (["ui", "themes", "locales", "bot"].includes(c.point)) nudge(o.registry.entries(c.point).map((e) => e.pluginId));

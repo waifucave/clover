@@ -46,6 +46,9 @@ import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinks
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
 import { pluginUi } from "./plugin-host/ui";
+import { uiSettingsMethods } from "./plugin-host/ui-settings";
+import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
+import type { MethodContext, MethodHandler } from "./rpc/handler";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
@@ -3245,6 +3248,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
+  // are empty and anything else is refused while it opens; then the registry's handlers serve them.
+  let pluginMethods: Record<string, MethodHandler> = {};
+  // The user's UI choices, which need no registry (B, on K's audit).
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(uiSettingsMethods({ home: cloverHome, emit: (event) => void cloverServer?.coreEvent(event) })));
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
+    async (params: unknown, ctx: MethodContext) => {
+      const h = pluginMethods[name];
+      return h !== undefined ? h(params, ctx) : beforePluginsOpen(name);
+    }]))));
   // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
   if (opts.modelPluginHost !== undefined) {
     Object.assign(cloverLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
@@ -3553,13 +3566,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
     pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
-    Object.assign(cloverLaneHandlers, laneMethodHandlers({
+    pluginMethods = {
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome }),
       ...pluginUiParts.methods,
-    }));
+    };
     return opened.registry;
   };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
@@ -3594,6 +3608,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
+    pluginMethods = {};
     glossary?.close();
     glossary = undefined;
     pluginUiParts?.close();
