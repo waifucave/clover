@@ -68,7 +68,7 @@ export { buildAgentEnv, launchContained } from "./process/launch";
 export { AgentQuirksSchema, QuirksFileSchema, bundledAgentPluginId, contributedBackends, quirksWithCommand, readQuirksFile, type ContributedBackend, type FileQuirks, type QuirksFile } from "./plugin-backends";
 export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 export { inProcessBridgeServer } from "./bridge/in-process";
-export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentActFence, type AgentPeersOptions } from "./remote";
+export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentPeersOptions } from "./remote";
 export { UserSelections } from "./acp/selections";
 export { agentMethods } from "./rpc";
 export { agentToolDefs, type CoreToolDef } from "./tools";
@@ -180,7 +180,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const cache = new ContributedBackendCache(build);
   // Core backends: Clover's own coding agent and lane A's in-process subagents.
   const core: AgentBackend[] = [
-    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })] : []),
+    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, pause: o.pause ?? OPEN_PAUSE_GATE, ...(o.log ? { log: o.log } : {}) })] : []),
     ...(o.inProcess ? [inProcessBackend({ ...(o.log ? { log: o.log } : {}), ...o.inProcess }, { home: o.home, ...(o.pause ? { pause: o.pause } : {}) })] : []),
   ];
   if (o.backends) {
