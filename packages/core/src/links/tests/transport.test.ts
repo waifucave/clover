@@ -8,7 +8,8 @@ import { SystemClock } from "../../clock/system-clock";
 import { ContractError, isContractError } from "../../contracts/common";
 import { FakeClock, flush } from "../../contracts/fakes/clock";
 import { makeLinkCluster } from "../testing";
-import { ALPN_LINK } from "../wire";
+import { ALPN_LINK, LIVE_STREAM_WINDOW, STREAM_WINDOW } from "../wire";
+import { receiveWindowFor } from "../transport";
 
 const rejection = async (p: Promise<unknown>) => p.then(() => undefined, (e: unknown) => e);
 
@@ -421,5 +422,21 @@ describe("the tree protocol in the hello (lane J's noFollow, #225)", () => {
     // The link view shows what each peer's hello named.
     expect(old.view().features).toEqual([]);
     expect(fresh.view().features).toContain("tree/1.1");
+  });
+});
+
+describe("an incoming stream's window, from its header (#288 N2)", () => {
+  test("a header's window counts only on a live stream, never above this side's own; any other stream gets the wire's", () => {
+    // A live stream (screenshots: browser.stream): the opener's window, at most this side's.
+    expect(receiveWindowFor("screenshots", 32 * 1024)).toBe(32 * 1024);
+    expect(receiveWindowFor("screenshots", 8 * 1024 * 1024)).toBe(LIVE_STREAM_WINDOW);
+    expect(receiveWindowFor("screenshots", undefined)).toBe(LIVE_STREAM_WINDOW);
+    expect(receiveWindowFor("screenshots", "64k")).toBe(LIVE_STREAM_WINDOW);
+    expect(receiveWindowFor("screenshots", -1)).toBe(LIVE_STREAM_WINDOW);
+    // Every other priority: the wire's, whatever the header names (a peer can't shrink a bulk stream's window).
+    for (const p of ["control", "tokens", "files"] as const) {
+      expect(receiveWindowFor(p, 16 * 1024)).toBe(STREAM_WINDOW);
+      expect(receiveWindowFor(p, undefined)).toBe(STREAM_WINDOW);
+    }
   });
 });

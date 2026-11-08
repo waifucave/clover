@@ -6,6 +6,7 @@
 // without a hardware H.264 encoder never sends VP8 to a browser that can't decode it.
 
 import {
+  encodeStreamAck,
   readStreamMeta,
   STREAM_LINK_LABEL,
   StreamFrameReader,
@@ -148,19 +149,24 @@ export class TabStreamView {
     return this.#ended;
   }
 
-  push(bytes: Uint8Array): void {
-    if (this.#done) return;
+  /** Takes the next bytes of the link stream. Returns the timestamps of the frames (kind 2) it took, decoded or
+   *  dropped, in order: what a receiver acks when the sender asked for acks. */
+  push(bytes: Uint8Array): number[] {
+    const taken: number[] = [];
+    if (this.#done) return taken;
     let chunks: StreamChunk[];
     try {
       chunks = this.#reader.push(bytes);
     } catch (e) {
       this.#fail(e instanceof Error ? e.message : String(e));
-      return;
+      return taken;
     }
     for (const c of chunks) {
-      if (this.#done) return;
+      if (this.#done) break;
       this.#take(c);
+      if (c.kind === "frame") taken.push(c.timestamp);
     }
+    return taken;
   }
 
   close(): void {
@@ -319,8 +325,9 @@ export function receiveTabStreams(
       stream.abort(meta === null ? "not a stream this reads" : "not wanted");
       return;
     }
+    const ack = acker(stream, meta!.acks);
     const offData = stream.onData((bytes) => {
-      view.push(bytes);
+      ack(view.push(bytes));
       if (view.closed) {
         offData();
         // The computer ends the stream after its `ended` frame; anything else is this side giving up.
@@ -332,4 +339,16 @@ export function receiveTabStreams(
       view.lose(error);
     });
   });
+}
+
+/** Writes the acks for the frames a view took, in order, when the sender asked for them (`meta.acks`). */
+export function acker(stream: Pick<LinkStream, "write">, acks: boolean): (timestamps: number[]) => void {
+  let chain: Promise<void> = Promise.resolve();
+  return (timestamps) => {
+    if (!acks) return;
+    for (const t of timestamps) {
+      // One after another, so they leave in the frames' order; a stream that ended takes no more.
+      chain = chain.then(() => stream.write(encodeStreamAck(t))).catch(() => undefined);
+    }
+  };
 }

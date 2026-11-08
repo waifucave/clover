@@ -9,7 +9,10 @@
 #
 # The version is `.bun-version` at the top of the git checkout you run it in, or else in this script's checkout.
 # On first use it is fetched from Bun's GitHub release (tag bun-v<version>). The zip's SHA-256 must match the
-# release's SHASUMS256.txt, and the binary must print the pinned version, or nothing is installed. It lands in
+# release's SHASUMS256.txt, the binary's must match `.bun-sha256` (beside `.bun-version`), and the binary must print
+# the pinned version, or nothing is installed. EVERY run checks the cached binary against `.bun-sha256` again (about
+# a fifth of a second): anything that can write the user's cache folder could otherwise swap the Bun that the dev
+# daemon, the tests and the dev plugin-Bun copy run. A mismatch is fetched again; a fetch that doesn't match fails. It lands in
 # ~/Library/Caches/clover-bun/<version>/bun on macOS and ${XDG_CACHE_HOME:-~/.cache}/clover-bun/<version>/bun on
 # Linux. CLOVER_BUN_CACHE sets the cache folder; CLOVER_BUN_RELEASES the download base (both for tests).
 set -euo pipefail
@@ -56,11 +59,16 @@ asset() {
   echo "$name"
 }
 
+name="$(asset)"
+shapin="$(dirname "$pin")/.bun-sha256"
+[ -f "$shapin" ] || die "no .bun-sha256 beside $pin: the binary's SHA-256 is pinned there"
+want_bin="$(awk -v v="$version" -v n="$name" '$1 == v && $2 == n { print $3 }' "$shapin")"
+case "$want_bin" in [0-9a-f]*) [ "${#want_bin}" -eq 64 ] || die "$shapin pins no SHA-256 for $name of Bun $version" ;; *) die "$shapin pins no SHA-256 for $name of Bun $version" ;; esac
+
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
 
 fetch() {
-  local name base tmp want got
-  name="$(asset)"
+  local base tmp want got
   base="${CLOVER_BUN_RELEASES:-https://github.com/oven-sh/bun/releases/download}/bun-v$version"
   mkdir -p "$dir"
   tmp="$(mktemp -d "$dir/.fetch.XXXXXX")"
@@ -74,6 +82,8 @@ fetch() {
   [ "$want" = "$got" ] || die "$name.zip has SHA-256 $got, but the release lists $want; nothing installed"
   unzip -q "$tmp/$name.zip" -d "$tmp/x" || die "could not unzip $name.zip"
   [ -x "$tmp/x/$name/bun" ] || die "$name.zip holds no $name/bun"
+  got="$(sha256 "$tmp/x/$name/bun")"
+  [ "$got" = "$want_bin" ] || die "$name/bun has SHA-256 $got, but $shapin pins $want_bin; nothing installed"
   got="$("$tmp/x/$name/bun" --version 2>/dev/null || true)"
   [ "$got" = "$version" ] || die "the downloaded bun prints \"$got\", not $version; nothing installed"
   # A rename within one folder is atomic: two fetches at once both leave a whole binary.
@@ -81,9 +91,16 @@ fetch() {
   mv -f "$dir/.bun.$$" "$bin"
   # Removed here, not by the trap alone: the `exec` below runs no EXIT trap.
   rm -rf "$tmp"; trap - EXIT
-  say "Bun $version is $bin (SHA-256 of $name.zip matches the release)"
+  say "Bun $version is $bin (SHA-256 of $name.zip matches the release, of the binary the pin)"
 }
 
+if [ -e "$bin" ]; then
+  got="$(sha256 "$bin")"
+  if [ "$got" != "$want_bin" ]; then
+    say "the cached $bin has SHA-256 $got, not the pinned $want_bin: fetching it again"
+    rm -f "$bin"
+  fi
+fi
 [ -x "$bin" ] || fetch
 
 if [ "${1:-}" = "--dir" ]; then

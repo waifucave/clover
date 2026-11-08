@@ -170,6 +170,36 @@ export interface Installed {
   reused: boolean;
 }
 
+/** The transient errors a Windows rename gives while a folder's delete is pending (until its last handle closes) or a
+ *  file just written is held open (an antivirus or the indexer scanning it). */
+const WINDOWS_TRANSIENT = new Set(["EPERM", "EACCES", "EBUSY", "ENOTEMPTY"]);
+
+/** Puts the checked staging folder at `to`, replacing whatever is there. On Windows a rename onto a folder just deleted,
+ *  or of one whose fresh files are still held, fails for a moment: retried there, for up to about 5 s, and then the
+ *  error stands. Anywhere else the first error stands. */
+export async function renameIntoPlace(from: string, to: string, fs: {
+  platform?: NodeJS.Platform;
+  rename?: (from: string, to: string) => void;
+  remove?: (path: string) => void;
+  sleep?: (ms: number) => Promise<void>;
+} = {}): Promise<void> {
+  const platform = fs.platform ?? process.platform;
+  const rename = fs.rename ?? renameSync;
+  const remove = fs.remove ?? ((path: string) => rmSync(path, { recursive: true, force: true }));
+  const sleep = fs.sleep ?? ((ms: number) => Bun.sleep(ms));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      remove(to);
+      rename(from, to);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code ?? "";
+      if (platform !== "win32" || !WINDOWS_TRANSIENT.has(code) || attempt >= 20) throw e;
+      await sleep(Math.min(50 * (attempt + 1), 400));
+    }
+  }
+}
+
 /** Installs the pinned headless shell (or checks the one there against its pin again), failing closed. */
 export async function installHeadlessShell(opts: InstallOptions): Promise<Installed> {
   const pin = opts.pin ?? HEADLESS_PIN;
@@ -198,8 +228,7 @@ export async function installHeadlessShell(opts: InstallOptions): Promise<Instal
     if (treeDigestOfArchive(zip, plat) !== p.tree) throw new InstallError("tree", "the archive matched its SHA-256 but not its tree's pinned digest");
     extractAll(zip, staging, (d) => Bun.hash.crc32(d));
     if ((await treeDigestOfDir(staging, plat)) !== p.tree) throw new InstallError("tree", "the unpacked browser doesn't match the pinned tree");
-    rmSync(dir, { recursive: true, force: true });
-    renameSync(staging, dir);
+    await renameIntoPlace(staging, dir);
   } catch (e) {
     rmSync(staging, { recursive: true, force: true });
     if (e instanceof InstallError) throw e;

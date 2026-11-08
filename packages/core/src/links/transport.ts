@@ -27,7 +27,7 @@ import { LINK_PRIORITIES, type Link, type LinkPriority, type LinkRequestOptions,
 import { decode, encode } from "./codec";
 import { FrameReader, frame } from "./frames";
 import {
-  ALPN_LINK, CLOSE_PROTOCOL, CLOSE_REVOKED, CLOSE_SHUTDOWN, CLOSE_SUPERSEDED, CLOSE_UNPAIRED, type DialTarget,
+  ALPN_LINK, CLOSE_PROTOCOL, LIVE_STREAM_WINDOW, STREAM_WINDOW, CLOSE_REVOKED, CLOSE_SHUTDOWN, CLOSE_SUPERSEDED, CLOSE_UNPAIRED, type DialTarget,
   type PathInfo, RESET_ABORTED, RESET_CONN_LOST, RESET_NOT_FOUND, WIRE_PRIORITY, type WireConn, type WireEndpoint,
   WireOffline, type WireStream,
 } from "./wire";
@@ -970,8 +970,10 @@ class Session {
 
   openStream(label: string, priority: LinkPriority, meta: unknown): LinkStream {
     if (this.#ended) throw offline(this.#link.peer);
-    const header = encode(["S", label, priority, meta ?? null]);
-    const ws = this.conn.openStream(WIRE_PRIORITY[priority]);
+    // A live stream's window (L-M3): chosen at open, and carried in the header so the receiving side holds no more.
+    const window = streamWindowFor(priority);
+    const header = encode(["S", label, priority, meta ?? null, ...(window === undefined ? [] : [window])]);
+    const ws = this.conn.openStream(WIRE_PRIORITY[priority], window === undefined ? {} : { window });
     const s = new SessionStream(`${this.conn.id}:${++this.#nextStream}`, label, priority, ws, this, this.#link.peer, true);
     this.#streams.add(s);
     s.writeHeader(header);
@@ -1014,12 +1016,17 @@ class Session {
         if (kind === undefined) {
           if (Array.isArray(msg) && msg[0] === "L") {
             kind = "lane";
+            // A lane carries requests and their answers: the wire's full window (an incoming stream starts small).
+            ws.setWindow?.(STREAM_WINDOW);
             continue;
           }
           if (Array.isArray(msg) && msg[0] === "S" && typeof msg[1] === "string" && typeof msg[2] === "string") {
             kind = "stream";
             stream = this.#acceptStream(ws, msg[1], msg[2] as LinkPriority, msg[3]);
             if (!stream) return;
+            // A live stream's window (the opener's, never more than this side's own); every other stream the wire's,
+            // whatever its header says (an incoming stream starts small).
+            ws.setWindow?.(receiveWindowFor(msg[2] as LinkPriority, msg[4]));
             continue;
           }
           this.close(CLOSE_PROTOCOL, "a stream of an unknown kind");
@@ -1130,6 +1137,21 @@ function spliceLast(headArray: Uint8Array, element: Uint8Array): Uint8Array {
   out[0] = 0x80 | ((first & 31) + 1);
   out.set(element, headArray.byteLength);
   return out;
+}
+
+/** A stream's window each way by its priority: a live stream's (`screenshots`, browser.stream's frames) is small, so its
+ *  writes wait on the link (L-M3); the others keep the wire's. */
+export function streamWindowFor(priority: LinkPriority): number | undefined {
+  return priority === "screenshots" ? LIVE_STREAM_WINDOW : undefined;
+}
+
+/** The window an incoming stream gets once its header is read: a header's window counts only on a live stream (the
+ *  `screenshots` priority), and never above this side's own for it; any other stream gets the wire's, whatever its
+ *  header names. */
+export function receiveWindowFor(priority: LinkPriority, asked: unknown): number {
+  const live = streamWindowFor(priority);
+  if (live === undefined) return STREAM_WINDOW;
+  return typeof asked === "number" && Number.isFinite(asked) && asked > 0 ? Math.min(asked, live) : live;
 }
 
 /** A LinkStream on a wire stream: a header frame, then one frame per chunk. */

@@ -18,6 +18,10 @@
 // BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH made unsettable on macOS and Linux,
 // then the byte check; a Windows binary is left unsealed) before anything signs it.
 //
+// Beside it go the binaries that run code not the core's own (scripts/bundled-binaries.ts): `clover-plugin-bun`, the
+// pinned Bun's release build for the target (checked against its pinned SHA-256), and on macOS `clover-process-holder`,
+// built from the installed agent runtime's source. Each is signed ad hoc under its own identifier here.
+//
 // Output: dist/daemon/<target>/clover-core (clover-core.exe on Windows), with its size and SHA-256 printed. The
 // binary is unsigned on every OS: the dev daemon signs its own copy on macOS (scripts/dev-daemon.ts), and release
 // signing is M2's. `--smoke` never starts a daemon: `--version` prints and exits before anything else runs.
@@ -30,6 +34,7 @@ import { fileURLToPath } from "node:url";
 import { DIST_BUILD_DEFINE } from "../packages/core/src/build-kind";
 import { BUNDLED_MANIFEST_FILE, parseBundledManifest } from "../packages/core/src/bundled-plugins-dir";
 import { bunPinProblem, thisBunFirst } from "./bun-pin";
+import { bundledFiles, buildHolder, HOLDER_FILE, stagePluginBun } from "./bundled-binaries";
 import { sealFile } from "./seal-bun-doors";
 
 export type DaemonTarget = "darwin-arm64" | "linux-x64" | "linux-arm64" | "windows-x64";
@@ -301,6 +306,19 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
     try {
       const sealed = sealFile(output);
       console.log(`build:daemon: ${target}: ${sealed === undefined ? "not sealed (Windows: no store there trusts a binary, scripts/seal-bun-doors.ts)" : `sealed ${Object.entries(sealed.sealed).map(([n, c]) => `${n}×${c}`).join(" ")}`}`);
+    } catch (err) {
+      console.error(`build:daemon: ${target}: ${(err as Error).message}`);
+      return 1;
+    }
+    // The binaries that ship beside the core (scripts/bundled-binaries.ts): plain Bun for plugins, and on macOS lane
+    // A's process holder, each under its own identifier.
+    try {
+      await stagePluginBun(target, join(dirname(output), bundledFiles(target)[0]!));
+      if (target === "darwin-arm64") {
+        if (process.platform !== "darwin") throw new Error(`${HOLDER_FILE} builds on macOS only`);
+        buildHolder(root, join(dirname(output), HOLDER_FILE));
+      }
+      console.log(`build:daemon: ${target}: beside it ${bundledFiles(target).join(", ")}`);
     } catch (err) {
       console.error(`build:daemon: ${target}: ${(err as Error).message}`);
       return 1;
