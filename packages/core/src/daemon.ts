@@ -460,7 +460,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** The daemon integration: this computer's node and bot side, started over the links once they're up. `node: false`
    *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
-  parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string; agents?: false | Pick<DaemonAgentsInput, "defaultModel" | "backends"> };
+  parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string; agents?: false | Pick<DaemonAgentsInput, "defaultModel" | "backends" | "fillProvider"> };
   /** TEST ONLY: the contract secret store (a test's store that starts locked). Default: the OS store, or an in-memory
    *  one when `secrets` is given. */
   contractSecrets?: ContractSecretStore;
@@ -3485,6 +3485,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const partsClock = new SystemClock();
   let partsRegistry: OpenedRegistry | undefined;
   let partsStopping = false;
+  // A-M3's provider fill, one for the bots and the agents (clover-code, the in-process subagents): which provider a
+  // model runs on and how its credentials reach the runtime, from the user's settings, through the daemon's one broker.
+  const partsProviderFill = botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings });
   const daemonBots = async (): Promise<DaemonBotsInput> => {
     // The bots come from the plugins folder and the app's bundled plugins (B-M1's registry, signed with the store's
     // key). The bundled ones are lane M's place (#259): `resources/plugins` beside `resources/daemon/` for a compiled
@@ -3508,9 +3511,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: opened.registry,
         epoch: () => main.epoch() ?? 0,
-        // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
-        // through the daemon's one broker (as a session's).
-        provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
+        // A-M3: which provider a bot's model runs on and how its credentials reach the runtime (as an agent's).
+        provider: partsProviderFill,
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
@@ -3577,6 +3579,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         agents: p.agents === false ? false : {
           socketPath: dirs.socketPath, spawn: (options) => embeddedSessions.spawn(options), doors: agentDoors,
           defaultModel: p.agents?.defaultModel ?? (() => liveModel?.() ?? ""),
+          // The same provider fill as the bots': an agent's turn gets its provider and credential as a bot's does.
+          fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
         },
         log: (line) => console.error(line),
