@@ -843,9 +843,9 @@ function errorText(e: unknown): string {
 }
 
 /** The OS's proxy tools, through `Bun.spawn` (never `node:child_process` on Linux, S7). */
-const bunRun: RunCommand = async (cmd, args) => {
+const bunRun = async (cmd: string, args: string[], timeoutMs = 5_000): Promise<string> => {
   const proc = Bun.spawn([cmd, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-  const timer = setTimeout(() => proc.kill(), 5_000);
+  const timer = setTimeout(() => proc.kill(), timeoutMs);
   try {
     const out = await new Response(proc.stdout).text();
     const code = await proc.exited;
