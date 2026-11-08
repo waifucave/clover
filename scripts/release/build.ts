@@ -149,7 +149,8 @@ export function devSigningIdentity(input: { identitiesOutput: string; subjectOf:
   }
   const chosen = resolveDevSigningIdentity({ identitiesOutput: input.identitiesOutput, teamId: input.teamId ?? CLOVER_TEAM_ID, subjectOf: input.subjectOf });
   if (!chosen.name.startsWith("Apple Development:")) {
-    throw new Error(`team ${input.teamId ?? CLOVER_TEAM_ID}'s only identity here is ${JSON.stringify(chosen.name)}, not an Apple Development one: a Developer ID builds with --sign (notarized)`);
+    // Its name isn't printed: a certificate's name is a person's or an organisation's.
+    throw new Error(`team ${input.teamId ?? CLOVER_TEAM_ID}'s only identity here (SHA-1 ${chosen.hash.toUpperCase()}) isn't an Apple Development one: a Developer ID builds with --sign (notarized)`);
   }
   return { hash: chosen.hash.toUpperCase(), name: chosen.name };
 }
@@ -396,7 +397,8 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
         }
       }
       if (a.signDev) {
-        console.log(`release/build: --sign-dev with ${dev!.name}`);
+        // By its SHA-1 only: an Apple Development certificate's name is a person's.
+        console.log(`release/build: --sign-dev with the team's Apple Development identity (SHA-1 ${dev!.hash})`);
         for (const b of RESOURCE_BINARIES) {
           must(`sign ${b.file} (dev)`, codesignDevArgs(join(staged, b.file), dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements === undefined ? undefined : join(root, b.entitlements), process.env.CLOVER_MAC_DEV_KEYCHAIN || undefined), root);
         }
