@@ -6,6 +6,7 @@ import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
@@ -315,7 +316,7 @@ describe("the release build (scripts/release/build.ts)", () => {
 
   // codesign itself, with no identity and no keychain: an ad hoc signature takes the same arguments but the identity,
   // and records the designated requirement given, which the real team identity's signature carries the same way.
-  test.if(process.platform === "darwin")("codesign records --sign-dev's team requirement as the designated one, which compiles, and an unsigned-by-the-team copy fails it", () => {
+  darwinTest("codesign records --sign-dev's team requirement as the designated one, which compiles, and an unsigned-by-the-team copy fails it", () => {
     const dir = mkdtempSync(join(tmpdir(), "clover-sign-dev-"));
     try {
       const bin = join(dir, "clover-plugin-bun");
