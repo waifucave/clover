@@ -14,7 +14,7 @@
 // `laneMethodHandlers` mounts handlers written in D's shape (`bots/rpc.ts`; D's sessions, H's devices,
 // the usage counter): each runs as the connection's caller, with its event stream.
 import {
-  CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, CODE_AGENT_LINE_NOTIFICATION, ERR,
+  CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
 import { createHash } from "node:crypto";
@@ -52,6 +52,9 @@ export interface CloverConn {
   notify(method: string, params: unknown): void;
   /** The sessions this connection follows live (`session.attach`), each with its unsubscribe; ended at close. */
   readonly follows: Map<string, () => void>;
+  /** K-M3b: bound to a coding session (`codeAgent.open`): it is sent `codeAgent.line` and nothing else, no session
+   *  event and no core event (#274's sender skips it). */
+  relayed?: boolean;
 }
 
 export type CloverHandler = (conn: CloverConn, params: unknown) => Promise<unknown> | unknown;
@@ -257,7 +260,9 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const gone = new WeakSet<object>();
   const bridged = new Map<number, { sessionId: string; connection: number; end?: () => void }>();
   // K-M3b: each connection's way to close itself, and the connections bound to a coding session.
+  // (#278 brings its own `ends` for link connections: whichever lands second folds the two into one map.)
   const ends = new Map<number, () => void>();
+  const binding = new Set<number>();
   const relayed = new Set<number>();
   const unrevoke = deps.bridge?.gate.onRevoke?.(({ sessionId, connection }) => {
     for (const [connId, b] of bridged) {
@@ -298,6 +303,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   // One request through the role's allow list, `userOnly` (unless the user's signed answer for this call stands
   // in), the method's params, then its handler.
   const run = async (conn: CloverConn, method: string, params: unknown, answered: boolean): Promise<unknown> => {
+    if (binding.has(conn.connId)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this connection is opening a coding session; it takes nothing until then");
     if (relayed.has(conn.connId) && method !== "codeAgent.send") {
       throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this connection relays one coding session; it takes nothing else");
     }
@@ -343,10 +349,33 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     "codeAgent.open": async (conn, p) => {
       if (!deps.codeAgent) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, "codeAgent.open is not served yet");
       const end = ends.get(conn.connId) ?? (() => {});
-      const r = await deps.codeAgent.open({ connId: conn.connId, clientName: conn.clientName, toClient: (line) => conn.notify(CODE_AGENT_LINE_NOTIFICATION, { line }), end }, p as { cwd: string; model?: string; effort?: string });
+      const toClient = (line: string) => {
+        // Over the cap a line can't be relayed whole: it is dropped, and said so without its content.
+        if (line.length > CODE_AGENT_MAX_LINE) {
+          deps.log?.(`[clover] code-agent connection ${conn.connId}: dropped a line of ${line.length} characters (over ${CODE_AGENT_MAX_LINE})`);
+          return;
+        }
+        conn.notify(CODE_AGENT_LINE_NOTIFICATION, { line });
+      };
+      // Binding from here: nothing else is taken meanwhile, a second open included; a failed open lets it go.
+      binding.add(conn.connId);
+      let r: { session: string };
+      try {
+        r = await deps.codeAgent.open({ connId: conn.connId, clientName: conn.clientName, toClient, end }, p as { cwd: string; model?: string; effort?: string });
+      } finally {
+        binding.delete(conn.connId);
+      }
       // The connection closed while the session opened: it ends at once.
-      if (!conns.has(conn.connId)) deps.codeAgent.close(conn.connId);
-      else relayed.add(conn.connId);
+      if (!conns.has(conn.connId)) {
+        deps.codeAgent.close(conn.connId);
+        return r;
+      }
+      // Bound: what it followed or subscribed to before stops, and from now on it is sent its lines only.
+      relayed.add(conn.connId);
+      conn.relayed = true;
+      for (const stop of conn.follows.values()) { try { stop(); } catch { /* the session is gone */ } }
+      conn.follows.clear();
+      conn.areas.clear();
       return r;
     },
     "codeAgent.send": (conn, p) => {
@@ -416,7 +445,10 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       const conn: CloverConn = {
         connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}),
         send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
-        notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
+        notify(method, p) {
+          if (conn.relayed === true && method !== CODE_AGENT_LINE_NOTIFICATION) return;
+          write(encodeLine({ jsonrpc: "2.0", method, params: p }));
+        },
         follows: new Map(),
       };
       conns.set(connId, conn);

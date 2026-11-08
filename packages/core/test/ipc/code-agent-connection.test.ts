@@ -5,9 +5,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, encodeLine, ERR, LineDecoder, METHODS } from "@waifucave/clover-protocol";
+import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, CODE_AGENT_MAX_LINE, encodeLine, ERR, LineDecoder, METHODS, SESSIONS_METHODS } from "@waifucave/clover-protocol";
 import { startIpcServer } from "../../src/ipc/server";
-import { createCloverServer, type CodeAgentDoor } from "../../src/ipc/clover";
+import { createCloverServer, laneMethodHandlers, type CodeAgentDoor } from "../../src/ipc/clover";
+import { handler } from "../../src/bots/rpc";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
 import { SessionStore } from "../../src/sessions/store";
@@ -58,8 +59,17 @@ class RecordingDoor implements CodeAgentDoor {
   readonly closedConns: number[] = [];
   toClient?: (line: string) => void;
   end?: () => void;
+  /** Holds the next open until released. */
+  gate?: Promise<void>;
+  /** The next open fails. */
+  failNext = false;
   async open(conn: Parameters<CodeAgentDoor["open"]>[0], p: { cwd: string }): Promise<{ session: string }> {
     this.opened.push({ connId: conn.connId, cwd: p.cwd });
+    if (this.gate) await this.gate;
+    if (this.failNext) {
+      this.failNext = false;
+      throw Object.assign(new Error("the folder isn't there"), { code: ERR.INVALID_PARAMS });
+    }
     this.toClient = conn.toClient;
     this.end = conn.end;
     return { session: "agent_code1" };
@@ -90,10 +100,19 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
     const logs: string[] = [];
     let peer = outside;
     const door = new RecordingDoor();
-    const clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), probe: () => peer, codeAgent: door, log: (l) => void logs.push(l) });
+    // A session the connection follows before it binds: its stop is recorded, and its sender kept to try after.
+    const follow: { stopped: boolean; send?: (event: unknown) => void } = { stopped: false };
+    const lanes = laneMethodHandlers({
+      "session.attach": handler(SESSIONS_METHODS.sessionAttach, (p, ctx) => {
+        follow.send = (event) => ctx.stream!.send(event as never);
+        ctx.stream!.follows.set(p.id, () => { follow.stopped = true; });
+        return { lastSeq: 0 };
+      }),
+    });
+    const clover = createCloverServer({ tokens, processes, serverVersion: "test", deviceId: "d".repeat(32), probe: () => peer, codeAgent: door, handlers: lanes, log: (l) => void logs.push(l) });
     const server = startIpcServer({ socketPath, serverVersion: "test", tokens: authority, store, cloverConnections: clover });
     stop = () => { clover.dispose(); server.stop(); store.close(); };
-    return { socketPath, token: legacy.harness, processes, door, logs, setPeer: (p: PeerFacts) => { peer = p; } };
+    return { socketPath, token: legacy.harness, processes, door, logs, follow, clover, setPeer: (p: PeerFacts) => { peer = p; } };
   }
 
   test("the user's relay binds its connection to one session; the lines cross; the connection takes nothing else", async () => {
@@ -138,6 +157,65 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
     expect(b.door.opened).toEqual([]);
     floor.close();
     agent.close();
+  });
+
+  test("while the session opens, the connection takes nothing, a second open included; a failed open lets it go", async () => {
+    const b = await boot();
+    const c = await Client.connect(b.socketPath);
+    await c.hello(b.token);
+    let release!: () => void;
+    b.door.gate = new Promise<void>((r) => (release = r));
+    const first = c.request("codeAgent.open", { cwd: "/Users/me/project" });
+    for (let i = 0; i < 50 && b.door.opened.length === 0; i++) await Bun.sleep(10);
+    // Each on its own write, so the server takes it while the open is still pending.
+    const other = await c.request("pair.status", {});
+    await Bun.sleep(20);
+    const second = await c.request("codeAgent.open", { cwd: "/Users/me/other" });
+    await Bun.sleep(20);
+    const send = await c.request("codeAgent.send", { line: "{}" });
+    expect([other.error?.code, second.error?.code, send.error?.code]).toEqual([CLOVER_ERR.ROLE_REFUSED, CLOVER_ERR.ROLE_REFUSED, CLOVER_ERR.ROLE_REFUSED]);
+    expect(b.door.opened).toHaveLength(1);
+    release();
+    expect((await first).result).toEqual({ session: "agent_code1" });
+    c.close();
+    // A failed open: the connection isn't bound, and takes other calls again.
+    b.door.gate = undefined;
+    b.door.failNext = true;
+    const d = await Client.connect(b.socketPath);
+    await d.hello(b.token);
+    expect((await d.request("codeAgent.open", { cwd: "/Users/me/missing" })).error.code).toBe(ERR.INVALID_PARAMS);
+    expect((await d.request("pair.status", {})).error).toBeUndefined();
+    expect((await d.request("codeAgent.open", { cwd: "/Users/me/project" })).result).toEqual({ session: "agent_code1" });
+    d.close();
+  });
+
+  test("what the connection followed or subscribed to before it bound stops: after it, it is sent its lines only", async () => {
+    const b = await boot();
+    const c = await Client.connect(b.socketPath);
+    await c.hello(b.token);
+    expect((await c.request("session.attach", { id: "s_other" })).result).toEqual({ lastSeq: 0 });
+    expect((await c.request("events.subscribe", { areas: ["agents"] })).result).toEqual({ ok: true });
+    b.follow.send!({ type: "text_delta", seq: 1, sessionId: "s_other", ts: 1, delta: "before" });
+    for (let i = 0; i < 50 && c.notes.length === 0; i++) await Bun.sleep(10);
+    expect(c.notes.map((n) => n.method)).toEqual(["event"]);
+    await c.request("codeAgent.open", { cwd: "/Users/me/project" });
+    expect(b.follow.stopped).toBe(true);
+    const conn = b.clover.connections().find((x) => x.clientName === "clover-code-agent")!;
+    expect([conn.relayed, conn.follows.size, conn.areas.size]).toEqual([true, 0, 0]);
+    // A sender that kept going anyway reaches nothing; the session's lines still do.
+    b.follow.send!({ type: "text_delta", seq: 2, sessionId: "s_other", ts: 2, delta: "after" });
+    b.door.toClient!("{\"jsonrpc\":\"2.0\",\"method\":\"session/update\"}");
+    for (let i = 0; i < 50 && c.notes.length < 2; i++) await Bun.sleep(10);
+    await Bun.sleep(50);
+    expect(c.notes.map((n) => n.method)).toEqual(["event", "codeAgent.line"]);
+    // A line over the cap is dropped, and said so without its content.
+    b.door.toClient!(`"${"x".repeat(CODE_AGENT_MAX_LINE)}"`);
+    await Bun.sleep(50);
+    expect(c.notes).toHaveLength(2);
+    const said = b.logs.find((l) => l.includes("dropped a line"))!;
+    expect(said).toContain(`over ${CODE_AGENT_MAX_LINE}`);
+    expect(said.length).toBeLessThan(200);
+    c.close();
   });
 
   test("the session ending on the daemon's side closes the connection", async () => {
