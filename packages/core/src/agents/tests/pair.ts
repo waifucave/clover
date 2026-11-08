@@ -7,7 +7,8 @@ import type { Clock } from "../../contracts/clock";
 import type { LinkTransport } from "../../contracts/link-transport";
 import type { LinkView } from "@waifucave/clover-protocol";
 import type { AgentPauseGate } from "../manager";
-import { AgentPeers, type AgentActFence } from "../remote";
+import { AgentPeers } from "../remote";
+import type { ActFence } from "../../tree/fencing";
 import { World, type WorldOptions } from "./world";
 
 export const STUDIO = "dev-studio";
@@ -15,7 +16,7 @@ export const LAPTOP = "dev-laptop";
 export const OTHER = "dev-other";
 
 /** A computer's view of the group's lease, and #237's guard over it, simplified: a token must match the view. */
-export class TestFence implements AgentActFence {
+export class TestFence implements ActFence {
   view: FencingToken = { scope: "acct_1", epoch: 3, holder: STUDIO };
   token(): FencingToken | undefined {
     return { ...this.view };
