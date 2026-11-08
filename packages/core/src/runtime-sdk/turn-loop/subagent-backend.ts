@@ -88,8 +88,14 @@ function isDirectory(path: string): boolean {
   }
 }
 
+const PAUSED = "Stopped: the user paused bots and their agents.";
+const CANCELLED = "Stopped: this turn was cancelled.";
+
 /** What a delegation with no pause gate gets: held, never open. */
 const CLOSED_GATE: AgentPauseGate = { mayAct: () => false };
+
+/** A session's running turn; `cancelled` once a cancel asked for it to end, `interrupting` while an interrupt is out. */
+type RunningTurn = { resolve(end: AgentTurnEnd): void; text: string; usage: { inputTokens: number; outputTokens: number }; cancelled?: boolean; interrupting?: boolean };
 
 class InProcessSession implements AgentSession {
   readonly agentSessionId: string;
@@ -100,7 +106,9 @@ class InProcessSession implements AgentSession {
   #permission: ((ask: AgentPermissionAsk) => Promise<AgentPermissionAnswer>) | undefined;
   readonly #listeners = new Set<(e: AgentEvent) => void>();
   #progressAt = Date.now();
-  #turn: { resolve(end: AgentTurnEnd): void; text: string; usage: { inputTokens: number; outputTokens: number } } | undefined;
+  #turn: RunningTurn | undefined;
+  /** An interrupt the runtime hasn't answered yet. */
+  #interruptOut: Promise<void> | undefined;
   #pump: Promise<void> | undefined;
   readonly #toolKinds = new Map<string, string>();
 
@@ -155,19 +163,23 @@ class InProcessSession implements AgentSession {
     // After a call, the next request waits while the pause holds; the call itself is never cut off.
     PostToolUse: [this.#afterCall()],
     PostToolUseFailure: [this.#afterCall()],
+    // A cancelled turn's work is refused here too, before and after any hold, so nothing of it rests on the interrupt
+    // reaching the runtime in time: a turn cancelled before it starts sends no model request, and none of its calls run.
     PreToolUse: [{
       failClosed: true,
       timeout: 86_400,
-      hooks: [async (_raw, _id, { signal }) => (await this.#holdWhilePaused(signal))
-        ? {}
-        : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "Stopped: the user paused bots and their agents." } }],
+      hooks: [async (_raw, _id, { signal }) => {
+        const why = this.#cancelled() ?? ((await this.#holdWhilePaused(signal)) ? this.#cancelled() : PAUSED);
+        return why === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: why } };
+      }],
     }],
     UserPromptSubmit: [{
       // The longest a timer can wait (about 24.8 days): this event doesn't fail closed, so the hold must outlast it.
       timeout: Math.floor(2_147_483_647 / 1000),
-      hooks: [async (_raw, _id, { signal }) => (await this.#holdWhilePaused(signal))
-        ? {}
-        : { decision: "block" as const, reason: "Stopped: the user paused bots and their agents." }],
+      hooks: [async (_raw, _id, { signal }) => {
+        const why = this.#cancelled() ?? ((await this.#holdWhilePaused(signal)) ? this.#cancelled() : PAUSED);
+        return why === undefined ? {} : { decision: "block" as const, reason: why };
+      }],
     }],
   };
 
@@ -176,11 +188,21 @@ class InProcessSession implements AgentSession {
   }
 
   readonly #canUseTool: CanUseTool = async (toolName, input, opts) => {
+    const cancelled = this.#cancelled();
+    if (cancelled !== undefined) return { behavior: "deny", message: cancelled };
     const answer = await this.#ask(toolName, input, opts);
     // The pause may have come on while the card was open: an allow given then waits for the user's resume (review B2).
-    if (answer !== null && answer.behavior === "allow" && !(await this.#holdWhilePaused(opts.signal))) return { behavior: "deny", message: "Stopped: the user paused bots and their agents." };
+    if (answer !== null && answer.behavior === "allow" && !(await this.#holdWhilePaused(opts.signal))) return { behavior: "deny", message: PAUSED };
+    // So may a cancel: its turn's calls never run.
+    const late = this.#cancelled();
+    if (late !== undefined && answer !== null && answer.behavior === "allow") return { behavior: "deny", message: late };
     return answer;
   };
+
+  /** Why the running turn's work is refused, when it was cancelled. */
+  #cancelled(): string | undefined {
+    return this.#turn?.cancelled === true ? CANCELLED : undefined;
+  }
 
   readonly #ask: CanUseTool = async (toolName, input, opts) => {
     const ask = this.#permission;
@@ -259,6 +281,10 @@ class InProcessSession implements AgentSession {
 
   #accept(msg: Record<string, unknown>): void {
     this.#emit({ type: "progress" });
+    // A cancelled turn the runtime is still running: the interrupt goes again (one at a time). One sent before the
+    // runtime took the prompt up found no turn to stop, and the turn would run on (a slow runner's flake).
+    const running = this.#turn;
+    if (running?.cancelled === true && msg.type !== "result") this.#interrupt(running);
     if (typeof msg.parent_tool_use_id === "string" && msg.parent_tool_use_id !== "") return;
     if (msg.type === "system" && typeof msg.task_id === "string") {
       // Every task but a foreground command (`is_backgrounded: false`), a running tool call the pause never cuts off; a
@@ -347,20 +373,42 @@ class InProcessSession implements AgentSession {
     this.#state = "prompting";
     return new Promise<AgentTurnEnd>((resolve) => {
       this.#turn = { resolve, text: "", usage: { inputTokens: 0, outputTokens: 0 } };
-      this.#queue!.push(input.text);
+      // An interrupt still out for the turn before (a cancel's) is answered first: the runtime acknowledges one only
+      // after it has acted on it, so it can't cut this turn short. The prompt goes after that answer (bounded by the
+      // cancel's wait), not before. This doesn't rest on the channel keeping a control request ahead of the next
+      // message, and a cancelled turn's own work is refused at the hooks whatever the interrupt does.
+      const queue = this.#queue!;
+      const send = () => { if (!queue.closed) queue.push(input.text); };
+      if (this.#interruptOut === undefined) send();
+      else void Promise.race([this.#interruptOut, new Promise<void>((r) => setTimeout(r, AGENT_CANCEL_WAIT_MS))]).then(send);
     });
   }
 
   async cancel(): Promise<void> {
-    if (this.#turn === undefined || this.#query === undefined) return;
+    const t = this.#turn;
+    if (t === undefined || this.#query === undefined) return;
     this.#state = "cancelling";
     const done = new Promise<void>((r) => {
-      const t = this.#turn!;
       const prev = t.resolve;
       t.resolve = (e) => { prev(e); r(); };
     });
-    try { await this.#query.interrupt(); } catch { /* ended already */ }
+    // Marked first: if the runtime hasn't taken the prompt up yet, this interrupt finds no turn, and the turn's own
+    // messages send it again (#accept) once it runs, however late that is.
+    t.cancelled = true;
+    this.#interrupt(t);
     await Promise.race([done, new Promise<void>((r) => setTimeout(r, AGENT_CANCEL_WAIT_MS))]);
+  }
+
+  /** Asks the runtime to stop `t`, unless an ask is out already or `t` has ended. The next prompt waits for its
+   *  answer (`prompt`). */
+  #interrupt(t: RunningTurn): void {
+    if (t.interrupting === true || this.#turn !== t || this.#query === undefined) return;
+    t.interrupting = true;
+    const out: Promise<void> = this.#query.interrupt().catch(() => { /* ended already */ }).finally(() => {
+      t.interrupting = false;
+      if (this.#interruptOut === out) this.#interruptOut = undefined;
+    });
+    this.#interruptOut = out;
   }
 
   async setConfig(option: "model" | "effort", value: string): Promise<void> {

@@ -10,8 +10,8 @@
 //   lift says so (`needsAnswer`) and carries the holder's own card, so the calling computer shows the user exactly that
 //   card and sends the signed answer back with the call.
 import { createHash } from "node:crypto";
-import type { Caller, CardContent, Level, SignedCardAnswer } from "@waifucave/clover-protocol";
-import { DEFAULT_LEVEL } from "@waifucave/clover-protocol";
+import type { Caller, CardContent, Level, SignedCardAnswer, TreeTransferParams } from "@waifucave/clover-protocol";
+import { DEFAULT_LEVEL, TREE_TRANSFER } from "@waifucave/clover-protocol";
 import {
   levelDecision, strictestLevel, verifySignedAnswer,
   type ActionEffect, type AnswerDevices, type AnswerLedger, type CallCardRenderer,
@@ -67,11 +67,10 @@ export async function judgePeer(o: {
   reviewer?: PeerReviewer;
   answers?: Answers;
   now: number;
-  /** The computer the card binds, when one card covers an operation on several (a move or copy between two: the
-   *  destination; the controller's one-card ruling). Its params name every computer, and this one must be among
-   *  them; each holder rebuilds the same card and checks the answer against it. Default: this computer. */
-  boundTo?: string;
 }): Promise<void> {
+  // The computer the card names: this one, or for a move or copy between two (R15) the destination its params name,
+  // whichever end asks; the answer is checked as this computer either way (`bindsComputer`).
+  const cardComputer = o.method === TREE_TRANSFER ? (o.params as TreeTransferParams).destination : o.computer;
   const level = strictestLevel([o.ownLevel ?? DEFAULT_LEVEL, o.callLevel])!;
   const d = levelDecision(level, o.effect);
   if (d === "allow") return;
@@ -81,7 +80,7 @@ export async function judgePeer(o: {
       const verdict = await o.reviewer({ computer: o.computer, method: o.method, params: o.params, as: o.as, effect: o.effect });
       if (verdict === "safe") return;
     }
-    throw needsAnswer(o.boundTo ?? o.computer, o.method, o.params, o.answers?.render, `${o.computer} needs the user's answer for this, signed and bound to it`);
+    throw needsAnswer(cardComputer, o.method, o.params, o.answers?.render, `${o.computer} needs the user's answer for this, signed and bound to it`);
   }
   if (!o.answers) throw new ContractError("refused", `${o.computer} takes no signed answers`);
   // Each end checks the one answer as itself: for `tree.transfer` its card binds both computers (`bindsComputer`).
@@ -89,7 +88,7 @@ export async function judgePeer(o: {
   // An answer spent already, or too old, is the user's real answer to an earlier try: the card goes back to them
   // (#177's review), and the caller asks again. Anything else is refused outright.
   if (verdict === "used" || verdict === "bad-time") {
-    throw needsAnswer(o.boundTo ?? o.computer, o.method, o.params, o.answers.render, `that answer was ${verdict === "used" ? "used already" : "too old"}; ${o.computer} needs a new one`);
+    throw needsAnswer(cardComputer, o.method, o.params, o.answers.render, `that answer was ${verdict === "used" ? "used already" : "too old"}; ${o.computer} needs a new one`);
   }
   if (verdict !== "ok") throw new ContractError("refused", `the answer doesn't hold for this call (${verdict})`, { verdict });
 }

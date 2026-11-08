@@ -77,7 +77,7 @@ async function judgeEnd(
     throw new ContractError("refused", `${from} isn't on ${source}, or ${to} isn't on ${destination}`);
   }
   if (role === "source" && !move) return;
-  await holder.judge(call, transferChange(move, from, to, source, destination), role === "source" || move ? "move" : "edit", destination);
+  await holder.judge(call, transferChange(move, from, to, source, destination), role === "source" || move ? "move" : "edit");
 }
 
 interface Entry {
@@ -402,12 +402,13 @@ async function cleanUp(staging: string, made: string): Promise<void> {
 }
 
 /** A move or copy whose two ends are on this disk: two holders here (the conformance harness), or one. */
-/** Which of `holders` holds a tree path (its own `realPathOf` takes it), for `transferEndsHold`; else `fallback`. */
-function heldBy(holders: readonly LocalHolder[], fallback = ""): (path: string) => { computer: string } {
+/** Which of `holders` holds a tree path (its own `realPathOf` takes it, for `as`), for `transferEndsHold`; else
+ *  `fallback`. */
+function heldBy(holders: readonly LocalHolder[], fallback = "", as?: Caller): (path: string) => { computer: string } {
   return (path) => {
     for (const h of holders) {
       try {
-        h.realPathOf(path);
+        h.realPathOf(path, as);
         return { computer: h.name };
       } catch {
         // not this holder's
@@ -426,7 +427,7 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
   if (!from.exists) throw new ContractError("not_found", `${p.from} doesn't exist`);
   if (inside(from.real, to.real)) throw new ContractError("invalid", `${p.to} is inside ${p.from}`);
   // The whole operation, judged once at each end before anything lands; R15's ends by which holder holds each path.
-  const ends = heldBy([src, dst]);
+  const ends = heldBy([src, dst], "", as);
   await judgeEnd(dst, dcall, "destination", p.move, p.from, p.to, src.name, dst.name, ends);
   if (src !== dst) await judgeEnd(src, scall, "source", p.move, p.from, p.to, src.name, dst.name, ends);
   const entries = await walk(src, from.real, scall, p.move);
@@ -454,7 +455,10 @@ export async function localTransfer(src: LocalHolder, dst: LocalHolder, p: Recei
     await cleanUp(staging, kept);
     throw e;
   }
-  return { files, bytes, kept: p.move ? await removeSent(from.real, entries) : 0 };
+  dst.changedAt(to.real);
+  const changed = p.move ? await removeSent(from.real, entries) : 0;
+  if (p.move) src.changedAt(from.real);
+  return { files, bytes, kept: changed };
 }
 
 // ---- serving both ends --------------------------------------------------------------------------------------------
@@ -520,6 +524,7 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     try {
       got = await receive(stream, staging);
       await placeInto(staging, dst.real, p.to, dst.root);
+      o.holder.changedAt(dst.real);
     } catch (e) {
       await cleanUp(staging, above);
       throw offlineAs(src.computer, e);
@@ -594,7 +599,9 @@ export function serveTransfer(o: TransferOptions): { receiveHere: (p: ReceivePar
     if (!s || s.device !== from) return { kept: 0 };
     pending.delete(id);
     clearTimeout(s.timer);
-    return { kept: await removeSent(s.real, s.entries) };
+    const kept = await removeSent(s.real, s.entries);
+    o.holder.changedAt(s.real);
+    return { kept };
   }));
 
   return {
