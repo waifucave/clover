@@ -352,11 +352,14 @@ export function codesignArgs(path: string, identity: string, identifier: string,
  * and a later Developer ID build of the same identifier satisfies it too (an Apple Development certificate's default
  * requirement names the person's certificate instead, which a Developer ID build would not meet).
  */
-export function codesignDevArgs(path: string, identityHash: string, identifier: string, teamId: string, entitlements?: string): string[] {
+export function codesignDevArgs(path: string, identityHash: string, identifier: string, teamId: string, entitlements?: string, keychain?: string): string[] {
   if (!/^[0-9A-F]{40}$/i.test(identityHash)) throw new Error("a dev-signed build names its identity by its SHA-1 hash");
   return ["codesign", "--force", "--sign", identityHash, "--options", "runtime", "--timestamp=none", "--identifier", identifier,
     `-r=designated => ${teamRequirement(identifier, teamId)}`,
-    ...(entitlements === undefined ? [] : ["--entitlements", entitlements]), path];
+    ...(entitlements === undefined ? [] : ["--entitlements", entitlements]),
+    // A keychain named for this build only (CLOVER_MAC_DEV_KEYCHAIN): the identity is looked up there, and the user's
+    // keychain search list is never changed for it.
+    ...(keychain === undefined ? [] : ["--keychain", keychain]), path];
 }
 
 /** A binary's requirement on Clover's team: its identifier, Apple's chain, the team's certificate. */

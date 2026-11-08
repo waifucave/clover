@@ -294,6 +294,8 @@ describe("the release build (scripts/release/build.ts)", () => {
       `-r=designated => identifier "com.waifucave.clover.core" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`,
       "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
     expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID)).not.toContain("--entitlements");
+    // A keychain for this build only: codesign looks there, and the search list isn't touched.
+    expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID, undefined, "/s/dev.keychain-db").slice(-3)).toEqual(["--keychain", "/s/dev.keychain-db", "x/clover-link"]);
     expect(() => codesignDevArgs("x", "Apple Development: Someone", core.identifier, CLOVER_TEAM_ID)).toThrow(/SHA-1/);
     const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "a", CSC_LINK: "x", PATH: "/bin" };
     const dev = parseReleaseBuildArgs(["--sign-dev"], "darwin", "arm64");
@@ -302,6 +304,9 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(() => releaseBuilderArgs(dev, env)).toThrow(/SHA-1/);
     // Nothing a Developer ID build or notarization would use reaches it.
     expect(builderEnv(dev, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+    expect(builderEnv(dev, { ...env, CLOVER_MAC_DEV_KEYCHAIN: "/s/dev.keychain-db", CSC_KEYCHAIN: "/elsewhere" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_KEYCHAIN: "/s/dev.keychain-db" });
+    // An unsigned build drops any keychain it's handed.
+    expect(builderEnv(parseReleaseBuildArgs([], "darwin", "arm64"), { PATH: "/bin", CSC_KEYCHAIN: "/k", CLOVER_MAC_DEV_KEYCHAIN: "/k" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
   });
 
   test("a dev-signed binary is held to the signed build's checks but the timestamp", () => {

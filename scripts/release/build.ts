@@ -45,7 +45,8 @@
 // --sign-dev (macOS only) is the owner's alpha, before the Developer ID is set up: the same build on the beta channel
 // (an alpha is a beta; there is no third channel), signed with the owner's Apple Development identity of Clover's team
 // (found in the login keychain by its certificate's team, `security find-identity`, never by name; or
-// CLOVER_MAC_DEV_IDENTITY, its SHA-1) and not notarized. The staged binaries get each its own identifier and
+// CLOVER_MAC_DEV_IDENTITY, its SHA-1, looked up in CLOVER_MAC_DEV_KEYCHAIN when that names a keychain file: for that
+// build only, by codesign's --keychain and electron-builder's CSC_KEYCHAIN, never the user's search list) and not notarized. The staged binaries get each its own identifier and
 // entitlements and a designated requirement on Clover's team (lib.ts's `codesignDevArgs`), which the Keychain items and
 // plugin Bun's check accept and a later Developer ID build meets too; electron-builder signs the app with the same
 // identity. The checks are the signed build's but for the timestamp, the staple and Gatekeeper's verdict: it installs
@@ -217,7 +218,9 @@ export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, stri
 export function builderEnv(a: ReleaseBuildArgs, env: Record<string, string | undefined>): Record<string, string | undefined> {
   if (a.sign && !a.signDev) return env;
   const out: Record<string, string | undefined> = { ...env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
-  for (const k of ["CLOVER_MAC_IDENTITY", "CLOVER_WIN_PUBLISHER", "CSC_LINK", "CSC_KEY_PASSWORD", "CSC_NAME", "WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "APPLE_KEYCHAIN_PROFILE", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"]) delete out[k];
+  for (const k of ["CSC_KEYCHAIN", "CLOVER_MAC_DEV_KEYCHAIN", "CLOVER_MAC_IDENTITY", "CLOVER_WIN_PUBLISHER", "CSC_LINK", "CSC_KEY_PASSWORD", "CSC_NAME", "WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "APPLE_KEYCHAIN_PROFILE", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"]) delete out[k];
+  // A dev-signed build's identity may sit in a keychain named for it alone (electron-builder's CSC_KEYCHAIN).
+  if (a.signDev && env.CLOVER_MAC_DEV_KEYCHAIN) out.CSC_KEYCHAIN = env.CLOVER_MAC_DEV_KEYCHAIN;
   return out;
 }
 
@@ -395,7 +398,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       if (a.signDev) {
         console.log(`release/build: --sign-dev with ${dev!.name}`);
         for (const b of RESOURCE_BINARIES) {
-          must(`sign ${b.file} (dev)`, codesignDevArgs(join(staged, b.file), dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
+          must(`sign ${b.file} (dev)`, codesignDevArgs(join(staged, b.file), dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements === undefined ? undefined : join(root, b.entitlements), process.env.CLOVER_MAC_DEV_KEYCHAIN || undefined), root);
         }
       }
       // The package gate (scripts/bundled-binaries.ts): plugin Bun beside the core, and on macOS the process holder,
