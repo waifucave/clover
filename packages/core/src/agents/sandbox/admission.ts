@@ -7,9 +7,10 @@
 // A protected backend also needs a writer: the fenced set denied in its own format (writers.ts). Codex's and Claude
 // Code's writers are ready; their rows stay `unverified` until the live gates in `live-gates.ts` pass, and a row turns
 // `protected` only with that evidence, for the versions the gates ran on.
-import type { Os } from "@waifucave/clover-protocol";
+import type { Level, Os } from "@waifucave/clover-protocol";
 import type { SandboxPolicy } from "../../contracts/fence";
 import type { Obj } from "@waifucave/clover-agent-sdk/acp";
+import type { ModeFloor } from "../acp/session";
 import { versionSatisfies } from "../version";
 
 export type SandboxAdmission =
@@ -28,9 +29,25 @@ export interface SandboxSetup {
   /** Merged into `session/new`'s `_meta` (the Claude adapter's `_meta.claudeCode.options`). */
   meta?: Obj;
   files?: { name: string; content: string }[];
+  /** Modes the session may not be in at this level (Claude Code's from the user's `permissions.defaultMode`). */
+  modeFloor?: ModeFloor;
 }
 
-export type SandboxWriter = (policy: SandboxPolicy, ctx: { root: string; dir: string }) => SandboxSetup;
+/** What a writer knows of the session besides its policy. */
+export interface SandboxContext {
+  /** The session's root folder (its real path). */
+  root: string;
+  /** The session's own setup folder. */
+  dir: string;
+  /** The user's home folder, where the vendors keep their own config (`~/.codex`, `~/.claude`). */
+  home: string;
+  /** The agent's environment, for a vendor home moved elsewhere (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`). */
+  env?: Readonly<Record<string, string | undefined>>;
+  /** The session's level; absent counts as the strictest. */
+  level?: Level;
+}
+
+export type SandboxWriter = (policy: SandboxPolicy, ctx: SandboxContext) => SandboxSetup;
 
 /** A backend whose writer (writers.ts) is ready, its sandbox not yet shown to hold the fence through its adapter. */
 const WRITER_READY = "writer ready; awaiting live gates (its adapter, shell descendants, file tools, retries and exclusions)";

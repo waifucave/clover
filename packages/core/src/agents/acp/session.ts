@@ -94,6 +94,15 @@ export interface OpenOptions {
   readOnlyMode?: { option: string; values: readonly string[] };
   /** Start in the read-only mode; the session fails `refused` when the agent offers none of its values. */
   readOnly?: boolean;
+  /** Modes the session may not be in (its sandbox writer's, from the level): one it starts in, from the user's own
+   *  settings (Claude Code's `permissions.defaultMode`), is switched to `fallback`, or the session fails `refused`. */
+  modeFloor?: ModeFloor;
+}
+
+/** Modes a session may not be in, and the one to switch to instead. */
+export interface ModeFloor {
+  refused: readonly string[];
+  fallback: string;
 }
 
 /** The most permission requests one agent may have open at once; more are refused without a card. */
@@ -132,6 +141,7 @@ export class AcpAgentSession implements AgentSession {
   /** Permission requests waiting on their answer. */
   #asking = 0;
   readonly #readOnlyMode: { option: string; values: readonly string[] } | undefined;
+  readonly #modeFloor: ModeFloor | undefined;
   #readOnly = false;
   /** The mode before the read-only one, to switch back to. */
   #modeBefore: string | undefined;
@@ -156,6 +166,7 @@ export class AcpAgentSession implements AgentSession {
     this.#lastProgress = opts.clock.now();
     this.#selections = opts.selections ?? { keeper: new UserSelections(), backend: "agent" };
     this.#readOnlyMode = opts.readOnlyMode;
+    this.#modeFloor = opts.modeFloor;
     const tap = opts.tap;
     this.#peer = new RpcPeer({
       write: (line) => this.#proc.write(line),
@@ -286,6 +297,7 @@ export class AcpAgentSession implements AgentSession {
       this.#modes = { available, ...(current ? { current } : {}) };
     }
     await this.#setBackLeftovers();
+    if (opts.modeFloor) await this.#holdModeFloor(opts.modeFloor);
     if (opts.readOnly) await this.setReadOnly(true);
     if (opts.model !== undefined) await this.setConfig("model", opts.model);
     if (opts.effort !== undefined && !this.#quirks.config.effortInModel) await this.setConfig("effort", opts.effort);
@@ -325,6 +337,8 @@ export class AcpAgentSession implements AgentSession {
     if (this.#state === "stopped" || this.#state === "failed") throw new ContractError("closed", "the agent's session has ended");
     if (this.#state === "prompting" || this.#state === "cancelling") throw new ContractError("conflict", "a turn is running; the host queues the next prompt");
     if (this.#state === "starting") throw new ContractError("conflict", "the agent is still starting");
+    // A mode the agent switched itself into since (a `current_mode_update`) is held to the floor before each turn.
+    if (this.#modeFloor) await this.#holdModeFloor(this.#modeFloor);
     const turn: Turn = { text: "", abort: new AbortController(), toolIds: new Set(), endedOnRefusal: false };
     this.#turn = turn;
     this.#state = "prompting";
@@ -409,6 +423,24 @@ export class AcpAgentSession implements AgentSession {
       if (result === undefined) continue;
       keeper.restored(backend, c.id);
       this.#config = readConfigOptions(result) ?? this.#config;
+    }
+  }
+
+  /** The mode the agent says it started in, as its `mode` config option and as ACP's session modes: one the floor
+   *  refuses is switched to its fallback, and the session is refused unless the agent then reports the fallback. */
+  async #holdModeFloor(floor: ModeFloor): Promise<void> {
+    const option = () => this.#config.find((c) => c.id === "mode");
+    const current = () => [option()?.currentValue, this.#modes?.current].filter((m): m is string => m !== undefined);
+    if (!current().some((m) => floor.refused.includes(m))) return;
+    const was = current().find((m) => floor.refused.includes(m))!;
+    const o = option();
+    if (o && floor.refused.includes(o.currentValue ?? "") && o.values.includes(floor.fallback)) await this.#setOption(o.id, floor.fallback);
+    if (this.#modes?.current !== undefined && floor.refused.includes(this.#modes.current) && this.#modes.available.includes(floor.fallback)) {
+      await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: floor.fallback }, CONFIG_TIMEOUT_MS);
+      this.#modes.current = floor.fallback;
+    }
+    if (current().some((m) => floor.refused.includes(m))) {
+      throw new ContractError("refused", `the agent started in its ${was} mode, which this level doesn't allow, and didn't leave it, so it wasn't started`);
     }
   }
 

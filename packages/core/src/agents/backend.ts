@@ -15,7 +15,8 @@
 //   (sandbox/oks.ts, asked by the manager).
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import type { Os } from "@waifucave/clover-protocol";
+import { homedir } from "node:os";
+import type { Level, Os } from "@waifucave/clover-protocol";
 import type { AgentPauseGate } from "./manager";
 import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk";
 import type { AgentBackend, AgentDetection, AgentQuirks, AgentStartSpec, BridgeServer } from "../contracts/agent-backend";
@@ -84,6 +85,8 @@ export interface AcpBackendOptions {
 export interface AcpStartSpec extends AgentStartSpec {
   /** The session runs at read-only: an agent that acts without asking must start in its read-only mode. */
   readOnly?: boolean;
+  /** The session's level, for its sandbox writer (which modes it may run in). */
+  level?: Level;
   /** The program the manager admitted (and the user OK'd, with its file's hash): `start` refuses another. */
   admitted?: { path: string; version?: string; sha256?: string };
   /** For a backend that runs inside the daemon (`inProcess`): the session's bridge as an in-process MCP server, which it
@@ -200,7 +203,7 @@ export class AcpAgentBackend implements AgentBackend {
       const dir = wire.setupDir ?? this.#opts.setupDir?.(spec.sessionId);
       if (!dir) throw new ContractError("refused", `${this.id}'s sandbox needs a setup folder`);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
-      setup = sandbox.writer(spec.fence, { root: spec.root, dir });
+      setup = sandbox.writer(spec.fence, { root: spec.root, dir, home: homedir(), env: this.#env(), ...(spec.level ? { level: spec.level } : {}) });
       for (const f of setup.files ?? []) writeFileSync(join(dir, f.name), f.content, { mode: 0o600 });
     }
     // The plugins' skills, agents and hooks, where this backend reads its own.
@@ -246,6 +249,7 @@ export class AcpAgentBackend implements AgentBackend {
       selections: { keeper: this.#selections, backend: this.id },
       ...(this.#opts.readOnlyMode ? { readOnlyMode: this.#opts.readOnlyMode } : {}),
       ...(readOnly ? { readOnly: true } : {}),
+      ...(setup.modeFloor ? { modeFloor: setup.modeFloor } : {}),
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }

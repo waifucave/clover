@@ -730,6 +730,7 @@ export class AgentManager {
       fence: withHomeDenied(agentPolicyOf(this.#o.fence.policy()), this.#o.home),
       ...(reattach ? { reattach } : {}),
       ...(this.#levelOf(e) === "read-only" ? { readOnly: true } : {}),
+      level: this.#levelOf(e),
       // A backend that holds its own tool calls (the in-process ones, which ask nothing for a read) holds on this.
       ...(this.#gateFor(e) === undefined ? {} : { pause: this.#gateFor(e)! }),
       admitted,

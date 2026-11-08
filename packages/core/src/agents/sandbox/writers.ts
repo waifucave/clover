@@ -1,6 +1,7 @@
 // The fenced set in each agent's own sandbox format (spec §9.3 "The fence reaches agents through their own settings";
-// spike S8 §8.3). A writer is pure: the session's `SandboxPolicy` (the manager's `withHomeDenied(agentPolicyOf(…))`,
-// so the whole Clover home is denied) in, the backend's own settings out, nothing written to the user's own config.
+// spike S8 §8.3). The session's `SandboxPolicy` (the manager's `withHomeDenied(agentPolicyOf(…))`, so the whole Clover
+// home is denied) in, the backend's own settings out, nothing written to the user's own config. A writer reads the disk
+// only to add each denial's real path beside the one it was given.
 //
 // Admission is separate (admission.ts): a writer here does not make a backend "protected". Its rows stay `unverified`
 // until the live gates in `live-gates.ts` pass for the exact backend, OS and version.
@@ -10,16 +11,26 @@
 //   user's `CODEX_HOME` and login are untouched. Its filesystem table is the shape S8's Codex probe passed with
 //   (`":root" = "read"`, write folders `"write"`, denied folders `"deny"`), and its network is off.
 // * **Claude Code** (`claude-agent-acp`): `_meta.claudeCode.options` at `session/new`, which the adapter spreads into
-//   the Claude Agent SDK's options. `sandbox` with the fence's folders, no way out of it (`allowUnsandboxedCommands:
-//   false`, no excluded commands, fail if it can't start), and the file tools' deny rules in the flag settings layer.
+//   the Claude Agent SDK's options. No settings sources (the user's, the project's and the local files could add
+//   excluded commands, allowed domains, hooks, an API key helper, a status line and MCP servers, all run unsandboxed);
+//   `sandbox` with the fence's folders and no way out of it; and the file tools' deny rules in the flag settings layer.
+//   The adapter sets the permission mode after our options, from the user's own `permissions.defaultMode`, so the
+//   session holds a mode floor (`modeFloor`): never `bypassPermissions`, and `acceptEdits` only at a level that accepts
+//   edits.
+// * **Both** write-deny the vendors' own config, which an agent could otherwise change to weaken its next session:
+//   `~/.codex` (and `CODEX_HOME`), `~/.claude` and `~/.claude.json` (and `CLAUDE_CONFIG_DIR`), and `.codex`, `.claude`
+//   and `.mcp.json` in the root and every folder above it up to the home.
 //
 // Pattern items (`<home>/bots/*/memory`) are written as literal folders: dropped where a literal denial already holds
 // them (the Clover home does, for an agent), and otherwise widened to the folder above their first `*`. Widening only
 // denies more, so a vendor's glob support is never relied on.
+import { dirname, isAbsolute, join, relative } from "node:path";
+import type { Level } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
 import type { SandboxPolicy } from "../../contracts/fence";
-import { agentPolicyOf, fileToolDenials } from "../memory";
-import type { SandboxWriter } from "./admission";
+import type { ModeFloor } from "../acp/session";
+import { agentPolicyOf, fileToolDenials, realPathOf } from "../memory";
+import type { SandboxContext, SandboxWriter } from "./admission";
 
 /** The Codex permissions profile Clover's writer names. */
 export const CODEX_PROFILE = "clover";
@@ -80,41 +91,93 @@ function writable(policy: SandboxPolicy, root: string): string[] {
   return policy.allowWrite.length > 0 ? policy.allowWrite.map(trimEnd) : [root];
 }
 
+/** The vendors' own config an agent may not change (see above): the home's, a moved vendor home, and the project
+ *  files in the root and every folder above it up to the home (Codex reads `.codex/config.toml` up to the project's
+ *  root; Claude Code reads `.claude/` and `.mcp.json` in its working folder). */
+export function vendorConfigPaths(ctx: Pick<SandboxContext, "root" | "home" | "env">): string[] {
+  const out = [join(ctx.home, ".codex"), join(ctx.home, ".claude"), join(ctx.home, ".claude.json")];
+  for (const name of ["CODEX_HOME", "CLAUDE_CONFIG_DIR"]) {
+    const v = ctx.env?.[name];
+    if (v && isAbsolute(v)) out.push(trimEnd(v));
+  }
+  const inHome = (d: string) => { const r = relative(ctx.home, d); return r === "" || (!r.startsWith("..") && !isAbsolute(r)); };
+  for (let d = ctx.root; ; d = dirname(d)) {
+    out.push(join(d, ".codex"), join(d, ".claude"), join(d, ".mcp.json"));
+    if (!inHome(d) || d === ctx.home || dirname(d) === d) break;
+  }
+  return [...new Set(out)];
+}
+
+/** Each path, and its real path where that differs (a link, or the disk's own form), so a link's form is covered. */
+function withRealForms(paths: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const p of paths) {
+    out.push(p);
+    if (!isAbsolute(p)) continue;
+    const real = trimEnd(realPathOf(p, "/"));
+    if (real !== p) out.push(real);
+  }
+  return [...new Set(out)];
+}
+
+/** A writer's denials: the policy's as literal folders, the vendors' config write-denied, each with its real path. */
+export function writerDenials(p: SandboxPolicy, ctx: Pick<SandboxContext, "root" | "home" | "env">): { denyRead: string[]; denyWrite: string[] } {
+  const { denyRead, denyWrite } = literalDenials(p);
+  return { denyRead: withRealForms(denyRead), denyWrite: withRealForms([...denyWrite, ...vendorConfigPaths(ctx)]) };
+}
+
+/** A path for comparing: its real path, `/`-separated and case-folded, so neither a link nor a case variant of a
+ *  folder makes an entry inside it look like it's outside. */
+function foldKey(path: string): string {
+  const real = isAbsolute(path) ? realPathOf(path, "/") : path;
+  return trimEnd(real.replace(/\\/g, "/")).toLowerCase();
+}
+
 /** Codex's permissions profile for the policy: `:root` readable, the write folders writable, write-denied folders
  *  read-only, read-denied folders denied outright; no network. A path keeps its strictest access, and an entry inside
  *  a stricter folder is left out: a more specific entry must never reopen what a folder above it closes (a read-only
  *  `credentials` inside the denied Clover home would make it readable where the most specific entry wins). */
-export function codexProfile(policy: SandboxPolicy, root: string): { filesystem: Record<string, "read" | "write" | "deny">; network: { enabled: false } } {
+export function codexProfile(policy: SandboxPolicy, ctx: Pick<SandboxContext, "root" | "home" | "env">): { filesystem: Record<string, "read" | "write" | "deny">; network: { enabled: false } } {
   const p = checked(policy);
-  const { denyRead, denyWrite } = literalDenials(p);
+  const { denyRead, denyWrite } = writerDenials(p, ctx);
   const access = new Map<string, "read" | "write" | "deny">();
   const set = (path: string, a: "read" | "write" | "deny") => {
     const cur = access.get(path);
     if (cur === undefined || STRICTNESS[a] > STRICTNESS[cur]) access.set(path, a);
   };
-  for (const w of writable(p, root)) set(w, "write");
+  for (const w of writable(p, ctx.root)) set(w, "write");
   for (const d of denyWrite) set(d, "read");
   for (const d of denyRead) set(d, "deny");
+  const entries = [...access].map(([path, a]) => ({ path, a, key: foldKey(path) }));
   const filesystem: Record<string, "read" | "write" | "deny"> = { ":root": "read" };
-  for (const [path, a] of access) {
-    const closedAbove = [...access].some(([other, b]) => other !== path && holds(other, path) && STRICTNESS[b] >= STRICTNESS[a]);
-    if (!closedAbove) filesystem[path] = a;
+  for (const e of entries) {
+    // Left out under any folder at least as strict, compared as folded real paths; at the same folded path, under a
+    // stricter entry only (a denial's given and real forms are both written).
+    const closedAbove = entries.some((o) => o !== e && holds(o.key, e.key) && (o.key === e.key ? STRICTNESS[o.a] > STRICTNESS[e.a] : STRICTNESS[o.a] >= STRICTNESS[e.a]));
+    if (!closedAbove) filesystem[e.path] = e.a;
   }
   return { filesystem, network: { enabled: false } };
 }
 
 const STRICTNESS = { write: 0, read: 1, deny: 2 } as const;
 
-/** Codex: the profile in `CODEX_CONFIG`, made the session's default. */
-export const codexWriter: SandboxWriter = (policy, { root }) => ({
-  env: { CODEX_CONFIG: JSON.stringify({ default_permissions: CODEX_PROFILE, permissions: { [CODEX_PROFILE]: codexProfile(policy, root) } }) },
+/** Codex's mode floor: never its full-access mode (no sandbox at all); the fallback is its read-only mode until the
+ *  live gates record its mode list (B4). */
+export const CODEX_MODE_FLOOR: ModeFloor = { refused: ["agent-full-access"], fallback: "read-only" };
+
+/** Codex: the profile in `CODEX_CONFIG`, made the session's default, and its mode floor. */
+export const codexWriter: SandboxWriter = (policy, ctx) => ({
+  env: { CODEX_CONFIG: JSON.stringify({ default_permissions: CODEX_PROFILE, permissions: { [CODEX_PROFILE]: codexProfile(policy, ctx) } }) },
+  modeFloor: CODEX_MODE_FLOOR,
 });
 
 /** The Claude Agent SDK's `sandbox` and flag settings for the policy. */
-export function claudeCodeOptions(policy: SandboxPolicy, root: string): Record<string, unknown> {
+export function claudeCodeOptions(policy: SandboxPolicy, ctx: Pick<SandboxContext, "root" | "home" | "env">): Record<string, unknown> {
   const p = checked(policy);
-  const { denyRead, denyWrite } = literalDenials(p);
+  const { denyRead, denyWrite } = writerDenials(p, ctx);
   return {
+    // None of the user's, the project's or the local settings files (the adapter's default is all three).
+    settingSources: [],
     sandbox: {
       enabled: true,
       // No sandbox, no session: never a warning and an unsandboxed shell.
@@ -125,7 +188,7 @@ export function claudeCodeOptions(policy: SandboxPolicy, root: string): Record<s
       excludedCommands: [],
       enableWeakerNestedSandbox: false,
       enableWeakerNetworkIsolation: false,
-      filesystem: { allowWrite: writable(p, root), denyWrite: [...new Set([...denyWrite, ...denyRead])], denyRead },
+      filesystem: { allowWrite: writable(p, ctx.root), denyWrite: [...new Set([...denyWrite, ...denyRead])], denyRead },
       network: { allowedDomains: [], allowLocalBinding: false, allowAllUnixSockets: false, allowUnixSockets: [] },
     },
     settings: {
@@ -138,9 +201,20 @@ export function claudeCodeOptions(policy: SandboxPolicy, root: string): Record<s
   };
 }
 
-/** Claude Code: `_meta.claudeCode.options` at `session/new`. */
-export const claudeCodeWriter: SandboxWriter = (policy, { root }) => ({
-  meta: { claudeCode: { options: claudeCodeOptions(policy, root) } },
+/** Whether a level lets an agent's edits through without asking. */
+function acceptsEdits(level: Level | undefined): boolean {
+  return level === "accept-edits" || level === "automatic";
+}
+
+/** Claude Code's mode floor at a level: never `bypassPermissions`; `acceptEdits` only where the level accepts edits. */
+export function claudeCodeModeFloor(level: Level | undefined): ModeFloor {
+  return { refused: ["bypassPermissions", ...(acceptsEdits(level) ? [] : ["acceptEdits"])], fallback: "default" };
+}
+
+/** Claude Code: `_meta.claudeCode.options` at `session/new`, and its mode floor. */
+export const claudeCodeWriter: SandboxWriter = (policy, ctx) => ({
+  meta: { claudeCode: { options: claudeCodeOptions(policy, ctx) } },
+  modeFloor: claudeCodeModeFloor(ctx.level),
 });
 
 /** The writers, by backend id. A writer is used only where its backend's row is `protected` (admission.ts). */
