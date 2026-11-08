@@ -14,6 +14,7 @@
 // * **A no, or no way to ask, fails the turn** with a clear reason, and nothing reaches the provider; the user can pick
 //   a model in the bot's settings. A no is asked again at the next turn.
 import { CardFieldName, type SealedValue } from "@waifucave/clover-protocol";
+import { testProviderNameFor } from "../runtime-sdk/provider-selection";
 import type { SessionGrants } from "../sessions/grants";
 import { plainText, type EffectiveBot } from "./service";
 
@@ -22,8 +23,10 @@ export function providerGrantKey(provider: string): string {
   return `bot.provider:${provider}`;
 }
 
-/** The provider a model tag names (`anthropic/claude-sonnet-5-5` → `anthropic`); none for an untagged id. */
+/** The provider a model tag names (`anthropic/claude-sonnet-5-5` → `anthropic`); none for an untagged id, and none for
+ *  the runtime's test models, which use no stored key (the provider fill gives them nothing). */
 export function providerOfModel(model: string): string | undefined {
+  if (testProviderNameFor(model) !== undefined) return undefined;
   const slash = model.indexOf("/");
   return slash > 0 ? model.slice(0, slash) : undefined;
 }

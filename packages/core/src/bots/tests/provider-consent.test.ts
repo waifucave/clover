@@ -154,5 +154,7 @@ describe("a provider the bot's plugin chose", () => {
     expect(providerOfModel("anthropic/claude-sonnet-5-5")).toBe("anthropic");
     expect(providerOfModel("openrouter/qwen/qwen-4")).toBe("openrouter");
     expect(providerOfModel("gpt")).toBeUndefined();
+    // The runtime's test models use no stored key.
+    expect(providerOfModel("winter-test/calls")).toBeUndefined();
   });
 });
