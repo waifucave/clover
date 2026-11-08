@@ -11,6 +11,7 @@ import { z } from "zod";
 import { utf16 } from "./strings";
 import { AnyPluginId, BotId, ComputerName, Ok, SessionId, Timestamp } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
+import { NDJSON_MAX_LINE_BYTES } from "./ndjson";
 
 /** DevTools domains the API never passes (§12.1). */
 export const CDP_DENIED_DOMAINS = ["Target", "Browser", "Storage", "SystemInfo", "Tethering", "ServiceWorker"] as const;
@@ -130,6 +131,22 @@ export const BrowserNetworkConfig = z.object({
 });
 export type BrowserNetworkConfig = z.infer<typeof BrowserNetworkConfig>;
 
+/** Room kept under the daemon's NDJSON line cap for everything in a `browser.streamData` request
+ *  that is not the frame: the JSON envelope and the stream id. The real envelope is a few hundred
+ *  bytes; this is deliberately generous, well under `NDJSON_MAX_LINE_BYTES`. */
+export const STREAM_FRAME_LINE_HEADROOM_BYTES = 256 * 1024;
+/** The longest base64 `data` a frame may carry: the line cap less the headroom, a whole number of
+ *  4-char groups. Longer data is refused before it is decoded, so one frame always fits one NDJSON
+ *  line (the app drops over-cap frames before sending; S3). */
+export const STREAM_FRAME_B64_MAX_LENGTH = Math.floor((NDJSON_MAX_LINE_BYTES - STREAM_FRAME_LINE_HEADROOM_BYTES) / 4) * 4;
+
+/** Strict standard base64: the alphabet, the padding and the length (`Buffer.from(s, "base64")`
+ *  silently skips characters it does not know, so the wire is checked first — the handler decodes). */
+const STRICT_BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+export function isStrictBase64(s: string): boolean {
+  return s.length > 0 && s.length % 4 === 0 && STRICT_BASE64.test(s);
+}
+
 /** One piece of a tab's stream, from the app to the daemon (`browser.streamData`), which frames it onto
  *  each viewer's link stream. A frame's bytes ride base64 (JSON-RPC carries no binary). */
 export const StreamChunk = z.discriminatedUnion("kind", [
@@ -146,8 +163,8 @@ export const StreamChunk = z.discriminatedUnion("kind", [
     key: z.boolean(),
     /** Microseconds. */
     timestamp: z.number().nonnegative(),
-    /** The encoded chunk, base64. */
-    data: z.string(),
+    /** The encoded chunk, base64, under one NDJSON line. */
+    data: z.string().max(STREAM_FRAME_B64_MAX_LENGTH).refine(isStrictBase64, "the frame data is not valid base64"),
   }),
   z.object({ kind: z.literal("ended"), reason: z.enum(["stopped", "closed", "failed"]), message: utf16(1024).optional() }),
 ]);

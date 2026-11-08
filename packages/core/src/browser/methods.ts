@@ -6,7 +6,7 @@
 //
 //   const handlers = browserMethodHandlers({ service: browser.service });
 //   for (const [name, fn] of Object.entries(handlers)) server.serve(name, fn);   // lane INT
-import { BROWSER_METHODS, CLOVER_ERR, ERR, type Caller } from "@waifucave/clover-protocol";
+import { BROWSER_METHODS, CLOVER_ERR, ERR, STREAM_FRAME_B64_MAX_LENGTH, isStrictBase64, type Caller } from "@waifucave/clover-protocol";
 import { handler, MethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
 import type { AppTabEvent } from "./contract";
 import { BrowserError, type BrowserErrorCode } from "./policy";
@@ -20,6 +20,10 @@ export interface BrowserMethodOptions {
   /** The device a `browser.stream` call came on, from the authenticated link (never from the params). A peer's, or a user
    *  client's (a phone's, a web page's), own device by default. */
   deviceOf?: (ctx: MethodContext) => string | undefined;
+  /** The app connection's id, held by the server wiring (lane INT passes the Clover `conn.connId` through
+   *  `MethodContext.connId`): `report` and `streamData` from any other app connection — replaced by a
+   *  reconnect, or hung past its heartbeat — are ignored, never adopted. Absent until the wiring lands. */
+  appConnId?: () => number | undefined;
 }
 
 const NOT_FOUND: ReadonlySet<BrowserErrorCode> = new Set(["no_tab", "tab_closed"]);
@@ -43,6 +47,12 @@ async function run<T>(work: () => Promise<T> | T): Promise<T> {
 export function browserMethodHandlers(o: BrowserMethodOptions): Record<string, MethodHandler> {
   const { service } = o;
   const caller = (ctx: MethodContext): BrowserCaller => browserCallerOf(ctx.caller as ProtocolCaller, o.servingToolCall?.(ctx));
+  /** True when the call comes over an app connection the server has replaced: the app reconnected
+   *  (or hung past its heartbeat) on another connection, so this one's `report`/`streamData` are late
+   *  and must change nothing. Only a positive mismatch ignores: without a wired id, calls act as before. */
+  const staleApp = (ctx: MethodContext): boolean =>
+    (ctx.caller as Caller).kind === "user" && o.appConnId !== undefined
+    && ctx.connId !== undefined && ctx.connId !== o.appConnId();
   const M = BROWSER_METHODS;
   const handlers: Record<string, MethodHandler> = {};
   const add = (name: string, fn: MethodHandler): void => {
@@ -73,8 +83,29 @@ export function browserMethodHandlers(o: BrowserMethodOptions): Record<string, M
     if (device === undefined) throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "a stream goes to a device: this call didn't come on a device's link");
     return run(() => service.stream(caller(ctx), p.id, { on: p.on, ...(p.maxKbps !== undefined ? { maxKbps: p.maxKbps } : {}), ...(p.codecs !== undefined ? { codecs: p.codecs } : {}) }, device));
   }));
-  add(M.browserReport.name, handler(M.browserReport, async (p) => {
+  add(M.browserReport.name, handler(M.browserReport, async (p, ctx) => {
+    // A late report from a replaced or hung app connection must not close or adopt tabs.
+    if (staleApp(ctx)) return { ok: true as const };
     service.report(p.events as AppTabEvent[]);
+    return { ok: true as const };
+  }));
+  add(M.browserStreamData.name, handler(M.browserStreamData, async (p, ctx) => {
+    // App-role only, like `browser.hold`'s user check: no layer or peer streams a tab's chunks.
+    if ((ctx.caller as Caller).kind !== "user") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "the app alone streams its tabs' chunks");
+    // A late chunk from a replaced or hung app connection lands in no stream.
+    if (staleApp(ctx)) return { ok: true as const };
+    const chunk = p.chunk;
+    if (chunk.kind === "frame") {
+      // The schema already caps and base64-checks; the decode here is the second gate (B2), so a
+      // chunk that reached the service is always bytes the wire could carry.
+      if (chunk.data.length > STREAM_FRAME_B64_MAX_LENGTH || !isStrictBase64(chunk.data)) {
+        throw new MethodError(ERR.INVALID_PARAMS, "browser.streamData: the frame is over the wire cap or not valid base64");
+      }
+      const data = new Uint8Array(Buffer.from(chunk.data, "base64"));
+      await run(() => service.streamData(p.stream, { kind: "frame", key: chunk.key, timestamp: chunk.timestamp, data }));
+    } else {
+      await run(() => service.streamData(p.stream, chunk));
+    }
     return { ok: true as const };
   }));
   return handlers;

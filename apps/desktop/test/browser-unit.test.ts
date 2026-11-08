@@ -1,7 +1,10 @@
 // The browser module's logic that needs no Electron: the popup choice, the screen-reader switch, and that the app's
 // mirror of lane B's contract matches the core's. The Electron side runs in CI only (`browser.test.ts`).
 import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import * as appContract from "../src/main/browser/contract";
+import { BROWSER_ASSETS } from "../src/main/browser/assets";
 import { choosePopup, siteOf } from "../src/main/browser/popups";
 import { parseGdbusBool, parseMacVoiceOver, parseWindowsTasklist, ScreenReaderSwitch, type ScreenReaderProbe } from "../src/main/browser/screen-reader";
 import * as coreContract from "../../../packages/core/src/browser/contract";
@@ -25,6 +28,30 @@ describe("the contract mirrors", () => {
     expect(appContract.isCdpCallAllowed("Page.reload")).toBe(true);
     for (const owner of [{ kind: "user" }, { kind: "bot", bot: "alpha" }, { kind: "bot", bot: "pack/luna" }, { kind: "session", session: "sess_1" }, { kind: "session", session: "a:b.c-d" }, { kind: "plugin", plugin: "acme/tool" }] as const) {
       expect(appContract.partitionFor(owner)).toBe(corePartitionFor(owner));
+    }
+  });
+});
+
+describe("the build carries every browser page", () => {
+  // B1: a page without a build step ships nothing. When the build ran (its main bundle is there),
+  // every BROWSER_ASSETS entry's `out` is there too — viewport and stream page alike.
+  const root = join(import.meta.dir, "..");
+  const anchor = join(root, "out", "main", "index.js");
+  test.if(existsSync(anchor))("viewport preload + page, stream preload + page", () => {
+    expect(Object.keys(BROWSER_ASSETS).sort()).toEqual(["html", "preload", "streamHtml", "streamPreload"]);
+    for (const [name, asset] of Object.entries(BROWSER_ASSETS)) {
+      expect(existsSync(join(root, asset.out)), name).toBe(true);
+    }
+  });
+
+  test("both page windows are sandboxed with no Node (viewport view, stream encoder page)", () => {
+    // Their prefs are inline literals (no Electron to construct them here): the viewport's view and
+    // the encoder page both sandbox and turn Node integration off.
+    const viewport = readFileSync(join(import.meta.dir, "..", "src", "main", "browser", "viewport.ts"), "utf8");
+    const stream = readFileSync(join(import.meta.dir, "..", "src", "main", "browser", "stream.ts"), "utf8");
+    for (const [name, text] of [["viewport", viewport], ["stream", stream]] as const) {
+      expect(text, `${name} sandbox`).toContain("sandbox: true");
+      expect(text, `${name} nodeIntegration`).toContain("nodeIntegration: false");
     }
   });
 });

@@ -37,8 +37,9 @@ export interface DaemonPairDeps {
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   /** Stop the daemon on purpose (exit 0). Called once. */
   stopDaemon(why: string): void;
-  /** The last app connection left (closed, hung, or leaving): the browser's tabs have no app any more
-   *  (lane E's appGone — lane INT passes the browser service's own, which closes or parks them). */
+  /** The last app connection left (closed, hung, or leaving): whoever runs the tabs ends their
+   *  streams (lane E's appGone — lane INT passes the browser service's own `appGone`, which ends each
+   *  stream with `failed`). */
   onAppGone?(): void;
   log?(line: string): void;
 }
@@ -162,7 +163,13 @@ export class DaemonPair {
     if (!app) return;
     this.apps.delete(connId);
     if (this.apps.size > 0) return; // another app connection is still up (a reconnect overlapping)
-    this.deps.onAppGone?.(); // the tabs' app is gone: the browser closes or parks them (lane E's appGone)
+    // The tabs' app is gone: whoever runs them ends their streams. Never lets a throwing hook break
+    // the restart path below (a crash still schedules, a stop still finishes).
+    try {
+      this.deps.onAppGone?.();
+    } catch (err) {
+      this.log(`appGone threw, ignored (${err instanceof Error ? err.message.slice(0, 160) : "refused"})`);
+    }
     if (this.stopping) { this.finishStop(`the app went (${this.stopping.reason})`); return; }
     if (!this.o.desktop) return;
     if (app.leaving === "restart") { this.schedule("restart", this.o.restartGraceMs); return; }

@@ -15,6 +15,7 @@
 // serves every stream; it goes when the last stream stops. While a tab streams it paints at least 30 fps (a resting
 // or headless offscreen tab paints at 10 fps or not at all), and goes back to its own rate after.
 import { ipcMain, WebContentsView, type IpcMainEvent, type NativeImage, type Rectangle } from "electron";
+import { STREAM_FRAME_B64_MAX_LENGTH } from "@waifucave/clover-protocol";
 import type { StreamChunk, StreamCodec } from "./contract";
 import { BROWSER_WEBRTC_POLICY, prepareViewportSession, VIEWPORT_PARTITION } from "./session";
 import { HostTab, OffscreenTab, type BrowserTab } from "./tab";
@@ -344,6 +345,9 @@ export class TabStreamer {
   private emit(stream: string, chunk: StreamChunk): void {
     const s = this.streams.get(stream);
     if (s !== undefined && chunk.kind === "frame") {
+      // Over the wire cap the frame never goes: it is dropped here, before the stats or the send,
+      // and the core asks for a keyframe when its backpressure needs one (S3: the next keyframe resyncs).
+      if (Math.ceil(chunk.data.byteLength / 3) * 4 > STREAM_FRAME_B64_MAX_LENGTH) return;
       s.stats.frames++;
       if (chunk.key) s.stats.keyframes++;
       s.stats.bytes += chunk.data.byteLength;

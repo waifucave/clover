@@ -3,7 +3,8 @@
 //   out/main/index.js            the main process, one ESM file for Electron's Node (electron stays external)
 //   out/main/preload.cjs         the one preload (sandboxed preloads are CommonJS)
 //   out/main/browser-viewport-preload.cjs, out/renderer/browser-viewport.html
-//                                the Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`)
+//                                the Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`;
+//                                every entry there is built, stream page included)
 //   out/main/tray.png, @2x       the menu-bar and tray icon
 //   out/main/native/screen.node  macOS: the screen add-on (native/input/macos/screen.mm), built with clang alone
 //   out/renderer/core/           the window's core root: index.html, root.css, root.js
@@ -43,21 +44,28 @@ const LAYER_EXTERNALS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", 
 await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked" }, "the main process");
 await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: join(out, "main"), target: "node", format: "cjs", external: ["electron"], naming: "[name].cjs" }, "the preload");
 
-// ---- The Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`) ----
+// ---- The Clover Browser's pages and their preloads (lane L's `BROWSER_ASSETS`) ----
+// Every entry is built: `entry` bundles to one CommonJS file (a sandboxed preload can't import),
+// `from` copies as it is. A new page without a build step here would ship nothing (browser-unit pins it).
 {
   const { BROWSER_ASSETS } = await import("../src/main/browser/assets");
-  const preloadOut = join(root, BROWSER_ASSETS.preload.out);
-  const built = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"], minify: false, ...{ macros: false } });
-  if (!built.success || built.outputs.length !== 1) {
-    for (const l of built.logs) console.error(l);
-    console.error("build: the browser viewport's preload failed");
-    process.exit(1);
+  for (const [name, asset] of Object.entries(BROWSER_ASSETS)) {
+    if ("entry" in asset) {
+      const preloadOut = join(root, asset.out);
+      const built = await Bun.build({ entrypoints: [join(root, asset.entry)], target: "node", format: "cjs", external: ["electron"], minify: false, ...{ macros: false } });
+      if (!built.success || built.outputs.length !== 1) {
+        for (const l of built.logs) console.error(l);
+        console.error(`build: the browser ${name}'s preload failed`);
+        process.exit(1);
+      }
+      mkdirSync(dirname(preloadOut), { recursive: true });
+      writeFileSync(preloadOut, await built.outputs[0]!.text());
+    } else {
+      const htmlOut = join(root, asset.out);
+      mkdirSync(dirname(htmlOut), { recursive: true });
+      cpSync(join(root, asset.from), htmlOut);
+    }
   }
-  mkdirSync(dirname(preloadOut), { recursive: true });
-  writeFileSync(preloadOut, await built.outputs[0]!.text());
-  const htmlOut = join(root, BROWSER_ASSETS.html.out);
-  mkdirSync(dirname(htmlOut), { recursive: true });
-  cpSync(join(root, BROWSER_ASSETS.html.from), htmlOut);
 }
 
 // ---- The tray icon: a clover leaf, as a template image (macOS draws it in the menu bar's own colour) ----

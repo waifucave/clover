@@ -31,7 +31,7 @@ async function failure(p: Promise<unknown>): Promise<{ code: number; data?: unkn
 describe("the browser's methods, served", () => {
   test("every method the app, a layer or a peer may call has a handler", () => {
     const names = Object.keys(browserMethodHandlers({ service: new BrowserService({ computer: "Studio", app: () => undefined }) })).sort();
-    expect(names).toEqual([M.browserTabs, M.browserOpen, M.browserClose, M.browserNavigate, M.browserShow, M.browserHide, M.browserHold, M.browserScreenshot, M.browserCdp, M.browserStream, M.browserReport].map((m) => m.name).sort());
+    expect(names).toEqual([M.browserTabs, M.browserOpen, M.browserClose, M.browserNavigate, M.browserShow, M.browserHide, M.browserHold, M.browserScreenshot, M.browserCdp, M.browserStream, M.browserReport, M.browserStreamData].map((m) => m.name).sort());
   });
 
   test("open, tabs, navigate, show, hide, close: the person's own calls", async () => {
@@ -76,6 +76,34 @@ describe("the browser's methods, served", () => {
     expect(await h["browser.hold"]!({ id: "tab_1", held: true }, user)).toEqual({ ok: true });
     expect(service.tabs({ kind: "user" })[0]!.heldByUser).toBe(true);
     expect(await h["browser.report"]!({ events: [{ kind: "closed", id: "tab_1", by: "user" }] }, user)).toEqual({ ok: true });
+    expect(service.tabs({ kind: "user" })).toEqual([]);
+  });
+
+  test("streamData takes the app's chunks; anyone else is refused, and over-cap or bad base64 is invalid", async () => {
+    const { h } = setup();
+    const config = { stream: "st_1", chunk: { kind: "config", codec: "h264", width: 1280, height: 800, codecString: "avc1.42E01F" } };
+    expect(await h["browser.streamData"]!(config, user)).toEqual({ ok: true });
+    expect(await failure(h["browser.streamData"]!(config, session))).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+    const frame = (data: string) => ({ stream: "st_1", chunk: { kind: "frame", key: true, timestamp: 1_000, data } });
+    expect(await h["browser.streamData"]!(frame(Buffer.from([0, 1]).toString("base64")), user)).toEqual({ ok: true });
+    expect(await failure(h["browser.streamData"]!(frame("!!!not-base64!!!"), user))).toMatchObject({ code: ERR.INVALID_PARAMS });
+    expect(await failure(h["browser.streamData"]!(frame("A".repeat(8 * 1024 * 1024)), user))).toMatchObject({ code: ERR.INVALID_PARAMS });
+  });
+
+  test("report and streamData from a replaced app connection are ignored, never adopted", async () => {
+    const { service } = setup();
+    let current: number | undefined = 7;
+    const h = browserMethodHandlers({ service, appConnId: () => current });
+    await h["browser.open"]!({ owner: { kind: "bot", bot: "alpha" } }, { caller: user.caller, connId: 7 });
+    expect(service.tabs({ kind: "user" })).toHaveLength(1);
+    // The app reconnected on 8: 7's late close changes nothing, and its chunks land nowhere.
+    current = 8;
+    const stale = { caller: user.caller, connId: 7 };
+    expect(await h["browser.report"]!({ events: [{ kind: "closed", id: "tab_1", by: "user" }] }, stale)).toEqual({ ok: true });
+    expect(service.tabs({ kind: "user" })).toHaveLength(1);
+    expect(await h["browser.streamData"]!({ stream: "st_1", chunk: { kind: "ended", reason: "failed" } }, stale)).toEqual({ ok: true });
+    // The current connection still acts.
+    expect(await h["browser.report"]!({ events: [{ kind: "closed", id: "tab_1", by: "user" }] }, { caller: user.caller, connId: 8 })).toEqual({ ok: true });
     expect(service.tabs({ kind: "user" })).toEqual([]);
   });
 

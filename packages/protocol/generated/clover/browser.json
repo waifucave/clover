@@ -2562,7 +2562,8 @@
                     "minimum": 0
                   },
                   "data": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 8126464
                   }
                 },
                 "required": [
