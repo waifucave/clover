@@ -4,7 +4,7 @@
 //
 // The router is the one capability gate (fails closed):
 // * a path that isn't in the plugin SDK's `API_CALLS` doesn't exist (`refused`), whatever the plugin declared;
-// * a call needs the capability the catalog names, read from the plugin's own record (the capabilities its OK listed),
+// * a call needs the capability the catalog names, read from the plugin's own record (the capabilities its OK granted,
 //   never from the call: `call:<top-level id>` for `commands.run` (the command's plugin, found by its namespace) and
 //   `network:<host>` for `net.fetch` (the URL's host);
 // * a call where it doesn't exist (`secrets.get` outside a process of the plugin's own, `ui.send` from a component …)
@@ -56,7 +56,7 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
       throw new ContractError("plugin_stopped", `${call.pluginId} is ${record.enabled ? record.state : "off"}${record.reason ? `: ${record.reason}` : ""}`);
     }
     const target = targetOf(path, call.args, o.commandOwner);
-    if (!apiCallAllowed(path, call.process, record.capabilities, target, o.allowNetwork)) {
+    if (!apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }
     const fn = handlers[path];
