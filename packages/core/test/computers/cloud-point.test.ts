@@ -87,6 +87,33 @@ describe("the computer point", () => {
   });
 });
 
+describe("a pass that's due without a change (#284's check 2, S3)", () => {
+  test("the point waits on its timer for the next due pass (here: the grace after a new tenure), and runs it then", async () => {
+    const { registry, host, clock, hetzner } = await cloudPlugins();
+    const lists = () => hetzner.requests.filter((r) => r === "GET /v1/servers").length;
+    const set: { fn: () => void; ms: number }[] = [];
+    const cards: string[] = [];
+    const cloud = new CloudComputers({
+      clock, store: new FileCloudStateStore(tempDir("lane-j-cloud-home-")), provider: pluginProviders(registry, host), providerIds: () => providerIds(registry),
+      authority: { canAct: () => true, tenure: () => "group:1" }, cards: desk(() => true, (c) => cards.push(c.kind)), userData: testUserData,
+      noneGraceMs: 600_000,
+    });
+    const point = new CloudPoint({
+      registry, cloud, active: () => true, now: () => clock.now(),
+      timers: { set: (fn, ms) => { set.push({ fn, ms }); return set.length; }, clear: () => {} },
+    });
+    await point.sync();
+    await point.settled();
+    expect(cards).toEqual(["cloud-create"]);
+    expect(set.at(-1)!.ms).toBe(600_000);
+    const before = lists();
+    set.at(-1)!.fn();
+    for (let i = 0; i < 100 && lists() === before; i++) await Bun.sleep(5);
+    await point.settled();
+    expect(lists()).toBeGreaterThan(before); // the timer ran a pass: the cloud was asked again
+  });
+});
+
 describe("cloud computers on a node", () => {
   test("only the lease's holder makes VMs; when the lease moves, the old holder stops", async () => {
     const cluster = new Cluster();

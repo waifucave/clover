@@ -301,11 +301,17 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       ...(c.makeMain ? { makeMain: c.makeMain } : {}), ...(o.log ? { log: o.log } : {}),
     });
     const active = () => authority.canAct() && authority.tenure() !== undefined;
-    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active, ...(o.log ? { log: o.log } : {}) });
+    const point = new CloudPoint({ registry: c.plugins, cloud: vms, active, now: () => o.clock.now(), ...(o.log ? { log: o.log } : {}) });
     cloud = point;
     const follow = () => {
-      if (active() && !offCloud) offCloud = point.start();
-      else if (!active() && offCloud) {
+      // Cards asked under a tenure that has gone close as stale, so no computer waits on an answer that does nothing.
+      point.authorityChanged();
+      if (active() && !offCloud) {
+        const off = point.start();
+        // A change in the device list can settle what a VM's pairing is: a pass runs.
+        const offD = o.devices.watch(() => void point.sync());
+        offCloud = () => { off(); offD(); };
+      } else if (!active() && offCloud) {
         offCloud();
         offCloud = undefined;
       }

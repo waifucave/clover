@@ -99,12 +99,29 @@ export class CloudPoint {
   readonly #active: () => boolean;
   #running: Promise<ReconcileResult> | undefined;
   #stopped = false;
+  #timer: unknown;
+  readonly #timers: { set(fn: () => void, ms: number): unknown; clear(t: unknown): void };
+  readonly #now: () => number;
   #again = false;
 
   /** `active`: whether this computer acts on cloud computers now (the lease's holder alone); a sync on any other does
    *  nothing. `CloudComputers` checks its own authority again around every card and provider call. */
-  constructor(o: { registry: PluginRegistry; cloud: CloudComputers; active: () => boolean; log?: (line: string) => void }) {
+  constructor(o: {
+    registry: PluginRegistry; cloud: CloudComputers; active: () => boolean; log?: (line: string) => void;
+    /** The timer a due pass waits on (tests give a fake); `now` its clock. */
+    timers?: { set(fn: () => void, ms: number): unknown; clear(t: unknown): void };
+    now?: () => number;
+  }) {
     this.#active = o.active;
+    this.#timers = o.timers ?? {
+      set: (fn, ms) => {
+        const t = setTimeout(fn, ms);
+        (t as { unref?: () => void }).unref?.();
+        return t;
+      },
+      clear: (t) => clearTimeout(t as ReturnType<typeof setTimeout>),
+    };
+    this.#now = o.now ?? (() => Date.now());
     this.#registry = o.registry;
     this.#cloud = o.cloud;
     this.#log = o.log;
@@ -118,8 +135,34 @@ export class CloudPoint {
     void this.sync();
     return () => {
       this.#stopped = true;
+      this.#clearTimer();
       off();
     };
+  }
+
+  /** The lease moved: cards asked under another tenure close as stale, and a pass runs if this computer acts. */
+  authorityChanged(): void {
+    this.#cloud.authorityChanged();
+    void this.sync();
+  }
+
+  /** A pass at the next time one is due without a change (a duplicate's card to ask again, an owed label to set
+   *  again, the grace after a new tenure ending: #284's check 2, S3). */
+  #schedule(): void {
+    this.#clearTimer();
+    if (this.#stopped) return;
+    const due = this.#cloud.nextDue();
+    if (due === undefined) return;
+    const wait = Math.max(1_000, Math.min(due - this.#now(), 24 * 60 * 60_000));
+    this.#timer = this.#timers.set(() => {
+      this.#timer = undefined;
+      void this.sync();
+    }, wait);
+  }
+
+  #clearTimer(): void {
+    if (this.#timer !== undefined) this.#timers.clear(this.#timer);
+    this.#timer = undefined;
   }
 
   /** Settles once the changes the syncs started (cards waiting for the person, then the provider) have ended. */
@@ -149,6 +192,7 @@ export class CloudPoint {
     };
     const p = run().finally(() => {
       this.#running = undefined;
+      this.#schedule();
     });
     this.#running = p;
     return p;

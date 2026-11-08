@@ -134,6 +134,11 @@ export interface CloudCards {
 
 /** How long an unanswered duplicate card waits before it is asked again (the controller's ruling: once a day). */
 export const DUPLICATE_ASK_AGAIN_MS = 24 * 60 * 60 * 1000;
+/** An owed device label is set again after a failure this long later, doubling up to an hour. */
+export const LABEL_RETRY_FIRST_MS = 60_000;
+export const LABEL_RETRY_MAX_MS = 60 * 60_000;
+/** The default grace before "nothing paired" is evidence, after a new tenure. */
+export const NONE_GRACE_MS = 10 * 60_000;
 
 /** A VM's own state, as this main last saw it: a cache, settled from the provider. */
 export interface CloudVm {
@@ -310,6 +315,12 @@ export interface CloudComputersOptions {
   makeMain?: (name: string) => Promise<void>;
   /** How long a `creating` entry waits for its provider before it is looked up again (default 15 minutes). */
   createWaitMs?: number;
+  /** How long after this computer starts acting under a tenure before "nothing paired" counts as evidence for a
+   *  pair-again card (#284's check 2, S3): the device list may not have caught up yet. Default 10 minutes. */
+  noneGraceMs?: number;
+  /** Whether lane H's device list has synced at least once since this computer started acting; until then "nothing
+   *  paired" isn't evidence either. Default: yes. */
+  devicesSynced?: () => boolean;
   log?: (line: string) => void;
 }
 
@@ -369,9 +380,22 @@ export class CloudComputers {
   #lastServers = new Map<string, string>();
   /** Told when a card is approved, for the changes under way (an extra pass after one that didn't act is harmless). */
   #onAsk: (() => void)[] = [];
+  /** When this process started: a re-ask stamp from before it is ignored (its card died with the last process). */
+  readonly #startedAt: number;
+  /** The open cards, by subject, with the tenure each was asked under: a lost lease closes them (S2). */
+  readonly #openCards = new Map<string, string | undefined>();
+  /** The folder each change under way started from: an edit while its card is open closes the card (N1). */
+  readonly #unitFolder = new Map<string, CloudFolder>();
+  /** Computers whose change should bring another pass when it ends (its card was closed by an edit). */
+  readonly #resync = new Set<string>();
+  /** Owed device labels whose last try failed: when to try again, and the next wait (backoff). */
+  readonly #labelRetry = new Map<string, { at: number; delay: number }>();
+  /** The tenure this computer acts under, and since when (the grace for "nothing paired"). */
+  #tenureSince: { tenure: string; at: number } | undefined;
 
   constructor(o: CloudComputersOptions) {
     this.#o = o;
+    this.#startedAt = o.clock.now();
     this.#state = o.store.load();
     this.pairing = new PairingTokens({ clock: o.clock, state: () => this.#state, save: () => this.#save() });
   }
@@ -395,6 +419,7 @@ export class CloudComputers {
     const out = emptyResult();
     const tenure = this.#o.authority.tenure();
     if (!this.#o.authority.canAct() || tenure === undefined) return out;
+    if (this.#tenureSince?.tenure !== tenure) this.#tenureSince = { tenure, at: this.#o.clock.now() };
     const attempt = async (name: string, fn: () => Promise<void>) => {
       try {
         await this.#one(name, fn);
@@ -409,21 +434,30 @@ export class CloudComputers {
       }
     };
     const started: Promise<void>[] = [];
-    const run = async (name: string, fn: () => Promise<void>) => {
+    const run = async (name: string, fn: () => Promise<void>, f?: CloudFolder) => {
       if (this.#busy.has(name)) {
+        // Its folder edited while its card is open: that card is out of date. Closed as stale; a fresh pass follows.
+        const was = this.#unitFolder.get(name);
+        if (f && was && JSON.stringify(was) !== JSON.stringify(f)) {
+          this.#staleFolderCards(was);
+          this.#resync.add(name);
+        }
         out.waiting.push(name);
         return;
       }
       let asked = false;
-      const unit = attempt(name, () => this.#asking(fn, () => { asked = true; }));
+      if (f) this.#unitFolder.set(name, f);
+      const unit = attempt(name, () => this.#asking(fn, () => { asked = true; })).finally(() => {
+        if (f && this.#unitFolder.get(name) === f) this.#unitFolder.delete(name);
+      });
       if (!opts.detach) return unit;
       this.#units.add(unit);
       started.push(unit);
-      // Only a change the person approved (one that did something) brings another pass: a pass with nothing to do, or
-      // a card declined or left unanswered, ends there (it is asked again on the next change or pass).
+      // Only a change the person approved (one that did something), or one whose card an edit closed, brings another
+      // pass: a pass with nothing to do, or a card declined or left unanswered, ends there.
       void unit.finally(() => {
         this.#units.delete(unit);
-        if (asked) opts.onSettled?.();
+        if (this.#resync.delete(name) || asked) opts.onSettled?.();
       });
     };
     for (const f of folders) {
@@ -455,7 +489,7 @@ export class CloudComputers {
     for (const f of folders) {
       const label = cloudLabelOf(f.folder);
       seen.add(label);
-      await run(f.name, () => this.#folder(f, label, found.get(label), unreachable, tenure, out));
+      await run(f.name, () => this.#folder(f, label, found.get(label), unreachable, tenure, out), f);
     }
     // VMs with the label whose folder is gone: unless held, kept, or their provider couldn't be asked.
     for (const [label, all] of found) {
@@ -496,9 +530,50 @@ export class CloudComputers {
   /** Raises a card for the change under way; an approved one marks it as having done something. */
   async #ask(card: CloudCard): Promise<CloudCardOutcome> {
     const told = [...this.#onAsk];
-    const r = await this.#o.cards.ask(card);
-    if (r === "approved") for (const f of told) f();
-    return r;
+    const subject = cloudCardSubject(card);
+    this.#openCards.set(subject, this.#o.authority.tenure());
+    try {
+      const r = await this.#o.cards.ask(card);
+      if (r === "approved") for (const f of told) f();
+      return r;
+    } finally {
+      this.#openCards.delete(subject);
+    }
+  }
+
+  /** The lease moved (lane H's watch): every card asked under another tenure is closed as stale, so its computer isn't
+   *  left waiting on an answer that would do nothing (#284's check 2, S2). */
+  authorityChanged(): void {
+    const now = this.#o.authority.canAct() ? this.#o.authority.tenure() : undefined;
+    for (const [subject, tenure] of [...this.#openCards]) if (now === undefined || tenure !== now) this.#o.cards.stale(subject);
+  }
+
+  /** When a pass is next due without any change: an unanswered duplicate card to ask again, or an owed label to set
+   *  again (#284's check 2, S3). Undefined when nothing waits. */
+  nextDue(): number | undefined {
+    const at: number[] = [];
+    for (const stamp of Object.values(this.#state.duplicateAsked)) if (stamp >= this.#startedAt) at.push(stamp + DUPLICATE_ASK_AGAIN_MS);
+    for (const r of this.#labelRetry.values()) at.push(r.at);
+    if (this.#state.vms.some((v) => v.labelOwed && !this.#labelRetry.has(v.serverId ?? ""))) at.push(this.#o.clock.now());
+    const now = this.#o.clock.now();
+    const graceEnds = this.#tenureSince ? this.#tenureSince.at + (this.#o.noneGraceMs ?? NONE_GRACE_MS) : undefined;
+    if (graceEnds !== undefined && graceEnds > now) at.push(graceEnds);
+    return at.length ? Math.max(now, Math.min(...at)) : undefined;
+  }
+
+  /** Whether a duplicate card for `id` was raised in this process less than a day ago (a stamp from before this
+   *  process started is ignored: its card died with that process). */
+  #askedRecently(id: string): boolean {
+    const stamp = this.#state.duplicateAsked[id];
+    return stamp !== undefined && stamp >= this.#startedAt && this.#o.clock.now() - stamp < DUPLICATE_ASK_AGAIN_MS;
+  }
+
+  /** A folder's open cards (its create and make-main cards, and its computer's resize, repair and delete cards),
+   *  closed as stale. */
+  #staleFolderCards(f: CloudFolder): void {
+    this.#o.cards.stale(cloudCardSubject({ kind: "cloud-create", name: f.name, provider: f.provider, size: f.size, region: f.region, folder: f.folder }));
+    this.#o.cards.stale(cloudCardSubject({ kind: "cloud-make-main", name: f.name }));
+    this.#o.cards.stale(cloudCardSubject({ kind: "cloud-resize", name: f.name, provider: f.provider, from: f.size, to: f.size }));
   }
 
   /** Settles once every change a detached pass started has ended (tests, and shutdown through `drain`). */
@@ -510,12 +585,7 @@ export class CloudComputers {
    *  repair and delete cards) and a server no longer there (its duplicate card). */
   #closeGone(folders: readonly CloudFolder[], found: Map<string, { provider: string; vm: CloudInstance }[]>, unreachable: Map<string, string>): void {
     const now = new Map(folders.map((f) => [f.folder, f]));
-    for (const [id, f] of this.#lastFolders) {
-      if (now.has(id)) continue;
-      this.#o.cards.stale(cloudCardSubject({ kind: "cloud-create", name: f.name, provider: f.provider, size: f.size, region: f.region, folder: f.folder }));
-      this.#o.cards.stale(cloudCardSubject({ kind: "cloud-make-main", name: f.name }));
-      this.#o.cards.stale(cloudCardSubject({ kind: "cloud-resize", name: f.name, provider: f.provider, from: f.size, to: f.size }));
-    }
+    for (const [id, f] of this.#lastFolders) if (!now.has(id)) this.#staleFolderCards(f);
     this.#lastFolders = now;
     const servers = new Map([...found.values()].flat().map((x) => [x.vm.serverId, x.provider]));
     for (const [serverId, provider] of this.#lastServers) {
@@ -544,8 +614,9 @@ export class CloudComputers {
     if (all) {
       const ranked = this.#ranked(f.name, label, all);
       const [there, ...extra] = ranked;
-      // A tie at the top: nobody can say which one is the computer. All reported, nothing deleted or changed.
-      if (extra.length && extra[0]!.rank === there!.rank) {
+      // Nobody can say which one is the computer (a tie at the top, or a duplicate that may be in use: paired, may be
+      // paired, or the one this main knows): all reported, nothing deleted or changed (#284's check 2, S1).
+      if (extra.some((d) => !this.#deletable(there!, d))) {
         for (const d of ranked) {
           out.duplicates.push({ name: f.name, serverId: d.vm.serverId, outcome: "reported" });
           this.#report(f, d);
@@ -566,7 +637,10 @@ export class CloudComputers {
       delete this.#state.duplicateAsked[there!.vm.serverId];
       const vm = this.#adopt(f, label, there!, out);
       if (vm.state === "deleting") return;
-      if (vm.state === "paired" && vm.device && (vm.labelOwed || there!.vm.device !== deviceTagOf(vm.device))) await this.#label(vm, tenure);
+      if (vm.state === "paired" && vm.device && (vm.labelOwed || there!.vm.device !== deviceTagOf(vm.device))) {
+        const retry = this.#labelRetry.get(vm.serverId!);
+        if (!retry || this.#o.clock.now() >= retry.at) await this.#label(vm, tenure);
+      }
       if (vm.size !== f.size) {
         this.#tally(f.name, await this.#resize(vm, f.size, tenure), out.resized, out);
         return;
@@ -596,8 +670,7 @@ export class CloudComputers {
   #report(f: CloudFolder, d: { provider: string; vm: CloudInstance; ev: { kind: string } }): void {
     const id = d.vm.serverId;
     if (this.#state.reportedDuplicates.includes(id)) return;
-    const asked = this.#state.duplicateAsked[id];
-    if (asked !== undefined && this.#o.clock.now() - asked < DUPLICATE_ASK_AGAIN_MS) return;
+    if (this.#askedRecently(id)) return;
     this.#state.duplicateAsked[id] = this.#o.clock.now();
     this.#save();
     void this.#ask(this.#duplicateCard(f, d)).then((r) => {
@@ -689,9 +762,12 @@ export class CloudComputers {
       await p.paired({ serverId: vm.serverId, label: vm.label, region: vm.region, device: deviceTagOf(vm.device) });
       const now = this.#state.vms.find((v) => v.label === vm.label && v.serverId === vm.serverId);
       if (now) delete now.labelOwed;
+      this.#labelRetry.delete(vm.serverId);
     } catch (e) {
       const now = this.#state.vms.find((v) => v.label === vm.label && v.serverId === vm.serverId);
       if (now) now.labelOwed = true;
+      const delay = this.#labelRetry.get(vm.serverId)?.delay ?? LABEL_RETRY_FIRST_MS;
+      this.#labelRetry.set(vm.serverId, { at: this.#o.clock.now() + delay, delay: Math.min(delay * 2, LABEL_RETRY_MAX_MS) });
       this.#o.log?.(`cloud computer ${vm.name}: its device label wasn't set or its user-data cleared (${(e as Error).message}); set again on the next pass`);
     }
     this.#save();
@@ -725,12 +801,27 @@ export class CloudComputers {
       const d = reg.list().find((x) => ok(x) && deviceTagOf(x.id) === i.device);
       return d ? { kind: "paired", device: d.id } : { kind: "unknown" };
     }
-    return reg.list().some((x) => ok(x) && !accounted.has(x.id)) ? { kind: "unknown" } : { kind: "none" };
+    if (reg.list().some((x) => ok(x) && !accounted.has(x.id))) return { kind: "unknown" };
+    return this.#graceOver() ? { kind: "none" } : { kind: "unknown" };
   }
 
-  /** The VMs with one folder's label, best first: the one this main knows by id (rank 0), then one whose device is
-   *  paired (1), then the rest (2); within a rank, the lowest id, numerically when both are numbers (the same order on
-   *  every main). */
+  /** Whether "nothing paired" counts as evidence yet: the device list has synced, and the grace after this tenure
+   *  began has passed (#284's check 2, S3). */
+  #graceOver(): boolean {
+    if (this.#o.devicesSynced && !this.#o.devicesSynced()) return false;
+    const since = this.#tenureSince?.at ?? this.#o.clock.now();
+    return this.#o.clock.now() - since >= (this.#o.noneGraceMs ?? NONE_GRACE_MS);
+  }
+
+  /** A duplicate may be offered for deletion only when the one kept ranks strictly above it and nothing says it may
+   *  be in use: it isn't paired or perhaps paired (`unknown`), and it isn't the one this main knows. */
+  #deletable(keeper: { rank: number }, d: { rank: number; known: boolean; ev: { kind: string } }): boolean {
+    return keeper.rank < d.rank && !d.known && (d.ev.kind === "none" || d.ev.kind === "revoked");
+  }
+
+  /** The VMs with one folder's label, best first, by evidence (#284's check 2, S1): one whose device is paired (rank
+   *  0), then the one this main knows by id (1), then the rest (2); within a rank, the lowest id, numerically when both
+   *  are numbers (the same order on every main). */
   #ranked(name: string, label: string, all: { provider: string; vm: CloudInstance }[]) {
     const known = this.#state.vms.find((v) => v.label === label)?.serverId;
     const first = all.map((x) => ({ ...x, ev: this.#evidence(name, label, x.vm, new Set()) }));
@@ -738,9 +829,10 @@ export class CloudComputers {
     return all
       .map((x) => {
         const ev = this.#evidence(name, label, x.vm, accounted);
-        const rank = x.vm.serverId === known ? 0 : ev.kind === "paired" ? 1 : 2;
+        const isKnown = x.vm.serverId === known;
+        const rank = ev.kind === "paired" ? 0 : isKnown ? 1 : 2;
         const paired: "yes" | "no" | "unknown" = ev.kind === "paired" ? "yes" : ev.kind === "unknown" ? "unknown" : "no";
-        return { ...x, ev, rank, paired };
+        return { ...x, ev, rank, paired, known: isKnown };
       })
       .sort((a, b) => a.rank - b.rank || compareIds(a.vm.serverId, b.vm.serverId));
   }
@@ -750,8 +842,7 @@ export class CloudComputers {
    *  again a day later at most (never read as keep). Under the computer's lock (the pass's unit). */
   async #duplicate(f: CloudFolder, d: { provider: string; vm: CloudInstance; ev: { kind: string } }, keeper: { vm: CloudInstance; ev: { kind: string } }, tenure: string): Promise<CloudCardOutcome> {
     const id = d.vm.serverId;
-    const asked = this.#state.duplicateAsked[id];
-    if (asked !== undefined && this.#o.clock.now() - asked < DUPLICATE_ASK_AGAIN_MS) return "unanswered";
+    if (this.#askedRecently(id)) return "unanswered";
     const p = this.#provider(d.provider);
     this.#state.duplicateAsked[id] = this.#o.clock.now();
     this.#save();
