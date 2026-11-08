@@ -140,6 +140,10 @@ export class PeerOwner {
   }
 
   private async read(): Promise<{ rows: Row[]; pids: Set<number>; held: Set<number> | "unknown" }> {
+    // Windows: the process tree (PowerShell) is the slow half, seconds on a loaded machine, so the socket table is read
+    // while it runs. The table is still read after the connection existed, which is all that matters.
+    const winTable = this.opts.platform === "win32" ? this.opts.run("netstat", ["-ano", "-p", "TCP"]).then(parseNetstat) : undefined;
+    winTable?.catch(() => undefined);
     const pids = new Set((await this.opts.allowedPids()).filter((p) => Number.isInteger(p) && p > 0));
     if (pids.size === 0) return { rows: [], pids, held: new Set() };
     if (this.opts.platform === "linux") {
@@ -178,31 +182,47 @@ export class PeerOwner {
       return { rows: parseLsof(out), pids, held: new Set() };
     }
     if (this.opts.platform === "win32") {
-      return { rows: parseNetstat(await this.opts.run("netstat", ["-ano", "-p", "TCP"])), pids, held: new Set() };
+      return { rows: await winTable!, pids, held: new Set() };
     }
     throw new Error(`no socket table on ${this.opts.platform}`);
   }
 }
 
 /** The processes under `roots` (themselves included), for a browser whose network process is its child (the headless
- *  shell). macOS and Linux read `ps`; Windows the process table through PowerShell. */
-export async function processTree(roots: readonly number[], o: { platform: NodeJS.Platform; run: RunCommand }): Promise<number[]> {
+ *  shell). macOS and Linux read `ps`; Windows the process table through PowerShell.
+ *
+ *  Windows hands a dead process's id to the next process made, and a table row names its parent by id alone, so a
+ *  process whose parent died before the browser started can look like the browser's child (the browser took the dead
+ *  parent's id). Windows rows carry their creation time, and a row only joins the tree when it was made after the
+ *  process it names as its parent. `exclude` (the caller's own process, which hosts the filter) is never in the tree,
+ *  nor is anything reached only through it. */
+export async function processTree(roots: readonly number[], o: { platform: NodeJS.Platform; run: RunCommand; exclude?: readonly number[] }): Promise<number[]> {
   const out = o.platform === "win32"
-    ? await o.run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"])
+    ? await o.run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.ToFileTimeUtc())\" }"])
     : await o.run("ps", ["-A", "-o", "pid=,ppid="]);
   const children = new Map<number, number[]>();
+  const born = new Map<number, number>();
+  const rows: [number, number][] = [];
   for (const line of out.split("\n")) {
-    const [pid, ppid] = line.trim().split(/\s+/).map(Number) as [number, number];
+    const [pid, ppid, created] = line.trim().split(/\s+/).map(Number) as [number, number, number | undefined];
     if (!Number.isInteger(pid) || !Number.isInteger(ppid)) continue;
+    if (created !== undefined && Number.isFinite(created)) born.set(pid, created);
+    rows.push([pid, ppid]);
+  }
+  for (const [pid, ppid] of rows) {
+    const mine = born.get(pid);
+    const theirs = born.get(ppid);
+    if (mine !== undefined && theirs !== undefined && mine < theirs) continue; // made before the process it names: the id was reused
     const list = children.get(ppid) ?? [];
     list.push(pid);
     children.set(ppid, list);
   }
+  const skip = new Set(o.exclude ?? []);
   const seen = new Set<number>();
-  const stack = [...roots];
+  const stack = roots.filter((pid) => !skip.has(pid));
   while (stack.length > 0) {
     const pid = stack.pop()!;
-    if (seen.has(pid)) continue;
+    if (seen.has(pid) || skip.has(pid)) continue;
     seen.add(pid);
     stack.push(...(children.get(pid) ?? []));
   }
