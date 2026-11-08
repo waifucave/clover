@@ -10,7 +10,7 @@
 // * the dev profile, or a core run from source: the dev stage, `<home>/run/dev-bundled/`, which `buildDevBundledPlugins`
 //   makes from the repository's `plugins/` with `buildPluginForShipping({ dev: true, bundled: true })` and measures. A
 //   dist core never reads a dev stage.
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   BUNDLED_MANIFEST_FILE, bundledPluginIds, formatBundledManifest, measureBundledTree, parseBundledManifest, readBundledPlugin,
@@ -29,11 +29,15 @@ export function devBundledDir(cloverHome: string): string {
 }
 
 /** Copies every bundled plugin that verifies against `manifest` into `out`, replacing what was there, and returns `out`
- *  (undefined when the manifest names none). A plugin that fails is left out with its refusal, never copied in part. */
-export function stageBundledPlugins(o: { root: string; manifest: BundledManifest; out: string; log?: (line: string) => void }): { dir: string | undefined; staged: string[]; refused: string[] } {
+ *  (undefined when the manifest names none). A plugin that fails is left out with its refusal, never copied in part.
+ *  `digests` holds each copied file's SHA-256 by its real path, as verified: the plugin host runs a bundled plugin's
+ *  entry only from bytes that match it (#322's review, S2), so a file rewritten after staging doesn't run. */
+export function stageBundledPlugins(o: { root: string; manifest: BundledManifest; out: string; log?: (line: string) => void }): { dir: string | undefined; staged: string[]; refused: string[]; digests: ReadonlyMap<string, string> } {
   const ids = bundledPluginIds(o.manifest);
   rmSync(o.out, { recursive: true, force: true });
-  if (ids.length === 0) return { dir: undefined, staged: [], refused: [] };
+  const digests = new Map<string, string>();
+  if (ids.length === 0) return { dir: undefined, staged: [], refused: [], digests };
+  const verified: string[] = [];
   const tmp = `${o.out}.tmp-${process.pid}`;
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(tmp, { recursive: true, mode: 0o700 });
@@ -51,6 +55,7 @@ export function stageBundledPlugins(o: { root: string; manifest: BundledManifest
         const file = join(tmp, ...rel.split("/"));
         mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
         writeFileSync(file, bytes, { mode: 0o600 });
+        verified.push(rel);
       }
       staged.push(id);
     }
@@ -59,7 +64,9 @@ export function stageBundledPlugins(o: { root: string; manifest: BundledManifest
     rmSync(tmp, { recursive: true, force: true });
     throw err;
   }
-  return { dir: o.out, staged, refused };
+  const out = realpathSync(o.out);
+  for (const rel of verified) digests.set(join(out, ...rel.split("/")), o.manifest.files[rel]!.sha256);
+  return { dir: o.out, staged, refused, digests };
 }
 
 /** The dev stage's root and manifest, or undefined when there is none (or it's unreadable). */
