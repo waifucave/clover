@@ -3265,9 +3265,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
+  const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
-    tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
+    tokens: cloverTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
     get deviceId() { return liveDeviceId; },
@@ -3554,6 +3555,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
       // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
       updateGate,
+      // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
+      clients: { server: cloverServer, tokens: cloverTokens },
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });
