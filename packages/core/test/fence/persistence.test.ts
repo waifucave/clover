@@ -17,15 +17,48 @@ import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { agentConfigPaths, autoRunPaths } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
+import { expandWindowsEnv, gitConfiguredDirs, parseRegValue, runLaterExtrasFrom } from "../../src/fence/run-later";
 import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
+import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import { ApprovalBroker } from "../../src/agent/approvals";
+import { PermissionGate } from "../../src/agent/gate";
+import { QuestionBroker } from "../../src/agent/questions";
+import { canUseToolFor } from "../../src/runtime-sdk/approval-bridge";
 import { escapeFloorHit } from "../../src/runtime-sdk/hooks";
 import { darwinDescribe } from "../helpers/darwin-only";
 import { protectedPathsFor, protectedWriteDecision } from "../../src/runtime-sdk/protected-paths";
 
 const SAMPLES = {
-  macos: { home: "/Users/me", auto: ["Library/LaunchAgents/evil.plist", ".zshrc", ".bash_login", ".ssh/authorized_keys", ".ssh/rc", ".config/fish/config.fish", "Library/Application Support/com.apple.backgroundtaskmanagementagent/backgrounditems.btm"], agent: [".codex/config.toml", ".claude/settings.json", ".config/opencode/opencode.json"] },
-  linux: { home: "/home/me", auto: [".config/autostart/x.desktop", ".config/systemd/user/x.service", ".local/share/systemd/user/x.service", ".config/environment.d/x.conf", ".pam_environment", ".xprofile", ".bashrc", ".profile"], agent: [".codex/config.toml", ".claude/settings.local.json"] },
-  windows: { home: "C:\\Users\\me", auto: ["AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\x.lnk", "Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1", "Documents\\WindowsPowerShell\\profile.ps1", ".bashrc", ".ssh\\authorized_keys"], agent: [".codex\\config.toml", ".config\\opencode\\opencode.json"] },
+  macos: {
+    home: "/Users/me",
+    auto: [
+      "Library/LaunchAgents/evil.plist", ".zshrc", ".bash_login", ".zlogout", ".ssh/authorized_keys", ".ssh/rc", ".ssh/config", ".config/fish/config.fish",
+      "Library/Application Support/com.apple.backgroundtaskmanagementagent/backgrounditems.btm", "Library/Preferences/com.apple.loginwindow.plist",
+      "Library/Application Support/iTerm2/Scripts/AutoLaunch/x.py", "Library/Workflows/Applications/Folder Actions/x.workflow",
+      ".gitconfig", ".config/git/config", ".git-templates/hooks/post-checkout", ".local/bin/ls", "bin/git", ".cargo/bin/x",
+      "Library/Python/3.12/lib/python/site-packages/x.pth", ".npmrc", ".yarnrc.yml", ".bunfig.toml", ".cargo/config.toml", ".gradle/init.d/x.gradle",
+      ".config/pip/pip.conf", ".pip/pip.conf", ".vimrc", ".config/nvim/init.lua", ".emacs.d/init.el", ".tmux.conf", ".inputrc", ".config/zsh/.zshrc",
+    ],
+    agent: [".codex/config.toml", ".claude/settings.json", ".claude/agents/x.md", ".claude.json", ".gemini/settings.json", ".cursor/mcp.json", ".config/opencode/opencode.json"],
+  },
+  linux: {
+    home: "/home/me",
+    auto: [
+      ".config/autostart/x.desktop", ".config/systemd/user/x.service", ".local/share/systemd/user/x.service", ".config/environment.d/x.conf",
+      ".pam_environment", ".xprofile", ".xinitrc", ".xsession", ".xsessionrc", ".config/plasma-workspace/env/x.sh", ".config/i3/config",
+      ".config/sway/config", ".config/hypr/hyprland.conf", ".config/openbox/autostart", ".bashrc", ".profile", ".cshrc", ".kshrc",
+      ".config/nushell/config.nu", ".local/lib/python3.12/site-packages/x.pth", ".gitconfig", ".local/bin/x", ".npmrc", ".vimrc",
+    ],
+    agent: [".codex/config.toml", ".claude/settings.local.json", ".claude.json", ".gemini/settings.json"],
+  },
+  windows: {
+    home: "C:\\Users\\me",
+    auto: [
+      "AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\x.lnk", "Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1",
+      "Documents\\WindowsPowerShell\\profile.ps1", ".bashrc", ".ssh\\authorized_keys", ".gitconfig", ".npmrc", "AppData\\Roaming\\Python\\Python312\\site-packages\\x.pth",
+    ],
+    agent: [".codex\\config.toml", ".config\\opencode\\opencode.json", ".claude.json", ".cursor\\mcp.json"],
+  },
 } as const;
 
 describe("the shared list", () => {
@@ -33,7 +66,34 @@ describe("the shared list", () => {
     expect(autoRunPaths("macos", "/Users/me")).toEqual(expect.arrayContaining(["/Users/me/Library/LaunchAgents", "/Users/me/.zshrc", "/Users/me/.ssh/authorized_keys", "/Users/me/.config/fish"]));
     expect(autoRunPaths("linux", "/home/me")).toEqual(expect.arrayContaining(["/home/me/.config/systemd/user", "/home/me/.local/share/systemd/user", "/home/me/.pam_environment", "/home/me/.xprofile", "/home/me/.bash_login"]));
     expect(autoRunPaths("windows", "C:\\Users\\me")).toEqual(expect.arrayContaining(["C:\\Users\\me\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup", "C:\\Users\\me\\Documents\\PowerShell", "C:\\Users\\me\\Documents\\WindowsPowerShell"]));
-    expect(agentConfigPaths("linux", "/home/me")).toEqual(["/home/me/.codex/config.toml", "/home/me/.claude/settings.json", "/home/me/.claude/settings.local.json", "/home/me/.config/opencode"]);
+    expect(agentConfigPaths("linux", "/home/me")).toEqual(["/home/me/.claude", "/home/me/.claude.json", "/home/me/.codex/config.toml", "/home/me/.gemini/settings.json", "/home/me/.cursor", "/home/me/.config/opencode"]);
+    // No duplicates, and nothing that ssh, git or a shell writes as it runs.
+    for (const os of ["macos", "linux", "windows"] as const) {
+      const list = autoRunPaths(os, os === "windows" ? "C:\\Users\\me" : "/home/me");
+      expect(new Set(list).size).toBe(list.length);
+      expect(list.some((p) => /known_hosts|\.zsh_history|\.bash_history|\.lesshst/.test(p))).toBe(false);
+    }
+  });
+
+  test("the user's own settings add theirs: git's templates and hooks, ZDOTDIR, PYTHONSTARTUP, a moved Documents", () => {
+    expect(gitConfiguredDirs([
+      "[core]", "\thooksPath = ~/.githooks   # mine", "[init]", '  templateDir = "/opt/tmpl"', "[alias]", "  hooksPath = /not/this",
+      '[includeIf "gitdir:~/w/"]', "  path = x", "[core]", "  hooksPath = .husky",
+    ].join("\n"), "linux", "/home/me")).toEqual(["/home/me/.githooks", "/opt/tmpl"]);
+    const files: Record<string, string> = { "/home/me/.config/git/config": "[init]\n\ttemplatedir = ~/tmpl\n" };
+    const extras = runLaterExtrasFrom("linux", "/home/me", { env: { ZDOTDIR: "/home/me/.zdot", PYTHONSTARTUP: "/home/me/.py.py" }, read: (f) => files[f] });
+    expect(extras).toEqual({ gitDirs: ["/home/me/tmpl"], envPaths: ["/home/me/.zdot", "/home/me/.py.py"] });
+    expect(autoRunPaths("linux", "/home/me", extras)).toEqual(expect.arrayContaining(["/home/me/tmpl", "/home/me/.zdot", "/home/me/.py.py"]));
+    // Windows: OneDrive moved Documents, and the PowerShell profiles with it.
+    const reg = "\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\r\n    Personal    REG_EXPAND_SZ    %USERPROFILE%\\OneDrive\\Documents\r\n";
+    expect(parseRegValue(reg, "Personal")).toBe("%USERPROFILE%\\OneDrive\\Documents");
+    expect(expandWindowsEnv("%UserProfile%\\x", { USERPROFILE: "C:\\Users\\me" })).toBe("C:\\Users\\me\\x");
+    expect(expandWindowsEnv("%NOPE%\\x", {})).toBeUndefined();
+    const win = runLaterExtrasFrom("windows", "C:\\Users\\me", { env: { USERPROFILE: "C:\\Users\\me" }, read: () => undefined, documentsValue: () => parseRegValue(reg, "Personal") });
+    expect(win.documents).toBe("C:\\Users\\me\\OneDrive\\Documents");
+    expect(autoRunPaths("windows", "C:\\Users\\me", win)).toEqual(expect.arrayContaining([
+      "C:\\Users\\me\\Documents\\PowerShell", "C:\\Users\\me\\OneDrive\\Documents\\PowerShell", "C:\\Users\\me\\OneDrive\\Documents\\WindowsPowerShell",
+    ]));
   });
 });
 
@@ -117,6 +177,25 @@ describe("a code session the user drives: asks, never silently writes", () => {
     }
   });
 
+  test("the card offers no \"always\": answered with one anyway, the next write is carded again", async () => {
+    const approvals = new ApprovalBroker();
+    const events: NewSessionEvent[] = [];
+    const canUse = canUseToolFor({
+      sessionId: "s1", mode: "code", policy: "auto", approvals, questions: new QuestionBroker(), gate: new PermissionGate(),
+      emit: (e) => { events.push(e); }, log: { info: () => {}, error: () => {} }, now: () => 1, home: "/Users/x/.clover", cwd: "/",
+    });
+    const target = join(homedir(), ".zshrc"); // a string: the bridge only reads where it would lead
+    for (const id of ["t1", "t2"]) {
+      const pending = canUse("Write", { file_path: target, content: "x" }, { signal: new AbortController().signal, toolUseID: id, suggestions: [{ type: "addRules", behavior: "allow", destination: "userSettings", rules: [{ toolName: "Edit", ruleContent: "//Users/**" }] }] } as unknown as Parameters<typeof canUse>[2]);
+      const card = events.filter((e) => e.type === "approval_requested").at(-1) as { callId: string; options?: { id: string; rule?: string }[] } | undefined;
+      expect(card?.callId).toBe(id);
+      expect((card?.options ?? []).filter((o) => o.rule !== undefined)).toEqual([]);
+      approvals.resolve("s1", id, true, "user", "allow_global_0"); // the runtime suggested one; the card never offered it
+      expect(await pending).toMatchObject({ behavior: "allow" });
+      expect((await pending as { updatedPermissions?: unknown[] }).updatedPermissions ?? []).toEqual([]);
+    }
+  });
+
   test("a write tool gets the card in code and dispatch, a typed deny in chat; elsewhere is free", () => {
     const hits = pick(persistencePaths(me));
     expect(hits.length).toBeGreaterThan(4);
@@ -144,6 +223,6 @@ darwinDescribe("Seatbelt, live", () => {
     writeFileSync(join(home, ".zshrc"), "# mine\n");
     for (const rel of [...SAMPLES.macos.auto, ...SAMPLES.macos.agent, ".zshrc"]) expect([rel, write(rel)]).toEqual([rel, false]);
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("# mine\n");
-    for (const rel of [".zshrc.bak", "Documents/notes.md", ".config/other/x", ".codex/sessions/x.jsonl"]) expect([rel, write(rel)]).toEqual([rel, true]);
+    for (const rel of [".zshrc.bak", "Documents/notes.md", ".config/other/x", ".codex/sessions/x.jsonl", ".ssh/known_hosts", ".local/share/x", ".claudex/x"]) expect([rel, write(rel)]).toEqual([rel, true]);
   });
 });

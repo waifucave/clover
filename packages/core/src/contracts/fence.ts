@@ -361,12 +361,25 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
 }
 
 // -------------------------------------------------------------------------------------------------
-// Persistence and auto-run (the #301 review, the controller's ruling of November 8): the places where a file written
-// now runs OUTSIDE any sandbox later, at the user's next shell, login or SSH session, or changes how a coding agent
-// sandboxes itself. The fence's `login-start` and `agent-installs` items carry them (fence/layout.ts), so every runner's
-// sandbox and file tools refuse writes there; a code session the user drives asks instead (no "always"), through the
-// protected-path card (runtime-sdk/protected-paths.ts). One list, here.
+// Persistence and auto-run (the #301 review, the controller's ruling of November 8, and its review on #308): the places
+// where a file written now runs OUTSIDE any sandbox later (at the user's next shell, login, SSH session, editor, git
+// command, package install or Python start) or changes how a coding agent sandboxes itself or which servers it runs.
+// The fence's `login-start` and `agent-installs` items carry them (fence/layout.ts), so every runner's sandbox and file
+// tools refuse writes there; a code session the user drives asks instead (no "always"), through the protected-path card
+// (runtime-sdk/protected-paths.ts). One list, here; what only the user's own settings can say (where git's templates
+// and hooks are, a ZDOTDIR, PYTHONSTARTUP, a Documents folder OneDrive moved) comes in as `RunLaterExtras`
+// (fence/run-later.ts reads them).
 // -------------------------------------------------------------------------------------------------
+
+/** What the user's own settings add to the list (`fence/run-later.ts`), each an absolute path in `os`'s form. */
+export interface RunLaterExtras {
+  /** git's `init.templateDir` and `core.hooksPath` from the user's global config files. */
+  readonly gitDirs?: readonly string[];
+  /** `$ZDOTDIR` when it isn't the home, and `$PYTHONSTARTUP`. */
+  readonly envPaths?: readonly string[];
+  /** Windows: the Documents known folder, when OneDrive (or the user) moved it from `<home>\Documents`. */
+  readonly documents?: string;
+}
 
 /** A path under `home` in `os`'s own form. */
 function underHome(os: Os, home: string, parts: readonly string[]): string {
@@ -374,44 +387,77 @@ function underHome(os: Os, home: string, parts: readonly string[]): string {
   return [home.replace(/[\\/]+$/, ""), ...parts].join(sep);
 }
 
-/** The shells' start files, on every OS (Git Bash and WSL-style shells read them on Windows too). */
-const SHELL_START_FILES = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"] as const;
+/** The shells' start and end files, on every OS (Git Bash and WSL-style shells read them on Windows too), and
+ *  readline's `.inputrc` (its macros type commands). */
+const SHELL_FILES = [
+  ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout", ".bashrc", ".bash_profile", ".profile", ".bash_login",
+  ".bash_logout", ".cshrc", ".tcshrc", ".login", ".kshrc", ".inputrc",
+] as const;
 
-/** Where a file starts something at the next shell, login or SSH session, under `home`. HKCU's `Run` and `RunOnce`
- *  keys aren't paths: the Windows sandbox (#207) has to deny them, a gap until it lands (the Windows release blocker). */
-export function autoRunPaths(os: Os, home: string): string[] {
+/** Folders and files under `.config` that a shell, an editor or a tool runs from, on every OS. */
+const CONFIG_RUN_LATER = [
+  ["fish"], ["zsh"], ["nushell"], ["nvim"], ["tmux"], ["git"], ["pip"],
+] as const;
+
+/** Where a file starts something later, outside any sandbox, under `home`. HKCU's `Run` and `RunOnce` keys aren't
+ *  paths: the Windows sandbox (#207) has to deny them, a gap until it lands (the Windows release blocker). */
+export function autoRunPaths(os: Os, home: string, extras: RunLaterExtras = {}): string[] {
   const u = (...parts: string[]) => underHome(os, home, parts);
-  const shells = SHELL_START_FILES.map((f) => u(f));
+  const out: string[] = [];
+  // Shells, readline, editors, tmux.
+  out.push(...SHELL_FILES.map((f) => u(f)), u(".vimrc"), u(".vim"), u(".emacs"), u(".emacs.d"), u(".tmux.conf"));
+  out.push(...CONFIG_RUN_LATER.map((parts) => u(".config", ...parts)));
   // SSH's files that run or admit something: `rc` runs at each login, `config` holds `ProxyCommand`/`LocalCommand`,
   // `environment` is read by sshd, the keys admit whoever holds them. `known_hosts` stays writable (ssh writes it).
-  const ssh = ["rc", "config", "environment", "authorized_keys", "authorized_keys2"].map((f) => u(".ssh", f));
+  out.push(...["rc", "config", "environment", "authorized_keys", "authorized_keys2"].map((f) => u(".ssh", f)));
+  // git: hooks, fsmonitor, the pager and `!` aliases in the global config; the templates every `git init` copies.
+  out.push(u(".gitconfig"), u(".git-templates"));
+  // The folders on the PATH a user's shell finds commands in first.
+  out.push(u(".local", "bin"), u("bin"), u(".cargo", "bin"));
+  // Package managers' configs (scripts, registries, init scripts) and Python's: a `.pth` or `usercustomize.py` in the
+  // user site-packages runs at every Python start, so the whole user tree is held (`pip install --user` asks).
+  out.push(u(".npmrc"), u(".yarnrc"), u(".yarnrc.yml"), u(".bunfig.toml"), u(".cargo", "config.toml"), u(".cargo", "config"),
+    u(".gradle", "init.d"), u(".gradle", "init.gradle"), u(".pip"));
   if (os === "macos") {
-    return [
+    out.push(
       u("Library", "LaunchAgents"), u("Library", "LaunchDaemons"),
       u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
       u("Library", "Application Support", "com.apple.backgroundtaskmanagementd"),
-      u(".config", "fish"), ...shells, ...ssh,
-    ];
-  }
-  if (os === "linux") {
-    return [
+      u("Library", "Preferences", "com.apple.loginwindow.plist"),
+      u("Library", "Application Support", "iTerm2", "Scripts", "AutoLaunch"),
+      u("Library", "Workflows", "Applications", "Folder Actions"),
+      u("Library", "Python"),
+    );
+  } else if (os === "linux") {
+    out.push(
       u(".config", "autostart"), u(".config", "systemd", "user"), u(".local", "share", "systemd", "user"),
-      u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".config", "fish"), ...shells, ...ssh,
-    ];
+      u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".xinitrc"), u(".xsession"), u(".xsessionrc"),
+      u(".config", "plasma-workspace", "env"), u(".config", "plasma-workspace", "shutdown"),
+      u(".config", "i3"), u(".i3"), u(".config", "sway"), u(".config", "hypr"), u(".config", "openbox"),
+      u(".local", "lib"),
+    );
+  } else {
+    const docs = [u("Documents")];
+    if (extras.documents !== undefined && extras.documents.toLowerCase() !== docs[0]!.toLowerCase()) docs.push(extras.documents);
+    out.push(u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"));
+    for (const d of docs) out.push(`${d}\\PowerShell`, `${d}\\WindowsPowerShell`);
+    out.push(u("AppData", "Roaming", "Python"), u("AppData", "Roaming", "pip"));
   }
-  return [
-    u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"),
-    u("Documents", "PowerShell"), u("Documents", "WindowsPowerShell"), ...shells, ...ssh,
-  ];
+  out.push(...(extras.gitDirs ?? []), ...(extras.envPaths ?? []));
+  return [...new Set(out)];
 }
 
-/** The coding agents' own settings that change how they sandbox themselves (lane K's writers deny these per backend;
- *  the fence holds them for every runner). */
+/** The coding agents' own settings, which change how they sandbox themselves or which commands they run (MCP servers,
+ *  hooks): Claude Code's whole folder and its `.claude.json` (user-scope MCP servers), Codex's config, Gemini's
+ *  settings, Cursor's folder and OpenCode's. Lane K's writers deny these per backend; the fence holds them for every
+ *  runner. */
 export function agentConfigPaths(os: Os, home: string): string[] {
   const u = (...parts: string[]) => underHome(os, home, parts);
   return [
+    u(".claude"), u(".claude.json"),
     u(".codex", "config.toml"),
-    u(".claude", "settings.json"), u(".claude", "settings.local.json"),
+    u(".gemini", "settings.json"),
+    u(".cursor"),
     u(".config", "opencode"),
   ];
 }

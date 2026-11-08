@@ -25,7 +25,8 @@
 import { readdirSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import { agentConfigPaths, autoRunPaths, type FencedKind } from "../contracts/fence";
+import { agentConfigPaths, autoRunPaths, type FencedKind, type RunLaterExtras } from "../contracts/fence";
+import { runLaterExtras } from "./run-later";
 
 export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
 
@@ -38,6 +39,13 @@ export function defaultUserData(os: Os, home: string): string {
   if (os === "macos") return pathFor(os, home).join(home, "Library", "Application Support", "Clover");
   if (os === "windows") return pathFor(os, home).join(home, "AppData", "Roaming", "Clover");
   return pathFor(os, home).join(home, ".config", "Clover");
+}
+
+/** The user's own additions to the persistence list (git's dirs, ZDOTDIR, PYTHONSTARTUP, a moved Documents), read
+ *  only for this computer's OS: a layout for another OS has none. */
+function extrasHere(os: Os, home: string): RunLaterExtras {
+  const here: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+  return os === here ? runLaterExtras(os, home) : {};
 }
 
 /** The login items that start the daemon at login (main's `loginStartPaths`): macOS's LaunchAgents
@@ -84,7 +92,7 @@ export function fenceLayout(cloverHome: string, os: Os, o?: {
     usage: [h("usage")],
     "browser-profiles": userData === undefined ? [] : [p.join(userData, "Partitions")],
     // Clover's own login item, and every place a file runs from later outside any sandbox (the #301 review's ruling).
-    "login-start": [...new Set([...loginStartPaths(os, o?.home, cloverHome), ...(o?.home === undefined ? [] : autoRunPaths(os, o.home))])],
+    "login-start": [...new Set([...loginStartPaths(os, o?.home, cloverHome), ...(o?.home === undefined ? [] : autoRunPaths(os, o.home, extrasHere(os, o.home)))])],
     // The OK'd agents' installs, and the coding agents' own sandbox settings.
     "agent-installs": [...(o?.agentInstalls ?? []), ...(o?.home === undefined ? [] : agentConfigPaths(os, o.home))],
   };
@@ -117,7 +125,7 @@ export function pendingFenced(o: {
     transcripts: [p.join(o.cloverHome, "transcripts")], // `transcriptsDir(home)`, joined in this OS's form
     usage: [p.join(o.cloverHome, "usage")],
     "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
-    "login-start": [...new Set([...loginStart[o.os], ...autoRunPaths(o.os, o.home)])],
+    "login-start": [...new Set([...loginStart[o.os], ...autoRunPaths(o.os, o.home, extrasHere(o.os, o.home))])],
     "agent-installs": [...(o.agentInstalls ?? []), ...agentConfigPaths(o.os, o.home)],
     plugins: [p.join(o.cloverHome, "plugins")],
     // Windows: the per-user Git for Windows, whose bash runs hooks (#205's S4): a fenced caller can't plant one there.

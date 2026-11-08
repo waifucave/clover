@@ -1,6 +1,7 @@
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentConfigPaths, autoRunPaths } from "../contracts/fence";
+import { runLaterExtras } from "../fence/run-later";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -949,7 +950,7 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
  *  agents meet them as the fence's `login-start` and `agent-installs` items, refused outright. */
 export function persistencePaths(userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string[] {
   const os = platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
-  return [...autoRunPaths(os, userHome), ...agentConfigPaths(os, userHome)];
+  return [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
 }
 
 /**

@@ -1138,9 +1138,14 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
     }
   }
   // The #301 review's ruling: where a file runs later outside any sandbox (shell start files, login items, SSH's rc,
-  // keys and config, autostart) and the coding agents' sandbox settings (`persistencePaths`), write-shaped, each as a
-  // whole path (`~/.zshrc.bak` is another file). A write tool gets the protected card for these; an unsandboxed command
-  // gets none, so an approval it carries (or an "always" for its prefix) never writes them.
+  // keys and config, autostart, git's config, the PATH's user folders, package managers' configs) and the coding
+  // agents' settings (`persistencePaths`), write-shaped, each as a whole path (`~/.zshrc.bak` is another file). A write
+  // tool gets the protected card for these; an unsandboxed command gets none, so an approval it carries (or an "always"
+  // for its prefix) never writes them.
+  // BEST EFFORT, like the rest of this floor: it sees only the literal spellings (absolute, `~`, `$HOME`, `${HOME}`)
+  // in a write-shaped position. A command that writes one without naming it (`git config --global`, `npm config set`,
+  // `pip install --user`, a script, a path built at run time) isn't caught here; the sandboxed Bash's `denyWrite`
+  // holds those, and an unsandboxed command is the user's own approved escape.
   for (const needle of persistenceNeedles()) {
     for (let at = c.indexOf(needle); at >= 0; at = c.indexOf(needle, at + 1)) {
       if (at <= writeStart) continue;
@@ -1229,7 +1234,7 @@ function pathFenceHook(deps: SessionHooksDeps): HookCallback {
     const decision = protectedWriteDecision(toolName, toolInput, { mode: deps.mode ?? "code", protected: protectedPathsFor(home, root, { cwd }), cwd });
     if (decision === null) return allow();
     return decision.decision === "ask"
-      ? ask(`${toolName} writes a protected path (skills, commands, rules, output styles and CLOVER.md load into every future session) — the user decides.`)
+      ? ask(`${toolName} writes a protected path (skills, commands, rules, output styles and CLOVER.md load into every future session; shell start files, login items, git, package-manager and coding agents' settings run outside the sandbox later) — the user decides.`)
       : deny(decision.reason);
   };
 }
