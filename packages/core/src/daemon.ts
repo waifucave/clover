@@ -40,7 +40,12 @@ import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
-import { startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { computerNameFor } from "./devices/registry";
+import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
+import { pluginSettingsMethods } from "./plugin-host/api/settings";
+import { commandListMethods } from "./commands/views";
+import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
@@ -53,7 +58,7 @@ import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
 import { hostOs } from "./tree/names";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
@@ -448,6 +453,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** A-M2: lane B's plugin registry and plugin host, which the model plugins load through (`startModelPlugins`).
    *  Absent (today, until B-M1's registry and B-M2's host): sessions use the SDK's compiled catalog. */
   modelPluginHost?: Pick<StartModelPluginsOptions, "registry" | "host" | "pluginSecrets">;
+  /** B-M2: the daemon's one plugin host, injected (a test's). Absent: it starts over the plugin registry when the bot
+   *  side opens it (`startPluginHost`). */
+  pluginHost?: (registry: OpenedRegistry["registry"]) => Promise<DaemonPluginHost>;
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
@@ -3461,6 +3469,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
   const partsClock = new SystemClock();
   let partsRegistry: OpenedRegistry | undefined;
+  // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
+  // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
+  let pluginHost: DaemonPluginHost | undefined;
+  let glossary: GlossaryIndex | undefined;
   let partsStopping = false;
   const daemonBots = async (): Promise<DaemonBotsInput> => {
     // The bots come from the plugins folder and the app's bundled plugins (B-M1's registry, signed with the store's
@@ -3474,6 +3486,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       log: (line) => console.error(`[plugins] ${line}`),
     });
     partsRegistry = opened;
+    pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
+      home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      log: (line) => console.error(line),
+    })))(opened.registry);
+    glossary = new GlossaryIndex({ registry: opened.registry });
+    Object.assign(cloverLaneHandlers, laneMethodHandlers({
+      ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
+      ...commandListMethods(opened.registry),
+      ...pluginSettingsMethods(pluginHost.settings),
+      ...glossaryMethods(glossary),
+    }));
     return {
       registry: opened.registry,
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
@@ -3501,6 +3524,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
+    glossary?.close();
+    glossary = undefined;
+    const host = pluginHost;
+    pluginHost = undefined;
+    await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
     const registry = partsRegistry;
     partsRegistry = undefined;
     registry?.close();
