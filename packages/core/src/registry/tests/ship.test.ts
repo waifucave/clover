@@ -294,11 +294,24 @@ describe("buildPluginForShipping", () => {
       ["a Worker", `export const f = () => new Worker("./w.js");`],
       ["Bun.resolveSync", `export const f = () => Bun.resolveSync("x", ".");`],
       ["a literal require of what isn't shipped", `declare const require: (s: string) => unknown;\nexport const f = () => require("left-pad");`],
+      // R1: aliases a pattern per call would miss.
+      ["createRequire aliased", `import { createRequire as cr } from "node:module";\nexport const f = () => cr(import.meta.url);`],
+      ["require aliased", "declare const require: unknown;\nexport const f = () => { const r = require; return r; };"],
+      ["dlopen through computed members", `export const f = () => (globalThis as any)["process"]["dlopen"]({}, "x.node");`],
+      ["Worker aliased", `import { Worker as W } from "node:worker_threads";\nexport const f = () => new W("./w.js");`],
+      ["Module._load", `import Module from "node:module";\nexport const f = () => (Module as any)._load("x");`],
+      ["import.meta.resolve", "export const f = () => import.meta.resolve(\"x\");"],
+      ["import.meta passed on", "export const f = () => { const m = import.meta; return m; };"],
+      ["child_process fork", `import { fork } from "node:child_process";\nexport const f = () => fork("./x.js");`],
+      ["vm", `import vm from "node:vm";\nexport const f = (s: string) => vm.runInThisContext(s);`],
+      ["Bun.spawn", "export const f = () => Bun.spawn([\"x\"]);"],
+      ["Bun.build", "export const f = () => Bun.build({ entrypoints: [] });"],
+      ["Bun passed on", "export const f = () => { const b = Bun; return b; };"],
     ];
     for (const [what, code] of forms) {
       const c = await checkout({ plugin: { "host/index.ts": `${code}\nexport const start = () => 1;\n` } });
       const e = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).catch((x) => x);
-      expect([what, e instanceof PluginBuildError && /can't be checked|requires left-pad at run time|takes node:module|Could not resolve: "left-pad"/.test(e.message) ? true : String(e?.message ?? e)]).toEqual([what, true]);
+      expect([what, e instanceof PluginBuildError && /can't be checked|requires left-pad at run time|loads or runs other code|Could not resolve: "left-pad"/.test(e.message) ? true : String(e?.message ?? e)]).toEqual([what, true]);
     }
     const client = await checkout({ plugin: { "client/index.tsx": `export const load = (url: string) => import(url);\n` } });
     const ce = await buildPluginForShipping(client.plugin, { target: "linux-arm64", download: client.download }).catch((x) => x);
@@ -306,6 +319,18 @@ describe("buildPluginForShipping", () => {
     const copied = await checkout({ plugin: { "assets/helper.js": `export const f = (x) => import(x);\n` } });
     const pe = await buildPluginForShipping(copied.plugin, { target: "linux-arm64", download: copied.download }).catch((x) => x);
     expect(pe instanceof PluginBuildError && pe.message.includes("assets/helper.js: 1 import() of a computed specifier")).toBe(true);
+    // A plugin that names child_process in `builtins` may import it (and the OK lists it); prose that says
+    // "require" or "Worker" in a string or a comment is no reference.
+    const named = await checkout({ plugin: {
+      "clover.json": json({ manifest: 1, id: "demo", name: "Demo", engines: { clover: `^${PLUGIN_API_VERSION}` }, builtins: ["child_process"], host: { entry: "host/index.ts" } }),
+      "host/index.ts": `import { execFileSync } from "node:child_process";\n// we require nothing; a Worker is not used\nexport const note = "you may require a Worker";\nexport const start = () => execFileSync;\n`,
+    } });
+    expect((await buildPluginForShipping(named.plugin, { target: "linux-arm64", download: named.download })).modules.map((m) => m.file)).toContain("host/index.js");
+    // A path in copied data (JSON, HTML, CSS) fails too.
+    const page = await checkout();
+    write(page.plugin, { "assets/page.html": `<a href="file://${realpathSync(page.root)}/x">x</a>` });
+    const ge = await buildPluginForShipping(page.plugin, { target: "linux-arm64", download: page.download }).catch((x) => x);
+    expect(ge instanceof PluginBuildError && ge.message.includes("assets/page.html: holds the checkout")).toBe(true);
     // The bundler's own shims and a literal require of a built-in pass.
     const ok = await checkout({ plugin: { "host/index.ts": `declare const require: (s: string) => unknown;\nexport const start = () => require("node:path");\n` } });
     expect((await buildPluginForShipping(ok.plugin, { target: "linux-arm64", download: ok.download })).modules.length).toBe(4);

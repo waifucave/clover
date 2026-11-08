@@ -403,6 +403,10 @@ export const ManifestSchema = z.strictObject({
     permissions: z.array(z.enum(HELPER_PERMISSIONS)).max(HELPER_PERMISSIONS.length).optional(),
     ipc: z.enum(["socket", "stdio"]).optional(),
   }).optional(),
+  /** Node's built-ins that load or run other code, which the plugin's host code or programs import: `module`,
+   *  `worker_threads`, `vm`, `child_process`. Clover's build refuses host code that imports one the plugin doesn't name
+   *  here, since it can't follow what they load (#271's review, R1); the OK lists them. */
+  builtins: z.array(z.enum(["module", "worker_threads", "vm", "child_process"])).max(4).optional(),
   /** They gate the plugin API; they are not containment (§5.4). */
   capabilities: z.array(utf16(300, 1)).max(256).optional(),
   settings: z.record(SettingKey, SettingSchema).optional(),

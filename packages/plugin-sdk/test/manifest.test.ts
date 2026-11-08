@@ -160,6 +160,13 @@ describe("code, engines and platforms", () => {
     expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" } }).ok).toBe(true);
   });
 
+  test("code-loading built-ins a plugin names (`builtins`) are listed in its OK; any other name is refused", () => {
+    const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.js" }, builtins: ["child_process"] });
+    expect([r.ok, r.builtins]).toEqual([true, ["child_process"]]);
+    expect(describeOk(r).join(" ")).toContain("Its code can load or run other code, which Clover doesn't check (child_process).");
+    expect(validateManifest({ ...min(), builtins: ["fs"] }).ok).toBe(false);
+  });
+
   test("handlers need host code, components need a client module", () => {
     const r = validateManifest({ ...min(), contributes: { commands: [{ name: "draw", description: "Draw a card", handler: "draw" }] } });
     expect(r.ok).toBe(true);
