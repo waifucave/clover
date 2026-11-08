@@ -257,7 +257,7 @@ describe("the daemon's Clover parts at the edges", () => {
         const openMcp = host.openMcp.bind(host);
         host.openMcp = (pluginId, server) => { opened += 1; return openMcp(pluginId, server); };
         return {
-          host, registry, pluginSecrets: { get: async () => null }, settings: {} as never,
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
           close: async () => { order.push("host"); },
         } as unknown as DaemonPluginHost;
       },
