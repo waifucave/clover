@@ -9,6 +9,11 @@
 // A config's payload is JSON {codec, width, height, codecString}; a frame's is H.264 (Annex B, SPS and PPS in band
 // before each keyframe), a VP8 frame, or one whole JPEG picture; an ended frame's is JSON {reason, message?}.
 // The link may hand the bytes over as one run, so `StreamFrameReader` splits them by the length field.
+//
+// When the meta says `acks: true`, the receiver writes one ack back on the same link stream for every frame (kind 2)
+// it decoded or dropped, in order: a header alone, kind 4, flags 0, the frame's timestamp, payload length 0. The
+// sender keeps at most two frames unacked once acks start (lane L, lane/l-m3); a receiver that doesn't ack is unaffected
+// but gets no latency bound.
 
 export const STREAM_LINK_LABEL = "browser.stream";
 export const STREAM_FRAME_VERSION = 1;
@@ -29,6 +34,18 @@ export interface StreamLinkMeta {
   stream: string;
   tab: string;
   computer: string;
+  /** The sender wants an ack for every frame (`encodeStreamAck`). */
+  acks: boolean;
+}
+
+/** The ack for the frame stamped `timestamp` (microseconds): the 16-byte header alone, kind 4. */
+export function encodeStreamAck(timestamp: number): Uint8Array {
+  const out = new Uint8Array(STREAM_HEADER_BYTES);
+  const view = new DataView(out.buffer);
+  view.setUint8(0, STREAM_FRAME_VERSION);
+  view.setUint8(1, 4);
+  view.setBigInt64(4, BigInt(Math.round(timestamp)));
+  return out;
 }
 
 export class StreamFormatError extends Error {
@@ -44,7 +61,7 @@ export function readStreamMeta(meta: unknown): StreamLinkMeta | null {
   const m = meta as Record<string, unknown>;
   if (m.v !== STREAM_FRAME_VERSION) return null;
   if (typeof m.stream !== "string" || typeof m.tab !== "string" || typeof m.computer !== "string") return null;
-  return { v: 1, stream: m.stream, tab: m.tab, computer: m.computer };
+  return { v: 1, stream: m.stream, tab: m.tab, computer: m.computer, acks: m.acks === true };
 }
 
 /** Exactly one frame back to its chunk; throws `StreamFormatError` on anything else. */
