@@ -185,6 +185,25 @@ describe("the daemon's Clover parts, booted", () => {
     expect((await cloverCall(daemon.socketPath, cli, "device.list", {}) as { devices: { isThis: boolean }[] }).devices).toEqual([expect.objectContaining({ isThis: true })]);
   }, 30_000);
 
+  test("a Mac on its own serves what the app lists: computer.* from the node, usage.* from D's ledger", async () => {
+    const home = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { binary: null, handshake: null, publicTime: null, mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" } },
+      parts: { userHome: temp("clover-int-user-"), bots: await fakeBots() },
+    });
+    await daemon.cloverParts.ready;
+    const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
+    const call = <T>(method: string, params: unknown = {}) => cloverCall(daemon!.socketPath, cli, method, params) as Promise<T>;
+    const node = daemon.cloverParts.node()!;
+    expect((await call<{ computers: { name: string }[] }>("computer.list")).computers).toEqual([node.registry.self()]);
+    expect((await call<{ computer: { name: string } }>("computer.get", { name: "Studio" })).computer.name).toBe("Studio");
+    expect(await call("computer.setLevel", { name: "Studio", level: "read-only" })).toEqual({ applied: true });
+    expect(node.registry.self().level).toBe("read-only");
+    expect(await call("usage.rows", { since: 0 })).toMatchObject({ rows: [] });
+    expect(await call("usage.summary", { from: 0, to: Date.now(), groupBy: "day" })).toEqual({ groups: [] });
+  }, 30_000);
+
   test("node: false and bots: false start the links alone; links: false starts nothing", async () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");
