@@ -83,6 +83,20 @@ export function describeDevDaemonPlan(plan: DevDaemonPlan): string[] {
  *  binary's (`clover-core`), which is signed in the app bundle. */
 export const DEV_DAEMON_IDENTIFIER = "com.waifucave.clover.core.dev";
 
+/** The dev link sidecar's identifier (macOS): its own `.dev` one, never the dev core's, which the dev Keychain items
+ *  trust; the packaged one is `com.waifucave.clover.link` (release/lib.ts). */
+export const DEV_LINK_IDENTIFIER = "com.waifucave.clover.link.dev";
+
+/** Where the dev daemon's link sidecar comes from and goes: lane H's `clover-link`, built for this machine
+ *  (`cargo build --release --locked`, as the packages build it), copied beside the dev core, where the daemon looks
+ *  for it (`bundledLinkBinary`). Without it the dev daemon runs local-only. */
+export function devLinkSidecarPlan(o: { repoRoot: string; binary: string; platform?: NodeJS.Platform; linkBuild: readonly string[]; linkOutput: string }): { build: string[]; from: string; to: string; sign: boolean } {
+  const platform = o.platform ?? process.platform;
+  const file = platform === "win32" ? "clover-link.exe" : "clover-link";
+  const from = join(o.repoRoot, ...o.linkOutput.split("/")) + (platform === "win32" ? ".exe" : "");
+  return { build: [...o.linkBuild], from, to: join(dirname(o.binary), file), sign: platform === "darwin" };
+}
+
 /**
  * The dev daemon's designated requirement, stated rather than derived: its identifier and Clover's team
  * (the certificate's OU), under Apple's anchor. The derived one would name the signing certificate's common

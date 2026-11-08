@@ -46,7 +46,8 @@
  * daemon is prompted for every item, so dev-profile commands go through the signed binary from then on.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLOVER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
@@ -56,9 +57,10 @@ import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { hostTarget, runScriptLine } from "./build-daemon";
 import { BUNDLED_IDENTIFIERS, buildHolder, HOLDER_FILE, holderSource } from "./bundled-binaries";
+import { LINK_BUILD, LINK_OUTPUT } from "./build-packages";
 import { DYLD_ENTITLEMENT, sealFile } from "./seal-bun-doors";
 import { bunPinProblem } from "./bun-pin";
-import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devDaemonPlan, devDaemonRequirement, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
+import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_LINK_IDENTIFIER, devDaemonPlan, devLinkSidecarPlan, devDaemonRequirement, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_DIR = join(REPO_ROOT, "packages", "cli");
@@ -143,6 +145,7 @@ function build(build: NonNullable<DevDaemonPlan["build"]>, binary: string): void
  * fall back to process-group tracking, which a packaged build never does (its package gate).
  */
 async function buildBundled(dir: string, sign: boolean): Promise<void> {
+  stageLinkSidecar(join(dir, "clover-core"), sign);
   if (hostTarget() !== "darwin-arm64") return;
   if (holderSource(REPO_ROOT) === undefined) {
     console.error(`dev:daemon: no ${HOLDER_FILE} (the installed agent runtime has no native/process-holder.c before SDK 0.0.70): a bot's commands fall back to process-group tracking`);
@@ -156,6 +159,37 @@ async function buildBundled(dir: string, sign: boolean): Promise<void> {
     if (r.status !== 0) die(`codesign of ${holder} failed: ${r.stderr.trim()}`);
   }
   console.error(`dev:daemon: beside it ${holder}${sign ? ` (${BUNDLED_IDENTIFIERS[HOLDER_FILE].dev})` : ""}`);
+}
+
+/**
+ * Lane H's link sidecar beside the dev core, so the dev daemon pairs and links like a packaged one: built with cargo for
+ * this machine and signed (macOS) with the dev identity under its own `.dev` identifier. Without cargo it says so and
+ * goes on: the dev daemon then runs local-only (its links on no other device), which a packaged build never does.
+ */
+function stageLinkSidecar(binary: string, sign: boolean): void {
+  const plan = devLinkSidecarPlan({ repoRoot: REPO_ROOT, binary, linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
+  const cargo = Bun.which("cargo") ?? (existsSync(join(homedir(), ".cargo", "bin", "cargo")) ? join(homedir(), ".cargo", "bin", "cargo") : null);
+  if (cargo === null) {
+    console.error("dev:daemon: no cargo, so no clover-link beside the dev core: it runs local-only, without links to other devices");
+    return;
+  }
+  console.error("dev:daemon: building the link sidecar (clover-link)…");
+  const built = run(cargo, plan.build.slice(1), { cwd: REPO_ROOT });
+  if (built.status !== 0 || !existsSync(plan.from)) die(`the link sidecar didn't build (exit ${built.status}): ${built.stderr.trim().split("\n").slice(-3).join(" ")}`);
+  // Beside the dev core, by a rename, so a running dev daemon's sidecar is never written in place.
+  const tmp = `${plan.to}.tmp-${process.pid}`;
+  copyFileSync(plan.from, tmp);
+  chmodSync(tmp, 0o755);
+  if (sign && plan.sign) {
+    const identity = devSigningIdentity();
+    const r = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_LINK_IDENTIFIER, "--options", "runtime", "--timestamp=none", tmp]);
+    if (r.status !== 0) {
+      rmSync(tmp, { force: true });
+      die(`codesign of clover-link failed: ${r.stderr.trim()}`);
+    }
+  }
+  renameSync(tmp, plan.to);
+  console.error(`dev:daemon: beside it ${plan.to}${sign && plan.sign ? ` (${DEV_LINK_IDENTIFIER})` : ""}`);
 }
 
 function devEnv(plan: DevDaemonPlan): NodeJS.ProcessEnv {

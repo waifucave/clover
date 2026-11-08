@@ -34,11 +34,24 @@ async function boot(net: MemoryNetwork, name: string) {
 }
 
 describe("the daemon's links (H-M1 wiring)", () => {
-  test("no sidecar and no wire: the daemon runs without links and says so", async () => {
+  test("no sidecar: the links start local-only (one computer on its own), say so, and reach no other device", async () => {
     const lines: string[] = [];
-    const d = await startDaemonLinks({ home: mkdtempSync(join(tmpdir(), "x-")), store: new CloverSecretStore({ home: mkdtempSync(join(tmpdir(), "y-")), values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }), clock, handlers: {}, binary: null, dispatch: async () => null, log: (l) => lines.push(l) });
-    expect(d.links).toBeNull();
-    expect(lines[0]).toMatch(/runs without links/);
+    const handlers: Record<string, CloverHandler> = {};
+    const d = await startDaemonLinks({
+      home: mkdtempSync(join(tmpdir(), "x-")), store: new CloverSecretStore({ home: mkdtempSync(join(tmpdir(), "y-")), values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
+      clock, handlers, binary: null, handshake: null, publicTime: null, mainComputer: { watchSleep: false }, watch: () => () => {},
+      self: { name: "Studio", os: "macos" }, dispatch: async () => null, log: (l) => lines.push(l),
+    });
+    stops.push(() => d.close());
+    expect(lines[0]).toMatch(/runs local-only, without links to other devices/);
+    const links = d.links!;
+    expect(links).toBeDefined();
+    expect(links.registry.get(links.key.id)).toMatchObject({ name: "Studio" });
+    expect(Object.keys(handlers)).toContain("device.list");
+    expect(links.sidecarPid()).toBeUndefined();
+    // A lone computer: its own main, holding its lease.
+    for (let i = 0; i < 200 && links.main?.lease.state().holder !== links.key.id; i++) await Bun.sleep(10);
+    expect(links.main?.lease.state().holder).toBe(links.key.id);
     expect(linkSidecarBinary("/nonexistent/bin/clover-core")).toBeNull();
     // The environment never names the sidecar that is handed the device key: only the one beside the daemon counts.
     const bin = mkdtempSync(join(tmpdir(), "clover-c-bin-"));

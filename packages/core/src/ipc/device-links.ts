@@ -31,6 +31,7 @@ import { HandshakeClient } from "../links/handshake";
 import { startDeviceLinks, type DeviceLinks, type DeviceLinksOptions } from "../links/node";
 import { bundledLinkBinary } from "../links/sidecar-binary";
 import { mountPeerCall } from "../links/peer-call";
+import { MemoryNetwork } from "../links/memory-wire";
 import { watchNetwork } from "../platform/network-watch";
 import { laneMethodHandlers, type CloverHandler } from "./clover";
 
@@ -109,10 +110,11 @@ export interface DaemonLinks {
 export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonLinks> {
   const log = input.log ?? (() => {});
   const binary = input.binary !== undefined ? input.binary : linkSidecarBinary();
-  if (!input.wire && !binary) {
-    log("[links] no link sidecar (clover-link) beside the daemon: this computer runs without links to its devices");
-    return { links: null, handOver: async () => {}, close: async () => {} };
-  }
+  // No sidecar (a daemon run from source, a build without it): this computer runs local-only, on a wire with no other
+  // device on it. Its links, the computer node, the folder tree, the bots and the agents all start; it just can't pair
+  // or reach another device until it has the sidecar. One computer on its own is the main case, not an error.
+  const localOnly = !input.wire && !binary;
+  if (localOnly) log("[links] no link sidecar (clover-link) beside the daemon: this computer runs local-only, without links to other devices");
   const handshake = input.handshake === undefined
     ? new HandshakeClient({ baseUrl: WAIFUCAVE_DEVICE_SERVICES.handshake.url, clock: input.clock })
     : input.handshake ?? undefined;
@@ -122,7 +124,7 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
   const links = await startDeviceLinks({
     home: input.home, store: input.store, clock: input.clock,
     self: input.self ?? { name: defaultDeviceName(hostname()), kind: "desktop", os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux" },
-    ...(input.wire ? { wire: input.wire } : { sidecar }),
+    ...(input.wire ? { wire: input.wire } : localOnly ? { wire: (key: { publicKey: Uint8Array }) => new MemoryNetwork().endpoint(key.publicKey) } : { sidecar }),
     ...(input.directory ? { directory: input.directory } : {}),
     ...(handshake ? { handshake } : {}),
     ...(publicTime ? { publicTime } : {}),
