@@ -19,6 +19,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { inflateRawSync } from "node:zlib";
+import { PLUGIN_BUN_FILE as CORE_PLUGIN_BUN_FILE, PLUGIN_BUN_IDENTIFIER, PROCESS_HOLDER_FILE, PROCESS_HOLDER_IDENTIFIER } from "../packages/core/src/bundled-identities";
 import type { DaemonTarget } from "./build-daemon";
 
 /** The Bun that `clover-plugin-bun` is: the release asset per target and its SHA-256, pinned here (not trusted from
@@ -34,15 +35,16 @@ export const PLUGIN_BUN = {
   } satisfies Record<DaemonTarget, { asset: string; sha256: string }>,
 } as const;
 
-export const PLUGIN_BUN_FILE = "clover-plugin-bun";
-export const HOLDER_FILE = "clover-process-holder";
+// One source for the names and identifiers (#234's `packages/core/src/bundled-identities.ts`): the signer here and the
+// core's checker (`pluginBun()`'s requirement) read the same values.
+export const PLUGIN_BUN_FILE = CORE_PLUGIN_BUN_FILE;
+export const HOLDER_FILE = PROCESS_HOLDER_FILE;
 
-/** The identifiers each is signed under: a release's, and the dev daemon's (`.dev`). Never the core's. Lane B's
- *  `packages/core/src/bundled-identities.ts` (#234) holds the same values for `pluginBun()`'s requirement check; once it
- *  lands these come from there, one source for the signer and the checker. */
+/** The identifiers each is signed under: a release's, and the dev daemon's (`.dev`). Never the core's. From the core's
+ *  `bundled-identities.ts`, which `pluginBun()`'s requirement check reads too. */
 export const BUNDLED_IDENTIFIERS = {
-  [PLUGIN_BUN_FILE]: { dist: "com.waifucave.clover.plugin-bun", dev: "com.waifucave.clover.plugin-bun.dev" },
-  [HOLDER_FILE]: { dist: "com.waifucave.clover.process-holder", dev: "com.waifucave.clover.process-holder.dev" },
+  [PLUGIN_BUN_FILE]: PLUGIN_BUN_IDENTIFIER,
+  [HOLDER_FILE]: PROCESS_HOLDER_IDENTIFIER,
 } as const;
 
 /** The core's own identifiers, which none of these may carry. */

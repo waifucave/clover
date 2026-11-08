@@ -94,6 +94,9 @@ const CANCELLED = "Stopped: this turn was cancelled.";
 /** What a delegation with no pause gate gets: held, never open. */
 const CLOSED_GATE: AgentPauseGate = { mayAct: () => false };
 
+/** How often a paused session whose runtime can't stop a task says so (lane K's clover-code, #287). */
+const NO_STOP_LOG_MS = 60_000;
+
 /** A session's running turn; `cancelled` once a cancel asked for it to end, `interrupting` while an interrupt is out. */
 type RunningTurn = { resolve(end: AgentTurnEnd): void; text: string; usage: { inputTokens: number; outputTokens: number }; cancelled?: boolean; interrupting?: boolean };
 
@@ -130,6 +133,8 @@ class InProcessSession implements AgentSession {
   readonly #stopping = new Set<string>();
   #offPause: (() => void) | undefined;
   #pausePoll: ReturnType<typeof setInterval> | undefined;
+  /** When the pause last said this runtime can't stop a task (`NO_STOP_LOG_MS`). */
+  #noStopSaidAt = -Infinity;
 
   /** Waits while the pause switch holds this agent; false when the call should not go on (the turn was cancelled). */
   async #holdWhilePaused(signal: AbortSignal): Promise<boolean> {
@@ -327,7 +332,8 @@ class InProcessSession implements AgentSession {
   }
 
   /** While background tasks run, the pause stops them (the owner's rule), through the runtime's `stopTask`, as the host.
-   *  It keeps looking while tasks remain and the pause holds, so a stop that failed is tried again. */
+   *  It keeps looking while tasks remain and the pause holds, so a stop that failed is tried again; a runtime with no
+   *  `stopTask` is said once a minute while it lasts, still watched. */
   #watchPause(): void {
     if (this.#offPause !== undefined || this.#pausePoll !== undefined) return;
     const look = () => {
@@ -335,8 +341,14 @@ class InProcessSession implements AgentSession {
       if (this.#gate.mayAct()) return;
       const q = this.#query;
       if (q === undefined || typeof q.stopTask !== "function") {
-        this.deps.log?.(`in-process agent ${this.agentSessionId}: paused with ${this.#tasks.size} background task(s), and this runtime can't stop a task`);
-        return this.#unwatchPause();
+        // Said again while it lasts (throttled), and still watched: the tasks may end on their own, or the pause lift
+        // (#287's ruling; lane K's clover-code does the same).
+        const now = Date.now();
+        if (now - this.#noStopSaidAt >= NO_STOP_LOG_MS) {
+          this.#noStopSaidAt = now;
+          this.deps.log?.(`in-process agent ${this.agentSessionId}: paused with ${this.#tasks.size} background task(s), and this runtime can't stop a task`);
+        }
+        return;
       }
       for (const id of [...this.#tasks]) {
         if (this.#stopping.has(id)) continue;

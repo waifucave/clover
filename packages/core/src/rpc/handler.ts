@@ -22,10 +22,12 @@ export function toMethodError(err: unknown): MethodError {
   if (isContractError(err)) {
     const rpc = typeof err.detail?.rpc === "number" ? err.detail.rpc : undefined;
     const code = rpc ?? RPC_ERROR_OF[err.code] ?? {
-      not_found: ERR.NOT_FOUND, invalid: ERR.INVALID_PARAMS, refused: ERR.INVALID_REQUEST, closed: ERR.INVALID_REQUEST,
+      not_found: ERR.NOT_FOUND, invalid: ERR.INVALID_PARAMS, invalid_args: ERR.INVALID_PARAMS, refused: ERR.INVALID_REQUEST, closed: ERR.INVALID_REQUEST,
       conflict: ERR.INVALID_REQUEST, timeout: ERR.INTERNAL, cancelled: ERR.INTERNAL,
     }[err.code as string] ?? ERR.INTERNAL;
-    return new MethodError(code, err.message, { code: err.code });
+    // `invalid_args` carries where the args failed, so a client can point at the field (never the value).
+    const where = err.code === "invalid_args" ? { path: err.detail?.path, keyword: err.detail?.keyword } : {};
+    return new MethodError(code, err.message, { code: err.code, ...where });
   }
   return new MethodError(ERR.INTERNAL, err instanceof Error ? err.message : String(err));
 }

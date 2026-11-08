@@ -68,6 +68,8 @@ import { ShellCardQueue, approvalPromptLine, approvalResolvedHow } from "./shell
 import { legacyFilesDoctorLine, sdkHomeDoctorSection } from "./doctor-legacy-files";
 import { makeEventBridge, type EventBridge } from "./tui/event-bridge";
 import { COMPUTER_WAKE_CLIENT_NAME, endedWords, stoppedWords, waitingWords, type ArmedWakeFacts } from "./wake-words";
+/** A build define (`compile:core`: false; `verify:fd-receiver`: true): the plugin-run probe route (#234). */
+declare const CLOVER_PLUGIN_RUN_PROBE: boolean | undefined;
 
 const AQUA = "\x1b[38;2;53;214;232m";
 
@@ -1758,6 +1760,12 @@ if (import.meta.main) {
     const { bridgeMain } = await import("./bridge-entry");
     await bridgeMain();
   }
+  // K-M3b: Clover's coding agent for an outside ACP client (Zed and others), which starts `<clover-core> code-agent`
+  // as its agent server: a relay of ACP lines between its stdio and the daemon's endpoint. POSITIONAL, like `bridge`.
+  if (process.argv[2] === "code-agent") {
+    const { codeAgentMain } = await import("../../core/src/agents/code-agent/relay");
+    await codeAgentMain(socketPath());
+  }
   // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<clover-core> __workflow-worker`
   // already wrapped in sandbox-exec; THIS process is the sandboxed worker. Route straight to the entry
   // and never fall through to daemon-connect / TUI. (In dev/test the runtime spawns the entry .ts
@@ -1851,6 +1859,16 @@ if (import.meta.main) {
     const peer = r.ok ? await runPeerPidProbe() : { ok: false, line: "peer-pid: not run" };
     process.stdout.write(`${r.line}\n${peer.line}\n`);
     process.exit(r.ok && peer.ok ? 0 : 1);
+  }
+  // #234's checks 4 and 5: a plugin host started inside the compiled core runs on `clover-plugin-bun`, guarded
+  // (`scripts/verify-fd-receiver-compiled.ts`, step 3d). argv[3]: an empty scratch folder; touches nothing else. Only in a
+  // build with `--define CLOVER_PLUGIN_RUN_PROBE=true` (the gate's): `compile:core` defines it false, so no release
+  // build has the route, and from source it is undefined.
+  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-run-probe") {
+    const { runPluginRunProbe } = await import("./plugin-run-probe");
+    const result = runPluginRunProbe(process.argv[3]);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.exit(result.ok ? 0 : 1);
   }
   // M-M2: the update feed's signature, against the key this binary carries (./verify-feed.ts).
   if (process.argv[2] === "__verify-feed") {

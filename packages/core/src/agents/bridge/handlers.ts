@@ -6,8 +6,8 @@
 // the server validates their params, and a revoked token's connection is closed (`onRevoke`).
 //
 // `bridgeCloverParts` is what the daemon passes to `createCloverServer`: the gate and the session's bot for the hello,
-// and the four methods, each refused once the session's token is gone (review 5: the revoke's close may not have
-// reached the connection yet).
+// and the four methods, each refused unless the connection is still its session token's live one (review 5: the
+// revoke's close may not have reached the connection yet; a re-mint leaves the session a token, but not this one).
 import { CLOVER_ERR } from "@waifucave/clover-protocol";
 import { bridgeMethodHandlers, CloverRpcError, type BridgeGate, type CloverConn, type CloverHandler } from "../../ipc/clover";
 import type { BridgeTokens } from "./tokens";
@@ -30,20 +30,18 @@ export interface BridgeCloverParts {
 }
 
 export function bridgeCloverParts(tokens: BridgeTokens, h: BridgeHandlers): BridgeCloverParts {
-  const live = (sessionId: string) => {
-    if (!tokens.has(sessionId)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this bridge's token was revoked");
-  };
   const methods = bridgeMethodHandlers({
-    tools: async (id) => (live(id), h.tools(id)),
-    call: async (id, c) => (live(id), h.call(id, c)),
-    sendMessage: async (id, m) => (live(id), h.sendMessage(id, m)),
-    glossary: async (id, q) => (live(id), h.glossary(id, q)),
+    tools: (id) => h.tools(id),
+    call: (id, c) => h.call(id, c),
+    sendMessage: (id, m) => h.sendMessage(id, m),
+    glossary: (id, q) => h.glossary(id, q),
   });
-  // Where C's connection names the bridge connection `accept` let in, each request checks it is still that token's
-  // live one (K-M2 review 6); one live connection per token makes the session check the same thing until then.
+  // Each request checks that its connection is the one `accept` let in for the session's live token (K-M2 review 6):
+  // a re-mint revokes the old token, and its connection is refused here even before the revoke's close reaches it.
+  // A connection without both (a `peer.call` dispatch under the bridge role, say) is refused too.
   const handlers = Object.fromEntries(Object.entries(methods).map(([name, fn]) => [name, (conn: CloverConn, params: unknown) => {
-    const b = (conn as { bridge?: { sessionId?: string; connection?: number } }).bridge;
-    if (b?.sessionId !== undefined && b.connection !== undefined && !tokens.isLive(b.sessionId, b.connection)) {
+    const sessionId = conn.caller.kind === "session" ? conn.caller.sessionId : undefined;
+    if (sessionId === undefined || conn.bridgeConnection === undefined || !tokens.isLive(sessionId, conn.bridgeConnection)) {
       throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this bridge's connection isn't its token's live one");
     }
     return fn(conn, params);

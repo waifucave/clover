@@ -27,6 +27,9 @@ export interface SpotInfo {
   readonly keys?: readonly string[];
   readonly keep?: readonly string[];
   readonly needs?: readonly string[];
+  /** Props that reach only a plugin holding a capability, by their dotted path in the props: the spot itself needs
+   *  none (`menu.message`'s `message.text` needs `conversation.read`). */
+  readonly gates?: Readonly<Record<string, string>>;
   readonly context?: readonly string[];
   /** For a keyed spot: a key no plugin fills shows the declaring part's placeholder, which offers to find a plugin
    *  for it (lane F's request): the plugins page, searched for that spot and key. */
@@ -45,6 +48,8 @@ const none = z.object({});
 const BotRef = z.object({ id: z.string(), name: Text });
 const titled = z.object({ title: Text, icon: Path.optional() });
 const titledOpt = z.object({ title: Text.optional(), icon: Path.optional() });
+/** A command by its full name, `<namespace>.<name>` (§5.4). */
+const CommandRef = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*\.[a-z][a-zA-Z0-9_-]{0,63}$/);
 /** A conversation item as the conversation view draws it: its id, its kind and its time on the shared clock, plus the
  *  kind's own fields (lane F's, settled at F-M2). An approval item carries only its card's id, computer and state; the
  *  sealed text never reaches a plugin. Under the `tool` key, the item is a run of consecutive calls (`calls`). */
@@ -84,7 +89,7 @@ export const SPOTS: readonly SpotInfo[] = [
     doc: "The panel host, keyed by panel: each panel (session, terminal, diff, files, browser) is a plugin of its own, and replaceable. A panel for some sessions only says so with `when.session` (the code-only panels: `\"coding\"`); a key no plugin fills shows the host's placeholder." },
   { name: "panel.view", shape: "keyed", declaredBy: "shell", inBotTab: false, fields: titled,
     props: z.object({ view: z.string(), session: z.string().optional() }),
-    doc: "The panel's contents: the browser, and later the diff view, editor, file tree and terminal." },
+    doc: "A spot inside each panel view, keyed by the view's id." },
   { name: "settings.section", shape: "list", declaredBy: "settings", inBotTab: false, fields: titled, props: none,
     doc: "A section of the settings screen, which the settings part (`main` key `settings`) declares." },
   { name: "status", shape: "list", declaredBy: "shell", inBotTab: false, fields: titledOpt, props: none,
@@ -117,8 +122,10 @@ export const SPOTS: readonly SpotInfo[] = [
   { name: "tool.result", shape: "keyed", declaredBy: "conversation", inBotTab: true, needs: ["conversation.read"], context: ["bot"], fields: none,
     props: z.object({ ...inConversation, tool: z.string() }),
     doc: "A tool's result, keyed by tool name (`mcp__blender__*`); `item` is the one call." },
-  { name: "menu.message", shape: "list", declaredBy: "conversation", inBotTab: true, needs: ["conversation.read"], context: ["bot"], fields: titled,
-    props: z.object(inConversation), doc: "Items in a message's menu." },
+  { name: "menu.message", shape: "list", declaredBy: "conversation", inBotTab: true, context: ["bot"],
+    fields: titled.extend({ command: CommandRef }), gates: { "message.text": "conversation.read" },
+    props: z.object({ bot: BotRef, session: z.string(), message: z.object({ id: z.string(), text: z.string().optional() }), role: z.enum(["user", "bot"]) }),
+    doc: "Items in a message's menu. Picking one runs its `command` (`command.run`) with these props as its args; the message's text is there only for a plugin with `conversation.read`." },
   { name: "file.preview", shape: "keyed", declaredBy: "file-view", inBotTab: true, fields: none,
     props: z.object({ path: z.string(), mediaType: z.string() }),
     doc: "A file's preview wherever one shows, keyed by media type (`image/*`); in a bot's plugin, only inside its tab." },

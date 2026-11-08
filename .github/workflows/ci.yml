@@ -812,9 +812,11 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # xmllint, for release-lib's appcast checks (macOS has it built in).
-      - name: xmllint
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+      # xmllint, for release-lib's appcast checks, and bsdtar (libarchive-tools), which the name scan opens zips, tars,
+      # debs and rpms with and its tests build their fixtures with. macOS has both built in. The scan itself runs only
+      # in publish.ts on the owner's Mac, so this changes no release behaviour: Linux CI gets the same bsdtar the Mac has.
+      - name: xmllint and bsdtar
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils libarchive-tools
 
       - name: Install dependencies
         run: bun install --frozen-lockfile

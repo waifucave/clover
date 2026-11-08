@@ -142,25 +142,51 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
       expect(reg.get("spicy")?.state).toBe("running");
     });
 
-    test("an install from the app or a layer lands found with its OK card; only the CLI's y is the OK (F-M2's review, S1)", async () => {
-      const reg = make({ plugins: [{ ...webhook, approved: false }, { ...island, approved: false }] });
-      const fromApp = await reg.installed("webhook", "app");
-      expect(fromApp).toEqual({ state: "found", card: expect.any(String) });
-      expect(reg.okCards()).toEqual([{ id: "webhook", card: fromApp.card!, treeHash: hashOf(reg, "webhook") }]);
+    test("an install from anywhere lands found with its sealed OK card, and nothing runs before its yes (F-M2's review, S1)", async () => {
+      const reg = make({ plugins: [{ ...webhook, approved: false }, { ...island, approved: false }, { id: "deck", manifest: m({ name: "Deck" }), approved: false }, { ...forwarder, approved: false }] });
+      // The app's index, the CLI, a bot, a paste: each raises the same kind of card, and none is the OK.
+      const ids = ["webhook", "island", "deck", "forwarder"] as const;
+      const froms = ["app", "cli", "bot", "layer"] as const;
+      const cards: string[] = [];
+      for (const [i, id] of ids.entries()) {
+        const r = await reg.installed(id, froms[i]!);
+        expect([id, r]).toEqual([id, { state: "found", card: expect.any(String) }]);
+        cards.push(r.card!);
+      }
+      expect(reg.okCards()).toEqual(ids.map((id, i) => ({ id, card: cards[i]!, treeHash: hashOf(reg, id) })));
+      for (const id of ids) expect([id, reg.get(id)?.state]).toEqual([id, "found"]);
       expect(reg.entries("triggers")).toEqual([]);
-      // The terminal asks instead: no card, and its y is the switch with the tree it showed.
-      expect(await reg.installed("island", "cli")).toEqual({ state: "found" });
-      expect(reg.okCards().map((c) => c.id)).toEqual(["webhook"]);
-      expect(await reg.setEnabled("island", true, { from: "cli", okHash: hashOf(reg, "island") })).toEqual({ applied: true });
+      expect(reg.entries("webhook.ingress")).toEqual([]);
+      // Only the user's yes on the card loads it.
+      expect(await reg.approve("island", hashOf(reg, "island"))).toBe("approved");
       expect(reg.get("island")?.state).toBe("running");
-      expect(await reg.approve("webhook", hashOf(reg, "webhook"))).toBe("approved");
-      expect(reg.okCards()).toEqual([]);
+      expect(reg.okCards().map((c) => c.id)).toEqual(["webhook", "deck", "forwarder"]);
+      // An install of a plugin already OK'd for this tree raises no card.
+      expect(await reg.installed("island", "cli")).toEqual({ state: "running" });
+    });
+
+    test("a plugin's granted capabilities are its OK's: none before it, after a refusal or a block (F-M3's text gate)", async () => {
+      const withCaps = { ...webhook, manifest: { ...webhook.manifest, capabilities: ["conversation.read", "files"] } };
+      const reg = make({ plugins: [{ ...withCaps, approved: false }, { id: "gone", manifest: m({ name: "Gone", capabilities: ["files"] }), blocked: "malware" }] });
+      expect(reg.get("webhook")).toMatchObject({ state: "found", capabilities: ["conversation.read", "files"], granted: [] });
+      expect(reg.get("gone")).toMatchObject({ capabilities: ["files"], granted: [] });
+      await reg.approve("webhook", hashOf(reg, "webhook"));
+      expect(reg.get("webhook")).toMatchObject({ state: "running", granted: ["conversation.read", "files"] });
+      // Switched off by the user, it keeps what was granted; a new capability waits for a new OK, granting nothing.
+      await reg.setEnabled("webhook", false);
+      expect(reg.get("webhook")?.granted).toEqual(["conversation.read", "files"]);
+      await reg.setEnabled("webhook", true);
+      reg.put({ ...withCaps, manifest: { ...withCaps.manifest, capabilities: ["conversation.read", "files", "network:api.example.com"] } });
+      expect(reg.get("webhook")).toMatchObject({ state: "found", granted: [] });
+      await reg.refuse("webhook");
+      expect(reg.get("webhook")?.granted).toEqual([]);
     });
 
     test("switching a found plugin on raises its OK card and never loads it; the switch refuses what can't run (S2)", async () => {
       const reg = make({
         plugins: [
           { ...webhook, approved: false },
+          { ...island },
           { id: "clover", manifest: m({ name: "Clover" }), source: "bundled" },
           { id: "bad", manifest: m({ name: "Bad" }), invalid: "no manifest format" },
           { id: "gone", manifest: m({ name: "Gone" }), blocked: "malware" },
@@ -172,16 +198,19 @@ export function runPluginRegistryConformance(make: PluginRegistryFactory): void 
       expect(await reg.setEnabled("webhook", true)).toEqual(first); // the same card while it waits
       expect(reg.get("webhook")?.state).toBe("found");
       expect(reg.entries("triggers")).toEqual([]);
-      // From a layer or the app, an okHash is no OK; from the CLI, a tree that changed since is a conflict.
-      expect(await reg.setEnabled("webhook", true, { okHash: hashOf(reg, "webhook") })).toEqual(first);
-      reg.put({ ...webhook, approved: false, manifest: { ...webhook.manifest, version: "2.0.0" } });
-      const stale = await reg.setEnabled("webhook", true, { from: "cli", okHash: "sha256:" + "0".repeat(64) }).then(() => "ok", (e: { code?: string }) => e.code);
-      expect(stale).toBe("conflict");
+      // A plugin OK'd and only switched off comes back on at once.
+      expect(await reg.setEnabled("island", false)).toEqual({ applied: true });
+      expect(reg.get("island")?.state).toBe("off");
+      expect(await reg.setEnabled("island", true)).toEqual({ applied: true });
+      expect(reg.get("island")?.state).toBe("running");
+      // Refused: blocked, refused and invalid plugins, either way, and switching Clover's own plugin off.
       await reg.refuse("no");
-      for (const id of ["clover", "bad", "gone", "no"]) {
-        const code = await reg.setEnabled(id, id !== "clover").then(() => "ok", (e: { code?: string }) => e.code);
-        expect([id, code]).toEqual([id, "refused"]);
+      for (const [id, on] of [["bad", true], ["bad", false], ["gone", true], ["gone", false], ["no", true], ["no", false], ["clover", false]] as const) {
+        const code = await reg.setEnabled(id, on).then(() => "ok", (e: { code?: string }) => e.code);
+        expect([id, on, code]).toEqual([id, on, "refused"]);
       }
+      expect(await reg.setEnabled("clover", true)).toEqual({ applied: true });
+      expect(reg.get("clover")?.state).toBe("running");
     });
   });
 

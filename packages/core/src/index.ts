@@ -25,6 +25,8 @@ export { UpdateGate, UpdateRestartingRefusal, isUpdateRestarting, UPDATE_RESTART
 export { type SelfUpdate } from "./update/service";
 export { INSTALL_MARKER, parseInstallMarker, readInstallMarker, removeInstallMarker, updatesItself, writeInstallMarker, type InstallChannel, type InstallKind, type InstallMarker } from "./update/install-marker";
 export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
+export { sendCoreEvent, OWNER_SCOPED_EVENTS, type CoreEventInput, type CoreEventOptions, type CoreEventRouting } from "./ipc/core-events";
+export { approvalCoreEvents } from "./approvals/core-events";
 export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
@@ -325,6 +327,7 @@ export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverA
 export { fileRuleStore, savedRulesPath, SAVED_RULES_VERSION } from "./approvals/rule-store";
 export { botApprovalCheck, botToolRequest, effectOf as botToolEffect, isBuiltinTool, resolveSessionPath, type BotToolRequestOptions } from "./approvals/bot-check";
 export { looksCredentialBearing } from "./approvals/strings";
+export { cloudCardConfirm, cloudCardRequest, cloudCardSubject, CloudCardDesk, CLOUD_CARD_TEXT, CLOUD_PAIRED_TEXT, CLOUD_VALUE_MAX, type CloudCardOutcome, type CloudCardRequest, type CloudVmRef } from "./approvals/cloud-cards";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
 export {
   bundledManifest, bundledPluginIds, bundledPluginsDir, formatBundledManifest, loadBundledManifest, measureBundledTree, readBundledFile, readBundledPlugin,
