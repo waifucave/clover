@@ -549,6 +549,24 @@
         "typescript": "5.9.3",
       },
     },
+    "plugins/clover/plugins/provider-gcp": {
+      "name": "@waifucave/clover-plugin-provider-gcp",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+        "typescript": "5.9.3",
+      },
+    },
+    "plugins/clover/plugins/provider-hetzner": {
+      "name": "@waifucave/clover-plugin-provider-hetzner",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "1.4.4",
+        "@waifucave/clover-plugin-sdk": "workspace:*",
+        "typescript": "5.9.3",
+      },
+    },
     "plugins/clover/plugins/push": {
       "name": "@waifucave/clover-plugin-push",
       "version": "0.0.0",
@@ -1272,6 +1290,10 @@
     "@waifucave/clover-plugin-pill": ["@waifucave/clover-plugin-pill@workspace:plugins/clover/plugins/pill"],
 
     "@waifucave/clover-plugin-plugin-index": ["@waifucave/clover-plugin-plugin-index@workspace:plugins/clover/plugins/plugin-index"],
+
+    "@waifucave/clover-plugin-provider-gcp": ["@waifucave/clover-plugin-provider-gcp@workspace:plugins/clover/plugins/provider-gcp"],
+
+    "@waifucave/clover-plugin-provider-hetzner": ["@waifucave/clover-plugin-provider-hetzner@workspace:plugins/clover/plugins/provider-hetzner"],
 
     "@waifucave/clover-plugin-push": ["@waifucave/clover-plugin-push@workspace:plugins/clover/plugins/push"],
 
