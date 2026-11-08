@@ -4,7 +4,7 @@
 // * Terminals: a paste of several lines raises a `confirm` card through the approval broker (`pasteCardRequest`).
 //   Until the daemon's broker exists the node gets none, and such a paste is refused with a reason the panel shows
 //   (`PASTE_CANT_ASK`, tree/terminals.ts), never dropped silently.
-// * The safety reviewer, for another computer's calls here at "ask for risky actions" (R1): Winter's `BashReviewer`,
+// * The safety reviewer, for another computer's calls here at "ask for risky actions" (R1): the daemon's `BashReviewer` (agent/reviewer.ts),
 //   with the internal-jobs model and credentials the daemon already resolves for it (docs/claude/internal-jobs.md),
 //   adapted to the node's `PeerReviewer` (`peerReviewer`). It fails closed: no reviewer, no runnable model, a timeout or
 //   any other failure is `unavailable`, which needs the user's answer; it never passes a call by default.
@@ -58,7 +58,7 @@ export function confirmPasteVia(broker: Pick<ApprovalBroker, "request">, compute
   return async (text, terminalId) => (await broker.request(pasteCardRequest(text, { computer: computer(), terminalId }))).allowed;
 }
 
-/** What the reviewer needs: Winter's `BashReviewer`, or anything with its `review`. */
+/** What the reviewer needs: the daemon's `BashReviewer` (agent/reviewer.ts), or anything with its `review`. */
 export interface SafetyReviewer {
   review(input: ReviewInput, signal?: AbortSignal): Promise<ReviewVerdict>;
 }

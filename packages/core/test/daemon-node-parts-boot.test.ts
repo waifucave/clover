@@ -55,7 +55,7 @@ async function fakeBots(): Promise<DaemonBotsInput & { fakes: Drivers }> {
   const luna = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna"), "bot/instructions.md": "You are Luna." });
   const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: (await pluginFromFolder(luna)).inputs });
   const fakes = new Drivers();
-  return { registry, drivers: () => fakes.factory, defaultModel: () => ({ model: "winter-test/calls" }), fakes };
+  return { registry, drivers: () => fakes.factory, defaultModel: () => ({ model: "clover-test/calls" }), fakes };
 }
 
 const mainComputer = { watchSleep: false, monotonic: () => performance.now() };
