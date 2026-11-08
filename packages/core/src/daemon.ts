@@ -140,7 +140,8 @@ import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
-import type { ProviderRefresher } from "./runtime-sdk/host-credentials";
+import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
+import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -453,7 +454,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none).
    *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
    *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
-  links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
+  links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "account" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
   /** The daemon integration: this computer's node and bot side, started over the links once they're up. `node: false`
    *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
@@ -2240,6 +2241,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (!result.ok) throw new Error("console_bearer_refresh_failed");
     },
   };
+  // WS-25 §7: ONE credential broker for the daemon, the sessions' and the bots' (A-M3's provider fill): its generation
+  // registry and its refresh single-flights are per item, so a session and a bot asking for the same bearer share one
+  // renewal. Built as the session table built it before (the same service, store, refreshers and log).
+  const hostCredentials = createHostCredentialBroker({
+    secrets,
+    keychainService: keychainService(undefined, cloverHome),
+    mcpOAuthStore: sessionMcpOAuthStore,
+    refreshers: credentialRefreshers,
+    log: (line) => console.error(`clover-leg: ${line}`),
+  });
   const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
     // M-M2: no new turn while the update gate closes for a restart (`updateGate` is set further down, before any turn).
     updateClosing: () => updateGate.closed,
@@ -2335,6 +2346,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // Review r1 (i): the enabled plugins' http/sse servers join the MCP sign-in allowlist (live per incarnation).
     pluginMcpServers: () => pluginMcpServersFor(pluginStore.list().filter((p) => !p.disabled).map((p) => p.installPath)),
     credentialRefreshers,
+    hostCredentials,
   });
   // A-M2: the model plugins, when the daemon was handed lane B's plugin registry and plugin host (B-M1/B-M2; none
   // until then, and the SDK's compiled catalog, which the bundled model plugins are generated from, serves the same
@@ -3477,6 +3489,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: opened.registry,
         epoch: () => main.epoch() ?? 0,
+        // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
+        // through the daemon's one broker (as a session's).
+        provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
