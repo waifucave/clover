@@ -420,11 +420,30 @@ export function isCopiedRecord(r: SessionRecord): boolean {
 }
 
 /** Whether a held record is the one copied again: alike but for the late mark and the copy's source (a resend can
- *  carry another of either). */
+ *  carry another of either). A grant and its copy are the same record when their place (seq, time, epoch) and the
+ *  grant's key are: the copy is renamed and says where it came from, and carries no card (lane H's sync compares them
+ *  the same way, `sync/session-records.ts`). */
 function sameRecord(held: SessionRecord, incoming: SessionRecord): boolean {
   const { late: _a, copiedFrom: _c, ...a } = held as SessionRecord & { late?: true; copiedFrom?: string };
   const { late: _b, copiedFrom: _d, ...b } = incoming as SessionRecord & { late?: true; copiedFrom?: string };
+  const ga = isGrantRecord(a);
+  const gb = isGrantRecord(b);
+  if (ga || gb) {
+    if (!ga || !gb) return false;
+    const { event: ea, ...ra } = a as Extract<SessionRecord, { type: "driver" }>;
+    const { event: eb, ...rb } = b as Extract<SessionRecord, { type: "driver" }>;
+    const grant = (e: { [key: string]: unknown }) => {
+      const { type: _t, from: _f, cardId: _card, ...rest } = e;
+      return rest;
+    };
+    return Bun.deepEquals(ra, rb) && Bun.deepEquals(grant(ea), grant(eb));
+  }
   return Bun.deepEquals(a, b);
+}
+
+/** A grant's record, as recorded here (`session_grant`) or copied (`session_grant_copied`). */
+function isGrantRecord(r: Partial<SessionRecord>): boolean {
+  return r.type === "driver" && (r.event?.type === "session_grant" || r.event?.type === COPIED_GRANT_EVENT_TYPE);
 }
 
 function readMeta(path: string): SessionMeta | undefined {
