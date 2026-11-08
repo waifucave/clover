@@ -249,7 +249,7 @@ export class AcpAgentBackend implements AgentBackend {
       selections: { keeper: this.#selections, backend: this.id },
       ...(this.#opts.readOnlyMode ? { readOnlyMode: this.#opts.readOnlyMode } : {}),
       ...(readOnly ? { readOnly: true } : {}),
-      ...(setup.modeFloor ? { modeFloor: setup.modeFloor } : {}),
+      ...(setup.modeFloor ? { modeFloor: setup.modeFloor, ...(spec.level ? { level: spec.level } : {}) } : {}),
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }

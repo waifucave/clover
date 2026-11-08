@@ -678,12 +678,15 @@ export class AgentManager {
     return this.#startAgent(e, { agentSessionId });
   }
 
-  /** At each turn, the computer's level as it is now (check 2's minor 5): an agent that acts without asking goes into
-   *  its read-only mode when the level dropped to read-only since it started, and back when it rose again. */
+  /** At each turn, the computer's level as it is now (check 2's minor 5): the session's mode floor is held against it,
+   *  and an agent that acts without asking goes into its read-only mode when the level dropped to read-only since it
+   *  started, and back when it rose again. */
   async #applyLevel(e: Entry, session: AgentSession): Promise<void> {
+    const s = session as { setReadOnly?: (on: boolean) => Promise<void>; setLevel?: (level: Level) => Promise<void> };
+    // The sandbox writer's mode floor follows the level too (acceptEdits only while it accepts edits).
+    if (s.setLevel) await s.setLevel(this.#levelOf(e));
     if (!e.backend.quirks.marks.includes("unasked-actions")) return;
     const readOnly = this.#levelOf(e) === "read-only";
-    const s = session as { setReadOnly?: (on: boolean) => Promise<void> };
     if (s.setReadOnly) return s.setReadOnly(readOnly);
     if (readOnly) throw new ContractError("refused", `${e.backend.id} acts without asking and can't be held at read-only, so this turn wasn't sent`);
   }

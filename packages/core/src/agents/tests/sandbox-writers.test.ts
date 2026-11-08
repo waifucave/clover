@@ -74,7 +74,7 @@ describe("Codex's profile", () => {
   test("CODEX_CONFIG names the clover profile as the default: the root readable, writes where allowed, denials closed, the vendors' config read-only, no network", () => {
     const setup = codexWriter(policy(), ctx);
     expect(Object.keys(setup)).toEqual(["env", "modeFloor"]);
-    expect(setup.modeFloor).toEqual(CODEX_MODE_FLOOR);
+    expect(setup.modeFloor!("automatic")).toEqual(CODEX_MODE_FLOOR);
     expect(Object.keys(setup.env!)).toEqual(["CODEX_CONFIG"]);
     const config = JSON.parse(setup.env!["CODEX_CONFIG"]!);
     expect(config.default_permissions).toBe(CODEX_PROFILE);
@@ -160,7 +160,8 @@ describe("Claude Code's _meta", () => {
     expect(claudeCodeModeFloor(undefined)).toEqual({ refused: ["bypassPermissions", "acceptEdits"], fallback: "default" });
     for (const l of ["read-only", "ask", "ask-risky"] as const) expect(claudeCodeModeFloor(l).refused).toEqual(["bypassPermissions", "acceptEdits"]);
     for (const l of ["accept-edits", "automatic"] as const) expect(claudeCodeModeFloor(l).refused).toEqual(["bypassPermissions"]);
-    expect(claudeCodeWriter(policy(), { ...ctx, level: "accept-edits" }).modeFloor).toEqual(claudeCodeModeFloor("accept-edits"));
+    // The writer hands the floor by level, so the session holds it against the level at each turn.
+    expect(claudeCodeWriter(policy(), ctx).modeFloor).toBe(claudeCodeModeFloor);
   });
 });
 
@@ -191,6 +192,34 @@ describe("the session holds the mode floor", () => {
     await w2.delegate();
     await waitFor(() => notification(w2), "the notification");
     expect(w2.report("config")).toEqual([]);
+  });
+
+  test("the level drops from accept-edits to ask mid-session: acceptEdits is switched to default before the next turn", async () => {
+    const w = make({ level: "accept-edits", modes: ["acceptEdits", "default"], script: [[{ say: "one" }], [{ say: "two" }], [{ say: "three" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    expect(w.report("config")).toEqual([]); // allowed at accept-edits
+    w.level = "ask";
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Two." });
+    await waitFor(() => w.parentInputs("task-notification").length === 2, "the second notification");
+    expect(w.report("config").map((c) => [c["option"], c["value"]])).toEqual([["mode", "default"]]);
+    expect(w.report("prompt")).toHaveLength(2);
+    // Raised again: the floor allows acceptEdits, and nothing is switched back on its own.
+    w.level = "accept-edits";
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Three." });
+    await waitFor(() => w.parentInputs("task-notification").length === 3, "the third notification");
+    expect(w.report("config")).toHaveLength(1);
+  });
+
+  test("the level drops and the agent can't leave acceptEdits: its session is ended, and the turn isn't sent", async () => {
+    const w = make({ level: "automatic", modes: ["acceptEdits"], script: [[{ say: "one" }], [{ say: "never" }]] });
+    const r = await w.delegate();
+    await waitFor(() => notification(w), "the first notification");
+    w.level = "ask";
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Two." });
+    const second = await waitFor(() => w.parentInputs("task-notification")[1]?.input as { text: string; stopReason?: string } | undefined, "the second notification");
+    expect(second.text).toContain("acceptEdits mode");
+    expect(w.report("prompt")).toHaveLength(1);
   });
 
   test("an agent that can't leave a refused mode isn't started", async () => {

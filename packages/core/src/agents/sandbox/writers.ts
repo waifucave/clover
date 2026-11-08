@@ -15,8 +15,8 @@
 //   excluded commands, allowed domains, hooks, an API key helper, a status line and MCP servers, all run unsandboxed);
 //   `sandbox` with the fence's folders and no way out of it; and the file tools' deny rules in the flag settings layer.
 //   The adapter sets the permission mode after our options, from the user's own `permissions.defaultMode`, so the
-//   session holds a mode floor (`modeFloor`): never `bypassPermissions`, and `acceptEdits` only at a level that accepts
-//   edits.
+//   session holds a mode floor (`modeFloor`), at its start and at every turn against the level then: never
+//   `bypassPermissions`, and `acceptEdits` only while the level accepts edits.
 // * **Both** write-deny the vendors' own config, which an agent could otherwise change to weaken its next session:
 //   `~/.codex` (and `CODEX_HOME`), `~/.claude` and `~/.claude.json` (and `CLAUDE_CONFIG_DIR`), and `.codex`, `.claude`
 //   and `.mcp.json` in the root and every folder above it up to the home.
@@ -168,7 +168,7 @@ export const CODEX_MODE_FLOOR: ModeFloor = { refused: ["agent-full-access"], fal
 /** Codex: the profile in `CODEX_CONFIG`, made the session's default, and its mode floor. */
 export const codexWriter: SandboxWriter = (policy, ctx) => ({
   env: { CODEX_CONFIG: JSON.stringify({ default_permissions: CODEX_PROFILE, permissions: { [CODEX_PROFILE]: codexProfile(policy, ctx) } }) },
-  modeFloor: CODEX_MODE_FLOOR,
+  modeFloor: () => CODEX_MODE_FLOOR,
 });
 
 /** The Claude Agent SDK's `sandbox` and flag settings for the policy. */
@@ -214,7 +214,7 @@ export function claudeCodeModeFloor(level: Level | undefined): ModeFloor {
 /** Claude Code: `_meta.claudeCode.options` at `session/new`, and its mode floor. */
 export const claudeCodeWriter: SandboxWriter = (policy, ctx) => ({
   meta: { claudeCode: { options: claudeCodeOptions(policy, ctx) } },
-  modeFloor: claudeCodeModeFloor(ctx.level),
+  modeFloor: claudeCodeModeFloor,
 });
 
 /** The writers, by backend id. A writer is used only where its backend's row is `protected` (admission.ts). */

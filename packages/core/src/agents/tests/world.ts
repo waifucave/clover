@@ -45,7 +45,7 @@ export const FAKE_PROTECTED: SandboxAdmission = {
 
 /** The scripted agent's admission on every OS. */
 export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level: Level | undefined) => ModeFloor) {
-  const writer: SandboxWriter = (policy, ctx) => ({ ...(FAKE_PROTECTED as { writer: SandboxWriter }).writer(policy, ctx), modeFloor: modeFloor!(ctx.level) });
+  const writer: SandboxWriter = (policy, ctx) => ({ ...(FAKE_PROTECTED as { writer: SandboxWriter }).writer(policy, ctx), modeFloor: modeFloor! });
   const row: SandboxAdmission = sandbox === "none" ? { status: "unsupported", reason: "the test's agent has none" } : modeFloor ? { ...FAKE_PROTECTED, writer } as SandboxAdmission : FAKE_PROTECTED;
   return { fake: { macos: row, linux: row, windows: row } };
 }

@@ -29,6 +29,7 @@
 //
 // The client advertises neither `fs` nor `terminal`: agents use their own tools, inside their own sandbox (§9.3).
 // Reaching the folder tree and Bash under the fence through those doors comes with Gemini CLI, which uses them (M2).
+import type { Level } from "@waifucave/clover-protocol";
 import type {
   AgentEvent, AgentPermissionAnswer, AgentPermissionAsk, AgentQuirks, AgentSession, AgentSessionState, AgentTurnEnd,
 } from "../../contracts/agent-backend";
@@ -94,10 +95,16 @@ export interface OpenOptions {
   readOnlyMode?: { option: string; values: readonly string[] };
   /** Start in the read-only mode; the session fails `refused` when the agent offers none of its values. */
   readOnly?: boolean;
-  /** Modes the session may not be in (its sandbox writer's, from the level): one it starts in, from the user's own
-   *  settings (Claude Code's `permissions.defaultMode`), is switched to `fallback`, or the session fails `refused`. */
-  modeFloor?: ModeFloor;
+  /** Modes the session may not be in, by level (its sandbox writer's): one it starts in, from the user's own settings
+   *  (Claude Code's `permissions.defaultMode`), is switched to the floor's `fallback`, or the session fails `refused`.
+   *  Held again at every turn against the level then (`setLevel`). */
+  modeFloor?: ModeFloorFor;
+  /** The session's level at its start, for `modeFloor`. */
+  level?: Level;
 }
+
+/** A writer's mode floor at a level (absent: the strictest). */
+export type ModeFloorFor = (level: Level | undefined) => ModeFloor;
 
 /** Modes a session may not be in, and the one to switch to instead. */
 export interface ModeFloor {
@@ -141,7 +148,8 @@ export class AcpAgentSession implements AgentSession {
   /** Permission requests waiting on their answer. */
   #asking = 0;
   readonly #readOnlyMode: { option: string; values: readonly string[] } | undefined;
-  readonly #modeFloor: ModeFloor | undefined;
+  readonly #modeFloor: ModeFloorFor | undefined;
+  #level: Level | undefined;
   #readOnly = false;
   /** The mode before the read-only one, to switch back to. */
   #modeBefore: string | undefined;
@@ -167,6 +175,7 @@ export class AcpAgentSession implements AgentSession {
     this.#selections = opts.selections ?? { keeper: new UserSelections(), backend: "agent" };
     this.#readOnlyMode = opts.readOnlyMode;
     this.#modeFloor = opts.modeFloor;
+    this.#level = opts.level;
     const tap = opts.tap;
     this.#peer = new RpcPeer({
       write: (line) => this.#proc.write(line),
@@ -297,7 +306,7 @@ export class AcpAgentSession implements AgentSession {
       this.#modes = { available, ...(current ? { current } : {}) };
     }
     await this.#setBackLeftovers();
-    if (opts.modeFloor) await this.#holdModeFloor(opts.modeFloor);
+    if (this.#modeFloor) await this.#holdModeFloor(this.#modeFloor(this.#level));
     if (opts.readOnly) await this.setReadOnly(true);
     if (opts.model !== undefined) await this.setConfig("model", opts.model);
     if (opts.effort !== undefined && !this.#quirks.config.effortInModel) await this.setConfig("effort", opts.effort);
@@ -338,7 +347,7 @@ export class AcpAgentSession implements AgentSession {
     if (this.#state === "prompting" || this.#state === "cancelling") throw new ContractError("conflict", "a turn is running; the host queues the next prompt");
     if (this.#state === "starting") throw new ContractError("conflict", "the agent is still starting");
     // A mode the agent switched itself into since (a `current_mode_update`) is held to the floor before each turn.
-    if (this.#modeFloor) await this.#holdModeFloor(this.#modeFloor);
+    if (this.#modeFloor) await this.#holdFloorOrStop();
     const turn: Turn = { text: "", abort: new AbortController(), toolIds: new Set(), endedOnRefusal: false };
     this.#turn = turn;
     this.#state = "prompting";
@@ -426,6 +435,25 @@ export class AcpAgentSession implements AgentSession {
     }
   }
 
+  /** The level as it is now (the manager's, at every turn): the mode floor follows it, so a mode the level allowed
+   *  when the session started (`acceptEdits` at accept-edits) is switched to the floor's fallback when it drops. */
+  async setLevel(level: Level): Promise<void> {
+    this.#level = level;
+    // Between turns only; a running turn's next prompt holds it.
+    if (this.#modeFloor && (this.#state === "ready" || this.#state === "idle")) await this.#holdFloorOrStop();
+  }
+
+  /** The floor at the current level on a running session: an agent that doesn't leave a refused mode is stopped. */
+  async #holdFloorOrStop(): Promise<void> {
+    try {
+      await this.#holdModeFloor(this.#modeFloor!(this.#level));
+    } catch (err) {
+      await this.stop().catch(() => {});
+      this.#state = "failed";
+      throw err;
+    }
+  }
+
   /** The mode the agent says it started in, as its `mode` config option and as ACP's session modes: one the floor
    *  refuses is switched to its fallback, and the session is refused unless the agent then reports the fallback. */
   async #holdModeFloor(floor: ModeFloor): Promise<void> {
@@ -440,7 +468,7 @@ export class AcpAgentSession implements AgentSession {
       this.#modes.current = floor.fallback;
     }
     if (current().some((m) => floor.refused.includes(m))) {
-      throw new ContractError("refused", `the agent started in its ${was} mode, which this level doesn't allow, and didn't leave it, so it wasn't started`);
+      throw new ContractError("refused", `the agent is in its ${was} mode, which this level doesn't allow, and didn't leave it, so its session was ended`);
     }
   }
 

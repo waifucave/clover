@@ -10,7 +10,7 @@
 import type { Level, Os } from "@waifucave/clover-protocol";
 import type { SandboxPolicy } from "../../contracts/fence";
 import type { Obj } from "@waifucave/clover-agent-sdk/acp";
-import type { ModeFloor } from "../acp/session";
+import type { ModeFloorFor } from "../acp/session";
 import { versionSatisfies } from "../version";
 
 export type SandboxAdmission =
@@ -29,8 +29,9 @@ export interface SandboxSetup {
   /** Merged into `session/new`'s `_meta` (the Claude adapter's `_meta.claudeCode.options`). */
   meta?: Obj;
   files?: { name: string; content: string }[];
-  /** Modes the session may not be in at this level (Claude Code's from the user's `permissions.defaultMode`). */
-  modeFloor?: ModeFloor;
+  /** Modes the session may not be in, by level, held at its start and at every turn (Claude Code's against the user's
+   *  `permissions.defaultMode`). */
+  modeFloor?: ModeFloorFor;
 }
 
 /** What a writer knows of the session besides its policy. */
