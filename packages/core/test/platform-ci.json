@@ -29,6 +29,7 @@
   "linuxSkips": {
     "src/agents/tests/windows-path.test.ts": "an agent backend's bare command found as its .exe or .cmd on PATH: Windows only (the tree job runs it there)",
     "src/clock/tests/shared-clock.test.ts": "one live SNTP query against the public servers runs only with CLOVER_LIVE_TIME=1, on every OS",
+    "src/links/tests/daemon-sidecar.test.ts": "needs the built clover-link sidecar: the link job builds it and runs this on Linux and macOS (it reads ps, so not on Windows)",
     "src/links/tests/live-window.test.ts": "needs the built clover-link sidecar: the link job builds it and runs these on Linux, Windows and macOS",
     "src/links/tests/sidecar.test.ts": "needs the built clover-link sidecar: the link job builds it and runs these on Linux, Windows and macOS",
     "test/agent/browser-gates.test.ts": "holds no tests on any OS: its gate walk retired with the engine (Task 17); the capability's sequence is pinned in test/capabilities",
