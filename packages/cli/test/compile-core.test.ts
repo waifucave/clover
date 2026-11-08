@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { COMPILED_EMBEDDED_WORKER_ENTRY } from "../../core/src/runtime-sdk/embedded";
 import { COMPILED_FD_RECEIVER_WORKER_ENTRY } from "../../core/src/cowork/native/fd-channel";
+import { HOST_BUNDLE_ENTRIES, HOST_BUNDLE_FILES } from "../../core/src/plugin-host/bundles";
 
 const CLI_DIR = join(import.meta.dir, "..");
 const manifest = JSON.parse(readFileSync(join(CLI_DIR, "package.json"), "utf8")) as { scripts: Record<string, string> };
@@ -28,20 +29,41 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   test("both compile scripts pre-bundle each worker graph ALONE, then pass src/main.ts AND both worker files as entrypoints", () => {
     for (const name of ["compile", "compile:core"]) {
       const steps = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/));
-      expect([name, steps.length]).toEqual([name, 3]);
-      const [prebundle, prebundleFd, compile] = steps as [string[], string[], string[]];
+      expect([name, steps.length]).toEqual([name, 5]);
+      const [prebundle, prebundleFd, , , compile] = steps as [string[], string[], string[], string[], string[]];
       // Steps 1 and 2: each worker's graph, bundled on its own — never beside src/main.ts.
       for (const [step, source, bundle] of [[prebundle, WORKER_SOURCE_REL, WORKER_BUNDLE_REL], [prebundleFd, "src/fd-receiver-worker.source.ts", ".build/fd-receiver-worker.bundle.js"]] as const) {
         expect([name, step.slice(0, 2), step.filter((t) => t.startsWith("src/"))]).toEqual([name, ["bun", "build"], [source]]);
         expect([name, step.includes("--compile")]).toEqual([name, false]);
         expect([name, step[step.indexOf("--target") + 1], step[step.indexOf("--outfile") + 1]]).toEqual([name, "bun", bundle]);
       }
-      // Step 3: the compile, whose extra entrypoints are the plain-path Worker files.
+      // Step 5: the compile, whose extra entrypoints are the plain-path Worker files (steps 3 and 4, the plugin host's
+      // bundles, are pinned below).
       expect([name, compile.slice(0, 4), compile.filter((t) => t.startsWith("src/"))]).toEqual([
         name,
         ["bun", "build", "--compile", "--no-macros"],
         ["src/main.ts", `src/${basename(COMPILED_EMBEDDED_WORKER_ENTRY)}`, `src/${basename(COMPILED_FD_RECEIVER_WORKER_ENTRY)}`],
       ]);
+    }
+  });
+
+  // Lane M: a compiled core has no sources, so it starts a plugin-host process only from the two bundles it embeds
+  // (plugin-host/bundles.ts). Each is HOST_BUNDLE_ENTRIES' own file, bundled alone for Bun with macros off into
+  // `.build/<HOST_BUNDLE_FILES>`, and both are compile entrypoints (embedded files: `.bundle` takes Bun's file loader).
+  test("both compile scripts bundle the plugin host's two entries alone, macros off, and embed both", () => {
+    for (const name of ["compile", "compile:core"]) {
+      const steps = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/));
+      const compile = steps.at(-1)!;
+      for (const [i, which] of [[2, "host"], [3, "worker"]] as const) {
+        const step = steps[i]!;
+        const out = `.build/${HOST_BUNDLE_FILES[which]}`;
+        expect([name, step.slice(0, 2), step.includes("--compile"), step.includes("--no-macros")]).toEqual([name, ["bun", "build"], false, true]);
+        expect([name, step[step.indexOf("--target") + 1], step[step.indexOf("--outfile") + 1]]).toEqual([name, "bun", out]);
+        const sources = step.filter((t) => t.endsWith(".ts")).map((t) => join(CLI_DIR, t));
+        expect([name, sources]).toEqual([name, [HOST_BUNDLE_ENTRIES[which]]]);
+        expect([name, compile.filter((t) => t === out).length]).toEqual([name, 1]);
+        expect([name, out.endsWith(".js") || out.endsWith(".ts")]).toEqual([name, false]);
+      }
     }
   });
 
@@ -63,7 +85,7 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   // `__runtime-workflow-worker`) inherits it. `bun run verify:runtimes` proves it on the real binary.
   test("both compile scripts switch off the cwd bunfig.toml and .env autoloads", () => {
     for (const name of ["compile", "compile:core"]) {
-      const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/))[2]!;
+      const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/)).at(-1)!;
       expect([name, compile.includes("--no-compile-autoload-bunfig"), compile.includes("--no-compile-autoload-dotenv")]).toEqual([name, true, true]);
       // #234's check 5: the plugin-run probe route is in no release build; only verify:fd-receiver flips this.
       expect([name, compile.join(" ").includes("--define CLOVER_PLUGIN_RUN_PROBE=false")]).toEqual([name, true]);
@@ -74,7 +96,7 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   // keeps a Bun that changes its default from turning them on (`bun run verify:sealed-core` checks the binary).
   test("both compile scripts switch off the cwd tsconfig.json and package.json autoloads too", () => {
     for (const name of ["compile", "compile:core"]) {
-      const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/))[2]!;
+      const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/)).at(-1)!;
       expect([name, compile.includes("--no-compile-autoload-tsconfig"), compile.includes("--no-compile-autoload-package-json")]).toEqual([name, true, true]);
       expect([name, compile.some((t) => t.startsWith("--compile-exec-argv"))]).toEqual([name, false]);
     }

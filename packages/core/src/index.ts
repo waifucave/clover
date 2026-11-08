@@ -333,5 +333,6 @@ export {
   bundledManifest, bundledPluginIds, bundledPluginsDir, formatBundledManifest, loadBundledManifest, measureBundledTree, readBundledFile, readBundledPlugin,
   type BundledEntry, type BundledManifest, type BundledPluginRead, type BundledRead,
 } from "./bundled-plugins-dir";
+export { HOST_BUNDLE_FILES, loadPrebuiltHostBundles, prebuiltHostBundles, type HostBundleTexts } from "./plugin-host/bundles";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
 export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";

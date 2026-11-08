@@ -1,6 +1,6 @@
 // The daemon binary, `clover-core`, for each of the four targets CI builds (plan §3): one `bun build --compile` per
 // target, from `packages/cli`'s own `compile:core` script with only the target and the output changed, so it is the
-// same three-step, three-entrypoint build (`cli/test/compile-core.test.ts` pins its shape) and cannot drift from it.
+// same five-step, five-entrypoint build (`cli/test/compile-core.test.ts` pins its shape) and cannot drift from it.
 //
 //   bun run build:daemon                                  this machine's target
 //   bun run build:daemon --target linux-x64[,…] | --all   cross-compile (Bun fetches the other targets' runtimes)
@@ -33,6 +33,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DIST_BUILD_DEFINE } from "../packages/core/src/build-kind";
 import { BUNDLED_MANIFEST_FILE, parseBundledManifest } from "../packages/core/src/bundled-plugins-dir";
+import { HOST_BUNDLE_FILES } from "../packages/core/src/plugin-host/bundles";
 import { bunPinProblem, thisBunFirst } from "./bun-pin";
 import { bundledFiles, buildHolder, HOLDER_FILE, stagePluginBun } from "./bundled-binaries";
 import { sealFile } from "./seal-bun-doors";
@@ -277,6 +278,35 @@ export function embeddedManifestLine(binary: string): string {
   }
 }
 
+/** The line `__host-bundles` prints for a bundle pair: each one's size and SHA-256. */
+export function hostBundlesLine(host: Uint8Array, worker: Uint8Array): string {
+  const one = (b: Uint8Array) => `${b.length} bytes, sha256 ${createHash("sha256").update(b).digest("hex")}`;
+  return `host ${one(host)}; worker ${one(worker)}`;
+}
+
+/** The bundles `compile:core` just built into `packages/cli/.build/` (what the compile embedded), and their line. */
+export function hostBundlesBuilt(cliDir: string): { bytes: { host: Uint8Array; worker: Uint8Array }; line: string } {
+  const bytes = {
+    host: new Uint8Array(readFileSync(join(cliDir, ".build", HOST_BUNDLE_FILES.host))),
+    worker: new Uint8Array(readFileSync(join(cliDir, ".build", HOST_BUNDLE_FILES.worker))),
+  };
+  return { bytes, line: hostBundlesLine(bytes.host, bytes.worker) };
+}
+
+/** The plugin host's bundles a built core carries, as its `__host-bundles` prints them. */
+export function embeddedHostBundlesLine(binary: string): string {
+  const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-host-bundles-"));
+  try {
+    const r = spawnSync(binary, ["__host-bundles"], { env: probeEnv(home), encoding: "utf8", timeout: 60_000 });
+    const out = (r.stdout ?? "").trim();
+    const m = /^host-bundles: (.*)$/.exec(out);
+    if (r.status !== 0 || m === null) throw new Error(`${binary} __host-bundles: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out)}${r.stderr ? `\n${r.stderr.slice(0, 2000)}` : ""}`);
+    return m[1]!;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 /** How many times `needle` occurs in `binary`: a cross-built core (which this machine can't run) must hold the
  *  manifest's exact bytes once (Bun stores an embedded file as it is). */
 export function occurrences(binary: Uint8Array, needle: Uint8Array): number {
@@ -344,6 +374,27 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
         console.error(`build:daemon: ${target}: ${(err as Error).message}`);
         return 1;
       }
+    }
+    // The plugin host's bundles (packages/core/src/plugin-host/bundles.ts): a compiled core starts plugins only from
+    // the ones it embeds. The host's binary is asked (`__host-bundles`, which reads them as the daemon does); a
+    // cross-built one must hold each bundle's exact bytes once.
+    try {
+      const built = hostBundlesBuilt(cliDir);
+      if (target === host) {
+        const line = embeddedHostBundlesLine(output);
+        if (line !== built.line) throw new Error(`the binary carries ${line}, not the plugin host's bundles compile:core built (${built.line})`);
+        console.log(`build:daemon: ${target}: plugin-host bundles: ${line}`);
+      } else {
+        const bytes = new Uint8Array(readFileSync(output));
+        for (const [which, b] of Object.entries(built.bytes)) {
+          const n = occurrences(bytes, b);
+          if (n !== 1) throw new Error(`the binary holds the plugin host's ${which} bundle ${n} times, not once`);
+        }
+        console.log(`build:daemon: ${target}: plugin-host bundles embedded (cross build: each found once; ${built.line})`);
+      }
+    } catch (err) {
+      console.error(`build:daemon: ${target}: ${(err as Error).message}`);
+      return 1;
     }
     if (args.smoke && target === host) {
       try {

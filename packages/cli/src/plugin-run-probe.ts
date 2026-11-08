@@ -7,7 +7,7 @@
 // Only in a build with `--define CLOVER_PLUGIN_RUN_PROBE=true` (the gate's); never in a release build. Runs only in a
 // scratch folder the caller names (an absolute path to an empty folder): it touches no home, no Keychain, no daemon.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { ensurePluginRunFiles, pluginBun, pluginBunLaunch } from "../../core/src/registry/plugin-run";
 
@@ -68,4 +68,66 @@ export function runPluginRunProbe(scratch: string | undefined): PluginRunProbeRe
     && host?.main === realpathSync(join(plugin, "host", "index.ts")) && host.beBun === "unset"
     && host.shadowRealm === "refused" && host.outside === "refused" && result.outsideRan === false;
   return result;
+}
+
+export interface PluginHostProbeResult {
+  ok: boolean;
+  /** The core's own binary and the plugin Bun the host ran on, both real paths. */
+  core?: string;
+  pluginBun?: string;
+  /** Whether the bundles written into the run folder are the ones this core embeds (byte for byte). */
+  prebuilt?: boolean;
+  /** `pluginHost.ping`'s answer. */
+  ping?: { ok?: boolean; bun?: string; workers?: number };
+  error?: string;
+}
+
+/**
+ * The compiled-core probe for the plugin host itself (lane M; `scripts/verify-fd-receiver-compiled.ts`, step 3e): a
+ * compiled core has no sources, so it starts a plugin-host process only from the bundles it embeds
+ * (`plugin-host/bundles.ts`). This starts one the daemon's way (`hostProcessLaunch` + `spawnHostProcess`) in a run
+ * folder under the scratch folder, asks it `pluginHost.ping` over its fd-3 link, and reports what answered. The same
+ * define gates it as `__plugin-run-probe`; the same safety: the scratch folder only, no home, Keychain or daemon.
+ */
+export async function runPluginHostProbe(scratch: string | undefined): Promise<PluginHostProbeResult> {
+  if (scratch === undefined || !isAbsolute(scratch) || !existsSync(scratch) || readdirSync(scratch).length > 0) {
+    return { ok: false, error: "the host probe needs an absolute path to an empty scratch folder" };
+  }
+  const { loadPrebuiltHostBundles } = await import("../../core/src/plugin-host/bundles");
+  const { hostProcessLaunch, spawnHostProcess } = await import("../../core/src/plugin-host/launch");
+  const core = realpathSync(process.execPath);
+  let embedded: Awaited<ReturnType<typeof loadPrebuiltHostBundles>>;
+  try {
+    embedded = await loadPrebuiltHostBundles();
+  } catch (e) {
+    return { ok: false, core, error: `the embedded bundles: ${(e as Error).message}` };
+  }
+  if (embedded === undefined) return { ok: false, core, error: "this core embeds no plugin-host bundles" };
+  const output: string[] = [];
+  let launch: Awaited<ReturnType<typeof hostProcessLaunch>>;
+  try {
+    launch = await hostProcessLaunch({ runDir: join(scratch, "run"), computer: "probe", base: { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: process.env.HOME ?? scratch }, onOutput: (l) => output.push(l) });
+  } catch (e) {
+    return { ok: false, core, error: (e as Error).message };
+  }
+  const bun = realpathSync(launch.cmd[0]!);
+  const hostFile = launch.cmd[launch.cmd.length - 1]!;
+  const workerFile = launch.env.CLOVER_PLUGIN_WORKER ?? "";
+  const prebuilt = readFileSync(hostFile, "utf8") === embedded.host && readFileSync(workerFile, "utf8") === embedded.worker;
+  const child = spawnHostProcess(launch);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const ping = await Promise.race([
+      child.peer.request("pluginHost.ping", {}) as Promise<PluginHostProbeResult["ping"]>,
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("no answer to pluginHost.ping in 20 s")), 20_000); }),
+    ]);
+    const ok = ping?.ok === true && typeof ping.bun === "string" && ping.workers === 0 && prebuilt && bun !== core;
+    return { ok, core, pluginBun: bun, prebuilt, ...(ping === undefined ? {} : { ping }) };
+  } catch (e) {
+    return { ok: false, core, pluginBun: bun, prebuilt, error: `${(e as Error).message}${output.length > 0 ? `: ${output.slice(-5).join(" | ").slice(0, 600)}` : ""}` };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    child.peer.close();
+    child.kill();
+  }
 }

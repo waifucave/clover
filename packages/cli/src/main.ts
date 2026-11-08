@@ -4,7 +4,7 @@ import { ensureServerPlugins, PluginsLock, recoverServerPlugins, serverPluginsDi
 import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
 import { join, resolve } from "node:path";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1869,6 +1869,26 @@ if (import.meta.main) {
     const result = runPluginRunProbe(process.argv[3]);
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
+  }
+  // Lane M: a plugin-host process started from the bundles this core embeds, answering `pluginHost.ping` (the same
+  // gate's define; never in a release build).
+  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-host-probe") {
+    const { runPluginHostProbe } = await import("./plugin-run-probe");
+    const result = await runPluginHostProbe(process.argv[3]);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.exit(result.ok ? 0 : 1);
+  }
+  // Lane M: the plugin host's bundles this binary carries (scripts/build-daemon.ts checks they are the ones it built).
+  if (process.argv[2] === "__host-bundles") {
+    try {
+      const b = await loadPrebuiltHostBundles();
+      const line = (t: string) => `${Buffer.byteLength(t)} bytes, sha256 ${new Bun.CryptoHasher("sha256").update(t).digest("hex")}`;
+      process.stdout.write(`host-bundles: ${b === undefined ? "none" : `host ${line(b.host)}; worker ${line(b.worker)}`}\n`);
+      process.exit(0);
+    } catch (err) {
+      process.stdout.write(`host-bundles: refused (${(err as Error).message})\n`);
+      process.exit(1);
+    }
   }
   // M-M2: the update feed's signature, against the key this binary carries (./verify-feed.ts).
   if (process.argv[2] === "__verify-feed") {

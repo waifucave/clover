@@ -5,7 +5,7 @@
  * string `./fd-receiver-worker.ts` (a `new URL(...).href` hangs silently, WS-23 spike #1), which resolves only if `packages/cli/src/fd-receiver-worker.ts` was passed to
  * `compile:core` as a third entrypoint. `bun test` only runs the dev path, so nothing but the real artifact notices that missing.
  *
- *   1. `compile:core` -> dist/clover-core (all three entrypoints).
+ *   1. `compile:core` -> dist/clover-core (all five entrypoints: main, the two Worker files, the plugin host's two bundles).
  *   2. A copy in a throwaway directory, ad-hoc signed the way the Release app signs clover-core (hardened runtime + scripts/clover-core.entitlements).
  *   3. `<copy> __fd-receiver-probe` from that directory, with a narrow environment and a temp CLOVER_HOME: socketpair, one line through the receiver hub, expect the line back.
  *   3b. `<copy> __host-code-adapter-probe`: the host-code broker's SDK modules resolve INSIDE the built binary (`installedHostCodeAdapter()` does not throw "Cannot find module").
@@ -17,6 +17,9 @@
  *       a plugin host started the supervisor's way runs on `clover-plugin-bun`, never on clover-core, as Bun (its `Bun.main` is
  *       the host's entry), without the `BUN_BE_BUN` it was handed, with the load guard preloaded (no `ShadowRealm`), and an outside import is refused and never runs.
  *       Same safety: the scratch folder only.
+ *   3e. (lane M) The same probe build runs `<copy> __plugin-host-probe <empty folder>`: a plugin-host process starts the daemon's way (`hostProcessLaunch`,
+ *       `spawnHostProcess`) from the bundles the core EMBEDS (a compiled core has no sources to build them from), byte for byte, on `clover-plugin-bun`, and answers
+ *       `pluginHost.ping` over its fd-3 link. Same safety: the scratch folder only.
  *   4. The negative control: the same probe against a copy of the binary whose Worker entry cannot be found must NOT print ok. (Checked without rebuilding: the probe is run with the
  *      entry string patched in the copy to a name that does not exist.)
  *
@@ -41,7 +44,7 @@ const BUN_JIT_ENTITLEMENTS = join(REPO_ROOT, "scripts", "bun-jit.entitlements");
 /** The plugin Bun's dev signing identifier (`bundled-identities.ts`): never clover-core's. */
 const PLUGIN_BUN_IDENTIFIER = PLUGIN_BUN_IDENTIFIERS.dev;
 /** Strings only the plugin-run probe's code holds: absent from a release-shaped build. */
-const PROBE_MARKERS = ["__plugin-run-probe", "the probe needs an absolute path to an empty scratch folder"];
+const PROBE_MARKERS = ["__plugin-run-probe", "the probe needs an absolute path to an empty scratch folder", "__plugin-host-probe", "the host probe needs an absolute path to an empty scratch folder"];
 export const ENTRY_NAME = "./fd-receiver-worker.ts";
 
 /** The probe's one JSON line, or undefined. */
@@ -132,6 +135,12 @@ async function main(): Promise<void> {
     const pluginResult = parseProbe(pluginRun.stdout);
     if (pluginRun.code !== 0 || pluginResult?.ok !== true) throw new Error(`a plugin host did not run guarded on clover-plugin-bun inside the compiled core (exit ${pluginRun.code}): ${JSON.stringify(pluginResult)}\n${pluginRun.stderr.trim()}`);
     console.log(`ok: a plugin host ran on clover-plugin-bun, not clover-core, without BUN_BE_BUN, guarded, its outside import refused (${JSON.stringify(pluginResult)})`);
+
+    const hostScratch = join(scratch, "plugin-host"); mkdirSync(hostScratch);
+    const hostRun = await runChild(probeCore, ["__plugin-host-probe", hostScratch], env, scratch);
+    const hostResult = parseProbe(hostRun.stdout);
+    if (hostRun.code !== 0 || hostResult?.ok !== true) throw new Error(`the compiled core did not start a plugin-host process from its embedded bundles (exit ${hostRun.code}): ${JSON.stringify(hostResult)}\n${hostRun.stderr.trim()}`);
+    console.log(`ok: the compiled core started a plugin-host process from its embedded bundles, and it answered pluginHost.ping (${JSON.stringify(hostResult)})`);
 
     const broken = withBrokenEntry(readFileSync(DIST_BINARY));
     if (broken === null) throw new Error(`the binary does not contain the entry string ${ENTRY_NAME}: fd-channel.ts does not use the compiled entry`);
