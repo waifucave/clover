@@ -6,7 +6,7 @@
 import type { SecretStore } from "../contracts/secret-store";
 import type { FileDeviceRegistry, PairRecord } from "../devices/registry";
 import { type Bytes, fromBase64 } from "../identity/bytes";
-import { type Ed25519Key, ed25519FromSecret } from "../identity/keys";
+import { type Ed25519Key, ed25519FromSecret, publicKeyFromBase64 } from "../identity/keys";
 import type { NatMapping } from "./dial-policy";
 import {
   type AddrPlaintext, type HandshakeClient, openPairBox, pairBoxKey, pairKeyRef, pairSecretRef, sealPairBox,
@@ -45,7 +45,8 @@ export class HandshakeDirectory implements PeerDirectory {
   async target(device: string): Promise<DialTarget | undefined> {
     const d = this.#o.registry.get(device);
     if (!d || d.revokedAt !== undefined) return undefined;
-    const key = fromBase64(d.publicKey);
+    // A link key Clover dials is a strict Ed25519 point (identity/ed25519-strict.ts).
+    const key = publicKeyFromBase64(d.publicKey);
     if (!key) return undefined;
     // "Dial now", so the peer dials back at once (S1): both directions race, and the first through wins.
     if (this.#pair(device)?.registeredAt !== undefined) void this.dialNow(device).catch(() => undefined);
