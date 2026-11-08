@@ -35,8 +35,9 @@ const EXTRA: Record<string, string> = { "Ԍ": "g", "ԍ": "g" };
 
 /** What a look-alike of an `i` or an `l` reads as: either. The SDK reads Greek `Ι` and Cyrillic `І`, `Ї` and `Ӏ` as an
  *  `l`, Greek `ι` and Cyrillic `і` as an `i`; in a tag name a model reads any of them as whichever letter the tag
- *  spells (`<task-notΙfication>`, `<bot-Іnstructions>`). A Latin `i` or `l` stays itself. */
-const EITHER_I_OR_L = "\uE000";
+ *  spells (`<task-notΙfication>`, `<bot-Іnstructions>`). A Latin `i` or `l` stays itself. A noncharacter, and one the
+ *  text itself carries reads as U+FFFD (`readAs`), so no input stands for it. */
+const EITHER_I_OR_L = "\uFDD0";
 
 /** Cherokee small letters, which the SDK's map knows by their capitals. */
 const CHEROKEE_SMALL = /^[\uAB70-\uABBF\u13F8-\u13FD]$/u;
@@ -53,7 +54,7 @@ function readAs(ch: string): string {
   let out = "";
   for (const c of lookalike(ch) === undefined ? ch.normalize("NFKC") : ch) {
     const l = /^[A-Za-z]$/.test(c) ? undefined : lookalike(c);
-    const s = l === undefined ? c.toLowerCase() : l === "i" || l === "l" ? EITHER_I_OR_L : l;
+    const s = c === EITHER_I_OR_L ? "\uFFFD" : l === undefined ? c.toLowerCase() : l === "i" || l === "l" ? EITHER_I_OR_L : l;
     out += HYPHEN.has(s) ? "-" : SLASH.has(s) ? "/" : s;
   }
   return out;
@@ -63,7 +64,7 @@ function isLessThan(ch: string): boolean {
   return LESS_THAN.has(ch) || ch.normalize("NFKC") === "<";
 }
 
-const WORD = /[\p{L}\p{N}_\uE000]/u;
+const WORD = /[\p{L}\p{N}_\uFDD0]/u;
 
 /**
  * `text` with the bracket of every tag that opens or closes one of `names` defused, however it is spelled (see the

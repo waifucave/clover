@@ -1760,6 +1760,12 @@ if (import.meta.main) {
     const { bridgeMain } = await import("./bridge-entry");
     await bridgeMain();
   }
+  // K-M3b: Clover's coding agent for an outside ACP client (Zed and others), which starts `<clover-core> code-agent`
+  // as its agent server: a relay of ACP lines between its stdio and the daemon's endpoint. POSITIONAL, like `bridge`.
+  if (process.argv[2] === "code-agent") {
+    const { codeAgentMain } = await import("../../core/src/agents/code-agent/relay");
+    await codeAgentMain(socketPath());
+  }
   // Workflow worker subprocess (COMPILED path): the daemon self-spawns `<clover-core> __workflow-worker`
   // already wrapped in sandbox-exec; THIS process is the sandboxed worker. Route straight to the entry
   // and never fall through to daemon-connect / TUI. (In dev/test the runtime spawns the entry .ts
