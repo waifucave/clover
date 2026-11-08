@@ -883,6 +883,24 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     expect(o2scoped.kind === "exited" && o2scoped.code).toBe(2);
   }, 90_000);
 
+  test("a risky key set between two runs is caught at the next run's start, never taken as its baseline (#321's check 2)", async () => {
+    const w = world();
+    const own = { caller: botCaller("luna", "s-between") };
+    expect(ok(await w.run(`git init -q repo`, own))).toBe(true);
+    const config = join(w.home, "project", "repo", ".git", "config");
+    // Something outside the runs (stood for by a write from here) sets a risky key and an ordinary one.
+    writeFileSync(config, `${readFileSync(config, "utf8")}[core]\n\tfsmonitor = /tmp/evil\n[user]\n\temail = x@y.io\n`);
+    const next = await w.run(`true`, own);
+    expect(next.kind === "exited" && next.stderr).toMatch(/core\.fsmonitor/);
+    expect(readFileSync(config, "utf8")).not.toContain("fsmonitor");
+    expect(readFileSync(config, "utf8")).toContain("x@y.io");
+    // Another session's runs never look at this one's.
+    writeFileSync(config, `${readFileSync(config, "utf8")}[core]\n\tfsmonitor = /tmp/evil2\n`);
+    const other = await w.run(`true`, { caller: botCaller("luna", "s-other") });
+    expect(other.kind === "exited" && other.stderr).not.toMatch(/fsmonitor/);
+    expect(w.spawner.recheck!("s-between")).toMatch(/core\.fsmonitor/);
+  }, 60_000);
+
   test("git config guard: a risky key set through git config or a direct edit is reverted", async () => {
     const w = world();
     const own = { caller: botCaller("luna", "s1") };
