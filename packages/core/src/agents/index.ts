@@ -78,6 +78,7 @@ export { placeInClaudeCode, matcherOf, shellQuote } from "./claude-code/placemen
 export { dropAllow, hookShimCommand, hookShimMain, runHook } from "./claude-code/hook-shim";
 export { AGENT_COMMAND_MAX_MS, StallWatchdog } from "./watchdog";
 export { ADMISSIONS, admissionFor, type SandboxAdmission, type SandboxSetup, type SandboxWriter } from "./sandbox/admission";
+export { WRITERS, codexWriter, claudeCodeWriter } from "./sandbox/writers";
 export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOkKey } from "./sandbox/oks";
 
 export interface AgentsOptions {

@@ -4,8 +4,9 @@
 // `sandboxed: true`; every other agent starts only after the user's OK, which says it could read Clover's logins
 // and approve its own cards (oks.ts), and Settings marks it.
 //
-// A protected backend also needs a writer: the fenced set denied in its own format (writers.ts). A row here and its
-// writer land together, with the S8-style gates that admit them (`spikes/s8-secrets/agent-floor-gates.py`).
+// A protected backend also needs a writer: the fenced set denied in its own format (writers.ts). Codex's and Claude
+// Code's writers are ready; their rows stay `unverified` until the live gates in `live-gates.ts` pass, and a row turns
+// `protected` only with that evidence, for the versions the gates ran on.
 import type { Os } from "@waifucave/clover-protocol";
 import type { SandboxPolicy } from "../../contracts/fence";
 import type { Obj } from "@waifucave/clover-agent-sdk/acp";
@@ -31,12 +32,25 @@ export interface SandboxSetup {
 
 export type SandboxWriter = (policy: SandboxPolicy, ctx: { root: string; dir: string }) => SandboxSetup;
 
+/** A backend whose writer (writers.ts) is ready, its sandbox not yet shown to hold the fence through its adapter. */
+const WRITER_READY = "writer ready; awaiting live gates (its adapter, shell descendants, file tools, retries and exclusions)";
+
 /** S8 §8.3, November 5, for the backends lane K runs today. */
 export const ADMISSIONS: Readonly<Record<string, Partial<Record<Os, SandboxAdmission>>>> = {
   cursor: {
     macos: { status: "unsupported", reason: "S8: its sandbox let outside-root reads and writes through, and wrote a hidden file on the host" },
     linux: { status: "unsupported", reason: "S8: its unsupported-backend preflight fails closed" },
     windows: { status: "unsupported", reason: "S8: its helper isolates the network only, not files" },
+  },
+  codex: {
+    macos: { status: "unverified", reason: WRITER_READY },
+    linux: { status: "unverified", reason: WRITER_READY },
+    windows: { status: "unverified", reason: WRITER_READY },
+  },
+  "claude-code": {
+    macos: { status: "unverified", reason: WRITER_READY },
+    linux: { status: "unverified", reason: WRITER_READY },
+    windows: { status: "unsupported", reason: "Claude Code's sandbox runs on macOS and Linux only" },
   },
   antigravity: {
     macos: { status: "unverified", reason: "it has a terminal sandbox flag, but no sandbox-only entry point to test it without a model" },
