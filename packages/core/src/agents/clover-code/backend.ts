@@ -39,6 +39,17 @@ import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
 export const CLOVER_CODE_ID = "clover-code";
 
+/** What `serve` needs: the session's root (a folder that exists), its model and effort, and its fence. */
+export type CodeAgentServeSpec = Pick<AcpStartSpec, "root" | "model" | "effort" | "fence">;
+
+/** The coding agent served to an outside client: the client's lines go in with `feed`; `close` ends it. */
+export interface CodeAgentServed {
+  feed(line: string): void;
+  /** Settles when the agent has ended (closed, or its server failed). */
+  readonly ended: Promise<void>;
+  close(): Promise<void>;
+}
+
 /** The coding agent's tools: the runtime's coding set, with plan mode; the bot's own tools never (messages go through
  *  the bridge). `TaskStop` here is the runtime's own, for the agent's background commands. */
 export const CLOVER_CODE_TOOLS: readonly string[] = [
@@ -224,15 +235,76 @@ export class CloverCodeBackend implements AgentBackend {
     const deps = this.#deps;
     const bridge = spec.inProcessBridge;
     if (!bridge) throw new ContractError("refused", "Clover's coding agent needs its in-process bridge");
+    // The session's own pause (the manager's, with another computer's forwarded switch for an agent run for it). With
+    // no gate at all it fails closed, as lane A's backend does (`CLOSED_GATE`): the core always hands one.
+    const { query, options, abort } = await this.#agentParts(spec, bridge, spec.pause ?? deps.pause ?? CLOSED_GATE);
+    const wire = deps.wire?.(spec.sessionId) ?? {};
+    const proc = inMemoryAgent((write) => serveAcpAgent({
+      query,
+      options: options as unknown as Record<string, unknown>,
+      agentInfo: { name: CLOVER_CODE_ID, title: "Clover's coding agent", version: SDK_VERSION },
+      write,
+      newId: () => randomUUID(),
+      ...(deps.log ? { log: deps.log } : {}),
+    }));
+    void proc.exited.then(() => abort.abort());
+    const readOnly = spec.readOnly === true;
+    return AcpAgentSession.open({
+      quirks: this.quirks,
+      clock: deps.clock,
+      process: proc,
+      cwd: spec.root,
+      // No stdio bridge on the wire: the agent's query serves the in-process one under the session's bridge name.
+      mcpServers: [],
+      ...(spec.instructions === undefined ? {} : { instructions: spec.instructions }),
+      ...(spec.reattach === undefined ? {} : { reattach: spec.reattach }),
+      ...(spec.model === undefined ? {} : { model: spec.model }),
+      ...(spec.effort === undefined ? {} : { effort: spec.effort }),
+      ...(wire.tap ? { tap: wire.tap } : {}),
+      selections: { keeper: this.#selections, backend: this.id },
+      readOnlyMode: CLOVER_CODE_READ_ONLY_MODE,
+      ...(readOnly ? { readOnly: true } : {}),
+    });
+  }
+
+  /** The coding agent for an outside ACP client (`clover-core code-agent`, K-M3b): the same agent, options, fence and
+   *  sandbox as `start`, served to the relay's lines in place of Clover's own ACP client. It has no bridge (the user's
+   *  own session has no bot to message) and no MCP server the client names. The relay feeds it the client's lines and
+   *  gets its own back, one at a time and never re-entrantly. */
+  async serve(spec: CodeAgentServeSpec, out: (line: string) => void): Promise<CodeAgentServed> {
+    const deps = this.#deps;
+    // The user's own session: the bots' pause doesn't hold it (an open gate, never none: with none a session fails closed).
+    const { query, options, abort } = await this.#agentParts(spec, undefined, { mayAct: () => true });
+    const server = serveAcpAgent({
+      query,
+      options: options as unknown as Record<string, unknown>,
+      agentInfo: { name: CLOVER_CODE_ID, title: "Clover's coding agent", version: SDK_VERSION },
+      write: (line) => queueMicrotask(() => out(line.endsWith("\n") ? line.slice(0, -1) : line)),
+      newId: () => randomUUID(),
+      ...(deps.log ? { log: deps.log } : {}),
+    });
+    const ended = server.ended.then(() => abort.abort());
+    return {
+      // The server reads a stream: each line goes with its newline.
+      feed: (line) => queueMicrotask(() => server.feed(`${line}\n`)),
+      ended,
+      close: async () => {
+        await server.close();
+        abort.abort();
+      },
+    };
+  }
+
+  /** What `start` and `serve` share: the session's query on the embedded runtime and its options (the coding tools,
+   *  the fence's sandbox and deny rules, the pause and the fence's hooks), checked and filled. */
+  async #agentParts(spec: Pick<AcpStartSpec, "root" | "model" | "effort" | "fence">, bridge: AcpStartSpec["inProcessBridge"], gate: AgentPauseGate): Promise<{ query: AcpQueryFn; options: Options; abort: AbortController }> {
+    const deps = this.#deps;
     // The root is a folder that exists: the manager resolved it; one that went away isn't made again here.
     if (!isDirectory(spec.root)) throw new ContractError("not_found", `the agent's root folder ${spec.root} isn't there`);
     const model = spec.model ?? deps.defaultModel();
     const abort = new AbortController();
     // Never a bot's own memory (`ownMemory`): an agent's policy denies all of `<home>/bots`.
     const fence = agentPolicyOf(spec.fence);
-    // The session's own pause (the manager's, with another computer's forwarded switch for an agent run for it).
-    // With no gate at all it fails closed, as lane A's backend does (`CLOSED_GATE`): the core always hands one.
-    const gate = spec.pause ?? deps.pause ?? CLOSED_GATE;
     const pauseHook: HookCallbackMatcher[] = [{
         failClosed: true,
         timeout: 86_400,
@@ -292,11 +364,11 @@ export class CloverCodeBackend implements AgentBackend {
     };
     await fillProvider(deps.fillProvider ? { provider: (m, o) => deps.fillProvider!(m, o) } : {}, options);
     const run = deps.query ?? sdkQuery;
-    // The ACP agent's query, with the session's in-process bridge in place of the stdio entry it was handed, and an
-    // allow that came while the pause came on waiting for the resume.
+    // The ACP agent's query, with the session's in-process bridge in place of the stdio entry it was handed (served to
+    // an outside client, no MCP server at all), and an allow that came while the pause came on waiting for the resume.
     const query: AcpQueryFn = (args) => {
       const o = args.options as unknown as Options & { canUseTool: CanUseTool; mcpServers?: Record<string, unknown> };
-      const servers = { ...(o.mcpServers ?? {}), [bridge.name]: bridge as McpSdkServerConfigWithInstance };
+      const servers = bridge ? { ...(o.mcpServers ?? {}), [bridge.name]: bridge as McpSdkServerConfigWithInstance } : {};
       const ask = o.canUseTool;
       const canUseTool: CanUseTool = async (name, input, opts) => {
         const answer = await ask(name, input, opts);
@@ -306,33 +378,7 @@ export class CloverCodeBackend implements AgentBackend {
       const q = run({ prompt: args.prompt, options: { ...o, mcpServers: servers as Options["mcpServers"], canUseTool } }) as unknown as AcpQuery;
       return stoppingTasksWhilePaused(q, gate, abort.signal, deps.log);
     };
-    const wire = deps.wire?.(spec.sessionId) ?? {};
-    const proc = inMemoryAgent((write) => serveAcpAgent({
-      query,
-      options: options as unknown as Record<string, unknown>,
-      agentInfo: { name: CLOVER_CODE_ID, title: "Clover's coding agent", version: SDK_VERSION },
-      write,
-      newId: () => randomUUID(),
-      ...(deps.log ? { log: deps.log } : {}),
-    }));
-    void proc.exited.then(() => abort.abort());
-    const readOnly = spec.readOnly === true;
-    return AcpAgentSession.open({
-      quirks: this.quirks,
-      clock: deps.clock,
-      process: proc,
-      cwd: spec.root,
-      // No stdio bridge on the wire: the agent's query serves the in-process one under the session's bridge name.
-      mcpServers: [],
-      ...(spec.instructions === undefined ? {} : { instructions: spec.instructions }),
-      ...(spec.reattach === undefined ? {} : { reattach: spec.reattach }),
-      ...(spec.model === undefined ? {} : { model: spec.model }),
-      ...(spec.effort === undefined ? {} : { effort: spec.effort }),
-      ...(wire.tap ? { tap: wire.tap } : {}),
-      selections: { keeper: this.#selections, backend: this.id },
-      readOnlyMode: CLOVER_CODE_READ_ONLY_MODE,
-      ...(readOnly ? { readOnly: true } : {}),
-    });
+    return { query, options, abort };
   }
 }
 

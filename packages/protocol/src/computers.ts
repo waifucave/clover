@@ -100,6 +100,49 @@ const ViaPeer = {
   fence: FencingToken.optional(),
 };
 
+/** `noFollow` on `tree.stat` and `tree.read` (lane J's `tree/nofollow.ts`, #225): the holder follows no link anywhere on
+ *  the way, refusing one, and reads only a plain file whose opened handle is the path walked; for the user's own file
+ *  viewers, where a runner may have left a link pointing anywhere. Sent only when true. It came with tree protocol 1.1:
+ *  a holder on 1.0 would drop it and follow links, so a sender refuses it locally to such a peer (`unsupported`,
+ *  `peerTakesTreeCall`) rather than trusting the peer. */
+const NoFollow = z.boolean().optional();
+
+/** The folder tree's protocol between computers, `major.minor`. A daemon names it in `peer.hello`'s `features` as
+ *  `tree/<major>.<minor>` (`treeFeature`); a peer that names none speaks 1.0. 1.1 adds `noFollow`. */
+export const TREE_PROTOCOL = { major: 1, minor: 1 } as const;
+
+/** The `peer.hello` feature naming a tree protocol version. */
+export function treeFeature(v: { major: number; minor: number } = TREE_PROTOCOL): string {
+  return `tree/${v.major}.${v.minor}`;
+}
+
+/** The tree protocol a peer's hello features name: the highest `tree/<major>.<minor>`, or 1.0 with none. */
+export function treeProtocolOf(features: readonly string[] | undefined): { major: number; minor: number } {
+  let best = { major: 1, minor: 0 };
+  for (const f of features ?? []) {
+    const m = /^tree\/(\d{1,4})\.(\d{1,4})$/.exec(f);
+    if (!m) continue;
+    const v = { major: Number(m[1]), minor: Number(m[2]) };
+    if (v.major > best.major || (v.major === best.major && v.minor > best.minor)) best = v;
+  }
+  return best;
+}
+
+/** The tree protocol a call to a peer needs, from its method and params: 1.1 for `noFollow: true` on `tree.stat` or
+ *  `tree.read`, else 1.0. */
+export function treeCallNeeds(method: string, params: unknown): { major: number; minor: number } {
+  const noFollow = (method === "tree.stat" || method === "tree.read") && (params as { noFollow?: unknown } | null)?.noFollow === true;
+  return noFollow ? { major: 1, minor: 1 } : { major: 1, minor: 0 };
+}
+
+/** Whether a peer whose hello named `features` takes this call as meant: same major, at least the minor it needs. */
+export function peerTakesTreeCall(method: string, params: unknown, features: readonly string[] | undefined): boolean {
+  const need = treeCallNeeds(method, params);
+  if (need.major === 1 && need.minor === 0) return true; // what every peer speaks
+  const has = treeProtocolOf(features);
+  return has.major === need.major && has.minor >= need.minor;
+}
+
 /** A peer asks the receiver to change its own level (levels per computer, J-M2): a lowering applies; a raise needs the
  *  user's answer signed for the receiver's own card (`levelRaiseCall`), or it is refused with `NeedsAnswer`. */
 const PeerSetLevel = z.strictObject({ level: Level, answer: SignedCardAnswer.optional(), fence: FencingToken.optional() });
@@ -147,14 +190,14 @@ export const COMPUTERS_METHODS = {
   // its own sessions (ruling R1): only what the reviewer judges risky, or can't judge, needs `answer`.
   treeStat: defineMethod({
     name: "tree.stat", owner: "J", ...Files,
-    params: z.object({ ...ViaPeer, path: TreePath }), result: z.object({ stat: FileStat.nullable() }),
-    doc: "A path's type, size and time; null when it doesn't exist.",
+    params: z.object({ ...ViaPeer, path: TreePath, noFollow: NoFollow }), result: z.object({ stat: FileStat.nullable() }),
+    doc: "A path's type, size and time; null when it doesn't exist. `noFollow`: no link on the way is followed.",
   }),
   treeRead: defineMethod({
     name: "tree.read", owner: "J", ...Files,
-    params: z.object({ ...ViaPeer, path: TreePath, offset: z.number().int().nonnegative().optional(), length: z.number().int().positive().max(16 * 1024 * 1024).optional(), encoding: z.enum(["utf8", "base64"]).optional() }),
+    params: z.object({ ...ViaPeer, path: TreePath, offset: z.number().int().nonnegative().optional(), length: z.number().int().positive().max(16 * 1024 * 1024).optional(), encoding: z.enum(["utf8", "base64"]).optional(), noFollow: NoFollow }),
     result: TreeData,
-    doc: "Reads a file on the computer that holds it.",
+    doc: "Reads a file on the computer that holds it. `noFollow`: only a plain file reached without a link is read.",
   }),
   treeWrite: defineMethod({
     name: "tree.write", owner: "J", ...Files,
