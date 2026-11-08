@@ -1,54 +1,28 @@
-// Gap B: the app against a REAL clover-core (not the fake). A characterization test: it pins what the
-// real daemon serves today so every lane's serving work shows up here as a test to update, and the
-// owner-priority "usable macOS app" milestone has a green gate in the meantime.
+// Gap B: the app against a REAL daemon core, booted in-process (never a spawned binary, never the
+// login keychain). A characterization test: it pins what the real daemon serves today so every lane's
+// serving work shows up here as a test to update, and the owner-priority "usable macOS app" milestone
+// has a green gate in the meantime.
 //
-// Runs only when CLOVER_REAL_DAEMON_BIN points at a built daemon (`bun run build:daemon` first); CI
-// never sets it, so CI stays on the fake. Locally: `CLOVER_REAL_DAEMON_BIN=dist/daemon/darwin-arm64/clover-core
-// scripts/heavy bun test test/real-daemon-interop.test.ts` from apps/desktop.
+// Safety (the #320 blocker): the daemon boots in this process via `startDaemon` on a temp home with a
+// FILE secret store (`secrets.json` under that home) and no agent provider — the same pattern as
+// packages/core/test/daemon-clover-pair-boot.test.ts. It asserts the pair has NO launcher (a test
+// daemon runs alone) and touches no real home, keychain, or network. Always runs, in CI too.
 //
 // Each `-32601` expectation below names its owning lane; when that lane serves the method on the Clover
 // connection, the expectation flips to `ok` (that flip IS the lane's Gap B done-signal for the method).
 import { afterEach, describe, expect, test } from "bun:test";
-import { spawn, type ChildProcess } from "node:child_process";
 import { connect, type Socket } from "node:net";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FileSecretStore, startDaemon, type RunningDaemon } from "@waifucave/clover-core";
 
-const bin = process.env.CLOVER_REAL_DAEMON_BIN;
-const enabled = bin !== undefined && bin !== "" && existsSync(bin);
-
-const daemons: ChildProcess[] = [];
+const daemons: RunningDaemon[] = [];
 const homes: string[] = [];
 afterEach(async () => {
-  for (const d of daemons.splice(0)) {
-    try { d.kill("SIGKILL"); } catch { /* already gone */ }
-  }
+  for (const d of daemons.splice(0)) await Promise.resolve(d.stop()).catch(() => {});
   for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
 });
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-async function bootRealDaemon(): Promise<{ home: string; sock: string; token: string }> {
-  const home = mkdtempSync(join(tmpdir(), "clover-realinterop-"));
-  homes.push(home);
-  const sock = join(home, "run", "core.sock");
-  const d = spawn(bin!, ["daemon", "run"], {
-    env: { ...process.env, CLOVER_HOME: home, CLOVER_PROFILE: "dev" },
-    stdio: "ignore",
-  });
-  daemons.push(d);
-  const end = Date.now() + 30000;
-  while (!existsSync(sock)) {
-    if (Date.now() > end) throw new Error(`real daemon never bound ${sock}`);
-    await sleep(200);
-  }
-  const token = readFileSync(join(home, "run", "app.token"), "utf8").trim();
-  expect(token.length).toBeGreaterThan(0);
-  return { home, sock, token };
-}
-
-type RpcResult = { result?: unknown; error?: { code: number; message: string } };
 
 /** One persistent connection: calls are multiplexed by id (a fresh connection proves, a hello'd one calls). */
 function makeClient(sock: string): Promise<{ call: (method: string, params?: unknown) => Promise<unknown>; close: () => void }> {
@@ -74,7 +48,7 @@ function makeClient(sock: string): Promise<{ call: (method: string, params?: unk
         buf = buf.slice(idx + 1);
         if (line === "") continue;
         try {
-          const msg = JSON.parse(line) as RpcResult & { id?: number };
+          const msg = JSON.parse(line) as { id?: number; result?: unknown; error?: { code: number; message: string } };
           if (typeof msg.id !== "number") continue;
           const w = waiting.get(msg.id);
           if (!w) continue;
@@ -99,10 +73,18 @@ async function expectNotServedYet(call: (method: string, params?: unknown) => Pr
   throw new Error(`${method} is served now — flip this expectation to ok (see the header)`);
 }
 
-describe.if(enabled)("the app against a real daemon (Gap B interop)", () => {
+describe("the app against a real daemon core, booted in-process (Gap B interop)", () => {
   test("hello, prove, pair.status and events.subscribe work; lanes' methods report not-served-yet", async () => {
-    const { home, sock, token } = await bootRealDaemon();
-    const client = await makeClient(sock);
+    const home = mkdtempSync(join(tmpdir(), "clover-realinterop-"));
+    homes.push(home);
+    // File secrets, no provider, no launcher: this daemon can reach neither the login keychain nor the machine.
+    const daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null });
+    daemons.push(daemon);
+    expect(daemon.pair?.launcher, "a test daemon runs alone: no launcher").toBeNull();
+    const token = readFileSync(join(home, "run", "app.token"), "utf8").trim();
+    expect(token.length).toBeGreaterThan(0);
+
+    const client = await makeClient(daemon.socketPath);
     try {
       // Lane C serves these today.
       const hello = await client.call("protocol.hello", { protocolVersion: 1, role: "app", token, clientName: "real-interop", features: ["app.show", "app.quit", "layers"] }) as { ok?: boolean; caller?: { kind?: string; client?: string } };
@@ -110,7 +92,7 @@ describe.if(enabled)("the app against a real daemon (Gap B interop)", () => {
       expect(hello.caller).toMatchObject({ kind: "user", client: "app" });
 
       // Prove runs pre-hello on its own connection (lane C's review-S3 shape).
-      const prover = await makeClient(sock);
+      const prover = await makeClient(daemon.socketPath);
       try {
         const proof = await prover.call("protocol.prove", { nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }) as { proof?: unknown; pid?: unknown };
         expect(typeof proof.proof).toBe("string");
@@ -130,7 +112,7 @@ describe.if(enabled)("the app against a real daemon (Gap B interop)", () => {
       await expectNotServedYet(client.call, "plugin.list");
       // Lane C serves card.list then.
       await expectNotServedYet(client.call, "card.list");
-      // Lane E serves ui.settings itself (the app's loadRegistry reads it, defaulting meanwhile): flip to ok then.
+      // Lane B serves ui.settings (UiSettings): flip to ok then; the app keeps its default fallback meanwhile.
       await expectNotServedYet(client.call, "ui.settings");
       // Lane D serves sessions then.
       await expectNotServedYet(client.call, "session.list");
