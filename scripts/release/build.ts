@@ -136,12 +136,21 @@ export function daemonInApp(outDir: string, os: BuildOs): string {
     : join(outDir, "win-unpacked", "resources", "daemon", "clover-core.exe");
 }
 
+/** The identity as electron-builder's `mac.identity` takes it: the full name less "Developer ID Application: ". */
+export function builderIdentity(identity: string): string {
+  const name = identity.replace(/^Developer ID Application: /, "");
+  if (name === "" || name === identity) throw new Error("CLOVER_MAC_IDENTITY is a Developer ID Application identity named in full");
+  return name;
+}
+
 /** electron-builder's command for the OS's release, run in apps/desktop. Secrets reach it through its environment only. */
 export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, string | undefined>): string[] {
   const base = a.os === "mac" ? ["electron-builder", "--mac", "dmg", "zip", "--arm64"] : ["electron-builder", "--win", "nsis", "--x64"];
   const out = [...base, "--publish", "never", ...channelArgs(a.channel)];
   if (!a.sign) return out;
-  if (a.os === "mac") return [...out, `-c.mac.identity=${env.CLOVER_MAC_IDENTITY}`, "-c.mac.notarize=true"];
+  // electron-builder takes the identity without its "Developer ID Application: " prefix (it refuses one that has it,
+  // and picks the certificate type itself); codesign takes the full name.
+  if (a.os === "mac") return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=true"];
   return [...out, "-c.win.forceCodeSigning=true", `-c.win.signtoolOptions.publisherName=${env.CLOVER_WIN_PUBLISHER}`];
 }
 

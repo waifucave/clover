@@ -7,7 +7,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
@@ -231,7 +231,10 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(releaseBuilderArgs(unsigned, env)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
     expect(builderEnv(unsigned, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
     const signed = { ...unsigned, sign: true };
-    expect(releaseBuilderArgs(signed, env)).toEqual([...releaseBuilderArgs(unsigned, env), "-c.mac.identity=Developer ID Application: Example Ltd (AB12CD34EF)", "-c.mac.notarize=true"]);
+    // electron-builder refuses the "Developer ID Application: " prefix (it picks the type itself): the name without it.
+    expect(releaseBuilderArgs(signed, env)).toEqual([...releaseBuilderArgs(unsigned, env), "-c.mac.identity=Example Ltd (AB12CD34EF)", "-c.mac.notarize=true"]);
+    expect(builderIdentity("Developer ID Application: Example Ltd (AB12CD34EF)")).toBe("Example Ltd (AB12CD34EF)");
+    expect(() => builderIdentity("Example Ltd (AB12CD34EF)")).toThrow(/named in full/);
     expect(builderEnv(signed, env)).toBe(env);
     const win = { os: "win", channel: "beta", sign: true, dryRun: false } as const;
     expect(releaseBuilderArgs(win, { CLOVER_WIN_PUBLISHER: "Example Ltd" })).toEqual(
