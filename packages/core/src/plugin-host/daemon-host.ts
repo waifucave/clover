@@ -6,21 +6,27 @@
 //   plugin's process isn't served yet: starting one fails with why, under the crash rules.
 // * A process gets only a small environment (the path, home, temp folder and locale), never the daemon's: its workers
 //   copy theirs from it.
-// * The router: the process check (S4) and the capability gate, in front of the areas it serves (none yet: every call
-//   answers `refused`, "not served on this computer", until B-M2's API PR adds them).
+// * The router: the process check (S4) and the capability gate, in front of the areas served here (points, synced
+//   storage, settings, commands and, with an approval broker, confirm cards).
 // * Logs: a worker's console lines go to `<home>/logs/plugins/<id>.log`, a process's own output to the daemon's log.
 // * `pluginSecrets`: the contract store narrowed to `get`, for the model plugins (lane A). A plugin's own secrets sit
-//   under `{ owner: { kind: "plugin", pluginId }, name }`.
+//   under `{ owner: { kind: "plugin", pluginId }, name }`, where plugin settings put their `secret` fields.
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
+import { commandOwner, commandsApi } from "../commands/views";
+import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import { guardApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore } from "../contracts/secret-store";
+import { confirmApi } from "./api/confirm";
+import { pointsApi } from "./api/points";
 import { createApiRouter, type ApiHandlers } from "./api/router";
+import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
+import { fileSyncedStores, storageApi, SyncedStores } from "./api/storage";
 import { pluginDataFolder, pluginPath } from "./paths";
 import { CorePluginHost, type HostedRecord } from "./core-host";
 import { hostProcessLaunch, spawnHostProcess, type HostProcessLaunch } from "./launch";
@@ -36,6 +42,8 @@ export interface DaemonPluginHost {
   readonly registry: PluginRegistry;
   /** The contract store narrowed to `get`: a plugin's own items are `{ owner: { kind: "plugin", pluginId }, name }`. */
   readonly pluginSecrets: Pick<SecretStore, "get">;
+  /** The user's side of plugin settings (`plugin.settings.get`/`set`). */
+  readonly settings: PluginSettings;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -47,12 +55,23 @@ export interface StartPluginHostOptions {
   registry: PluginRegistry;
   /** The contract secret store (lane C's). */
   secrets: SecretStore;
+  /** For `confirm` cards; absent, they're refused as not served. */
+  approvals?: Pick<ApprovalBroker, "request">;
+  /** The URL a component or host fetches a plugin's file from (lane E's asset server). */
+  assetUrl?: (pluginId: string, path: string) => string;
   /** The daemon's log, for a process's own output. */
   log?: (line: string) => void;
   clock?: Clock;
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
   env?: Readonly<Record<string, string | undefined>>;
+}
+
+/** Where a plugin's files are served from until lane E names it: the layer of its top-level plugin. */
+function defaultAssetUrl(pluginId: string, path: string): string {
+  const top = pluginId.split("/")[0]!;
+  const rest = pluginId.includes("/") ? `${pluginId.slice(top.length + 1)}/` : "";
+  return `clover-plugin://${top}/${rest}${path.replace(/^\/+/, "")}`;
 }
 
 /** The registry states a plugin's host half may run in: OK'd and on (`running`, `waiting`), or stopped by the crash
@@ -137,12 +156,19 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log: pluginLog,
   });
 
-  const handlers: ApiHandlers[] = [];
+  const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets });
+  const handlers: ApiHandlers[] = [
+    pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
+    storageApi(new SyncedStores(fileSyncedStores(o.home))),
+    settingsApi(settings),
+    commandsApi(o.registry),
+    ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
+  ];
   const recordOf = (id: string) => {
     const r = o.registry.get(id);
     return r === undefined ? undefined : installRecordOf(r);
   };
-  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers }), recordOf));
+  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name) }), recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its
   // calls failing, and starts fresh on its next use; one running from a tree that has since changed reloads.
@@ -164,6 +190,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     host,
     registry: o.registry,
     pluginSecrets: { get: (ref) => o.secrets.get(ref) },
+    settings,
     async close() {
       if (closed) return;
       closed = true;
