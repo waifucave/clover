@@ -169,4 +169,24 @@ describe("the daemon's links (H-M1 wiring)", () => {
     stops.push(() => d.close());
     expect(d.links!.registry.get(d.links!.key.id)?.name.length).toBe(63);
   });
+
+  test("a dev build with a handshake it can't use (http to a host that isn't this one) doesn't start its links, and never falls back to production's", async () => {
+    const saved = process.env.CLOVER_HANDSHAKE_URL;
+    process.env.CLOVER_HANDSHAKE_URL = "http://handshake.example.invalid";
+    try {
+      const home = mkdtempSync(join(tmpdir(), "clover-int-account-"));
+      const net = new MemoryNetwork();
+      const err = await startDaemonLinks({
+        home, store: new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
+        clock, self: { name: "Studio", os: "macos" }, handlers: {}, binary: null, publicTime: null, mainComputer: { watchSleep: false }, driver: false,
+        wire: (key) => net.endpoint(key.publicKey), dispatch: async () => null, watch: () => () => {},
+      }).then((d) => (stops.push(() => d.close()), undefined), (e: unknown) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toMatch(/the links don't start: handshakeUrl \(from env\) isn't used.*never falls back to production's handshake/);
+      expect((err as Error).message).not.toContain("example.invalid"); // the value itself is never said
+    } finally {
+      if (saved === undefined) delete process.env.CLOVER_HANDSHAKE_URL;
+      else process.env.CLOVER_HANDSHAKE_URL = saved;
+    }
+  });
 });

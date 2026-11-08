@@ -27,6 +27,8 @@ import type { SecretStore } from "../contracts/secret-store";
 import type { AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import { SntpTimeSource } from "../clock/shared-clock";
 import { waifucaveAccount, type WaifucaveAccount } from "../identity/account-config";
+import { DIST_BUILD } from "../build-kind";
+import { ContractError } from "../contracts/common";
 import { devicesMethods, mountMainChoiceRequests, type CardOpener } from "../devices/rpc";
 import type { UpdateRestartGate } from "../lease/main";
 import { HandshakeClient } from "../links/handshake";
@@ -122,6 +124,12 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
   const settings = input.handshake === undefined
     ? await waifucaveAccount({ home: input.home, store: input.store, clock: input.clock, log })
     : undefined;
+  // A dev or test build that names a handshake it can't use (http to a host that isn't this one, say) doesn't start
+  // its links on production's instead: it says why and stops there. A release build ignores the override anyway.
+  const badHandshake = DIST_BUILD ? undefined : settings?.config.problems.find((p) => p.startsWith("handshakeUrl ("));
+  if (badHandshake !== undefined) {
+    throw new ContractError("invalid", `the links don't start: ${badHandshake}, and a dev build never falls back to production's handshake`);
+  }
   const account = input.account === undefined ? settings : input.account ?? undefined;
   const handshake = input.handshake === undefined
     ? new HandshakeClient({ baseUrl: settings!.handshakeUrl, clock: input.clock })
