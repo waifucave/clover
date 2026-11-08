@@ -15,9 +15,10 @@
 // back silently (to process-group tracking, for the holder).
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { inflateRawSync } from "node:zlib";
 import type { DaemonTarget } from "./build-daemon";
 
 /** The Bun that `clover-plugin-bun` is: the release asset per target and its SHA-256, pinned here (not trusted from
@@ -116,28 +117,69 @@ export async function pluginBunZip(target: DaemonTarget, fetcher: Fetcher = http
   return zip;
 }
 
+/**
+ * One file of a zip, read in-process (no `tar` or `unzip`: Git Bash's GNU tar, first on a Windows runner's PATH, reads
+ * `C:\…` as a remote `host:path`). Stored or deflated entries, each checked against its size and CRC-32; undefined when
+ * the zip has no entry by that name. Refuses what it can't read whole: zip64, an encrypted entry, another method.
+ */
+export function zipEntry(zip: Uint8Array, name: string): Uint8Array | undefined {
+  const v = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  const u16 = (o: number) => v.getUint16(o, true);
+  const u32 = (o: number) => v.getUint32(o, true);
+  let eocd = -1;
+  for (let i = zip.length - 22; i >= Math.max(0, zip.length - 22 - 0xffff); i--) {
+    if (u32(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("not a zip (no end-of-central-directory record)");
+  const count = u16(eocd + 10), cdOffset = u32(eocd + 16);
+  if (count === 0xffff || cdOffset === 0xffffffff) throw new Error("a zip64 archive, which this reader doesn't take");
+  let p = cdOffset;
+  for (let n = 0; n < count; n++) {
+    if (p + 46 > zip.length || u32(p) !== 0x02014b50) throw new Error("a zip whose central directory doesn't read");
+    const flags = u16(p + 8), method = u16(p + 10), crc = u32(p + 16), csize = u32(p + 20), usize = u32(p + 24);
+    const nameLen = u16(p + 28), extraLen = u16(p + 30), commentLen = u16(p + 32), local = u32(p + 42);
+    const entry = new TextDecoder().decode(zip.subarray(p + 46, p + 46 + nameLen));
+    p += 46 + nameLen + extraLen + commentLen;
+    if (entry !== name) continue;
+    if (flags & 1) throw new Error(`${name} is encrypted`);
+    if (csize === 0xffffffff || usize === 0xffffffff || local === 0xffffffff) throw new Error(`${name} is a zip64 entry, which this reader doesn't take`);
+    if (u32(local) !== 0x04034b50) throw new Error(`${name}'s local header doesn't read`);
+    const start = local + 30 + u16(local + 26) + u16(local + 28);
+    const data = zip.subarray(start, start + csize);
+    if (data.length !== csize) throw new Error(`${name} is cut short`);
+    const bytes = method === 0 ? data : method === 8 ? new Uint8Array(inflateRawSync(data)) : undefined;
+    if (bytes === undefined) throw new Error(`${name} is compressed with method ${method}, which this reader doesn't take`);
+    if (bytes.length !== usize || (Bun.hash.crc32(bytes) >>> 0) !== crc) throw new Error(`${name} doesn't match its size and CRC-32`);
+    return bytes;
+  }
+  return undefined;
+}
+
+/** Writes plain Bun for `target` from its release `zip` to `out`, unpacked in-process (zipEntry). */
+export function unpackPluginBun(zip: string, target: DaemonTarget, out: string): void {
+  const { asset } = PLUGIN_BUN.assets[target];
+  const inside = `${asset}/${target.startsWith("windows-") ? "bun.exe" : "bun"}`;
+  let bytes: Uint8Array | undefined;
+  try {
+    bytes = zipEntry(new Uint8Array(readFileSync(zip)), inside);
+  } catch (e) {
+    throw new Error(`could not unpack ${asset}.zip: ${(e as Error).message}`);
+  }
+  if (bytes === undefined) throw new Error(`${asset}.zip holds no ${inside}`);
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, bytes);
+  chmodSync(out, 0o755);
+}
+
 /** Stages plain Bun for `target` at `out` (`clover-plugin-bun`, `.exe` on Windows). */
 export async function stagePluginBun(target: DaemonTarget, out: string, fetcher?: Fetcher): Promise<void> {
   const zip = await pluginBunZip(target, fetcher);
-  const { asset } = PLUGIN_BUN.assets[target];
-  const work = mkdtempSync(join(tmpdir(), "clover-plugin-bun-"));
-  try {
-    // `tar` reads zips on macOS (bsdtar) and Windows 10 and later; Linux runners have `unzip`.
-    const x = process.platform === "linux" ? spawnSync("unzip", ["-q", zip, "-d", work], { encoding: "utf8" }) : spawnSync("tar", ["-xf", zip, "-C", work], { encoding: "utf8" });
-    if (x.status !== 0) throw new Error(`could not unpack ${asset}.zip: ${(x.stderr ?? "").trim()}`);
-    const bin = join(work, asset, target.startsWith("windows-") ? "bun.exe" : "bun");
-    if (!existsSync(bin)) throw new Error(`${asset}.zip holds no ${asset}/${target.startsWith("windows-") ? "bun.exe" : "bun"}`);
-    mkdirSync(dirname(out), { recursive: true });
-    copyFileSync(bin, out);
-    chmodSync(out, 0o755);
-    // Oven's signature names Bun; ours names clover-plugin-bun (ad hoc here; a release or the dev daemon signs it for real).
-    if (target === "darwin-arm64" && process.platform === "darwin") {
-      const entitlements = join(dirname(import.meta.dir), PLUGIN_BUN_ENTITLEMENTS);
-      const sign = spawnSync("codesign", ["--force", "--sign", "-", "--identifier", BUNDLED_IDENTIFIERS[PLUGIN_BUN_FILE].dist, "--options", "runtime", "--entitlements", entitlements, out], { encoding: "utf8" });
-      if (sign.status !== 0) throw new Error(`codesign (ad hoc) of ${PLUGIN_BUN_FILE} failed: ${sign.stderr.trim()}`);
-    }
-  } finally {
-    rmSync(work, { recursive: true, force: true });
+  unpackPluginBun(zip, target, out);
+  // Oven's signature names Bun; ours names clover-plugin-bun (ad hoc here; a release or the dev daemon signs it for real).
+  if (target === "darwin-arm64" && process.platform === "darwin") {
+    const entitlements = join(dirname(import.meta.dir), PLUGIN_BUN_ENTITLEMENTS);
+    const sign = spawnSync("codesign", ["--force", "--sign", "-", "--identifier", BUNDLED_IDENTIFIERS[PLUGIN_BUN_FILE].dist, "--options", "runtime", "--entitlements", entitlements, out], { encoding: "utf8" });
+    if (sign.status !== 0) throw new Error(`codesign (ad hoc) of ${PLUGIN_BUN_FILE} failed: ${sign.stderr.trim()}`);
   }
 }
 
