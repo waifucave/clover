@@ -54,7 +54,8 @@ import { DEV_KEYCHAIN_SERVICE, oldCreatorStillOwnsItems, transitionDevKeychain }
 import { keychainUnlocked } from "../packages/core/src/auth/keychain-ffi";
 import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
-import { runScriptLine } from "./build-daemon";
+import { hostTarget, runScriptLine } from "./build-daemon";
+import { BUNDLED_IDENTIFIERS, buildHolder, HOLDER_FILE, holderSource } from "./bundled-binaries";
 import { DYLD_ENTITLEMENT, sealFile } from "./seal-bun-doors";
 import { bunPinProblem } from "./bun-pin";
 import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devDaemonPlan, devDaemonRequirement, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
@@ -73,9 +74,8 @@ function run(cmd: string, args: string[], opts: { cwd?: string } = {}): { status
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-/** macOS: sign the freshly compiled `tmp` as the dev daemon, and check it before it is moved into place. */
-function signForKeychain(tmp: string): void {
-  const identity = resolveDevSigningIdentity({
+function devSigningIdentity(): { name: string; hash: string } {
+  return resolveDevSigningIdentity({
     identitiesOutput: run("security", ["find-identity", "-v", "-p", "codesigning"]).stdout,
     teamId: CLOVER_TEAM_ID,
     override: process.env.CLOVER_DEV_SIGN_IDENTITY,
@@ -86,6 +86,11 @@ function signForKeychain(tmp: string): void {
       return r.status === 0 ? r.stdout : undefined;
     },
   });
+}
+
+/** macOS: sign the freshly compiled `tmp` as the dev daemon, and check it before it is moved into place. */
+function signForKeychain(tmp: string): void {
+  const identity = devSigningIdentity();
   console.error(`dev:daemon: signing identity ${identity.name}`);
   const requirement = devDaemonRequirement(CLOVER_TEAM_ID);
   const signed = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_DAEMON_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]);
@@ -131,6 +136,28 @@ function build(build: NonNullable<DevDaemonPlan["build"]>, binary: string): void
   }
 }
 
+/**
+ * Lane A's process holder beside the dev core (macOS; scripts/bundled-binaries.ts), signed with the dev identity under
+ * its own `.dev` identifier, never the dev core's, which the dev Keychain items trust. Plugin Bun's dev copy is lane
+ * B's step. A dev build without the holder's source (an agent runtime before SDK 0.0.70) says so and goes on: commands
+ * fall back to process-group tracking, which a packaged build never does (its package gate).
+ */
+async function buildBundled(dir: string, sign: boolean): Promise<void> {
+  if (hostTarget() !== "darwin-arm64") return;
+  if (holderSource(REPO_ROOT) === undefined) {
+    console.error(`dev:daemon: no ${HOLDER_FILE} (the installed agent runtime has no native/process-holder.c before SDK 0.0.70): a bot's commands fall back to process-group tracking`);
+    return;
+  }
+  const holder = join(dir, HOLDER_FILE);
+  buildHolder(REPO_ROOT, holder);
+  if (sign) {
+    const identity = devSigningIdentity();
+    const r = run("codesign", ["--force", "--sign", identity.hash, "--identifier", BUNDLED_IDENTIFIERS[HOLDER_FILE].dev, "--options", "runtime", "--timestamp=none", holder]);
+    if (r.status !== 0) die(`codesign of ${holder} failed: ${r.stderr.trim()}`);
+  }
+  console.error(`dev:daemon: beside it ${holder}${sign ? ` (${BUNDLED_IDENTIFIERS[HOLDER_FILE].dev})` : ""}`);
+}
+
 function devEnv(plan: DevDaemonPlan): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...plan.env };
   // A test preload's override has no business here (and a default home ignores it anyway).
@@ -165,7 +192,10 @@ async function main(): Promise<void> {
   if (pin !== null) die(`${pin} — run it with the pinned Bun: scripts/pinned-bun run dev:daemon`);
   const binary = join(REPO_ROOT, ...plan.binary.split("/"));
   const home = plan.home;
-  if (plan.build !== undefined) build(plan.build, binary);
+  if (plan.build !== undefined) {
+    build(plan.build, binary);
+    await buildBundled(dirname(binary), plan.build.sign);
+  }
   if (!existsSync(binary)) die(`${binary} does not exist — run without --no-build`);
   const env = devEnv(plan);
 

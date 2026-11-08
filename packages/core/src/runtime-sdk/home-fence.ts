@@ -51,7 +51,8 @@ export function homeFencedDirs(home: string, options?: HostStorageFenceOptions):
  * lies under one (`isHomeWriteOnly`). The escape floor matches one only as a whole path segment
  * (`<home>/computer-use-notes.txt` is not `<home>/computer-use`), a glob after it still counting.
  */
-// `bin` is not here: it holds the code a server's next start runs (`<home>/bin/clover-core`), so the floor refuses any
+// `bin` is not here: it holds the code a server's next start runs (`<home>/bin/daemon/clover-core`, plain Bun beside it,
+// and the bundled plugins in `<home>/bin/plugins`), so the floor refuses any
 // mention of it, as it does `runtimes` (a write through an interpreter, `python3 -c "open(…,'wb')"`, has no write shape
 // the floor could see). `update` and `install.json` (a server's self-update records) can only freeze updates on their own.
 // `cache` stays: the model is pointed at the skill-plugin views under it to read and run them.

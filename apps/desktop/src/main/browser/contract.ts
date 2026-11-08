@@ -6,6 +6,7 @@
 // `headless` means "offscreen, drawing for a bot"; while a screen reader is on, new bot tabs start as real views in a
 // hidden host window instead (the hybrid).
 import { createHash } from "node:crypto";
+import type { BrowserProxySetting } from "./proxy";
 
 /** A bot's tabs live in its own partition, the user's in another; never per site (§12.1). A session without a bot has
  *  a partition of its own (ruling R10). `session` is proposed to lane B, not in its pin yet. */
@@ -39,6 +40,8 @@ export interface TabView {
   loading: boolean;
   /** The user holds it in the view; an agent's commands are refused meanwhile. */
   heldByUser: boolean;
+  /** The view showing it live, while it is `shown` (lane B's B-M1 field, ruling R8). */
+  view?: string;
 }
 
 export type ScreenshotFormat = "png" | "jpeg" | "webp";
@@ -60,7 +63,30 @@ export type AppTabCommand =
   | { kind: "navigate"; url: string }
   | { kind: "place"; place: TabPlace; view?: string; viewport?: Viewport }
   | { kind: "screenshot"; format: ScreenshotFormat; quality?: number }
-  | { kind: "cdp"; method: string; params?: Record<string, unknown> };
+  | { kind: "cdp"; method: string; params?: Record<string, unknown> }
+  /** Starts or stops streaming the tab as video to another device (`browser.stream`, spec §12.1): the chunks come back
+   *  through the host's `streamData`, tagged with `stream`. */
+  | { kind: "stream"; stream: string; on: boolean; maxKbps?: number; codecs?: StreamCodec[] }
+  /** While a stream runs: a keyframe next, and/or a new target bitrate (the sender fell behind, or caught up). */
+  | { kind: "stream-control"; stream: string; keyframe?: boolean; kbps?: number };
+
+/** The codecs a tab's stream may use: H.264 where a hardware encoder exists, else VP8 (spec §12.1, S7); JPEG frames
+ *  where no encoder runs at all (the headless shell's screencast). Which a receiver decodes is lane I's contract. */
+export type StreamCodec = "h264" | "vp8" | "jpeg";
+
+/** One piece of a tab's stream, from the app (or the headless shell) to the daemon, which frames it onto the link. */
+export type StreamChunk =
+  | { kind: "config"; codec: StreamCodec; width: number; height: number; /** The codec string, e.g. `avc1.42E01F`. */ codecString: string }
+  | { kind: "frame"; key: boolean; /** Microseconds. */ timestamp: number; data: Uint8Array }
+  | { kind: "ended"; reason: "stopped" | "closed" | "failed"; message?: string };
+
+/** The browser's network settings, as the core sends them to whoever runs the tabs (`app.browser.configure`, and the
+ *  headless shell): the proxy setting (R14) and the bots whose LAN setting is on (their tabs reach private and
+ *  link-local addresses; loopback stays refused for bots, and the metadata address for everyone). */
+export interface BrowserNetworkConfig {
+  proxy: BrowserProxySetting;
+  lanBots: string[];
+}
 
 /** What the app reports back (`browser.report`). */
 export type AppTabEvent =
