@@ -18,8 +18,8 @@ export interface FakeView {
   source?: "bundled" | "local" | "dev";
   enabledAt?: number;
   capabilities?: string[];
-  isBot?: boolean;
-  botTheme?: string;
+  /** The bot's name and its tab's theme/layout (lane B's nested `bot`, replacing flat isBot/botTheme). */
+  bot?: { name: string; theme?: string; layout?: string };
   name?: string;
   css?: string[];
 }
@@ -77,7 +77,7 @@ export function cloverViews(): FakeView[] {
  *  theme's own paths are relative to it). */
 export function alphaView(): FakeView {
   const dir = join(REPO, "plugins", "alpha");
-  return { pluginId: "alpha", treeHash: ZERO, layer: "alpha", assetBase: dir, ui: [], themes: existsSync(join(dir, "tab", "theme.json")) ? [{ id: "alpha", file: "tab/theme.json" }] : [], locales: [], bots: "all", source: "bundled", enabledAt: 100, isBot: true, botTheme: "alpha", name: "Alpha" };
+  return { pluginId: "alpha", treeHash: ZERO, layer: "alpha", assetBase: dir, ui: [], themes: existsSync(join(dir, "tab", "theme.json")) ? [{ id: "alpha", file: "tab/theme.json" }] : [], locales: [], bots: "all", source: "bundled", enabledAt: 100, name: "Alpha", bot: { name: "Alpha", theme: "alpha" } };
 }
 
 /** A plugin folder of the tests' own, installed by the user. */
