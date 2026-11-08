@@ -3588,15 +3588,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         if (partsStopping) return;
       }
     }
-    // The plugins, before the links and whatever they do; a registry or host that can't start leaves the rest running.
-    let pluginRegistry: OpenedRegistry["registry"] | undefined;
-    try {
-      pluginRegistry = await startPlugins();
-    } catch (err) {
+    // The plugins start beside the links, whatever the links do (no sidecar, a hung wire); a registry or host that can't
+    // start leaves the rest running. One that finishes starting after the stop closes itself as it does.
+    const pluginsStarted = startPlugins().catch((err: unknown) => {
       console.error(`[plugins] not started: ${(err as Error).message}`);
-    }
-    if (partsStopping) return void (await closeStarted());
-    if (opts.links === false) return;
+      return undefined;
+    });
+    void pluginsStarted.then(async () => { if (partsStopping) await closeStarted(); });
+    if (opts.links === false) return void (await pluginsStarted);
     const started = await startDaemonLinks({
       home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
@@ -3607,8 +3606,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     daemonLinks = started;
     if (partsStopping) return void (await closeStarted());
-    if (!started.links) return;
+    if (!started.links) return void (await pluginsStarted);
     const links = started.links;
+    const pluginRegistry = await pluginsStarted;
+    if (partsStopping) return void (await closeStarted());
     // A node or bot side that can't start leaves the links up (their methods answer), and says why.
     try {
       const p = opts.parts ?? {};
