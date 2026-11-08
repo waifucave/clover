@@ -44,7 +44,7 @@ export async function build() {
   await checked("/usr/bin/xcrun", ["swift", "build", "--package-path", join(root, "native"), "--jobs", "4"]);
   const library = join(buildRoot, "libWinterCoworkVM.dylib"), binary = join(buildRoot, "winter-cowork-probe");
   copyFileSync(join(root, "native/.build/debug/libWinterCoworkVM.dylib"), library);
-  await checked(process.execPath, ["build", "--compile", "--target=bun-darwin-arm64", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", "--outfile", binary, join(root, "probe.ts")]);
+  await checked(process.execPath, ["build", "--compile", "--no-macros", "--target=bun-darwin-arm64", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", "--outfile", binary, join(root, "probe.ts")]);
   await checked("/usr/bin/codesign", ["--force", "--sign", "-", library]);
   await checked("/usr/bin/codesign", ["--force", "--sign", "-", "--options", "runtime", "--entitlements", join(root, "probe.entitlements"), binary]);
   console.log(JSON.stringify({ built: { binary, library }, signing: "ad-hoc fixture only" }));

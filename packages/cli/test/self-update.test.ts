@@ -3,12 +3,14 @@
 // binary crashing twice (rolled back), and a good swap. Nothing reaches the network or a real home.
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, signFeed } from "@waifucave/clover-update-feed";
 import { UpdateGate, UPDATE_RESTART_EXIT_CODE } from "@waifucave/clover-core";
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, isNewer, MAX_FEED_BYTES, readCapped, rolledBack, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
+import { badBinary, beginUpdatedBoot, replaceBinary, bootWasGood, coreTargetOf, healFromOld, isNewer, MAX_FEED_BYTES, oldBinary, pluginsDirOf, superviseTarget, readCapped, rolledBack, runBundledManifest, runVersion, SelfUpdater, SWAP_BACKOFF_MS, versionEnv, type Fetcher } from "../src/self-update";
+import { recoverServerPlugins, treeManifestSha256 } from "../src/plugins-install";
+import { realOps, type DurableOps } from "../src/durable";
 
 const posix = test.if(process.platform !== "win32");
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -58,10 +60,26 @@ function github(key: { privateKey: string }, releases: Release[]) {
   return { fetch, asked, files };
 }
 
-function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number }) {
+/** A plugins tree for `version` written at `dir`, and the SHA-256 of the manifest it measures to. */
+function pluginsTree(dir: string, version: string): string {
+  mkdirSync(join(dir, "clover"), { recursive: true });
+  writeFileSync(join(dir, "clover", "clover.json"), `{"id":"clover","v":"${version}"}`);
+  return treeManifestSha256(dir)!;
+}
+
+/** The server's bundled plugins (the `<home>/bin/daemon` layout): what the new binary says it carries, and how a
+ *  version's tree is staged (or refused). */
+interface PluginsOpt { says?: string | "none" | undefined; refuse?: string }
+
+function server(opts: { version?: string; channel?: "latest" | "beta"; releases: Release[]; busy?: () => number; onRenew?: () => void; drainMs?: number; reopenAfterMs?: number; plugins?: PluginsOpt; ops?: DurableOps }) {
   const home = mkdtempSync(join(tmpdir(), "clover-self-update-"));
-  mkdirSync(join(home, "bin"));
-  const bin = join(home, "bin", "clover-core");
+  const binDir = opts.plugins === undefined ? join(home, "bin") : join(home, "bin", "daemon");
+  mkdirSync(binDir, { recursive: true });
+  const bin = join(binDir, "clover-core");
+  const pluginsDir = join(home, "bin", "plugins");
+  const staged: string[] = [];
+  const nextSha = pluginsTree(join(mkdtempSync(join(tmpdir(), "clover-self-update-tree-")), "p"), "1.3.0");
+  if (opts.plugins !== undefined) pluginsTree(pluginsDir, opts.version ?? "1.2.3");
   writeFileSync(bin, versionScript(opts.version ?? "1.2.3"), { mode: 0o755 });
   const key = generateFeedKey();
   const gh = github(key, opts.releases);
@@ -85,8 +103,22 @@ function server(opts: { version?: string; channel?: "latest" | "beta"; releases:
     ...(opts.reopenAfterMs !== undefined ? { reopenAfterMs: opts.reopenAfterMs } : {}),
     exit: (code) => { exited.push(code); },
     log: (l) => lines.push(l),
+    ...(opts.ops === undefined ? {} : { ops: opts.ops }),
+    ...(opts.plugins === undefined ? {} : {
+      runManifest: async () => ("says" in opts.plugins! ? opts.plugins!.says : nextSha),
+      plugins: {
+        dir: pluginsDir,
+        stage: async (version: string, sha: string) => {
+          staged.push(`${version} ${sha === nextSha ? "the new manifest" : sha}`);
+          if (opts.plugins!.refuse !== undefined) return { why: opts.plugins!.refuse };
+          rmSync(`${pluginsDir}.new`, { recursive: true, force: true });
+          pluginsTree(`${pluginsDir}.new`, version);
+          return { files: 1 };
+        },
+      },
+    }),
   });
-  return { home, bin, updater, did, exited, lines, asked: gh.asked, files: gh.files, gate, advance: (ms: number) => { now += ms; } };
+  return { home, bin, pluginsDir, staged, nextSha, updater, did, exited, lines, asked: gh.asked, files: gh.files, gate, advance: (ms: number) => { now += ms; } };
 }
 
 describe("a server's daemon updating itself", () => {
@@ -308,5 +340,261 @@ describe("a server's daemon updating itself", () => {
     expect(s.exited).toEqual([]);
     expect(s.gate.closed).toBe(false);
     expect(s.lines.some((l) => l.includes("installing the update failed") && l.includes("no checked update"))).toBe(true);
+  });
+
+  posix("the bundled plugins update with the daemon: staged against the new binary's manifest, swapped with it, kept as .old until a good boot", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    const before = treeManifestSha256(s.pluginsDir);
+    expect(await s.updater.check()).toEqual({ kind: "ready", version: "1.3.0" });
+    expect(s.staged).toEqual(["1.3.0 the new manifest"]);
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.3.0"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(s.nextSha);
+    expect(treeManifestSha256(`${s.pluginsDir}.old`)).toBe(before);
+    expect(existsSync(`${s.pluginsDir}.new`)).toBe(false);
+    expect(pluginsDirOf(s.bin)).toBe(s.pluginsDir);
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    bootWasGood(s.home, s.bin);
+    expect(existsSync(`${s.pluginsDir}.old`)).toBe(false);
+  });
+
+  posix("a rollback puts the old plugins back with the old binary", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    const before = treeManifestSha256(s.pluginsDir);
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("rolled-back");
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(before);
+    expect(treeManifestSha256(`${s.pluginsDir}.bad`)).toBe(s.nextSha);
+    bootWasGood(s.home, s.bin);
+    expect(existsSync(`${s.pluginsDir}.bad`)).toBe(false);
+  });
+
+  posix("a new binary with no manifest, or plugins that can't be had, refuse the update: nothing waits", async () => {
+    const none = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { says: "none" } });
+    expect(await none.updater.check()).toEqual({ kind: "refused", why: "clover-core-1.3.0-linux-x64 carries no bundled-plugins manifest" });
+    expect(existsSync(`${none.bin}.new`)).toBe(false);
+    const silent = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { says: undefined } });
+    expect((await silent.updater.check()).kind).toBe("refused");
+    const refused = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: { refuse: "clover-plugins-1.3.0-linux-x64.tar.gz: bad signature" } });
+    expect(await refused.updater.check()).toEqual({ kind: "refused", why: "the bundled plugins for 1.3.0: clover-plugins-1.3.0-linux-x64.tar.gz: bad signature" });
+    expect(existsSync(`${refused.bin}.new`)).toBe(false);
+    expect(refused.updater.ready()).toBe(false);
+  });
+
+  posix("plugins.new changed while it waited: refused at the swap, the daemon keeps running on both old ones", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    const before = treeManifestSha256(s.pluginsDir);
+    await s.updater.check();
+    writeFileSync(join(`${s.pluginsDir}.new`, "clover", "planted.js"), "globalThis.x = 1;");
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    expect(s.exited).toEqual([]);
+    expect(s.gate.closed).toBe(false);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(before);
+    expect(existsSync(`${s.pluginsDir}.new`)).toBe(false);
+    expect(s.lines.at(-1)).toContain("is no longer the checked plugins for 1.3.0");
+  });
+
+  posix("__bundled-manifest is asked like --version: PATH alone, its SHA-256 or none, and nothing else counts", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-manifest-check-"));
+    const sha = "a".repeat(64);
+    const answer = (name: string, body: string) => { writeFileSync(join(dir, name), script(body), { mode: 0o755 }); return join(dir, name); };
+    expect(await runBundledManifest(answer("one", `[ "$1" = __bundled-manifest ] && [ -z "$HOME" ] && echo "bundled-manifest: 996 files, sha256 ${sha}"`))).toBe(sha);
+    expect(await runBundledManifest(answer("none", 'echo "bundled-manifest: 0 files, sha256 none"'))).toBe("none");
+    expect(await runBundledManifest(answer("odd", 'echo "bundled-manifest: refused (two)"; exit 1'))).toBeUndefined();
+    expect(await runBundledManifest(answer("hang", "sleep 30"), 300)).toBeUndefined();
+  });
+
+  /** Every step a swap takes, with `look` run before each one and once after the last: a power cut can fall between
+   *  any two steps (each one atomic on its own), so what `look` sees is what a restart after a cut would find. */
+  const watched = (look: (step: string) => void): { ops: DurableOps; steps: string[] } => {
+    const steps: string[] = [];
+    const wrap = <A extends unknown[]>(name: string, fn: (...a: A) => void) => (...a: A) => { look(`before ${name}`); steps.push(name); fn(...a); };
+    return { steps, ops: { rename: wrap("rename", realOps.rename), link: wrap("link", realOps.link), rm: wrap("rm", realOps.rm), syncFile: realOps.syncFile, syncDir: wrap("syncDir", realOps.syncDir) } };
+  };
+
+  posix("a power cut at any step of the swap leaves a whole binary at bin, and plugins a start can recover", async () => {
+    const seen: string[] = [];
+    let s!: ReturnType<typeof server>;
+    let oldSha = "";
+    const look = (step: string) => {
+      const bin = existsSync(s.bin) ? readFileSync(s.bin, "utf8") : "missing";
+      seen.push(`${step}: bin ${bin === versionScript("1.2.3") ? "old" : bin === versionScript("1.3.0") ? "new" : bin}`);
+      const tree = treeManifestSha256(s.pluginsDir);
+      const recoverable = tree === oldSha || tree === s.nextSha || treeManifestSha256(`${s.pluginsDir}.new`) === s.nextSha || treeManifestSha256(`${s.pluginsDir}.old`) === oldSha;
+      if (!recoverable) seen.push(`${step}: plugins unrecoverable`);
+    };
+    const w = watched(look);
+    s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {}, ops: w.ops });
+    oldSha = treeManifestSha256(s.pluginsDir)!;
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    look("after the last step");
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(w.steps).toEqual(["rm", "link", "syncDir", "rename", "syncDir", "rm", "rename", "rename", "syncDir"]);
+    expect(seen.filter((l) => !/: bin (old|new)$/.test(l))).toEqual([]);
+    // A cut between the plugins' two renames: the folder is gone, `.new` is the new tree, and the start's recovery
+    // (an update watched: `.new` only) takes it back.
+    rmSync(s.pluginsDir, { recursive: true, force: true });
+    rmSync(`${s.pluginsDir}.new`, { recursive: true, force: true });
+    pluginsTree(`${s.pluginsDir}.new`, "1.3.0");
+    expect(recoverServerPlugins({ dir: s.pluginsDir, manifestSha256: s.nextSha, watching: true, log: () => {} })).toEqual({ kind: "recovered", from: ".new" });
+    expect(treeManifestSha256(s.pluginsDir)).toBe(s.nextSha);
+  });
+
+  posix("a power cut at any step of a rollback leaves a whole binary, and the version is recorded before the first", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {} });
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+    const seen: string[] = [];
+    const w = watched((step) => {
+      const bin = existsSync(s.bin) ? readFileSync(s.bin, "utf8") : "missing";
+      if (bin !== versionScript("1.2.3") && bin !== versionScript("1.3.0")) seen.push(`${step}: bin ${bin}`);
+      if (!rolledBack(s.home).includes("1.3.0")) seen.push(`${step}: not yet recorded`);
+    });
+    expect(beginUpdatedBoot(s.home, s.bin, () => {}, w.ops)).toBe("rolled-back");
+    expect(seen).toEqual([]);
+    expect(w.steps.slice(0, 4)).toEqual(["rm", "link", "syncDir", "rename"]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+  });
+
+  posix("a swap step that fails puts everything back: the old binary at bin, the old plugins, no restart", async () => {
+    let renames = 0;
+    const failing: DurableOps = { ...realOps, rename: (a, b) => { renames++; if (renames === 3) throw new Error("injected: the disk refused"); realOps.rename(a, b); } };
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], plugins: {}, ops: failing });
+    const before = treeManifestSha256(s.pluginsDir);
+    await s.updater.check();
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    expect(s.exited).toEqual([]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(treeManifestSha256(s.pluginsDir)).toBe(before);
+    expect(s.lines.at(-1)).toContain("injected: the disk refused");
+  });
+
+  test("restartWhenIdle: at the next idle moment the gate closes and commits, the daemon drains and exits to restart", async () => {
+    let busy = 1;
+    const s = server({ releases: [], busy: () => busy });
+    s.updater.restartWhenIdle("the bundled plugins were fetched again");
+    await Bun.sleep(20);
+    expect(s.exited).toEqual([]);
+    busy = 0;
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.gate.committed).toBe(true);
+    expect(s.did).toContain("drained");
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(s.lines.at(-1)).toContain("the bundled plugins were fetched again");
+  });
+
+  test("Windows names: the rollback copies end in .exe, so cmd.exe and the logon task can start them", () => {
+    expect(oldBinary("C:\\h\\bin\\daemon\\clover-core.exe")).toBe("C:\\h\\bin\\daemon\\clover-core.old.exe");
+    expect(badBinary("C:\\h\\bin\\daemon\\clover-core.exe")).toBe("C:\\h\\bin\\daemon\\clover-core.bad.exe");
+    expect(oldBinary("/h/bin/daemon/clover-core")).toBe("/h/bin/daemon/clover-core.old");
+  });
+
+  test("supervise started as the .old copy takes the binary once it is back, and only a server's", () => {
+    const have = (set: string[]) => (p: string) => set.includes(p);
+    expect(superviseTarget("/h/bin/daemon/clover-core.old", have(["/h/bin/daemon/clover-core"]))).toBe("/h/bin/daemon/clover-core");
+    expect(superviseTarget("/h/bin/daemon/clover-core.old", have([]))).toBe("/h/bin/daemon/clover-core.old");
+    expect(superviseTarget("C:/h/bin/daemon/clover-core.old.exe", have(["C:/h/bin/daemon/clover-core.exe"]))).toBe("C:/h/bin/daemon/clover-core.exe");
+    expect(superviseTarget("/h/bin/daemon/clover-core", have([]))).toBe("/h/bin/daemon/clover-core");
+    expect(superviseTarget("/elsewhere/x.old", have(["/elsewhere/x"]))).toBe("/elsewhere/x.old");
+  });
+
+  posix("a daemon started as .old with the binary missing finishes the swap from .new when it hashes to the recorded SHA-512", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    await s.updater.check();
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    // A cut between Windows' two renames: the binary is gone, the new one still `.new`.
+    const { renameSync } = await import("node:fs");
+    renameSync(s.bin, `${s.bin}.new`);
+    expect(healFromOld(s.home, s.bin, oldBinary(s.bin))).toEqual({ kind: "finished the swap" });
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.3.0"));
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("watching");
+  });
+
+  posix("... and else copies itself back durably and drops the boot record; with the binary there, nothing to do", async () => {
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }] });
+    await s.updater.check();
+    await s.gate.closeForRestart({ timeoutMs: 1_000 });
+    await s.updater.swap();
+    expect(healFromOld(s.home, s.bin, oldBinary(s.bin))).toEqual({ kind: "not needed" });
+    rmSync(s.bin);
+    writeFileSync(`${s.bin}.new`, "not the checked binary");
+    expect(healFromOld(s.home, s.bin, oldBinary(s.bin))).toEqual({ kind: "restored", from: oldBinary(s.bin) });
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.2.3"));
+    expect(beginUpdatedBoot(s.home, s.bin)).toBe("normal");
+    // A daemon that isn't the .old copy never heals anything.
+    rmSync(s.bin);
+    expect(healFromOld(s.home, s.bin, join(s.home, "elsewhere"))).toEqual({ kind: "not needed" });
+  });
+
+  posix("a folder flush that fails after the rename is reported as swapped, never undone", async () => {
+    let syncs = 0;
+    const flaky: DurableOps = { ...realOps, syncDir: (p) => { syncs++; if (syncs === 2) throw new Error("injected: flush failed"); realOps.syncDir(p); } };
+    const s = server({ releases: [{ version: "1.3.0", binary: versionScript("1.3.0") }], ops: flaky });
+    await s.updater.check();
+    s.updater.apply();
+    for (let i = 0; i < 50 && s.exited.length === 0; i++) await Bun.sleep(10);
+    expect(s.exited).toEqual([UPDATE_RESTART_EXIT_CODE]);
+    expect(readFileSync(s.bin, "utf8")).toBe(versionScript("1.3.0"));
+    expect(s.lines.some((l) => l.includes("is swapped in, but flushing its folder failed: injected: flush failed"))).toBe(true);
+  });
+
+  test("replaceBinary on this OS (links on macOS and Linux, renames on Windows): the new one in place, the old one aside, a failure undone", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-replace-"));
+    const bin = join(dir, process.platform === "win32" ? "clover-core.exe" : "clover-core");
+    writeFileSync(bin, "old");
+    writeFileSync(`${bin}.new`, "new");
+    expect(replaceBinary(bin, `${bin}.new`, oldBinary(bin))).toBeUndefined();
+    expect(readFileSync(bin, "utf8")).toBe("new");
+    expect(readFileSync(oldBinary(bin), "utf8")).toBe("old");
+    expect(existsSync(`${bin}.new`)).toBe(false);
+    const refusing: DurableOps = { ...realOps, rename: (a, b) => { if (a.endsWith(".missing")) throw new Error("injected"); realOps.rename(a, b); } };
+    expect(() => replaceBinary(bin, `${bin}.missing`, oldBinary(bin), refusing)).toThrow("injected");
+    expect(readFileSync(bin, "utf8")).toBe("new");
+  });
+
+  // Windows is where healing happens: these build the state a cut between its two renames leaves, with its .exe names,
+  // from plain files, so they run on every OS (CI's Windows leg included).
+  const cutBetweenRenames = (newBytes: string, recorded: string) => {
+    const home = mkdtempSync(join(tmpdir(), "clover-heal-"));
+    const bin = join(home, "bin", "daemon", "clover-core.exe");
+    mkdirSync(join(home, "bin", "daemon"), { recursive: true });
+    mkdirSync(join(home, "update"), { recursive: true });
+    writeFileSync(oldBinary(bin), "old version");
+    writeFileSync(`${bin}.new`, newBytes);
+    writeFileSync(join(home, "update", "boot.json"), JSON.stringify({ version: "1.3.0", boots: 0, sha512: createHash("sha512").update(recorded).digest("base64") }));
+    return { home, bin };
+  };
+
+  test("healing, Windows names: .new that hashes to the recorded SHA-512 finishes the swap, and its starts stay watched", () => {
+    const c = cutBetweenRenames("new version", "new version");
+    expect(healFromOld(c.home, c.bin, oldBinary(c.bin))).toEqual({ kind: "finished the swap" });
+    expect(readFileSync(c.bin, "utf8")).toBe("new version");
+    expect(existsSync(`${c.bin}.new`)).toBe(false);
+    expect(beginUpdatedBoot(c.home, c.bin)).toBe("watching");
+    expect(superviseTarget(oldBinary(c.bin))).toBe(c.bin);
+  });
+
+  test("healing, Windows names: a .new that doesn't hash to it restores the old copy and drops the record", () => {
+    const c = cutBetweenRenames("something else", "new version");
+    expect(healFromOld(c.home, c.bin, oldBinary(c.bin))).toEqual({ kind: "restored", from: oldBinary(c.bin) });
+    expect(readFileSync(c.bin, "utf8")).toBe("old version");
+    expect(existsSync(join(c.home, "update", "boot.json"))).toBe(false);
+    expect(healFromOld(c.home, c.bin, oldBinary(c.bin))).toEqual({ kind: "not needed" });
   });
 });

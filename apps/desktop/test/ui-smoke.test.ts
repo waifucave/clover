@@ -130,7 +130,7 @@ beforeAll(() => {
     expect(built.status, built.stderr).toBe(0);
   }
   fakeCore = join(work, `clover-core${exe}`);
-  const compiled = spawnSync("bun", ["build", "--compile", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeCore], { encoding: "utf8" });
+  const compiled = spawnSync("bun", ["build", "--compile", "--no-macros", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeCore], { encoding: "utf8" });
   expect(compiled.status, compiled.stderr).toBe(0);
   const base = [...cloverViews(), alphaView()];
   registries.default = join(work, "default.json");

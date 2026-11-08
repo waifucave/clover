@@ -25,6 +25,7 @@ import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platfo
 import { peerHandle, type PeerHandle } from "../platform/peer-handle";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
 import type { DaemonPlatform } from "../platform/transport";
+import { sendCoreEvent, type CoreEventInput, type CoreEventOptions } from "./core-events";
 
 /** A thrown JSON-RPC error; the server's pump reads `code`, `message` and `data` off it. */
 export class CloverRpcError extends Error {
@@ -137,6 +138,9 @@ export interface CloverServerDeps {
    *  then committed to the restart. */
   acceptUpdateExit?(): boolean;
   readonly features?: readonly string[];
+  /** A plugin's granted capabilities (lane B's registry), for the `core.event`s that need one; without it a plugin's
+   *  connection gets none of those. */
+  pluginCapabilities?(pluginId: string): readonly string[] | undefined;
   readonly os?: DaemonPlatform;
   /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
   readonly endpoint?: string;
@@ -186,6 +190,9 @@ export interface CloverServer {
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
+  /** Sends a daemon-wide event as `core.event` to the connections that may have it (`ipc/core-events.ts`): its role,
+   *  its subscribed areas, a plugin's capability, and `opts.to`. How many it went to. */
+  coreEvent(event: CoreEventInput, opts?: CoreEventOptions): number;
   /** Runs a method for a caller with no connection here: another computer's `peer.call` (lane H's door), under
    *  `role`'s allow list. `answer`: the user's signed answer the door verified, by its card id and the call hash it
    *  binds (`canonicalCallHash`). It stands in for the user on a `userOnly` method only for this method and these
@@ -457,6 +464,14 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     connections() { return [...conns.values()]; },
+
+    coreEvent(event, opts) {
+      return sendCoreEvent({
+        connections: () => conns.values(),
+        pluginCapabilities: (id) => deps.pluginCapabilities?.(id),
+        log: (line) => deps.log?.(line),
+      }, event, opts);
+    },
 
     dispose() {
       unrevoke?.();

@@ -171,7 +171,7 @@ describe("writes: a server's self-update files (<home>/bin, <home>/update, <home
       `echo '{"kind":"app"}' > ${H}/install.json`, `echo '{"kind":"app"}' > ${H}/bin/install.json`, `rm -rf ${H}/bin`,
     ]) expect(escapeFloorHit(cmd, H), cmd).toBeDefined();
     // The write tools: the control-plane fence refuses each.
-    for (const f of [`${H}/bin/clover-core`, `${H}/bin/clover-core.new`, `${H}/update/boot.json`, `${H}/install.json`]) {
+    for (const f of [`${H}/bin/clover-core`, `${H}/bin/clover-core.new`, `${H}/bin/daemon/clover-core`, `${H}/bin/daemon/clover-plugin-bun`, `${H}/bin/plugins/clover/host.js`, `${H}/bin/plugins.new/clover/host.js`, `${H}/update/boot.json`, `${H}/install.json`]) {
       expect(controlPlaneTargetForCall("Write", { file_path: f }, "/", homeFenceFor(H)), f).not.toBeNull();
     }
     // <home>/bin holds the code the next start runs: refused on ANY mention, like `runtimes` — a write through an
@@ -179,6 +179,9 @@ describe("writes: a server's self-update files (<home>/bin, <home>/update, <home
     for (const cmd of [
       `python3 -c "open('${H}/bin/clover-core','wb').write(b'x')"`, `bun -e "Bun.write('${H}/bin/clover-core', 'x')"`,
       `ls ${H}/bin`, `cat ${H}/bin/clover-core`,
+      // The server layout (#244): the daemon and plain Bun in bin/daemon, the bundled plugins in bin/plugins.
+      `cp evil ${H}/bin/daemon/clover-core`, `cp evil ${H}/bin/daemon/clover-plugin-bun`, `echo x > ${H}/bin/plugins/clover/host.js`,
+      `mv evil ${H}/bin/plugins.new`, `rm -rf ${H}/bin/plugins`,
     ]) expect(escapeFloorHit(cmd, H), cmd).toBeDefined();
     // The self-update's records stay write-only there (alone, they could only freeze updates); reads are free.
     expect(escapeFloorHit(`cat ${H}/install.json`, H)).toBeUndefined();

@@ -1,3 +1,4 @@
+import { missingProcessHolder } from "./build-kind";
 import { loadBundledManifest } from "./bundled-plugins-dir";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
@@ -139,7 +140,8 @@ import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
-import type { ProviderRefresher } from "./runtime-sdk/host-credentials";
+import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
+import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -699,6 +701,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `tools.json`, …). One line when any exist — never touched, only named (`clover doctor` repeats it).
   const deadLegacyLine = describeDeadLegacyFiles(findDeadLegacyFiles(home), home);
   if (deadLegacyLine !== undefined) console.error(deadLegacyLine);
+  // Lane A's F8 process holder ships beside a compiled macOS core (scripts/bundled-binaries.ts); without it a bot's
+  // commands fall back to process-group tracking, which a packaged build never does (its package gate). Said loudly.
+  {
+    const holder = missingProcessHolder();
+    if (holder !== undefined) console.error(`error: ${holder} is missing beside this clover-core: a bot's commands fall back to process-group tracking, and what they leave running (setsid, double forks) can outlive a pause. Reinstall Clover.`);
+  }
 
 
   // WS-25 §7 B: the app reads `harness-token`/`remote-token` without a Keychain prompt once their access
@@ -2233,6 +2241,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (!result.ok) throw new Error("console_bearer_refresh_failed");
     },
   };
+  // WS-25 §7: ONE credential broker for the daemon, the sessions' and the bots' (A-M3's provider fill): its generation
+  // registry and its refresh single-flights are per item, so a session and a bot asking for the same bearer share one
+  // renewal. Built as the session table built it before (the same service, store, refreshers and log).
+  const hostCredentials = createHostCredentialBroker({
+    secrets,
+    keychainService: keychainService(undefined, cloverHome),
+    mcpOAuthStore: sessionMcpOAuthStore,
+    refreshers: credentialRefreshers,
+    log: (line) => console.error(`clover-leg: ${line}`),
+  });
   const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
     // M-M2: no new turn while the update gate closes for a restart (`updateGate` is set further down, before any turn).
     updateClosing: () => updateGate.closed,
@@ -2328,6 +2346,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // Review r1 (i): the enabled plugins' http/sse servers join the MCP sign-in allowlist (live per incarnation).
     pluginMcpServers: () => pluginMcpServersFor(pluginStore.list().filter((p) => !p.disabled).map((p) => p.installPath)),
     credentialRefreshers,
+    hostCredentials,
   });
   // A-M2: the model plugins, when the daemon was handed lane B's plugin registry and plugin host (B-M1/B-M2; none
   // until then, and the SDK's compiled catalog, which the bundled model plugins are generated from, serves the same
@@ -3475,6 +3494,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: opened.registry,
         epoch: () => main.epoch() ?? 0,
+        // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
+        // through the daemon's one broker (as a session's).
+        provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
