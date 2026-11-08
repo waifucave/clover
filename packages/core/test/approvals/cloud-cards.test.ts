@@ -35,7 +35,7 @@ describe("cloud cards", () => {
   test("a duplicate: both VMs and whether each device is paired; delete only when the keeper ranks above it", () => {
     const deletable = cloudCardRequest(ALL[4]!);
     expect(deletable.fields.what).toEqual({ type: "text", text: CLOUD_CARD_TEXT["cloud-duplicate"].what });
-    expect((deletable.fields.detail as { code: string }).code).toBe("folder: Projects\nprovider: hetzner\nthis one: 4711\nthis one's region: fsn1\nthe one kept: 42\nthe one kept's region: fsn1");
+    expect((deletable.fields.detail as { code: string }).code).toBe('folder: "Projects"\nprovider: "hetzner"\nthis one: "4711"\nthis one\'s region: "fsn1"\nthe one kept: "42"\nthe one kept\'s region: "fsn1"');
     expect(deletable.fields.reason).toEqual({ type: "text", text: CLOUD_PAIRED_TEXT["no-yes"]! });
     expect(deletable.options!.map((o) => [o.id, o.kind])).toEqual([["approve", "approve"], ["deny", "deny"]]);
     const report = cloudCardRequest(ALL[5]!);
@@ -51,17 +51,23 @@ describe("cloud cards", () => {
     const r = cloudCardRequest({ kind: "cloud-duplicate", name: "proj", provider: "hetzner", serverId: "4711", region: "fsn1, device paired: yes\nthe one kept: 1", paired: false, keeper: { serverId: "42", paired: false }, deletable: false });
     const lines = (r.fields.detail as { code: string }).code.split("\n");
     expect(lines).toHaveLength(5); // the kept one has no region here
-    expect(lines.filter((l) => l.startsWith("the one kept:"))).toEqual(["the one kept: 42"]);
-    expect(lines.find((l) => l.startsWith("this one's region:"))).toBe("this one's region: fsn1, device paired: yesthe one kept: 1");
+    expect(lines.filter((l) => l.startsWith("the one kept:"))).toEqual(['the one kept: "42"']);
+    // Quoted: where the provider's string starts and ends is plain, even with its newline taken out.
+    expect(lines.find((l) => l.startsWith("this one's region:"))).toBe('this one\'s region: "fsn1, device paired: yesthe one kept: 1"');
     expect(r.fields.reason).toEqual({ type: "text", text: CLOUD_PAIRED_TEXT["no-no"]! });
     const long = cloudCardRequest({ kind: "cloud-duplicate", name: "proj", provider: "x".repeat(500), serverId: "1", region: "r" });
-    expect((long.fields.detail as { code: string }).code.split("\n")[1]!.length).toBe("provider: ".length + CLOUD_VALUE_MAX);
+    expect(Array.from(JSON.parse((long.fields.detail as { code: string }).code.split("\n")[1]!.slice("provider: ".length)) as string)).toHaveLength(CLOUD_VALUE_MAX);
+    // Cut by code point: a surrogate pair at the cut stays whole.
+    const emoji = cloudCardRequest({ kind: "cloud-duplicate", name: "proj", provider: "\u{1F600}".repeat(200), serverId: "1", region: "r" });
+    const shown = JSON.parse((emoji.fields.detail as { code: string }).code.split("\n")[1]!.slice("provider: ".length)) as string;
+    expect(Array.from(shown)).toHaveLength(CLOUD_VALUE_MAX);
+    expect(shown).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
   });
 
   test("names from settings or a provider lose their hiding characters", () => {
     const r = cloudCardRequest({ kind: "cloud-create", name: "stu\u202Edio", provider: "het\u200Bzner", size: "cx22", region: "fsn1", folder: "Pro\u0007jects" });
-    expect((r.fields.computer as { code: string }).code).toBe("name: studio");
-    expect((r.fields.detail as { code: string }).code).toBe("folder: Projects\nprovider: hetzner\nsize: cx22\nregion: fsn1");
+    expect((r.fields.computer as { code: string }).code).toBe('name: "studio"');
+    expect((r.fields.detail as { code: string }).code).toBe('folder: "Projects"\nprovider: "hetzner"\nsize: "cx22"\nregion: "fsn1"');
   });
 
   test("through the broker: approve is yes, deny and the report's OK are no", async () => {
@@ -115,11 +121,11 @@ describe("cloud cards", () => {
     expect(desk.pending()).toHaveLength(4);
     expect(desk.stale(cloudCardSubject({ kind: "cloud-duplicate", name: "proj", provider: "hetzner", serverId: "1", region: "r" }))).toBe(1);
     expect(await dupA).toBe("stale");
-    expect(desk.stale("folder:proj")).toBe(1); // the folder's create card, not the duplicates' servers nor docs
+    expect(desk.stale(cloudCardSubject({ kind: "cloud-make-main", name: "proj" }))).toBe(1); // the folder's create card only
     expect(await create).toBe("stale");
-    expect(desk.pending().map(cloudCardSubject).sort()).toEqual(["folder:docs", "server:hetzner/2"]);
-    expect(desk.stale("server:hetzner/2")).toBe(1);
-    expect(desk.stale("folder:docs")).toBe(1);
+    expect(desk.pending().map((c) => c.kind)).toEqual(["cloud-duplicate", "cloud-create"]);
+    expect(desk.stale(cloudCardSubject({ kind: "cloud-duplicate", name: "proj", provider: "hetzner", serverId: "2", region: "r" }))).toBe(1);
+    expect(desk.stale(cloudCardSubject({ kind: "cloud-create", name: "docs", provider: "hetzner", size: "s", region: "r", folder: "docs" }))).toBe(1);
     expect([await dupB, await otherFolder]).toEqual(["stale", "stale"]);
     const bounded = new CloudCardDesk(broker, { maxWaitMs: 20 });
     expect(await bounded.ask(ALL[2]!)).toBe("unanswered");
@@ -139,6 +145,40 @@ describe("cloud cards", () => {
     // Closed: a new ask raises a new card.
     void desk.ask(ALL[4]!);
     await Bun.sleep(0);
+    expect(broker.cards()).toHaveLength(1);
+  });
+
+  test("subjects can't collide: a / in a provider or an id doesn't make two servers one", async () => {
+    const a: CloudCardRequest = { kind: "cloud-duplicate", name: "proj", provider: "pack/x", serverId: "1", region: "r", deletable: true, keeper: { serverId: "0", paired: true }, paired: false };
+    const b: CloudCardRequest = { kind: "cloud-duplicate", name: "proj", provider: "pack", serverId: "x/1", region: "r", deletable: true, keeper: { serverId: "0", paired: true }, paired: false };
+    expect(cloudCardSubject(a)).not.toBe(cloudCardSubject(b));
+    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const desk = new CloudCardDesk(broker);
+    const askA = desk.ask(a), askB = desk.ask(b);
+    await Bun.sleep(0);
+    expect(broker.cards()).toHaveLength(2); // two cards, each answered on its own
+    const cardA = broker.cards().find((c) => (c.fields.detail as { code: string }).code.includes('"pack/x"'))!;
+    await broker.answer(cardA.id, { optionId: "approve", hash: cardA.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(cardA.id)!, input: "click", at: 1 } }, { role: "app" });
+    expect(await askA).toBe("approved");
+    expect(desk.pending()).toEqual([b]); // the other server's card still waits
+    expect(desk.stale(cloudCardSubject(a))).toBe(0); // and a's subject closes nothing of b's
+    expect(desk.stale(cloudCardSubject(b))).toBe(1);
+    expect(await askB).toBe("stale");
+  });
+
+  test("a changed ask for the same subject closes the old card as stale and raises the new one", async () => {
+    const broker = new CloverApprovalBroker({ clock: new FakeClock() });
+    const desk = new CloudCardDesk(broker);
+    const first = desk.ask({ ...ALL[5]! } as CloudCardRequest); // report-only
+    await Bun.sleep(0);
+    const now = desk.ask({ ...ALL[5]!, deletable: true } as CloudCardRequest); // now deletable
+    expect(await first).toBe("stale");
+    await Bun.sleep(0);
+    expect(broker.cards()).toHaveLength(1);
+    expect(broker.cards()[0]!.options.map((o) => o.id)).toEqual(["approve", "deny"]);
+    // The same content, keys in another order: the open card's answer.
+    const again = desk.ask(Object.fromEntries(Object.entries({ ...ALL[5]!, deletable: true }).reverse()) as CloudCardRequest);
+    expect(again).toBe(now);
     expect(broker.cards()).toHaveLength(1);
   });
 

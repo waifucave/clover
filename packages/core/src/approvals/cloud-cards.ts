@@ -63,10 +63,14 @@ const yesNo = (t: { yes: string; no: string }): NonNullable<ApprovalRequest["opt
 /** The longest value a card line shows; a provider's longer string is cut and marked. */
 export const CLOUD_VALUE_MAX = 120;
 
-/** `key: value` lines in a code field: the values' hiding characters (newlines included) out, so no value makes a
- *  line of its own, and each cut at `CLOUD_VALUE_MAX`. */
+/** `key: "value"` lines in a code field: each value with its hiding characters (newlines included) out, so none makes
+ *  a line of its own; cut at `CLOUD_VALUE_MAX` code points (never inside a surrogate pair); and quoted, JSON-style, so
+ *  where it starts and ends is plain. */
 function details(lines: readonly (readonly [string, string | undefined])[]): { type: "code"; code: string } {
-  const value = (v: string) => { const plain = plainOf(v); return plain.length > CLOUD_VALUE_MAX ? `${plain.slice(0, CLOUD_VALUE_MAX - 1)}…` : plain; };
+  const value = (v: string) => {
+    const points = Array.from(plainOf(v));
+    return JSON.stringify(points.length > CLOUD_VALUE_MAX ? `${points.slice(0, CLOUD_VALUE_MAX - 1).join("")}…` : points.join(""));
+  };
   return { type: "code", code: lines.filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${value(v!)}`).join("\n") };
 }
 
@@ -148,15 +152,27 @@ export type CloudCardOutcome = "approved" | "declined" | "stale" | "unanswered";
 /** What a card is about, for `stale` and for one open card per kind and subject: a duplicate's server, the folder a
  *  create or make-main card is for, else the computer by provider and name. */
 export function cloudCardSubject(card: CloudCardRequest): string {
+  // An encoding no two different subjects share (a `/` inside a provider or an id can't shift where one part ends):
+  // opaque to callers, who always take it from here.
   switch (card.kind) {
-    case "cloud-duplicate": return `server:${card.provider}/${card.serverId}`;
-    case "cloud-create": return `folder:${card.folder}`;
-    case "cloud-make-main": return `folder:${card.name}`;
-    default: return `computer:${card.provider}/${card.name}`;
+    case "cloud-duplicate": return JSON.stringify(["server", card.provider, card.serverId]);
+    case "cloud-create": return JSON.stringify(["folder", card.folder]);
+    case "cloud-make-main": return JSON.stringify(["folder", card.name]);
+    default: return JSON.stringify(["computer", card.provider, card.name]);
   }
 }
 
-interface OpenCloudCard { card: CloudCardRequest; subject: string; outcome: Promise<CloudCardOutcome>; close: (why: "stale" | "unanswered") => void }
+/** A card's whole content, keys sorted, to tell an identical ask from a changed one. */
+function contentOf(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(contentOf).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.keys(value).sort().filter((k) => (value as Record<string, unknown>)[k] !== undefined)
+      .map((k) => `${JSON.stringify(k)}:${contentOf((value as Record<string, unknown>)[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+interface OpenCloudCard { card: CloudCardRequest; content: string; subject: string; outcome: Promise<CloudCardOutcome>; close: (why: "stale" | "unanswered") => void }
 
 /** The cloud cards through the broker, each waiting for the person until it is answered or closed as stale. */
 export class CloudCardDesk {
@@ -177,12 +193,19 @@ export class CloudCardDesk {
    *  denied by anything but the person) is `unanswered`, never a no. */
   ask(card: CloudCardRequest): Promise<CloudCardOutcome> {
     const subject = cloudCardSubject(card);
-    const key = `${card.kind}|${subject}`;
+    const key = JSON.stringify([card.kind, subject]);
+    const content = contentOf(card);
     const open = this.#open.get(key);
-    if (open !== undefined) return open.outcome;
+    if (open !== undefined) {
+      // The same card: its answer. A changed one (now deletable, another keeper): the old card is out of date.
+      if (open.content === content) return open.outcome;
+      open.close("stale");
+      this.#open.delete(key);
+    }
     const ac = new AbortController();
     let closed: "stale" | "unanswered" | undefined;
-    const timer = this.#maxWaitMs === undefined ? undefined : setTimeout(() => entry.close("unanswered"), this.#maxWaitMs);
+    let entry: OpenCloudCard | undefined;
+    const timer = this.#maxWaitMs === undefined ? undefined : setTimeout(() => entry?.close("unanswered"), this.#maxWaitMs);
     (timer as { unref?: () => void } | undefined)?.unref?.();
     const outcome = (async (): Promise<CloudCardOutcome> => {
       try {
@@ -192,10 +215,10 @@ export class CloudCardDesk {
         return d.allowed ? "approved" : "declined";
       } finally {
         if (timer !== undefined) clearTimeout(timer);
-        this.#open.delete(key);
+        if (this.#open.get(key) === entry) this.#open.delete(key);
       }
     })();
-    const entry: OpenCloudCard = { card, subject, outcome, close: (why) => { closed ??= why; ac.abort(); } };
+    entry = { card, content, subject, outcome, close: (why) => { closed ??= why; ac.abort(); } };
     this.#open.set(key, entry);
     return outcome;
   }
