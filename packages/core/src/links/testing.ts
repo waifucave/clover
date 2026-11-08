@@ -33,7 +33,7 @@ export function recordFor(key: DeviceKey, name: string): Omit<DeviceRecord, "add
 /** Devices named `names`, each paired with every other one (unless `pairAll` is false), on one memory network. */
 export async function makeLinkCluster(
   names: readonly string[],
-  opts: { clock: Clock; net?: MemoryNetwork; pairAll?: boolean; planner?: DialPlanner; transport?: Partial<LinkTransportOptions> },
+  opts: { clock: Clock; net?: MemoryNetwork; pairAll?: boolean; planner?: DialPlanner; transport?: Partial<LinkTransportOptions>; perDevice?: Record<string, Partial<LinkTransportOptions>> },
 ): Promise<{ net: MemoryNetwork; devices: Map<string, ClusterDevice>; pair(a: string, b: string): Promise<void>; close(): Promise<void> }> {
   const net = opts.net ?? new MemoryNetwork();
   const keys = new Map<string, DeviceKey>();
@@ -58,6 +58,7 @@ export async function makeLinkCluster(
       clock: opts.clock,
       ...(opts.planner ? { planner: opts.planner } : {}),
       ...opts.transport,
+      ...opts.perDevice?.[name],
     });
     devices.set(name, { name, key, id: key.id, endpoint, registry, transport });
   }

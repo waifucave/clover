@@ -2,10 +2,13 @@
 // nothing a release leaves out; a plugin's runtime dependencies must ship with it; and the exact import check on a
 // built tree.
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builtPluginImportProblems, bundledPluginsProblems, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
+import { buildBundledPlugins, builtPluginImportProblems, bundledPluginsProblems, lockedPackageFiles, lockedPackages, lockEntries, tarballUrl, type PluginBuilder, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, repoInputVetter, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
+import { buildPluginModule } from "../../packages/core/src/registry/build";
+import { buildPluginForShipping, hostShipTarget } from "../../packages/core/src/registry/ship";
 import { measureBundledTree, parseBundledManifest, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -18,6 +21,8 @@ function repo(files: Record<string, string>): string {
     if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
   };
   git("init", "-q");
+  // A release checkout has its lockfile (the inputs check reads it).
+  if (files["bun.lock"] === undefined) files = { ...files, "bun.lock": '{\n  "lockfileVersion": 1,\n  "packages": {},\n}\n' };
   for (const [f, body] of Object.entries(files)) { mkdirSync(join(dir, f, ".."), { recursive: true }); writeFileSync(join(dir, f), body); }
   for (const f of Object.keys(files).filter((f) => f.endsWith(".sh"))) chmodSync(join(dir, f), 0o755);
   git("add", "-A");
@@ -137,13 +142,14 @@ describe("the packaged app's bundled plugins", () => {
     expect(problems[0]).toContain("clover/outside");
   });
 
-  test("a missing manifest, and each kind of file a release leaves out, is a problem", () => {
+  test("a missing manifest, and an environment file or OS artifact anywhere (a built tree's node_modules is fine), is a problem", () => {
     const ok = [{ rel: "clover/clover.json", link: false }, { rel: "alpha/clover.json", link: false }];
     const files = new Set(["/r/plugins/clover/clover.json", "/r/plugins/alpha/clover.json"]);
     const manifest: BundledManifest = { files: {} };
     const measure = (): BundledManifest => manifest;
     expect(bundledPluginsProblems("/r", manifest, (p) => p !== "/r/plugins/alpha/clover.json", () => ok, measure)).toEqual(["/r/plugins/alpha/clover.json is missing: the alpha plugin isn't bundled"]);
-    for (const stray of ["alpha/tab/test/x.ts", "clover/x/tests/a.ts", "clover/node_modules/x/index.js", "alpha/tsconfig.json", "clover/a.test.tsx", "alpha/.env", "alpha/.env.local", "clover/.DS_Store"]) {
+    expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: "clover/node_modules/node-datachannel/build/Release/node_datachannel.node", link: false }], measure)).toEqual([]);
+    for (const stray of ["alpha/.env", "alpha/.env.local", "clover/.DS_Store", "clover/node_modules/x/.env"]) {
       expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: stray, link: false }], measure)[0]).toContain(stray);
     }
   });
@@ -210,4 +216,241 @@ describe("the exact import check on a built tree", () => {
       .toEqual(["host/natives/node_datachannel.node: a native addon for linux-x64, not linux-arm64", "host/index.js: host code imports node-datachannel, which nothing in the shipped tree provides"]);
     expect(builtPluginImportProblems([], tree, { natives: [{ file: "host/natives/gone.node", package: "x", target: "linux-x64" }] })).toEqual(["host/natives/gone.node: a native addon the build reported isn't in the shipped tree"]);
   });
+});
+
+describe("the bundled plugins, built for shipping (lane B's buildPluginForShipping)", () => {
+  /** A stand-in builder: copies the files `include` lets through, reporting them, a host module per `.js`, and a
+   *  native for `natives`. */
+  const fakeBuild = (calls: Array<{ folder: string; target: string; out: string; seen: string[] }>, natives: Record<string, string> = {}): PluginBuilder =>
+    async (folder, o) => {
+      const seen: string[] = [];
+      const walk = (rel: string): void => {
+        for (const n of require("node:fs").readdirSync(join(folder, rel))) {
+          const r = rel === "" ? n : `${rel}/${n}`;
+          if (require("node:fs").statSync(join(folder, r)).isDirectory()) walk(r);
+          else if (o.include(r)) seen.push(r);
+        }
+      };
+      walk("");
+      calls.push({ folder, target: o.target, out: o.out, seen: [...seen].sort() });
+      for (const f of seen) { mkdirSync(join(o.out, f, ".."), { recursive: true }); writeFileSync(join(o.out, f), readFileSync(join(folder, f))); }
+      const files = [...seen];
+      const extra = natives[folder.split("/").at(-1)!];
+      if (extra !== undefined) { mkdirSync(join(o.out, extra, ".."), { recursive: true }); writeFileSync(join(o.out, extra), "native"); files.push(extra); }
+      return {
+        dir: o.out, files: files.sort(),
+        modules: seen.filter((f) => f.endsWith(".js")).map((f) => ({ file: f, kind: "host" as const, source: readFileSync(join(folder, f), "utf8"), inputs: [join(folder, f)] })),
+        natives: extra === undefined ? [] : [{ file: extra, package: "node-datachannel", target: o.target }],
+      };
+    };
+
+  test("each top-level plugin is built from its committed files only, for the target, and the paths come back as <id>/…", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/host.js": "import x from \"node-datachannel\";\nexport default x;\n", "plugins/alpha/clover.json": "{}", "plugins/alpha/tab/tsconfig.json": "{}" });
+    writeFileSync(join(dir, ".gitignore"), "");
+    const calls: Array<{ folder: string; target: string; out: string; seen: string[] }> = [];
+    const dest = join(dir, "out", "plugins");
+    const built = await buildBundledPlugins(dir, dest, "linux-x64", { build: fakeBuild(calls, { clover: "node_modules/node-datachannel/package.json" }) });
+    expect(calls.map((c) => [c.folder.split("/").slice(-2).join("/"), c.target, c.out === join(dest, c.folder.split("/").at(-1)!)])).toEqual([["plugins/alpha", "linux-x64", true], ["plugins/clover", "linux-x64", true]]);
+    // The staging filter applies to the source: the committed tsconfig is never handed to the build.
+    expect(calls[0]!.seen).toEqual(["clover.json"]);
+    expect(built.files).toEqual(["alpha/clover.json", "clover/clover.json", "clover/host.js", "clover/node_modules/node-datachannel/package.json"]);
+    expect(built.modules.map((m) => m.file)).toEqual(["clover/host.js"]);
+    expect(built.natives).toEqual([{ file: "clover/node_modules/node-datachannel/package.json", package: "node-datachannel", target: "linux-x64" }]);
+  });
+
+  test("an uncommitted file is never handed to the build: a dirty plugins/ is refused before any build", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}" });
+    writeFileSync(join(dir, "plugins", "clover", "extra.js"), "untracked");
+    const calls: Array<{ folder: string; target: string; out: string; seen: string[] }> = [];
+    await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild(calls) })).rejects.toThrow("uncommitted changes");
+    expect(calls).toEqual([]);
+  });
+
+  test("the release's checks run on the built tree: an import nothing ships fails the build, and the stage is removed", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/host.js": "import x from \"left-pad\";\nexport default x;\n" });
+    const dest = join(dir, "out", "plugins");
+    await expect(buildBundledPlugins(dir, dest, "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("host code imports left-pad, which nothing in the shipped tree provides");
+    expect(existsSync(dest)).toBe(false);
+    // A native shipped for another target than the one built for is refused too.
+    const other: PluginBuilder = async (folder, o) => ({ ...(await fakeBuild([], { clover: "node_modules/n/x.node" })(folder, o)), natives: [{ file: "node_modules/n/x.node", package: "n", target: "windows-x64" }] });
+    const dir2 = repo({ "plugins/clover/clover.json": "{}" });
+    await expect(buildBundledPlugins(dir2, join(dir2, "out", "plugins"), "darwin-arm64", { build: other })).rejects.toThrow("a native addon for windows-x64, not darwin-arm64");
+  });
+
+  test("a package.json naming a dependency nothing ships fails the build", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/package.json": "{\"dependencies\":{\"left-pad\":\"1\"}}" });
+    await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("clover: left-pad: a dependency nothing ships");
+  });
+});
+
+describe("what the bundler read: every input tracked at HEAD or in a package bun.lock holds, byte for byte (#244 check 4, #285)", () => {
+  /** A minimal npm tarball: ustar under `package/`, gzipped. */
+  const tgz = (files: Record<string, string>): Uint8Array => {
+    const blocks: Uint8Array[] = [];
+    for (const [path, body] of Object.entries(files)) {
+      const h = new Uint8Array(512);
+      const put = (at: number, text: string) => h.set(new TextEncoder().encode(text), at);
+      const bytes = new TextEncoder().encode(body);
+      put(0, `package/${path}`);
+      put(100, "0000644\0");
+      put(108, "0000000\0");
+      put(116, "0000000\0");
+      put(124, `${bytes.length.toString(8).padStart(11, "0")}\0`);
+      put(136, "00000000000\0");
+      put(148, "        ");
+      h[156] = 0x30;
+      put(257, "ustar\0");
+      put(263, "00");
+      put(148, `${h.reduce((a, b) => a + b, 0).toString(8).padStart(6, "0")}\0 `);
+      blocks.push(h, bytes, new Uint8Array((512 - (bytes.length % 512)) % 512));
+    }
+    blocks.push(new Uint8Array(1024));
+    return Bun.gzipSync(cat(...blocks));
+  };
+  const cat = (...parts: Uint8Array[]): Uint8Array<ArrayBuffer> => { const out = new Uint8Array(parts.reduce((n, x) => n + x.length, 0)); let o = 0; for (const x of parts) { out.set(x, o); o += x.length; } return out; };
+  const sri = (b: Uint8Array): string => `sha512-${createHash("sha512").update(b).digest("base64")}`;
+  /** A bun.lock pinning each package to its tarball (npm's registry unless `registry` says otherwise). */
+  const lockFor = (pkgs: Record<string, Uint8Array>, registry = ""): string =>
+    `{\n  "lockfileVersion": 1,\n  "packages": {\n${Object.entries(pkgs).map(([id, t]) => `    "${id.replace(/@[^@]*$/, "")}": ["${id}", "${registry}", {}, "${sri(t)}"],\n`).join("")}  },\n}\n`;
+  const lock = (ids: string[]): string => lockFor(Object.fromEntries(ids.map((id) => [id, new Uint8Array([1])])));
+  /** Installs `files` as node_modules/<dir> (its package.json too). */
+  const install = (root: string, dir: string, files: Record<string, string>): void => {
+    for (const [f, body] of Object.entries(files)) { mkdirSync(join(root, "node_modules", dir, f, ".."), { recursive: true }); writeFileSync(join(root, "node_modules", dir, f), body); }
+  };
+
+  test("bun.lock's packages, read with its trailing commas", () => {
+    expect([...lockedPackages(lock(["left-pad@1.3.0", "@scope/pkg@2.0.0"]))].sort()).toEqual(["@scope/pkg@2.0.0", "left-pad@1.3.0"]);
+    expect(tarballUrl("left-pad", "1.3.0", "")).toBe("https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz");
+    expect(tarballUrl("@s/p", "2.0.0", "https://r.example/")).toBe("https://r.example/@s/p/-/p-2.0.0.tgz");
+    expect(tarballUrl("@s/p", "2.0.0", "https://npm.pkg.github.com/download/@s/p/2.0.0/abc")).toBe("https://npm.pkg.github.com/download/@s/p/2.0.0/abc");
+  });
+
+  test("the reviewer's probe: an entry importing an ignored file outside its plugin gets it inlined, and the inputs check refuses it by name", async () => {
+    const dir = repo({
+      ".gitignore": "ignored/\n",
+      "plugins/clover/host.ts": "import { gen } from \"../../ignored/gen.ts\";\nexport const x = gen;\n",
+    });
+    mkdirSync(join(dir, "ignored"));
+    writeFileSync(join(dir, "ignored", "gen.ts"), "export const gen = \"generated, never committed\";\n");
+    const out = mkdtempSync(join(tmpdir(), "lane-m-inputs-out-"));
+    const built = await buildPluginModule({ entry: join(dir, "plugins", "clover", "host.ts"), outFile: join(out, "host.js"), side: "bun" });
+    // Inlined: the copy filter never saw it.
+    expect(built.source).toContain("generated, never committed");
+    expect(built.inputs.map((p) => p.split("/").slice(-2).join("/")).sort()).toEqual(["clover/host.ts", "ignored/gen.ts"]);
+    expect(await repoInputVetter(dir)(built.inputs)).toEqual(["ignored/gen.ts: the build read a file that isn't tracked at HEAD"]);
+    // Through the release's build: the build fails, naming it, and the stage is removed.
+    const dest = join(dir, "out", "plugins");
+    const leaking: PluginBuilder = async (folder, o) => {
+      mkdirSync(o.out, { recursive: true });
+      writeFileSync(join(o.out, "host.js"), built.source);
+      return { dir: o.out, files: ["host.js"], modules: [{ file: "host.js", kind: "host", source: built.source, inputs: built.inputs }], natives: [] };
+    };
+    await expect(buildBundledPlugins(dir, dest, "darwin-arm64", { build: leaking })).rejects.toThrow("ignored/gen.ts: the build read a file that isn't tracked at HEAD");
+    expect(existsSync(dest)).toBe(false);
+  });
+
+  test("a node_modules file passes only when it is byte for byte its package's file in the tarball bun.lock pins", async () => {
+    const leftPad = { "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "module.exports = 1;" };
+    const react = { "package.json": JSON.stringify({ name: "react", version: "19.0.0" }), "index.js": "export const r = 1;" };
+    const tarballs: Record<string, Uint8Array> = { "left-pad@1.3.0": tgz(leftPad), "react@19.0.0": tgz(react) };
+    const dir = repo({ "bun.lock": lockFor(tarballs), "plugins/clover/host.ts": "x" });
+    install(dir, "left-pad", leftPad);
+    install(dir, "react", react);
+    const fetched: string[] = [];
+    const download = async (url: string): Promise<Uint8Array> => {
+      fetched.push(url);
+      const id = /\/-\/(.+)-(\d+\.\d+\.\d+)\.tgz$/.exec(url)!;
+      return tarballs[`${id[1]}@${id[2]}`]!;
+    };
+    const vet = repoInputVetter(dir, { download });
+    const nm = (p: string): string => join(dir, "node_modules", ...p.split("/"));
+    expect(await vet([nm("left-pad/index.js"), nm("react/index.js"), join(dir, "plugins", "clover", "host.ts")])).toEqual([]);
+    // Each package's tarball is fetched once, from npm's registry.
+    expect(fetched.sort()).toEqual(["https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz", "https://registry.npmjs.org/react/-/react-19.0.0.tgz"]);
+    // The reviewer's probes: a file added to an installed, locked package ...
+    writeFileSync(nm("react/evil.js"), "steal();");
+    expect(await vet([nm("react/evil.js")])).toEqual(["node_modules/react/evil.js: not in react@19.0.0's tarball (a file added to the installed package)"]);
+    // ... and a fake nested package claiming a locked name and version.
+    install(dir, "react/node_modules/left-pad", { "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "steal();" });
+    expect(await vet([nm("react/node_modules/left-pad/index.js")])).toEqual(["node_modules/react/node_modules/left-pad/index.js: differs from left-pad@1.3.0's tarball"]);
+    // An edited file of a locked package.
+    writeFileSync(nm("left-pad/index.js"), "module.exports = 2;");
+    expect(await vet([nm("left-pad/index.js")])).toEqual(["node_modules/left-pad/index.js: differs from left-pad@1.3.0's tarball"]);
+    // Identity first: a version bun.lock doesn't hold, a misnamed package.
+    install(dir, "left-pad", { "package.json": JSON.stringify({ name: "left-pad", version: "1.3.1" }) });
+    expect(await vet([nm("left-pad/index.js")])).toEqual(["node_modules/left-pad/index.js: in left-pad@1.3.1, which bun.lock doesn't hold"]);
+    install(dir, "left-pad", { "package.json": JSON.stringify({ name: "right-pad", version: "1.3.0" }) });
+    expect(await vet([nm("left-pad/index.js")])).toEqual(["node_modules/left-pad/index.js: in node_modules/left-pad, whose package.json doesn't name left-pad with a version"]);
+    // Outside the checkout, and not a file at all.
+    const outside = join(mkdtempSync(join(tmpdir(), "lane-m-outside-")), "x.ts");
+    writeFileSync(outside, "x");
+    expect(await vet([outside])).toEqual([`${realpathSync(outside)}: the build read a file outside the checkout`]);
+    expect(await vet([join(dir, "gone.ts")])).toEqual([`${join(dir, "gone.ts")}: the build read it, and it isn't a file here`]);
+  });
+
+  test("a tarball is trusted only on bun.lock's integrity, and GitHub Packages needs NODE_AUTH_TOKEN, sent only there", async () => {
+    const good = tgz({ "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "1" });
+    const entries = lockEntries(lockFor({ "left-pad@1.3.0": good }));
+    const swapped = lockedPackageFiles(entries, { download: async () => tgz({ "package.json": JSON.stringify({ name: "left-pad", version: "1.3.0" }), "index.js": "evil" }) });
+    await expect(swapped("left-pad@1.3.0")).rejects.toThrow("isn't what bun.lock pins (sha512 differs)");
+    const gh = lockEntries(lockFor({ "@waifucave/x@1.0.0": good }, "https://npm.pkg.github.com/download/@waifucave/x/1.0.0/abc"));
+    await expect(lockedPackageFiles(gh, { download: async () => good })("@waifucave/x@1.0.0")).rejects.toThrow("needs NODE_AUTH_TOKEN");
+    const sent: Array<Record<string, string>> = [];
+    const files = lockedPackageFiles(gh, { token: "tok-123", download: async (_url, headers) => { sent.push(headers); return good; } });
+    // The tarball says left-pad, not @waifucave/x: refused, and the token never shows in the message.
+    const err = await files("@waifucave/x@1.0.0").catch((e: Error) => e.message);
+    expect(err).toContain("its tarball is left-pad@1.3.0");
+    expect(err).not.toContain("tok-123");
+    expect(sent).toEqual([{ Authorization: "Bearer tok-123" }]);
+    // Never over plain http.
+    const plain = lockEntries(lockFor({ "@waifucave/x@1.0.0": good }, "http://npm.pkg.github.com/download/@waifucave/x/1.0.0/abc"));
+    const leaked: Array<Record<string, string>> = [];
+    await expect(lockedPackageFiles(plain, { token: "tok-123", download: async (_u, h) => { leaked.push(h); return good; } })("@waifucave/x@1.0.0")).rejects.toThrow("the token goes only over https");
+    expect(leaked).toEqual([]);
+    // npm's registry gets no token.
+    const npm: Array<Record<string, string>> = [];
+    await lockedPackageFiles(entries, { token: "tok-123", download: async (_u, h) => { npm.push(h); return good; } })("left-pad@1.3.0");
+    expect(npm).toEqual([{}]);
+  });
+
+  test("today's bundled plugins pass: every file the real build reads is tracked at HEAD or a locked package's own file", async () => {
+    const target = hostShipTarget();
+    if (target === undefined) return;
+    const dest = join(mkdtempSync(join(tmpdir(), "lane-m-inputs-real-")), "plugins");
+    const seen: string[] = [];
+    // No download in a test: each package's files come from this checkout's install, read through the same check (a
+    // release build fetches the tarballs bun.lock pins instead). Every input is still classified: tracked, or a
+    // locked package's file by name, version and path.
+    const installed = new Map<string, string>();
+    const vet = repoInputVetter(ROOT, {
+      packageFiles: async (id) => {
+        const dir = installed.get(id);
+        if (dir === undefined) throw new Error(`${id}: not installed here`);
+        const files = new Map<string, Uint8Array>();
+        const walk = (rel: string): void => {
+          for (const n of readdirSync(join(dir, rel), { withFileTypes: true })) {
+            const r = rel === "" ? n.name : `${rel}/${n.name}`;
+            if (n.isDirectory()) { if (n.name !== "node_modules") walk(r); } else files.set(r, new Uint8Array(readFileSync(join(dir, r))));
+          }
+        };
+        walk("");
+        return files;
+      },
+    });
+    const built = await buildBundledPlugins(ROOT, dest, target, {
+      build: (folder, o) => buildPluginForShipping(folder, { ...o, dev: true }),
+      vet: async (inputs) => {
+        seen.push(...inputs);
+        for (const i of inputs) {
+          const m = /^(.*\/node_modules\/(?:@[^/]+\/)?[^/]+)\//.exec(realpathSync(i));
+          if (m) { const p = JSON.parse(readFileSync(join(m[1]!, "package.json"), "utf8")); installed.set(`${p.name}@${p.version}`, m[1]!); }
+        }
+        return vet(inputs);
+      },
+    });
+    expect(built.modules.length).toBeGreaterThan(0);
+    expect(seen.some((p) => p.includes("/node_modules/"))).toBe(true);
+    expect(await vet(seen)).toEqual([]);
+    rmSync(join(dest, ".."), { recursive: true, force: true });
+  }, 120_000);
 });

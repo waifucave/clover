@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { parseProfileImagePath } from "../../src/platform/login/live";
 import {
   renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, renderAppSystemdUnit, renderAppSchtasksXml,
   renderXdgAutostart, loginLabel, loginUnitPath, parkedPlistPath, appUnitPath, xdgAutostartPath,
-  systemdUnitName, schtasksTaskName, appTaskName, appUnitName, systemdArg, type LoginSpec,
+  systemdUnitName, schtasksTaskName, appTaskName, appUnitName, systemdArg, schtasksFallback, schtasksFallbackProblem, type LoginSpec,
 } from "../../src/platform/login/render";
 
 const base = (over: Partial<LoginSpec> = {}): LoginSpec => ({
@@ -136,4 +137,38 @@ describe("login-start paths with control characters (review M4)", () => {
     expect(() => renderXdgAutostart({ ...base, app: { bin: "/opt/a\nExec=/bin/evil" } } as never)).toThrow(/control character/);
     expect(() => renderLaunchdPlist({ ...base, os: "darwin", home: "/Users/me/.clo\u0007ver" } as never)).toThrow(/control character/);
   });
+});
+
+test("a server's logon task (Windows) starts the binary if it is there, else its .old.exe copy, by existence alone", () => {
+  const user = "C:\\Users\\R&D ^50% !team";
+  const bin = `${user}\\.clover\\bin\\daemon\\clover-core.exe`;
+  const old = `${user}\\.clover\\bin\\daemon\\clover-core.old.exe`;
+  const xml = renderSchtasksXml({ os: "win32", bin, home: `${user}\\.clover`, logsDir: `${user}\\.clover\\logs`, profile: "dist", homedir: user, winUser: "S-1-5-21-1", fallbackBin: old });
+  expect(xml).toContain("<Command>%SystemRoot%\\System32\\cmd.exe</Command>");
+  // Only fixed file names reach cmd.exe (with /v:off); a crash or exit 78 of the binary never runs the old one.
+  expect(xml).toContain("<Arguments>/d /v:off /s /c &quot;if exist .\\clover-core.exe (.\\clover-core.exe supervise) else if exist .\\clover-core.old.exe (.\\clover-core.old.exe supervise)&quot;</Arguments>");
+  // The folder goes in the task's working directory, under %USERPROFILE%: a user name with & ^ % ! is never parsed.
+  expect(xml).toContain("<WorkingDirectory>%USERPROFILE%\\.clover\\bin\\daemon</WorkingDirectory>");
+  expect(xml).not.toContain("R&amp;D");
+  // Without a fallback (the app's daemon, which the app updates), the binary itself, as before.
+  expect(renderSchtasksXml({ os: "win32", bin, home: "h", logsDir: "l", profile: "dist" })).toContain(`<Command>${bin.replace(/&/g, "&amp;")}</Command>`);
+  // Outside the profile, a folder with a % can't be written safely: refused, with why.
+  expect(schtasksFallbackProblem("D:\\srv%x%\\daemon\\clover-core.exe", "D:\\srv%x%\\daemon\\clover-core.old.exe", user)).toContain("holds a %");
+  expect(() => schtasksFallback("D:\\srv%x%\\daemon\\clover-core.exe", "D:\\srv%x%\\daemon\\clover-core.old.exe", user)).toThrow("holds a %");
+  expect(schtasksFallbackProblem("D:\\srv & co\\daemon\\clover-core.exe", "D:\\srv & co\\daemon\\clover-core.old.exe", user)).toBeUndefined();
+  expect(schtasksFallback("D:\\srv & co\\daemon\\clover-core.exe", "D:\\srv & co\\daemon\\clover-core.old.exe", user).workingDir).toBe("D:\\srv & co\\daemon");
+  expect(schtasksFallbackProblem(bin, "C:\\elsewhere\\clover-core.old.exe", user)).toContain("isn't beside");
+});
+
+test("a server on a network share (UNC) is refused, with why", () => {
+  expect(schtasksFallbackProblem("\\\\nas\\home\\a\\.clover\\bin\\daemon\\clover-core.exe", "\\\\nas\\home\\a\\.clover\\bin\\daemon\\clover-core.old.exe", "\\\\nas\\home\\a")).toContain("network share");
+  expect(schtasksFallbackProblem("//nas/home/a/.clover/bin/daemon/clover-core.exe", "//nas/home/a/.clover/bin/daemon/clover-core.old.exe", "C:\\Users\\a")).toContain("network share");
+});
+
+test("the account's logon profile, from the registry's ProfileList, its variables expanded", () => {
+  const out = "\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\S-1-5-21-1\r\n    ProfileImagePath    REG_EXPAND_SZ    %SystemDrive%\\Users\\R&D ^50% !team\r\n\r\n";
+  expect(parseProfileImagePath(out, { SYSTEMDRIVE: "D:" })).toBe("D:\\Users\\R&D ^50% !team");
+  expect(parseProfileImagePath(out, {})).toBeUndefined();
+  expect(parseProfileImagePath("    ProfileImagePath    REG_SZ    C:\\Users\\a\r\n", {})).toBe("C:\\Users\\a");
+  expect(parseProfileImagePath("ERROR: The system was unable to find the specified registry key or value.", {})).toBeUndefined();
 });

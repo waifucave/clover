@@ -16,7 +16,7 @@ import type { Caller, FileStat, Level, Os } from "@waifucave/clover-protocol";
 import { DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment } from "@waifucave/clover-protocol";
 import { strictestLevel } from "../contracts/approval-broker";
 import { ContractError, type Unsubscribe } from "../contracts/common";
-import { splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
+import { checkNoFollow, splitTreePath, type Tree, type TreeCallOptions, type TreeData, type TreeLocation } from "../contracts/tree";
 import { CLOVER_HOME_NAME, MEMORY_FOLDER, memoryBotOf, type Holder, type HolderCall } from "./holder";
 import type { TransferResult } from "./transfer";
 import { foldName } from "./names";
@@ -134,12 +134,14 @@ export class CoreTree implements Tree {
 
   /** `noFollow`: no link anywhere on the way is followed (one is refused), for the user's own file viewers. */
   async stat(path: string, opts: TreeCallOptions & { noFollow?: boolean }): Promise<FileStat | null> {
+    checkNoFollow(opts);
     const { holder, call } = this.#reach([path], opts);
     return holder.stat(path, { ...call, ...(opts.noFollow ? { noFollow: true } : {}) });
   }
 
   /** `noFollow`: as `stat`, in the same call: only a plain file reached without a link is read. */
   async read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; noFollow?: boolean }): Promise<TreeData> {
+    checkNoFollow(opts);
     const { holder, call } = this.#reach([path], opts);
     return holder.read(path, { ...call, ...(opts.encoding === undefined ? {} : { encoding: opts.encoding }), ...(opts.noFollow ? { noFollow: true } : {}) });
   }
@@ -249,6 +251,7 @@ export class CoreTree implements Tree {
 
   /** A file's bytes in parts, for the tool layer: `offset` and `length` reach the holder. */
   async readPart(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; offset?: number; length?: number; noFollow?: boolean }): Promise<TreeData> {
+    checkNoFollow(opts);
     const { holder, call } = this.#reach([path], opts);
     return holder.read(path, {
       ...call, ...(opts.noFollow ? { noFollow: true } : {}),

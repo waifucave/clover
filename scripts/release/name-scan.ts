@@ -1,9 +1,22 @@
 // The release's name scan (plan §4 M-M2): every file a release ships, read for the owner's identity before the
 // draft goes up. Git hooks see only what enters the repo; a build can still carry an absolute builder path or a name
 // in a binary (the predecessor app's 0.2.001 leak), so the gate reads the built files themselves. The patterns live
-// OUTSIDE this repo, in the owner's local-only guard (~/norma-private/git-hooks/name-guard.sh `artifacts`): a tracked
+// OUTSIDE this repo, in the owner's local-only guard (~/norma-private/git-hooks/name-guard.sh `artifacts`, or
+// CLOVER_NAME_GUARD): a tracked
 // copy would publish the strings it keeps out. So the gate fails closed on a machine without the guard, or without a
 // tool it needs to open an asset, and only the owner's Mac cuts a release.
+//
+// One scanner, two callers. publish.ts runs `nameScan` on the release's assets and the signed app before the draft
+// goes up. The builds (release/build.ts, build-packages.ts) run `runNameScan` on their whole output folder,
+// apps/desktop/out/dist/ (the unpacked app with resources/daemon's core, sidecar, plugin Bun and process holder, the
+// installers, the update files and the core's release files): release-lib.ts's `nameScanPlan` splits it into what is
+// read and what is excluded, the partition is asserted against the filesystem (every regular file under exactly one of
+// the two, so a bug in it can't under-scan a release), and the read part goes through `nameScan`, opened to the
+// bottom like everything else. A signed release's build FAILS CLOSED without the guard; an unsigned build (CI's) scans
+// when the guard is there and says it skipped when it isn't. Build-time exclusions: none yet (CLOVER_NAME_SCAN_EXCLUSIONS
+// below); widening them is a security decision, not a build fix (release-lib.ts's NAME_SCAN_EXCLUSIONS says why the
+// predecessor app has its one), and a Chromium locale pack colliding here is investigated and named, never appended to
+// blind.
 //
 // What it reads, for each asset: the asset's own bytes, and everything inside it, opened without running anything:
 //   dmg        mounted read-only and unbrowsed (hdiutil attach -readonly -nobrowse), its whole tree, .DS_Store too
@@ -57,8 +70,9 @@ import { extractAll as extractAsar, getRawHeader as asarHeader } from "@electron
 import { spawnSync } from "node:child_process";
 import { brotliDecompressSync, gunzipSync, inflateRawSync } from "node:zlib";
 import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative } from "node:path";
+import { nameScanPlan } from "../release-lib";
 
 export const NAME_SCAN_ACCEPTED: readonly RegExp[] = [/(^|\/)resources\/daemon\/srt-win\.THIRD_PARTY_NOTICES\.txt$/];
 export const MAX_DEPTH = 4;
@@ -66,6 +80,14 @@ export const MAX_DEPTH = 4;
 export function guardPath(home: string | undefined): string {
   return join(home ?? "", "norma-private", "git-hooks", "name-guard.sh");
 }
+
+/** The owner's local-only guard: CLOVER_NAME_GUARD, or the one in their home folder. */
+export function nameGuardPath(env: Record<string, string | undefined> = process.env): string {
+  return env.CLOVER_NAME_GUARD ?? guardPath(env.HOME ?? homedir());
+}
+
+/** How nameScan finds its guard: a home folder (its norma-private guard), or the guard itself; `quiet` hides its output. */
+export type NameScanOptions = string | undefined | { home?: string; guard?: string; quiet?: boolean };
 
 export type Opener =
   | "dmg" | "zip" | "7z" | "nsis" | "deb" | "ar" | "rpm" | "tar" | "appimage" | "squashfs" | "asar" | "cab" | "msi" | "rar" | "crx"
@@ -579,8 +601,9 @@ function sh(cmd: string[]): boolean {
   return (spawnSync(cmd[0]!, cmd.slice(1), { stdio: ["ignore", "ignore", "pipe"] }).status ?? 1) === 0;
 }
 
-export function nameScan(assets: readonly string[], apps: readonly string[], home = process.env.HOME): { problems: string[]; read: number; accepted: string[] } {
-  const guard = guardPath(home);
+export function nameScan(assets: readonly string[], apps: readonly string[], options: NameScanOptions = process.env.HOME): { problems: string[]; read: number; accepted: string[] } {
+  const o = typeof options === "object" ? options : { home: options };
+  const guard = o.guard ?? (o.home === process.env.HOME ? nameGuardPath() : guardPath(o.home));
   if (!existsSync(guard)) return { problems: [`the name scan needs the owner's local guard (${guard}); this machine can't cut a release`], read: 0, accepted: [] };
   const needed = new Set(assets.map((a) => TOOLS[formatOf(a)]).filter((t): t is string => t !== undefined));
   const missing = [...needed].filter((t) => tool(t) === undefined);
@@ -592,7 +615,8 @@ export function nameScan(assets: readonly string[], apps: readonly string[], hom
   let n = 0;
   const runGuard = (files: string[]): boolean => {
     for (let i = 0; i < files.length; i += 500) {
-      const r = spawnSync(guard, ["artifacts", ...files.slice(i, i + 500)], { stdio: ["ignore", "inherit", "inherit"] });
+      // The guard's own output goes straight to the terminal (or nowhere): never into a message this process keeps.
+      const r = spawnSync(guard, ["artifacts", ...files.slice(i, i + 500)], { stdio: o.quiet ? "ignore" : ["ignore", "inherit", "inherit"] });
       if ((r.status ?? 1) !== 0) return false;
     }
     return true;
@@ -748,4 +772,56 @@ export function nameScan(assets: readonly string[], apps: readonly string[], hom
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
+}
+
+// -------------------------------------------------------------------------------------------------------------------
+// The builds' scan of their whole output folder (#244), through nameScan.
+// -------------------------------------------------------------------------------------------------------------------
+
+/** Subtrees of the built output the build-time scan leaves out: empty, see the header. */
+export const CLOVER_NAME_SCAN_EXCLUSIONS: readonly RegExp[] = [];
+
+/** Every regular file under `paths` (lstat: a symlink is neither counted nor followed, like `find -type f`). */
+export function countFiles(paths: readonly string[]): number {
+  let n = 0;
+  const walk = (p: string): void => {
+    const st = lstatSync(p);
+    if (st.isSymbolicLink()) return;
+    if (st.isDirectory()) for (const e of readdirSync(p)) walk(join(p, e));
+    else if (st.isFile()) n++;
+  };
+  for (const p of paths) walk(p);
+  return n;
+}
+
+export type NameScanResult = { ran: true; targets: string[]; scanned: number; total: number } | { ran: false; reason: string };
+
+/**
+ * Scans a build's `outDir` (see the header): the plan's targets through nameScan, folders as trees and files as
+ * assets, each opened to the bottom. Throws on a hit, on anything the scan couldn't read, on a partition that doesn't
+ * cover every file, and, when `required` (a signed release), on a missing guard.
+ */
+export function runNameScan(outDir: string, opts: { required: boolean; guard?: string; exclusions?: readonly RegExp[]; quiet?: boolean } = { required: false }): NameScanResult {
+  const guard = opts.guard ?? nameGuardPath();
+  if (!existsSync(guard)) {
+    if (opts.required) throw new Error(`the identity scan can't run: ${guard} is missing, and a signed release never ships unscanned (CLOVER_NAME_GUARD names another)`);
+    return { ran: false, reason: `no name guard at ${guard}` };
+  }
+  const exclusions = opts.exclusions ?? CLOVER_NAME_SCAN_EXCLUSIONS;
+  const plan = nameScanPlan({
+    root: outDir,
+    listDir: (p) => readdirSync(p, { withFileTypes: true }).filter((e) => !e.isSymbolicLink()).map((e) => e.name),
+    isDir: (p) => lstatSync(p).isDirectory(),
+    isExcluded: (rel) => exclusions.some((re) => re.test(rel)),
+  });
+  const total = countFiles([outDir]);
+  const scanned = countFiles(plan.targets);
+  const skipped = plan.excluded.length === 0 ? 0 : countFiles(plan.excluded);
+  if (scanned + skipped !== total) throw new Error(`the identity scan's partition is wrong (${scanned} scanned + ${skipped} excluded ≠ ${total} files): refusing a gate that may not cover the release`);
+  const folders = plan.targets.filter((t) => lstatSync(t).isDirectory());
+  const files = plan.targets.filter((t) => !folders.includes(t));
+  const r = nameScan(files, folders, { guard, ...(opts.quiet ? { quiet: true } : {}) });
+  if (r.problems.some((p) => p.includes("found the owner's identity"))) throw new Error(`the identity scan found a hit in the built release (the guard named the file above): ${r.problems.join("; ")}`);
+  if (r.problems.length > 0) throw new Error(`the identity scan couldn't read the whole built release: ${r.problems.join("; ")}`);
+  return { ran: true, targets: plan.targets.map((t) => relative(outDir, t) || "."), scanned, total };
 }

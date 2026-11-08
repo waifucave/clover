@@ -17,6 +17,9 @@ const result = await Bun.build({
   format: "esm",
   minify: true,
   naming: "main.js",
+  // Macros off: a `with { type: "macro" }` import would run in this build process (bun-types has no field for it).
+  // LAST, so nothing after it turns them back on.
+  ...{ macros: false },
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);
