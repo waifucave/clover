@@ -399,52 +399,60 @@ const CONFIG_RUN_LATER = [
   ["fish"], ["zsh"], ["nushell"], ["nvim"], ["tmux"], ["git"], ["pip"],
 ] as const;
 
+/** One entry of the list: a folder (everything inside it) or a single file. */
+export interface RunLaterEntry { readonly path: string; readonly file: boolean }
+
+/** The list with each entry's shape (a test fixture plants a file at a file entry, and inside a folder entry). */
+export function autoRunEntries(os: Os, home: string, extras: RunLaterExtras = {}): RunLaterEntry[] {
+  const out: RunLaterEntry[] = [];
+  const f = (...parts: string[]) => { out.push({ path: underHome(os, home, parts), file: true }); };
+  const d = (...parts: string[]) => { out.push({ path: underHome(os, home, parts), file: false }); };
+  // Shells, readline, editors, tmux.
+  for (const name of SHELL_FILES) f(name);
+  f(".vimrc"); d(".vim"); f(".emacs"); d(".emacs.d"); f(".tmux.conf");
+  for (const parts of CONFIG_RUN_LATER) d(".config", ...parts);
+  // SSH's files that run or admit something: `rc` runs at each login, `config` holds `ProxyCommand`/`LocalCommand`,
+  // `environment` is read by sshd, the keys admit whoever holds them. `known_hosts` stays writable (ssh writes it).
+  for (const name of ["rc", "config", "environment", "authorized_keys", "authorized_keys2"]) f(".ssh", name);
+  // git: hooks, fsmonitor, the pager and `!` aliases in the global config; the templates every `git init` copies.
+  f(".gitconfig"); d(".git-templates");
+  // The folders on the PATH a user's shell finds commands in first.
+  d(".local", "bin"); d("bin"); d(".cargo", "bin");
+  // Package managers' configs (scripts, registries, init scripts) and Python's: a `.pth` or `usercustomize.py` in the
+  // user site-packages runs at every Python start, so the whole user tree is held (`pip install --user` asks).
+  f(".npmrc"); f(".yarnrc"); f(".yarnrc.yml"); f(".bunfig.toml"); f(".cargo", "config.toml"); f(".cargo", "config");
+  d(".gradle", "init.d"); f(".gradle", "init.gradle"); d(".pip");
+  if (os === "macos") {
+    d("Library", "LaunchAgents"); d("Library", "LaunchDaemons");
+    d("Library", "Application Support", "com.apple.backgroundtaskmanagementagent");
+    d("Library", "Application Support", "com.apple.backgroundtaskmanagementd");
+    f("Library", "Preferences", "com.apple.loginwindow.plist");
+    d("Library", "Application Support", "iTerm2", "Scripts", "AutoLaunch");
+    d("Library", "Workflows", "Applications", "Folder Actions");
+    d("Library", "Python");
+  } else if (os === "linux") {
+    d(".config", "autostart"); d(".config", "systemd", "user"); d(".local", "share", "systemd", "user");
+    d(".config", "environment.d"); f(".pam_environment"); f(".xprofile"); f(".xinitrc"); f(".xsession"); f(".xsessionrc");
+    d(".config", "plasma-workspace", "env"); d(".config", "plasma-workspace", "shutdown");
+    d(".config", "i3"); d(".i3"); d(".config", "sway"); d(".config", "hypr"); d(".config", "openbox");
+    d(".local", "lib");
+  } else {
+    const docs = [underHome(os, home, ["Documents"])];
+    if (extras.documents !== undefined && extras.documents.toLowerCase() !== docs[0]!.toLowerCase()) docs.push(extras.documents);
+    d("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
+    for (const doc of docs) out.push({ path: `${doc}\\PowerShell`, file: false }, { path: `${doc}\\WindowsPowerShell`, file: false });
+    d("AppData", "Roaming", "Python"); d("AppData", "Roaming", "pip");
+  }
+  for (const p of extras.gitDirs ?? []) out.push({ path: p, file: false });
+  for (const p of extras.envPaths ?? []) out.push({ path: p, file: false });
+  const seen = new Set<string>();
+  return out.filter((e) => (seen.has(e.path) ? false : (seen.add(e.path), true)));
+}
+
 /** Where a file starts something later, outside any sandbox, under `home`. HKCU's `Run` and `RunOnce` keys aren't
  *  paths: the Windows sandbox (#207) has to deny them, a gap until it lands (the Windows release blocker). */
 export function autoRunPaths(os: Os, home: string, extras: RunLaterExtras = {}): string[] {
-  const u = (...parts: string[]) => underHome(os, home, parts);
-  const out: string[] = [];
-  // Shells, readline, editors, tmux.
-  out.push(...SHELL_FILES.map((f) => u(f)), u(".vimrc"), u(".vim"), u(".emacs"), u(".emacs.d"), u(".tmux.conf"));
-  out.push(...CONFIG_RUN_LATER.map((parts) => u(".config", ...parts)));
-  // SSH's files that run or admit something: `rc` runs at each login, `config` holds `ProxyCommand`/`LocalCommand`,
-  // `environment` is read by sshd, the keys admit whoever holds them. `known_hosts` stays writable (ssh writes it).
-  out.push(...["rc", "config", "environment", "authorized_keys", "authorized_keys2"].map((f) => u(".ssh", f)));
-  // git: hooks, fsmonitor, the pager and `!` aliases in the global config; the templates every `git init` copies.
-  out.push(u(".gitconfig"), u(".git-templates"));
-  // The folders on the PATH a user's shell finds commands in first.
-  out.push(u(".local", "bin"), u("bin"), u(".cargo", "bin"));
-  // Package managers' configs (scripts, registries, init scripts) and Python's: a `.pth` or `usercustomize.py` in the
-  // user site-packages runs at every Python start, so the whole user tree is held (`pip install --user` asks).
-  out.push(u(".npmrc"), u(".yarnrc"), u(".yarnrc.yml"), u(".bunfig.toml"), u(".cargo", "config.toml"), u(".cargo", "config"),
-    u(".gradle", "init.d"), u(".gradle", "init.gradle"), u(".pip"));
-  if (os === "macos") {
-    out.push(
-      u("Library", "LaunchAgents"), u("Library", "LaunchDaemons"),
-      u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
-      u("Library", "Application Support", "com.apple.backgroundtaskmanagementd"),
-      u("Library", "Preferences", "com.apple.loginwindow.plist"),
-      u("Library", "Application Support", "iTerm2", "Scripts", "AutoLaunch"),
-      u("Library", "Workflows", "Applications", "Folder Actions"),
-      u("Library", "Python"),
-    );
-  } else if (os === "linux") {
-    out.push(
-      u(".config", "autostart"), u(".config", "systemd", "user"), u(".local", "share", "systemd", "user"),
-      u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".xinitrc"), u(".xsession"), u(".xsessionrc"),
-      u(".config", "plasma-workspace", "env"), u(".config", "plasma-workspace", "shutdown"),
-      u(".config", "i3"), u(".i3"), u(".config", "sway"), u(".config", "hypr"), u(".config", "openbox"),
-      u(".local", "lib"),
-    );
-  } else {
-    const docs = [u("Documents")];
-    if (extras.documents !== undefined && extras.documents.toLowerCase() !== docs[0]!.toLowerCase()) docs.push(extras.documents);
-    out.push(u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"));
-    for (const d of docs) out.push(`${d}\\PowerShell`, `${d}\\WindowsPowerShell`);
-    out.push(u("AppData", "Roaming", "Python"), u("AppData", "Roaming", "pip"));
-  }
-  out.push(...(extras.gitDirs ?? []), ...(extras.envPaths ?? []));
-  return [...new Set(out)];
+  return autoRunEntries(os, home, extras).map((e) => e.path);
 }
 
 /** The coding agents' own settings, which change how they sandbox themselves or which commands they run (MCP servers,
@@ -452,12 +460,17 @@ export function autoRunPaths(os: Os, home: string, extras: RunLaterExtras = {}):
  *  settings, Cursor's folder and OpenCode's. Lane K's writers deny these per backend; the fence holds them for every
  *  runner. */
 export function agentConfigPaths(os: Os, home: string): string[] {
+  return agentConfigEntries(os, home).map((e) => e.path);
+}
+
+/** `agentConfigPaths` with each entry's shape. */
+export function agentConfigEntries(os: Os, home: string): RunLaterEntry[] {
   const u = (...parts: string[]) => underHome(os, home, parts);
   return [
-    u(".claude"), u(".claude.json"),
-    u(".codex", "config.toml"),
-    u(".gemini", "settings.json"),
-    u(".cursor"),
-    u(".config", "opencode"),
+    { path: u(".claude"), file: false }, { path: u(".claude.json"), file: true },
+    { path: u(".codex", "config.toml"), file: true },
+    { path: u(".gemini", "settings.json"), file: true },
+    { path: u(".cursor"), file: false },
+    { path: u(".config", "opencode"), file: false },
   ];
 }
