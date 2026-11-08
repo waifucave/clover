@@ -311,6 +311,8 @@ export class AccountClient {
         ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      // Never followed: a 307 or 308 would send the body (a refresh token among them) to whatever origin it names.
+      redirect: "error",
     });
     const res = await this.#fetch(req);
     if (res.ok) return res;
@@ -324,6 +326,7 @@ export class AccountClient {
       method,
       headers: { authorization: `Bearer ${bearer}`, ...(body === undefined ? {} : { "content-type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      redirect: "error",
     }));
     let res = await send(token);
     if (res.status === 401) {
