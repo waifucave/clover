@@ -9,12 +9,21 @@ import { CLOVER_NAME_SCAN_EXCLUSIONS, countFiles, nameGuardPath, runNameScan } f
 const PLANTED = "PLANTED-IDENTITY-PROBE";
 const guardScript = `#!/bin/bash\n[ "$1" = artifacts ] || exit 2\nshift\nif grep -rIl --binary-files=text "${PLANTED}" "$@" >/dev/null 2>&1; then exit 1; fi\nexit 0\n`;
 
+/** A real (deflated) zip of `inside` at `file`: an installer the scan has to open to read. */
+function zipOf(file: string, inside: string): void {
+  const src = mkdtempSync(join(tmpdir(), "clover-name-scan-zip-"));
+  writeFileSync(join(src, "inside.txt"), inside);
+  const r = Bun.spawnSync(["bsdtar", "-a", "-cf", file, "-C", src, "inside.txt"]);
+  rmSync(src, { recursive: true, force: true });
+  if (r.exitCode !== 0) throw new Error(`bsdtar: ${r.stderr.toString()}`);
+}
+
 function release(): string {
   const out = mkdtempSync(join(tmpdir(), "clover-name-scan-"));
   mkdirSync(join(out, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon"), { recursive: true });
   writeFileSync(join(out, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon", "clover-core"), "core bytes");
   writeFileSync(join(out, "mac-arm64", "Clover.app", "Contents", "Resources", "daemon", "clover-plugin-bun"), "bun bytes");
-  writeFileSync(join(out, "Clover-1.0.0.dmg"), "dmg bytes");
+  zipOf(join(out, "Clover-1.0.0-mac.zip"), "installer bytes");
   writeFileSync(join(out, "latest-mac.yml"), "version: 1.0.0\n");
   return out;
 }
@@ -36,8 +45,8 @@ describe("the release's identity scan", () => {
     }
   });
 
-  test("a planted hit anywhere in the release fails it: in resources/daemon, an installer, an update file", () => {
-    for (const where of [["mac-arm64", "Clover.app", "Contents", "Resources", "daemon", "clover-plugin-bun"], ["Clover-1.0.0.dmg"], ["latest-mac.yml"]]) {
+  test("a planted hit anywhere in the release fails it: in resources/daemon, an update file, and inside an installer", () => {
+    for (const where of [["mac-arm64", "Clover.app", "Contents", "Resources", "daemon", "clover-plugin-bun"], ["latest-mac.yml"]]) {
       const out = release();
       try {
         writeFileSync(join(out, ...where), `bytes ${PLANTED} bytes`);
@@ -45,6 +54,25 @@ describe("the release's identity scan", () => {
       } finally {
         rmSync(out, { recursive: true, force: true });
       }
+    }
+    // Deflated inside the zip, so only opening it finds it (the scanner is #209's, which opens every archive).
+    const out = release();
+    try {
+      rmSync(join(out, "Clover-1.0.0-mac.zip"));
+      zipOf(join(out, "Clover-1.0.0-mac.zip"), `${"padding ".repeat(200)}${PLANTED}${" padding".repeat(200)}`);
+      expect(() => runNameScan(out, { required: true, guard, quiet: true })).toThrow("the identity scan found a hit");
+    } finally {
+      rmSync(out, { recursive: true, force: true });
+    }
+  });
+
+  test("an installer the scan can't open fails it (never read raw only)", () => {
+    const out = release();
+    try {
+      writeFileSync(join(out, "Clover-1.0.0.dmg"), "not a disk image");
+      expect(() => runNameScan(out, { required: true, guard, quiet: true })).toThrow("couldn't read the whole built release");
+    } finally {
+      rmSync(out, { recursive: true, force: true });
     }
   });
 
@@ -61,9 +89,10 @@ describe("the release's identity scan", () => {
   test("an exclusion still keeps the partition whole, and symlinks are neither counted nor followed", () => {
     const out = release();
     try {
-      symlinkSync(join(out, "Clover-1.0.0.dmg"), join(out, "link.dmg"));
+      // A relative link: its name and target are read, it is never followed (an absolute one fails the scan).
+      symlinkSync("Clover-1.0.0-mac.zip", join(out, "link.zip"));
       expect(countFiles([out])).toBe(4);
-      const r = runNameScan(out, { required: true, guard, quiet: true, exclusions: [/^Clover-1\.0\.0\.dmg$/] });
+      const r = runNameScan(out, { required: true, guard, quiet: true, exclusions: [/^Clover-1\.0\.0-mac\.zip$/] });
       expect(r.ran && r.scanned === 3 && r.total === 4).toBe(true);
     } finally {
       rmSync(out, { recursive: true, force: true });
