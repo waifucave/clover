@@ -31,6 +31,7 @@ import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
 import type { SessionRecord } from "../contracts/session-host";
 import type { FileDeviceRegistry } from "../devices/registry";
+import { projectRecords } from "../sessions/wire";
 import { mountSyncStreams } from "./streams";
 
 const PREFIX = "transcript:";
@@ -233,9 +234,12 @@ export class SessionRecordSync {
     const peers = this.#o.transport.links().filter((l) => l.up && this.#isComputer(l.peer)).map((l) => l.peer);
     for (const peer of peers) {
       for (const [id, box] of batches) {
+        // One record before the new ones, so the receiver compares it: a live push finds a fork as a pull does.
         const first = box.records[0]!;
-        const entries = box.records.map((r, i) => this.#entry(r, i === 0 ? box.view : undefined));
-        void this.#push(peer, id, first.seq - 1, entries, box.records.at(-1)!.seq);
+        const prev = first.seq > 0 ? this.#o.host.history(id, { afterSeq: first.seq - 2, limit: 1 })[0] : undefined;
+        const records = prev !== undefined && prev.seq === first.seq - 1 ? [prev, ...box.records] : box.records;
+        const entries = records.map((r, i) => this.#entry(r, i === 0 ? box.view : undefined));
+        void this.#push(peer, id, records[0]!.seq - 1, entries, box.records.at(-1)!.seq);
       }
     }
   }
@@ -298,13 +302,13 @@ export class SessionRecordSync {
 
   #take(id: string, base: number, entries: Entry[], from: string, senderHead?: number): { ok: true; head: number } | { ok: false; reason: "stale_base" | "not_writer" | "refused" | "fork" } {
     const head = this.#o.host.head(id);
-    // Entries may start at or before this computer's last record (they overlap, and the host compares them), never
-    // after it.
-    if (base > head - 1 || base < -1) return { ok: false, reason: "stale_base" };
+    // Entries start at or before this computer's last record, so at least that one overlaps and the host compares it
+    // (a different one is a fork); never after it. Entries that don't reach back to it are asked again from history.
     if (entries.length === 0) return { ok: true, head: head - 1 };
-    if (this.#forking.has(id)) return { ok: false, reason: "fork" };
     const v = this.#writerView(id, from, entries.find((e) => e?.payload?.view)?.payload.view);
     if (v === undefined) return this.#o.host.get(id) || entries[0]?.payload?.view ? { ok: false, reason: "not_writer" } : { ok: false, reason: "refused" };
+    if (base > (head > 0 ? head - 2 : -1) || base < -1) return { ok: false, reason: "stale_base" };
+    if (this.#forking.has(id)) return { ok: false, reason: "fork" };
     const records: SessionRecord[] = [];
     const late: boolean[] = [];
     let next = base + 1;
@@ -315,9 +319,21 @@ export class SessionRecordSync {
       late.push(this.#o.isStale?.(r.epoch ?? 0, typeof e.scope === "string" ? e.scope : undefined) ?? false);
       next++;
     }
+    // The records this computer holds already are compared here (a grant the same as its copy): a different one is a
+    // fork. Only the new ones go to the host.
+    const heldCount = Math.max(0, Math.min(records.length, head - (base + 1)));
+    if (heldCount > 0) {
+      const mine = this.#o.host.history(id, { afterSeq: base, limit: heldCount });
+      for (let i = 0; i < heldCount; i++) {
+        if (!sameRecord(mine[i], records[i])) {
+          void this.#resolveFork(from, id, Math.min(head - 1, next - 1), false);
+          return { ok: false, reason: "fork" };
+        }
+      }
+    }
     try {
       // Only the records from an earlier lease are marked late: the batch goes in as runs of the same mark.
-      for (let i = 0; i < records.length;) {
+      for (let i = heldCount; i < records.length;) {
         let j = i + 1;
         while (j < records.length && late[j] === late[i]) j++;
         this.#o.host.ingest(v, records.slice(i, j), { from, late: late[i]! });
@@ -370,9 +386,11 @@ export class SessionRecordSync {
       // The writer's records from there.
       for (;;) {
         const have = this.#o.host.head(id);
-        const page = await link.request<{ entries: Entry[]; more: boolean }>("sync.pull", { stream, after: have - 1, limit: BATCH });
+        // From the last record both now hold, overlapping by one, as every take does.
+        const after = Math.max(-1, have - 2);
+        const page = await link.request<{ entries: Entry[]; more: boolean }>("sync.pull", { stream, after, limit: BATCH });
         if (page.entries.length === 0) break;
-        const r = this.#take(id, have - 1, page.entries, peer);
+        const r = this.#take(id, after, page.entries, peer);
         if (!r.ok || !page.more) break;
       }
       await this.#sendLate(id);
@@ -405,7 +423,8 @@ export class SessionRecordSync {
         const view = this.#o.host.get(id);
         if (!view) return;
         const records = this.#o.host.readEarlier(id, e.id);
-        if (records.length > 0) {
+        // A run with nothing a person would see (status changes only) goes nowhere: no "Earlier on" note over nothing.
+        if (projectRecords(records.filter((r) => r.type !== "status"), { kind: view.kind }).length > 0) {
           if (view.computer === this.#o.computer()) {
             // This computer runs it now: its own set-aside records go at the end of its own log.
             this.#o.host.appendLate(id, records, { from: this.#o.self, computer: this.#o.computer(), earlierId: e.id });
@@ -413,8 +432,9 @@ export class SessionRecordSync {
             const runner = this.#o.registry.list().find((d) => d.computer === view.computer && d.runsCore && d.revokedAt === undefined);
             if (!runner) return;
             const link = await this.#o.transport.connect(runner.id);
-            const r = await link.request<{ ok: boolean }>("sync.push", { stream: `${PREFIX}${id}`, late: true, earlierId: e.id, entries: records.map((rec) => this.#entry(rec, undefined)) });
+            const r = await link.request<{ ok: boolean; reason?: string }>("sync.push", { stream: `${PREFIX}${id}`, late: true, earlierId: e.id, entries: records.map((rec) => this.#entry(rec, undefined)) });
             if (!r.ok) {
+              this.#log(`session ${id}: ${view.computer} didn't take what this computer set aside (${r.reason ?? "refused"}); trying again`);
               again = true;
               return;
             }
@@ -498,8 +518,31 @@ function sessionOf(stream: unknown): string | undefined {
 /** What a copy adds to a record that isn't the record (lane D's host: `late`, and `copiedFrom` on every copy). */
 const IGNORED = new Set(["late", "copiedFrom"]);
 
-/** The same record, whatever its `late` and `copiedFrom` marks. */
+/** A grant and its copy are the same record (a copy is `session_grant_copied`, with where it came from and no card):
+ *  compared by their key alone. */
+const GRANT_TYPES = new Set(["session_grant", "session_grant_copied"]);
+function grantKeyOf(r: unknown): string | undefined {
+  const x = r as { type?: unknown; event?: { type?: unknown; key?: unknown } } | null;
+  if (x === null || typeof x !== "object" || x.type !== "driver" || typeof x.event !== "object" || x.event === null) return undefined;
+  return GRANT_TYPES.has(x.event.type as string) && typeof x.event.key === "string" ? x.event.key : undefined;
+}
+
+/** The same record, whatever its `late` and `copiedFrom` marks, and a grant the same as its copy. */
 export function sameRecord(a: unknown, b: unknown): boolean {
+  const ga = grantKeyOf(a);
+  const gb = grantKeyOf(b);
+  if (ga !== undefined || gb !== undefined) {
+    if (ga !== gb) return false;
+    const rest = (r: unknown) => {
+      const { event: _e, ...o } = r as Record<string, unknown>;
+      return o;
+    };
+    return sameFields(rest(a), rest(b));
+  }
+  return sameFields(a, b);
+}
+
+function sameFields(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
   if (Array.isArray(a) !== Array.isArray(b)) return false;
