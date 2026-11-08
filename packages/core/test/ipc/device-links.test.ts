@@ -78,6 +78,10 @@ describe("the daemon's links (H-M1 wiring)", () => {
   // Lane I's account settings (#258): the default handshake, the account and short codes' rendezvous all come from
   // `waifucaveAccount` (here `<clover home>/account.json`, read as a test build reads it), at a local stand-in.
   async function accountBoot(settings: Record<string, string>) {
+    // The environment's overrides (a dev or test build reads them) would win over the file: none while this runs.
+    const saved = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith("CLOVER_ACCOUNT_") || k === "CLOVER_HANDSHAKE_URL").map((k) => [k, process.env[k]]));
+    for (const k of Object.keys(saved)) delete process.env[k];
+    stops.push(async () => void Object.assign(process.env, saved));
     const seen: string[] = [];
     const server = Bun.serve({
       hostname: "127.0.0.1", port: 0,
@@ -105,7 +109,7 @@ describe("the daemon's links (H-M1 wiring)", () => {
     return { d, seen, lines };
   }
 
-  test.skipIf(process.env.CLOVER_HANDSHAKE_URL !== undefined)("the account settings pick the handshake and the short codes' rendezvous; with no sign-in project the device runs signed out", async () => {
+  test("the account settings pick the handshake and the short codes' rendezvous; with no sign-in project the device runs signed out", async () => {
     const { d, seen, lines } = await accountBoot({ handshakeUrl: "$URL" });
     const links = d.links!;
     expect(links.directory).toBeDefined();
@@ -116,7 +120,7 @@ describe("the daemon's links (H-M1 wiring)", () => {
     expect(seen.some((r) => r.startsWith("PUT /v1/rendezvous/"))).toBe(true);
   });
 
-  test.skipIf(process.env.CLOVER_HANDSHAKE_URL !== undefined || process.env.CLOVER_ACCOUNT_AUTH_URL !== undefined)("with a sign-in project the links get the account client (and its devices at the handshake)", async () => {
+  test("with a sign-in project the links get the account client (and its devices at the handshake)", async () => {
     const { d, lines } = await accountBoot({ handshakeUrl: "$URL", authUrl: "$URL/supabase", anonKey: "anon-public-key", serviceUrl: "$URL/auth" });
     expect(d.links!.accountDirectory).toBeDefined();
     expect(lines.some((l) => /runs signed out/.test(l))).toBe(false);
