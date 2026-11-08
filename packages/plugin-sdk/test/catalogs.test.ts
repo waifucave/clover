@@ -8,7 +8,7 @@ import {
   fetchesCodeAtRunTime, hookMatchesTool, hookOrder, interpolate, isPluginTokenName, isSafeTokenValue, isTokenName, isTokenValue, keyMatches,
   networkAllows, pluginTokenName,
   parseCapability,
-  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, CLIENT_BARE_IMPORTS,
+  parseInterpolation, splitToolWireName, toolWireName, validateManifest, wrapperId, mayHoldCapability, foldTitle, isReservedPluginName, CLIENT_BARE_IMPORTS,
   reachesPublicNetwork,
 } from "../src/index";
 
@@ -269,6 +269,12 @@ describe("points and spots", () => {
     for (const t of ["Cłover", "Cƚover", "ꓚlover", "Ϲlover", "ϲlover", "Clover™", "Clover®", "Cloveɍ", "Clovɘr", "Clѻver", "Cl○ver"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Clover")]);
     expect(foldTitle("ħŧđ")).toBe("htd");
     expect(foldTitle("Iris")).not.toBe(foldTitle("Irma"));
+    // #264's review: lookalikes the island's own fold refused, which needed the order (NFKD and marks first, the map
+    // before and after case) and the island's tables: Cherokee, Armenian capitals, Greek sigmas, Cyrillic yi.
+    for (const t of ["Needs y\u0585u", "Needs y\u03C3u", "N\u0451eds you", "NEEDS Y\u13EBU", "NEEDS Y\u0555U", "NEEDS YO\u054D", "NEED\u054F YOU"]) expect([t, foldTitle(t)]).toEqual([t, foldTitle("Needs you")]);
+    for (const t of ["CL\u13EBVER", "CL\u0555VER", "C\u0407over", "\u03C2lover", "C\u13A5over"]) expect([t, isReservedPluginName(t)]).toEqual([t, true]);
+    // Too loose to keep: Greek eta reads as "n" only in some faces.
+    expect(foldTitle("\u03B7eeds you")).not.toBe(foldTitle("Needs you"));
     // The panel says whose tabs a bot's panel shows; the client entry's bare imports are React 19's and the UI API's.
     expect(Object.keys((SPOTS.find((s) => s.name === "panel")!.props as unknown as { shape: Record<string, unknown> }).shape)).toEqual(["app", "session", "bot"]);
     expect(CLIENT_BARE_IMPORTS).toContain("@waifucave/clover-plugin-sdk/ui");

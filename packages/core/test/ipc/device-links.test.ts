@@ -6,7 +6,7 @@ import { SystemClock } from "../../src/clock/system-clock";
 import { MemoryNetwork } from "../../src/links/memory-wire";
 import { MemoryRendezvous } from "../../src/links/pairing";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../../src/secrets/clover-secret-store";
-import { linkSidecarBinary, refuseUntilBroker, startDaemonLinks, type DaemonLinks } from "../../src/ipc/device-links";
+import { defaultDeviceName, linkSidecarBinary, refuseUntilBroker, startDaemonLinks, type DaemonLinks } from "../../src/ipc/device-links";
 import type { CloverHandler } from "../../src/ipc/clover";
 
 // C-M2: H's links in the daemon, on H's in-memory network: the real CloverSecretStore holds the device keys, the devices
@@ -139,5 +139,30 @@ describe("the daemon's links (H-M1 wiring)", () => {
     const rendezvous = new MemoryRendezvous();
     expect((await (await start({ rendezvous })).pairing.begin()).code).toBeDefined();
     expect(rendezvous.slots.size).toBe(1);
+  });
+
+  test("the default device name: the host name without its domain, cut to 63 characters, never one the registry refuses", () => {
+    expect(defaultDeviceName("studio.local")).toBe("studio");
+    expect(defaultDeviceName("Studio-MacBook-Pro")).toBe("Studio-MacBook-Pro");
+    // A CI runner's generated name, longer than the registry takes.
+    const long = "x".repeat(100);
+    expect(defaultDeviceName(long)).toBe("x".repeat(63));
+    expect([...defaultDeviceName("é".repeat(80))].length).toBe(63);
+    expect(defaultDeviceName("")).toBe("Computer");
+    expect(defaultDeviceName(".local")).toBe("Computer");
+    expect(defaultDeviceName("tab\there")).toBe("tabhere");
+  });
+
+  test("a host name too long for the registry still starts the links", async () => {
+    const net = new MemoryNetwork();
+    const home = mkdtempSync(join(tmpdir(), "clover-int-name-"));
+    const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+    const d = await startDaemonLinks({
+      home, store, clock, handlers: {}, binary: null, handshake: null, publicTime: null, mainComputer: { watchSleep: false },
+      self: { name: defaultDeviceName(`runner-${"0".repeat(90)}.local`), os: "macos" },
+      wire: (key) => net.endpoint(key.publicKey), dispatch: async () => null, watch: () => () => {},
+    });
+    stops.push(() => d.close());
+    expect(d.links!.registry.get(d.links!.key.id)?.name.length).toBe(63);
   });
 });
