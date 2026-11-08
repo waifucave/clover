@@ -108,7 +108,10 @@ export class HostMux {
     for (const m of ["pluginHost.api", "pluginHost.unwatch"]) {
       w.peer.handle(m, (p: Record<string, unknown>) => d.request(m, { ...p, pluginId }));
     }
-    w.peer.handle("pluginHost.chunk", (p: Record<string, unknown>) => d.notify("pluginHost.chunk", p));
+    // A stream's chunk only for a call made to this worker's plugin (#322's review): never another plugin's call id.
+    w.peer.handle("pluginHost.chunk", (p: { callId?: unknown }) => {
+      if (typeof p?.callId === "string" && this.#callOwner.get(p.callId) === pluginId) d.notify("pluginHost.chunk", p);
+    });
     for (const m of ["pluginHost.mcpMessage", "pluginHost.mcpClose"]) {
       w.peer.handle(m, (p: { channel: string }) => {
         if (this.#channelOwner.get(p.channel) === pluginId) d.notify(m, p);

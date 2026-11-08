@@ -14,5 +14,14 @@ delete process.env.CLOVER_PLUGIN_WORKER;
 const mux = new HostMux({ daemon: peer, spawnWorker: bunWorker(process.env.CLOVER_COMPUTER ?? "", workerEntry === undefined || workerEntry === "" ? undefined : workerEntry) });
 peer.onClose(() => {
   mux.close();
+  // The daemon is gone (or ended this process): what the plugins started goes with it. The daemon starts this process
+  // as its group's leader (`spawnHostProcess`), so the group is this process's; where it isn't, there's none to signal.
+  if (process.platform !== "win32") {
+    try {
+      process.kill(-process.pid, "SIGKILL");
+    } catch {
+      /* not a group leader */
+    }
+  }
   process.exit(0);
 });
