@@ -39,7 +39,8 @@ describe("the daemon's links (H-M1 wiring)", () => {
     const handlers: Record<string, CloverHandler> = {};
     const d = await startDaemonLinks({
       home: mkdtempSync(join(tmpdir(), "x-")), store: new CloverSecretStore({ home: mkdtempSync(join(tmpdir(), "y-")), values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } }),
-      clock, handlers, binary: null, handshake: null, publicTime: null, mainComputer: { watchSleep: false }, watch: () => () => {},
+      // The defaults: local-only must not reach for production's handshake, SNTP or the network watch on its own.
+      clock, handlers, binary: null, mainComputer: { watchSleep: false },
       self: { name: "Studio", os: "macos" }, dispatch: async () => null, log: (l) => lines.push(l),
     });
     stops.push(() => d.close());
@@ -49,6 +50,10 @@ describe("the daemon's links (H-M1 wiring)", () => {
     expect(links.registry.get(links.key.id)).toMatchObject({ name: "Studio" });
     expect(Object.keys(handlers)).toContain("device.list");
     expect(links.sidecarPid()).toBeUndefined();
+    // Nothing leaves the machine: no handshake's directory or group, no directories' driver.
+    expect(links.directory).toBeUndefined();
+    expect(links.groups).toBeUndefined();
+    expect(links.driver).toBeUndefined();
     // A lone computer: its own main, holding its lease.
     for (let i = 0; i < 200 && links.main?.lease.state().holder !== links.key.id; i++) await Bun.sleep(10);
     expect(links.main?.lease.state().holder).toBe(links.key.id);

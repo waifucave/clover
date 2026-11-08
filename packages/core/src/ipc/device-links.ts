@@ -115,10 +115,13 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
   // or reach another device until it has the sidecar. One computer on its own is the main case, not an error.
   const localOnly = !input.wire && !binary;
   if (localOnly) log("[links] no link sidecar (clover-link) beside the daemon: this computer runs local-only, without links to other devices");
+  // Local-only, nothing leaves the machine: no handshake (no other device to find or pair), no public time (the shared
+  // clock has no one to share with) and no directories' driver (nothing to publish or look up).
   const handshake = input.handshake === undefined
-    ? new HandshakeClient({ baseUrl: WAIFUCAVE_DEVICE_SERVICES.handshake.url, clock: input.clock })
+    ? (localOnly ? undefined : new HandshakeClient({ baseUrl: WAIFUCAVE_DEVICE_SERVICES.handshake.url, clock: input.clock }))
     : input.handshake ?? undefined;
-  const publicTime = input.publicTime === undefined ? new SntpTimeSource() : input.publicTime ?? undefined;
+  const publicTime = input.publicTime === undefined ? (localOnly ? undefined : new SntpTimeSource()) : input.publicTime ?? undefined;
+  const driver = input.driver !== undefined ? input.driver : localOnly ? false : undefined;
   const openCard = input.openCard ?? refuseUntilBroker;
   const sidecar: NonNullable<DeviceLinksOptions["sidecar"]> = { ...(input.sidecar ?? {}), binary: binary!, onLog: (l: string) => log(`[clover-link] ${l}`) };
   const links = await startDeviceLinks({
@@ -129,7 +132,7 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
     ...(handshake ? { handshake } : {}),
     ...(publicTime ? { publicTime } : {}),
     ...(input.mainComputer !== undefined ? { mainComputer: input.mainComputer } : {}),
-    ...(input.driver !== undefined ? { driver: input.driver } : {}),
+    ...(driver !== undefined ? { driver } : {}),
     ...(input.updateGate ? { updateGate: input.updateGate } : {}),
     openCard,
     log,
@@ -147,7 +150,8 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
       devices: links.registry, ledger: memoryLedger(), render: renderNothing, clock: input.clock,
       dispatch: (method, params, caller, role) => input.dispatch(method, params, caller, role),
     }));
-    offs.push((input.watch ?? watchNetwork)((why) => {
+    // Local-only there is no one to re-dial, so no network watch (a test's own watch still runs).
+    if (!localOnly || input.watch) offs.push((input.watch ?? watchNetwork)((why) => {
       log(`[links] network ${why === "wake" ? "after a wake" : "changed"}: re-dialling`);
       void links.networkChanged().catch(() => undefined);
     }));
