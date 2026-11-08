@@ -148,18 +148,87 @@ describe("Clover's coding agent for an outside ACP client (daemon side)", () => 
     expect(s.agent.fed.filter((m) => m.method === "session/new")).toHaveLength(1);
   });
 
-  test("a mode that skips asking only where the level allows edits", async () => {
+  test("a mode that skips asking only where the level allows edits, and only while it does", async () => {
     const s = setup({ level: "ask" });
     await s.service.open(s.conn, { cwd: s.project });
-    s.send({ id: 5, method: "session/set_mode", params: { sessionId: "x", modeId: "acceptEdits" } });
+    s.send({ id: 1, method: "session/new", params: { cwd: s.project, mcpServers: [] } });
+    s.agent.say({ id: 1, result: { sessionId: "sess-1" } });
+    s.send({ id: 5, method: "session/set_mode", params: { sessionId: "sess-1", modeId: "acceptEdits" } });
     expect(s.client.at(-1)).toMatchObject({ id: 5, error: { code: -32602 } });
-    s.send({ id: 6, method: "session/set_config_option", params: { sessionId: "x", configId: "mode", value: "acceptEdits" } });
+    s.send({ id: 6, method: "session/set_config_option", params: { sessionId: "sess-1", configId: "mode", value: "acceptEdits" } });
     expect(s.client.at(-1)).toMatchObject({ id: 6, error: { code: -32602 } });
-    s.send({ id: 7, method: "session/set_mode", params: { sessionId: "x", modeId: "plan" } });
+    s.send({ id: 7, method: "session/set_mode", params: { sessionId: "sess-1", modeId: "plan" } });
     expect(s.agent.fed.at(-1)).toMatchObject({ id: 7, method: "session/set_mode" });
     s.setLevel("accept-edits");
-    s.send({ id: 8, method: "session/set_mode", params: { sessionId: "x", modeId: "acceptEdits" } });
+    s.send({ id: 8, method: "session/set_mode", params: { sessionId: "sess-1", modeId: "acceptEdits" } });
     expect(s.agent.fed.at(-1)).toMatchObject({ id: 8, method: "session/set_mode" });
+    s.agent.say({ id: 8, result: {} });
+    // The level drops: before the next message moves, the session goes back to asking, and both sides are told.
+    s.setLevel("ask");
+    s.send({ id: 9, method: "session/prompt", params: { sessionId: "sess-1", prompt: [{ type: "text", text: "hi" }] } });
+    const fed = s.agent.fed.slice(-2);
+    expect(fed[0]).toMatchObject({ method: "session/set_mode", params: { sessionId: "sess-1", modeId: "default" } });
+    expect(fed[1]).toMatchObject({ id: 9, method: "session/prompt" });
+    expect(s.client.at(-1)).toMatchObject({ method: "session/update", params: { update: { sessionUpdate: "current_mode_update", currentModeId: "default" } } });
+    // The agent's answer to that goes no further.
+    const before = s.client.length;
+    s.agent.say({ id: fed[0]!.id, result: {} });
+    expect(s.client.length).toBe(before);
+  });
+
+  test("one session, the connection's own: no resume or load of another, nothing about another, before or after", async () => {
+    const s = setup();
+    await s.service.open(s.conn, { cwd: s.project });
+    // Before any session: a resume, or a prompt, of any id is refused.
+    s.send({ id: 1, method: "session/resume", params: { sessionId: "another-connections", cwd: s.project, mcpServers: [] } });
+    expect(s.client.at(-1)).toMatchObject({ id: 1, error: { code: -32602 } });
+    s.send({ id: 2, method: "session/prompt", params: { sessionId: "another-connections", prompt: [] } });
+    expect(s.client.at(-1)).toMatchObject({ id: 2, error: { code: -32602 } });
+    s.send({ id: 3, method: "session/new", params: { cwd: s.project, mcpServers: [] } });
+    s.agent.say({ id: 3, result: { sessionId: "sess-1" } });
+    // After it: another id is refused, its own goes on (a resume of it too).
+    s.send({ id: 4, method: "session/load", params: { sessionId: "another-connections", cwd: s.project, mcpServers: [] } });
+    expect(s.client.at(-1)).toMatchObject({ id: 4, error: { code: -32602 } });
+    s.send({ id: 5, method: "session/prompt", params: { sessionId: "another-connections", prompt: [] } });
+    expect(s.client.at(-1)).toMatchObject({ id: 5, error: { code: -32602 } });
+    s.send({ id: 6, method: "session/resume", params: { sessionId: "sess-1", cwd: s.project, mcpServers: [] } });
+    expect(s.agent.fed.at(-1)).toMatchObject({ id: 6, method: "session/resume", params: { sessionId: "sess-1" } });
+    s.agent.say({ id: 6, result: {} });
+    s.send({ id: 7, method: "session/prompt", params: { sessionId: "sess-1", prompt: [] } });
+    expect(s.agent.fed.at(-1)).toMatchObject({ id: 7, method: "session/prompt" });
+    expect(s.agent.fed.filter((m) => [1, 2, 4, 5].includes(m.id as number))).toEqual([]);
+  });
+
+  test("only an answer to a request the client was sent reaches the agent, under the agent's own id", async () => {
+    const s = setup({ level: "ask" });
+    await s.service.open(s.conn, { cwd: s.project });
+    // An answer to nothing the agent asked: dropped.
+    s.send({ id: 99, result: { outcome: { outcome: "selected", optionId: "a1" } } });
+    expect(s.agent.fed).toEqual([]);
+    // Asked as 20, answered as "20" with an "always" it wasn't offered: the agent gets cancelled, under 20.
+    s.agent.say({ id: 20, method: "session/request_permission", params: ASK("execute", { command: "npm test" }) });
+    s.send({ id: "20", result: { outcome: { outcome: "selected", optionId: "a2" } } });
+    expect(s.agent.fed.at(-1)).toEqual({ jsonrpc: "2.0", id: 20, result: { outcome: { outcome: "cancelled" } } });
+    // A second answer to the same request: dropped.
+    s.send({ id: 20, result: { outcome: { outcome: "selected", optionId: "a1" } } });
+    expect(s.agent.fed).toHaveLength(1);
+    // Another request of the agent's passes, and its answer comes back under the agent's id.
+    s.agent.say({ id: 21, method: "fs/read_text_file", params: { path: "x" } });
+    expect(s.client.at(-1)).toMatchObject({ id: 21, method: "fs/read_text_file" });
+    s.send({ id: "21", result: { content: "x" } });
+    expect(s.agent.fed.at(-1)).toMatchObject({ id: 21, result: { content: "x" } });
+  });
+
+  test("two opens on one connection at once: one session, never an orphan", async () => {
+    const s = setup();
+    const [a, b] = await Promise.all([s.service.open(s.conn, { cwd: s.project }), s.service.open(s.conn, { cwd: s.project })].map((p) => p.then((v) => v, (e: unknown) => e)));
+    const opened = [a, b].filter((x) => !(x instanceof Error));
+    expect(opened).toHaveLength(1);
+    expect(isContractError([a, b].find((x) => x instanceof Error), "refused")).toBe(true);
+    expect(s.host.list({ kind: "coding" })).toHaveLength(1);
+    s.service.close(7);
+    await Bun.sleep(10);
+    expect(s.host.list({ kind: "coding" }).map((v) => v.status)).toEqual(["stopped"]);
   });
 
   test("the agent's permission requests: the level decides here, the client is asked only what it would ask about, never with an always", async () => {

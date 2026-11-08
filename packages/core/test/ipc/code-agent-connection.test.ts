@@ -9,6 +9,7 @@ import { CLOVER_ERR, CLOVER_PROTOCOL_VERSION, CODE_AGENT_MAX_LINE, encodeLine, E
 import { startIpcServer } from "../../src/ipc/server";
 import { createCloverServer, laneMethodHandlers, type CodeAgentDoor } from "../../src/ipc/clover";
 import { handler } from "../../src/bots/rpc";
+import { runCodeAgentRelay } from "../../src/agents/code-agent/relay";
 import { CloverTokens } from "../../src/auth/clover-tokens";
 import { SessionProcesses } from "../../src/auth/clover-caller";
 import { SessionStore } from "../../src/sessions/store";
@@ -216,6 +217,42 @@ describe("codeAgent.* on the daemon's endpoint (K-M3b)", () => {
     expect(said).toContain(`over ${CODE_AGENT_MAX_LINE}`);
     expect(said.length).toBeLessThan(200);
     c.close();
+  });
+
+  test("the relay: a slow client pauses the reading until it drains, in order; a line over the endpoint's bound encoded is refused", async () => {
+    const b = await boot();
+    // The client's side takes one line, then nothing until it drains.
+    const got: string[] = [];
+    let drain: (() => void) | undefined;
+    let full = false;
+    let ended!: () => void;
+    const input: AsyncIterable<Uint8Array> = { async *[Symbol.asyncIterator]() { await new Promise<void>((r) => (ended = r)); } };
+    const exit = runCodeAgentRelay({
+      endpoint: b.socketPath, cwd: "/Users/me/project", token: async () => b.token, input,
+      output: (t) => { got.push(t); if (!full) { full = true; return false; } return true; },
+      onDrain: (fn) => { drain = fn; }, say: () => {},
+    });
+    for (let i = 0; i < 100 && !b.door.toClient; i++) await Bun.sleep(10);
+    b.door.toClient!("{\"n\":1}");
+    b.door.toClient!("{\"n\":2}");
+    b.door.toClient!("{\"n\":3}");
+    await Bun.sleep(100);
+    expect(got).toEqual(["{\"n\":1}\n"]);
+    drain!();
+    for (let i = 0; i < 50 && got.length < 3; i++) await Bun.sleep(10);
+    expect(got).toEqual(["{\"n\":1}\n", "{\"n\":2}\n", "{\"n\":3}\n"]);
+    ended();
+    expect(await exit).toBe(0);
+
+    // Characters that JSON writes six bytes each: under the character cap, over the endpoint's 8 MiB once encoded.
+    const said: string[] = [];
+    const big = `{"x":"${"\u0001".repeat(1_500_000)}"}`;
+    const one: AsyncIterable<Uint8Array> = { async *[Symbol.asyncIterator]() { yield new TextEncoder().encode(`${big}\n`); await new Promise(() => {}); } };
+    const before = b.door.inputs.length;
+    const refused = await runCodeAgentRelay({ endpoint: b.socketPath, cwd: "/Users/me/project", token: async () => b.token, input: one, output: () => true, say: (t) => void said.push(t) });
+    expect(refused).toBe(1);
+    expect(said.join("\n")).toContain("over the endpoint's");
+    expect(b.door.inputs.length).toBe(before);
   });
 
   test("the session ending on the daemon's side closes the connection", async () => {

@@ -87,16 +87,24 @@ interface Relay {
   served?: CodeAgentServed;
   /** The one ACP session the client opened on this connection, once the agent answered. */
   acpSession?: string;
-  /** The client's `session/new` or `session/resume` still unanswered: its id. */
+  /** The client's `session/new`, `session/resume` or `session/load` still unanswered: its id. */
   opening?: RpcId;
-  /** The agent's permission requests the client was asked: the option ids it was offered. */
-  readonly asked: Map<RpcId, Set<string>>;
+  /** The agent's requests the client hasn't answered, by `String(id)`: the agent's own id, and for a permission request
+   *  the option ids the client was offered. Only an answer to one of these reaches the agent. */
+  readonly pending: Map<string, { id: RpcId; offered?: Set<string> }>;
+  /** The mode the session is in, as far as the client set it (`acceptEdits` is held to the level). */
+  mode: string;
+  /** Requests the service sent the agent itself: their answers go no further. */
+  readonly own: Set<string>;
   closed: boolean;
 }
 
 export class CodeAgentService {
   readonly #o: CodeAgentServiceOptions;
   readonly #relays = new Map<number, Relay>();
+  /** Connections whose session is being opened: reserved before the first await, so a second open can't slip in. */
+  readonly #opening = new Set<number>();
+  #ownSeq = 0;
 
   constructor(o: CodeAgentServiceOptions) {
     this.#o = o;
@@ -104,7 +112,16 @@ export class CodeAgentService {
 
   /** `codeAgent.open`: the session for this connection, bound to it. */
   async open(conn: CodeAgentConnection, p: { cwd: string; model?: string; effort?: string }): Promise<{ session: string }> {
-    if (this.#relays.has(conn.connId)) throw new ContractError("refused", "this connection already relays a session");
+    if (this.#relays.has(conn.connId) || this.#opening.has(conn.connId)) throw new ContractError("refused", "this connection already relays a session");
+    this.#opening.add(conn.connId);
+    try {
+      return await this.#open(conn, p);
+    } finally {
+      this.#opening.delete(conn.connId);
+    }
+  }
+
+  async #open(conn: CodeAgentConnection, p: { cwd: string; model?: string; effort?: string }): Promise<{ session: string }> {
     const backend = this.#o.backend();
     if (!backend) throw new ContractError("not_installed", "Clover's coding agent isn't on this computer");
     const detected = await backend.detect();
@@ -117,7 +134,7 @@ export class CodeAgentService {
       ...(p.model === undefined ? {} : { model: p.model }), ...(p.effort === undefined ? {} : { effort: p.effort }),
     };
     transcript.writeRecord(record);
-    const relay: Relay = { id, conn, root, transcript, asked: new Map(), closed: false };
+    const relay: Relay = { id, conn, root, transcript, pending: new Map(), mode: "default", own: new Set(), closed: false };
     this.#relays.set(conn.connId, relay);
     try {
       relay.served = await backend.serve({
@@ -153,6 +170,7 @@ export class CodeAgentService {
     }
     // Not a JSON-RPC object: the agent answers it as it would any (a parse error).
     if (!msg) return relay.served.feed(line);
+    this.#holdMode(relay);
     const out = this.#fromClient(relay, msg);
     if (out === undefined) return;
     relay.transcript.wire("out", out as unknown as JsonRpcMessage, false, this.#o.clock.now());
@@ -177,28 +195,33 @@ export class CodeAgentService {
   #fromClient(relay: Relay, msg: Obj): Obj | undefined {
     const id = idOf(msg);
     const method = str(msg["method"]);
-    // The client's answer to a permission request it was asked: only an option it was offered counts.
-    if (method === undefined && id !== undefined && relay.asked.has(id)) {
-      const offered = relay.asked.get(id)!;
-      relay.asked.delete(id);
+    // An answer: only to a request of the agent's the client was sent, and under the agent's own id.
+    if (method === undefined) {
+      const asked = id === undefined ? undefined : relay.pending.get(String(id));
+      if (!asked) return undefined;
+      relay.pending.delete(String(id));
+      if (!asked.offered) return { ...msg, id: asked.id };
+      // A permission request: only an option it was offered counts.
       const outcome = obj(obj(msg["result"])?.["outcome"]);
       const picked = str(outcome?.["optionId"]);
-      const ok = str(outcome?.["outcome"]) === "selected" && picked !== undefined && offered.has(picked);
-      relay.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: String(id), allowed: ok && picked !== undefined, by: "client" });
-      return ok ? msg : { jsonrpc: "2.0", id, result: { outcome: { outcome: "cancelled" } } };
+      const ok = str(outcome?.["outcome"]) === "selected" && picked !== undefined && asked.offered.has(picked);
+      relay.transcript.call({ ts: this.#o.clock.now(), type: "permission", toolCallId: String(asked.id), allowed: ok, by: "client" });
+      return { jsonrpc: "2.0", id: asked.id, result: { outcome: ok ? { outcome: "selected", optionId: picked } : { outcome: "cancelled" } } };
     }
-    if (method === undefined) return msg;
     const params = obj(msg["params"]) ?? {};
     const refuse = (why: string): undefined => {
       if (id !== undefined) this.#toClient(relay, { jsonrpc: "2.0", id, error: { code: RPC_INVALID_PARAMS, message: why } });
       return undefined;
     };
+    const named = str(params["sessionId"]);
     switch (method) {
       case "session/new":
       case "session/resume":
       case "session/load": {
-        if (relay.acpSession !== undefined || relay.opening !== undefined) {
-          return refuse("this connection serves one session; start Clover's coding agent again for another");
+        if (relay.opening !== undefined) return refuse("a session is already being opened on this connection");
+        // A new session only as the connection's first; a resume or load only of the one this connection was handed.
+        if (method === "session/new" ? relay.acpSession !== undefined : named === undefined || named !== relay.acpSession) {
+          return refuse("this connection serves one session, the one it opened; start Clover's coding agent again for another");
         }
         const cwd = str(params["cwd"]);
         const real = cwd === undefined ? relay.root : this.#real(cwd);
@@ -207,16 +230,31 @@ export class CodeAgentService {
         // No MCP server the client names runs inside the daemon.
         return { ...msg, params: { ...params, cwd: real, mcpServers: [] } };
       }
-      case "session/set_mode":
-        return this.#modeOk(str(params["modeId"])) ? msg : refuse(`the mode ${str(params["modeId"]) ?? "(none)"} would skip asking, which this computer's level doesn't allow`);
-      case "session/set_config_option":
-        if (str(params["configId"]) === "mode" && !this.#modeOk(str(params["value"]))) {
-          return refuse(`the mode ${str(params["value"]) ?? "(none)"} would skip asking, which this computer's level doesn't allow`);
-        }
-        return msg;
       default:
-        return msg;
+        break;
     }
+    // Everything else about a session names the connection's own.
+    if (method.startsWith("session/") && (relay.acpSession === undefined || named !== relay.acpSession)) return refuse("this connection serves one session, the one it opened");
+    if (method === "session/set_mode" || (method === "session/set_config_option" && str(params["configId"]) === "mode")) {
+      const mode = str(method === "session/set_mode" ? params["modeId"] : params["value"]);
+      if (!this.#modeOk(mode)) return refuse(`the mode ${mode ?? "(none)"} would skip asking, which this computer's level doesn't allow`);
+      relay.mode = mode ?? relay.mode;
+    }
+    return msg;
+  }
+
+  /** A session left in `acceptEdits` after the level stopped allowing edits goes back to asking, before anything else
+   *  moves: the agent is told, the client too, and the agent's answer goes no further. */
+  #holdMode(relay: Relay): void {
+    if (relay.mode !== "acceptEdits" || this.#modeOk("acceptEdits") || relay.acpSession === undefined || !relay.served) return;
+    relay.mode = "default";
+    const own = `clover-mode-${++this.#ownSeq}`;
+    relay.own.add(own);
+    const set = { jsonrpc: "2.0", id: own, method: "session/set_mode", params: { sessionId: relay.acpSession, modeId: "default" } };
+    relay.transcript.wire("out", set as unknown as JsonRpcMessage, false, this.#o.clock.now());
+    relay.served.feed(JSON.stringify(set));
+    this.#toClient(relay, { jsonrpc: "2.0", method: "session/update", params: { sessionId: relay.acpSession, update: { sessionUpdate: "current_mode_update", currentModeId: "default" } } });
+    this.#o.log?.(`code-agent: ${relay.id}: the level no longer allows edits without asking; back to asking`);
   }
 
   /** A mode the client may pick: one that asks, or one that edits without asking where the level allows edits. */
@@ -242,8 +280,17 @@ export class CodeAgentService {
     }
     if (!msg) return relay.conn.toClient(line);
     relay.transcript.wire("in", msg as unknown as JsonRpcMessage, false, this.#o.clock.now());
+    this.#holdMode(relay);
     const id = idOf(msg);
     const method = str(msg["method"]);
+    // The answer to a request the service sent itself goes no further.
+    if (method === undefined && id !== undefined && relay.own.delete(String(id))) return;
+    // The mode the agent says it is in.
+    const update = obj(obj(msg["params"])?.["update"]);
+    if (method === "session/update" && str(update?.["sessionUpdate"]) === "current_mode_update") {
+      relay.mode = str(update?.["currentModeId"]) ?? relay.mode;
+      this.#holdMode(relay);
+    }
     // The agent's answer to the client's session/new or resume: the connection's one session.
     if (method === undefined && id !== undefined && id === relay.opening) {
       relay.opening = undefined;
@@ -251,6 +298,8 @@ export class CodeAgentService {
       if (result) relay.acpSession = str(result["sessionId"]) ?? relay.acpSession ?? "";
     }
     if (method === "session/request_permission" && id !== undefined) return this.#permission(relay, id, obj(msg["params"]) ?? {});
+    // Any other request of the agent's: the client's answer to it may reach the agent.
+    if (method !== undefined && id !== undefined) relay.pending.set(String(id), { id });
     relay.conn.toClient(line);
   }
 
@@ -276,7 +325,7 @@ export class CodeAgentService {
     // What the level would ask about goes to the client, without an "always".
     const offered = options.filter((o) => OFFERED_KINDS.has(o.kind));
     if (offered.length === 0) return answer(false, "no-option");
-    relay.asked.set(id, new Set(offered.map((o) => o.optionId)));
+    relay.pending.set(String(id), { id, offered: new Set(offered.map((o) => o.optionId)) });
     this.#toClient(relay, { jsonrpc: "2.0", id, method: "session/request_permission", params: { ...params, options: offered } });
   }
 
@@ -307,7 +356,7 @@ export class CodeAgentService {
     if (relay.closed) return;
     relay.closed = true;
     this.#relays.delete(relay.conn.connId);
-    relay.asked.clear();
+    relay.pending.clear();
     await relay.served?.close().catch(() => {});
     if (o.host !== false && this.#o.host.get(relay.id)) await this.#o.host.stop(relay.id, reason).catch(() => {});
     if (o.end !== false) {
