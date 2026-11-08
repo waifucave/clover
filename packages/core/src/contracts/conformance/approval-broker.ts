@@ -16,7 +16,7 @@ import {
 } from "../approval-broker";
 import { type FakeApprovalBroker, MemoryAnswerLedger } from "../fakes/approval-broker";
 import { FakeClock, flush } from "../fakes/clock";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64, type FakeDevice } from "../fakes/device-registry";
 import { FakeFence } from "../fakes/fence";
 import { transferBinding, transferChange } from "../tree";
 
@@ -329,20 +329,23 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
     test("a paired device answers with its signature over the card and the children; a browser or revoked one can't", async () => {
       const clock = new FakeClock();
       const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-      const phone = await makeFakeDevice();
+      const phone = await makeFakePhone();
       const web = await makeFakeDevice();
-      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
       await registry.add({ id: web.id, name: "Web", kind: "browser", runsCore: false, publicKey: web.publicKey }, { via: "account", account: "acct_1" });
       const broker = make({ clock, verify: deviceProofVerifier(registry) });
       const at = clock.now();
-      const sign = async (who: typeof phone, card: Card, option: string, children: string[] = []) =>
+      const sign = async (who: FakeDevice, card: Card, option: string, children: string[] = []) =>
         toBase64(await who.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option, at, children }))));
-      const from = (who: typeof phone): AnswerOrigin => ({ role: "remote", device: who.id });
-      const proof = async (who: typeof phone, card: Card, option: string, children: string[] = []): Promise<CardAnswerProof> =>
+      const from = (who: FakeDevice): AnswerOrigin => ({ role: "remote", device: who.id });
+      const proof = async (who: FakeDevice, card: Card, option: string, children: string[] = []): Promise<CardAnswerProof> =>
         ({ via: "device", device: who.id, at, signature: await sign(who, card, option, children) });
 
       const one = await carded(broker, bash());
       expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(phone, one.card, "deny") }, from(phone))).toBe("bad-proof");
+      // A phone's link key never answers, only its answer key (no fallback, lane H's ask).
+      const linkSigned = { via: "device" as const, device: phone.id, at, signature: await sign(phone.link, one.card, "approve") };
+      expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: linkSigned }, from(phone))).toBe("bad-proof");
       // The web companion answers no card, even with a good signature.
       expect(await broker.answer(one.card.id, { optionId: "approve", hash: one.card.hash, proof: await proof(web, one.card, "approve") }, from(web))).toBe("bad-proof");
       // A phone's answer relayed by another computer holds end to end (review N4).
@@ -390,9 +393,9 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
     test("a signed answer counts as proof only for the call its card binds, on this computer, once", async () => {
       const clock = new FakeClock();
       const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-      const phone = await makeFakeDevice();
+      const phone = await makeFakePhone();
       const web = await makeFakeDevice();
-      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
       await registry.add({ id: web.id, name: "Web", kind: "browser", runsCore: false, publicKey: web.publicKey }, { via: "account", account: "acct_1" });
       const params = { name: "Studio", level: "automatic" };
       const unhashed = {
@@ -401,7 +404,7 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
         binds: { computer: "Studio", method: "computer.setLevel", params: sha256(callBindingInput("computer.setLevel", params)) },
       };
       const card = { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card;
-      const signed = async (who: typeof phone, option = "approve", over: Partial<SignedCardAnswer> = {}): Promise<SignedCardAnswer> => {
+      const signed = async (who: FakeDevice, option = "approve", over: Partial<SignedCardAnswer> = {}): Promise<SignedCardAnswer> => {
         const at = clock.now();
         return { card, option, device: who.id, at, signature: toBase64(await who.sign(new TextEncoder().encode(cardAnswerSigningInput({ id: card.id, hash: card.hash, option, at })))), ...over };
       };
@@ -435,8 +438,8 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
     test("R15: one answer for a move between computers binds both ends, and each end takes it once (#179's review, F2)", async () => {
       const clock = new FakeClock();
       const { registry } = await FakeDeviceRegistry.create({ clock, name: "Studio" });
-      const phone = await makeFakeDevice();
-      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "account", account: "acct_1" });
+      const phone = await makeFakePhone();
+      await registry.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "account", account: "acct_1" });
       // The exact call, pinned: lane J's holders build it with `transferChange` (#177).
       const call = transferChange(true, "home/Laptop1/proj", "home/Studio/proj", "Laptop1", "Studio");
       expect(call).toEqual({ method: "tree.transfer", params: { operation: "move", from: "home/Laptop1/proj", to: "home/Studio/proj", source: "Laptop1", destination: "Studio" } });

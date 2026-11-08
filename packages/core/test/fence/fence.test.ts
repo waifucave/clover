@@ -161,14 +161,15 @@ describe("the real fence on a real disk", () => {
       expect(other.check({ op: "write", path: b("future-bot", "memory", "MEMORY.md") })).toMatchObject({ allowed: false, reason: "bot-memory" });
       expect(other.check({ op: "write", path: b("future-bot") })).toMatchObject({ allowed: false });
       expect(other.touches([b("luna", "memory")])).toMatchObject({ kind: "bot-memory" });
-      // Another bot, a coding session, its agent, a plugin: luna's agents folder is read-only to all of them.
-      expect(other.check({ op: "read", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true });
+      // Another bot, a coding session, its agent: luna's agents folder is never theirs to write, and (#234's home
+      // default-deny, the controller's ruling) not theirs to read either; luna's own sessions read it.
+      expect(other.check({ op: "read", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false });
       expect(other.check({ op: "write", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false, reason: "bot-memory" });
     }
     // A plugin writing another bot's agents folder: refused too.
     const plugin = fence.forCaller({ kind: "plugin", pluginId: "tarot" });
     expect(plugin.check({ op: "write", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false, reason: "bot-memory" });
-    expect(plugin.check({ op: "read", path: b("luna", "agents", "t.json") })).toEqual({ allowed: true });
+    expect(plugin.check({ op: "read", path: b("luna", "agents", "t.json") })).toMatchObject({ allowed: false }); // the home default-deny
     expect(fence.forCaller({ kind: "session", sessionId: "c1", sessionKind: "coding" }).check({ op: "write", path: join(home, "project", "x") })).toEqual({ allowed: true });
     expect(botFolders(clover)).toEqual(["luna"]);
   });
@@ -181,11 +182,13 @@ describe("the real fence on a real disk", () => {
     expect(() => makeBotFolders(clover, "sol")).toThrow(/link/);
   });
 
-  test("the bot driver's state: write-denied to all, read only by its own session", () => {
+  test("the bot driver's state: write-denied to all, and no tool reads it, its own session's included (#234's home default-deny)", () => {
     const { clover, fence } = make();
     const rt = (n: string) => join(clover, "sessions-runtime", n);
     const s1 = fence.forCaller({ kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" });
-    expect(s1.check({ op: "read", path: rt("s1.json") })).toEqual({ allowed: true });
+    // The core reads a session's state for it; through a tool, the home default-deny refuses even its own.
+    expect(s1.check({ op: "read", path: rt("s1.json") })).toMatchObject({ allowed: false });
+    expect(fence.forCaller({ kind: "user", client: "app" }).check({ op: "read", path: rt("s1.json") })).toEqual({ allowed: true });
     expect(s1.check({ op: "read", path: rt("s2.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
     expect(s1.check({ op: "list", path: join(clover, "sessions-runtime") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
     expect(s1.check({ op: "write", path: rt("s1.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });

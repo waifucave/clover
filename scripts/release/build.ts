@@ -50,7 +50,7 @@ import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
-import { LINK_BUILD, LINK_OUTPUT } from "../build-packages";
+import { LINK_BUILD, LINK_OUTPUT, linkBuildEnv } from "../build-packages";
 import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import { sealProblems } from "../seal-bun-doors";
 import { runNameScan } from "./name-scan";
@@ -276,7 +276,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       manifest = writeStagedManifest(stagedPlugins, manifestFile);
       console.log(`release/build: the bundled plugins: ${builtPlugins.files.length} files built (${builtPlugins.natives.length} native addon files), ${Object.keys(manifest.files).length} measured`);
       if (runScriptLine(`bun scripts/build-daemon.ts --target ${target} --plugins-manifest ${JSON.stringify(manifestFile)}`, root) !== 0) throw new Error("the daemon's build failed");
-      must("the link sidecar", LINK_BUILD, root);
+      must("the link sidecar", LINK_BUILD, root, linkBuildEnv(process.env, root));
       rmSync(staged, { recursive: true, force: true });
       mkdirSync(staged, { recursive: true });
       copyFileSync(join(root, ...daemonOutput(target).split("/")), join(staged, `clover-core${exe}`));
