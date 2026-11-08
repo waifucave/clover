@@ -226,8 +226,6 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   const pipePeers = os === "win32" ? new WindowsPipePeers(deps.endpoint) : null;
   const spentAnswers = new Set<string>();
   const conns = new Map<number, CloverConn>();
-  /** How the server closes a connection it can close itself (a link's stream), by connection id. */
-  const ends = new Map<number, () => void>();
   let requestSeq = 0;
   const beatEvery = deps.heartbeat?.intervalMs ?? 5_000;
   const beatTimeout = deps.heartbeat?.timeoutMs ?? 15_000;
@@ -276,8 +274,8 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   // pid) finds its connection gone and gives back what it took.
   const gone = new WeakSet<object>();
   const bridged = new Map<number, { sessionId: string; connection: number; end?: () => void }>();
-  // K-M3b: each connection's way to close itself, and the connections bound to a coding session.
-  // (#278 brings its own `ends` for link connections: whichever lands second folds the two into one map.)
+  // Each connection's way to close itself (K-M3b's, and a link's stream, #278), and the connections bound to a coding
+  // session.
   const ends = new Map<number, () => void>();
   const binding = new Set<number>();
   const relayed = new Set<number>();
@@ -549,7 +547,6 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       conn.follows.clear();
       const b = bridged.get(conn.connId);
       if (b) { bridged.delete(conn.connId); deps.bridge?.gate.release(b.sessionId, b.connection); }
-      ends.delete(conn.connId);
       if (relayed.delete(conn.connId)) deps.codeAgent?.close(conn.connId);
       if (conn.role === "app") deps.pair?.appDisconnected(String(conn.connId));
     },
