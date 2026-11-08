@@ -55,9 +55,14 @@ describe("which stores a test may reach", () => {
 
   test("the OS store: never on macOS, on Linux only on the private bus, on Windows only under a throwaway service", () => {
     const t = `${THROWAWAY_SERVICE_PREFIX}1234-ab`;
-    expect(osStoreIsolated(t, { [PRIVATE_SECRET_SERVICE_ENV]: "1" }, "darwin")).toBe(false);
+    const bus = "unix:path=/tmp/dbus-private,guid=abc";
+    const PRIVATE = { [PRIVATE_SECRET_SERVICE_ENV]: bus, DBUS_SESSION_BUS_ADDRESS: bus };
+    // A bare flag, or a bus that isn't the session's (#327's minor), never counts.
+    expect(osStoreIsolated(SERVICE, { [PRIVATE_SECRET_SERVICE_ENV]: "1", DBUS_SESSION_BUS_ADDRESS: "1" }, "linux")).toBe(false);
+    expect(osStoreIsolated(SERVICE, { [PRIVATE_SECRET_SERVICE_ENV]: bus, DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" }, "linux")).toBe(false);
+    expect(osStoreIsolated(t, PRIVATE, "darwin")).toBe(false);
     expect(osStoreIsolated(SERVICE, {}, "linux")).toBe(false);
-    expect(osStoreIsolated(SERVICE, { [PRIVATE_SECRET_SERVICE_ENV]: "1" }, "linux")).toBe(true);
+    expect(osStoreIsolated(SERVICE, PRIVATE, "linux")).toBe(true);
     expect(osStoreIsolated(SERVICE, {}, "win32")).toBe(false);
     expect(osStoreIsolated(t, {}, "win32")).toBe(true);
     expect(osStoreIsolated(THROWAWAY_SERVICE_PREFIX, {}, "win32")).toBe(false);
@@ -65,8 +70,10 @@ describe("which stores a test may reach", () => {
   });
 
   test("the isolated backend: the real one only for an isolated call, this process's memory for the rest", async () => {
+    const bus = "unix:path=/tmp/dbus-private,guid=abc";
+    const PRIVATE = { [PRIVATE_SECRET_SERVICE_ENV]: bus, DBUS_SESSION_BUS_ADDRESS: bus };
     for (const [platform, env, service, real] of [
-      ["darwin", {}, SERVICE, false], ["linux", {}, SERVICE, false], ["linux", { [PRIVATE_SECRET_SERVICE_ENV]: "1" }, SERVICE, true],
+      ["darwin", {}, SERVICE, false], ["linux", {}, SERVICE, false], ["linux", PRIVATE, SERVICE, true],
       ["win32", {}, SERVICE, false], ["win32", {}, `${THROWAWAY_SERVICE_PREFIX}x`, true],
     ] as const) {
       const r = recorder();

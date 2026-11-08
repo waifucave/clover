@@ -17,7 +17,7 @@ import { join, posix, win32 } from "node:path";
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
+  agentConfigPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
   READ_DENIED_KINDS, writesPluginLoadDeny,
   type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
   type SandboxPolicy,
@@ -155,7 +155,7 @@ export class CloverFence implements Fence {
       ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),
     ];
     for (const p of [...new Set(browserProfiles)]) add("browser-profiles", p);
-    for (const p of this.#layout["agent-installs"] ?? this.#agentInstalls) add("agent-installs", p);
+    for (const p of this.#layout["agent-installs"] ?? [...this.#agentInstalls, ...agentConfigPaths(this.os, this.#home)]) add("agent-installs", p);
     // Each bot's memory, `<home>/bots/<bot>/memory/` (deny `caller`: `judge` binds it by pattern to the bot whose id
     // folds equal). The known bots by id, plus the folders on the disk, so an unlisted leftover is still named.
     const seg = (bot: string) => bot.replace(/\//g, "--");
