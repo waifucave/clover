@@ -140,8 +140,8 @@
                       "enum": [
                         "secure-enclave",
                         "keystore",
-                        "app-keychain",
                         "keychain",
+                        "app-keychain",
                         "tpm",
                         "dpapi",
                         "secret-service",
@@ -1066,8 +1066,8 @@
             "enum": [
               "secure-enclave",
               "keystore",
-              "app-keychain",
               "keychain",
+              "app-keychain",
               "tpm",
               "dpapi",
               "secret-service",
@@ -2566,8 +2566,8 @@
                     "enum": [
                       "secure-enclave",
                       "keystore",
-                      "app-keychain",
                       "keychain",
+                      "app-keychain",
                       "tpm",
                       "dpapi",
                       "secret-service",

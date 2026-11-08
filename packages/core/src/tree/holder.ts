@@ -24,6 +24,10 @@
 //   one, and the opened file's real path, read back from its handle, must be the path walked (`nofollow.ts`).
 // * `home/<this computer>/.clover/` is this computer's Clover home wherever it is on disk (`~/.clover-dev` for the dev
 //   profile, `CLOVER_HOME`): the tree's one path to it, which the spec's `home/<Computer>/.clover/…` paths name.
+// * A bot's memory (the owner's ruling for J-M3): `home/memory/` in a bot's own sessions is that bot's
+//   `<Clover home>/bots/<bot>/memory/` here, on every computer that runs the core (lane H keeps the copies in sync,
+//   so a write lands here even while another computer is off). Nobody else reaches it, by any path that leads there:
+//   not other bots, not coding sessions, not agents, not another computer. The user and the core do.
 // * A peer's write, remove or move is judged at the stricter of this computer's level and the call's (review N2;
 //   `judge.ts`, R1): at `ask-risky` this computer's reviewer passes what isn't risky, and where the level asks, only the
 //   user's signed answer bound to exactly that call lets it through; the refusal carries this computer's card for the
@@ -116,13 +120,27 @@ export interface LocalHolderOptions {
   fdRealPath?: (fd: number, path: string) => string | null;
   /** Tests only: called after each part a `noFollow` walk looks at, to swap something mid-walk. */
   afterLstat?: (real: string) => void | Promise<void>;
+  /** Told of every change in a bot's memory here, once it is on disk: lane H's sync, which copies it to the other
+   *  computers that run the core, now or when they are back. `rel` is the changed entry's path in the memory folder,
+   *  with `/` between names (`""` for the folder itself). */
+  memoryChanged?: (bot: string, rel: string) => void;
+}
+
+/** The tree's name for a bot's memory, beside the computers in `home/` (the owner's ruling for J-M3); also the folder's
+ *  name in the bot's own folder. No computer can be called this. */
+export const MEMORY_FOLDER = "memory";
+
+/** The bot whose memory a caller reaches as `home/memory`: a bot's own session (or its side thread). Coding sessions,
+ *  agents (ACP or delegated), plugins, peers, the user and the core have none. */
+export function memoryBotOf(as: Caller): string | undefined {
+  return as.kind === "session" && as.bot !== undefined && (as.sessionKind === "bot" || as.sessionKind === "side-thread") ? as.bot : undefined;
 }
 
 /** The name in `home/<this computer>/` that is this computer's Clover home, wherever it is on disk. */
 export const CLOVER_HOME_NAME = ".clover";
 
 interface Located {
-  area: "home" | "bot" | "clover";
+  area: "home" | "bot" | "clover" | "memory";
   /** The area's real root. */
   root: string;
   segments: string[];
@@ -160,10 +178,27 @@ export function diskError(err: unknown, what: string): ContractError {
   }
 }
 
+/** A path's real path, when it exists (`exact`); otherwise its nearest existing folder's real path with the rest
+ *  joined on, which is what it will be once made. */
+function realOrNearest(path: string): { real: string; exact: boolean } {
+  const rest: string[] = [];
+  for (let p = path; ; ) {
+    try {
+      return { real: join(realpathSync.native(p), ...rest.reverse()), exact: rest.length === 0 };
+    } catch {
+      const up = dirname(p);
+      if (up === p) return { real: path, exact: false };
+      rest.push(basename(p));
+      p = up;
+    }
+  }
+}
+
 export class LocalHolder implements Holder {
   readonly os: Os;
   readonly #o: LocalHolderOptions;
   #cloverHomeReal: string | undefined;
+  #botsRootReal: string | undefined;
   readonly #answers: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
   readonly watches: FolderWatches;
 
@@ -182,7 +217,7 @@ export class LocalHolder implements Holder {
   /** A folder's real path, for a command run there: it must exist, be a folder, and pass the fence for a listing. */
   async realFolder(path: string, call: HolderCall): Promise<string> {
     this.#caller(call);
-    const r = await this.#resolve(path, { follow: true });
+    const r = await this.#resolve(path, call, { follow: true });
     this.#fenced({ op: "list", path: r.real }, call);
     if (!r.exists) throw new ContractError("not_found", `${path} doesn't exist`);
     if (!r.st?.isDirectory()) throw new ContractError("invalid", `${path} isn't a folder`);
@@ -191,7 +226,7 @@ export class LocalHolder implements Holder {
 
   async watch(path: string, call: HolderCall, fn: (e: TreeWatchEvent) => void): Promise<Unsubscribe> {
     this.#caller(call);
-    const r = await this.#resolve(path, { follow: true });
+    const r = await this.#resolve(path, call, { follow: true });
     // A project's folder, never a whole home or a bot's whole folder (review minor 2): a recursive watch of those
     // costs the disk everything.
     if (r.real === r.root) throw new ContractError("invalid", `${path} is a whole area of the tree; watch a folder in it`);
@@ -204,7 +239,7 @@ export class LocalHolder implements Holder {
    *  `op`, as a write, a read or a delete would be. */
   async realEntry(path: string, call: HolderCall, op: "read" | "write" | "delete"): Promise<{ real: string; root: string; exists: boolean; dir: boolean }> {
     this.#caller(call);
-    const r = await this.#resolve(path, { follow: false, create: op === "write" });
+    const r = await this.#resolve(path, call, { follow: false, create: op === "write" });
     if (r.real === r.root && op !== "read") throw new ContractError("invalid", `${path} is a whole area of the tree`);
     this.#fenced({ op, path: r.real }, call);
     return { real: r.real, root: r.root, exists: r.exists, dir: r.st?.isDirectory() ?? false };
@@ -223,18 +258,18 @@ export class LocalHolder implements Holder {
   /** Whether `call` may change a real path here (a move's source, entry by entry). */
   changeable(real: string, call: HolderCall): boolean {
     if (call.as.kind === "user" || call.as.kind === "core") return this.#readDenied(real) === undefined;
-    return this.#check({ op: "delete", path: real }, call.as).allowed;
+    return this.#memoryOk(real, call.as, true) && this.#check({ op: "delete", path: real }, call.as).allowed;
   }
 
   /** Judges a whole operation once, with one binding (the direct path's move or copy; review S1). */
-  /** `boundTo`: the computer one card for an operation on several binds (`judge.ts`). */
-  async judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move", boundTo?: string): Promise<void> {
-    await this.#judge(call, change, effect, boundTo);
+  async judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
+    await this.#judge(call, change, effect);
   }
 
-  /** The real path a tree path names here, without touching the disk (for bookkeeping and `Tree.resolve`). */
-  realPathOf(path: string): string {
-    const loc = this.#locate(path);
+  /** The real path a tree path names here, without touching the disk (for bookkeeping and `Tree.resolve`). `as`: who
+   *  asks, for `home/memory/` (that bot's memory). */
+  realPathOf(path: string, as?: Caller): string {
+    const loc = this.#locate(path, as);
     return loc.segments.length === 0 ? loc.root : join(loc.root, ...loc.segments);
   }
 
@@ -244,7 +279,7 @@ export class LocalHolder implements Holder {
       const w = await this.#walkNoFollow(path, call, "stat");
       return w.st ? this.#statOf(this.#treePath(path), w.real, w.st) : null;
     }
-    const r = await this.#resolve(path, { follow: false });
+    const r = await this.#resolve(path, call, { follow: false });
     this.#fenced({ op: "stat", path: r.real }, call);
     if (!r.exists || !r.st) return null;
     return this.#statOf(this.#treePath(path), r.real, r.st);
@@ -256,7 +291,7 @@ export class LocalHolder implements Holder {
     if (call.noFollow) {
       fh = await this.#openNoFollow(path, call);
     } else {
-      const r = await this.#resolve(path, { follow: true });
+      const r = await this.#resolve(path, call, { follow: true });
       this.#fenced({ op: "read", path: r.real }, call);
       if (!r.exists) throw new ContractError("not_found", `${path} doesn't exist`);
       fh = await this.#openChecked(r, FS.O_RDONLY, call, "read", path);
@@ -286,7 +321,7 @@ export class LocalHolder implements Holder {
     this.#caller(call);
     const bytes = data.encoding === "utf8" ? new TextEncoder().encode(data.text) : Buffer.from(data.data, "base64");
     if (bytes.length > TREE_IO_MAX) throw new ContractError("invalid", `${path}: a write carries at most ${TREE_IO_MAX} bytes`);
-    const r = await this.#resolve(path, { follow: true, create: true });
+    const r = await this.#resolve(path, call, { follow: true, create: true });
     this.#fenced({ op: "write", path: r.real }, call);
     if (!call.approved) await this.#judge(call, treeCallBinding("tree.write", { path, data }), "edit");
     if (r.st?.isDirectory()) throw new ContractError("invalid", `${path} is a folder`);
@@ -308,11 +343,12 @@ export class LocalHolder implements Holder {
     } finally {
       await fh.close();
     }
+    this.changedAt(r.real);
   }
 
   async mkdir(path: string, call: HolderCall): Promise<void> {
     this.#caller(call);
-    const r = await this.#resolve(path, { follow: false, create: true });
+    const r = await this.#resolve(path, call, { follow: false, create: true });
     this.#fenced({ op: "write", path: r.real }, call);
     await this.#judge(call, { method: "tree.mkdir", params: { path } } as unknown as TreeChange, "edit");
     if (r.exists) {
@@ -320,11 +356,12 @@ export class LocalHolder implements Holder {
       throw new ContractError("conflict", `${path} is a file`);
     }
     await this.#mkdirs(r.root, r.real, path);
+    this.changedAt(r.real);
   }
 
   async list(path: string, call: HolderCall): Promise<FileStat[]> {
     this.#caller(call);
-    const r = await this.#resolve(path, { follow: true });
+    const r = await this.#resolve(path, call, { follow: true });
     this.#fenced({ op: "list", path: r.real }, call);
     if (!r.exists) throw new ContractError("not_found", `${path} doesn't exist`);
     if (!r.st?.isDirectory()) throw new ContractError("invalid", `${path} isn't a folder`);
@@ -352,7 +389,7 @@ export class LocalHolder implements Holder {
 
   async remove(path: string, call: HolderCall & { recursive?: boolean }): Promise<void> {
     this.#caller(call);
-    const r = await this.#resolve(path, { follow: false });
+    const r = await this.#resolve(path, call, { follow: false });
     this.#fenced({ op: "delete", path: r.real }, call);
     if (r.real === r.root) throw new ContractError("invalid", `${path} is a whole area of the tree; it can't be removed`);
     await this.#judge(call, treeCallBinding("tree.remove", call.recursive === undefined ? { path } : { path, recursive: call.recursive }), "delete");
@@ -361,6 +398,7 @@ export class LocalHolder implements Holder {
     const at = this.#at();
     if (at) {
       at.remove(r.root, this.#rel(r.root, r.real), { dir: r.st?.isDirectory() === true, recursive: call.recursive === true }, path);
+      this.changedAt(r.real);
       return;
     }
     try {
@@ -373,12 +411,13 @@ export class LocalHolder implements Holder {
     } catch (e) {
       throw diskError(e, path);
     }
+    this.changedAt(r.real);
   }
 
   async move(from: string, to: string, call: HolderCall): Promise<void> {
     this.#caller(call);
-    const src = await this.#resolve(from, { follow: false });
-    const dst = await this.#resolve(to, { follow: false, create: true });
+    const src = await this.#resolve(from, call, { follow: false });
+    const dst = await this.#resolve(to, call, { follow: false, create: true });
     this.#fenced({ op: "move", path: src.real, to: dst.real }, call);
     if (src.real === src.root) throw new ContractError("invalid", `${from} is a whole area of the tree; it can't be moved`);
     await this.#judge(call, treeCallBinding("tree.move", { from, to }), "move");
@@ -390,6 +429,15 @@ export class LocalHolder implements Holder {
       throw new ContractError("invalid", `${to} is inside ${from}`);
     }
     await this.#mkdirs(dst.root, dirname(dst.real), to);
+    try {
+      await this.#rename(src, dst, from);
+    } finally {
+      this.changedAt(src.real);
+      this.changedAt(dst.real);
+    }
+  }
+
+  async #rename(src: Resolved, dst: Resolved, from: string): Promise<void> {
     const at = this.#at();
     try {
       if (at) at.rename(src.root, this.#rel(src.root, src.real), dst.root, this.#rel(dst.root, dst.real), from);
@@ -410,7 +458,7 @@ export class LocalHolder implements Holder {
 
   async readlink(path: string, call: HolderCall): Promise<string> {
     this.#caller(call);
-    const r = await this.#resolve(path, { follow: false });
+    const r = await this.#resolve(path, call, { follow: false });
     this.#fenced({ op: "read", path: r.real }, call);
     if (!r.exists || !r.st?.isSymbolicLink()) throw new ContractError("invalid", `${path} isn't a link`);
     const raw = await fsp.readlink(r.real).catch((e) => { throw diskError(e, path); });
@@ -422,7 +470,7 @@ export class LocalHolder implements Holder {
     if (target === "" || target.includes("\0") || isAbsolute(target) || /^[A-Za-z]:/.test(target) || target.includes("\\")) {
       throw new ContractError("invalid", "a link's target is a relative path inside the tree");
     }
-    const r = await this.#resolve(path, { follow: false, create: true });
+    const r = await this.#resolve(path, call, { follow: false, create: true });
     if (r.exists) throw new ContractError("conflict", `${path} already exists`);
     const lands = resolvePath(dirname(r.real), target);
     if (!this.#inside(lands, r.root)) throw new ContractError("refused", `a link at ${path} would lead out of its folder`);
@@ -434,12 +482,13 @@ export class LocalHolder implements Holder {
     } catch (e) {
       throw diskError(e, path);
     }
+    this.changedAt(r.real);
   }
 
   async glob(pattern: string, call: HolderCall & { cwd: string; limit?: number }): Promise<{ paths: string[]; truncated: boolean }> {
     this.#caller(call);
     if (pattern.includes("\0") || pattern.split("/").includes("..") || isAbsolute(pattern)) throw new ContractError("invalid", "a glob stays inside its folder");
-    const r = await this.#resolve(call.cwd, { follow: true });
+    const r = await this.#resolve(call.cwd, call, { follow: true });
     this.#fenced({ op: "list", path: r.real }, call);
     if (!r.exists) throw new ContractError("not_found", `${call.cwd} doesn't exist`);
     if (!r.st?.isDirectory()) throw new ContractError("invalid", `${call.cwd} isn't a folder`);
@@ -467,7 +516,7 @@ export class LocalHolder implements Holder {
     } catch {
       throw new ContractError("invalid", "the pattern isn't a regular expression");
     }
-    const r = await this.#resolve(call.cwd, { follow: true });
+    const r = await this.#resolve(call.cwd, call, { follow: true });
     this.#fenced({ op: "read", path: r.real }, call);
     if (!r.exists) throw new ContractError("not_found", `${call.cwd} doesn't exist`);
     const base = this.#treePath(call.cwd);
@@ -507,8 +556,9 @@ export class LocalHolder implements Holder {
 
   // ---- resolution ------------------------------------------------------------------------------------------------
 
-  /** Which area a tree path names here, and its segments, each a plain name on this OS. */
-  #locate(path: string): Located {
+  /** Which area a tree path names here, and its segments, each a plain name on this OS. `home/memory/…` is the
+   *  calling bot's memory, for that bot's own sessions alone; for anyone else it names no computer. */
+  #locate(path: string, as?: Caller): Located {
     const parts = splitTreePath(path);
     if (!parts) throw new ContractError("invalid", `${path} isn't in the folder tree (home/<Computer>/… or bots/<bot>/…)`);
     const segments = parts.rest === "" ? [] : parts.rest.split("/");
@@ -520,6 +570,11 @@ export class LocalHolder implements Holder {
       if (alias !== undefined) throw new ContractError("refused", `${path}: "${alias}" may be another file's name on Windows (a stream or a short name)`);
     }
     const treePath = path.replace(/\/+$/, "");
+    if (parts.area === "home" && parts.name === MEMORY_FOLDER) {
+      const bot = as ? memoryBotOf(as) : undefined;
+      if (bot === undefined || !this.#o.botsRoot) throw new ContractError("not_found", `no computer ${MEMORY_FOLDER}`);
+      return { area: "memory", root: join(this.#o.botsRoot, pluginIdToSegment(bot), MEMORY_FOLDER), segments, treePath };
+    }
     if (parts.area === "home") {
       const names = [this.#o.name(), ...(this.#o.aliases?.() ?? [])];
       if (!names.includes(parts.name)) throw new ContractError("not_found", `${parts.name} isn't this computer`);
@@ -538,8 +593,8 @@ export class LocalHolder implements Holder {
    *  acts on what it points to). A missing last name, or missing folders above it, resolve to where they would be
    *  (`exists: false`), so the fence is asked before anything says "doesn't exist"; `create` also makes a bot's folder
    *  that doesn't exist yet. */
-  async #resolve(path: string, opts: { follow: boolean; create?: boolean }): Promise<Resolved> {
-    const loc = this.#locate(path);
+  async #resolve(path: string, call: HolderCall, opts: { follow: boolean; create?: boolean }): Promise<Resolved> {
+    const loc = this.#locate(path, call.as);
     const root = await this.#rootReal(loc, opts.create === true);
     if (loc.segments.length === 0) {
       const st = await fsp.lstat(root).catch(() => undefined);
@@ -614,8 +669,8 @@ export class LocalHolder implements Holder {
       return await fsp.realpath(loc.root);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw diskError(e, loc.treePath);
-      if (!create || loc.area !== "bot") {
-        if (loc.area === "bot") return loc.root; // nothing there yet; every name under it is missing
+      if (!create || loc.area === "home") {
+        if (loc.area !== "home") return loc.root; // nothing there yet; every name under it is missing
         throw new ContractError("not_found", `${loc.treePath} doesn't exist`);
       }
       await fsp.mkdir(loc.root, { recursive: true, mode: 0o700 });
@@ -646,7 +701,7 @@ export class LocalHolder implements Holder {
    *  and refused when it is a link, on Windows a reparse point, or a short (8.3) name; the fence judges the path. `st`
    *  is the last part's, undefined when it doesn't exist. */
   async #walkNoFollow(path: string, call: HolderCall, op: "stat" | "read"): Promise<{ real: string; st?: Stats }> {
-    const loc = this.#locate(path);
+    const loc = this.#locate(path, call.as);
     const root = await this.#rootReal(loc, false);
     const real = loc.segments.length === 0 ? root : join(root, ...loc.segments);
     this.#fenced({ op, path: real }, call);
@@ -865,6 +920,12 @@ export class LocalHolder implements Holder {
       }
       return;
     }
+    for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) {
+      // The same refusal as the fence's own `bot-memory` rule (lane B's #197), which says it at the OS's level too.
+      if (!this.#memoryOk(p, as, op.op !== "read" && op.op !== "stat" && op.op !== "list")) {
+        throw new ContractError("fenced", "a bot's memory is that bot's own sessions' alone", { computer: this.#o.name(), reason: "bot-memory" });
+      }
+    }
     if (op.op === "write" || op.op === "delete" || op.op === "move") {
       for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) this.#asciiUnderCloverHome(p);
     }
@@ -884,7 +945,53 @@ export class LocalHolder implements Holder {
 
   #mayRead(real: string, call: HolderCall): boolean {
     if (call.as.kind === "user" || call.as.kind === "core") return this.#readDenied(real) === undefined;
-    return this.#check({ op: "read", path: real }, call.as).allowed;
+    return this.#memoryOk(real, call.as, false) && this.#check({ op: "read", path: real }, call.as).allowed;
+  }
+
+  /** Tells lane H's sync that a real path changed, when it is in a bot's memory (the direct path calls this for what
+   *  it places and lets go of). */
+  changedAt(real: string): void {
+    const at = this.#memoryAt(real);
+    if (at) this.#o.memoryChanged?.(at.bot, at.rel);
+  }
+
+  /** The bot whose memory holds a real path, and the path in it. */
+  #memoryAt(real: string): { bot: string; rel: string } | undefined {
+    if (!this.#o.botsRoot || !this.#o.memoryChanged) return undefined;
+    const root = this.#botsRoot();
+    const rel = relative(root, real);
+    if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return undefined;
+    const [seg, folder, ...rest] = rel.split(sep);
+    if (seg === undefined || folder === undefined || foldName(folder, this.os) !== MEMORY_FOLDER) return undefined;
+    return { bot: pluginIdFromSegment(seg), rel: rest.join("/") };
+  }
+
+  /** The bots' folder's real path. Kept only once the folder exists: before that, its nearest folder that does is
+   *  resolved and the rest joined on, every time, so a Clover home behind a symlink compares right both before and
+   *  after `bots/` is made (#254's review, should-fix 7). */
+  #botsRoot(): string {
+    if (this.#botsRootReal !== undefined) return this.#botsRootReal;
+    const r = realOrNearest(this.#o.botsRoot!);
+    if (r.exact) this.#botsRootReal = r.real;
+    return r.real;
+  }
+
+  /** Whether `as` may reach a real path as far as bots' memories go: inside `<bots>/<bot>/memory/` only that bot's own
+   *  sessions; and for a change (`change`), the bots' folder itself and a bot's whole folder, which hold memories, are
+   *  that bot's too (the bots' folder: nobody's). Names compare folded, as the disk may. Anything else is fine here. */
+  #memoryOk(real: string, as: Caller, change: boolean): boolean {
+    if (!this.#o.botsRoot) return true;
+    const fold = (p: string) => foldPath(p, this.os).replace(/\/+$/, "");
+    const root = fold(this.#botsRoot());
+    const p = fold(real);
+    if (p !== root && !p.startsWith(`${root}/`)) return true;
+    const names = p.slice(root.length).split("/").filter((n) => n !== "");
+    const mine = memoryBotOf(as);
+    const owns = (segment: string) => mine !== undefined && foldName(pluginIdToSegment(mine), this.os) === segment;
+    if (names.length === 0) return !change;
+    if (names.length === 1) return !change || owns(names[0]!);
+    if (names[1] !== foldName(MEMORY_FOLDER, this.os)) return true;
+    return owns(names[0]!);
   }
 
   /** Lane B's second wall (`nonAsciiAlias`): a name that isn't ASCII where Clover names things under its home (its top
@@ -893,14 +1000,13 @@ export class LocalHolder implements Holder {
   #asciiUnderCloverHome(real: string): void {
     if (!this.#o.cloverHome) return;
     // The home's real path, as the paths it is compared with are (`/var` is `/private/var` on a Mac).
-    this.#cloverHomeReal ??= (() => {
-      try {
-        return realpathSync.native(this.#o.cloverHome!);
-      } catch {
-        return this.#o.cloverHome!;
-      }
-    })();
-    if (nonAsciiAlias(real, this.#o.fence?.fencedSet() ?? [], this.#cloverHomeReal, this.os)) {
+    let home = this.#cloverHomeReal;
+    if (home === undefined) {
+      const r = realOrNearest(this.#o.cloverHome);
+      if (r.exact) this.#cloverHomeReal = r.real;
+      home = r.real;
+    }
+    if (nonAsciiAlias(real, this.#o.fence?.fencedSet() ?? [], home, this.os)) {
       throw new ContractError("fenced", `names Clover keeps under its home are ASCII; ${basename(real)} isn't`, { computer: this.#o.name(), reason: "clover-home" });
     }
   }
@@ -923,11 +1029,10 @@ export class LocalHolder implements Holder {
 
   /** A peer's change, at the stricter of this computer's level and the call's (`judge.ts`, R1): the reviewer passes
    *  what isn't risky at `ask-risky`; the rest needs the user's signed answer bound to exactly it (N2). */
-  async #judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move", boundTo?: string): Promise<void> {
+  async #judge(call: HolderCall, change: TreeChange, effect: "edit" | "delete" | "move"): Promise<void> {
     if (call.as.kind !== "peer") return;
     if (call.level === undefined) throw new ContractError("invalid", "a peer's change says its level");
     await judgePeer({
-      ...(boundTo === undefined ? {} : { boundTo }),
       computer: this.#o.name(), ownLevel: this.#o.level?.(), callLevel: call.level, effect,
       method: change.method, params: change.params, as: call.as, now: this.#o.clock.now(), answers: this.#answers,
       ...(call.answer ? { answer: call.answer } : {}),

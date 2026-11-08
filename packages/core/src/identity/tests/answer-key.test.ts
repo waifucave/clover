@@ -13,18 +13,17 @@ import { AnswerKey, answerKeyHolder } from "../answer-key";
 import { DeviceKey } from "../device-key";
 
 describe("answer key", () => {
-  test("held by stores that never prompt: the Keychain on macOS, the TPM or DPAPI on Windows, the Secret Service on Linux", () => {
-    expect(answerKeyHolder("macos", { appKeychain: true, keychain: true })).toBe("app-keychain");
-    expect(answerKeyHolder("macos", { keychain: true })).toBe("keychain");
+  test("held by the Keychain on macOS, the TPM on Windows, and marked none elsewhere (never Hello, which prompts)", () => {
+    expect(answerKeyHolder("macos", { appKeychain: true })).toBe("app-keychain");
+    expect(answerKeyHolder("macos", { keychain: true, appKeychain: false })).toBe("keychain");
     expect(answerKeyHolder("macos", {})).toBe("none");
-    expect(answerKeyHolder("windows", { tpm: true, dpapi: true })).toBe("tpm");
-    expect(answerKeyHolder("windows", { dpapi: true })).toBe("dpapi");
+    // Never Windows Hello, which prompts: the TPM, or nothing. DPAPI keeps the key at rest only, which plugin code
+    // running as the user can reach, so the picker never chooses it either.
+    expect(answerKeyHolder("windows", { tpm: true })).toBe("tpm");
+    expect(answerKeyHolder("windows", { dpapi: true, tpm: false })).toBe("none");
     expect(answerKeyHolder("windows", {})).toBe("none");
-    expect(answerKeyHolder("linux", { secretService: true })).toBe("secret-service");
-    expect(answerKeyHolder("linux", { tpm: true, dpapi: true, keychain: true })).toBe("none");
-    // Windows Hello is never a holder (the owner's rule: no prompt to use the key).
-    expect(ANSWER_KEY_HOLDERS).not.toContain("hello" as never);
-    expect(answerKeyHolder("windows", { hello: true } as never)).toBe("none");
+    expect(answerKeyHolder("linux", { secretService: true })).toBe("none");
+    expect(answerKeyHolder("linux", {})).toBe("none");
   });
 
   test("the app's key reaches the registry with its proof; answers verify with it and never with the link key", async () => {
