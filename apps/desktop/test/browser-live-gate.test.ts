@@ -69,9 +69,9 @@ describe("the browser's live gate", () => {
   });
 
   test("the app it starts, and the viewport it uses, build", async () => {
-    const main = await Bun.build({ entrypoints: [join(root, "scripts", "browser-live-main.ts")], target: "node", format: "esm", external: ["electron"] });
+    const main = await Bun.build({ entrypoints: [join(root, "scripts", "browser-live-main.ts")], target: "node", format: "esm", external: ["electron"], ...{ macros: false } });
     expect(main.success, main.logs.map(String).join("\n")).toBe(true);
-    const preload = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"] });
+    const preload = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"], ...{ macros: false } });
     expect(preload.success).toBe(true);
   });
 });

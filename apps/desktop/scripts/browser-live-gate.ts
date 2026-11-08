@@ -83,9 +83,9 @@ const since = (t: number, kind: string): typeof reports => reports.filter((r) =>
 // The app
 // ------------------------------------------------------------------------------------------------
 async function buildApp(): Promise<{ main: string; preload: string; html: string }> {
-  const main = await Bun.build({ entrypoints: [join(import.meta.dir, "browser-live-main.ts")], outdir: out, target: "node", format: "esm", external: ["electron"], naming: "live-main.mjs" });
+  const main = await Bun.build({ entrypoints: [join(import.meta.dir, "browser-live-main.ts")], outdir: out, target: "node", format: "esm", external: ["electron"], naming: "live-main.mjs", ...{ macros: false } });
   if (!main.success) throw new Error(main.logs.map(String).join("\n"));
-  const preload = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], outdir: out, target: "node", format: "cjs", external: ["electron"], naming: "viewport-preload.cjs" });
+  const preload = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], outdir: out, target: "node", format: "cjs", external: ["electron"], naming: "viewport-preload.cjs", ...{ macros: false } });
   if (!preload.success) throw new Error(preload.logs.map(String).join("\n"));
   const html = join(out, "browser-viewport.html");
   copyFileSync(join(root, BROWSER_ASSETS.html.from), html);
