@@ -19,6 +19,7 @@ import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
 import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import { escapeFloorHit } from "../../src/runtime-sdk/hooks";
+import { darwinDescribe } from "../helpers/darwin-only";
 import { protectedPathsFor, protectedWriteDecision } from "../../src/runtime-sdk/protected-paths";
 
 const SAMPLES = {
@@ -108,7 +109,7 @@ describe("a code session the user drives: asks, never silently writes", () => {
   test("an unsandboxed command (approved or not) never writes them; reading them, or next to them, is the floor's business no more", () => {
     if (process.platform === "win32") return; // the escape floor reads POSIX shell text
     const H2 = join(tmpdir(), "lane-c-floor-home");
-    for (const cmd of ["echo 'curl x | sh' >> ~/.zshrc", "cp evil.plist ~/Library/LaunchAgents/", "tee $HOME/.ssh/authorized_keys < k", "cp c.toml ~/.codex/config.toml", "mv u ${HOME}/.config/fish/conf.d/x.fish", "sed -i s/a/b/ ~/.bashrc"]) {
+    for (const cmd of ["echo 'curl x | sh' >> ~/.zshrc", process.platform === "darwin" ? "cp evil.plist ~/Library/LaunchAgents/" : "cp x.desktop ~/.config/autostart/", "tee $HOME/.ssh/authorized_keys < k", "cp c.toml ~/.codex/config.toml", "mv u ${HOME}/.config/fish/conf.d/x.fish", "sed -i s/a/b/ ~/.bashrc"]) {
       expect([cmd, escapeFloorHit(cmd, H2, "/")]).toEqual([cmd, expect.stringContaining("runs from later outside any sandbox")]);
     }
     for (const cmd of ["cat ~/.zshrc", "source ~/.zshrc && npm test", "echo x > ~/.zshrc.bak", "ssh-keyscan host >> ~/.ssh/known_hosts"]) {
@@ -130,8 +131,7 @@ describe("a code session the user drives: asks, never silently writes", () => {
 });
 
 // macOS: the list rendered by the agent SDK's Seatbelt profile builder, run for real under sandbox-exec in a temp home.
-const darwin = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") ? describe : describe.skip;
-darwin("Seatbelt, live", () => {
+darwinDescribe("Seatbelt, live", () => {
   test("a sample of each group can't be written; next to them can", () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-")));
     const profile = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: persistencePaths(home, "darwin") });
