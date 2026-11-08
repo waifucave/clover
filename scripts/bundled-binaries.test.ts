@@ -132,7 +132,7 @@ describe("plain Bun's zip is unpacked in-process (no tar: Git Bash's GNU tar rea
     const z = zipOf({ "a/bun": "abc" }, true);
     // A flipped byte in the stored data: refused, not handed on.
     const bad = z.slice();
-    bad[30 + "a/bun".length] ^= 1;
+    bad[30 + "a/bun".length] = bad[30 + "a/bun".length]! ^ 1;
     expect(() => zipEntry(bad, "a/bun")).toThrow("doesn't match its size and CRC-32");
     expect(() => zipEntry(new TextEncoder().encode("not a zip at all"), "a/bun")).toThrow("not a zip");
   });
