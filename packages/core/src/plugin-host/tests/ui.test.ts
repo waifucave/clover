@@ -4,7 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
+import { layerApiCall, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
 import { ContractError } from "../../contracts/common";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
@@ -65,13 +65,16 @@ describe("plugin.ui and plugin.layer.api", () => {
       // host.call: the plugin's host handler runs, as the user, for the session the component shows; its ui.send
       // reaches the app as plugin_ui_message.
       const api = ui.methods[PLUGINS_METHODS.pluginLayerApi.name]!;
-      expect(await api({ pluginId: "tarot", call: "host.call", args: [{ handler: "draw", args: { card: "The Star" } }], session: "s_1" }, ctx))
+      expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "draw", { card: "The Star" }), session: "s_1" }, ctx))
         .toEqual({ result: { drew: "The Star", by: "user", session: "s_1" } });
       expect(events.find((e) => e.type === "plugin_ui_message")).toMatchObject({ pluginId: "tarot", event: "drawn", value: { card: "The Star" } });
       // A "both" call works from a component; a host-only one doesn't exist there.
-      expect(await api({ pluginId: "tarot", call: "storage.synced.set", args: ["k", 1] }, ctx)).toEqual({ result: undefined });
+      expect(await api({ pluginId: "tarot", ...layerApiCall("storage.synced.set", "k", 1) }, ctx)).toEqual({ result: undefined });
+      expect(await api({ pluginId: "tarot", ...layerApiCall("storage.synced.get", "k") }, ctx)).toEqual({ result: 1 });
       const refused = (await api({ pluginId: "tarot", call: "ui.send", args: ["x", 1] }, ctx).catch((x: unknown) => x)) as ContractError;
       expect(refused.message).toBe("ui.send exists only in a plugin's host code");
+      // A failure names the plugin and the call, which the app maps to its own parts (it never needs the mount back).
+      expect((refused as unknown as { data?: Record<string, unknown> }).data).toMatchObject({ pluginId: "tarot", call: "ui.send" });
 
       // Switched off: no view, and a nudge.
       events.length = 0;

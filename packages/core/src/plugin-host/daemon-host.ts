@@ -168,11 +168,12 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     {
       // A component runs one of its plugin's host handlers, as the user, for the session it shows.
+      // Its arguments are `HostApi.call`'s, in order: the handler's name, its args, and options (`timeoutMs`).
       "host.call": async (ctx, args) => {
-        const a = args[0];
-        if (a === null || typeof a !== "object" || typeof (a as { handler?: unknown }).handler !== "string") throw new ContractError("invalid", "host.call takes { handler, args }");
-        const { handler, args: callArgs } = a as { handler: string; args?: unknown };
-        return host.invoke({ pluginId: ctx.pluginId, handler, args: callArgs ?? null, caller: ctx.caller, ...(ctx.session !== undefined ? { session: ctx.session } : {}) });
+        const [handler, callArgs, opts] = args as [unknown, unknown, { timeoutMs?: unknown } | undefined];
+        if (typeof handler !== "string" || handler === "") throw new ContractError("invalid", "host.call takes the handler's name first");
+        const timeoutMs = typeof opts?.timeoutMs === "number" ? opts.timeoutMs : undefined;
+        return host.invoke({ pluginId: ctx.pluginId, handler, args: callArgs ?? null, caller: ctx.caller, ...(ctx.session !== undefined ? { session: ctx.session } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
       },
       // A host half's message to its components, relayed by the app to their `host.on`.
       "ui.send": (ctx, args) => {

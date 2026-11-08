@@ -442,9 +442,10 @@ export const PLUGINS_METHODS = {
     params: z.object({
       /** The plugin of the mount the app bound the calling component to, never anything the component said. */
       pluginId: AnyPluginId,
-      /** A plugin API call a component may make (the SDK's `API_CALLS`, `where` "ui" or "both"): `host.call` runs one of
-       *  the plugin's host handlers, `args` being `[{ handler, args }]`. */
+      /** A plugin API call a component may make (the SDK's `API_CALLS`, `where` "ui" or "both"). */
       call: utf16(128, 1),
+      /** The method's parameters in order, typed by the SDK's `ApiCallSignatures` (`layerApiCall` builds them):
+       *  `host.call` takes the handler's name, its args and options. A listener can't be one. */
       args: z.array(z.unknown()).max(64),
       /** The bot whose tab the component is in, and the session it shows, for calls scoped to them. */
       bot: BotId.optional(),
