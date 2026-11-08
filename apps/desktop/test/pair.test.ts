@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloverHelloParams } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
-import { parseAutostartStatus, type DaemonLauncher } from "../src/main/pair/login";
+import { parseAutostartStatus, devDaemonLauncher, type DaemonLauncher, type DevChild } from "../src/main/pair/login";
 import { Pair, daemonProof, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
@@ -380,6 +380,79 @@ describe("Quit's question", () => {
     const q = quitQuestion({ bots: [], routines: 1, agents: 0, canHandOver: true, safeMode: false });
     expect(q.ask).toBe(true);
     expect(q.buttons.map((b) => b.id)).toEqual(["quit", "cancel"]);
+  });
+});
+
+describe("the dev daemon as the app's own child (Gap A: no more starting it by hand)", () => {
+  function setup() {
+    const root = mkdtempSync(join(tmpdir(), "clover-dev-root-"));
+    homes.push(root);
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    writeFileSync(join(root, "scripts", "dev-daemon.ts"), "// stand-in");
+    const home = mkdtempSync(join(tmpdir(), "clover-dev-home-"));
+    homes.push(home);
+    const lines: string[] = [];
+    const spawned: { command: string; args: readonly string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
+    let alive = false;
+    let killed: NodeJS.Signals | undefined;
+    const spawn = (command: string, args: readonly string[], opts: { cwd: string; env: NodeJS.ProcessEnv }): DevChild => {
+      spawned.push({ command, args, cwd: opts.cwd, env: opts.env });
+      alive = true;
+      return {
+        get pid() { return 4242; },
+        get exitCode() { return alive ? null : 1; },
+        get signalCode() { return null; },
+        kill: (signal?: NodeJS.Signals) => {
+          killed = signal ?? "SIGTERM";
+          alive = false;
+          return true;
+        },
+        on: () => {},
+      };
+    };
+    const reg = devDaemonLauncher({ root, home, log: (l) => lines.push(l), spawn });
+    return { root, home, lines, spawned, reg, killed: () => killed };
+  }
+
+  function withBinary(root: string): void {
+    const dir = join(root, "dist", "dev");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, process.platform === "win32" ? "clover-core.exe" : "clover-core"), "stand-in");
+  }
+
+  test("starts bun run dev:daemon in the checkout, on the dev home and profile", async () => {
+    const { root, home, reg, spawned } = setup();
+    withBinary(root);
+    expect(await reg.status()).toBeUndefined();
+    const r = await reg.start();
+    expect(r.ok).toBe(true);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]!.command).toBe("bun");
+    expect([...spawned[0]!.args]).toEqual(["run", "dev:daemon", "--no-build"]);
+    expect(spawned[0]!.cwd).toBe(root);
+    expect(spawned[0]!.env.CLOVER_HOME).toBe(home);
+    expect(spawned[0]!.env.CLOVER_PROFILE).toBe("dev");
+    expect(await reg.status()).toEqual({ registered: true, running: true });
+    // Already running: no second child.
+    expect((await reg.start()).ok).toBe(true);
+    expect(spawned).toHaveLength(1);
+  });
+
+  test("without a built binary it starts nothing and says to build it once", async () => {
+    const { reg, spawned, lines } = setup();
+    const r = await reg.start();
+    expect(r.ok).toBe(false);
+    expect(spawned).toHaveLength(0);
+    expect(lines.join("\n")).toContain("bun run dev:daemon");
+  });
+
+  test("stopping the pair stops the child", async () => {
+    const { root, reg, killed } = setup();
+    withBinary(root);
+    await reg.start();
+    reg.stop?.();
+    expect(killed()).toBe("SIGTERM");
+    expect(await reg.status()).toBeUndefined();
   });
 });
 

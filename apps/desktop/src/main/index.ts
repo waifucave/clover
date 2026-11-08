@@ -20,7 +20,7 @@ import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost 
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
-import { cliLauncher, locateDaemonBinary } from "./pair/login";
+import { cliLauncher, devDaemonLauncher, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
@@ -363,13 +363,18 @@ async function showFallbackCard(cardId: string): Promise<void> {
 
 function makePair(): Pair {
   const binary = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  // No binary and no daemon: an unpackaged dev run starts its own dev daemon as its child (Gap A) instead of
+  // telling the person to start it by hand. The checkout root is three levels above the built main process.
+  const devRoot = join(here, "..", "..", "..");
   const p = new Pair({
     endpoint: daemonEndpoint(home),
     hello: () => {
       const token = readAppToken(home, env);
       return token === undefined ? undefined : appHello(token, app.getVersion(), CLOVER_PROTOCOL_VERSION);
     },
-    ...(binary !== undefined ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
+    ...(binary !== undefined
+      ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) }
+      : !app.isPackaged ? { launcher: devDaemonLauncher({ root: devRoot, home, log }) } : {}),
     // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },

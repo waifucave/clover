@@ -14,7 +14,7 @@
 //
 // each with `CLOVER_HOME` and `CLOVER_PROFILE` set, exit code 0 on success. A fake binary stands in for it in the
 // tests until C-M1 lands.
-import { execFile } from "node:child_process";
+import { execFile, spawn as nodeSpawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
@@ -32,6 +32,8 @@ export interface DaemonLauncher {
   status(): Promise<{ registered: boolean; running?: boolean } | undefined>;
   enable(): Promise<LoginResult>;
   start(): Promise<LoginResult>;
+  /** Stops what `start` started, if anything is still running (a dev child; the OS owns the rest). */
+  stop?(): void;
 }
 
 export interface LauncherConfig {
@@ -116,4 +118,83 @@ export function copyOutOfAppImage(bundled: string, env: NodeJS.ProcessEnv, userH
     renameSync(temp, target);
   }
   return target;
+}
+
+/** A spawned child process, enough of it for the dev launcher to watch and stop. */
+export interface DevChild {
+  readonly pid?: number;
+  readonly exitCode: number | null;
+  readonly signalCode: NodeJS.Signals | null;
+  kill(signal?: NodeJS.Signals): boolean;
+  on(event: "exit", listener: () => void): void;
+}
+
+/** Spawning for the dev launcher; `node:child_process`'s own in production. */
+export type DevSpawn = (
+  command: string, args: readonly string[], opts: { cwd: string; env: NodeJS.ProcessEnv },
+) => DevChild;
+
+export interface DevDaemonConfig {
+  /** The repo checkout (`scripts/dev-daemon.ts` and `dist/dev` live under it). */
+  root: string;
+  home: string;
+  log(line: string): void;
+  spawn?: DevSpawn;
+  /** Which `bun` runs the dev script (`bun` on PATH by default). */
+  bun?: string;
+}
+
+/** The dev daemon, as the dev app's own child: when no daemon answers and no binary is configured, an unpackaged run
+ *  starts `bun run dev:daemon --no-build` itself instead of telling the person to start it by hand. No login item
+ *  (dev manages its own child); the app stops it on quit. The binary must already be built (`bun run dev:daemon`
+ *  once); without it the launcher says how, and starts nothing. */
+export function devDaemonLauncher(cfg: DevDaemonConfig): DaemonLauncher {
+  const dist = join(cfg.root, "dist", "dev", DAEMON_BINARY_NAME);
+  const spawn = cfg.spawn ?? ((command: string, args: readonly string[], opts: { cwd: string; env: NodeJS.ProcessEnv }) => {
+    const child = nodeSpawn(command, [...args], { cwd: opts.cwd, env: opts.env, stdio: ["ignore", "inherit", "inherit"], windowsHide: true });
+    return {
+      get pid() { return child.pid; },
+      get exitCode() { return child.exitCode; },
+      get signalCode() { return child.signalCode; },
+      kill: (signal?: NodeJS.Signals) => child.kill(signal ?? "SIGTERM"),
+      on: (_event: "exit", listener: () => void) => void child.on("exit", listener),
+    };
+  });
+  let child: DevChild | undefined;
+  const alive = () => child !== undefined && child.exitCode === null && child.signalCode === null;
+  return {
+    status: async () => (alive() ? { registered: true, running: true } : undefined),
+    enable: async () => ({ ok: true, code: 0, out: "dev: no login item" }),
+    start: async () => {
+      if (alive()) return { ok: true, code: 0, out: "dev: already running" };
+      if (!existsSync(join(cfg.root, "scripts", "dev-daemon.ts"))) {
+        cfg.log(`dev: no repo checkout at ${cfg.root} (no scripts/dev-daemon.ts); start the daemon by hand`);
+        return { ok: false, code: null, out: "dev: no repo checkout" };
+      }
+      if (!existsSync(dist)) {
+        cfg.log(`dev: no dev daemon binary at ${dist}; run \`bun run dev:daemon\` once to build it`);
+        return { ok: false, code: null, out: "dev: no dev binary" };
+      }
+      const bun = cfg.bun ?? "bun";
+      try {
+        child = spawn(bun, ["run", "dev:daemon", "--no-build"], {
+          cwd: cfg.root,
+          env: { ...process.env, CLOVER_HOME: cfg.home, CLOVER_PROFILE: "dev" },
+        });
+      } catch (err) {
+        cfg.log(`dev: the daemon wouldn't start (${err instanceof Error ? err.message.slice(0, 160) : "refused"})`);
+        child = undefined;
+        return { ok: false, code: null, out: "dev: spawn failed" };
+      }
+      cfg.log(`dev: started the dev daemon (pid ${child.pid ?? "?"})`);
+      return { ok: true, code: 0, out: "dev: started" };
+    },
+    stop: () => {
+      if (child === undefined) return;
+      try {
+        child.kill("SIGTERM");
+      } catch { /* gone */ }
+      child = undefined;
+    },
+  };
 }
