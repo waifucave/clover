@@ -185,6 +185,20 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(await broker.request(bash({ effect: "edit", paths: ["/Users/me/project/a.ts"] }))).toMatchObject({ allowed: true, by: "level" });
     });
 
+    test("rule 3: a write where a file runs later outside any sandbox is refused without a card, at every level", async () => {
+      const { broker } = setup({ levels: { Studio: "automatic" } });
+      expect(await broker.request(bash({ effect: "edit", paths: ["/Users/me/.zshrc"] }))).toEqual({ allowed: false, by: "fence" });
+      expect(await broker.request(bash({ effect: "delete", paths: ["/Users/me/project/a.ts", "/Users/me/Library/LaunchAgents/x.plist"] }))).toEqual({ allowed: false, by: "fence" });
+      expect(await broker.request(bash({ kind: "agent-permission", effect: "edit", paths: ["/Users/me/.codex/config.toml"], ruleKey: "Edit(*)" }))).toEqual({ allowed: false, by: "fence" });
+      expect(broker.cards()).toHaveLength(0);
+      // Next to them is free; reading one, or a command naming one (the sandbox holds its writes), is rule 3's card.
+      expect(await broker.request(bash({ effect: "edit", paths: ["/Users/me/.zshrc.bak"] }))).toMatchObject({ allowed: true, by: "level" });
+      void broker.request(bash({ effect: "read", paths: ["/Users/me/.zshrc"] }));
+      void broker.request(bash({ effect: "execute", paths: ["/Users/me/.zshrc"] }));
+      await flush();
+      expect(broker.cards()).toHaveLength(2);
+    });
+
     test("rule 4: a card's always saves Clover's own rule for those computers", async () => {
       const { broker } = setup();
       const { card, decision } = await carded(broker, bash({ ruleKey: "Bash(git push:*)" }));

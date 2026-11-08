@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { runFenceConformance } from "../../src/contracts/conformance/fence";
 import { CLOUD_METADATA_ADDRESSES } from "../../src/contracts/fence";
+import { agentConfigPaths } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
 import { canonicalPath } from "../../src/fence/canonical";
 import { botFolders, pendingFenced } from "../../src/fence/layout";
@@ -131,7 +132,7 @@ describe("the real fence on a real disk", () => {
     expect(p.transcripts).toEqual(["/Users/me/.clover/transcripts"]);
     expect(p["browser-profiles"]).toEqual(["/Users/me/Library/Application Support/Clover/Partitions"]);
     expect(p["login-start"]).toContain("/Users/me/Library/LaunchAgents");
-    expect(p["agent-installs"]).toEqual(["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin"]);
+    expect(p["agent-installs"]).toEqual(["/opt/homebrew/lib/node_modules/@zed-industries/codex-acp", "/Applications/Cursor.app/Contents/Resources/app/bin", ...agentConfigPaths("macos", "/Users/me")]);
     expect(p.plugins).toEqual(["/Users/me/.clover/plugins"]);
     expect(p["hook-shell"]).toEqual([]);
     expect(pendingFenced({ home: "C:\\Users\\me", cloverHome: "C:\\Users\\me\\.clover", os: "windows" })["hook-shell"]).toEqual(["C:\\Users\\me\\AppData\\Local\\Programs\\Git"]);

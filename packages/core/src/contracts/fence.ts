@@ -59,11 +59,13 @@ export const FENCED_KINDS = [
    *  reading too. */
   "browser-profiles",
   /** The login item that starts the daemon at login (lane C): macOS's LaunchAgents plist and its parked copy, Linux's
-   *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. */
+   *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. And every place a file written now runs
+   *  later outside any sandbox (`autoRunPaths`: shell start files, login items, autostart, SSH's rc and keys). */
   "login-start",
   /** The install folders of the coding agents the user has OK'd to run (lane K, keyed to each program's real path and
    *  hash): the resolved program's folder, and npm's global package folder for its package. Write-denied to sessions
-   *  and agents, so none can swap in a new copy of itself or of another agent. They change as the user OKs agents. */
+   *  and agents, so none can swap in a new copy of itself or of another agent. They change as the user OKs agents. And
+   *  the coding agents' own sandbox settings (`agentConfigPaths`). */
   "agent-installs",
   /** Windows and Linux: the encrypted secrets file, hidden from reads too (§8.5, §9.1). */
   "secrets-file",
@@ -76,6 +78,9 @@ export type FencedKind = (typeof FENCED_KINDS)[number];
 /** The items whose reach is the caller's (`deny: "caller"`, `forCaller`). */
 export const CALLER_KINDS: readonly FencedKind[] = ["bot-memory"];
 export const READ_DENIED_KINDS: readonly FencedKind[] = ["run-folder", "browser-profiles", "secrets-file", "key-file"];
+/** The items a write to which runs later outside any sandbox: a bot's or an agent's write there is refused without a
+ *  card (the approval broker's rule 3), where any other fenced item gets one. */
+export const RUN_LATER_KINDS: readonly FencedKind[] = ["login-start", "agent-installs"];
 
 export interface FencedPath {
   kind: FencedKind;
@@ -353,4 +358,60 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
     }
   }
   return { allowed: true };
+}
+
+// -------------------------------------------------------------------------------------------------
+// Persistence and auto-run (the #301 review, the controller's ruling of November 8): the places where a file written
+// now runs OUTSIDE any sandbox later, at the user's next shell, login or SSH session, or changes how a coding agent
+// sandboxes itself. The fence's `login-start` and `agent-installs` items carry them (fence/layout.ts), so every runner's
+// sandbox and file tools refuse writes there; a code session the user drives asks instead (no "always"), through the
+// protected-path card (runtime-sdk/protected-paths.ts). One list, here.
+// -------------------------------------------------------------------------------------------------
+
+/** A path under `home` in `os`'s own form. */
+function underHome(os: Os, home: string, parts: readonly string[]): string {
+  const sep = os === "windows" ? "\\" : "/";
+  return [home.replace(/[\\/]+$/, ""), ...parts].join(sep);
+}
+
+/** The shells' start files, on every OS (Git Bash and WSL-style shells read them on Windows too). */
+const SHELL_START_FILES = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login"] as const;
+
+/** Where a file starts something at the next shell, login or SSH session, under `home`. HKCU's `Run` and `RunOnce`
+ *  keys aren't paths: the Windows sandbox (#207) has to deny them, a gap until it lands (the Windows release blocker). */
+export function autoRunPaths(os: Os, home: string): string[] {
+  const u = (...parts: string[]) => underHome(os, home, parts);
+  const shells = SHELL_START_FILES.map((f) => u(f));
+  // SSH's files that run or admit something: `rc` runs at each login, `config` holds `ProxyCommand`/`LocalCommand`,
+  // `environment` is read by sshd, the keys admit whoever holds them. `known_hosts` stays writable (ssh writes it).
+  const ssh = ["rc", "config", "environment", "authorized_keys", "authorized_keys2"].map((f) => u(".ssh", f));
+  if (os === "macos") {
+    return [
+      u("Library", "LaunchAgents"), u("Library", "LaunchDaemons"),
+      u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
+      u("Library", "Application Support", "com.apple.backgroundtaskmanagementd"),
+      u(".config", "fish"), ...shells, ...ssh,
+    ];
+  }
+  if (os === "linux") {
+    return [
+      u(".config", "autostart"), u(".config", "systemd", "user"), u(".local", "share", "systemd", "user"),
+      u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".config", "fish"), ...shells, ...ssh,
+    ];
+  }
+  return [
+    u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"),
+    u("Documents", "PowerShell"), u("Documents", "WindowsPowerShell"), ...shells, ...ssh,
+  ];
+}
+
+/** The coding agents' own settings that change how they sandbox themselves (lane K's writers deny these per backend;
+ *  the fence holds them for every runner). */
+export function agentConfigPaths(os: Os, home: string): string[] {
+  const u = (...parts: string[]) => underHome(os, home, parts);
+  return [
+    u(".codex", "config.toml"),
+    u(".claude", "settings.json"), u(".claude", "settings.local.json"),
+    u(".config", "opencode"),
+  ];
 }

@@ -14,7 +14,7 @@ import { classifyPermissionMode } from "@waifucave/clover-agent-sdk/messaging";
 import { DISPATCH_CHILD_APPROVAL_TIMEOUT_MS, canUseToolFor, neverPromptsMessage, type BridgeLogger } from "../../src/runtime-sdk/approval-bridge";
 import { REVIEWER_ESCALATION_REASON, noteReviewerCleared, takeReviewerCleared } from "../../src/runtime-sdk/bridge-common";
 import {
-  buildCloverOptions, permissionModeFor, disallowedToolsFor, toolsFor, deferToolsFor,
+  buildCloverOptions, permissionModeFor, disallowedToolsFor, toolsFor, deferToolsFor, persistencePaths,
   CAPABILITY_TOOL_MODES, CHAT_BUILTIN_TOOLS, DISPATCH_BUILTIN_TOOLS, DISPATCH_READ_ALLOW_RULES, GLOBAL_READ_ALLOW_RULES,
   WEB_BUILTIN_ALLOW_RULES, KNOWN_RUNTIME_BUILTINS, CAPABILITY_PLAIN_NAMES, LEGACY_TOOL_NAMES, toolSurfaceViolations,
   type ToolExposure, type CloverOptionsInput,
@@ -543,6 +543,8 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
     // store home IS the shared runtime home (`sdk/`), so the list names it once (router 0.0.11 added the
     // `<home>/…` duplicates of these five).
     "/h/sdk/skills", "/h/sdk/commands", "/h/sdk/rules", "/h/sdk/output-styles", "/h/sdk/CLOVER.md",
+    // The #301 review: where a file runs later outside any sandbox, and the coding agents' sandbox settings.
+    ...persistencePaths(),
     "/repo/.clover/mcp.json", "/repo/.clover/settings.json", "/repo/.clover/settings.local.json", "/repo/.clover/agents",
     "/repo/.clover/skills", "/repo/.clover/commands", "/repo/.clover/rules", "/repo/.clover/output-styles",
     // R.3 I-4: the any-depth project fence (child-only; `sandboxConfigFor`'s literal list has none).

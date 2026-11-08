@@ -25,7 +25,7 @@
 import { readdirSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import type { FencedKind } from "../contracts/fence";
+import { agentConfigPaths, autoRunPaths, type FencedKind } from "../contracts/fence";
 
 export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
 
@@ -83,8 +83,10 @@ export function fenceLayout(cloverHome: string, os: Os, o?: {
     transcripts: [h("sessions")],
     usage: [h("usage")],
     "browser-profiles": userData === undefined ? [] : [p.join(userData, "Partitions")],
-    "login-start": loginStartPaths(os, o?.home, cloverHome),
-    "agent-installs": [...(o?.agentInstalls ?? [])],
+    // Clover's own login item, and every place a file runs from later outside any sandbox (the #301 review's ruling).
+    "login-start": [...new Set([...loginStartPaths(os, o?.home, cloverHome), ...(o?.home === undefined ? [] : autoRunPaths(os, o.home))])],
+    // The OK'd agents' installs, and the coding agents' own sandbox settings.
+    "agent-installs": [...(o?.agentInstalls ?? []), ...(o?.home === undefined ? [] : agentConfigPaths(os, o.home))],
   };
 }
 
@@ -115,8 +117,8 @@ export function pendingFenced(o: {
     transcripts: [p.join(o.cloverHome, "transcripts")], // `transcriptsDir(home)`, joined in this OS's form
     usage: [p.join(o.cloverHome, "usage")],
     "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
-    "login-start": loginStart[o.os],
-    "agent-installs": [...(o.agentInstalls ?? [])],
+    "login-start": [...new Set([...loginStart[o.os], ...autoRunPaths(o.os, o.home)])],
+    "agent-installs": [...(o.agentInstalls ?? []), ...agentConfigPaths(o.os, o.home)],
     plugins: [p.join(o.cloverHome, "plugins")],
     // Windows: the per-user Git for Windows, whose bash runs hooks (#205's S4): a fenced caller can't plant one there.
     "hook-shell": o.os === "windows" ? [u("AppData", "Local", "Programs", "Git")] : [],

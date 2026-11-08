@@ -1,5 +1,6 @@
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { agentConfigPaths, autoRunPaths } from "../contracts/fence";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -942,17 +943,29 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
   ];
 }
 
+/** The places under the user's home where a write runs later outside any sandbox (`autoRunPaths`), and the coding
+ *  agents' sandbox settings (`agentConfigPaths`), for this OS: protected in a code session the user drives (a card,
+ *  never an "always"; a typed deny in chat) and write-denied to its sandboxed Bash (`protectedHomeDenyWrite`). Bots and
+ *  agents meet them as the fence's `login-start` and `agent-installs` items, refused outright. */
+export function persistencePaths(userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string[] {
+  const os = platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
+  return [...autoRunPaths(os, userHome), ...agentConfigPaths(os, userHome)];
+}
+
 /**
  * Review I7: the user tier's PROTECTED item directories and instructions file (spec §7.2) — for the shared
  * runtime home and, when it differs (router 0.0.11), the store home the build actually loads them from.
  * The sandbox's `denyWrite` only: a write TOOL gets the card (`protected-paths.ts`), never a hard deny.
  */
-export function protectedHomeDenyWrite(home: string): string[] {
+export function protectedHomeDenyWrite(home: string, userHome?: string): string[] {
   const out: string[] = [];
   for (const base of new Set([sdkHomeFor(home), storeHomeFor(home)])) {
     for (const kind of PROTECTED_ITEM_DIRS) out.push(join(base, kind));
     out.push(join(base, "CLOVER.md"));
   }
+  // The #301 review's ruling: shell start files, login items, SSH's rc and keys, and the coding agents' sandbox
+  // settings: a sandboxed Bash never writes them; a write tool gets the protected card (`persistencePaths`).
+  out.push(...persistencePaths(userHome));
   return out;
 }
 
