@@ -210,6 +210,8 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
     triggers: b.registry,
     ...(node ? {
       computers: () => node.registry.list().map((c) => ({ name: c.name, level: c.level })),
+      // The tree path names the computer (`home/<computer>/…`), so the tree reaches it from the path alone. It writes as
+      // the core: the routine tool (the bot's level, its card for a raised one) is the gate (#313 review Q).
       writeRemote: (_computer: string, treePath: string, text: string) => node.tree.write(treePath, { encoding: "utf8", text }, { as: { kind: "core" } }),
     } : {}),
     ...(host ? { ingress: { registry: b.registry, host }, ...(host.triggers ? { pluginTriggers: host.triggers } : {}) } : {}),
