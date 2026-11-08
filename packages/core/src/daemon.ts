@@ -164,7 +164,7 @@ import { IslandRegistry, type IslandHost, type IslandSessionFacts } from "./isla
 import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection } from "./usage/wiring";
-import { rowForTag } from "./runtime-sdk/provider-selection";
+import { providerFor, rowForTag, testProviderNameFor } from "./runtime-sdk/provider-selection";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
 import { BROWSER_HOST_SOCKET_NAME } from "./computer-use/browser/extension/protocol";
@@ -3481,6 +3481,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     return {
       registry: opened.registry,
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
+      // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
+      // key (§6.1), the routines' secrets and the user's time zone, and the app's URL for a plugin's file.
+      hasKeyFor: botKeyPresence(secrets, cloverHome),
+      routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
+      assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
@@ -3729,3 +3734,27 @@ if (import.meta.main) {
   const daemon = await startDaemon();
   stopOnSignals(daemon);
 }
+
+/** Whether the user holds a key for a model's provider (lane D's `hasKeyFor`): read from the credential store at most
+ *  every few seconds, when a bot asks, so a key added or removed reaches the next turn without a restart and an idle
+ *  daemon reads nothing. The runtime's test models need none. */
+function botKeyPresence(secrets: SecretStore, home: string): (model: string) => boolean {
+  let presence: Awaited<ReturnType<typeof credentialPresenceFrom>> | undefined;
+  let readAt = 0;
+  let reading = false;
+  const read = () => {
+    if (reading) return;
+    reading = true;
+    void credentialPresenceFrom(secrets).then((p) => { presence = p; }, () => {}).finally(() => { readAt = Date.now(); reading = false; });
+  };
+  read();
+  return (model) => {
+    if (testProviderNameFor(model) !== undefined) return true;
+    if (Date.now() - readAt > BOT_KEY_PRESENCE_MS) read();
+    const selection = providerFor(model, home);
+    return selection !== undefined && presence?.byProvider[selection.providerId] !== undefined;
+  };
+}
+
+/** How old the bots' view of the stored keys may be before a bot's next look reads it again. */
+const BOT_KEY_PRESENCE_MS = 5_000;
