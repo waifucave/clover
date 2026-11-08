@@ -58,7 +58,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  clampSentAt, pluginIdToSegment, TRANSIENT_EVENT_TYPES,
+  clampSentAt, pluginIdToSegment, SessionView as SessionViewSchema, TRANSIENT_EVENT_TYPES,
   type Caller, type SessionFailure, type SessionKind, type SessionStatus, type SessionView, type TurnOrigin,
 } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
@@ -71,7 +71,7 @@ import {
 } from "../contracts/session-host";
 import { readJson, writeJsonAtomic } from "./atomic-file";
 import { MAX_RECORD_BYTES, RecordTooLargeError, SessionLogFile, shrinkRecord } from "./event-log";
-import { mintSessionId, sessionLogPath, sessionMetaPath, transcriptsDir } from "./ids";
+import { mainSessionIdFor, mintSessionId, SESSION_ID_PREFIX, sessionLogPath, sessionMetaPath, transcriptsDir } from "./ids";
 
 /** After the user's interrupt, how long a driver that said it stopped has to end its turn before the host ends it. */
 export const INTERRUPT_GRACE_MS = 5_000;
@@ -112,7 +112,11 @@ export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "tas
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
-export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant"]);
+export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant", "session_grant_copied"]);
+
+/** What a copied `session_grant` becomes in this computer's log (review N7, H-M3): a record of another computer's grant,
+ *  which grants nothing here (`SessionGrants` reads only `session_grant`) and, core-only, is never sent to clients. */
+export const COPIED_GRANT_EVENT_TYPE = "session_grant_copied";
 
 /** The result a tool call gets when a restart or a takeover finds it with none (§3.1, §6.4). */
 export function interruptedCallOutput(ranOn?: string): string {
@@ -122,6 +126,21 @@ export function interruptedCallOutput(ranOn?: string): string {
 }
 
 /** Who a session is, kept beside its log. */
+/** A run of this computer's records set aside when its copy of a session forked from the computer running it (the
+ *  controller's ruling: the main's log wins, nothing is deleted, and the set-aside records go to the main marked late). */
+export interface EarlierLog {
+  /** `e<at>` (with a suffix when two land in one millisecond); its file is `<log stem>.earlier-<id>.json` beside the log. */
+  id: string;
+  at: number;
+  /** Where the fork began: the records were `fromSeq` up to `fromSeq + records` in this computer's log. */
+  fromSeq: number;
+  records: number;
+  /** The device whose records replaced them. */
+  from: string;
+  /** When the computer running the session took them (`ackEarlier`). */
+  delivered?: number;
+}
+
 export interface SessionMeta {
   meta: 1;
   id: string;
@@ -136,6 +155,8 @@ export interface SessionMeta {
   root?: string;
   routine?: string;
   startedAt: number;
+  /** This computer's records set aside when its copy forked from the computer running the session (`setAside`). */
+  earlier?: EarlierLog[];
   /** Set when the session ends, so a start needn't read its log. */
   ended?: { status: "stopped" | "failed"; at: number; failure?: SessionFailure };
 }
@@ -241,7 +262,28 @@ interface Hosted {
   interruptAfterCompaction: boolean;
   /** A turn another computer started and the log never ended: caught up before this computer starts one. */
   foreignTurn?: { on: string };
+  /** Which other computers' late records (and runs' notes) `appendLate` has appended, by where they first came from
+   *  (read from the log once). */
+  late?: { seen: Set<string> };
 }
+
+/** Where a late record first came from (`appendLate`): the device and computer, its place and time there; a note
+ *  that opens a run of them names the run instead (`note`, its place -1). */
+interface LateFrom {
+  device: string;
+  computer: string;
+  seq: number;
+  ts: number;
+  epoch?: number;
+  note?: string;
+}
+
+type LateRecord = SessionRecord & { late: true; copiedFrom?: string; lateFrom: LateFrom };
+
+const lateKey = (from: LateFrom) => (from.note !== undefined ? `${from.device}\u0000note\u0000${from.note}` : `${from.device}\u0000${from.seq}`);
+
+/** How many records a full read of a log takes at a time. */
+const RESTATE_PAGE = 1_000;
 
 const isEnded = (status: SessionStatus) => status === "stopped" || status === "failed";
 
@@ -297,6 +339,9 @@ class Replay {
   readonly questions = new Set<string>();
 
   apply(r: SessionRecord): void {
+    // A late record (another lease's, or another computer's set aside) is history only: it never moves the status,
+    // the line of inputs or a turn.
+    if ((r as { late?: unknown }).late === true) return;
     switch (r.type) {
       case "input":
         if (r.input.from === "user") rememberClientId(this.clientIds, r.input.clientMessageId, { seq: r.seq, disposition: r.disposition });
@@ -357,6 +402,48 @@ function trackCall(open: Map<string, string>, event: { type: string; [key: strin
   if (typeof callId !== "string" || callId === "") return;
   if (event.type === "tool_call") open.set(callId, typeof event["name"] === "string" ? event["name"] : "");
   else if (event.type === "tool_result") open.delete(callId);
+}
+
+/** A record as this computer keeps a copy of it: a grant renamed so it grants nothing here, marked late if so. */
+function copied(r: SessionRecord, late: boolean, from: string): SessionRecord {
+  let copy = structuredClone(r) as SessionRecord & { late?: true; copiedFrom?: string };
+  if (copy.type === "driver" && copy.event.type === "session_grant") copy = { ...copy, event: { ...copy.event, type: COPIED_GRANT_EVENT_TYPE } };
+  if (late) copy.late = true;
+  // The record's first copy names where it came from; a copy of a copy keeps that (the usage counter skips both).
+  copy.copiedFrom ??= from;
+  return copy;
+}
+
+/** Whether a record is a copy from another computer (`ingest`, `appendLate`): its usage is counted where it ran. */
+export function isCopiedRecord(r: SessionRecord): boolean {
+  return typeof (r as { copiedFrom?: unknown }).copiedFrom === "string";
+}
+
+/** Whether a held record is the one copied again: alike but for the late mark and the copy's source (a resend can
+ *  carry another of either). A grant and its copy are the same record when their place (seq, time, epoch) and the
+ *  grant's key are: the copy is renamed and says where it came from, and carries no card (lane H's sync compares them
+ *  the same way, `sync/session-records.ts`). */
+function sameRecord(held: SessionRecord, incoming: SessionRecord): boolean {
+  const { late: _a, copiedFrom: _c, ...a } = held as SessionRecord & { late?: true; copiedFrom?: string };
+  const { late: _b, copiedFrom: _d, ...b } = incoming as SessionRecord & { late?: true; copiedFrom?: string };
+  const ga = isGrantRecord(a);
+  const gb = isGrantRecord(b);
+  if (ga || gb) {
+    if (!ga || !gb) return false;
+    const { event: ea, ...ra } = a as Extract<SessionRecord, { type: "driver" }>;
+    const { event: eb, ...rb } = b as Extract<SessionRecord, { type: "driver" }>;
+    const grant = (e: { [key: string]: unknown }) => {
+      const { type: _t, from: _f, cardId: _card, ...rest } = e;
+      return rest;
+    };
+    return Bun.deepEquals(ra, rb) && Bun.deepEquals(grant(ea), grant(eb));
+  }
+  return Bun.deepEquals(a, b);
+}
+
+/** A grant's record, as recorded here (`session_grant`) or copied (`session_grant_copied`). */
+function isGrantRecord(r: Partial<SessionRecord>): boolean {
+  return r.type === "driver" && (r.event?.type === "session_grant" || r.event?.type === COPIED_GRANT_EVENT_TYPE);
 }
 
 function readMeta(path: string): SessionMeta | undefined {
@@ -644,6 +731,303 @@ export class DurableSessionHost implements SessionHost {
     return this.#sessions.get(id)?.driver !== undefined;
   }
 
+  /** A copied session's view is checked as a client's would be, and must be what its id says: a `b_` id is its bot's
+   *  main conversation and nothing else, and a minted id carries its kind's prefix. A view naming this computer as the
+   *  one running it is refused, unless it is a bot's main conversation whose lease is elsewhere (review S1). */
+  #checkCopiedView(view: SessionView): void {
+    const parsed = SessionViewSchema.safeParse(view);
+    if (!parsed.success) throw new ContractError("invalid", `a copied session's view doesn't parse: ${parsed.error.issues[0]?.message ?? "invalid"}`);
+    if (!view.id.startsWith(SESSION_ID_PREFIX[view.kind])) throw new ContractError("invalid", `session ${view.id} isn't a ${view.kind}'s id`);
+    if (view.kind === "bot" && (view.bot === undefined || view.id !== mainSessionIdFor(view.bot))) {
+      throw new ContractError("invalid", `session ${view.id} isn't ${view.bot === undefined ? "a bot" : view.bot}'s main conversation`);
+    }
+    if (this.#computer !== undefined && view.computer === this.#computer) {
+      const leaseElsewhere = view.kind === "bot" && this.#runsHere !== undefined && !this.#runsHere(view);
+      if (!leaseElsewhere) throw new ContractError("refused", `session ${view.id} names this computer as the one running it; its records aren't copied here`);
+    }
+  }
+
+  /** Whether this computer runs the session now, so its log is the one others follow: it holds the driver, and the
+   *  lease is here (a bot's main conversation) or a turn or a compaction of its runs here. */
+  #runsLive(s: Hosted): boolean {
+    return s.driver !== undefined && (s.running !== undefined || s.compacting !== undefined || this.#runHere(s));
+  }
+
+  /** On a computer that doesn't run the session, whose copy forked from the runner's at `fromSeq` (lane H's sync finds
+   *  where): this computer's records from `fromSeq` on are kept aside in a file beside the log, never deleted, and
+   *  listed by `earlier`; the log is cut back to `fromSeq`, so the runner's records go on from there; and what the
+   *  session holds (status, the line of inputs, questions, a turn left open) is read again from what remains. The view
+   *  says `rebasedAt`, so a client reads the history again. The set-aside records, which it returns, go to the
+   *  computer running the session (`appendLate` there), which puts them after its own, marked late. */
+  setAside(id: string, fromSeq: number, opts: { from: string }): SessionRecord[] {
+    const s = this.#sessions.get(id);
+    if (!s) throw new ContractError("not_found", `no session ${id}`);
+    // Refused while this computer runs the session, a turn of its included: a turn still running here (the old main's,
+    // as the lease leaves) would go on writing past the cut. Losing the lease interrupts that turn (the bot side), and
+    // the sync tries again on its next exchange, when it has ended.
+    if (this.#runsLive(s)) throw new ContractError("refused", `this computer runs session ${id}; its log is the one the others follow`);
+    const log = this.#logOf(s);
+    if (!Number.isInteger(fromSeq) || fromSeq < 0 || fromSeq > log.length) {
+      throw new ContractError("invalid", `session ${id}: can't set aside from seq ${fromSeq} (this computer holds ${log.length} records)`);
+    }
+    if (fromSeq === log.length) return [];
+    const records = log.read(fromSeq, log.length);
+    const at = this.#clock.now();
+    const taken = new Set((s.meta.earlier ?? []).map((e) => e.id));
+    let earlierId = `e${at}`;
+    for (let n = 2; taken.has(earlierId); n++) earlierId = `e${at}-${n}`;
+    const entry: EarlierLog = { id: earlierId, at, fromSeq, records: records.length, from: opts.from };
+    // The file first, then the meta that lists it, then the cut: a crash between them leaves the records in the log
+    // (set aside again, which the runner's `appendLate` takes once) or in a kept file.
+    writeJsonAtomic(this.#earlierPath(s, earlierId), { session: id, ...entry, list: records }, { mode: 0o600 });
+    const meta: SessionMeta = { ...s.meta, earlier: [...(s.meta.earlier ?? []), entry] };
+    writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
+    s.meta = meta;
+    log.cut(fromSeq);
+    this.#restate(s, at);
+    return records;
+  }
+
+  /** The runs of this computer's records `setAside` kept for the session, oldest first. */
+  earlier(id: string): EarlierLog[] {
+    const s = this.#sessions.get(id);
+    if (!s) throw new ContractError("not_found", `no session ${id}`);
+    return structuredClone(s.meta.earlier ?? []);
+  }
+
+  /** The records of one set-aside run, as they were in this computer's log ([] if its file is gone). */
+  readEarlier(id: string, earlierId: string): SessionRecord[] {
+    const s = this.#sessions.get(id);
+    if (!s) throw new ContractError("not_found", `no session ${id}`);
+    if (!(s.meta.earlier ?? []).some((e) => e.id === earlierId)) throw new ContractError("not_found", `session ${id} has no earlier records ${earlierId}`);
+    const file = readJson(this.#earlierPath(s, earlierId)) as { list?: unknown } | undefined;
+    return Array.isArray(file?.list) ? (file.list as SessionRecord[]) : [];
+  }
+
+  /** The computer running the session took a set-aside run (its `appendLate` answered): it isn't sent again. */
+  ackEarlier(id: string, earlierId: string): void {
+    const s = this.#sessions.get(id);
+    if (!s) throw new ContractError("not_found", `no session ${id}`);
+    const list = s.meta.earlier ?? [];
+    const at = list.findIndex((e) => e.id === earlierId);
+    if (at < 0) throw new ContractError("not_found", `session ${id} has no earlier records ${earlierId}`);
+    if (list[at]!.delivered !== undefined) return;
+    const meta: SessionMeta = { ...s.meta, earlier: list.map((e, i) => (i === at ? { ...e, delivered: this.#clock.now() } : e)) };
+    writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
+    s.meta = meta;
+  }
+
+  /** On the computer running the session: another computer's set-aside records (`setAside` there), put after this
+   *  log's own with new seqs. Each keeps its time and epoch, is marked `late`, `copiedFrom` and `lateFrom` (its device,
+   *  computer and place there; a record already late from a third computer keeps its own), and is history only:
+   *  nothing runs, and the status, the line of inputs and the turn don't move. A grant is kept as a copied grant (it
+   *  grants nothing here), and a status record is left out. A core note, "Earlier on <computer>", goes before each
+   *  run a device sends, so every copy of the transcript shows where they came from: a run is named by `earlierId`
+   *  (the sender's `EarlierLog` id) when given, else by the place of its first record (the first of `records`, so a
+   *  run sent in pages needs `earlierId`). Taken once
+   *  per original device and seq, so a resend adds nothing. Refused `busy` while one of this session's own turns or
+   *  compactions runs (late records inside a running turn would end it early for a reader of the log): the sender
+   *  tries again. How many records it appended (the notes not counted). */
+  appendLate(id: string, records: SessionRecord[], opts: { from: string; computer: string; earlierId?: string }): number {
+    const s = this.#sessions.get(id);
+    if (!s) throw new ContractError("not_found", `no session ${id}`);
+    if (!(s.driver !== undefined && this.#runHere(s))) {
+      throw new ContractError("refused", `this computer doesn't run session ${id}; another computer's earlier records go to the one that does`);
+    }
+    if (s.running !== undefined || s.compacting !== undefined) {
+      throw new ContractError("busy", `session ${id} is running a turn here; its earlier records from ${opts.computer} go in once it ends`);
+    }
+    for (const r of records) {
+      if (r.sessionId !== id) throw new ContractError("invalid", `a record of ${r.sessionId} was sent as ${id}'s`);
+      if (!Number.isInteger(r.seq) || r.seq < 0) throw new ContractError("invalid", `session ${id}: a late record with no place (seq ${String(r.seq)})`);
+    }
+    const late = this.#lateOf(s);
+    const run = opts.earlierId !== undefined ? `e:${opts.earlierId}` : `s:${records[0]?.seq ?? 0}`;
+    // Where each came from: its own first place when it is late already, else the sender's.
+    const origin = (r: SessionRecord): LateFrom => {
+      const own = (r as { lateFrom?: Partial<LateFrom> }).lateFrom;
+      if (own !== undefined && typeof own.device === "string" && typeof own.seq === "number" && typeof own.computer === "string" && typeof own.ts === "number") {
+        return { device: own.device, computer: own.computer, seq: own.seq, ts: own.ts, ...(typeof own.epoch === "number" ? { epoch: own.epoch } : {}), ...(typeof own.note === "string" ? { note: own.note } : {}) };
+      }
+      return { device: opts.from, computer: opts.computer, seq: r.seq, ts: r.ts, ...(r.epoch === undefined ? {} : { epoch: r.epoch }) };
+    };
+    const fresh = records.filter((r) => r.type !== "status" && !late.seen.has(lateKey(origin(r))));
+    if (fresh.length === 0) return 0;
+    const log = this.#logOf(s);
+    const write = (record: LateRecord) => {
+      log.append(record, { durable: true });
+      late.seen.add(lateKey(record.lateFrom));
+      s.subscribers.emit(structuredClone(record));
+      if (this.#taps.size > 0) this.#taps.emit({ record: structuredClone(record), view: this.#viewOf(s) });
+    };
+    const note = (run: string) => {
+      const from: LateFrom = { device: opts.from, computer: opts.computer, seq: -1, ts: this.#clock.now(), note: run };
+      if (late.seen.has(lateKey(from))) return;
+      const epoch = this.#epoch?.();
+      write({
+        type: "input", disposition: "note",
+        input: {
+          from: "note", by: { kind: "core" }, label: `Earlier on ${opts.computer}`.slice(0, 120),
+          text: `What follows happened on ${opts.computer} before it followed this conversation here. It is kept after the rest, marked late.`,
+        },
+        seq: log.length, sessionId: id, ts: from.ts, ...(epoch === undefined ? {} : { epoch }), late: true, lateFrom: from,
+      } as LateRecord);
+    };
+    for (const r of fresh) {
+      const from = origin(r);
+      // A record already late from elsewhere goes in as it is (its own note came with it); the sender's own open a run.
+      if (from.device === opts.from && from.note === undefined) note(run);
+      const { seq: _seq, sessionId: _id, ts: _ts, epoch: _epoch, late: _l, copiedFrom, lateFrom: _f, ...body } = structuredClone(r) as SessionRecord & {
+        late?: true; copiedFrom?: string; lateFrom?: unknown;
+      };
+      let kept = body as SessionRecordBody;
+      if (kept.type === "driver" && kept.event.type === "session_grant") kept = { ...kept, event: { ...kept.event, type: COPIED_GRANT_EVENT_TYPE } };
+      write({
+        ...kept, seq: log.length, sessionId: id, ts: r.ts, ...(r.epoch === undefined ? {} : { epoch: r.epoch }),
+        late: true, copiedFrom: typeof copiedFrom === "string" ? copiedFrom : opts.from, lateFrom: from,
+      } as unknown as LateRecord);
+    }
+    s.view = { ...s.view, updatedAt: this.#clock.now() };
+    this.#emitView(s);
+    return fresh.length;
+  }
+
+  /** The late records the session holds, by where they first came from (a run's note by its run); read from its log
+   *  once. */
+  #lateOf(s: Hosted): { seen: Set<string> } {
+    if (s.late !== undefined) return s.late;
+    const late = { seen: new Set<string>() };
+    const log = this.#logOf(s);
+    for (let from = 0; from < log.length; from += RESTATE_PAGE) {
+      for (const r of log.read(from, from + RESTATE_PAGE)) {
+        const lf = (r as { lateFrom?: Partial<LateFrom> }).lateFrom;
+        if (typeof lf?.device !== "string" || typeof lf.seq !== "number") continue;
+        late.seen.add(lateKey(lf as LateFrom));
+      }
+    }
+    s.late = late;
+    return late;
+  }
+
+  #earlierPath(s: Hosted, earlierId: string): string {
+    return sessionLogPath(this.#home, s.meta.bot, s.meta.id).replace(/\.ndjson$/, `.earlier-${earlierId}.json`);
+  }
+
+  /** What the session holds, read again from its whole log (after `setAside` cut it back). */
+  #restate(s: Hosted, at: number): void {
+    const replay = new Replay();
+    const log = this.#logOf(s);
+    for (let from = 0; from < log.length; from += RESTATE_PAGE) for (const r of log.read(from, from + RESTATE_PAGE)) replay.apply(r);
+    s.queue = replay.queue;
+    s.pending = replay.pending;
+    s.clientIds.clear();
+    for (const [k, v] of replay.clientIds) s.clientIds.set(k, v);
+    s.questions.clear();
+    for (const q of replay.questions) s.questions.add(q);
+    if (replay.running && replay.runningOn !== undefined && replay.runningOn !== this.#computer) s.foreignTurn = { on: replay.runningOn };
+    else delete s.foreignTurn;
+    s.late = undefined;
+    s.view = { ...viewOfMeta(s.meta, replay.status, at, replay.failure) };
+    this.#emitView(s);
+  }
+
+  /** The next seq the session's log expects (its length; 0 for a session this computer doesn't know): lane H's
+   *  `SessionRecordSink.head`, where records copied from the computer running it go on. */
+  head(id: string): number {
+    const s = this.#sessions.get(id);
+    return s === undefined ? 0 : this.#logOf(s).length;
+  }
+
+  /** Records copied from the computer running the session (lane H's `SessionRecordSync`), appended to this computer's
+   *  log in seq order (`SessionRecordSink.ingest`):
+   *  * a session not known here is opened dormant from `view`, with no driver and no record of its own;
+   *  * a record already held (its seq below the head) is skipped when it is the same record, so a repeat is harmless;
+   *    a different record at a held seq is a fork (two computers wrote that place) and refuses the batch `conflict`;
+   *    one past the head is a gap and nothing is taken (the sync asks for the history first);
+   *  * a copied `session_grant` is kept as `session_grant_copied`, which grants nothing here and never reaches clients;
+   *  * `late` (from an earlier lease) marks each record it appends, and each is marked `copiedFrom` the sender (so
+   *    the usage counter, which counts a turn where it ran, skips it);
+   *  * no driver ever runs, and nothing is sent on (taps aren't told: the copy isn't this computer's to sync).
+   *  A session this computer runs takes no copies: any session but a bot's main conversation, and that one while the
+   *  lease is here or a turn of its still runs here. A bot's main conversation keeps its driver on every computer (the
+   *  bot side opens it so) and takes copies while the lease is elsewhere; what they queue and a turn they leave open
+   *  are kept as a restart would read them, so a takeover runs what waits and catches the open turn up. A known
+   *  session's runner follows `view`. */
+  ingest(view: SessionView, records: SessionRecord[], opts: { from: string; late: boolean }): void {
+    this.#checkCopiedView(view);
+    let s = this.#sessions.get(view.id);
+    if (s !== undefined && (s.meta.kind !== view.kind || s.meta.bot !== view.bot || s.meta.parent !== view.parent)) {
+      throw new ContractError("invalid", `session ${view.id} is a ${s.meta.kind} here; ${opts.from} sent it as a ${view.kind}`);
+    }
+    if (s !== undefined && this.#runsLive(s)) {
+      throw new ContractError("refused", `this computer runs session ${view.id}; its records aren't copied here from ${opts.from}`);
+    }
+    const log = s === undefined ? undefined : this.#logOf(s);
+    let next = log?.length ?? 0;
+    // Checked whole before anything is written: a gap, a fork or another session's record takes nothing.
+    for (const r of records) {
+      if (r.sessionId !== view.id) throw new ContractError("invalid", `a record of ${r.sessionId} was copied as ${view.id}'s`);
+      if (r.seq < next) {
+        const held = log!.read(r.seq, r.seq + 1)[0];
+        if (held === undefined || !sameRecord(held, copied(r, false, opts.from))) {
+          throw new ContractError("conflict", `session ${view.id}: this computer holds another record at seq ${r.seq} than ${opts.from} sent; the two logs forked there`);
+        }
+        continue;
+      }
+      if (r.seq > next) throw new ContractError("invalid", `session ${view.id}: a gap before seq ${r.seq} (this computer holds up to ${next - 1}); the history comes first`);
+      next++;
+    }
+    if (s === undefined) {
+      const meta: SessionMeta = {
+        meta: SESSION_META_VERSION, id: view.id, kind: view.kind, startedAt: view.startedAt, computer: view.computer,
+        ...(view.bot === undefined ? {} : { bot: view.bot }), ...(view.parent === undefined ? {} : { parent: view.parent }),
+      };
+      for (const k of ["title", "backend", "model", "effort", "root", "routine"] as const) if (view[k] !== undefined) meta[k] = view[k];
+      writeJsonAtomic(sessionMetaPath(this.#home, meta.bot, meta.id), meta);
+      const file = new SessionLogFile(sessionLogPath(this.#home, meta.bot, meta.id), meta.id, this.#warn);
+      file.load();
+      s = this.#hosted(meta, file);
+      this.#sessions.set(meta.id, s);
+    } else if (view.computer !== s.meta.computer) {
+      this.#patchMeta(s, { computer: view.computer });
+      s.view = { ...s.view, computer: view.computer };
+    }
+    const hosted = s;
+    const target = this.#logOf(hosted);
+    // The copies replayed onto what the session holds now, as a restart would read the whole log.
+    const replay = new Replay();
+    replay.running = hosted.foreignTurn !== undefined;
+    replay.runningOn = hosted.foreignTurn?.on;
+    replay.queue = [...hosted.queue];
+    replay.pending = [...hosted.pending];
+    replay.status = hosted.view.status;
+    replay.failure = hosted.view.failure;
+    for (const [k, v] of hosted.clientIds) replay.clientIds.set(k, v);
+    for (const q of hosted.questions) replay.questions.add(q);
+    let appended = 0;
+    for (const r of records) {
+      if (r.seq < target.length) continue;
+      const copy = copied(r, opts.late, opts.from);
+      target.append(copy, { durable: copy.type !== "driver" });
+      hosted.subscribers.emit(structuredClone(copy));
+      replay.apply(copy);
+      hosted.view = { ...hosted.view, updatedAt: copy.ts };
+      appended++;
+    }
+    if (appended === 0) return;
+    hosted.queue = replay.queue;
+    hosted.pending = replay.pending;
+    for (const [k, v] of replay.clientIds) hosted.clientIds.set(k, v);
+    hosted.questions.clear();
+    for (const q of replay.questions) hosted.questions.add(q);
+    // A turn the runner has open is caught up only if this computer takes the session over.
+    if (replay.running && replay.runningOn !== undefined && replay.runningOn !== this.#computer) hosted.foreignTurn = { on: replay.runningOn };
+    else delete hosted.foreignTurn;
+    hosted.view = { ...hosted.view, status: replay.status, ...(replay.failure === undefined ? {} : { failure: replay.failure }) };
+    if (isEnded(hosted.view.status) && hosted.meta.ended === undefined) this.#markEnded(hosted);
+    this.#emitView(hosted);
+  }
+
   /** How many records the session's log holds. */
   length(id: string): number {
     const s = this.#sessions.get(id);
@@ -743,6 +1127,8 @@ export class DurableSessionHost implements SessionHost {
     }
     if (!this.#tryRecord(s, { type: "turn_ended", end: { reason: "interrupted" } })) return 0;
     delete s.foreignTurn;
+    // The status the other computer's turn left (copied with it) ends with that turn, as a restart's would.
+    if (s.view.status === "prompting" || s.view.status === "cancelling" || s.view.status === "starting") this.#setStatus(s, "idle");
     return open.size;
   }
 
@@ -1209,6 +1595,7 @@ function viewOfMeta(meta: SessionMeta, status: SessionStatus, updatedAt: number,
     ...(meta.effort === undefined ? {} : { effort: meta.effort }),
     ...(meta.root === undefined ? {} : { root: meta.root }),
     ...(meta.routine === undefined ? {} : { routine: meta.routine }),
+    ...(meta.earlier === undefined || meta.earlier.length === 0 ? {} : { rebasedAt: meta.earlier[meta.earlier.length - 1]!.at }),
   };
 }
 

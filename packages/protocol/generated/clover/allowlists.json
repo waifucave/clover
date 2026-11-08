@@ -276,6 +276,8 @@
       "bot.setUserLayer",
       "bots.pause",
       "clock.status",
+      "codeAgent.open",
+      "codeAgent.send",
       "command.list",
       "command.run",
       "computer.get",

@@ -118,6 +118,10 @@ export const SessionView = z.object({
   /** What waits for the user in it: pending cards and unanswered questions, as counts only (the shell's needs-you
    *  marks; a card's content stays behind `approvals` and the sealed frames). */
   needsYou: z.object({ cards: z.number().int().nonnegative(), questions: z.number().int().nonnegative() }).optional(),
+  /** When this computer's copy last forked from the computer running the session and was cut back to follow it: what
+   *  this computer held from there was kept aside and went to that computer, which shows it after its own, marked late
+   *  ("Earlier on <computer>"). A client reads the history again when it changes. */
+  rebasedAt: Timestamp.optional(),
 });
 export type SessionView = z.infer<typeof SessionView>;
 
@@ -400,12 +404,14 @@ export const BotsPausedEvent = coreEvent("bots_paused", { paused: z.boolean() })
 export const SessionChangedEvent = coreEvent("session_changed", { session: SessionView });
 export const RoutinesChangedEvent = coreEvent("routines_changed", { bot: BotId.optional() });
 
-/** The envelope of Clover's session events: the inherited one (`seq`, `sessionId`, `ts`), plus the lease epoch every
- *  log event carries once lane H's lease exists (§6.4 "Events carry their lease epoch"). */
+/** The envelope of Clover's session events: the inherited one (`seq`, `sessionId`, `ts`, `late`), plus the lease epoch
+ *  every log event carries once lane H's lease exists (§6.4 "Events carry their lease epoch"). `late`: the event
+ *  reached this log after events that happened later (an earlier lease's, or another computer's set aside after a
+ *  fork, §8.5); a client shows it apart, as history. */
 function sessionEvent<T extends string, S extends z.ZodRawShape>(type: T, shape: S) {
   return z.object({
     type: z.literal(type), seq: z.number().int().nonnegative(), sessionId: SessionId, ts: Timestamp,
-    epoch: z.number().int().nonnegative().optional(), ...shape,
+    epoch: z.number().int().nonnegative().optional(), late: z.literal(true).optional(), ...shape,
   });
 }
 

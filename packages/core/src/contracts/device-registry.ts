@@ -9,10 +9,11 @@
 // The registry is also where signatures are checked: `verify` checks a device's link key, and `verifyAnswer` its app's
 // answer key, and both refuse a revoked device.
 //
-// Who may answer another computer's card (the owner's decision on review N1): a phone, with its own key, or any
+// Who may answer another computer's card (the owner's decision on review N1): a phone, with its own answer key, or any
 // desktop, with a key its app holds apart from the core's link key, so plugin code can't sign with it where the OS
-// allows (a Keychain item limited to the signed app on macOS, a TPM- or Windows Hello-backed key on Windows). Where
-// the OS can't (Linux, and Windows without either), the owner accepted the risk: "any desktop may answer; a
+// allows (a Keychain item limited to the signed app on macOS, a TPM-backed key on Windows; no holder ever prompts,
+// `ANSWER_KEY_HOLDERS`). Answers verify only against the answer key, never a link key: no fallback. Where the OS
+// can't (Linux, and Windows without a TPM), the owner accepted the risk: "any desktop may answer; a
 // compromised plugin on a Windows or Linux computer could approve actions on other computers". A server, a cloud
 // computer and a browser never sign: their only key is the core's, or they may answer no card (`mayAnswerCards`).
 import type { AnswerKeyAlg, AnswerKeyHolder, DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
@@ -32,10 +33,11 @@ export interface DeviceRecord {
   /** Its Ed25519 public key, raw 32 bytes, base64: the core's link key on a computer. */
   publicKey: string;
   /** A desktop's answer key: its app's key, apart from the core's, how the OS holds it, and its algorithm (`alg`,
-   *  `ed25519` when absent): `p256` for a key in the Secure Enclave, Windows Hello or a TPM (raw uncompressed point,
+   *  `ed25519` when absent): `p256` for a key in the Secure Enclave, the Android Keystore or a TPM (raw uncompressed point,
    *  65 bytes, base64), `ed25519` for one in software. Verification picks the algorithm from here, and the statement
    *  the app signs to register the key covers `alg` as it covers `held`, so a record can't be relabelled. A phone
-   *  answers with its own key (`publicKey`) unless it names one here. */
+   *  names its answer key here too: it never answers with its link key (`publicKey`), so a phone without one answers
+   *  no card. */
   answerKey?: { publicKey: string; held: AnswerKeyHolder; alg?: AnswerKeyAlg };
   /** Its X25519 box key, raw 32 bytes as base64url (H-M1's ask), which account-scope boxes are sealed to (lane I's);
    *  absent until the device has published one. A revoked device's is never used. */
@@ -79,16 +81,25 @@ export interface DeviceRegistry {
   watch(fn: (change: DeviceChange) => void): Unsubscribe;
 }
 
-/** The key a device signs card answers with: a phone's own (or the one it names), a desktop's app-held answer key,
- *  and none for anything else, a desktop with no answer key, or a revoked device. */
+/** The key a device signs card answers with: a phone's or a desktop's answer key, never its link key (no fallback),
+ *  and none for anything else, a phone or desktop with no answer key, or a revoked device. */
 export function answerKeyOf(d: Pick<DeviceRecord, "kind" | "publicKey" | "answerKey" | "revokedAt">): string | undefined {
   if (d.revokedAt !== undefined) return undefined;
-  if (d.kind === "phone") return d.answerKey?.publicKey ?? d.publicKey;
-  if (d.kind === "desktop") return d.answerKey?.publicKey;
+  if (d.kind === "phone" || d.kind === "desktop") return d.answerKey?.publicKey;
   return undefined;
 }
 
-/** The algorithm of the key `answerKeyOf` gives: the answer key's (`ed25519` when absent); a phone's own key is Ed25519. */
+/** The one algorithm a holder's keys can have, where it has only one: the Secure Enclave makes only P-256 keys, so a
+ *  record saying `secure-enclave` with an Ed25519 key is a mislabel and is refused (`invalid`, lane H's reviewer). */
+export const HOLDER_ALGS: Readonly<Partial<Record<AnswerKeyHolder, AnswerKeyAlg>>> = { "secure-enclave": "p256" };
+
+/** Whether an answer key's holder can hold a key of its algorithm (`alg` absent is `ed25519`). */
+export function holderFitsAlg(held: AnswerKeyHolder, alg: AnswerKeyAlg | undefined): boolean {
+  const only = HOLDER_ALGS[held];
+  return only === undefined || only === (alg ?? "ed25519");
+}
+
+/** The algorithm of the key `answerKeyOf` gives: the answer key's (`ed25519` when absent). */
 export function answerKeyAlgOf(d: Pick<DeviceRecord, "answerKey">): AnswerKeyAlg {
   return d.answerKey?.alg ?? "ed25519";
 }

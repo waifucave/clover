@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OTHER_INSTALL_HOMES } from "../packages/core/src/other-installs";
-import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, devCompileCommand, devDaemonHome, devDaemonPlan, devDaemonRequirement, devOs, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
+import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devCompileCommand, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, devDaemonHome, devDaemonPlan, devDaemonRequirement, devOs, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
 
 const TEAM = "37N77U9RSZ";
 const IDENTITIES = `  1) ${"A".repeat(40)} "Apple Development: someone@example.invalid (AAAAAAAAAA)"
@@ -134,10 +134,34 @@ describe("the dev daemon's plan on each OS", () => {
     expect(linux[0]).toBe("dev:daemon: the plan on linux (dry run: nothing is built, signed or started)");
     expect(linux).toContain("  sign     none (the dev binary is unsigned on linux); rename to dist/dev/clover-core");
     expect(linux.some((l) => l.startsWith("  seal     scripts/seal-bun-doors.ts"))).toBe(true);
+    expect(linux.some((l) => l.startsWith("  beside "))).toBe(false);
     expect(linux).toContain("  run      dist/dev/clover-core daemon run");
     const mac = describeDevDaemonPlan(plan(["--dry-run", "--transition"], "darwin"));
     expect(mac.some((l) => l.startsWith(`  sign     codesign as ${DEV_DAEMON_IDENTIFIER}`))).toBe(true);
     expect(mac).toContain("  then     the one-time dev Keychain transition, and exit");
+    expect(mac.some((l) => l.startsWith("  beside   dist/dev/clover-process-holder, signed under its own .dev identifier"))).toBe(true);
     expect(describeDevDaemonPlan(plan(["--dry-run", "--no-build"], "win32"))).toContain("  build    none (--no-build): dist/dev/clover-core.exe as it is");
+  });
+});
+
+describe("the dev plugin Bun (#234's check 5)", () => {
+  test("it sits in the dev Clover home's bin under its own name, signed under its own identifier, never the core's", () => {
+    expect(devPluginBunPath("/u/.clover-dev", "darwin")).toBe("/u/.clover-dev/bin/clover-plugin-bun");
+    expect(devPluginBunPath("/u/.clover-dev", "win32")).toBe(join("/u/.clover-dev", "bin", "clover-plugin-bun.exe"));
+    expect(DEV_PLUGIN_BUN_IDENTIFIER).toBe("com.waifucave.clover.plugin-bun.dev");
+    expect(DEV_PLUGIN_BUN_IDENTIFIER).not.toBe(DEV_DAEMON_IDENTIFIER);
+    const args = devPluginBunSignArgs("/tmp/b", "/repo/scripts/bun-jit.entitlements");
+    expect(args).toEqual(["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", "/repo/scripts/bun-jit.entitlements", "/tmp/b"]);
+  });
+
+  test("it is made again when it's missing, the pinned Bun changed, or the copy there was swapped", () => {
+    const ok = { exists: true, stamp: "a\n", sourceHash: "a", recordedDigest: "cdhash:1\n", actualDigest: "cdhash:1" };
+    expect(devPluginBunStale(ok)).toBe(false);
+    expect(devPluginBunStale({ ...ok, exists: false })).toBe(true);
+    expect(devPluginBunStale({ ...ok, stamp: undefined })).toBe(true);
+    expect(devPluginBunStale({ ...ok, stamp: "b\n" })).toBe(true);
+    expect(devPluginBunStale({ ...ok, recordedDigest: undefined })).toBe(true);
+    expect(devPluginBunStale({ ...ok, actualDigest: "cdhash:2" })).toBe(true); // swapped destination
+    expect(devPluginBunStale({ ...ok, actualDigest: undefined })).toBe(true); // its signature no longer verifies
   });
 });

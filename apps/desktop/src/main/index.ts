@@ -1204,6 +1204,16 @@ async function smoke(): Promise<void> {
   const deadline = Date.now() + Number(process.env.CLOVER_SMOKE_DEADLINE_MS ?? "45000");
   const win = await openMainWindow();
   if (win === undefined) return report({ ok: false, reason: "no window" });
+  // A sealed run delivers real input into out-of-process frames: CDP input routes through the browser's compositor
+  // hit-test, which a hidden window never produces (its views draw nothing to route by) — the press then lands
+  // nowhere, or stops a frame early, depending on the platform. Showing the window inactive (never focusing it)
+  // starts every frame compositing long before the press, so the router can target the sealed frame. Test-only like
+  // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
+  // touched.
+  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && sealedInputAllowed({ packaged: app.isPackaged, headless }) && !win.isVisible()) {
+    win.showInactive();
+    log(`sealed-click: main window shown for input routing`);
+  }
   const probe = `(() => ({
     origin: location.origin,
     node: typeof require !== "undefined" || typeof process !== "undefined",
@@ -1369,9 +1379,28 @@ async function smoke(): Promise<void> {
                 b.style.opacity = ${Number(opacity)};
               })()`, true).catch(() => undefined);
             }
-            // Let the IntersectionObserver register the visibility change (trackVisibility, delay 200 ms), and the
-            // button's own 500 ms visible + 400 ms open gates pass before the press.
+            // Let the layout settle, then wait for the button's own visibility verdict (its IOv2 report through the
+            // sealed-visible channel) before the press: on a slow runner the first verdict lands after any fixed
+            // sleep, and the page refuses presses it hasn't seen yet (its 500 ms visible gate starts at the verdict,
+            // so a seen verdict waits out a further beat). Caps at ~10 s; a button that never reports (covered,
+            // dimmed) still gets its press on timeout, which the page refuses.
             await new Promise((r) => setTimeout(r, 800));
+            let seenToken: string | null = null;
+            try {
+              seenToken = new URL(frame.url).searchParams.get("token");
+            } catch {
+              seenToken = null;
+            }
+            let seen = false;
+            if (seenToken !== null) {
+              const end = Date.now() + 10_000;
+              while (!seen && Date.now() < end) {
+                if (sealed.isTokenVisible(seenToken)) seen = true;
+                else await new Promise((r) => setTimeout(r, 250));
+              }
+            }
+            log(`sealed-click: button visibility seen=${seen}`);
+            if (seen) await new Promise((r) => setTimeout(r, 750));
             const buttonRaw = await frame.executeJavaScript(
               `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
             const buttonRect = buttonRaw !== null && typeof buttonRaw === "object" && typeof (buttonRaw as { x?: unknown }).x === "number" ? buttonRaw as { x: number; y: number; width: number; height: number } : null;

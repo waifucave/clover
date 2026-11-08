@@ -19,6 +19,7 @@ import { ContractError, Listeners, type Unsubscribe } from "../contracts/common"
 import {
   holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
 } from "../contracts/computer-registry";
+import { MEMORY_FOLDER } from "../tree/holder";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -29,6 +30,8 @@ const WINDOWS_DEVICE_NAMES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
 export function computerNameProblem(name: string): string | null {
   if (!COMPUTER_NAME_RE.test(name)) return "a computer's name is letters, digits and hyphens";
   if (WINDOWS_DEVICE_NAMES.test(name)) return `${name} is a name Windows keeps for a device`;
+  // `home/memory/` is a bot's memory, beside the computers (the owner's ruling for J-M3).
+  if (name.toLowerCase() === MEMORY_FOLDER) return `${name} is the tree's name for a bot's memory (home/${MEMORY_FOLDER})`;
   return null;
 }
 

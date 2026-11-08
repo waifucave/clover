@@ -15,7 +15,7 @@ export async function buildGitReadParserFixture(root: string) {
   const launcher = join(root, "launcher"), node = join(root, "node"), payload = join(root, "parser.cjs");
   copyFileSync(process.env.CLOVER_GIT_READ_NODE_FIXTURE!, node); chmodSync(node, 0o700);
   const compiled = await parserFixtureCommand(root, ["/Library/Developer/CommandLineTools/usr/bin/clang", "-O2", "-Werror", "-isysroot", "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk", resolve("../../apple/Cowork/WinterCoworkGitReadParser/launcher.c"), "-o", launcher]); expect(compiled.code).toBe(0);
-  const bundled = await parserFixtureCommand(root, [process.execPath, "build", "--target=node", "--format=cjs", resolve("src/cowork/git/read-parser-entry.ts"), "--outfile", payload]); expect(bundled.code).toBe(0); chmodSync(payload, 0o600);
+  const bundled = await parserFixtureCommand(root, [process.execPath, "build", "--no-macros", "--target=node", "--format=cjs", resolve("src/cowork/git/read-parser-entry.ts"), "--outfile", payload]); expect(bundled.code).toBe(0); chmodSync(payload, 0o600);
   const requirements: string[] = [];
   for (const [path, id] of [[launcher, "com.waifucave.clover.core.test-git-launcher"], [node, "com.waifucave.clover.core.test-git-parser-node"]]) {
     const signed = await parserFixtureCommand(root, ["/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime", "--identifier", id!, path!]); expect(signed.code).toBe(0);

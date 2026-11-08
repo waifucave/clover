@@ -27,7 +27,8 @@ mkdirSync(join(layerOut, "vendor"), { recursive: true });
 mkdirSync(coreOut, { recursive: true });
 
 async function build(config: Parameters<typeof Bun.build>[0], what: string): Promise<void> {
-  const result = await Bun.build(config);
+  // Macros off: a `with { type: "macro" }` import would run in this build process (bun-types has no field, hence the spread).
+  const result = await Bun.build({ ...config, ...{ macros: false } });
   if (!result.success) {
     console.error(`build: ${what} failed`);
     for (const log of result.logs) console.error(log);
@@ -46,7 +47,7 @@ await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: jo
 {
   const { BROWSER_ASSETS } = await import("../src/main/browser/assets");
   const preloadOut = join(root, BROWSER_ASSETS.preload.out);
-  const built = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"], minify: false });
+  const built = await Bun.build({ entrypoints: [join(root, BROWSER_ASSETS.preload.entry)], target: "node", format: "cjs", external: ["electron"], minify: false, ...{ macros: false } });
   if (!built.success || built.outputs.length !== 1) {
     for (const l of built.logs) console.error(l);
     console.error("build: the browser viewport's preload failed");
@@ -171,12 +172,14 @@ writeFileSync(join(layerOut, "clover.css"), css.join("\n"));
 
 // ---- The screen add-on (macOS; native/input) ----
 // Built with clang alone: the few Node-API calls it makes are declared in its own source. Where it can't be built (no
-// Xcode tools), the app does without it: no housing is known, as on Windows and Linux.
+// Xcode tools), the app does without it: no housing is known, as on Windows and Linux. Its install name is a fixed
+// `@rpath/screen.node`: by default a shared library's is the path it was linked to, which would put this machine's
+// build folder (and the account name in it) into every shipped app (the release's identity scan refuses that).
 if (process.platform === "darwin") {
   const source = join(repo, "native", "input", "macos", "screen.mm");
   const dest = join(out, "main", "native", "screen.node");
   mkdirSync(dirname(dest), { recursive: true });
-  const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-framework", "AppKit", "-o", dest, source], { encoding: "utf8" });
+  const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-Wl,-install_name,@rpath/screen.node", "-framework", "AppKit", "-o", dest, source], { encoding: "utf8" });
   if (r.status !== 0) console.warn(`build: the screen add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without it`);
 }
 

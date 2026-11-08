@@ -182,6 +182,12 @@ export class SealedFrames {
     else this.visible.delete(token);
   }
 
+  /** Whether a frame's page has reported itself visible (its IOv2 verdict): what the smoke run waits for before it
+   *  presses, since the page refuses presses it hasn't seen yet. */
+  isTokenVisible(token: string): boolean {
+    return this.visible.has(token);
+  }
+
   /** Whether a card's approve and deny buttons both show (the fallback rule: only show the fallback when no
    *  plugin has both buttons on screen and visible within 2 s). Matched to the card's own options: at least one
    *  visible button channel for an approve option, and at least one for a deny option. A plugin that places only

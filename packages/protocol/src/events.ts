@@ -6,6 +6,10 @@ const Base = z.object({
   seq: z.number().int().nonnegative(),
   sessionId: z.string().min(1),
   ts: z.number().int().nonnegative(), // epoch ms
+  /** Clover: the event reached this log late, after events that happened later (§8.5 "Events from an earlier lease
+   *  that arrive late go at the end, marked late"; another computer's records set aside after a fork). History only:
+   *  a client shows it apart, as having happened earlier, and its `ts` is when it happened. */
+  late: z.literal(true).optional(),
 });
 
 /** Sentinel `sessionId` for events that aren't scoped to any session (Phase 4d Task 1's

@@ -1,0 +1,91 @@
+// The bots' provider fill (A-M3, after INT's #257): a bot's model tag becomes the runtime's model, provider, credential
+// resolver and model plugins, as a session's do, through the daemon's one broker, and only the model's own keys are set
+// (the guarded `fillProvider` would refuse anything else).
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { Options } from "@waifucave/clover-agent-sdk";
+import { FileSecretStore } from "../../../src/auth/secret-store";
+import { writeOpenAiApiKey } from "../../../src/auth/credential-material";
+import type { BotSessionContext } from "../../../src/bots/service";
+import type { Settings } from "../../../src/settings";
+import type { HostCredentialBroker, SessionCredentialAllowlist } from "../../../src/runtime-sdk/host-credentials";
+import { CLOVER_CREDENTIAL_INVENTORY, credentialRefFor } from "../../../src/runtime-sdk/keychain";
+import type { ModelPlugins } from "../../../src/runtime-sdk/model-plugins/service";
+import { fillProvider } from "../../../src/runtime-sdk/turn-loop/embedded-session";
+import { botProviderFill } from "../../../src/runtime-sdk/turn-loop/provider-fill";
+
+const temps: string[] = [];
+afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
+const temp = (p: string) => { const d = mkdtempSync(join(tmpdir(), p)); temps.push(d); return d; };
+
+const ctx = { botId: "alpha", sessionId: "b_alpha", kind: "bot" } as unknown as BotSessionContext;
+
+/** A broker that records the allowlist each session is given. */
+function recordingBroker(): { broker: HostCredentialBroker; allowlists: SessionCredentialAllowlist[]; resolver: NonNullable<Options["onCredentialResolve"]> } {
+  const allowlists: SessionCredentialAllowlist[] = [];
+  const resolver = (async () => ({ status: "not_found" })) as unknown as NonNullable<Options["onCredentialResolve"]>;
+  const broker = {
+    resolverFor: (a: SessionCredentialAllowlist) => { allowlists.push(a); return resolver; },
+    mcpRefresherFor: () => { throw new Error("a bot has no MCP sign-ins"); },
+    generationOf: () => undefined,
+  } as unknown as HostCredentialBroker;
+  return { broker, allowlists, resolver };
+}
+
+test("a bot's model tag fills the model, its provider and locator, the shared broker's resolver and the model plugins, and nothing else", async () => {
+  const home = temp("clover-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  await writeOpenAiApiKey(secrets, "sk-test-not-real");
+  const { broker, allowlists, resolver } = recordingBroker();
+  const pluginsAsked: unknown[] = [];
+  const modelProviders = { adapters: [] } as unknown as NonNullable<Options["modelProviders"]>;
+  const modelPlugins = { sessionOption: (o: unknown) => { pluginsAsked.push(o); return modelProviders; } } as unknown as ModelPlugins;
+  const fill = botProviderFill({ home, broker, secrets, modelPlugins: () => modelPlugins });
+  const options: Options = { model: "openai/gpt-test-model", cwd: home, env: { CLOVER_HOME: home } };
+  // Through the driver's guard: a fill that set anything but the model's own keys would throw here.
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, options);
+  expect(options.model).toBe("gpt-test-model");
+  expect(options.provider).toEqual({ providerId: "openai", authRef: credentialRefFor("openai", home)! });
+  expect(options.onCredentialResolve).toBe(resolver);
+  expect(options.modelProviders).toBe(modelProviders);
+  expect(pluginsAsked).toEqual([{ caller: { kind: "core" }, session: "b_alpha" }]);
+  // The broker answers the bot's provider's item and the slots of providers with a credential stored, nothing else.
+  const openaiAccount = CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "openai")!.secretName;
+  const anthropicAccount = CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "anthropic")!.secretName;
+  expect(allowlists).toHaveLength(1);
+  expect(allowlists[0]!.accounts.has(openaiAccount)).toBe(true);
+  expect(allowlists[0]!.accounts.has(anthropicAccount)).toBe(false);
+  expect(allowlists[0]!.mcpAccounts.size).toBe(0);
+  // No secret anywhere in what was filled.
+  expect(JSON.stringify(options)).not.toContain("sk-test-not-real");
+});
+
+test("the user's own endpoint for the provider travels as its connection, read at each fill", async () => {
+  const home = temp("clover-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  let settings: Settings | null = null;
+  const fill = botProviderFill({ home, broker: recordingBroker().broker, secrets, settings: () => settings, modelPlugins: () => undefined });
+  const first: Options = { model: "openai/gpt-test-model" };
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, first);
+  expect(first.provider).toEqual({ providerId: "openai", authRef: credentialRefFor("openai", home)! });
+  expect(first.modelProviders).toBeUndefined();
+  settings = { providers: { openai: { baseUrl: "http://127.0.0.1:9/v1" } } } as unknown as Settings;
+  const second: Options = { model: "openai/gpt-test-model" };
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, second);
+  expect(second.provider).toEqual({ providerId: "openai", authRef: credentialRefFor("openai", home)!, connection: { baseUrl: "http://127.0.0.1:9/v1", endpointOrigin: "user", local: true } });
+});
+
+test("a test model and the unstated sentinel get nothing", async () => {
+  const home = temp("clover-a3-fill-home-");
+  const { broker, allowlists } = recordingBroker();
+  const fill = botProviderFill({ home, broker, secrets: new FileSecretStore(temp("clover-a3-fill-secrets-")), modelPlugins: () => undefined });
+  const test: Options = { model: "winter-test/echo" };
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, test);
+  expect(test).toEqual({ model: "winter-test/echo" });
+  const unstated: Options = { model: "unstated/unstated" };
+  await fill("unstated/unstated", unstated, ctx);
+  expect(unstated).toEqual({ model: "unstated/unstated" });
+  expect(allowlists).toHaveLength(0);
+});

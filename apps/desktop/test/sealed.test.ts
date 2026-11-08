@@ -92,6 +92,17 @@ describe("the sealed frames' store", () => {
     expect(store.buildAnswer(made.token, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "a field's frame answers nothing" });
   });
 
+  test("a frame's visibility verdict is readable per token: reported, then withdrawn", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent)!;
+    expect(store.isTokenVisible(made.token)).toBe(false);
+    store.markVisible(made.token, true);
+    expect(store.isTokenVisible(made.token)).toBe(true);
+    store.markVisible(made.token, false);
+    expect(store.isTokenVisible(made.token)).toBe(false);
+  });
+
   test("the serving: once per token, on an iframe's load, and the ttl is the serve's alone (S5)", () => {
     const store = new SealedFrames();
     store.fromCore(CARD);

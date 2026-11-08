@@ -1,0 +1,27 @@
+{
+  "manifest": 1,
+  "name": { "en": "Hetzner Cloud computers" },
+  "description": {
+    "en": "Makes, resizes and deletes cloud computers in your own Hetzner Cloud project, from the cloud computer folders you or your bots write. Each change asks you first. The VMs run Clover's official image and get no cloud credentials."
+  },
+  "engines": { "clover": "^1.0.0" },
+  "host": { "entry": "host/index.ts", "runtime": "bun" },
+  "capabilities": ["network:api.hetzner.cloud"],
+  "contributes": {
+    "computerProviders": [
+      {
+        "id": "hetzner",
+        "name": { "en": "Hetzner Cloud" },
+        "auth": [
+          {
+            "method": "api-key",
+            "secret": "hetzner-api-token",
+            "help": "An API token with read and write access, from your Hetzner Cloud project's Security page. Clover keeps it in your credential store and adds it to Hetzner's requests itself; this plugin never sees it.",
+            "placement": { "header": "authorization", "scheme": "Bearer" }
+          }
+        ],
+        "handler": "provider"
+      }
+    ]
+  }
+}

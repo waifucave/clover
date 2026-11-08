@@ -8,7 +8,7 @@ type Answer = (m: Extract<WorkerToHost, { op: "call" }>) => { ok: true; value?: 
 
 function harness(answer: Answer = () => ({ ok: true })) {
   const out: WorkerToHost[] = [];
-  const transpiler = new Bun.Transpiler({ loader: "ts" });
+  const transpiler = new Bun.Transpiler({ loader: "ts", ...({ macro: false } as object) });
   let rt!: AutomationRuntime;
   rt = createAutomationRuntime({
     post: (m) => {
