@@ -76,6 +76,9 @@ export interface AgentManagerOptions {
   pluginParts?: PluginPartsSource;
   /** A computer's level (§9.1), for an agent that acts without asking; read-only when it isn't known. */
   levelOf?: (computer: string) => Level | undefined;
+  /** Tells the manager the levels changed (the computer registry's `watch`), so running sessions follow straight away
+   *  (`levelsChanged`); without it they follow at their next turn. */
+  watchLevels?: (fn: () => void) => () => void;
   /** The pause switch (lane D's gate, `mayAct()`): while it says no, a delegated agent is held (`#hold`). */
   pause?: AgentPauseGate;
   /** Tests only: start an agent that isn't sandboxed, or is outside its tested versions, without the user's OK. */
@@ -202,6 +205,7 @@ export class AgentManager {
   #offPeerPause: (() => void) | undefined;
 
   readonly #unpause: (() => void) | undefined;
+  readonly #unwatchLevels: (() => void) | undefined;
 
   constructor(opts: AgentManagerOptions) {
     this.#o = opts;
@@ -212,6 +216,7 @@ export class AgentManager {
       if (opts.pause!.mayAct()) return;
       for (const e of this.#entries.values()) this.#cancelForPause(e);
     });
+    this.#unwatchLevels = opts.watchLevels?.(() => this.levelsChanged());
   }
 
   /** Agents on other computers (remote.ts), once the daemon has a link: this computer places agents there and runs the
@@ -683,12 +688,24 @@ export class AgentManager {
    *  started, and back when it rose again. */
   async #applyLevel(e: Entry, session: AgentSession): Promise<void> {
     const s = session as { setReadOnly?: (on: boolean) => Promise<void>; setLevel?: (level: Level) => Promise<void> };
-    // The sandbox writer's mode floor follows the level too (acceptEdits only while it accepts edits).
-    if (s.setLevel) await s.setLevel(this.#levelOf(e));
-    if (!e.backend.quirks.marks.includes("unasked-actions")) return;
-    const readOnly = this.#levelOf(e) === "read-only";
-    if (s.setReadOnly) return s.setReadOnly(readOnly);
-    if (readOnly) throw new ContractError("refused", `${e.backend.id} acts without asking and can't be held at read-only, so this turn wasn't sent`);
+    const level = this.#levelOf(e);
+    if (e.backend.quirks.marks.includes("unasked-actions")) {
+      if (s.setReadOnly) await s.setReadOnly(level === "read-only");
+      else if (level === "read-only") throw new ContractError("refused", `${e.backend.id} acts without asking and can't be held at read-only, so this turn wasn't sent`);
+    }
+    // The sandbox writer's mode floor last, so it holds whatever mode that left.
+    if (s.setLevel) await s.setLevel(level);
+  }
+
+  /** The computers' levels changed (the daemon's `watchLevels`, or a caller): every running session's mode floor is
+   *  held against its level now, a running turn's too (a drop from accept-edits mid-turn switches the agent out of
+   *  acceptEdits under it, or cancels the turn). Read-only itself still follows at the next turn. */
+  levelsChanged(): void {
+    for (const e of this.#entries.values()) {
+      const s = e.session as { setLevel?: (level: Level) => Promise<void> } | undefined;
+      if (!s?.setLevel) continue;
+      void s.setLevel(this.#levelOf(e)).catch((err: unknown) => this.#o.log?.(`[agents] ${e.id}: ${err instanceof Error ? err.message : String(err)}`));
+    }
   }
 
   /** Before an agent launches: an agent that isn't sandboxed, or is outside its tested versions, needs the user's OK. */
@@ -943,6 +960,7 @@ export class AgentManager {
    *  next daemon reattaches the sessions the host restores. */
   async close(): Promise<void> {
     this.#unpause?.();
+    this.#unwatchLevels?.();
     this.#offPeerPause?.();
     // Agents on other computers stay there for the next daemon, which opens them again.
     for (const r of this.#remote.values()) r.driver.detach();

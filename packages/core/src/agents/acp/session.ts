@@ -101,6 +101,8 @@ export interface OpenOptions {
   modeFloor?: ModeFloorFor;
   /** The session's level at its start, for `modeFloor`. */
   level?: Level;
+  /** How long a mode switch may take to be confirmed (`MODE_CONFIRM_MS`). */
+  modeConfirmMs?: number;
 }
 
 /** A writer's mode floor at a level (absent: the strictest). */
@@ -108,9 +110,24 @@ export type ModeFloorFor = (level: Level | undefined) => ModeFloor;
 
 /** Modes a session may not be in, and the one to switch to instead. */
 export interface ModeFloor {
-  refused: readonly string[];
-  fallback: string;
+  /** Only these modes, where given: the ones the live gates showed keep the sandbox (a mode that is a sandbox preset of
+   *  its own may replace the writer's profile). Empty: none yet, so no session holds the floor. With a list, a session
+   *  that reports no mode isn't counted on either. */
+  allowed?: readonly string[];
+  /** Never these modes. */
+  refused?: readonly string[];
+  /** The mode a refused one is switched to; none: no switch is tried, and the session is refused or ended. */
+  fallback?: string;
 }
+
+/** Whether a floor allows a mode. */
+export function floorAllows(floor: ModeFloor, mode: string): boolean {
+  return (floor.allowed === undefined || floor.allowed.includes(mode)) && !(floor.refused ?? []).includes(mode);
+}
+
+/** How long an agent has to confirm a mode the floor switched it to (its `current_mode_update`) before a running turn is
+ *  cancelled, or a session between turns ended. */
+export const MODE_CONFIRM_MS = 5_000;
 
 /** The most permission requests one agent may have open at once; more are refused without a card. */
 export const MAX_OPEN_ASKS = 8;
@@ -150,6 +167,9 @@ export class AcpAgentSession implements AgentSession {
   readonly #readOnlyMode: { option: string; values: readonly string[] } | undefined;
   readonly #modeFloor: ModeFloorFor | undefined;
   #level: Level | undefined;
+  readonly #modeConfirmMs: number;
+  /** Waiting on the agent's `current_mode_update`. */
+  readonly #modeWaiters = new Set<() => void>();
   #readOnly = false;
   /** The mode before the read-only one, to switch back to. */
   #modeBefore: string | undefined;
@@ -176,6 +196,7 @@ export class AcpAgentSession implements AgentSession {
     this.#readOnlyMode = opts.readOnlyMode;
     this.#modeFloor = opts.modeFloor;
     this.#level = opts.level;
+    this.#modeConfirmMs = opts.modeConfirmMs ?? MODE_CONFIRM_MS;
     const tap = opts.tap;
     this.#peer = new RpcPeer({
       write: (line) => this.#proc.write(line),
@@ -439,8 +460,15 @@ export class AcpAgentSession implements AgentSession {
    *  when the session started (`acceptEdits` at accept-edits) is switched to the floor's fallback when it drops. */
   async setLevel(level: Level): Promise<void> {
     this.#level = level;
-    // Between turns only; a running turn's next prompt holds it.
-    if (this.#modeFloor && (this.#state === "ready" || this.#state === "idle")) await this.#holdFloorOrStop();
+    if (!this.#modeFloor) return;
+    if (this.#state === "ready" || this.#state === "idle") return this.#holdFloorOrStop();
+    // A running turn (the manager pushes a level change straight away): the mode is switched under it, since an agent
+    // in a mode the level no longer allows (Claude Code's acceptEdits) would edit without asking until the turn ends.
+    // Not confirmed in time, the turn is cancelled; the next turn's floor then ends a session that still hasn't left it.
+    if (this.#state === "prompting") {
+      const held = await this.#holdModeFloor(this.#modeFloor(level)).then(() => true, () => false);
+      if (!held && this.#state === "prompting") await this.cancel();
+    }
   }
 
   /** The floor at the current level on a running session: an agent that doesn't leave a refused mode is stopped. */
@@ -454,22 +482,50 @@ export class AcpAgentSession implements AgentSession {
     }
   }
 
-  /** The mode the agent says it started in, as its `mode` config option and as ACP's session modes: one the floor
-   *  refuses is switched to its fallback, and the session is refused unless the agent then reports the fallback. */
+  /** The modes the agent says it is in: its `mode` config option and ACP's session modes. */
+  #currentModes(): string[] {
+    return [this.#config.find((c) => c.id === "mode")?.currentValue, this.#modes?.current].filter((m): m is string => m !== undefined);
+  }
+
+  /** Waits for the agent's `current_mode_update` to report a mode `ok` accepts, up to the confirm time. */
+  #confirmMode(ok: (mode: string) => boolean): Promise<boolean> {
+    if (this.#modes?.current !== undefined && ok(this.#modes.current)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const done = (v: boolean) => {
+        clearTimeout(timer);
+        this.#modeWaiters.delete(check);
+        resolve(v);
+      };
+      const check = () => {
+        if (this.#modes?.current !== undefined && ok(this.#modes.current)) done(true);
+      };
+      const timer = setTimeout(() => done(false), this.#modeConfirmMs);
+      this.#modeWaiters.add(check);
+    });
+  }
+
+  /** Holds the floor: a mode it doesn't allow is switched to its fallback (the `mode` config option, whose answer
+   *  carries the new value, or ACP's `session/set_mode`, confirmed only by the agent's own `current_mode_update`), and
+   *  this throws `refused` unless the agent then reports only modes the floor allows. With an allow-list, a session
+   *  that reports no mode at all is refused too. */
   async #holdModeFloor(floor: ModeFloor): Promise<void> {
-    const option = () => this.#config.find((c) => c.id === "mode");
-    const current = () => [option()?.currentValue, this.#modes?.current].filter((m): m is string => m !== undefined);
-    if (!current().some((m) => floor.refused.includes(m))) return;
-    const was = current().find((m) => floor.refused.includes(m))!;
-    const o = option();
-    if (o && floor.refused.includes(o.currentValue ?? "") && o.values.includes(floor.fallback)) await this.#setOption(o.id, floor.fallback);
-    if (this.#modes?.current !== undefined && floor.refused.includes(this.#modes.current) && this.#modes.available.includes(floor.fallback)) {
-      await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: floor.fallback }, CONFIG_TIMEOUT_MS);
-      this.#modes.current = floor.fallback;
+    const bad = () => this.#currentModes().filter((m) => !floorAllows(floor, m));
+    const refuse = (why: string): never => {
+      throw new ContractError("refused", `the agent ${why}, which this level doesn't allow, so its session was ended`);
+    };
+    if (floor.allowed !== undefined && this.#currentModes().length === 0) refuse("reports no mode Clover has checked");
+    if (bad().length === 0) return;
+    const was = bad()[0]!;
+    const to = floor.fallback;
+    if (to === undefined || !floorAllows(floor, to)) refuse(`is in its ${was} mode and Clover has no mode to switch it to`);
+    const o = this.#config.find((c) => c.id === "mode");
+    if (o && !floorAllows(floor, o.currentValue ?? "") && o.values.includes(to!)) await this.#setOption(o.id, to!);
+    if (this.#modes?.current !== undefined && !floorAllows(floor, this.#modes.current) && this.#modes.available.includes(to!)) {
+      const confirmed = this.#confirmMode((m) => floorAllows(floor, m));
+      await this.#call("session/set_mode", { sessionId: this.#agentSessionId, modeId: to }, CONFIG_TIMEOUT_MS);
+      await confirmed;
     }
-    if (current().some((m) => floor.refused.includes(m))) {
-      throw new ContractError("refused", `the agent is in its ${was} mode, which this level doesn't allow, and didn't leave it, so its session was ended`);
-    }
+    if (bad().length > 0) refuse(`is in its ${was} mode and didn't confirm leaving it`);
   }
 
   /** Switches the agent into its read-only mode, or back to the mode it had: its `mode` config option, else ACP's
@@ -482,15 +538,18 @@ export class AcpAgentSession implements AgentSession {
     const refuse = (why: string): never => {
       throw new ContractError("refused", `this agent acts without asking and ${why}, so it can't run at read-only`);
     };
+    // A read-only value the sandbox writer's floor doesn't allow (Codex's own read-only preset, which may replace the
+    // writer's profile) is never picked.
+    const allowed = (v: string) => !this.#modeFloor || floorAllows(this.#modeFloor(this.#level), v);
     if (on) {
       if (option) {
-        const value = mode!.values.find((v) => option.values.includes(v));
+        const value = mode!.values.find((v) => option.values.includes(v) && allowed(v));
         if (value === undefined) refuse("offers no read-only mode");
         this.#modeBefore = option.currentValue;
         if (option.currentValue !== value) await this.#setOption(option.id, value!);
         if (this.#config.find((c) => c.id === option.id)?.currentValue !== value) refuse("didn't confirm its read-only mode");
       } else {
-        const value = mode?.values.find((v) => this.#modes?.available.includes(v));
+        const value = mode?.values.find((v) => this.#modes?.available.includes(v) && allowed(v));
         if (value === undefined) refuse("offers no read-only mode");
         this.#modeBefore = this.#modes!.current;
         if (this.#modes!.current !== value) {
@@ -661,6 +720,7 @@ export class AcpAgentSession implements AgentSession {
           const id = str(update?.["currentModeId"]) ?? str(update?.["modeId"]);
           if (id) {
             this.#modes.current = id;
+            for (const w of [...this.#modeWaiters]) w();
             // The agent left its read-only mode on its own: Clover no longer counts on it.
             if (this.#readOnly && !this.#readOnlyMode?.values.includes(id)) this.#readOnly = false;
           }

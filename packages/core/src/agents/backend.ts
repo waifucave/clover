@@ -65,6 +65,8 @@ export interface AcpBackendOptions {
   table?: ProcessTableReader;
   versionTimeoutMs?: number;
   startTimeoutMs?: number;
+  /** How long an agent has to confirm a mode the floor switched it to (the session's `MODE_CONFIRM_MS`). */
+  modeConfirmMs?: number;
   /** Which sandboxes hold the fence (S8); the built-in table by default. */
   admissions?: Parameters<typeof admissionFor>[0];
   /** Where a session's sandbox files go: a folder inside the fenced run folder (`<home>/run/agents/<session>`). */
@@ -250,6 +252,7 @@ export class AcpAgentBackend implements AgentBackend {
       ...(this.#opts.readOnlyMode ? { readOnlyMode: this.#opts.readOnlyMode } : {}),
       ...(readOnly ? { readOnly: true } : {}),
       ...(setup.modeFloor ? { modeFloor: setup.modeFloor, ...(spec.level ? { level: spec.level } : {}) } : {}),
+      ...(this.#opts.modeConfirmMs === undefined ? {} : { modeConfirmMs: this.#opts.modeConfirmMs }),
       ...(this.#opts.startTimeoutMs === undefined ? {} : { startTimeoutMs: this.#opts.startTimeoutMs }),
     });
   }

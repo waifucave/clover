@@ -99,6 +99,8 @@ export interface AgentsOptions {
   pluginParts?: PluginPartsSource;
   /** A computer's level, for the read-only mode of an agent that acts without asking; read-only when unknown. */
   levelOf?: (computer: string) => Level | undefined;
+  /** The levels changed (the computer registry's `watch`): running agents follow straight away (`levelsChanged`). */
+  watchLevels?: (fn: () => void) => () => void;
   /** The pause switch (lane D's gate): paused, delegated agents are held. */
   pause?: AgentPauseGate;
   /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
@@ -162,6 +164,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
     ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
+    ...(o.watchLevels ? { watchLevels: o.watchLevels } : {}),
     ...(o.pause ? { pause: o.pause } : {}),
     ...(o.log ? { log: o.log } : {}),
   });

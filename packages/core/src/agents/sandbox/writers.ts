@@ -161,9 +161,12 @@ export function codexProfile(policy: SandboxPolicy, ctx: Pick<SandboxContext, "r
 
 const STRICTNESS = { write: 0, read: 1, deny: 2 } as const;
 
-/** Codex's mode floor: never its full-access mode (no sandbox at all); the fallback is its read-only mode until the
- *  live gates record its mode list (B4). */
-export const CODEX_MODE_FLOOR: ModeFloor = { refused: ["agent-full-access"], fallback: "read-only" };
+/** Codex's mode floor: an allow-list of the modes the live gates showed keep the clover profile, empty until they run.
+ *  Codex's modes are sandbox presets of its own and may replace the profile (its plain read-only sandbox reads the
+ *  whole disk, the Clover home included), so no mode is counted on unchecked, and there is no fallback to switch to:
+ *  failing closed, a Codex session the writer serves is refused at its start, and its read-only switch is never made,
+ *  until B2 and B3 pass in a mode and it is listed here. */
+export const CODEX_MODE_FLOOR: ModeFloor = { allowed: [] };
 
 /** Codex: the profile in `CODEX_CONFIG`, made the session's default, and its mode floor. */
 export const codexWriter: SandboxWriter = (policy, ctx) => ({

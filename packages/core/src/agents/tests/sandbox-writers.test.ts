@@ -12,6 +12,8 @@ import { againstBaseline, codexSandboxArgv, gateFixture, gateProbes, judgeBaseli
 import {
   CODEX_MODE_FLOOR, CODEX_PROFILE, WRITERS, claudeCodeModeFloor, claudeCodeWriter, codexProfile, codexWriter, literalDenials, vendorConfigPaths,
 } from "../sandbox/writers";
+import type { AgentQuirks } from "../../contracts/agent-backend";
+import { WELL_BEHAVED_QUIRKS } from "../../contracts/fakes/agent-backend";
 import { World, waitFor, type WorldOptions } from "./world";
 
 setDefaultTimeout(60_000);
@@ -74,7 +76,9 @@ describe("Codex's profile", () => {
   test("CODEX_CONFIG names the clover profile as the default: the root readable, writes where allowed, denials closed, the vendors' config read-only, no network", () => {
     const setup = codexWriter(policy(), ctx);
     expect(Object.keys(setup)).toEqual(["env", "modeFloor"]);
-    expect(setup.modeFloor!("automatic")).toEqual(CODEX_MODE_FLOOR);
+    // An allow-list, empty until the gates run: no Codex mode is counted on unchecked.
+    expect(CODEX_MODE_FLOOR).toEqual({ allowed: [] });
+    for (const l of ["read-only", "ask", "automatic"] as const) expect(setup.modeFloor!(l)).toEqual(CODEX_MODE_FLOOR);
     expect(Object.keys(setup.env!)).toEqual(["CODEX_CONFIG"]);
     const config = JSON.parse(setup.env!["CODEX_CONFIG"]!);
     expect(config.default_permissions).toBe(CODEX_PROFILE);
@@ -211,6 +215,55 @@ describe("the session holds the mode floor", () => {
     expect(w.report("config")).toHaveLength(1);
   });
 
+  const agentPid = (w: World) => (w.report("started")[0] as unknown as { pid: number }).pid;
+  const blockedOnWait = (w: World) => w.report("blocked").some((b) => b["on"] === "wait");
+
+  test("the level drops during a long turn: acceptEdits is switched under it by session/set_mode, and the edit after the drop asks", async () => {
+    const w = make({
+      level: "accept-edits", acpModes: ["acceptEdits", "default"], editsFollowMode: true,
+      script: [[{ say: "working" }, { wait: true }, { tool: { kind: "edit", title: "Edit a.txt" } }, { say: "done" }]],
+    });
+    await w.delegate();
+    await waitFor(() => blockedOnWait(w), "the turn to be under way");
+    w.changeLevel("ask");
+    expect(await waitFor(() => w.report("set-mode")[0], "the mid-turn switch")).toMatchObject({ mode: "default", turn: true });
+    process.kill(agentPid(w), "SIGUSR2"); // the turn goes on to its edit
+    await waitFor(() => w.report("blocked").some((b) => b["on"] === "permission"), "the edit to ask");
+    expect(w.report("unasked-edit")).toEqual([]);
+  });
+
+  test("the level drops during a long turn and the switch isn't confirmed in time: the turn is cancelled before its edit", async () => {
+    const w = make({
+      level: "accept-edits", acpModes: ["acceptEdits", "default"], editsFollowMode: true, silentSetMode: true, modeConfirmMs: 300,
+      script: [[{ wait: true }, { tool: { kind: "edit", title: "Edit a.txt" } }, { say: "never" }], [{ say: "never" }]],
+    });
+    const r = await w.delegate();
+    await waitFor(() => blockedOnWait(w), "the turn to be under way");
+    w.changeLevel("ask");
+    await waitFor(() => notification(w), "the cancelled turn's notification");
+    expect(w.report("set-mode")).toEqual([expect.objectContaining({ mode: "default", turn: true })]);
+    expect(w.report("unasked-edit")).toEqual([]);
+    // Its next turn: the floor ends the session that still hasn't left acceptEdits, and nothing is sent.
+    await w.host.deliver(r.sessionId, { from: "bot", bot: "alpha", session: "s_alpha", text: "Two." });
+    const second = await waitFor(() => w.parentInputs("task-notification")[1]?.input as { text: string } | undefined, "the second notification");
+    expect(second.text).toContain("didn't confirm leaving it");
+    expect(w.report("prompt")).toHaveLength(1);
+  });
+
+  test("session/set_mode is confirmed only by the agent's current_mode_update", async () => {
+    const w = make({ level: "ask", acpModes: ["bypassPermissions", "default"], script: [[{ say: "done" }]] });
+    await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).text).toContain("done");
+    expect(w.report("set-mode")).toEqual([expect.objectContaining({ mode: "default", turn: false })]);
+    await w.close();
+    world = undefined;
+    const w2 = make({ level: "ask", acpModes: ["bypassPermissions", "default"], silentSetMode: true, modeConfirmMs: 300, script: [[{ say: "never" }]] });
+    await w2.delegate();
+    const n = await waitFor(() => notification(w2), "the notification");
+    expect(n.text).toContain("bypassPermissions mode and didn't confirm leaving it");
+    expect(w2.report("prompt")).toEqual([]);
+  });
+
   test("the level drops and the agent can't leave acceptEdits: its session is ended, and the turn isn't sent", async () => {
     const w = make({ level: "automatic", modes: ["acceptEdits"], script: [[{ say: "one" }], [{ say: "never" }]] });
     const r = await w.delegate();
@@ -220,6 +273,29 @@ describe("the session holds the mode floor", () => {
     const second = await waitFor(() => w.parentInputs("task-notification")[1]?.input as { text: string; stopReason?: string } | undefined, "the second notification");
     expect(second.text).toContain("acceptEdits mode");
     expect(w.report("prompt")).toHaveLength(1);
+  });
+
+  test("Codex's empty allow-list fails closed: no mode, an unchecked one, or a read-only switch to an unchecked mode is refused", async () => {
+    const codexFloor = () => CODEX_MODE_FLOOR;
+    const w = new World({ level: "ask", modes: ["agent", "read-only"], modeFloor: codexFloor, script: [[{ say: "never" }]] });
+    world = w;
+    await w.delegate();
+    expect((await waitFor(() => notification(w), "the notification")).text).toContain("agent mode and Clover has no mode to switch it to");
+    expect(w.report("prompt")).toEqual([]);
+    await w.close();
+    const w2 = new World({ level: "ask", modeFloor: codexFloor, script: [[{ say: "never" }]] });
+    world = w2;
+    await w2.delegate();
+    expect((await waitFor(() => notification(w2), "the notification")).text).toContain("reports no mode Clover has checked");
+    await w2.close();
+    // A mode the gates checked runs; its read-only switch to one they didn't is never made.
+    const quirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] } as AgentQuirks;
+    const w3 = new World({ quirks, level: "read-only", modes: ["agent", "read-only"], readOnlyMode: { option: "mode", values: ["read-only"] }, modeFloor: () => ({ allowed: ["agent"] }), script: [[{ say: "never" }]] });
+    world = w3;
+    await w3.delegate();
+    expect((await waitFor(() => notification(w3), "the notification")).text).toContain("no read-only mode");
+    expect(w3.report("config")).toEqual([]);
+    expect(w3.report("prompt")).toEqual([]);
   });
 
   test("an agent that can't leave a refused mode isn't started", async () => {

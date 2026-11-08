@@ -69,6 +69,12 @@ export interface WorldOptions {
   modes?: string[];
   /** The scripted agent's writer's mode floor, by level. */
   modeFloor?: (level: Level | undefined) => ModeFloor;
+  /** The scripted agent's ACP session modes, whether its `session/set_mode` stays unconfirmed, whether its edits ask
+   *  by mode (as Claude Code's), and how long the session waits for a mode's confirmation. */
+  acpModes?: string[];
+  silentSetMode?: boolean;
+  editsFollowMode?: boolean;
+  modeConfirmMs?: number;
   readOnlyMode?: { option: string; values: readonly string[] };
   askDuringReplay?: boolean;
   selections?: UserSelections;
@@ -119,6 +125,13 @@ export class World {
   readonly agent: FakeAgentRun;
   level: Level;
   readonly computer: string;
+  readonly #levelWatchers = new Set<() => void>();
+
+  /** Changes the computer's level and tells the manager, as the registry's watch does. */
+  changeLevel(level: Level): void {
+    this.level = level;
+    for (const fn of [...this.#levelWatchers]) fn();
+  }
 
   constructor(o: WorldOptions = {}) {
     this.computer = o.computer ?? "Studio";
@@ -141,6 +154,7 @@ export class World {
     this.agent = writeFakeAgent(join(this.root, "agent"), {
       quirks, script: o.script ?? [], ...(o.history ? { history: o.history } : {}), version: "fake-agent 1.0.0",
       ...(o.modes ? { modes: o.modes } : {}), ...(o.askDuringReplay ? { askDuringReplay: true } : {}),
+      ...(o.acpModes ? { acpModes: o.acpModes } : {}), ...(o.silentSetMode ? { silentSetMode: true } : {}), ...(o.editsFollowMode ? { editsFollowMode: true } : {}),
     });
     const sock = socketPath(this.root);
     let manager!: AgentManager;
@@ -149,6 +163,7 @@ export class World {
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
       admissions: fakeAdmissions(o.sandbox ?? "protected", o.modeFloor),
+      ...(o.modeConfirmMs === undefined ? {} : { modeConfirmMs: o.modeConfirmMs }),
       ...(o.place ? { place: o.place } : {}),
       ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
@@ -160,6 +175,10 @@ export class World {
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       levelOf: () => this.level,
+      watchLevels: (fn) => {
+        this.#levelWatchers.add(fn);
+        return () => void this.#levelWatchers.delete(fn);
+      },
       ...(o.pause ? { pause: o.pause } : {}),
     });
     this.manager = manager;
