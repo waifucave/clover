@@ -188,6 +188,16 @@ export class PeerOwner {
   }
 }
 
+/** The Windows process table as `pid ppid created` lines, `created` in milliseconds since year 1 in UTC, or empty for a
+ *  process with no creation time (the idle process has none on some builds; an error there would lose the whole table).
+ *  The creation time is read from WMI's own text (`yyyymmddHHMMSS.ffffff+UUU`, the UTC offset in minutes at the end) and
+ *  moved to UTC by that offset: it never passes through a local-time DateTime, which is ambiguous in the hour the clocks
+ *  go back and could make a process look older than the browser it descends from. */
+const WIN_PROCESS_TABLE =
+  "Get-WmiObject Win32_Process | ForEach-Object { $c = ''; if ($_.CreationDate) { $s = [string]$_.CreationDate; " +
+  "$c = [long][math]::Floor(([datetime]::ParseExact($s.Substring(0,14), 'yyyyMMddHHmmss', [Globalization.CultureInfo]::InvariantCulture).Ticks + [long]$s.Substring(15,6) * 10 - [long][int]$s.Substring(21) * 600000000) / 10000) }; " +
+  "\"$($_.ProcessId) $($_.ParentProcessId) $c\" }";
+
 /** The processes under `roots` (themselves included), for a browser whose network process is its child (the headless
  *  shell). macOS and Linux read `ps`; Windows the process table through PowerShell.
  *
@@ -198,7 +208,7 @@ export class PeerOwner {
  *  nor is anything reached only through it. */
 export async function processTree(roots: readonly number[], o: { platform: NodeJS.Platform; run: RunCommand; exclude?: readonly number[] }): Promise<number[]> {
   const out = o.platform === "win32"
-    ? await o.run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId) $($_.CreationDate.ToFileTimeUtc())\" }"])
+    ? await o.run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", WIN_PROCESS_TABLE])
     : await o.run("ps", ["-A", "-o", "pid=,ppid="]);
   const children = new Map<number, number[]>();
   const born = new Map<number, number>();
