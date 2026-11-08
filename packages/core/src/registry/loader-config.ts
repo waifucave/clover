@@ -280,7 +280,7 @@ export function loaderReach(files: readonly string[], readText: (path: string) =
     }
     let imports: { path: string }[];
     try {
-      imports = new Bun.Transpiler({ loader: loaderOf(file) }).scanImports(text);
+      imports = new Bun.Transpiler({ loader: loaderOf(file), ...({ macro: false } as object) }).scanImports(text);
     } catch {
       continue; // it doesn't parse, so it doesn't run
     }

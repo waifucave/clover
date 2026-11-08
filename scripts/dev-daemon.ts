@@ -61,7 +61,8 @@ import { keychainUnlocked } from "../packages/core/src/auth/keychain-ffi";
 import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { pluginBunDigest } from "../packages/core/src/registry/plugin-run";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
-import { runScriptLine } from "./build-daemon";
+import { hostTarget, runScriptLine } from "./build-daemon";
+import { BUNDLED_IDENTIFIERS, buildHolder, HOLDER_FILE, holderSource, PLUGIN_BUN_ENTITLEMENTS } from "./bundled-binaries";
 import { DYLD_ENTITLEMENT, sealFile } from "./seal-bun-doors";
 import { bunPinProblem } from "./bun-pin";
 import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devDaemonPlan, devDaemonRequirement, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
@@ -69,7 +70,6 @@ import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_DIR = join(REPO_ROOT, "packages", "cli");
 const ENTITLEMENTS = join(REPO_ROOT, "scripts", "clover-core.entitlements");
-const BUN_JIT_ENTITLEMENTS = join(REPO_ROOT, "scripts", "bun-jit.entitlements");
 
 function die(message: string): never {
   console.error(`dev:daemon: ${message}`);
@@ -81,9 +81,8 @@ function run(cmd: string, args: string[], opts: { cwd?: string } = {}): { status
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-/** macOS: sign the freshly compiled `tmp` as the dev daemon, and check it before it is moved into place. */
-function signForKeychain(tmp: string): void {
-  const identity = resolveDevSigningIdentity({
+function devSigningIdentity(): { name: string; hash: string } {
+  return resolveDevSigningIdentity({
     identitiesOutput: run("security", ["find-identity", "-v", "-p", "codesigning"]).stdout,
     teamId: CLOVER_TEAM_ID,
     override: process.env.CLOVER_DEV_SIGN_IDENTITY,
@@ -94,6 +93,11 @@ function signForKeychain(tmp: string): void {
       return r.status === 0 ? r.stdout : undefined;
     },
   });
+}
+
+/** macOS: sign the freshly compiled `tmp` as the dev daemon, and check it before it is moved into place. */
+function signForKeychain(tmp: string): void {
+  const identity = devSigningIdentity();
   console.error(`dev:daemon: signing identity ${identity.name}`);
   const requirement = devDaemonRequirement(CLOVER_TEAM_ID);
   const signed = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_DAEMON_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]);
@@ -141,11 +145,12 @@ function build(build: NonNullable<DevDaemonPlan["build"]>, binary: string): void
 
 /** The plugin Bun the dev daemon runs plugin code on (#234's checks 5 and 6): `<dev home>/bin/clover-plugin-bun`, inside
  *  the home no runner writes, a copy of the pinned Bun this script runs on, ad-hoc signed on macOS as
- *  `com.waifucave.clover.plugin-bun.dev` (hardened runtime, `bun-jit.entitlements`), never the core's identity. Its digest
+ *  `com.waifucave.clover.plugin-bun.dev` (hardened runtime, the release copy's `clover-plugin-bun.entitlements`, so a
+ *  plugin's native addon or FFI runs in dev as it does shipped), never the core's identity. Its digest
  *  (macOS: its cdhash) goes beside it as `clover-plugin-bun.digest`, which the daemon's `pluginBun()` checks on start and
  *  whenever the file changes. Made again when the pinned Bun changed (a source stamp beside it) or the copy there isn't
  *  the one recorded (swapped), through a temp file and a rename, so a running plugin keeps its binary. */
-function stagePluginBun(home: string): void {
+function stageDevPluginBun(home: string): void {
   const target = devPluginBunPath(home);
   const stampFile = `${target}.source-sha256`;
   const digestFile = `${target}.digest`;
@@ -166,7 +171,7 @@ function stagePluginBun(home: string): void {
     copyFileSync(source, tmp);
     chmodSync(tmp, 0o755);
     if (process.platform === "darwin") {
-      const signed = run("codesign", devPluginBunSignArgs(tmp, BUN_JIT_ENTITLEMENTS));
+      const signed = run("codesign", devPluginBunSignArgs(tmp, join(REPO_ROOT, PLUGIN_BUN_ENTITLEMENTS)));
       if (signed.status !== 0) die(`codesign of the plugin Bun failed: ${signed.stderr.trim()}`);
       const facts = signedFacts(run("codesign", ["-dv", tmp]).stderr);
       if (facts.identifier !== DEV_PLUGIN_BUN_IDENTIFIER || !facts.runtime) die(`the plugin Bun's signature is not ${DEV_PLUGIN_BUN_IDENTIFIER} with the hardened runtime`);
@@ -182,6 +187,28 @@ function stagePluginBun(home: string): void {
   } finally {
     rmSync(tmp, { force: true });
   }
+}
+
+/**
+ * Lane A's process holder beside the dev core (macOS; scripts/bundled-binaries.ts), signed with the dev identity under
+ * its own `.dev` identifier, never the dev core's, which the dev Keychain items trust. Plugin Bun's dev copy is lane
+ * B's step. A dev build without the holder's source (an agent runtime before SDK 0.0.70) says so and goes on: commands
+ * fall back to process-group tracking, which a packaged build never does (its package gate).
+ */
+async function buildBundled(dir: string, sign: boolean): Promise<void> {
+  if (hostTarget() !== "darwin-arm64") return;
+  if (holderSource(REPO_ROOT) === undefined) {
+    console.error(`dev:daemon: no ${HOLDER_FILE} (the installed agent runtime has no native/process-holder.c before SDK 0.0.70): a bot's commands fall back to process-group tracking`);
+    return;
+  }
+  const holder = join(dir, HOLDER_FILE);
+  buildHolder(REPO_ROOT, holder);
+  if (sign) {
+    const identity = devSigningIdentity();
+    const r = run("codesign", ["--force", "--sign", identity.hash, "--identifier", BUNDLED_IDENTIFIERS[HOLDER_FILE].dev, "--options", "runtime", "--timestamp=none", holder]);
+    if (r.status !== 0) die(`codesign of ${holder} failed: ${r.stderr.trim()}`);
+  }
+  console.error(`dev:daemon: beside it ${holder}${sign ? ` (${BUNDLED_IDENTIFIERS[HOLDER_FILE].dev})` : ""}`);
 }
 
 function devEnv(plan: DevDaemonPlan): NodeJS.ProcessEnv {
@@ -218,10 +245,13 @@ async function main(): Promise<void> {
   if (pin !== null) die(`${pin} — run it with the pinned Bun: scripts/pinned-bun run dev:daemon`);
   const binary = join(REPO_ROOT, ...plan.binary.split("/"));
   const home = plan.home;
-  if (plan.build !== undefined) build(plan.build, binary);
+  if (plan.build !== undefined) {
+    build(plan.build, binary);
+    await buildBundled(dirname(binary), plan.build.sign);
+  }
   if (!existsSync(binary)) die(`${binary} does not exist — run without --no-build`);
   // Plugin code never runs on the core's binary: its own Bun, beside it (with --no-build too, when it's missing).
-  stagePluginBun(home);
+  stageDevPluginBun(home);
   const env = devEnv(plan);
 
   if (plan.transition) {

@@ -37,8 +37,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SIGNATURE_SUFFIX, signFeed, verifyFeed } from "../../packages/update-feed/src/index";
 import { keychain, signingKey } from "./feed-key";
-import { buildCommitFile, checkCoreFeed, checkUpdateInfo, CORE_TARGET, expectedArtifacts, isCoreFeed, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
-import { coreBinaryFile, parseCoreFeed } from "../../packages/update-feed/src/index";
+import { buildCommitFile, checkCoreFeed, checkPluginBunFeed, checkPluginsFeed, isPluginsFeed, checkUpdateInfo, CORE_TARGET, expectedArtifacts, isCoreFeed, isPluginBunFeed, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
+import { coreBinaryFile, parseCoreFeed, parsePluginBunFeed, parsePluginsFeed, pluginBunBinaryFile, pluginsTarballFile } from "../../packages/update-feed/src/index";
+import { PLUGIN_BUN } from "../bundled-binaries";
 
 export const RELEASE_OSES: readonly ReleaseOs[] = ["mac", "win", "linux-x64", "linux-arm64"];
 
@@ -114,8 +115,14 @@ export function planRelease(
   for (const os of RELEASE_OSES) {
     for (const name of expectedArtifacts(version, os, channel)) {
       add(name);
-      if (name.endsWith(".yml") || name === coreBinaryFile(version, CORE_TARGET[os])) feeds.push(name);
-      if (isCoreFeed(name) && where.has(name)) {
+      if (name.endsWith(".yml") || name === coreBinaryFile(version, CORE_TARGET[os]) || name === pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]) || name === pluginsTarballFile(version, CORE_TARGET[os])) feeds.push(name);
+      if (isPluginsFeed(name) && where.has(name)) {
+        const readAny = (n: string) => (where.has(n) ? read(where.get(n)!, n) : undefined);
+        problems.push(...checkPluginsFeed(new TextDecoder().decode(read(where.get(name)!, name)), version, readAny).map((p) => `${name}: ${p}`));
+      } else if (isPluginBunFeed(name) && where.has(name)) {
+        const readAny = (n: string) => (where.has(n) ? read(where.get(n)!, n) : undefined);
+        problems.push(...checkPluginBunFeed(new TextDecoder().decode(read(where.get(name)!, name)), readAny).map((p) => `${name}: ${p}`));
+      } else if (isCoreFeed(name) && where.has(name)) {
         const readAny = (n: string) => (where.has(n) ? read(where.get(n)!, n) : undefined);
         problems.push(...checkCoreFeed(new TextDecoder().decode(read(where.get(name)!, name)), version, readAny).map((p) => `${name}: ${p}`));
       } else if (name.endsWith(".yml") && where.has(name)) {
@@ -186,10 +193,10 @@ export function promotedName(name: string): string {
 
 const REPO = "waifucave/clover";
 
-/** A beta update file: the app's for each OS, and the daemon's for each target. */
-const BETA_FEED = /^beta(-mac|-linux|-linux-arm64|-core-(darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml$/;
-/** A release's beta update files: the app's four and the daemon's four. */
-const BETA_FEEDS = 8;
+/** A beta update file: the app's for each OS, and the daemon's, plugin Bun's and the bundled plugins' for each target. */
+const BETA_FEED = /^beta(-mac|-linux|-linux-arm64|-(?:core|plugin-bun|plugins)-(darwin-arm64|linux-x64|linux-arm64|windows-x64))?\.yml$/;
+/** A release's beta update files: the app's four, and four each for the daemon, plugin Bun and the bundled plugins. */
+const BETA_FEEDS = 16;
 
 const CORE_IN_APP = ["Clover.app", "Contents", "Resources", "daemon", "clover-core"] as const;
 
@@ -311,8 +318,9 @@ export async function main(argv: readonly string[], root: string, deps: { proveS
         const signature = readFileSync(join(dir, `${n}${SIGNATURE_SUFFIX}`), "utf8");
         const verdict = verifyFeed(n, bytes, signature);
         if (!verdict.ok) throw new Error(`${n}'s signature doesn't verify (${verdict.reason})`);
-        const forVersion = isCoreFeed(n) ? parseCoreFeed(new TextDecoder().decode(bytes)).version : parseUpdateInfo(new TextDecoder().decode(bytes)).version;
-        if (forVersion !== a.version) throw new Error(`${n} is not for ${a.version}`);
+        // Plugin Bun's update file is for the daemon's Bun, not the release's version: its own check.
+        const forVersion = isPluginBunFeed(n) ? parsePluginBunFeed(new TextDecoder().decode(bytes)).version : isPluginsFeed(n) ? parsePluginsFeed(new TextDecoder().decode(bytes)).version : isCoreFeed(n) ? parseCoreFeed(new TextDecoder().decode(bytes)).version : parseUpdateInfo(new TextDecoder().decode(bytes)).version;
+        if (forVersion !== (isPluginBunFeed(n) ? PLUGIN_BUN.version : a.version)) throw new Error(`${n} is not for ${isPluginBunFeed(n) ? `Bun ${PLUGIN_BUN.version}` : a.version}`);
         const latest = promotedSignature(n, bytes, privateKey);
         writeFileSync(join(dir, latest.name), bytes);
         writeFileSync(join(dir, `${latest.name}${SIGNATURE_SUFFIX}`), latest.signature);

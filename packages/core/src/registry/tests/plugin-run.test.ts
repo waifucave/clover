@@ -345,6 +345,23 @@ describe("a plugin process loads only its own tree", () => {
     expect(() => guardedPluginEnv({ PATH: "/bin" }, { pluginRoot: root, files, shared: [] })).not.toThrow();
   }, 30_000);
 
+  // #289: a Bun macro runs its module while the importing file is transpiled. --no-macros holds a process's main thread
+  // only (a Worker runs one whatever the process was started with, measured on Bun 1.4.4), so the guard refuses a
+  // macro's module in every thread. Each case runs once unguarded as the control: the macro runs.
+  test("a Bun macro never runs in a plugin process, in its main thread or a worker", () => {
+    const mark = join(w.base, "mark");
+    const root = w.plugin("macro", {
+      "host/mac.ts": `import { writeFileSync } from "node:fs";\nexport function leak(): string { writeFileSync(${JSON.stringify(mark)}, "ran"); return "x"; }\n`,
+      "host/index.ts": "import { leak } from \"./mac.ts\" with { type: \"macro\" };\nconsole.log(\"value\", leak());\n",
+      "host/worker.ts": settle + "const w = new Worker(new URL(\"./index.ts\", import.meta.url).href);\nconst e = await settle(w);\nconsole.log(\"worker ended:\", e?.message ?? e?.type);\n",
+    });
+    for (const entry of ["host/index.ts", "host/worker.ts"]) {
+      expect([entry, w.run(root, entry, false).ran]).toEqual([entry, true]);
+      const guarded = w.run(root, entry, true);
+      expect([entry, guarded.ran, /Macros are disabled|a Bun macro/.test(guarded.stderr + guarded.stdout)]).toEqual([entry, false, true]);
+    }
+  }, 30_000);
+
   test("a hook's bun runs guarded: the outside file never loads", async () => {
     const root = w.plugin("hook", { "hooks/check.ts": "await import(\"../../outside/evil.ts\");\n" });
     const runner = new HookRunner({ files: w.files, shared: [] });

@@ -32,6 +32,9 @@ const result = await Bun.build({
   plugins: [dedupe],
   define: { "process.env.NODE_ENV": '"production"' },
   naming: "[name].[ext]",
+  // Macros off: a plugin file's `with { type: "macro" }` import would run in this process (bun-types has no field for it).
+  // LAST, so nothing after it turns them back on.
+  ...{ macros: false },
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);

@@ -13,7 +13,8 @@
 // a plugin that imports a dependency it doesn't ship (`loaderReach`'s `missing`). Each process runs with:
 //
 // * Clover's own `bunfig.toml` (`--config`), never the plugin's: no `preload`, and no auto-install from the network;
-// * no `.env` loading (`--no-env-file`), and no inherited `NODE_OPTIONS`, `BUN_OPTIONS` or `NODE_PATH`;
+// * no `.env` loading (`--no-env-file`), no Bun macros (`--no-macros`, and the guard in every worker), and no
+//   inherited `NODE_OPTIONS`, `BUN_OPTIONS` or `NODE_PATH`;
 // * Clover's guard preloaded (`--preload`): a Bun plugin whose `onLoad` sees every file the process loads, by its real
 //   path after links, and refuses one outside the plugin's tree and Clover's shared packages, whatever its name or
 //   loader; `process.dlopen` (native addons) held to the same rule; every worker (`Worker`, `node:worker_threads`)
@@ -56,6 +57,21 @@ const guardFile = fileURLToPath(import.meta.url);
 // The guard's own folder (its run files) loads too: a worker preloads the guard from there.
 const shared = [...JSON.parse(sharedEnv), dirname(guardFile)].map(real);
 const inside = (p, r) => p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
+// No Bun macros, in every thread (#289): a macro runs its module's code while the file importing it is transpiled. The
+// process's --no-macros (and a bunfig's) holds its main thread only: a Worker runs a macro whatever the process was
+// started with (measured on Bun 1.4.4), and a plugin's code can start workers. A macro's module resolves from a
+// "macro//" importer, which this refuses before it loads. Every other import falls through untouched.
+Bun.plugin({
+  name: "clover-no-macros",
+  setup(build) {
+    build.onResolve({ filter: /.*/ }, (args) => {
+      if (/^macro:?\/\//.test(args.importer ?? "")) fail("refused " + args.path + ": a Bun macro (an import with { type: \"macro\" }) runs code while its file loads, and Clover runs none");
+      return undefined;
+    });
+  },
+});
+// The guard stays registered.
+Object.defineProperty(Bun.plugin, "clearAll", { value: () => fail("the load guard stays"), writable: false, configurable: false });
 // A node_modules above the plugin's folder is where Bun looks for a dependency the plugin doesn't ship, and a file there
 // without an extension skips onLoad (#234's check 6, L4): this process doesn't start beside one, unless it holds
 // Clover's shared packages.
@@ -91,8 +107,6 @@ Module._resolveFilename = function (request, ...rest) {
 };
 const guardedResolve = Module._resolveFilename;
 Object.defineProperty(Module, "_resolveFilename", { get: () => guardedResolve, set: () => fail("the load guard stays"), enumerable: true, configurable: false });
-// The guard stays registered.
-Object.defineProperty(Bun.plugin, "clearAll", { value: () => fail("the load guard stays"), writable: false, configurable: false });
 // A native addon loads through process.dlopen: held to the same rule.
 const dlopen = process.dlopen.bind(process);
 Object.defineProperty(process, "dlopen", {
@@ -318,7 +332,7 @@ export function ensurePluginRunFiles(dir: string): PluginRunFiles {
 
 /** The Bun flags every plugin process runs with. */
 export function pluginBunFlags(files: PluginRunFiles): string[] {
-  return [`--config=${files.bunfig}`, "--no-env-file", `--preload=${files.guard}`];
+  return [`--config=${files.bunfig}`, "--no-env-file", "--no-macros", `--preload=${files.guard}`];
 }
 
 /** Variables a plugin process never inherits: they change what Bun or Node loads. */

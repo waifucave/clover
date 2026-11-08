@@ -82,3 +82,66 @@ describe("the update feed's signature", () => {
     expect(() => parseCoreFeed(`${text}version: 9.9.9\n`)).toThrow();
   });
 });
+
+test("plain Bun for plugins has its own signed update file and binary, named by its Bun version", async () => {
+  const { pluginBunFeedFile, pluginBunBinaryFile, parsePluginBunFeed, parseCoreFeed, FEED_NAME } = await import("../src/index");
+  expect(pluginBunFeedFile("latest", "linux-x64")).toBe("latest-plugin-bun-linux-x64.yml");
+  expect(pluginBunBinaryFile("1.4.4", "windows-x64")).toBe("clover-plugin-bun-1.4.4-windows-x64.exe");
+  expect(pluginBunBinaryFile("1.4.4", "darwin-arm64")).toBe("clover-plugin-bun-1.4.4-darwin-arm64");
+  for (const n of ["beta-plugin-bun-darwin-arm64.yml", "clover-plugin-bun-1.4.4-linux-arm64", "clover-plugin-bun-1.4.4-windows-x64.exe"]) expect(FEED_NAME.test(n)).toBe(true);
+  for (const n of ["clover-plugin-bun-1.4.4-windows-x64", "latest-plugin-bun.yml", "clover-plugin-bun-x-linux-x64"]) expect(FEED_NAME.test(n)).toBe(false);
+  const sha512 = Buffer.alloc(64, 1).toString("base64");
+  const feed = `version: 1.4.4\nfile: clover-plugin-bun-1.4.4-linux-x64\nsha512: ${sha512}\nsize: 100\n`;
+  expect(parsePluginBunFeed(feed)).toEqual({ version: "1.4.4", file: "clover-plugin-bun-1.4.4-linux-x64", sha512, size: 100 });
+  // Neither file passes for the other: a plugin Bun feed never names a daemon, nor the other way round.
+  expect(() => parseCoreFeed(feed)).toThrow("names a clover-core binary");
+  expect(() => parsePluginBunFeed(feed.replace(/clover-plugin-bun/, "clover-core"))).toThrow("names a clover-plugin-bun binary");
+});
+
+test("the bundled plugins' names: a per-target tarball and its update file, which a signature may cover", async () => {
+  const { pluginsFeedFile, pluginsTarballFile, parsePluginsFeed, FEED_NAME } = await import("../src/index");
+  expect(pluginsFeedFile("beta", "darwin-arm64")).toBe("beta-plugins-darwin-arm64.yml");
+  expect(pluginsTarballFile("1.2.3", "windows-x64")).toBe("clover-plugins-1.2.3-windows-x64.tar.gz");
+  for (const n of ["latest-plugins-linux-x64.yml", "clover-plugins-1.2.3-linux-arm64.tar.gz", "clover-plugins-1.3.0-beta.1-darwin-arm64.tar.gz"]) expect(FEED_NAME.test(n)).toBe(true);
+  for (const n of ["clover-plugins-1.2.3.tar.gz", "clover-plugins-1.2.3-linux-x64.tar", "latest-plugins.yml", "clover-plugins-x-linux-x64.tar.gz"]) expect(FEED_NAME.test(n)).toBe(false);
+  const sha512 = Buffer.alloc(64, 1).toString("base64");
+  expect(parsePluginsFeed(`version: 1.2.3\nfile: clover-plugins-1.2.3-linux-x64.tar.gz\nsha512: ${sha512}\nsize: 10\n`).file).toBe("clover-plugins-1.2.3-linux-x64.tar.gz");
+  expect(() => parsePluginsFeed(`version: 1.2.3\nfile: clover-core-1.2.3-linux-x64\nsha512: ${sha512}\nsize: 10\n`)).toThrow("bundled plugins");
+});
+
+test("the tarball: packed the same way every time, read back strictly", async () => {
+  const { packTarball, unpackTarball } = await import("../src/index");
+  const { gzipSync } = await import("node:zlib");
+  const enc = (s: string) => new TextEncoder().encode(s);
+  const long = `a/${"x".repeat(120)}/b.js`;
+  const files = [{ path: "z/clover.json", bytes: enc("{}"), executable: false }, { path: long, bytes: new Uint8Array(1000).fill(7), executable: true }];
+  const gz = packTarball(files);
+  expect(Buffer.from(packTarball([...files].reverse())).equals(Buffer.from(gz))).toBe(true);
+  expect(unpackTarball(gz).map((f) => [f.path, f.bytes.length, f.executable])).toEqual([[long, 1000, true], ["z/clover.json", 2, false]]);
+  for (const bad of ["../x", "/etc/passwd", "a//b", "a\\b"]) expect(() => packTarball([{ path: bad, bytes: enc(""), executable: false }])).toThrow("plain relative path");
+  expect(() => packTarball([files[0]!, files[0]!])).toThrow("twice");
+  // A hand-made archive: a symlink entry, a traversal path, a bad checksum, a truncated body: each refused.
+  const header = (name: string, type: string, size: number, fix = true) => {
+    const h = new Uint8Array(512);
+    const put = (at: number, t: string) => h.set(enc(t), at);
+    put(0, name); put(100, "0000644\0"); put(108, "0000000\0"); put(116, "0000000\0"); put(124, `${size.toString(8).padStart(11, "0")}\0`); put(136, "00000000000\0");
+    put(148, "        "); put(156, type); put(257, "ustar\0"); put(263, "00");
+    let sum = 0;
+    for (const b of h) sum += b;
+    put(148, `${(fix ? sum : sum + 1).toString(8).padStart(6, "0")}\0 `);
+    return h;
+  };
+  const tar = (...parts: Uint8Array[]) => new Uint8Array(gzipSync(Buffer.concat([...parts.map((p) => Buffer.from(p)), Buffer.alloc(1024)])));
+  expect(() => unpackTarball(tar(header("a/link", "2", 0)))).toThrow("only regular files");
+  expect(() => unpackTarball(tar(header("../evil", "0", 0)))).toThrow("plain relative path");
+  expect(() => unpackTarball(tar(header("a/x", "0", 0, false)))).toThrow("checksum");
+  expect(() => unpackTarball(new Uint8Array(gzipSync(Buffer.concat([Buffer.from(header("a/x", "0", 4096)), Buffer.alloc(512)]))))).toThrow();
+  expect(() => unpackTarball(enc("not gzip"))).toThrow("not a gzip stream");
+});
+
+test("a tarball path every OS can hold: no Windows device name, no trailing dot or space", async () => {
+  const { plainRelativePath, packTarball } = await import("../src/index");
+  for (const p of ["a/CON", "a/nul.txt", "COM1/x", "a/lpt9.js", "a/x.", "a/x ", "a/com¹"]) expect(plainRelativePath(p)).toBe(false);
+  for (const p of ["a/console.js", "a/null.js", "a/com10", "a/.env.example", "clover/clover.json"]) expect(plainRelativePath(p)).toBe(true);
+  expect(() => packTarball([{ path: "a/AUX.json", bytes: new Uint8Array(), executable: false }])).toThrow("plain relative path");
+});

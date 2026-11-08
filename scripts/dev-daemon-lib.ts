@@ -1,7 +1,7 @@
 // WS-27: the pure halves of `scripts/dev-daemon.ts` (unit-tested in `dev-daemon.test.ts`).
 import { homedir } from "node:os";
 import { PLUGIN_BUN_FILE, PLUGIN_BUN_IDENTIFIER } from "../packages/core/src/bundled-identities";
-import { join, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { otherInstallHome, realPathOf } from "../packages/core/src/other-installs";
 
 export type DevOs = "macos" | "linux" | "windows";
@@ -68,6 +68,7 @@ export function describeDevDaemonPlan(plan: DevDaemonPlan): string[] {
   else {
     lines.push(`  build    (in packages/cli) ${plan.build.command}`);
     lines.push(`  seal     scripts/seal-bun-doors.ts: Bun's BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH doors closed (not on Windows), then the byte check`);
+    if (plan.os === "macos") lines.push(`  beside   ${dirname(plan.binary)}/clover-process-holder, signed under its own .dev identifier (scripts/bundled-binaries.ts); plugin Bun's dev copy goes in the dev home's bin/, where pluginBun() checks it`);
     lines.push(plan.build.sign
       ? `  sign     codesign as ${DEV_DAEMON_IDENTIFIER} with Clover's team, then the __keychain-ffi-probe, then rename to ${plan.binary}`
       : `  sign     none (the dev binary is unsigned on ${plan.os}); rename to ${plan.binary}`);
@@ -103,8 +104,8 @@ export function devPluginBunPath(devHome: string, platform: NodeJS.Platform = pr
   return join(devHome, "bin", platform === "win32" ? `${PLUGIN_BUN_FILE}.exe` : PLUGIN_BUN_FILE);
 }
 
-/** The ad-hoc signature the dev plugin Bun gets on macOS: its own identifier, the hardened runtime and Bun's JIT
- *  entitlement (`scripts/bun-jit.entitlements`). */
+/** The ad-hoc signature the dev plugin Bun gets on macOS: its own identifier, the hardened runtime and the release
+ *  copy's entitlements (`scripts/clover-plugin-bun.entitlements`, bundled-binaries.ts's `PLUGIN_BUN_ENTITLEMENTS`). */
 export function devPluginBunSignArgs(path: string, entitlements: string): string[] {
   return ["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", entitlements, path];
 }
