@@ -1,3 +1,4 @@
+import { missingProcessHolder } from "./build-kind";
 import { loadBundledManifest } from "./bundled-plugins-dir";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
@@ -699,6 +700,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `tools.json`, …). One line when any exist — never touched, only named (`clover doctor` repeats it).
   const deadLegacyLine = describeDeadLegacyFiles(findDeadLegacyFiles(home), home);
   if (deadLegacyLine !== undefined) console.error(deadLegacyLine);
+  // Lane A's F8 process holder ships beside a compiled macOS core (scripts/bundled-binaries.ts); without it a bot's
+  // commands fall back to process-group tracking, which a packaged build never does (its package gate). Said loudly.
+  {
+    const holder = missingProcessHolder();
+    if (holder !== undefined) console.error(`error: ${holder} is missing beside this clover-core: a bot's commands fall back to process-group tracking, and what they leave running (setsid, double forks) can outlive a pause. Reinstall Clover.`);
+  }
 
 
   // WS-25 §7 B: the app reads `harness-token`/`remote-token` without a Keychain prompt once their access

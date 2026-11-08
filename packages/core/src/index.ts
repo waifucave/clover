@@ -4,8 +4,8 @@ export { startDaemon, stopOnSignals, CORE_VERSION, type RunningDaemon } from "./
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 export { resolveEndpoint, homePipeId, isPipe, endpointPresent, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
 export {
-  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs,
-  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
+  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, windowsProfilePath, parseProfileImagePath, stopDaemonCleanly, stopThroughOs,
+  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, schtasksFallbackProblem, loginLabel, loginUnitPath,
   systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
   superviseLoop, backoffMs, UPDATE_RESTART_EXIT_CODE,
   type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState, type Runner, type DaemonStartResult, type CleanStopResult, type CleanStopDeps,
@@ -328,7 +328,7 @@ export { looksCredentialBearing } from "./approvals/strings";
 export { cloudCardConfirm, cloudCardRequest, cloudCardSubject, CloudCardDesk, CLOUD_CARD_TEXT, CLOUD_PAIRED_TEXT, CLOUD_VALUE_MAX, type CloudCardOutcome, type CloudCardRequest, type CloudVmRef } from "./approvals/cloud-cards";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
 export {
-  bundledManifest, bundledPluginIds, bundledPluginsDir, loadBundledManifest, readBundledFile, readBundledPlugin,
+  bundledManifest, bundledPluginIds, bundledPluginsDir, formatBundledManifest, loadBundledManifest, measureBundledTree, readBundledFile, readBundledPlugin,
   type BundledEntry, type BundledManifest, type BundledPluginRead, type BundledRead,
 } from "./bundled-plugins-dir";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";

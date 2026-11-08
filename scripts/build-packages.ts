@@ -23,9 +23,12 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSy
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "./build-daemon";
-import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writeServedCopies, type Channel } from "./release/lib";
-import { bundledPluginsProblems, STAGED_PLUGINS, stageBundledPlugins, walkTree, writeStagedManifest } from "./release/bundled-plugins";
-import { BUNDLED_MANIFEST_FILE } from "../packages/core/src/bundled-plugins-dir";
+import { bundledBinaryProblems, bundledFiles } from "./bundled-binaries";
+import { runNameScan } from "./release/name-scan";
+import { sealProblems } from "./seal-bun-doors";
+import { channelArgs, checkoutCommit, parseChannel, writeBuildCommit, writeCoreAssets, writePluginBunAssets, writePluginsAssets, writeServedCopies, type Channel } from "./release/lib";
+import { buildBundledPlugins, bundledPluginsProblems, STAGED_PLUGINS, walkTree, writeStagedManifest } from "./release/bundled-plugins";
+import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../packages/core/src/bundled-plugins-dir";
 
 export const LINUX_ARCHES = ["x64", "arm64"] as const;
 export type LinuxArch = (typeof LINUX_ARCHES)[number];
@@ -96,14 +99,15 @@ export const LINK_OUTPUT = "native/link/target/release/clover-link";
 /** What a package must hold: the daemon, its link sidecar beside it, the AppArmor profile in the app's resources, and
  *  each bundled top-level plugin's manifest in resources/plugins (the registry's `bundledDirs`). */
 export const REQUIRED_FILES = [
-  "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
+  "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun",
+  "/opt/Clover/resources/apparmor-profile", "/opt/Clover/clover",
   "/opt/Clover/resources/plugins/clover/clover.json", "/opt/Clover/resources/plugins/alpha/clover.json",
 ] as const;
 /** What its after-install script must do: link `clover` to the daemon's command line (packaging/linux/after-install.sh). */
 export const AFTER_INSTALL_MARK = "/opt/Clover/resources/daemon/clover-core";
 
 /** The executables a package runs as root's files: the app, the daemon and the sidecar, `rwxr-xr-x root root`. */
-export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link"] as const;
+export const EXECUTABLES = ["/opt/Clover/clover", "/opt/Clover/resources/daemon/clover-core", "/opt/Clover/resources/daemon/clover-link", "/opt/Clover/resources/daemon/clover-plugin-bun"] as const;
 
 export interface PackageEntry {
   mode: string;
@@ -181,7 +185,7 @@ function checkBuilt(outDir: string, arch: LinuxArch, formats: readonly LinuxForm
   return problems;
 }
 
-export function main(argv: readonly string[], root: string): number {
+export async function main(argv: readonly string[], root: string): Promise<number> {
   let args: BuildPackagesArgs;
   try {
     args = parseBuildPackagesArgs(argv, process.arch);
@@ -200,44 +204,67 @@ export function main(argv: readonly string[], root: string): number {
   const manifestFile = join(desktop, "out", BUNDLED_MANIFEST_FILE);
   // `stage`: this architecture's daemon and sidecar go where electron-builder.yml's extraResources reads them, just
   // before packaging.
-  const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch }> = [
+  // `plugins`: this architecture's bundled plugins, built and measured into the manifest its daemon carries.
+  const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch; plugins?: LinuxArch }> = [
     { say: "the app", cmd: ["bun", "run", "build"], cwd: desktop },
     { say: "the link sidecar, clover-link", cmd: [...LINK_BUILD], cwd: root },
   ];
   for (const arch of args.arches) {
+    steps.push({ say: `the bundled plugins for linux-${arch}, built (lane B's buildPluginForShipping) and measured`, cmd: [], cwd: root, plugins: arch });
     steps.push({ say: `the daemon for linux-${arch}`, cmd: ["bun", "scripts/build-daemon.ts", "--target", daemonTargetFor(arch), "--plugins-manifest", manifestFile], cwd: root });
     steps.push({ say: `${args.formats.join(", ")} for ${arch}`, cmd: ["bunx", ...electronBuilderArgs(arch, args.formats, args.channel)], cwd: desktop, stage: arch });
   }
   if (args.dryRun) {
-    console.log(`build-packages: the bundled plugins: plugins/ at HEAD staged in apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
-    for (const s of steps) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
+    console.log(`build-packages: the bundled plugins: plugins/ at HEAD built per architecture into apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
+    for (const s of steps.filter((x) => x.plugins === undefined)) console.log(`build-packages: ${s.say}: (in ${s.cwd === root ? "." : "apps/desktop"}) ${s.cmd.join(" ")}`);
     return 0;
   }
-  rmSync(outDir, { recursive: true, force: true });
-  // The bundled plugins: the committed files only, staged where electron-builder.yml packs them and measured into
-  // the manifest each daemon carries; the stages removed however the build ends (a stale stage would go into a later
-  // plain `bun run dist`).
+  // A release is of one commit, from a fully clean checkout of it (the build reads the whole tree).
+  let commit: string;
   try {
-    stageBundledPlugins(root, stagedPlugins);
-    const manifest = writeStagedManifest(stagedPlugins, manifestFile);
-    console.log(`build-packages: the bundled plugins: ${Object.keys(manifest.files).length} files staged and measured`);
+    commit = checkoutCommit(root);
+  } catch (err) {
+    console.error(`build-packages: ${(err as Error).message}`);
+    return 1;
+  }
+  rmSync(outDir, { recursive: true, force: true });
+  const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
+  // The bundled plugins: built per architecture from the committed files only, where electron-builder.yml packs them,
+  // and measured into the manifest that architecture's daemon carries; the stages removed however the build ends (a
+  // stale stage would go into a later plain `bun run dist`).
+  let manifest: BundledManifest | undefined;
+  try {
     for (const s of steps) {
       console.log(`build-packages: ${s.say}…`);
+      if (s.plugins !== undefined) {
+        const built = await buildBundledPlugins(root, stagedPlugins, daemonTargetFor(s.plugins));
+        manifest = writeStagedManifest(stagedPlugins, manifestFile);
+        console.log(`build-packages: the bundled plugins for linux-${s.plugins}: ${built.files.length} files built (${built.natives.length} native addon files), ${Object.keys(manifest.files).length} measured`);
+        continue;
+      }
       if (s.stage !== undefined) {
         rmSync(staged, { recursive: true, force: true });
         mkdirSync(staged, { recursive: true });
         copyFileSync(join(root, ...daemonOutput(daemonTargetFor(s.stage)).split("/")), join(staged, "clover-core"));
         copyFileSync(join(root, ...LINK_OUTPUT.split("/")), join(staged, "clover-link"));
         chmodSync(join(staged, "clover-link"), 0o755);
+        // Plain Bun for plugins, beside the core (scripts/bundled-binaries.ts); the package gate before packaging.
+        const target = daemonTargetFor(s.stage);
+        const built = dirname(join(root, ...daemonOutput(target).split("/")));
+        for (const f of bundledFiles(target)) if (existsSync(join(built, f))) { copyFileSync(join(built, f), join(staged, f)); chmodSync(join(staged, f), 0o755); }
+        const gate = [...bundledBinaryProblems(staged, target), ...sealProblems(new Uint8Array(readFileSync(join(staged, "clover-core")))).map((p) => `the seal: ${p}`)];
+        if (gate.length > 0) { console.error(`build-packages: the package gate: ${gate.join("; ")}`); return 1; }
       }
       const status = runScriptLine(s.cmd.map((c) => (/[\s"']/.test(c) ? JSON.stringify(c) : c)).join(" "), s.cwd);
       if (status !== 0) { console.error(`build-packages: ${s.say} failed (exit ${status})`); return 1; }
       if (s.stage !== undefined) {
         // What electron-builder packed (its unpacked app) is exactly the tree the daemon's manifest names.
         const resources = join(outDir, s.stage === "x64" ? "linux-unpacked" : `linux-${s.stage}-unpacked`, "resources");
-        const problems = bundledPluginsProblems(resources, manifest, existsSync, walkTree);
+        const problems = bundledPluginsProblems(resources, manifest!, existsSync, walkTree);
         for (const p of problems) console.error(`build-packages: ${p} (${s.stage})`);
         if (problems.length > 0) return 1;
+        // The same tree for a server on this architecture: the tarball and its update files.
+        writePluginsAssets(outDir, version, s.stage === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(resources, "plugins"));
       }
     }
   } catch (err) {
@@ -249,13 +276,21 @@ export function main(argv: readonly string[], root: string): number {
     rmSync(manifestFile, { force: true });
   }
   // The daemon for a server's own update: each architecture's binary as its release file, with its update files.
-  const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
   for (const a of args.arches) writeCoreAssets(outDir, version, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(root, ...daemonOutput(daemonTargetFor(a)).split("/")));
+  // Plain Bun for plugins, for a server install on this architecture (scripts/bundled-binaries.ts).
+  for (const a of args.arches) writePluginBunAssets(outDir, a === "x64" ? "linux-x64" : "linux-arm64", args.channel, join(dirname(join(root, ...daemonOutput(daemonTargetFor(a)).split("/"))), "clover-plugin-bun"));
   // A full release serves beta users too: its update files under the beta names.
   writeServedCopies(outDir, args.channel, args.arches.map((a) => (a === "x64" ? "linux-x64" : "linux-arm64")));
   // The commit these packages are of, for the owner's release step (scripts/release/publish.ts).
-  const commit = checkoutCommit(root, false);
   for (const a of args.arches) writeBuildCommit(outDir, a === "x64" ? "linux-x64" : "linux-arm64", commit);
+  // The identity scan over everything built (scripts/release/name-scan.ts): skipped, and said, without the guard.
+  try {
+    const scan = runNameScan(outDir, { required: false });
+    console.log(scan.ran ? `build-packages: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `build-packages: identity scan skipped (${scan.reason})`);
+  } catch (err) {
+    console.error(`build-packages: ${(err as Error).message}`);
+    return 1;
+  }
   if (args.check) {
     const problems = args.arches.flatMap((arch) => checkBuilt(outDir, arch, args.formats));
     for (const p of problems) console.error(`build-packages: ${p}`);
@@ -265,4 +300,4 @@ export function main(argv: readonly string[], root: string): number {
   return 0;
 }
 
-if (import.meta.main) process.exit(main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..")));
+if (import.meta.main) process.exit(await main(process.argv.slice(2), join(dirname(fileURLToPath(import.meta.url)), "..")));

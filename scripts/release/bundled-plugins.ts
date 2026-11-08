@@ -12,11 +12,12 @@
 //   - `unshippedPluginDependencies`: what a plugin's package.json needs that nothing ships beside it;
 //   - `builtPluginImportProblems`: the exact check on a release-time-built tree (wired with that build).
 import { spawnSync } from "node:child_process";
-import { chmodSync, lstatSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, join, posix } from "node:path";
 import { CLIENT_BARE_IMPORTS } from "../../packages/plugin-sdk/src/manifest/schema";
 import { formatBundledManifest, measureBundledTree, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
+import { buildPluginForShipping, type ShippedPlugin, type ShipTarget } from "../../packages/core/src/registry/ship";
 
 /** The bundled plugins' folder in the app's resources (electron-builder.yml), beside `daemon/`. */
 export const BUNDLED_PLUGINS_DIR = "plugins";
@@ -34,6 +35,15 @@ export function leftOut(rel: string): string | undefined {
   if (parts.slice(0, -1).some((p) => p === "test" || p === "tests")) return "a test folder";
   if (/\.test\.tsx?$/.test(name)) return "a test file";
   if (/^tsconfig.*\.json$/.test(name)) return "a tsconfig";
+  if (name === ".env" || name.startsWith(".env.")) return "an environment file";
+  if (name === ".DS_Store") return "an OS artifact";
+  return undefined;
+}
+
+/** Why a path in a built tree never ships, or undefined: an environment file or an OS artifact (a built tree's own
+ *  `node_modules` holds the natives, and its packages' tests and configs are theirs). */
+export function neverShips(rel: string): string | undefined {
+  const name = rel.split("/").at(-1)!;
   if (name === ".env" || name.startsWith(".env.")) return "an environment file";
   if (name === ".DS_Store") return "an OS artifact";
   return undefined;
@@ -101,6 +111,25 @@ export function gitPluginsSource(root: string): PluginsSource {
  */
 export function stageBundledPlugins(root: string, dest: string, source: PluginsSource = gitPluginsSource(root)): string[] {
   rmSync(dest, { recursive: true, force: true });
+  const entries = committedPluginEntries(source);
+  try {
+    const blobs = source.blobs(entries.map((e) => e.object));
+    for (const e of entries) {
+      mkdirSync(dirname(join(dest, e.rel)), { recursive: true });
+      writeFileSync(join(dest, e.rel), blobs.get(e.object)!, { flag: "wx" });
+      // git's two file modes, whatever the umask: 100755 stays executable.
+      chmodSync(join(dest, e.rel), e.exec ? 0o755 : 0o644);
+    }
+  } catch (err) {
+    rmSync(dest, { recursive: true, force: true });
+    throw err;
+  }
+  return entries.map((e) => e.rel);
+}
+
+/** The committed files under plugins/ a release may build from (relative to plugins/, less what a release leaves out):
+ *  refuses a plugins/ with any uncommitted change, a committed symlink or submodule, and any other mode. */
+export function committedPluginEntries(source: PluginsSource): Array<{ rel: string; object: string; exec: boolean }> {
   const dirty = source.status().split("\0").filter((e) => e !== "");
   if (dirty.length > 0) throw new Error(`${BUNDLED_PLUGINS_DIR}/ has uncommitted changes, which a release never ships: ${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? ", …" : ""}`);
   const entries: Array<{ rel: string; object: string; exec: boolean }> = [];
@@ -116,19 +145,50 @@ export function stageBundledPlugins(root: string, dest: string, source: PluginsS
     if (leftOut(rel) !== undefined) continue;
     entries.push({ rel, object: object!, exec: mode === "100755" });
   }
+  return entries;
+}
+
+/** Lane B's builder (packages/core/src/registry/ship.ts), as the release calls it. */
+export type PluginBuilder = (folder: string, o: { target: ShipTarget; out: string; include: (rel: string) => boolean; bundled: true }) => Promise<ShippedPlugin>;
+
+/** A built bundled tree: every file (relative to it), its modules and its native addons, paths prefixed `<id>/`. */
+export interface BuiltBundle { files: string[]; modules: BuiltModule[]; natives: ShippedNative[] }
+
+/**
+ * Builds every bundled plugin for `target` into `dest` (`<dest>/<id>`), as installs carry them (the controller's
+ * ruling of November 6: bundled plugins ship BUILT). Each top-level plugin under plugins/ is built by lane B's
+ * `buildPluginForShipping` from the repository's folder, reading only the COMMITTED files a release may ship (the
+ * staging filter, `leftOut`, applies to that source; a dirty plugins/ is refused, and the release needs a fully clean
+ * checkout, so the working tree is HEAD), with `bundled: true`. Then the release's own checks on the built tree:
+ * every import resolves to what ships (`builtPluginImportProblems`, natives for `target` included) and no package a
+ * plugin names goes unshipped (`unshippedPluginDependencies`). Any problem throws, and `dest` is removed.
+ */
+export async function buildBundledPlugins(root: string, dest: string, target: ShipTarget, o: { source?: PluginsSource; build?: PluginBuilder } = {}): Promise<BuiltBundle> {
+  const source = o.source ?? gitPluginsSource(root);
+  const build: PluginBuilder = o.build ?? ((folder, opts) => buildPluginForShipping(folder, opts));
+  rmSync(dest, { recursive: true, force: true });
+  const committed = new Set(committedPluginEntries(source).map((e) => e.rel));
+  const ids = [...new Set([...committed].map((rel) => rel.split("/")[0]!))].sort();
+  const out: BuiltBundle = { files: [], modules: [], natives: [] };
   try {
-    const blobs = source.blobs(entries.map((e) => e.object));
-    for (const e of entries) {
-      mkdirSync(dirname(join(dest, e.rel)), { recursive: true });
-      writeFileSync(join(dest, e.rel), blobs.get(e.object)!, { flag: "wx" });
-      // git's two file modes, whatever the umask: 100755 stays executable.
-      chmodSync(join(dest, e.rel), e.exec ? 0o755 : 0o644);
+    mkdirSync(dest, { recursive: true });
+    for (const id of ids) {
+      const built = await build(join(root, BUNDLED_PLUGINS_DIR, id), { target, out: join(dest, id), include: (rel) => committed.has(`${id}/${rel}`), bundled: true });
+      out.files.push(...built.files.map((f) => `${id}/${f}`));
+      out.modules.push(...built.modules.map((m) => ({ ...m, file: `${id}/${m.file}` })));
+      out.natives.push(...built.natives.map((n) => ({ ...n, file: `${id}/${n.file}` })));
     }
+    out.files.sort();
+    const problems = [
+      ...builtPluginImportProblems(out.modules, out.files, { natives: out.natives, target }),
+      ...unshippedPluginDependencies(out.files, (rel) => readFileSync(join(dest, ...rel.split("/")), "utf8")).map((d) => `${d}: a dependency nothing ships`),
+    ];
+    if (problems.length > 0) throw new Error(`the built bundled plugins for ${target}: ${problems.slice(0, 10).join("; ")}${problems.length > 10 ? `; and ${problems.length - 10} more` : ""}`);
+    return out;
   } catch (err) {
     rmSync(dest, { recursive: true, force: true });
     throw err;
   }
-  return entries.map((e) => e.rel);
 }
 
 /** Measures the staged tree and writes its manifest (the text the core embeds) to `file`; answers the manifest. */
@@ -161,7 +221,9 @@ export function bundledPluginsProblems(resources: string, manifest: BundledManif
   const entries = walk(dir);
   const links = entries.filter((e) => e.link).map((e) => e.rel);
   if (links.length > 0) problems.push(`${dir} holds symlinks, which a release never ships: ${links.slice(0, 5).join(", ")}${links.length > 5 ? ", …" : ""}`);
-  const stray = entries.filter((e) => !e.link && leftOut(e.rel) !== undefined).map((e) => e.rel);
+  // The tree is built (natives keep a node_modules), so the source filter doesn't apply; what never ships, built or
+  // not, is an environment file or an OS artifact.
+  const stray = entries.filter((e) => !e.link && neverShips(e.rel) !== undefined).map((e) => e.rel);
   if (stray.length > 0) problems.push(`${dir} holds files a release leaves out: ${stray.slice(0, 5).join(", ")}${stray.length > 5 ? ", …" : ""}`);
   if (links.length === 0) {
     let shipped: BundledManifest | undefined;
@@ -225,7 +287,7 @@ export interface ShippedNative { file: string; package: string; target: string }
  *  reached through another name (`const r = require; r("x")`). */
 export function scanModule(source: string): { specifiers: string[]; computed: number } {
   const specifiers = new Set<string>();
-  for (const i of new Bun.Transpiler({ loader: "js" }).scanImports(source)) specifiers.add(i.path);
+  for (const i of new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source)) specifiers.add(i.path);
   // A bundle calls an external through `__require` (= import.meta.require), which the transpiler doesn't see.
   for (const m of source.matchAll(/(?<![\w$])(?:__require|import\.meta\.require)\s*\(\s*(["'])([^"'\\]+)\1\s*\)/g)) specifiers.add(m[2]!);
   let computed = 0;

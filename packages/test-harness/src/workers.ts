@@ -74,6 +74,9 @@ export async function bundleWorker(entry: string): Promise<string> {
     format: "esm",
     conditions: ["workerd", "worker", "browser"],
     external: ["cloudflare:*"],
+    // Macros off: a `with { type: "macro" }` import would run in this process (bun-types has no field for it).
+    // LAST, so nothing after it turns them back on.
+    ...{ macros: false },
   });
   if (!result.success || result.outputs[0] === undefined) {
     throw new Error(`bundling ${entry} failed:\n${result.logs.map((l) => String(l)).join("\n")}`);

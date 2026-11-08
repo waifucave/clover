@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builtPluginImportProblems, bundledPluginsProblems, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
+import { buildBundledPlugins, builtPluginImportProblems, bundledPluginsProblems, type PluginBuilder, LAYER_PROVIDED_PACKAGES, leftOut, manifestDifferences, scanModule, stageBundledPlugins, unshippedPluginDependencies, walkTree, writeStagedManifest, type PluginsSource } from "./bundled-plugins";
 import { measureBundledTree, parseBundledManifest, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -137,13 +137,14 @@ describe("the packaged app's bundled plugins", () => {
     expect(problems[0]).toContain("clover/outside");
   });
 
-  test("a missing manifest, and each kind of file a release leaves out, is a problem", () => {
+  test("a missing manifest, and an environment file or OS artifact anywhere (a built tree's node_modules is fine), is a problem", () => {
     const ok = [{ rel: "clover/clover.json", link: false }, { rel: "alpha/clover.json", link: false }];
     const files = new Set(["/r/plugins/clover/clover.json", "/r/plugins/alpha/clover.json"]);
     const manifest: BundledManifest = { files: {} };
     const measure = (): BundledManifest => manifest;
     expect(bundledPluginsProblems("/r", manifest, (p) => p !== "/r/plugins/alpha/clover.json", () => ok, measure)).toEqual(["/r/plugins/alpha/clover.json is missing: the alpha plugin isn't bundled"]);
-    for (const stray of ["alpha/tab/test/x.ts", "clover/x/tests/a.ts", "clover/node_modules/x/index.js", "alpha/tsconfig.json", "clover/a.test.tsx", "alpha/.env", "alpha/.env.local", "clover/.DS_Store"]) {
+    expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: "clover/node_modules/node-datachannel/build/Release/node_datachannel.node", link: false }], measure)).toEqual([]);
+    for (const stray of ["alpha/.env", "alpha/.env.local", "clover/.DS_Store", "clover/node_modules/x/.env"]) {
       expect(bundledPluginsProblems("/r", manifest, (p) => files.has(p), () => [...ok, { rel: stray, link: false }], measure)[0]).toContain(stray);
     }
   });
@@ -209,5 +210,70 @@ describe("the exact import check on a built tree", () => {
     expect(one("host", `__require("node-datachannel");`.replace("__require", "import.meta.require"), { target: "linux-arm64", natives: [{ file: "host/natives/node_datachannel.node", package: "node-datachannel", target: "linux-x64" }] }))
       .toEqual(["host/natives/node_datachannel.node: a native addon for linux-x64, not linux-arm64", "host/index.js: host code imports node-datachannel, which nothing in the shipped tree provides"]);
     expect(builtPluginImportProblems([], tree, { natives: [{ file: "host/natives/gone.node", package: "x", target: "linux-x64" }] })).toEqual(["host/natives/gone.node: a native addon the build reported isn't in the shipped tree"]);
+  });
+});
+
+describe("the bundled plugins, built for shipping (lane B's buildPluginForShipping)", () => {
+  /** A stand-in builder: copies the files `include` lets through, reporting them, a host module per `.js`, and a
+   *  native for `natives`. */
+  const fakeBuild = (calls: Array<{ folder: string; target: string; out: string; seen: string[] }>, natives: Record<string, string> = {}): PluginBuilder =>
+    async (folder, o) => {
+      const seen: string[] = [];
+      const walk = (rel: string): void => {
+        for (const n of require("node:fs").readdirSync(join(folder, rel))) {
+          const r = rel === "" ? n : `${rel}/${n}`;
+          if (require("node:fs").statSync(join(folder, r)).isDirectory()) walk(r);
+          else if (o.include(r)) seen.push(r);
+        }
+      };
+      walk("");
+      calls.push({ folder, target: o.target, out: o.out, seen: [...seen].sort() });
+      for (const f of seen) { mkdirSync(join(o.out, f, ".."), { recursive: true }); writeFileSync(join(o.out, f), readFileSync(join(folder, f))); }
+      const files = [...seen];
+      const extra = natives[folder.split("/").at(-1)!];
+      if (extra !== undefined) { mkdirSync(join(o.out, extra, ".."), { recursive: true }); writeFileSync(join(o.out, extra), "native"); files.push(extra); }
+      return {
+        dir: o.out, files: files.sort(),
+        modules: seen.filter((f) => f.endsWith(".js")).map((f) => ({ file: f, kind: "host" as const, source: readFileSync(join(folder, f), "utf8") })),
+        natives: extra === undefined ? [] : [{ file: extra, package: "node-datachannel", target: o.target }],
+      };
+    };
+
+  test("each top-level plugin is built from its committed files only, for the target, and the paths come back as <id>/…", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/host.js": "import x from \"node-datachannel\";\nexport default x;\n", "plugins/alpha/clover.json": "{}", "plugins/alpha/tab/tsconfig.json": "{}" });
+    writeFileSync(join(dir, ".gitignore"), "");
+    const calls: Array<{ folder: string; target: string; out: string; seen: string[] }> = [];
+    const dest = join(dir, "out", "plugins");
+    const built = await buildBundledPlugins(dir, dest, "linux-x64", { build: fakeBuild(calls, { clover: "node_modules/node-datachannel/package.json" }) });
+    expect(calls.map((c) => [c.folder.split("/").slice(-2).join("/"), c.target, c.out === join(dest, c.folder.split("/").at(-1)!)])).toEqual([["plugins/alpha", "linux-x64", true], ["plugins/clover", "linux-x64", true]]);
+    // The staging filter applies to the source: the committed tsconfig is never handed to the build.
+    expect(calls[0]!.seen).toEqual(["clover.json"]);
+    expect(built.files).toEqual(["alpha/clover.json", "clover/clover.json", "clover/host.js", "clover/node_modules/node-datachannel/package.json"]);
+    expect(built.modules.map((m) => m.file)).toEqual(["clover/host.js"]);
+    expect(built.natives).toEqual([{ file: "clover/node_modules/node-datachannel/package.json", package: "node-datachannel", target: "linux-x64" }]);
+  });
+
+  test("an uncommitted file is never handed to the build: a dirty plugins/ is refused before any build", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}" });
+    writeFileSync(join(dir, "plugins", "clover", "extra.js"), "untracked");
+    const calls: Array<{ folder: string; target: string; out: string; seen: string[] }> = [];
+    await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild(calls) })).rejects.toThrow("uncommitted changes");
+    expect(calls).toEqual([]);
+  });
+
+  test("the release's checks run on the built tree: an import nothing ships fails the build, and the stage is removed", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/host.js": "import x from \"left-pad\";\nexport default x;\n" });
+    const dest = join(dir, "out", "plugins");
+    await expect(buildBundledPlugins(dir, dest, "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("host code imports left-pad, which nothing in the shipped tree provides");
+    expect(existsSync(dest)).toBe(false);
+    // A native shipped for another target than the one built for is refused too.
+    const other: PluginBuilder = async (folder, o) => ({ ...(await fakeBuild([], { clover: "node_modules/n/x.node" })(folder, o)), natives: [{ file: "node_modules/n/x.node", package: "n", target: "windows-x64" }] });
+    const dir2 = repo({ "plugins/clover/clover.json": "{}" });
+    await expect(buildBundledPlugins(dir2, join(dir2, "out", "plugins"), "darwin-arm64", { build: other })).rejects.toThrow("a native addon for windows-x64, not darwin-arm64");
+  });
+
+  test("a package.json naming a dependency nothing ships fails the build", async () => {
+    const dir = repo({ "plugins/clover/clover.json": "{}", "plugins/clover/package.json": "{\"dependencies\":{\"left-pad\":\"1\"}}" });
+    await expect(buildBundledPlugins(dir, join(dir, "out", "plugins"), "darwin-arm64", { build: fakeBuild([]) })).rejects.toThrow("clover: left-pad: a dependency nothing ships");
   });
 });
