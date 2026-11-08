@@ -10,8 +10,9 @@
 // It is found from the daemon's own binary, never from the environment: a compiled daemon at
 // `<resources>/daemon/clover-core` has `<resources>` as its resources folder, and the install around it is the `.app`
 // bundle on macOS (`<X>.app/Contents/Resources`) and `<resources>`'s parent elsewhere. Both spellings are kept: the
-// binary's path as the process was started (a `Link.app` that links to `Real.app` is how a command may name it) and
-// with its links resolved. A daemon run from source, or a compiled one anywhere else (a server's `<home>/bin`, which is
+// binary's path as the process was started (`process.argv0` when absolute: a compiled Bun's `process.execPath` is
+// already resolved, so a `Link.app` that links to `Real.app`, how a command may name it, shows only there) and with its
+// links resolved. A daemon run from source, or a compiled one anywhere else (a server's `<home>/bin`, which is
 // fenced on its own), has none; an install folder that is a filesystem root, or holds the user's home, is never taken
 // (the resources folder alone is, then).
 import { realpathSync } from "node:fs";
@@ -55,17 +56,19 @@ export function appResourcesDirFor(
   try { return resourcesOf(realpath(execPath), platform); } catch { return undefined; }
 }
 
-/** The app's install folders for the daemon at `execPath`: the install around it as started and with its links
- *  resolved (one entry when they're the same), or none. */
+/** The app's install folders for the daemon at `execPath`: the install around it as started (`argv0`, when absolute:
+ *  a compiled Bun's `process.execPath` is already resolved, so a `Link.app` that links to `Real.app` shows only there),
+ *  as `execPath` names it, and with its links resolved (one entry for the same folder), or none. */
 export function appInstallDirsFor(
   execPath: string, compiled: boolean, platform: NodeJS.Platform = process.platform, realpath: (p: string) => string = realpathSync,
-  userHome: string = homedir(),
+  userHome: string = homedir(), argv0?: string,
 ): string[] {
   if (!compiled) return [];
+  const path = platform === "win32" ? win32 : posix;
   let real: string | undefined;
   try { real = realpath(execPath); } catch { real = undefined; }
   const out: string[] = [];
-  for (const binary of [execPath, real]) {
+  for (const binary of [argv0 !== undefined && path.isAbsolute(argv0) ? path.normalize(argv0) : undefined, execPath, real]) {
     if (binary === undefined) continue;
     const resources = resourcesOf(binary, platform);
     if (resources === undefined) continue;
@@ -80,7 +83,7 @@ let current: readonly string[] | undefined;
 
 /** The install folders the fences hold: this daemon's own, found once. */
 export function appInstallDirs(): readonly string[] {
-  if (current === undefined) current = appInstallDirsFor(process.execPath, isCompiledBinary());
+  if (current === undefined) current = appInstallDirsFor(process.execPath, isCompiledBinary(), process.platform, realpathSync, homedir(), process.argv0);
   return current;
 }
 

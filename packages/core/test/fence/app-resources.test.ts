@@ -64,6 +64,36 @@ describe("the install around it", () => {
   });
 });
 
+describe("as started: argv0 (#306's check 2)", () => {
+  test("an absolute argv0 adds its spelling; a relative one, or one outside an install, adds nothing", () => {
+    const real = (p: string) => p.replace("/Applications/Link.app/", "/Applications/Real.app/");
+    const resolved = "/Applications/Real.app/Contents/Resources/daemon/clover-core";
+    expect(appInstallDirsFor(resolved, true, "darwin", real, "/Users/x", "/Applications/Link.app/Contents/Resources/daemon/clover-core"))
+      .toEqual(["/Applications/Link.app", "/Applications/Real.app"]);
+    expect(appInstallDirsFor(resolved, true, "darwin", real, "/Users/x", "./Link.app/Contents/Resources/daemon/clover-core")).toEqual(["/Applications/Real.app"]);
+    expect(appInstallDirsFor(resolved, true, "darwin", real, "/Users/x", "/usr/local/bin/clover-core")).toEqual(["/Applications/Real.app"]);
+    // Its root and home refusals hold for argv0's spelling too.
+    expect(appInstallDirsFor(resolved, true, "darwin", real, "/Users/x", "/Users/x/Resources/daemon/clover-core")).toEqual(["/Users/x/Resources", "/Applications/Real.app"]);
+    expect(appInstallDirsFor("C:\\Program Files\\Clover\\resources\\daemon\\clover-core.exe", true, "win32", (p) => p, "C:\\Users\\x", "C:\\Clover-link\\resources\\daemon\\clover-core.exe"))
+      .toEqual(["C:\\Clover-link", "C:\\Program Files\\Clover"]);
+  });
+
+  test.skipIf(process.platform === "win32")("a compiled daemon started through a linked .app: execPath is resolved, argv0 keeps the link's spelling", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-argv0-")));
+    const entry = join(root, "probe.ts");
+    writeFileSync(entry, `import { realpathSync } from "node:fs";\nimport { appInstallDirsFor } from ${JSON.stringify(join(import.meta.dir, "../../src/platform/app-resources"))};\nconsole.log(JSON.stringify({ execPath: process.execPath, dirs: appInstallDirsFor(process.execPath, true, process.platform, realpathSync, "/nonexistent-home", process.argv0) }));\n`);
+    const bin = join(root, "Real.app", "Contents", "Resources", "daemon", "clover-core");
+    const built = Bun.spawnSync([process.execPath, "build", "--compile", "--no-macros", entry, "--outfile", bin], { stderr: "pipe" });
+    expect(built.exitCode, new TextDecoder().decode(built.stderr)).toBe(0);
+    symlinkSync(join(root, "Real.app"), join(root, "Link.app"));
+    const run = Bun.spawnSync([join(root, "Link.app", "Contents", "Resources", "daemon", "clover-core")], { stdout: "pipe", stderr: "pipe" });
+    const got = JSON.parse(new TextDecoder().decode(run.stdout)) as { execPath: string; dirs: string[] };
+    expect(got.execPath).toBe(bin); // Bun resolved it: the link's spelling is gone from execPath
+    const expected = process.platform === "darwin" ? [join(root, "Link.app"), join(root, "Real.app")] : [join(root, "Link.app", "Contents"), join(root, "Real.app", "Contents")];
+    expect(got.dirs).toEqual(expected);
+  }, 120_000);
+});
+
 describe("the install is fenced like runtimes", () => {
   test("the whole bundle: the sandbox, the write tools, their deny rules and the escape floor on any mention", () => {
     restore = setAppInstallDirs([A]);
