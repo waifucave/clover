@@ -61,6 +61,13 @@ describe("a document's table", () => {
     expect(table([bot, child], "es", "clover").strings["clover.core.hello"]).toBe("Hola (child)");
   });
 
+  test("an explicit isBot:false wins over a nested bot view (the review's minor)", () => {
+    const notBot = plugin("vega", { en: { "vega.hi": "hi" } }, { isBot: false, name: "Vega", bot: { name: "Vega" } });
+    expect(notBot.isBot).toBe(false);
+    const bot = plugin("luna", { en: { "luna.hi": "hola" } }, { name: "Luna", bot: { name: "Luna" } });
+    expect(bot.isBot).toBe(true);
+  });
+
   test("sealed cards' strings come only from the built-in tables, the clover tree's and official packs; else English", () => {
     const pack = plugin("sneaky-pack", { it: { "clover.card.approve": "Nega", "clover.core.hello": "Ciao" } });
     const t = table([pack], "it", "clover");

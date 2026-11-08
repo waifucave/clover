@@ -20,7 +20,7 @@ import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost 
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
-import { cliLauncher, devDaemonLauncher, locateDaemonBinary } from "./pair/login";
+import { cliLauncher, devDaemonHomeAllowed, devDaemonLauncher, findRepoRoot, locateDaemonBinary } from "./pair/login";
 import { Pair, type PairState } from "./pair/pair";
 import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
@@ -363,9 +363,12 @@ async function showFallbackCard(cardId: string): Promise<void> {
 
 function makePair(): Pair {
   const binary = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
-  // No binary and no daemon: an unpackaged dev run starts its own dev daemon as its child (Gap A) instead of
-  // telling the person to start it by hand. The checkout root is three levels above the built main process.
-  const devRoot = join(here, "..", "..", "..");
+  // No binary and no daemon: a dev-profile, unpackaged run on a dev home starts its own dev daemon as
+  // its child (Gap A) instead of telling the person to start it by hand. The checkout is found by
+  // walking up from the built main process (B1: a fixed depth lands in `<root>/apps`); the dist home
+  // and Winter's homes are refused here, not only in the dev script (S3); other profiles never offer it.
+  const devRoot = binary === undefined ? findRepoRoot(here) : undefined;
+  const devAllowed = !app.isPackaged && identity.profile === "dev" && devDaemonHomeAllowed(home);
   const p = new Pair({
     endpoint: daemonEndpoint(home),
     hello: () => {
@@ -374,7 +377,7 @@ function makePair(): Pair {
     },
     ...(binary !== undefined
       ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) }
-      : !app.isPackaged ? { launcher: devDaemonLauncher({ root: devRoot, home, log }) } : {}),
+      : devRoot !== undefined && devAllowed ? { launcher: devDaemonLauncher({ root: devRoot, home, log }) } : {}),
     // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloverHelloParams } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
-import { parseAutostartStatus, devDaemonLauncher, type DaemonLauncher, type DevChild } from "../src/main/pair/login";
+import { parseAutostartStatus, devDaemonHomeAllowed, devDaemonLauncher, findRepoRoot, type DaemonLauncher, type DevChild } from "../src/main/pair/login";
 import { Pair, daemonProof, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
@@ -393,25 +393,36 @@ describe("the dev daemon as the app's own child (Gap A: no more starting it by h
     homes.push(home);
     const lines: string[] = [];
     const spawned: { command: string; args: readonly string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
+    const listeners: { exit: Array<() => void>; error: Array<(err?: Error) => void> }[] = [];
+    const kills: (NodeJS.Signals | "tree")[] = [];
     let alive = false;
-    let killed: NodeJS.Signals | undefined;
     const spawn = (command: string, args: readonly string[], opts: { cwd: string; env: NodeJS.ProcessEnv }): DevChild => {
       spawned.push({ command, args, cwd: opts.cwd, env: opts.env });
       alive = true;
+      const l: { exit: Array<() => void>; error: Array<(err?: Error) => void> } = { exit: [], error: [] };
+      listeners.push(l);
       return {
         get pid() { return 4242; },
         get exitCode() { return alive ? null : 1; },
         get signalCode() { return null; },
         kill: (signal?: NodeJS.Signals) => {
-          killed = signal ?? "SIGTERM";
+          kills.push(signal ?? "SIGTERM");
           alive = false;
           return true;
         },
-        on: () => {},
+        on: (event: "exit" | "error", listener: (err?: Error) => void) => {
+          if (event === "exit") l.exit.push(listener as () => void);
+          else l.error.push(listener);
+        },
       };
     };
-    const reg = devDaemonLauncher({ root, home, log: (l) => lines.push(l), spawn });
-    return { root, home, lines, spawned, reg, killed: () => killed };
+    const trees: number[] = [];
+    const reg = (extra: { platform?: NodeJS.Platform; bun?: string } = {}) => devDaemonLauncher({
+      root, home, log: (l) => lines.push(l), spawn,
+      killTree: (pid) => { kills.push("tree"); trees.push(pid); },
+      ...extra,
+    });
+    return { root, home, lines, spawned, listeners, kills, trees, reg: reg(), makeReg: reg };
   }
 
   function withBinary(root: string): void {
@@ -420,14 +431,15 @@ describe("the dev daemon as the app's own child (Gap A: no more starting it by h
     writeFileSync(join(dir, process.platform === "win32" ? "clover-core.exe" : "clover-core"), "stand-in");
   }
 
-  test("starts bun run dev:daemon in the checkout, on the dev home and profile", async () => {
+  test("starts pinned-bun run dev:daemon in the checkout, on the dev home and profile", async () => {
     const { root, home, reg, spawned } = setup();
     withBinary(root);
     expect(await reg.status()).toBeUndefined();
     const r = await reg.start();
     expect(r.ok).toBe(true);
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]!.command).toBe("bun");
+    // Never `bun` from PATH: the checkout's pinned Bun.
+    expect(spawned[0]!.command).toBe(join(root, "scripts", "pinned-bun"));
     expect([...spawned[0]!.args]).toEqual(["run", "dev:daemon", "--no-build"]);
     expect(spawned[0]!.cwd).toBe(root);
     expect(spawned[0]!.env.CLOVER_HOME).toBe(home);
@@ -436,6 +448,56 @@ describe("the dev daemon as the app's own child (Gap A: no more starting it by h
     // Already running: no second child.
     expect((await reg.start()).ok).toBe(true);
     expect(spawned).toHaveLength(1);
+  });
+
+  test("findRepoRoot walks up to the checkout from the built main process (B1)", () => {
+    const { root } = setup();
+    // `here` is `<root>/apps/desktop/out/main`: a fixed three-level climb lands in `<root>/apps`.
+    expect(findRepoRoot(join(root, "apps", "desktop", "out", "main"))).toBe(root);
+    expect(findRepoRoot(root)).toBe(root);
+    expect(findRepoRoot(join(tmpdir(), "clover-dev-root-nonexistent"))).toBeUndefined();
+  });
+
+  test("the dev home refuses the dist default and Winter's homes (S3)", () => {
+    const user = mkdtempSync(join(tmpdir(), "clover-dev-user-"));
+    homes.push(user);
+    expect(devDaemonHomeAllowed(join(user, ".clover"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(user, ".winter"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(user, ".winter", "wt", "e2"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(mkdtempSync(join(tmpdir(), "clover-dev-ok-")), user)).toBe(true);
+  });
+
+  test("a spawn failure is logged, never thrown (no Electron error dialog, S2)", async () => {
+    const { root, reg, listeners, lines, spawned } = setup();
+    withBinary(root);
+    await reg.start();
+    expect(spawned).toHaveLength(1);
+    listeners[0]!.error.forEach((l) => l(new Error("spawn ENOENT")));
+    expect(await reg.status()).toBeUndefined();
+    expect(lines.join("\n")).toContain("exited at once");
+  });
+
+  test("a child that exits at once is logged once, and after 3 exits nothing starts", async () => {
+    const { root, reg, listeners, lines, spawned } = setup();
+    withBinary(root);
+    for (let i = 0; i < 3; i++) {
+      expect((await reg.start()).ok).toBe(true);
+      listeners[i]!.exit.forEach((l) => l());
+    }
+    expect(spawned).toHaveLength(3);
+    expect(lines.filter((l) => l.includes("exited at once"))).toHaveLength(1);
+    expect((await reg.start()).ok).toBe(false);
+    expect(spawned).toHaveLength(3);
+  });
+
+  test("stopping on Windows kills the tree; elsewhere one process (S4)", async () => {
+    const s = setup();
+    withBinary(s.root);
+    const win = s.makeReg({ platform: "win32" });
+    await win.start();
+    win.stop?.();
+    expect(s.kills).toEqual(["tree"]);
+    expect(s.trees).toEqual([4242]);
   });
 
   test("without a built binary it starts nothing and says to build it once", async () => {
@@ -447,11 +509,11 @@ describe("the dev daemon as the app's own child (Gap A: no more starting it by h
   });
 
   test("stopping the pair stops the child", async () => {
-    const { root, reg, killed } = setup();
+    const { root, reg, kills } = setup();
     withBinary(root);
     await reg.start();
     reg.stop?.();
-    expect(killed()).toBe("SIGTERM");
+    expect(kills).toEqual(["SIGTERM"]);
     expect(await reg.status()).toBeUndefined();
   });
 });

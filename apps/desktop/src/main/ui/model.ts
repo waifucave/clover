@@ -195,7 +195,7 @@ function fromView(v: Record<string, unknown>): UiPluginExtras {
   const botName = typeof bot?.name === "string" ? bot.name : undefined;
   const botTheme = typeof bot?.theme === "string" ? bot.theme : typeof v.botTheme === "string" ? (v.botTheme as string) : undefined;
   const botLayout = typeof bot?.layout === "string" ? bot.layout : typeof v.botLayout === "string" ? (v.botLayout as string) : undefined;
-  const isBot = bot !== undefined || v.isBot === true;
+  const isBot = v.isBot === false ? false : bot !== undefined || v.isBot === true;
   return {
     ...(source !== undefined ? { source: source as UiSource } : {}),
     ...(typeof v.enabledAt === "number" ? { enabledAt: v.enabledAt } : {}),

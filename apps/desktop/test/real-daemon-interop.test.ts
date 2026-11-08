@@ -4,8 +4,11 @@
 // has a green gate in the meantime.
 //
 // Safety (the #320 blocker): the daemon boots in this process via `startDaemon` on a temp home with a
-// FILE secret store (`secrets.json` under that home) and no agent provider — the same pattern as
-// packages/core/test/daemon-clover-pair-boot.test.ts. It asserts the pair has NO launcher (a test
+// FILE secret store (`secrets.json` under that home), no agent provider, and a FORCED null launcher
+// (`pair: { launcher: null }`, the test-only startDaemon seam) — the same pattern as
+// packages/core/test/daemon-clover-pair-boot.test.ts. Belt and braces: the keychain isolation the core
+// preload uses (`CLOVER_KEYCHAIN_SERVICE`, `WINTER_TEST_KEYCHAIN`), so even a store that forgot the file
+// lands in an isolated/memory keychain, never the login one. It asserts the pair has NO launcher (a test
 // daemon runs alone) and touches no real home, keychain, or network. Always runs, in CI too.
 //
 // Each `-32601` expectation below names its owning lane; when that lane serves the method on the Clover
@@ -19,18 +22,26 @@ import { FileSecretStore, startDaemon, type RunningDaemon } from "@waifucave/clo
 
 const daemons: RunningDaemon[] = [];
 const homes: string[] = [];
+const savedEnv = { CLOVER_KEYCHAIN_SERVICE: process.env.CLOVER_KEYCHAIN_SERVICE, WINTER_TEST_KEYCHAIN: process.env.WINTER_TEST_KEYCHAIN };
 afterEach(async () => {
   for (const d of daemons.splice(0)) await Promise.resolve(d.stop()).catch(() => {});
   for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
+  if (savedEnv.CLOVER_KEYCHAIN_SERVICE === undefined) delete process.env.CLOVER_KEYCHAIN_SERVICE;
+  else process.env.CLOVER_KEYCHAIN_SERVICE = savedEnv.CLOVER_KEYCHAIN_SERVICE;
+  if (savedEnv.WINTER_TEST_KEYCHAIN === undefined) delete process.env.WINTER_TEST_KEYCHAIN;
+  else process.env.WINTER_TEST_KEYCHAIN = savedEnv.WINTER_TEST_KEYCHAIN;
 });
 
-/** One persistent connection: calls are multiplexed by id (a fresh connection proves, a hello'd one calls). */
+/** One persistent connection: calls are multiplexed by id (a fresh connection proves, a hello'd one calls).
+ *  Messages that carry a `method` are the daemon's calls, never answers: `app.ping` is answered at once
+ *  (an unanswered heartbeat safe-modes the connection), and the rest are skipped, never id-matched. */
 function makeClient(sock: string): Promise<{ call: (method: string, params?: unknown) => Promise<unknown>; close: () => void }> {
   return new Promise((resolve, reject) => {
     const s: Socket = connect(sock);
     let buf = "";
     let nextId = 1;
     const waiting = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error & { code?: number }) => void; timer: ReturnType<typeof setTimeout> }>();
+    const answer = (id: number, result: unknown) => s.write(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`);
     s.on("connect", () => resolve({
       close: () => s.destroy(),
       call: (method: string, params: unknown = {}) => new Promise<unknown>((res, rej) => {
@@ -48,7 +59,11 @@ function makeClient(sock: string): Promise<{ call: (method: string, params?: unk
         buf = buf.slice(idx + 1);
         if (line === "") continue;
         try {
-          const msg = JSON.parse(line) as { id?: number; result?: unknown; error?: { code: number; message: string } };
+          const msg = JSON.parse(line) as { id?: number; method?: string; result?: unknown; error?: { code: number; message: string } };
+          if (typeof msg.method === "string") {
+            if (msg.method === "app.ping" && typeof msg.id === "number") answer(msg.id, { ok: true });
+            continue;
+          }
           if (typeof msg.id !== "number") continue;
           const w = waiting.get(msg.id);
           if (!w) continue;
@@ -77,8 +92,12 @@ describe("the app against a real daemon core, booted in-process (Gap B interop)"
   test("hello, prove, pair.status and events.subscribe work; lanes' methods report not-served-yet", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-realinterop-"));
     homes.push(home);
-    // File secrets, no provider, no launcher: this daemon can reach neither the login keychain nor the machine.
-    const daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null });
+    // File secrets, no provider, a forced null launcher: this daemon can reach neither the login
+    // keychain nor the machine. The keychain env pins the isolation even a store built without the
+    // file would get (the core preload's own values).
+    process.env.CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core.test-isolated";
+    process.env.WINTER_TEST_KEYCHAIN = "memory";
+    const daemon = await startDaemon({ home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: { launcher: null } });
     daemons.push(daemon);
     expect(daemon.pair?.launcher, "a test daemon runs alone: no launcher").toBeNull();
     const token = readFileSync(join(home, "run", "app.token"), "utf8").trim();
