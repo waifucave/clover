@@ -23,10 +23,12 @@ import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-regist
 /** What a handler gets: the plugin (its record as the core holds it), where the call came from, and whom it acts for. */
 export interface ApiCallContext {
   pluginId: string;
-  process: HostProcess;
+  process: HostProcess | "ui";
   caller: Caller;
   record: PluginRecord;
   path: ApiCallPath;
+  /** A component's call: the session it shows. */
+  session?: string;
 }
 
 export type ApiHandler = (ctx: ApiCallContext, args: readonly unknown[]) => unknown;
@@ -61,7 +63,7 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     }
     const fn = handlers[path];
     if (fn === undefined) throw new ContractError("refused", `${path} is not served on this computer`, { call: path });
-    return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path }, call.args);
+    return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}) }, call.args);
   };
 }
 
@@ -87,9 +89,10 @@ function targetOf(path: ApiCallPath, args: readonly unknown[], commandOwner?: (n
   return undefined;
 }
 
-function refusal(path: ApiCallPath, process: HostProcess, target?: { plugin?: string; host?: string }): string {
+function refusal(path: ApiCallPath, process: HostProcess | "ui", target?: { plugin?: string; host?: string }): string {
   const info: ApiCallInfo = API_CALLS[path];
   if (info.where === "ui") return `${path} exists only in components`;
+  if (process === "ui" && info.where !== "both") return `${path} exists only in a plugin's host code`;
   if (info.where === "own" && process !== "own") return `${path} exists only in a process of the plugin's own`;
   if (info.where === "clover" && process !== "clover") return `${path} exists only in the clover plugin host`;
   const capability = info.capability === "call:*" ? `call:${target?.plugin ?? "<plugin>"}` : info.capability === "network:*" ? `network:${target?.host ?? "<host>"}` : info.capability;

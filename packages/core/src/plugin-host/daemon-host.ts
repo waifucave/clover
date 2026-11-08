@@ -19,7 +19,7 @@ import { commandOwner, commandsApi } from "../commands/views";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
-import { guardApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
+import { guardApiRouter, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore } from "../contracts/secret-store";
 import { confirmApi } from "./api/confirm";
@@ -44,6 +44,8 @@ export interface DaemonPluginHost {
   readonly pluginSecrets: Pick<SecretStore, "get">;
   /** The user's side of plugin settings (`plugin.settings.get`/`set`). */
   readonly settings: PluginSettings;
+  /** The capability gate without the process check, for a component's call (`plugin.layer.api`, process `ui`). */
+  readonly gate: ApiRouter;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -61,6 +63,8 @@ export interface StartPluginHostOptions {
   assetUrl?: (pluginId: string, path: string) => string;
   /** The daemon's log, for a process's own output. */
   log?: (line: string) => void;
+  /** Sends a core event to the app (a host half's `ui.send` becomes `plugin_ui_message`). */
+  emit?: (event: { type: string; [key: string]: unknown }) => void;
   clock?: Clock;
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
@@ -163,12 +167,28 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     settingsApi(settings),
     commandsApi(o.registry),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
+    {
+      // A component runs one of its plugin's host handlers, as the user, for the session it shows.
+      "host.call": async (ctx, args) => {
+        const a = args[0];
+        if (a === null || typeof a !== "object" || typeof (a as { handler?: unknown }).handler !== "string") throw new ContractError("invalid", "host.call takes { handler, args }");
+        const { handler, args: callArgs } = a as { handler: string; args?: unknown };
+        return host.invoke({ pluginId: ctx.pluginId, handler, args: callArgs ?? null, caller: ctx.caller, ...(ctx.session !== undefined ? { session: ctx.session } : {}) });
+      },
+      // A host half's message to its components, relayed by the app to their `host.on`.
+      "ui.send": (ctx, args) => {
+        const event = args[0];
+        if (typeof event !== "string" || event === "" || event.length > 128) throw new ContractError("invalid", "ui.send takes an event name");
+        o.emit?.({ type: "plugin_ui_message", pluginId: ctx.pluginId, event, value: args[1] ?? null });
+      },
+    },
   ];
   const recordOf = (id: string) => {
     const r = o.registry.get(id);
     return r === undefined ? undefined : installRecordOf(r);
   };
-  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name) }), recordOf));
+  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name) });
+  host.serveApi(guardApiRouter(gate, recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its
   // calls failing, and starts fresh on its next use; one running from a tree that has since changed reloads.
@@ -191,6 +211,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     registry: o.registry,
     pluginSecrets: { get: (ref) => o.secrets.get(ref) },
     settings,
+    gate,
     async close() {
       if (closed) return;
       closed = true;

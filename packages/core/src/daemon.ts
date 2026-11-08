@@ -45,6 +45,7 @@ import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, 
 import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
+import { pluginUi } from "./plugin-host/ui";
 import { pluginSettingsMethods } from "./plugin-host/api/settings";
 import { commandListMethods } from "./commands/views";
 import { GlossaryIndex, glossaryMethods } from "./glossary";
@@ -3285,6 +3286,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     endpoint: dirs.socketPath,
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
+    // B: a plugin's granted capabilities, for the core events that need one (its OK's, from the registry).
+    pluginCapabilities: (pluginId) => partsRegistry?.registry.get(pluginId)?.granted,
   });
   const server: IpcServer = startIpcServer({
     cloverConnections: cloverServer,
@@ -3496,6 +3499,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
   let pluginHost: DaemonPluginHost | undefined;
   let glossary: GlossaryIndex | undefined;
+  let pluginUiParts: ReturnType<typeof pluginUi> | undefined;
   let partsStopping = false;
   // B-M2: the plugin registry and the plugin host start once the store answers, whatever the links do (a Mac with no
   // sidecar, a test daemon without links): plugins don't wait on the device links. The bot side takes this registry.
@@ -3539,14 +3543,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     partsRegistry = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
-      log: (line) => console.error(line),
+      log: (line) => console.error(line), emit: (event) => void cloverServer?.coreEvent(event),
     })))(opened.registry);
+    // The app's side of plugins with UI: `plugin.ui`, `plugin.layer.api`, and the nudge when a plugin's UI changes.
+    pluginUiParts = pluginUi({ registry: opened.registry, router: pluginHost.gate, emit: (event) => void cloverServer?.coreEvent(event) });
     glossary = new GlossaryIndex({ registry: opened.registry });
     Object.assign(cloverLaneHandlers, laneMethodHandlers({
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
+      ...pluginUiParts.methods,
     }));
     return opened.registry;
   };
@@ -3584,6 +3591,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     await parts?.close();
     glossary?.close();
     glossary = undefined;
+    pluginUiParts?.close();
+    pluginUiParts = undefined;
     const host = pluginHost;
     pluginHost = undefined;
     await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });

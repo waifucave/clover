@@ -10,6 +10,7 @@ import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { startPluginHost } from "../../plugin-host/daemon-host";
+import { uiPluginViews } from "../../plugin-host/ui";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBundledDir } from "../bundled-stage";
 import { openPluginRegistry } from "../open";
 
@@ -74,6 +75,15 @@ describe("the dev stage from the repository's plugins/", () => {
       // plugin API yet. Anything else that fails to start fails this test; fixing that one updates it.
       expect(failed.map((f) => f.split(":")[0])).toEqual(["clover/companion-web"]);
       expect(failed[0]).toContain("pairs.list isn't a call of the plugin API");
+
+      // What the app mounts from (plugin.ui): every clover child with UI in the `clover` layer, its files the verified
+      // copy's, its module a built .js, its tree hash real.
+      const views = uiPluginViews(opened.registry);
+      expect(views.length).toBeGreaterThan(10);
+      const off = views.filter((v) => !v.assetBase.startsWith(staged.dir!) || (v.clientEntry !== undefined && !v.clientEntry.endsWith(".js"))
+        || (v.pluginId.startsWith("clover/") && v.layer !== "clover") || !/^sha256:[0-9a-f]{64}$/.test(v.treeHash)).map((v) => v.pluginId);
+      expect(off).toEqual([]);
+      expect(views.map((v) => v.pluginId)).toContain("alpha");
     } finally {
       await ph.close();
       opened.close();

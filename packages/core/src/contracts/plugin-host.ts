@@ -191,12 +191,15 @@ export interface McpChannel {
  *  (`clampKeyedIdleTimeoutMs`). */
 export type ApiRouter = (call: {
   pluginId: string;
-  process: HostProcess;
+  /** The process the host half runs in, or `ui` for a component's call, which the app makes for it. */
+  process: HostProcess | "ui";
   path: string;
   args: unknown[];
   /** Whom the call acts for: the caller of the core's call it was made in, which the core looked up by that call's id
    *  (R7), or the plugin itself; never anything the plugin said. */
   caller: Caller;
+  /** A component's call (`plugin.layer.api`): the session the component shows, for calls scoped to it. */
+  session?: string;
 }) => Promise<unknown>;
 
 export interface PluginHost {

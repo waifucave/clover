@@ -8,7 +8,7 @@ import { z } from "zod";
 import { utf16 } from "./strings";
 import {
   AnyPluginId, BotId, Caller, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
-  Timestamp, TopPluginId, TreeHash,
+  SessionId, Timestamp, TopPluginId, TreeHash,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -182,6 +182,8 @@ export type PluginAuthView = z.infer<typeof PluginAuthView>;
  *  `css` and `networkHosts`; a view without them (an older daemon, a test's fake) means none of each. */
 export const UiPluginView = z.object({
   pluginId: AnyPluginId,
+  /** The manifest's name. */
+  name: Text,
   treeHash: TreeHash,
   /** Where it came from (§5.5 rule 5: a bundled entry yields to none). */
   source: PluginSource.optional(),
@@ -193,8 +195,9 @@ export const UiPluginView = z.object({
   css: z.array(utf16(4096, 1)).max(32).optional(),
   /** The hosts its `network:` capabilities declare, for the layer's CSP and `Connection-Allowlist`. */
   networkHosts: z.array(utf16(300, 1)).max(256).optional(),
-  /** For a bot's plugin: the bot's name and the theme file its tab wears. */
-  bot: z.object({ name: Text, theme: utf16(4096).optional() }).optional(),
+  /** For a bot's plugin: the bot's name, the theme its tab wears (one of `themes`) and the layout file its tab is
+   *  arranged by (a file in its folder). */
+  bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional() }).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
   layer: utf16(128),
   assetBase: utf16(2048),
@@ -434,6 +437,22 @@ export const PLUGINS_METHODS = {
     params: Empty, result: z.object({ plugins: z.array(UiPluginView) }),
     doc: "Every running plugin's UI, for the app's plugin runtime to mount in layers (§5.5).",
   }),
+  pluginLayerApi: defineMethod({
+    name: "plugin.layer.api", owner: "B", roles: ["app"],
+    params: z.object({
+      /** The plugin of the mount the app bound the calling component to, never anything the component said. */
+      pluginId: AnyPluginId,
+      /** A plugin API call a component may make (the SDK's `API_CALLS`, `where` "ui" or "both"): `host.call` runs one of
+       *  the plugin's host handlers, `args` being `[{ handler, args }]`. */
+      call: utf16(128, 1),
+      args: z.array(z.unknown()).max(64),
+      /** The bot whose tab the component is in, and the session it shows, for calls scoped to them. */
+      bot: BotId.optional(),
+      session: SessionId.optional(),
+    }),
+    result: z.object({ result: z.unknown() }),
+    doc: "A plugin component's plugin API call, which the app makes for it: as the user, through the core's capability gate.",
+  }),
   pointList: defineMethod({
     name: "point.list", owner: "B", roles: ["app", "cli"],
     params: Empty, result: z.object({ points: z.array(PointView) }),
@@ -608,6 +627,9 @@ export const PluginRemovedEvent = coreEvent("plugin_removed", { id: AnyPluginId 
 export const PluginUiChangedEvent = coreEvent("plugin_ui_changed", { pluginIds: z.array(AnyPluginId).max(1000) });
 export const CommandsChangedEvent = coreEvent("commands_changed", {});
 export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: utf16(4000) });
+/** A plugin's host half sent its components a message (`ui.send`): the app gives it to the components that listen
+ *  (`host.on(event)`). */
+export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
 export const DevFolderReloadedEvent = coreEvent("dev_folder_reloaded", {
   path: utf16(4096), pluginId: AnyPluginId.optional(), ok: z.boolean(), reason: utf16(2000).optional(),
 });
@@ -650,6 +672,11 @@ export const PLUGINS_EVENTS = {
     type: "plugin_log", owner: "B", roles: ["app"], schema: PluginLogEvent, transient: true,
     fixture: { type: "plugin_log", ts: 1781270000000, id: "luna", line: "connected to the tarot service" },
     doc: "A plugin's new log line, for Settings while it is open.",
+  }),
+  pluginUiMessage: defineEvent({
+    type: "plugin_ui_message", owner: "B", roles: ["app"], schema: PluginUiMessageEvent, transient: true,
+    fixture: { type: "plugin_ui_message", ts: 1781270000000, pluginId: "luna", event: "drawn", value: { card: "The Fool" } },
+    doc: "A plugin's host half sent its components a message (`ui.send`); the app relays it to their `host.on`.",
   }),
   devFolderReloaded: defineEvent({
     type: "dev_folder_reloaded", owner: "B", roles: ["app"], schema: DevFolderReloadedEvent,
