@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
 import { appShortcut, sealedInputAllowed } from "../src/main/shortcuts";
+import { islandCards } from "../src/layer/clover/cards";
+import type { CardMeta } from "@waifucave/clover-protocol";
 import { mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
@@ -151,6 +153,22 @@ describe("the app's shortcuts", () => {
     // Unpackaged alone isn't enough either: the smoke run is always headless.
     expect(sealedInputAllowed({ packaged: false, headless: false })).toBe(false);
     expect(sealedInputAllowed({ packaged: false, headless: true })).toBe(true);
+  });
+  test("the island's strip reads the pending cards' metas: elicitation draws as a link, the rest as approvals", () => {
+    expect(islandCards([])).toEqual([]);
+    const meta: CardMeta = {
+      id: "card_1", kind: "tool", computer: "Laptop", origin: "user", issuedAt: 7, expiresAt: null,
+      options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
+    };
+    expect(islandCards([meta])).toEqual([{
+      id: "card_1", kind: "approval", computer: "Laptop", issuedAt: 7,
+      options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
+    }]);
+    // A link request draws as a link; no computer and no options fall back to the island's own defaults.
+    const link: CardMeta = { ...meta, id: "card_2", kind: "elicitation", computer: null, options: [] };
+    expect(islandCards([link])).toEqual([
+      { id: "card_2", kind: "link", issuedAt: 7 },
+    ]);
   });
 });
 
