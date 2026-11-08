@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
@@ -97,6 +97,15 @@ describe("the macOS profile, as text", () => {
     expect(p).not.toContain('(regex #"^/U/[ -.0-~]');
   });
 
+  test("no naming rules for a fenced item's folder outside every writable root (#321's review)", () => {
+    const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, policy: {
+      allowWrite: ["/U/me"], denyWrite: ["/U/me/.clover", "/opt/homebrew/lib/node_modules/@openai/codex", "/U/me/Library/LaunchAgents"],
+      denyRead: ["/U/me/.clover"], closedDoors: [], blockedAddresses: [], network: "none" } });
+    expect(p).not.toContain("node_modules/@openai/[");
+    expect(p).not.toContain('(allow file-write* (regex #"^/opt/');
+    expect(p).toContain('(allow file-write* (regex #"^/U/me/Library/[ -.0-~]+(/|$)"))'); // inside the root: as before
+  });
+
   test("the caller's rules: its own folders read and write after the denies; the home stays denied otherwise", () => {
     const caller = callerPlaces("/U/me/.clover", "macos", { sessionId: "s1", memoryOf: "luna" });
     const p = macFenceProfile({ cloverHome: "/U/me/.clover", home: "/U/me", perUserTemp: null, caller, policy: {
@@ -125,6 +134,80 @@ describe("the macOS profile, as text", () => {
     expect(someoneElse).not.toContain("/U/me/\\.clover/bots/");
     expect(someoneElse).not.toContain("/U/me/\\.clover/scratch/");
     expect(someoneElse).not.toContain("/U/me/\\.clover/routines/");
+  });
+});
+
+darwinDescribe("macOS: everything a command starts ends with its run, before the git keys are looked at (#321's review)", () => {
+  // The process holder, built here from the agent runtime's own source (lane M ships it beside the core).
+  const holder = (() => {
+    let src: string;
+    try { src = join(dirname(Bun.resolveSync("@waifucave/clover-agent-runtime/package.json", import.meta.dir)), "native", "process-holder.c"); } catch { return undefined; }
+    if (!existsSync(src)) return undefined;
+    const out = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-holder-bin-"))), "clover-process-holder");
+    return Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0 ? out : undefined;
+  })();
+  const sleeping = (tag: string) => Bun.spawnSync(["/usr/bin/pgrep", "-f", `sleep 2\\.${tag}`]).exitCode === 0;
+
+  for (const mode of ["the recorded tree (no holder)", "the process holder"] as const) {
+    test(`a \`set -m\` job that sets core.hooksPath after the run: ended, and the key never lands (${mode})`, async () => {
+      if (mode === "the process holder") expect(holder).toBeDefined();
+      const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-setm-")));
+      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), project = join(home, "project");
+      for (const d of [clover, project, temp]) mkdirSync(d, { recursive: true });
+      expect(Bun.spawnSync(["git", "init", "-q", project]).exitCode).toBe(0);
+      const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp });
+      const spawner = fencedSpawner({ fence, processHolder: mode === "the process holder" ? holder! : null });
+      const tag = `${Date.now() % 100000}${Math.floor(Math.random() * 10)}`;
+      const started = Date.now();
+      const r = await spawner.run({
+        command: `set -m; (sleep 2.${tag}; git config core.hooksPath /tmp/y) > /dev/null 2>&1 & echo started`,
+        cwd: project, env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "s-setm", sessionKind: "coding" } },
+      });
+      expect(r.kind === "exited" && r.stdout).toBe("started\n");
+      expect(Date.now() - started).toBeLessThan(2_000); // the run didn't wait for the job: it ended it
+      expect(sleeping(tag)).toBe(false); // nothing left behind
+      await Bun.sleep(3_000); // past when the job would have written
+      expect(readFileSync(join(project, ".git", "config"), "utf8")).not.toContain("hooksPath");
+      expect(sleeping(tag)).toBe(false);
+    }, 30_000);
+  }
+
+  test("the second line: a key set after a run ended is reverted when the turn or session ends", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-recheck-")));
+    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), project = join(home, "project");
+    for (const d of [clover, project, temp]) mkdirSync(d, { recursive: true });
+    expect(Bun.spawnSync(["git", "init", "-q", project]).exitCode).toBe(0);
+    const spawner = fencedSpawner({ fence: new CloverFence({ os: "macos", home, cloverHome: clover, temp }), processHolder: null });
+    expect(ok(await spawner.run({ command: "true", cwd: project, env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "s-re", sessionKind: "coding" } } }))).toBe(true);
+    const config = join(project, ".git", "config");
+    const before = readFileSync(config, "utf8");
+    // Something that slipped past both (stood for by a write from here) sets a risky key, and an ordinary one.
+    writeFileSync(config, `${before}[core]\n\tfsmonitor = /tmp/evil\n[user]\n\temail = x@y.io\n`);
+    expect(spawner.recheck!("s-re")).toMatch(/core\.fsmonitor/);
+    const now = readFileSync(config, "utf8");
+    expect(now).not.toContain("fsmonitor");
+    expect(now).toContain("x@y.io");
+    expect(spawner.recheck!("s-re", { end: true })).toBeNull(); // nothing new
+    expect(spawner.recheck!("s-re")).toBeNull(); // forgotten
+    expect(spawner.recheck!("never-ran")).toBeNull();
+  }, 30_000);
+});
+
+darwinDescribe("a fenced item outside every writable root, on the real sandbox (#321's review)", () => {
+  test("a write beside it is refused, as everything outside the roots is", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-out-")));
+    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
+    const modules = join(root, "global", "lib", "node_modules"), install = join(modules, "@openai", "codex");
+    for (const d of [clover, join(home, "project"), temp, install]) mkdirSync(d, { recursive: true });
+    const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp, agentInstalls: [install] });
+    expect(fence.policy().denyWrite).toContain(install);
+    const spawner = fencedSpawner({ fence });
+    const run = (command: string) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } } });
+    for (const target of [join(modules, "@openai", "other.js"), join(modules, "evil.js"), join(install, "index.js")]) {
+      const r = await run(`echo x > '${target}'`);
+      expect([target, r.kind === "exited" && r.code !== 0, existsSync(target)]).toEqual([target, true, false]);
+    }
+    expect(ok(await run(`echo x > '${join(home, "project", "fine.txt")}'`))).toBe(true);
   });
 });
 
@@ -386,7 +469,7 @@ describe("the session's own repo", () => {
       writeFileSync(cfg, "[user]\n\tname = Luna\n[core]\n\thooksPath = /tmp/evil\n");
       const note = revertPlantedGitKeys(before);
       expect(note).toMatch(/core\.hookspath/);
-      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Luna\n[core]\n");
+      expect(readFileSync(cfg, "utf8")).toBe("[user]\n\tname = Luna\n"); // the emptied [core] goes too (#321's review)
       // No temp strays in the folder: git's lockfile is renamed over, never left behind.
       expect(readdirSync(root)).toEqual(["config"]);
       // An unchanged file is left alone (null note).

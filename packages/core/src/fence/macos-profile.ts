@@ -31,6 +31,9 @@ export interface MacProfileInput {
   readonly caller?: CallerPlaces;
 }
 
+/** The closed doors' programs, refused by path. Belt and braces only: what holds is `(deny default)` above them, which
+ *  gives the command no Mach services but the few listed, so it can't reach launchd to create a job or ask another
+ *  process (LaunchServices, Apple events) to start one, whichever program or copy it runs. */
 const DOOR_PATHS: Record<string, readonly string[]> = {
   open: ["/usr/bin/open"],
   launchctl: ["/bin/launchctl"],
@@ -64,11 +67,15 @@ export function macFenceProfile(input: MacProfileInput): string {
   // ASCII name stays allowed. Inside the Clover home there is no naming handling: the home deny above already refuses
   // every new name there, and a later allow must never open one (a bot's own folders come last, for their runner).
   // A naming folder that contains the home is skipped for the same reason: its allow must never reach inside the deny.
+  // Only a folder INSIDE a writable root gets naming rules (#321's review): outside every root nothing is writable to
+  // begin with, and an ASCII-name allow there would open it (a fenced agent install in a global `node_modules` would
+  // make the whole folder writable).
   const naming = new Set<string>();
   for (const d of policy.denyWrite) {
     if (!inside(d, input.cloverHome) && d !== input.cloverHome) {
       const parent = dirname(d);
-      if (!inside(parent, input.cloverHome) && !inside(input.cloverHome, parent) && !writable.some((w) => w === parent)) naming.add(parent);
+      if (!inside(parent, input.cloverHome) && !inside(input.cloverHome, parent) && !writable.some((w) => w === parent)
+        && writable.some((w) => inside(parent, w))) naming.add(parent);
     }
   }
   const doors = policy.closedDoors.flatMap((d) => (input.doorPaths ?? DOOR_PATHS)[d] ?? []);

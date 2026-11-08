@@ -354,3 +354,7 @@ export {
 } from "./bundled-plugins-dir";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
 export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";
+// C-M2 part 2: the fenced process, for INT's daemon fence (bots' Bash and hook commands under the one CloverFence).
+export { CloverFence } from "./fence/fence";
+export { fencedSpawner, type FencedProcessOptions } from "./fence/fenced-process";
+export { hookSpawner, FENCED_SPAWN_NOT_YET, RUN_AS_USER, type DescendantEnd, type FencedRun, type FencedRunResult, type FencedSpawner } from "./fence/spawn";

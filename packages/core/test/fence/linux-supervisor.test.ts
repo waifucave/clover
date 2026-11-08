@@ -323,6 +323,18 @@ describe("the git-config guard", () => {
     expect(revertWatchedGitChanges(before, [])).toBe(before);
   });
 
+  test("a section the revert empties goes with its header (#321's review); one with anything else left stays", () => {
+    const planted = "[core]\n\thooksPath = /tmp/y\n";
+    expect(revertWatchedGitChanges(planted, watchedGitChanges("", planted))).toBe("");
+    const before = "[user]\n\tname = Luna\n";
+    const after = `${before}[core]\n\thooksPath = /tmp/y\n\n[alias]\n\tll = log\n`;
+    expect(revertWatchedGitChanges(after, watchedGitChanges(before, after))).toBe("[user]\n\tname = Luna\n[alias]\n\tll = log\n");
+    const kept = `${before}[core]\n\tignorecase = true\n\thooksPath = /tmp/y\n`;
+    expect(revertWatchedGitChanges(kept, watchedGitChanges(before, kept))).toBe("[user]\n\tname = Luna\n[core]\n\tignorecase = true\n");
+    const commented = `${before}[core]\n\t# mine\n\thooksPath = /tmp/y\n`;
+    expect(revertWatchedGitChanges(commented, watchedGitChanges(before, commented))).toContain("# mine");
+  });
+
   test("re-verify catches what the line parser misses: a valueless hooksPath git accepts", () => {
     const before = ["[user]", "\tname = Luna", "[core]", "\teditor = vim"].join("\n");
     // No `=`: git reads this as boolean true, the built-in line parser sees no key at all.

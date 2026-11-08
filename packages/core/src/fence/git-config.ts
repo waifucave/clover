@@ -190,7 +190,9 @@ export function revertWatchedGitChanges(text: string, changes: readonly WatchedG
   };
   let section = "";
   let sub: string | null = null;
-  const kept: string[] = [];
+  let kept: string[] = [];
+  // Each section header kept: where it is, whether a line of it was dropped, and whether anything but blanks stayed.
+  const heads: { at: number; dropped: boolean; content: boolean }[] = [];
   for (const raw of lines) {
     const t = raw.trim();
     const head = /^\[(.+)\]$/.exec(t);
@@ -199,14 +201,27 @@ export function revertWatchedGitChanges(text: string, changes: readonly WatchedG
       const m = /^(\S+)(?:\s+"((?:[^"\\]|\\.)*)")?$/.exec(inner);
       if (m === undefined || m === null) { section = ""; sub = null; }
       else { section = m[1]!.toLowerCase(); sub = m[2] === undefined ? null : m[2]; }
+      heads.push({ at: kept.length, dropped: false, content: false });
       kept.push(raw);
       continue;
     }
-    if (t.startsWith("[")) { section = ""; sub = null; kept.push(raw); continue; }
+    if (t.startsWith("[")) { section = ""; sub = null; heads.push({ at: kept.length, dropped: false, content: true }); kept.push(raw); continue; }
     const d = dottedOf(raw, section, sub);
-    if (d !== null && changed.has(d.toLowerCase())) continue; // drop: re-appended below from the snapshot
+    if (d !== null && changed.has(d.toLowerCase())) { // drop: re-appended below from the snapshot
+      if (heads.length > 0) heads[heads.length - 1]!.dropped = true;
+      continue;
+    }
+    if (t !== "" && heads.length > 0) heads[heads.length - 1]!.content = true;
     kept.push(raw);
   }
+  // A section the revert emptied goes with its header (#321's review): no bare `[core]` is left behind.
+  const emptied = new Set<number>();
+  heads.forEach((h, i) => {
+    if (!h.dropped || h.content) return;
+    const end = i + 1 < heads.length ? heads[i + 1]!.at : kept.length;
+    for (let k = h.at; k < end; k++) emptied.add(k);
+  });
+  if (emptied.size > 0) kept = kept.filter((_, k) => !emptied.has(k));
   // Re-append each changed key's before-values (nothing to append for a key that was added).
   const bySection = new Map<string, { header: string; names: { name: string; value: string }[] }>();
   for (const c of changes) {

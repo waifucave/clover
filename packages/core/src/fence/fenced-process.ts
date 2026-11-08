@@ -16,6 +16,7 @@ import { fenceContextFor } from "../contracts/fence";
 import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote } from "./linux-bwrap";
 import { unixSocketFilter } from "./seccomp";
+import { PROCESS_HOLDER_FILE } from "../build-kind";
 import { gitTemplateDir, globalHooksPathDirs, loginStartDirs, loginStartSafeFiles, loginStartUnsafeFiles, selfUpdateFiles } from "./layout";
 import { supervisorArch } from "./linux-supervisor";
 import { parseGitConfigWatched, revertWatchedGitChanges, watchedGitChanges } from "./git-config";
@@ -26,6 +27,10 @@ import { runCommand, type FencedRun, type FencedRunResult, type FencedSpawner } 
 export interface FencedProcessOptions {
   readonly fence: CloverFence;
   readonly os?: Os;
+  /** macOS: the process holder every command runs under (`DescendantEnd`), so all it starts ends with the run.
+   *  Default: `clover-process-holder` beside the daemon's executable when it is there (lane M ships it); `null`, or
+   *  none there, records the process tree while the run lasts instead. */
+  readonly processHolder?: string | null;
   /** macOS's per-user temp folder; default from `getconf DARWIN_USER_TEMP_DIR`. */
   readonly perUserTemp?: () => string | null;
   /** Linux: bubblewrap's path (default `/usr/bin/bwrap`, never a PATH search). */
@@ -45,12 +50,43 @@ function darwinUserTemp(): string | null {
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 
+/** The macOS holder for `o`: the one named, else the one beside the daemon's executable when it is there. */
+function holderFor(o: FencedProcessOptions): string | null {
+  if (o.processHolder !== undefined) return o.processHolder !== null && existsSync(o.processHolder) ? o.processHolder : null;
+  const beside = join(dirname(process.execPath), PROCESS_HOLDER_FILE);
+  return existsSync(beside) ? beside : null;
+}
+
+/** Each session's watched git config files as its last run left them (after that run's revert), for `recheck`. */
+class SessionConfigs {
+  readonly #by = new Map<string, Map<string, string | null>>();
+  /** After a run: what each watched file holds now is what the next look compares against. */
+  settled(sessionId: string | undefined, paths: Iterable<string>): void {
+    if (sessionId === undefined) return;
+    const m = this.#by.get(sessionId) ?? new Map<string, string | null>();
+    for (const p of paths) m.set(p, readIfFile(p));
+    this.#by.set(sessionId, m);
+  }
+  recheck(sessionId: string, opts: { end?: boolean } = {}): string | null {
+    const m = this.#by.get(sessionId);
+    if (m === undefined) return null;
+    const note = revertPlantedGitKeys(m);
+    if (opts.end) this.#by.delete(sessionId);
+    else for (const p of m.keys()) m.set(p, readIfFile(p));
+    return note;
+  }
+}
+
+const sessionOf = (r: FencedRun): string | undefined => (r.who.caller.kind === "session" ? r.who.caller.sessionId : undefined);
+
 export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
   const os = o.os ?? o.fence.os;
+  const configs = new SessionConfigs();
   if (os === "macos") {
     if (!existsSync(SANDBOX_EXEC)) return closed("macOS's sandbox (sandbox-exec) isn't on this Mac");
     return {
       available: true,
+      recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
       run: async (r) => {
         const template = ensureGitTemplate(o.fence.cloverHome);
         if (typeof template !== "string") return template;
@@ -58,11 +94,19 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         const policy = o.fence.policy(ctx);
         const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
         const configBefore = snapshotFiles(watchedConfigFiles(o.fence.home, r.cwd));
-        const result = await runCommand(withGitTemplate(r, template), { shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command] });
+        // Everything the command starts ends with the run (#321's review): under the holder, or by its recorded tree,
+        // a `set -m` job and a double fork included. Only then are the git keys looked at, so nothing is left to set
+        // one after the revert.
+        const holder = holderFor(o);
+        const result = await runCommand(withGitTemplate(r, template), {
+          shell: "sh", argv: [SANDBOX_EXEC, "-p", profile, "/bin/sh", "-c", r.command],
+          descendants: holder !== null ? { kind: "holder", holder } : { kind: "tree" },
+        });
         if (result.kind === "refused") return result;
         // Repos made during the run weren't on disk at snapshot time: watch their configs as newly appeared.
         for (const p of watchedConfigFiles(o.fence.home, r.cwd)) if (!configBefore.has(p)) configBefore.set(p, null);
         const note = revertPlantedGitKeys(configBefore);
+        configs.settled(sessionOf(r), configBefore.keys());
         return note === null ? result : { ...result, stderr: result.stderr + note };
       },
     };
@@ -78,6 +122,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     };
     return {
       get available() { return probe() === null; },
+      recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
       run: async (r) => {
         const why = probe();
         if (why !== null) return { kind: "refused", reason: `a fenced process can't be started here: ${why}` };
@@ -159,6 +204,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
             quarantinePlanted(beltBefore, o.fence.cloverHome),
             revertPlantedGitKeys(configBefore),
           ].filter((n): n is string => n !== null);
+          configs.settled(sessionOf(r), configBefore.keys());
           return notes.length === 0 ? result : { ...result, stderr: result.stderr + notes.join("") };
         } finally {
           closeSync(fd);
