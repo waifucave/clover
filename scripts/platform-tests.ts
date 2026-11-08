@@ -6,8 +6,11 @@
 //                      `darwinDescribe(…)`, skipping on Linux; it runs on Linux AND on the macOS job
 //   every other file   Linux only
 //
-//   bun scripts/platform-tests.ts --root <dir> [--cwd <dir>] --darwin | --not-darwin [--shard K/N] [--config <json>]
-//                                 [--check-known-failures] [--list] [--timeout <ms>] [--slowest <n>]
+//   bun scripts/platform-tests.ts --root <dir> [--cwd <dir>] --darwin | --not-darwin | --windows [--shard K/N]
+//                                 [--config <json>] [--check-known-failures] [--list] [--timeout <ms>] [--slowest <n>]
+//
+//   --windows  the core's session and turn-loop files on Windows (lane A): the config's `windowsFiles` patterns over
+//              the files Linux runs, minus `windowsKnownFailures`, with `windowsSkips` reviewed as linuxSkips are
 //
 //   --root    where the test files are (relative to the repo root)
 //   --cwd     where bun runs (default: the repo root; the core runs in packages/core, for its bunfig and its paths)
@@ -16,6 +19,9 @@
 //               linuxKnownFailures   file → { owner, cause }: Linux product bugs, skipped by the Linux shards until fixed
 //               linuxSkips           file → reason: a Linux file whose tests may skip (an opt-in fixture, another OS…)
 //               darwinGateAllowed    file → reason: a Linux file that names "darwin" near a test gate without gating
+//               windowsFiles         patterns (Bun.Glob, relative to --root): the files --windows runs
+//               windowsKnownFailures file → { owner, cause }: Windows failures, skipped by --windows until fixed
+//               windowsSkips         file → reason: a --windows file whose tests may skip there
 //   --check-known-failures   runs each known failure alone and fails if one now passes (the list only shrinks)
 //   --timeout  bun's per-test timeout (`bun test --timeout`). CI passes 20 s: an overloaded runner (the merge queue's
 //              Macs above all) took a 5 s-default test past 5129 ms and dropped a PR from the queue for it. Local runs
@@ -88,18 +94,26 @@ export interface PlatformCi {
   linuxKnownFailures: Record<string, { owner: string; cause: string }>;
   linuxSkips: Record<string, string>;
   darwinGateAllowed: Record<string, string>;
+  windowsFiles: string[];
+  windowsKnownFailures: Record<string, { owner: string; cause: string }>;
+  windowsSkips: Record<string, string>;
 }
 
 export function parseConfig(text: string): PlatformCi {
   const c = JSON.parse(text) as Partial<PlatformCi>;
   const known = c.linuxKnownFailures ?? {};
-  for (const [f, e] of Object.entries(known)) {
-    if (typeof e?.owner !== "string" || e.owner === "" || typeof e.cause !== "string" || e.cause === "") throw new Error(`linuxKnownFailures["${f}"] needs an owner and a cause`);
+  const winKnown = c.windowsKnownFailures ?? {};
+  for (const [k, list] of [["linuxKnownFailures", known], ["windowsKnownFailures", winKnown]] as const) {
+    for (const [f, e] of Object.entries(list)) {
+      if (typeof e?.owner !== "string" || e.owner === "" || typeof e.cause !== "string" || e.cause === "") throw new Error(`${k}["${f}"] needs an owner and a cause`);
+    }
   }
-  for (const [k, v] of [["linuxSkips", c.linuxSkips ?? {}], ["darwinGateAllowed", c.darwinGateAllowed ?? {}]] as const) {
+  for (const [k, v] of [["linuxSkips", c.linuxSkips ?? {}], ["darwinGateAllowed", c.darwinGateAllowed ?? {}], ["windowsSkips", c.windowsSkips ?? {}]] as const) {
     for (const [f, why] of Object.entries(v)) if (typeof why !== "string" || why === "") throw new Error(`${k}["${f}"] needs a reason`);
   }
-  return { linuxKnownFailures: known, linuxSkips: c.linuxSkips ?? {}, darwinGateAllowed: c.darwinGateAllowed ?? {} };
+  const windowsFiles = c.windowsFiles ?? [];
+  if (!Array.isArray(windowsFiles) || windowsFiles.some((p) => typeof p !== "string" || p === "")) throw new Error("windowsFiles is a list of file patterns");
+  return { linuxKnownFailures: known, linuxSkips: c.linuxSkips ?? {}, darwinGateAllowed: c.darwinGateAllowed ?? {}, windowsFiles, windowsKnownFailures: winKnown, windowsSkips: c.windowsSkips ?? {} };
 }
 
 /**
@@ -117,6 +131,23 @@ export function configProblems(cfg: PlatformCi, linuxFiles: readonly string[], r
     const gates = gatesOnDarwin(src) && !usesDarwinOnly(src);
     if (gates && !(f in cfg.darwinGateAllowed)) problems.push(`${f} gates tests on darwin but runs on Linux: name it *.darwin.test.ts, or mark its macOS tests with darwinTest/darwinDescribe (test/helpers/darwin-only.ts)`);
     if (!gates && f in cfg.darwinGateAllowed) problems.push(`darwinGateAllowed lists ${f}, which no longer looks like a darwin gate: remove the entry`);
+  }
+  return problems;
+}
+
+/** The --windows files: those Linux runs that one of `patterns` matches (paths relative to the root). */
+export function windowsSelection(linuxFiles: readonly string[], patterns: readonly string[]): string[] {
+  const globs = patterns.map((p) => new Glob(p));
+  return linuxFiles.filter((f) => globs.some((g) => g.match(f)));
+}
+
+/** The Windows lists against the selection: each listed file is one --windows runs, and each pattern matches a file. */
+export function windowsConfigProblems(cfg: PlatformCi, linuxFiles: readonly string[]): string[] {
+  const problems: string[] = [];
+  const selected = new Set(windowsSelection(linuxFiles, cfg.windowsFiles));
+  for (const p of cfg.windowsFiles) if (windowsSelection(linuxFiles, [p]).length === 0) problems.push(`windowsFiles has ${p}, which matches no test file Linux runs`);
+  for (const [k, list] of [["windowsKnownFailures", cfg.windowsKnownFailures], ["windowsSkips", cfg.windowsSkips]] as const) {
+    for (const f of Object.keys(list)) if (!selected.has(f)) problems.push(`${k} lists ${f}, which --windows doesn't run (not matched by windowsFiles, or no longer a test file)`);
   }
   return problems;
 }
@@ -145,14 +176,15 @@ export function parseJunit(xml: string): Map<string, FileResult> {
  * macOS tests (`usesDarwinOnly`) or be in linuxSkips; a linuxSkips file in this run that skipped nothing is stale.
  * `ran` is per file relative to the root; `selected` the files given to bun.
  */
-export function skipProblems(selected: readonly string[], ran: Map<string, FileResult>, cfg: PlatformCi, read: (f: string) => string): string[] {
+export function skipProblems(selected: readonly string[], ran: Map<string, FileResult>, cfg: PlatformCi, read: (f: string) => string, windows = false): string[] {
   const problems: string[] = [];
+  const [skips, name, os] = windows ? [cfg.windowsSkips, "windowsSkips", "Windows"] as const : [cfg.linuxSkips, "linuxSkips", "Linux"] as const;
   for (const f of selected) {
     const r = ran.get(f);
     const skipped = r === undefined || r.tests === 0 ? "ran no tests" : r.skipped > 0 ? `skipped ${r.skipped} of ${r.tests} tests` : undefined;
-    const allowed = f in cfg.linuxSkips || usesDarwinOnly(read(f));
-    if (skipped !== undefined && !allowed) problems.push(`${f} ${skipped} on Linux: mark its macOS tests (darwinTest/darwinDescribe or *.darwin.test.ts), or review the skip in linuxSkips`);
-    if (skipped === undefined && f in cfg.linuxSkips) problems.push(`linuxSkips lists ${f}, which skipped nothing on Linux: remove the entry`);
+    const allowed = f in skips || usesDarwinOnly(read(f));
+    if (skipped !== undefined && !allowed) problems.push(`${f} ${skipped} on ${os}: mark its macOS tests (darwinTest/darwinDescribe or *.darwin.test.ts), or review the skip in ${name}`);
+    if (skipped === undefined && f in skips) problems.push(`${name} lists ${f}, which skipped nothing on ${os}: remove the entry`);
   }
   return problems;
 }
@@ -182,6 +214,7 @@ export interface Args {
   root: string;
   cwd: string | undefined;
   darwin: boolean;
+  windows: boolean;
   shard: { k: number; n: number } | undefined;
   config: string | undefined;
   checkKnownFailures: boolean;
@@ -201,15 +234,16 @@ export function parseArgs(argv: readonly string[]): Args {
   const root = value("--root");
   const darwin = argv.includes("--darwin");
   const notDarwin = argv.includes("--not-darwin");
+  const windows = argv.includes("--windows");
   if (root === undefined) throw new Error("platform-tests takes --root <dir>");
-  if (darwin === notDarwin) throw new Error("platform-tests takes exactly one of --darwin and --not-darwin");
+  if ([darwin, notDarwin, windows].filter(Boolean).length !== 1) throw new Error("platform-tests takes exactly one of --darwin, --not-darwin and --windows");
   const s = value("--shard");
   let shard: Args["shard"];
   if (s !== undefined) {
     const m = /^(\d+)\/(\d+)$/.exec(s);
     const k = Number(m?.[1]), n = Number(m?.[2]);
     if (!m || n < 1 || k < 1 || k > n) throw new Error(`--shard takes K/N with 1 <= K <= N, not ${s}`);
-    if (darwin) throw new Error("--shard is Linux's (--not-darwin)");
+    if (!notDarwin) throw new Error("--shard is Linux's (--not-darwin)");
     shard = { k, n };
   }
   const count = (flag: string): number | undefined => {
@@ -219,7 +253,7 @@ export function parseArgs(argv: readonly string[]): Args {
     return Number(v);
   };
   return {
-    root, cwd: value("--cwd"), darwin, shard, config: value("--config"), checkKnownFailures: argv.includes("--check-known-failures"), list: argv.includes("--list"),
+    root, cwd: value("--cwd"), darwin, windows, shard, config: value("--config"), checkKnownFailures: argv.includes("--check-known-failures"), list: argv.includes("--list"),
     timeoutMs: count("--timeout"), slowest: count("--slowest") ?? 0,
   };
 }
@@ -259,8 +293,12 @@ function main(): number {
   const linuxAll = select(all, false);
   const problems: string[] = [];
 
-  let files = args.darwin ? macosFiles(all, read) : linuxAll.filter((f) => !(cfg && f in cfg.linuxKnownFailures));
-  if (!args.darwin && cfg) problems.push(...configProblems(cfg, linuxAll, read));
+  if (args.windows && !cfg) throw new Error("--windows takes --config (its windowsFiles)");
+  let files = args.darwin ? macosFiles(all, read)
+    : args.windows ? windowsSelection(linuxAll, cfg!.windowsFiles).filter((f) => !(f in cfg!.windowsKnownFailures))
+    : linuxAll.filter((f) => !(cfg && f in cfg.linuxKnownFailures));
+  if (!args.darwin && !args.windows && cfg) problems.push(...configProblems(cfg, linuxAll, read));
+  if (args.windows) problems.push(...windowsConfigProblems(cfg!, linuxAll));
   if (args.shard) files = shardOf(files, args.shard.k, args.shard.n);
   if (args.list) {
     for (const f of files) console.log(f);
@@ -268,15 +306,16 @@ function main(): number {
   }
 
   if (args.checkKnownFailures && cfg) {
-    for (const [f, e] of Object.entries(cfg.linuxKnownFailures)) {
+    const [known, list, os] = args.windows ? [cfg.windowsKnownFailures, "windowsKnownFailures", "Windows"] as const : [cfg.linuxKnownFailures, "linuxKnownFailures", "Linux"] as const;
+    for (const [f, e] of Object.entries(known)) {
       if (!existsSync(join(rootAbs, f))) continue; // configProblems names it
       const r = runBun(cwd, [toCwd(f)], undefined, args.timeoutMs);
-      if (r.exitCode === 0) problems.push(`${f} now passes on Linux: remove it from linuxKnownFailures (owner ${e.owner})`);
-      else console.log(`platform-tests: known Linux failure, still failing as listed: ${f} (owner ${e.owner}: ${e.cause})`);
+      if (r.exitCode === 0) problems.push(`${f} now passes on ${os}: remove it from ${list} (owner ${e.owner})`);
+      else console.log(`platform-tests: known ${os} failure, still failing as listed: ${f} (owner ${e.owner}: ${e.cause})`);
     }
   }
 
-  const side = args.darwin ? "macOS" : `Linux${args.shard ? ` shard ${args.shard.k}/${args.shard.n}` : ""}`;
+  const side = args.darwin ? "macOS" : args.windows ? "Windows" : `Linux${args.shard ? ` shard ${args.shard.k}/${args.shard.n}` : ""}`;
   console.log(`platform-tests: ${files.length} test file(s) under ${args.root} for ${side}`);
   const tmp = mkdtempSync(join(tmpdir(), "platform-tests-"));
   try {
@@ -298,7 +337,7 @@ function main(): number {
       else {
         // JUnit names files relative to where bun ran; the lists name them relative to the root.
         const ran = new Map([...parseJunit(readFileSync(junit, "utf8"))].map(([f, v]) => [relative(rootAbs, join(cwd, f)).split("\\").join("/"), v]));
-        problems.push(...skipProblems(files, ran, cfg, read));
+        problems.push(...skipProblems(files, ran, cfg, read, args.windows));
       }
     }
   } finally {

@@ -1,5 +1,5 @@
 {
-  "$comment": "The core suite's reviewed platform lists (scripts/platform-tests.ts; paths relative to packages/core). linuxKnownFailures: Linux product bugs the Linux shards skip until their owner fixes them; a listed file that starts passing fails CI, so the list only shrinks, and a new Linux failure fails its shard until it is fixed or reviewed here. linuxSkips: Linux files whose tests may skip, each with why. darwinGateAllowed: Linux files that name darwin near a test gate without gating on it.",
+  "$comment": "The core suite's reviewed platform lists (scripts/platform-tests.ts; paths relative to packages/core). linuxKnownFailures: Linux product bugs the Linux shards skip until their owner fixes them; a listed file that starts passing fails CI, so the list only shrinks, and a new Linux failure fails its shard until it is fixed or reviewed here. linuxSkips: Linux files whose tests may skip, each with why. darwinGateAllowed: Linux files that name darwin near a test gate without gating on it. windowsFiles: the core's session and turn-loop files the core-windows job runs (lane A), patterns relative to packages/core. windowsKnownFailures: Windows failures that job skips until their owner fixes them (owner, cause), checked the same way. windowsSkips: windowsFiles files whose tests may skip on Windows, each with why.",
   "linuxKnownFailures": {
     "test/auth/credential-migration-lock.test.ts": {
       "owner": "C",
@@ -38,5 +38,16 @@
   },
   "darwinGateAllowed": {
     "test/lock.test.ts": "\"darwin\" is classifyLockFailure's platform argument (the errno table per OS), not a gate"
-  }
+  },
+  "windowsFiles": [
+    "test/runtime-sdk/turn-loop/**",
+    "test/runtime-sdk/session-driver.test.ts",
+    "test/runtime-sdk/clover-session.test.ts",
+    "test/runtime-sdk/sessions.test.ts",
+    "test/sessions/**",
+    "test/e2e/embedded-chat-dispatch-e2e.test.ts",
+    "test/e2e/per-call-tool-results-e2e.test.ts"
+  ],
+  "windowsKnownFailures": {},
+  "windowsSkips": {}
 }

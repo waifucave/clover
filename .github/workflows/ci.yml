@@ -766,6 +766,34 @@ jobs:
       - name: Core · test
         run: scripts/with-private-secret-service.sh bun scripts/platform-tests.ts --root packages/core --cwd packages/core --not-darwin --shard ${{ matrix.shard }}/3 --config packages/core/test/platform-ci.json --timeout 20000 --slowest 10 ${{ matrix.shard == 1 && '--check-known-failures' || '' }}
 
+  # The core's session and turn-loop files on Windows (lane A; platform-ci.json's windowsFiles, minus its
+  # windowsKnownFailures, each with an owner and a cause; a listed failure that starts passing fails the job).
+  core-windows:
+    name: core · windows (sessions)
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Core · sessions on Windows
+        run: bun scripts/platform-tests.ts --root packages/core --cwd packages/core --windows --config packages/core/test/platform-ci.json --timeout 30000 --slowest 10 --check-known-failures
+
   # The repo scripts' tests (`scripts/**/*.test.ts`) on Linux: the layout's conventions, the build, dev and release
   # tools' pure halves, the held scripts, the limiter, the rename's codemod. The few that need macOS are named
   # `*.darwin.test.ts` and run in the macos job (scripts/platform-tests.ts picks each side's files).
