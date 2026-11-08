@@ -1,9 +1,10 @@
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater } from "./self-update";
-import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
+import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, healFromOld, oldBinary, SelfUpdater, superviseTarget, updateWatched } from "./self-update";
+import { daemonBunVersion, ensurePluginBun, serverPluginBun } from "./plugin-bun-install";
+import { ensureServerPlugins, PluginsLock, recoverServerPlugins, serverPluginsDir, stageServerPlugins } from "./plugins-install";
+import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
 import { join, resolve } from "node:path";
-import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -1626,7 +1627,9 @@ async function runDaemonStart(): Promise<void> {
 
 /** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
 async function runSupervise(): Promise<void> {
-  const bin = process.execPath;
+  // The logon task's fallback (a server on Windows) may have started this as `<bin>.old.exe`: each start of the daemon
+  // takes `<bin>` once that is back (self-update.ts's healFromOld), so `bin` is asked again at every start.
+  const binNow = () => superviseTarget(process.execPath);
   let alive = true;
   let stopChild: (() => void) | null = null;
   let wake: (() => void) | null = null;
@@ -1656,14 +1659,14 @@ async function runSupervise(): Promise<void> {
     spawnDaemon(): DaemonRun {
       // macOS: the daemon starts with responsibility disclaimed, so it is its own responsible process and a
       // double fork of anything it starts still names it (the caller check, review B1).
-      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([bin, "daemon", "run"]) : null;
+      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([binNow(), "daemon", "run"]) : null;
       if (disclaimed) {
         childExited = disclaimed.exited;
         const stopIt = () => { try { process.kill(disclaimed.pid, "SIGTERM"); } catch { /* already gone */ } };
         stopChild = stopIt;
         return { exited: disclaimed.exited, stop: stopIt };
       }
-      const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      const child = Bun.spawn([binNow(), "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
       childExited = child.exited;
       const kill = () => { try { child.kill(); } catch { /* already gone */ } };
       stopChild = kill;
@@ -1680,6 +1683,12 @@ async function runSupervise(): Promise<void> {
     shouldContinue: () => alive,
   });
   console.error(`[supervise] loop ended: ${result.ended} (starts=${result.starts}, crashes=${result.crashes})`);
+}
+
+/** The SHA-256 of the bundled-plugins manifest text this binary carries (its embedded Blob), or undefined for none. */
+async function ownManifestSha256(): Promise<string | undefined> {
+  const { text } = await loadBundledManifest();
+  return text === undefined ? undefined : new Bun.CryptoHasher("sha256").update(text).digest("hex");
 }
 
 if (import.meta.main) {
@@ -1971,12 +1980,34 @@ if (import.meta.main) {
       process.exit(1);
     }
     const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+    // Windows: the logon task names its folder under %USERPROFILE% as the account sees it at logon, which this
+    // process's own USERPROFILE may not be (a profile moved, a session with another environment): the registry says.
+    let profile: string | undefined;
+    if (base.os === "win32") {
+      profile = winUser === undefined ? undefined : await windowsProfilePath(winUser, bunRunner);
+      if (profile === undefined) {
+        console.error("server install: this account's profile folder could not be read from the registry (ProfileList), so its logon task can't be written");
+        process.exit(1);
+      }
+      const note = profileNote(profile);
+      if (note !== undefined) console.log(note);
+    }
     mkdirSync(base.logsDir, { recursive: true });
     const deps = {
-      spec: winUser ? { ...base, winUser } : base,
+      spec: { ...base, ...(winUser ? { winUser } : {}), ...(profile !== undefined ? { homedir: profile } : {}) },
       os: liveLoginOsDeps(), run: bunRunner, loginEnable, loginRemove, stopDaemon: stopRunningDaemon,
       readMarker: (home: string) => readInstallMarker(home), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
       user: process.env.USER ?? process.env.LOGNAME, log: (line: string) => console.log(line),
+      pluginBun: (path: string, channel: "latest" | "beta") => {
+        const target = coreTargetOf(process.platform, process.arch);
+        if (target === undefined) return Promise.resolve({ kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` });
+        return ensurePluginBun({ path, bunVersion: daemonBunVersion(), target, channel, log: (line) => console.log(line) });
+      },
+      plugins: async (dir: string, channel: "latest" | "beta") => {
+        const target = coreTargetOf(process.platform, process.arch);
+        if (target === undefined) return { kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` };
+        return ensureServerPlugins({ dir, home: base.home, version: CORE_VERSION, manifestSha256: await ownManifestSha256(), target, channel, committed: () => false, log: (line) => console.log(line) });
+      },
     };
     process.exit(parsed.action === "install" ? await serverInstall(deps, parsed.channel) : await serverUninstall(deps));
     break;
@@ -1992,7 +2023,44 @@ if (import.meta.main) {
     // LANE C — M-M2's boot-count hook (self-update.ts), first, before anything else the daemon does (the log file
     // included), so a crash anywhere in the start counts: after a server's daemon swapped in its update, this counts
     // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.
-    if (beginUpdatedBoot(resolveCloverHome(), process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
+    // A server (`<home>/install.json` says server) first leaves the earlier layout if it still runs from there
+    // (server-install.ts's one migration step), then knows its binary as `<home>/bin/daemon/clover-core`.
+    const bootHome = resolveCloverHome();
+    const bootOs = currentDaemonPlatform();
+    const bootTarget = coreTargetOf(process.platform, process.arch);
+    const bootMarker = readInstallMarker(bootHome, process.execPath);
+    const isServer = updatesItself(bootMarker) && bootTarget !== undefined;
+    if (isServer) {
+      const migrated = await migrateEarlierLayout({
+        home: bootHome, os: bootOs, execPath: process.execPath, log: (line) => console.error(line),
+        reRegister: async (bin) => {
+          const base = currentLoginSpec();
+          const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+          const profile = winUser === undefined ? undefined : await windowsProfilePath(winUser, bunRunner);
+          if (profile === undefined) return false;
+          return (await loginEnable({ ...base, bin, fallbackBin: oldBinary(bin), winUser: winUser!, homedir: profile }, liveLoginOsDeps())).registered;
+        },
+      });
+      if (migrated.kind === "restart") process.exit(UPDATE_RESTART_EXIT_CODE);
+      if (migrated.kind === "failed") console.error(`server: leaving the earlier layout failed, so this daemon doesn't update itself: ${migrated.why}`);
+    }
+    const sameFile = (a: string, b: string) => { try { return realpathSync(a) === realpathSync(b); } catch { return false; } };
+    // Started as the rollback copy because the binary is missing (Windows: a cut between a swap's two renames, which
+    // the logon task's fallback answered): the binary is put back first, then a restart starts it.
+    if (isServer) {
+      const healed = healFromOld(bootHome, serverBinary(bootHome, bootOs), process.execPath);
+      if (healed.kind === "failed") console.error(`update: putting the binary back failed: ${healed.why}`);
+      if (healed.kind === "finished the swap" || healed.kind === "restored") {
+        console.error(`update: ${serverBinary(bootHome, bootOs)} was missing: ${healed.kind === "restored" ? "restored from this copy" : "the interrupted swap is finished"}; restarting into it`);
+        process.exit(UPDATE_RESTART_EXIT_CODE);
+      }
+    }
+    const serverBin = isServer && sameFile(process.execPath, serverBinary(bootHome, bootOs)) ? serverBinary(bootHome, bootOs) : undefined;
+    if (beginUpdatedBoot(bootHome, serverBin ?? process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
+    // The bundled plugins' local recovery, before anything reads the folder: a folder that isn't this core's
+    // manifest's tree takes `.new` or `.old` back when either is (plugins-install.ts), with no download.
+    const ownSha = serverBin === undefined ? undefined : await ownManifestSha256();
+    if (serverBin !== undefined) recoverServerPlugins({ dir: serverPluginsDir(bootHome), manifestSha256: ownSha, watching: updateWatched(bootHome), log: (line) => console.error(line) });
     // Whole-branch review: register the shutdown handlers HERE, not (only) in daemon.ts. daemon.ts's
     // SIGTERM/SIGINT handlers live under `if (import.meta.main)`, which is FALSE for the compiled
     // binary and this CLI entry (main.ts is `import.meta.main`, daemon.ts is not) — so without this
@@ -2032,23 +2100,47 @@ if (import.meta.main) {
     // hands back is what releases the lock (→ unlinks the socket). `process.exit(0)` on the same
     // line would kill the process mid-drain and leave the stale socket this handler exists to avoid.
     // M-M2: a start that ran GOOD_BOOT_MS, or stopped cleanly, is a good one (self-update.ts's `bootWasGood`).
-    const home = resolveCloverHome();
-    const goodBoot = setTimeout(() => bootWasGood(home, process.execPath), GOOD_BOOT_MS);
+    const home = bootHome;
+    const goodBoot = setTimeout(() => bootWasGood(home, serverBin ?? process.execPath), GOOD_BOOT_MS);
     goodBoot.unref?.();
-    const shutdown = async () => { await daemon.stop(); bootWasGood(home, process.execPath); process.exit(0); };
+    const shutdown = async () => { await daemon.stop(); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
-    const target = coreTargetOf(process.platform, process.arch);
-    const marker = readInstallMarker(home, process.execPath);
-    if (updatesItself(marker) && target !== undefined && process.execPath === serverBinary(home, currentDaemonPlatform())) {
+    const target = bootTarget;
+    const marker = bootMarker;
+    if (serverBin !== undefined && target !== undefined) {
+      // One lock for everything that touches `<home>/bin/plugins` (plugins-install.ts).
+      const pluginsLock = new PluginsLock();
       const self = new SelfUpdater({
-        home, bin: process.execPath, version: CORE_VERSION, target, channel: marker?.channel ?? "latest",
+        home, bin: serverBin, version: CORE_VERSION, target, channel: marker?.channel ?? "latest",
         gate: daemon.updateGate, restartCode: UPDATE_RESTART_EXIT_CODE,
         drain: async () => { clearTimeout(goodBoot); await daemon.stop(); },
         exit: (code) => process.exit(code),
         log: (line) => console.error(line),
+        // The bundled plugins update with the daemon: each version's tarball, against the new binary's manifest.
+        plugins: {
+          dir: serverPluginsDir(home),
+          lock: pluginsLock,
+          stage: (version, manifestSha256) => stageServerPlugins({ dir: serverPluginsDir(home), version, manifestSha256, target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) }),
+        },
       });
       daemon.setSelfUpdate(self);
-      self.start();
+      // Plain Bun for plugins follows the daemon's Bun: after a self-update that moved Bun (or a rollback), the
+      // matching one is fetched (or put back from `.old`) at this start (plugin-bun-install.ts).
+      void ensurePluginBun({ path: serverPluginBun(home, process.platform), bunVersion: daemonBunVersion(), target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) })
+        .then((r) => { if (r.kind === "refused") console.error(`update: plain Bun for plugins: ${r.why}`); });
+      // So do the bundled plugins: a folder that isn't this core's manifest's tree and that no local copy could
+      // replace (above) is fetched again, in the plugins lock, never swapped once the gate committed a restart. The
+      // registry reads bundled plugins at its start, so a folder fetched now is taken by a restart at the next idle
+      // moment. The self-update starts only once this settled.
+      void pluginsLock.run(() => ensureServerPlugins({
+        dir: serverPluginsDir(home), home, version: CORE_VERSION, manifestSha256: ownSha, target, channel: marker?.channel ?? "latest",
+        committed: () => daemon.updateGate.committed, log: (line) => console.error(line),
+      }))
+        .then((r) => {
+          if (r.kind === "refused") console.error(`update: the bundled plugins: ${r.why}`);
+          if (r.kind === "installed") self.restartWhenIdle("the bundled plugins were fetched again, and the registry reads them at its start");
+        }, (err: unknown) => console.error(`update: the bundled plugins: ${err instanceof Error ? err.message : String(err)}`))
+        .finally(() => self.start());
     }
     // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
     // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app

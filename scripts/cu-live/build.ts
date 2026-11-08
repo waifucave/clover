@@ -175,7 +175,7 @@ export function buildDaemon(identity: SigningIdentity, log: (l: string) => void)
   mkdirSync(OUT_DIR, { recursive: true });
   const tmp = `${out}.${process.pid}.tmp`;
   try {
-    must(run("bun", ["build", "--compile", "--no-compile-autoload-bunfig", "--no-compile-autoload-dotenv", join("scripts", "cu-live", "daemon-entry.ts"), "--outfile", tmp], { cwd: REPO_ROOT }), "bun build --compile");
+    must(run("bun", ["build", "--compile", "--no-macros", "--no-compile-autoload-bunfig", "--no-compile-autoload-dotenv", join("scripts", "cu-live", "daemon-entry.ts"), "--outfile", tmp], { cwd: REPO_ROOT }), "bun build --compile");
     const requirement = stated(LIVE_DAEMON_IDENTIFIER);
     must(run("codesign", ["--force", "--sign", identity.hash, "--identifier", LIVE_DAEMON_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", ENTITLEMENTS, `-r=designated => ${requirement}`, tmp]), "codesign clover-core-live");
     const shown = run("codesign", ["-d", "-r-", tmp]);

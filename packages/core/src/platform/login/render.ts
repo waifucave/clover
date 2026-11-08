@@ -38,6 +38,9 @@ export interface LoginSpec {
   readonly winUser?: string;
   /** The app, on a computer that runs it: its executable (macOS: the `.app` bundle). */
   readonly app?: { readonly bin: string };
+  /** Windows, a server install: the binary the logon task falls back to when `bin` is missing or won't start
+   *  (`<bin>.old`: a self-update's swap is two renames there, and a power cut between them leaves no `bin`). */
+  readonly fallbackBin?: string;
 }
 
 /** The daemon's restart-loop subcommand; the login unit runs `<bin> supervise`. */
@@ -239,6 +242,8 @@ interface TaskXml {
   readonly logon: "on" | "off" | "none";
   readonly command: string;
   readonly args: string;
+  /** The folder the command starts in (Task Scheduler expands `%VAR%` in it). */
+  readonly workingDir?: string;
 }
 
 function renderTask(t: TaskXml): string {
@@ -284,7 +289,8 @@ ${triggers}
   <Actions Context="Author">
     <Exec>
       <Command>${xmlEscape(t.command)}</Command>${t.args ? `
-      <Arguments>${xmlEscape(t.args)}</Arguments>` : ""}
+      <Arguments>${xmlEscape(t.args)}</Arguments>` : ""}${t.workingDir ? `
+      <WorkingDirectory>${xmlEscape(t.workingDir)}</WorkingDirectory>` : ""}
     </Exec>
   </Actions>
 </Task>
@@ -299,14 +305,53 @@ ${triggers}
  *  second start ignored. With login start off the trigger stays but is disabled, so `schtasks /Run`
  *  still starts the daemon. */
 export function renderSchtasksXml(spec: LoginSpec, loginOn = true): string {
+  const fallback = spec.fallbackBin === undefined ? undefined : schtasksFallback(spec.bin, spec.fallbackBin, spec.homedir ?? realHomedir());
   return renderTask({
     description: `${spec.profile === "dev" ? "Clover (dev)" : "Clover"} daemon (clover-core supervise)`,
     uri: schtasksTaskName(spec.profile),
     user: spec.winUser,
     logon: loginOn ? "on" : "off",
-    command: spec.bin,
-    args: SUPERVISE_ARGS[0],
+    command: fallback?.command ?? spec.bin,
+    args: fallback?.args ?? SUPERVISE_ARGS[0],
+    ...(fallback ? { workingDir: fallback.workingDir } : {}),
   });
+}
+
+/** Windows path pieces, whatever OS renders them. */
+const winDir = (p: string) => p.replace(/[\\/]+[^\\/]*$/, "");
+const winBase = (p: string) => p.replace(/^.*[\\/]/, "");
+
+/**
+ * The logon task's command with a fallback (a server install on Windows, whose self-update swaps with two renames):
+ * cmd.exe starts in the binary's folder and runs `.\<bin> supervise` when it is there, else `.\<fallback>
+ * supervise` when that is. Only whether the file exists decides: a crash, or a refusal (exit 78), never runs the old
+ * version. No path is ever parsed by cmd.exe (it has only the two fixed file names, with /v:off), so a folder name
+ * with `&`, `^`, `!` or `%` is safe; the folder goes in the task's WorkingDirectory, written under `%USERPROFILE%`
+ * when it lies in the user's profile, so a user name is never expanded. The one folder that can't be made safe, one
+ * outside the profile holding a `%`, is refused with why (`schtasksFallbackProblem`), before anything is installed.
+ */
+export function schtasksFallback(bin: string, fallback: string, homedir: string): { command: string; args: string; workingDir: string } {
+  const problem = schtasksFallbackProblem(bin, fallback, homedir);
+  if (problem !== undefined) throw new Error(problem);
+  const dir = winDir(bin), name = winBase(bin), old = winBase(fallback);
+  const home = homedir.replace(/[\\/]+$/, "");
+  const workingDir = dir.toLowerCase().startsWith(`${home.toLowerCase()}\\`) || dir.toLowerCase().startsWith(`${home.toLowerCase()}/`)
+    ? `%USERPROFILE%${dir.slice(home.length).replace(/\//g, "\\")}`
+    : dir;
+  const run = `if exist .\\${name} (.\\${name} ${SUPERVISE_ARGS[0]}) else if exist .\\${old} (.\\${old} ${SUPERVISE_ARGS[0]})`;
+  return { command: "%SystemRoot%\\System32\\cmd.exe", args: `/d /v:off /s /c "${run}"`, workingDir };
+}
+
+/** Why the logon task's fallback can't be written for these paths, or undefined. */
+export function schtasksFallbackProblem(bin: string, fallback: string, homedir: string): string | undefined {
+  if (/^[\\/]{2}/.test(bin)) return `${bin} is on a network share: a server installs on this computer's own disk (its logon task can start before the share is reachable, and a swap there isn't atomic)`;
+  if (winDir(bin) !== winDir(fallback)) return `${fallback} isn't beside ${bin}`;
+  for (const n of [winBase(bin), winBase(fallback)]) if (!/^[A-Za-z0-9._-]+$/.test(n)) return `${n}: not one of the daemon's file names`;
+  const home = homedir.replace(/[\\/]+$/, "").toLowerCase();
+  const dir = winDir(bin);
+  const rest = dir.toLowerCase().startsWith(`${home}\\`) || dir.toLowerCase().startsWith(`${home}/`) ? dir.slice(home.length) : dir;
+  if (rest.includes("%")) return `${dir} holds a %, which Task Scheduler would read as a variable: install the server under the user's profile (${homedir})`;
+  return undefined;
 }
 
 /** The app's on-demand task (no trigger), which the daemon starts with `schtasks /Run`, so the app is
