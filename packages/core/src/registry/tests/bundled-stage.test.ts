@@ -54,7 +54,7 @@ describe("the dev stage from the repository's plugins/", () => {
     const secrets = new MemorySecretStore();
     mkdirSync(join(home, "plugins"), { recursive: true });
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
-    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests });
     try {
       const all = opened.registry.list();
       // Bundled plugins need no OK: none is waiting on a card, refused or invalid.
@@ -84,6 +84,36 @@ describe("the dev stage from the repository's plugins/", () => {
         || (v.pluginId.startsWith("clover/") && v.layer !== "clover") || !/^sha256:[0-9a-f]{64}$/.test(v.treeHash)).map((v) => v.pluginId);
       expect(off).toEqual([]);
       expect(views.map((v) => v.pluginId)).toContain("alpha");
+
+      // #322's review, S2: a bundled entry rewritten after staging (run/bundled-plugins/clover/...) is refused at load,
+      // and its new code never runs.
+      const target = hosted.find((p) => p.id.startsWith("clover/") && p.id !== "clover/companion-web")!;
+      await ph.host.stop(target.id, "test");
+      const entry = join(target.folder, target.manifest!.host!.entry);
+      const mark = join(home, "tampered-ran");
+      writeFileSync(entry, `${readFileSync(entry, "utf8")}\nrequire("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`);
+      const refused = await Promise.race([ph.host.restart(target.id).then(() => "started", (err: unknown) => (err as Error).message), Bun.sleep(20_000).then(() => "timed out")]);
+      expect(`${refused} / ${ph.host.status(target.id).reason ?? ""}`).toContain("isn't the bundled code Clover verified");
+      expect(existsSync(mark)).toBe(false);
+    } finally {
+      await ph.close();
+      opened.close();
+    }
+  }, 180_000);
+
+  test("a bundled plugin with no verified digest recorded doesn't run", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-b2-devstage-"));
+    await buildDevBundledPlugins({ sources: REPO_PLUGINS, ids: ["clover"], cloverHome: home });
+    const staged = stageBundledPlugins({ ...devBundledSource(home)!, out: stagedBundledDir(home) });
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    mkdirSync(join(home, "plugins"), { recursive: true });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets });
+    try {
+      const hosted = opened.registry.list().find((p) => p.manifest?.host !== undefined && (p.manifest.host.runtime ?? "bun") === "bun" && p.id !== "clover/companion-web")!;
+      const refused = await Promise.race([ph.host.ensureStarted(hosted.id).then(() => "started", (err: unknown) => (err as Error).message), Bun.sleep(20_000).then(() => "timed out")]);
+      expect(`${refused} / ${ph.host.status(hosted.id).reason ?? ""}`).toContain("no verified copy recorded");
     } finally {
       await ph.close();
       opened.close();
