@@ -43,7 +43,7 @@
 // None is printed, logged or written anywhere. Nothing is published.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -175,6 +175,31 @@ function must(say: string, cmd: readonly string[], cwd: string, env?: Record<str
 
 const sha256 = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
 
+/** Whether `bytes` start a Mach-O file (thin, either byte order, 32 or 64 bit, or universal). */
+export function isMachO(bytes: Uint8Array): boolean {
+  if (bytes.length < 4) return false;
+  const magic = ((bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!) >>> 0;
+  return [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca].includes(magic);
+}
+
+/** The Mach-O files under `dir` (paths relative to it, with `/`): the bundled plugins' native code. */
+export function machOFiles(dir: string): string[] {
+  return walkTree(dir).filter((e) => !e.link).map((e) => e.rel).filter((rel) => {
+    const fd = openSync(join(dir, rel), "r");
+    try {
+      const head = new Uint8Array(4);
+      return readSync(fd, head, 0, 4, 0) === 4 && isMachO(head);
+    } finally {
+      closeSync(fd);
+    }
+  }).sort();
+}
+
+/** A bundled plugin's native file's signing identifier: Clover's prefix and its path, as letters, digits and dots. */
+export function nativeIdentifier(rel: string): string {
+  return `com.waifucave.clover.plugin.${rel.replace(/[^A-Za-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "")}`;
+}
+
 /** One signed app's checks: its signatures, the resources' entitlements, its seal, Gatekeeper's verdict and its staple. */
 function verifyMacApp(label: string, app: string, teamId: string, root: string, cwd: string): string[] {
   const problems: string[] = [];
@@ -187,6 +212,11 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
     const have = parseEntitlementKeys(run(["codesign", "-d", "--entitlements", "-", "--xml", path], cwd).out);
     const want = b.entitlements === undefined ? [] : entitlementsIn(readFileSync(join(root, b.entitlements), "utf8"));
     if (have.join(",") !== want.join(",")) problems.push(`${label}'s ${b.file} has the entitlements [${have.join(", ")}], not [${want.join(", ")}]`);
+  }
+  // The bundled plugins' native code, signed before the manifest was measured (and left alone by electron-builder).
+  const plugins = join(app, "Contents", "Resources", "plugins");
+  if (existsSync(plugins)) {
+    for (const rel of machOFiles(plugins)) problems.push(...signatureProblems(`${label}'s plugins/${rel}`, display(join(plugins, rel)), teamId, nativeIdentifier(rel)));
   }
   const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${CLOVER_APP_REQUIREMENT}`, app], cwd);
   if (deep.status !== 0) problems.push(`codesign --verify --deep --strict against Clover's requirement refuses ${label}: ${deep.out.trim().slice(0, 400)}`);
@@ -258,6 +288,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     console.log(`release/build: the bundled plugins: plugins/ at HEAD built for ${target} into apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
+    if (a.sign && a.os === "mac") console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignArgs("out/plugins/<file>", "<CLOVER_MAC_IDENTITY>", nativeIdentifier("<file>")).join(" ")}`);
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
@@ -282,6 +313,14 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       // Built for this target from the committed files (lane B's buildPluginForShipping), natives included, then
       // measured: the manifest the daemon carries names exactly the built tree.
       const builtPlugins = await buildBundledPlugins(root, stagedPlugins, target);
+      // A signed macOS build signs the plugins' native code (their addons) here, before the tree is measured, and
+      // electron-builder.yml's signIgnore keeps the app's signing off it: signing changes a file's bytes, so the
+      // manifest the core carries must name the signed ones. Notarization needs every Mach-O in the app signed.
+      if (a.sign && a.os === "mac") {
+        for (const rel of machOFiles(stagedPlugins)) {
+          must(`sign the plugins' ${rel}`, codesignArgs(join(stagedPlugins, rel), process.env.CLOVER_MAC_IDENTITY!, nativeIdentifier(rel)), root);
+        }
+      }
       manifest = writeStagedManifest(stagedPlugins, manifestFile);
       console.log(`release/build: the bundled plugins: ${builtPlugins.files.length} files built (${builtPlugins.natives.length} native addon files), ${Object.keys(manifest.files).length} measured`);
       if (runScriptLine(`bun scripts/build-daemon.ts --target ${target} --plugins-manifest ${JSON.stringify(manifestFile)}`, root) !== 0) throw new Error("the daemon's build failed");
