@@ -1,11 +1,12 @@
-// C-M3 item 5: the app's resources folder (the bundled plugins, approved without a card, and the daemon) is fenced like
-// `runtimes`: the sandbox's denyWrite, the escape floor on any mention, the write tools and their deny rules, and
+// C-M3 item 5 and #306's review: the app's whole install (the bundle on macOS, the install folder elsewhere: the bundled
+// plugins, approved without a card, the daemon and the app's own code) is fenced like `runtimes`, as started and with
+// its links resolved: the sandbox's denyWrite, the escape floor on any mention, the write tools and their deny rules, and
 // Clover's own fence. A server's `<home>/bin` is fenced the same way (fences-ws21.test.ts).
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { appResourcesDirFor, appResourcesDirs, setAppResourcesDirs } from "../../src/platform/app-resources";
+import { appInstallDirs, appInstallDirsFor, appResourcesDirFor, setAppInstallDirs } from "../../src/platform/app-resources";
 import { controlPlaneDenyRules, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import { escapeFloorHit } from "../../src/runtime-sdk/hooks";
 import { controlPlaneTargetForCall } from "../../src/runtime-sdk/control-plane";
@@ -13,7 +14,8 @@ import { homeFenceFor } from "../../src/runtime-sdk/home-fence";
 import { CloverFence } from "../../src/fence/fence";
 
 const H = "/Users/x/.clover";
-const R = "/Applications/Clover.app/Contents/Resources";
+const A = "/Applications/Clover.app";
+const R = `${A}/Contents/Resources`;
 let restore: (() => void) | undefined;
 afterEach(() => { restore?.(); restore = undefined; });
 
@@ -27,7 +29,7 @@ describe("where the resources folder is", () => {
     expect(appResourcesDirFor(`${H}/bin/clover-core`, true, "darwin", id)).toBeUndefined(); // a server's (fenced as <home>/bin)
     expect(appResourcesDirFor("/usr/local/bin/clover-core", true, "darwin", (p) => (p === "/usr/local/bin/clover-core" ? `${R}/daemon/clover-core` : p))).toBe(R);
     expect(appResourcesDirFor("/nowhere/clover-core", true, "darwin", () => { throw new Error("ENOENT"); })).toBeUndefined();
-    expect(appResourcesDirs()).toEqual([]); // the test runner isn't a compiled daemon
+    expect(appInstallDirs()).toEqual([]); // the test runner isn't a compiled daemon
     if (process.platform !== "win32") {
       const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-res-")));
       mkdirSync(join(root, "App", "resources", "daemon"), { recursive: true });
@@ -38,16 +40,59 @@ describe("where the resources folder is", () => {
   });
 });
 
-describe("the resources folder is fenced like runtimes", () => {
-  test("the sandbox, the write tools, their deny rules and the escape floor on any mention", () => {
-    restore = setAppResourcesDirs([R]);
-    expect(sandboxConfigFor(H).filesystem!.denyWrite).toContain(R);
-    expect(homeFenceFor(H).dirs).toContain(R);
+describe("the install around it", () => {
+  const id = (p: string) => p;
+  test("the .app on macOS, the install folder on Windows and Linux; never a root or a folder holding the home", () => {
+    expect(appInstallDirsFor(`${R}/daemon/clover-core`, true, "darwin", id, "/Users/x")).toEqual([A]);
+    expect(appInstallDirsFor("C:\\Program Files\\Clover\\resources\\daemon\\clover-core.exe", true, "win32", id, "C:\\Users\\x")).toEqual(["C:\\Program Files\\Clover"]);
+    expect(appInstallDirsFor("C:\\Users\\x\\AppData\\Local\\Programs\\Clover\\resources\\daemon\\clover-core.exe", true, "win32", id, "C:\\Users\\x")).toEqual(["C:\\Users\\x\\AppData\\Local\\Programs\\Clover"]);
+    expect(appInstallDirsFor("/opt/Clover/resources/daemon/clover-core", true, "linux", id, "/home/x")).toEqual(["/opt/Clover"]);
+    expect(appInstallDirsFor("/resources/daemon/clover-core", true, "linux", id, "/home/x")).toEqual(["/resources"]); // not "/"
+    expect(appInstallDirsFor("/home/x/resources/daemon/clover-core", true, "linux", id, "/home/x")).toEqual(["/home/x/resources"]); // not the home
+    expect(appInstallDirsFor("/Users/x/Resources/daemon/clover-core", true, "darwin", id, "/Users/x")).toEqual(["/Users/x/Resources"]); // no .app around it
+    expect(appInstallDirsFor(`${R}/daemon/clover-core`, false, "darwin", id, "/Users/x")).toEqual([]); // from source
+    expect(appInstallDirsFor(`${H}/bin/clover-core`, true, "darwin", id, "/Users/x")).toEqual([]);
+  });
+
+  test("a linked bundle (Link.app -> Real.app) is held under both spellings; the same one twice, once", () => {
+    const real = (p: string) => p.replace("/Applications/Link.app/", "/Applications/Real.app/");
+    expect(appInstallDirsFor("/Applications/Link.app/Contents/Resources/daemon/clover-core", true, "darwin", real, "/Users/x"))
+      .toEqual(["/Applications/Link.app", "/Applications/Real.app"]);
+    // A link to the binary itself has no bundle in its own spelling: only the resolved one.
+    expect(appInstallDirsFor("/usr/local/bin/clover-core", true, "darwin", () => `${R}/daemon/clover-core`, "/Users/x")).toEqual([A]);
+    expect(appInstallDirsFor("/applications/clover.app/Contents/Resources/daemon/clover-core", true, "darwin", () => `${R}/daemon/clover-core`, "/Users/x")).toEqual(["/applications/clover.app"]);
+  });
+});
+
+describe("the install is fenced like runtimes", () => {
+  test("the whole bundle: the sandbox, the write tools, their deny rules and the escape floor on any mention", () => {
+    restore = setAppInstallDirs([A]);
+    expect(sandboxConfigFor(H).filesystem!.denyWrite).toContain(A);
+    expect(homeFenceFor(H).dirs).toContain(A);
+    expect(controlPlaneDenyRules(H).some((r) => r.startsWith("Write(") && r.includes(`${A}/**`))).toBe(true);
+    for (const f of [`${A}/Contents/MacOS/Clover`, `${A}/Contents/Frameworks/Electron Framework.framework/x`, `${A}/Contents/Info.plist`, `/APPLICATIONS/clover.app/Contents/Info.plist`]) {
+      expect(controlPlaneTargetForCall("Write", { file_path: f }, "/", homeFenceFor(H)), f).not.toBeNull();
+    }
+    for (const cmd of [`cp x "${A}/Contents/MacOS/Clover"`, `plutil -replace x -string y ${A}/Contents/Info.plist`, `ls /applications/CLOVER.app/Contents/Frameworks`]) {
+      expect(escapeFloorHit(cmd, H), cmd).toBeDefined();
+    }
+    expect(escapeFloorHit("ls /Applications/Other.app/Contents", H)).toBeUndefined();
+  });
+
+  test("a linked bundle's own spelling is refused too", () => {
+    restore = setAppInstallDirs(appInstallDirsFor("/Applications/Link.app/Contents/Resources/daemon/clover-core", true, "darwin", (p) => p.replace("/Link.app/", "/Real.app/"), "/Users/x"));
+    for (const cmd of ["echo x > /Applications/Link.app/Contents/Resources/plugins/clover/index.js", "echo x > /applications/real.app/Contents/Info.plist"]) {
+      expect(escapeFloorHit(cmd, H), cmd).toBeDefined();
+    }
+    expect(sandboxConfigFor(H).filesystem!.denyWrite).toEqual(expect.arrayContaining(["/Applications/Link.app", "/Applications/Real.app"]));
+  });
+
+  test("the resources folder inside it, as before", () => {
+    restore = setAppInstallDirs([A]);
     for (const f of [`${R}/plugins/clover/manifest.json`, `${R}/plugins/clover/hooks/x.js`, `${R}/daemon/clover-core`]) {
       expect(controlPlaneTargetForCall("Write", { file_path: f }, "/", homeFenceFor(H)), f).not.toBeNull();
       expect(controlPlaneTargetForCall("Edit", { file_path: f, old_string: "a", new_string: "b" }, "/", homeFenceFor(H)), f).not.toBeNull();
     }
-    expect(controlPlaneDenyRules(H).some((r) => r.startsWith("Write(") && r.includes("/Applications/Clover.app/Contents/Resources/**"))).toBe(true);
     for (const cmd of [
       `echo x > ${R}/plugins/clover/hooks/x.js`, `cp evil.js ${R}/plugins/clover/index.js`, `rm -rf ${R}/plugins`,
       `python3 -c "open('${R}/plugins/clover/index.js','w').write('x')"`, `ls ${R}/plugins`, `cat ${R}/daemon/clover-core`,
@@ -57,9 +102,9 @@ describe("the resources folder is fenced like runtimes", () => {
     expect(controlPlaneTargetForCall("Write", { file_path: "/Users/x/notes.md" }, "/", homeFenceFor(H))).toBeNull();
   });
 
-  test("without a resources folder (from source, a server) nothing extra is fenced", () => {
-    restore = setAppResourcesDirs([]);
-    expect(sandboxConfigFor(H).filesystem!.denyWrite).not.toContain(R);
+  test("without an install (from source, a server) nothing extra is fenced", () => {
+    restore = setAppInstallDirs([]);
+    expect(sandboxConfigFor(H).filesystem!.denyWrite).not.toContain(A);
     expect(escapeFloorHit(`ls ${R}/plugins`, H)).toBeUndefined();
   });
 
@@ -67,9 +112,21 @@ describe("the resources folder is fenced like runtimes", () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-res-fence-")));
     const res = join(root, "Clover.app", "Contents", "Resources");
     mkdirSync(join(res, "plugins", "clover"), { recursive: true });
-    const fence = new CloverFence({ home: join(root, "home"), cloverHome: join(root, "home", ".clover"), temp: join(root, "tmp"), appResources: [res] });
-    expect(fence.check({ op: "write", path: join(res, "plugins", "clover", "index.js") })).toMatchObject({ allowed: false, reason: "plugins" });
+    const app = join(root, "Clover.app");
+    mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
+    const fence = new CloverFence({ home: join(root, "home"), cloverHome: join(root, "home", ".clover"), temp: join(root, "tmp"), appResources: [app] });
+    for (const p of [join(res, "plugins", "clover", "index.js"), join(app, "Contents", "MacOS", "Clover"), join(app, "Contents", "Info.plist")]) {
+      expect(fence.check({ op: "write", path: p }), p).toMatchObject({ allowed: false, reason: "plugins" });
+    }
     expect(fence.check({ op: "delete", path: join(res, "plugins") })).toMatchObject({ allowed: false });
     expect(fence.check({ op: "read", path: join(res, "plugins", "clover", "index.js") })).toMatchObject({ allowed: true });
+    // Windows and Linux: the install folder, its executable and libraries beside the resources.
+    const opt = join(root, "opt", "Clover");
+    mkdirSync(join(opt, "resources", "daemon"), { recursive: true });
+    const linux = new CloverFence({ os: "linux", home: join(root, "home"), cloverHome: join(root, "home", ".clover"), temp: join(root, "tmp"), appResources: [opt] });
+    for (const p of [join(opt, "clover"), join(opt, "libffmpeg.so"), join(opt, "resources", "daemon", "clover-core")]) {
+      expect(linux.check({ op: "write", path: p }), p).toMatchObject({ allowed: false, reason: "plugins" });
+    }
+    expect(linux.check({ op: "write", path: join(root, "opt", "Other", "x") })).toEqual({ allowed: true });
   });
 });
