@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, buildOsFor, devSigningIdentity, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
@@ -130,7 +130,7 @@ describe("the feed and the channels", () => {
     expect(builder.mac.identity).toBeNull();
     expect(builder.mac.notarize).toBe(false);
     expect(builder.mac.hardenedRuntime).toBe(true);
-    expect(builder.mac.signIgnore).toEqual(["Contents/Resources/daemon/"]);
+    expect(builder.mac.signIgnore).toEqual(["Contents/Resources/daemon/", "Contents/Resources/plugins/"]);
     const ent = read("packaging/macos/entitlements.mac.plist");
     expect(ent).toContain("com.apple.security.cs.allow-jit");
     expect(ent).not.toContain("disable-library-validation");
@@ -232,7 +232,10 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(releaseBuilderArgs(unsigned, env)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
     expect(builderEnv(unsigned, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
     const signed = { ...unsigned, sign: true };
-    expect(releaseBuilderArgs(signed, env)).toEqual([...releaseBuilderArgs(unsigned, env), "-c.mac.identity=Developer ID Application: Example Ltd (AB12CD34EF)", "-c.mac.notarize=true"]);
+    // electron-builder refuses the "Developer ID Application: " prefix (it picks the type itself): the name without it.
+    expect(releaseBuilderArgs(signed, env)).toEqual([...releaseBuilderArgs(unsigned, env), "-c.mac.identity=Example Ltd (AB12CD34EF)", "-c.mac.notarize=true"]);
+    expect(builderIdentity("Developer ID Application: Example Ltd (AB12CD34EF)")).toBe("Example Ltd (AB12CD34EF)");
+    expect(() => builderIdentity("Example Ltd (AB12CD34EF)")).toThrow(/named in full/);
     expect(builderEnv(signed, env)).toBe(env);
     const win = { os: "win", channel: "beta", sign: true, signDev: false, dryRun: false } as const;
     expect(releaseBuilderArgs(win, { CLOVER_WIN_PUBLISHER: "Example Ltd" })).toEqual(
@@ -348,6 +351,35 @@ describe("the release build (scripts/release/build.ts)", () => {
     const adhoc = parseCodesignDisplay("Identifier=x\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
     expect(signatureProblems("x", adhoc, CLOVER_TEAM_ID, undefined, { dev: true })).toEqual([`x is not signed with team ${CLOVER_TEAM_ID}'s identity`, "x has no hardened runtime"]);
   });
+});
+
+describe("the bundled plugins' native code on a signed Mac build", () => {
+  test("Mach-O files are found by their magic, any byte order, thin or universal; nothing else is", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-macho-"));
+    try {
+      mkdirSync(join(dir, "p", "node_modules", "x"), { recursive: true });
+      writeFileSync(join(dir, "p", "node_modules", "x", "addon.node"), new Uint8Array([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]));
+      writeFileSync(join(dir, "p", "fat.dylib"), new Uint8Array([0xca, 0xfe, 0xba, 0xbe, 1]));
+      writeFileSync(join(dir, "p", "index.js"), "export {};\n");
+      writeFileSync(join(dir, "p", "tiny"), new Uint8Array([0xcf, 0xfa]));
+      expect(machOFiles(dir)).toEqual(["p/fat.dylib", "p/node_modules/x/addon.node"]);
+      expect(isMachO(new Uint8Array([0xfe, 0xed, 0xfa, 0xcf]))).toBe(true);
+      // Universal binaries with 64-bit offsets, in either byte order.
+      expect(isMachO(new Uint8Array([0xca, 0xfe, 0xba, 0xbf]))).toBe(true);
+      expect(isMachO(new Uint8Array([0xbf, 0xba, 0xfe, 0xca]))).toBe(true);
+      expect(isMachO(new TextEncoder().encode("#!/b"))).toBe(false);
+      // A real one: this machine's own executable, when it's a Mac.
+      if (process.platform === "darwin") expect(isMachO(new Uint8Array(readFileSync("/usr/bin/true")).slice(0, 4))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("each signs under its own identifier, from its path", () => {
+    expect(nativeIdentifier("clover/plugins/companion-web/node_modules/@node-datachannel/darwin-arm64/node_datachannel.node"))
+      .toBe("com.waifucave.clover.plugin.clover.plugins.companion.web.node.modules.node.datachannel.darwin.arm64.node.datachannel.node");
+  });
+
 });
 
 describe("the owner's publish step (scripts/release/publish.ts)", () => {

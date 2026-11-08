@@ -54,7 +54,7 @@
 // (it requires a stapled dmg).
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -200,6 +200,13 @@ export function daemonInApp(outDir: string, os: BuildOs): string {
     : join(outDir, "win-unpacked", "resources", "daemon", "clover-core.exe");
 }
 
+/** The identity as electron-builder's `mac.identity` takes it: the full name less "Developer ID Application: ". */
+export function builderIdentity(identity: string): string {
+  const name = identity.replace(/^Developer ID Application: /, "");
+  if (name === "" || name === identity) throw new Error("CLOVER_MAC_IDENTITY is a Developer ID Application identity named in full");
+  return name;
+}
+
 /** electron-builder's command for the OS's release, run in apps/desktop. Secrets reach it through its environment only.
  *  --sign-dev names the identity by its SHA-1 (`devIdentity`), with no timestamp and no notarization. */
 export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, string | undefined>, devIdentity?: string): string[] {
@@ -210,7 +217,9 @@ export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, stri
     return [...out, `-c.mac.identity=${devIdentity}`, "-c.mac.notarize=false", "-c.mac.timestamp=none"];
   }
   if (!a.sign) return out;
-  if (a.os === "mac") return [...out, `-c.mac.identity=${env.CLOVER_MAC_IDENTITY}`, "-c.mac.notarize=true"];
+  // electron-builder takes the identity without its "Developer ID Application: " prefix (it refuses one that has it,
+  // and picks the certificate type itself); codesign takes the full name.
+  if (a.os === "mac") return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=true"];
   return [...out, "-c.win.forceCodeSigning=true", `-c.win.signtoolOptions.publisherName=${env.CLOVER_WIN_PUBLISHER}`];
 }
 
@@ -238,6 +247,32 @@ function must(say: string, cmd: readonly string[], cwd: string, env?: Record<str
 
 const sha256 = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex");
 
+/** Whether `bytes` start a Mach-O file (thin, either byte order, 32 or 64 bit, or universal with 32- or 64-bit
+ *  offsets). */
+export function isMachO(bytes: Uint8Array): boolean {
+  if (bytes.length < 4) return false;
+  const magic = ((bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!) >>> 0;
+  return [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca].includes(magic);
+}
+
+/** The Mach-O files under `dir` (paths relative to it, with `/`): the bundled plugins' native code. */
+export function machOFiles(dir: string): string[] {
+  return walkTree(dir).filter((e) => !e.link).map((e) => e.rel).filter((rel) => {
+    const fd = openSync(join(dir, rel), "r");
+    try {
+      const head = new Uint8Array(4);
+      return readSync(fd, head, 0, 4, 0) === 4 && isMachO(head);
+    } finally {
+      closeSync(fd);
+    }
+  }).sort();
+}
+
+/** A bundled plugin's native file's signing identifier: Clover's prefix and its path, as letters, digits and dots. */
+export function nativeIdentifier(rel: string): string {
+  return `com.waifucave.clover.plugin.${rel.replace(/[^A-Za-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "")}`;
+}
+
 /** One signed app's checks: its signatures, the resources' entitlements, its seal, Gatekeeper's verdict and its staple. */
 function verifyMacApp(label: string, app: string, teamId: string, root: string, cwd: string, dev = false): string[] {
   const problems: string[] = [];
@@ -255,6 +290,18 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
     const have = parseEntitlementKeys(run(["codesign", "-d", "--entitlements", "-", "--xml", path], cwd).out);
     const want = b.entitlements === undefined ? [] : entitlementsIn(readFileSync(join(root, b.entitlements), "utf8"));
     if (have.join(",") !== want.join(",")) problems.push(`${label}'s ${b.file} has the entitlements [${have.join(", ")}], not [${want.join(", ")}]`);
+  }
+  // The bundled plugins' native code, signed before the manifest was measured (and left alone by electron-builder).
+  const plugins = join(app, "Contents", "Resources", "plugins");
+  if (existsSync(plugins)) {
+    for (const rel of machOFiles(plugins)) {
+      const path = join(plugins, rel);
+      problems.push(...signatureProblems(`${label}'s plugins/${rel}`, display(path), teamId, nativeIdentifier(rel), { dev }));
+      if (dev) {
+        const dr = /^designated => (.+)$/m.exec(run(["codesign", "-d", "-r-", path], cwd).out)?.[1]?.trim();
+        if (dr !== teamRequirement(nativeIdentifier(rel), teamId)) problems.push(`${label}'s plugins/${rel}'s designated requirement is ${dr ?? "(none)"}, not Clover's team's`);
+      }
+    }
   }
   const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${CLOVER_APP_REQUIREMENT}`, app], cwd);
   if (deep.status !== 0) problems.push(`codesign --verify --deep --strict against Clover's requirement refuses ${label}: ${deep.out.trim().slice(0, 400)}`);
@@ -351,7 +398,9 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     console.log(`release/build: the bundled plugins: plugins/ at HEAD built for ${target} into apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
+    if (a.sign && a.os === "mac") console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignArgs("out/plugins/<file>", "<CLOVER_MAC_IDENTITY>", nativeIdentifier("<file>")).join(" ")}`);
     if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
+    if (a.signDev) console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignDevArgs("out/plugins/<file>", dev!.hash, nativeIdentifier("<file>"), CLOVER_TEAM_ID).join(" ").replace(dev!.hash, "<SHA-1>")}`);
     if (a.signDev) for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignDevArgs(`out/daemon/${b.file}`, dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements).join(" ").replace(dev!.hash, "<SHA-1>")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
@@ -376,6 +425,20 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       // Built for this target from the committed files (lane B's buildPluginForShipping), natives included, then
       // measured: the manifest the daemon carries names exactly the built tree.
       const builtPlugins = await buildBundledPlugins(root, stagedPlugins, target);
+      // A signed macOS build signs the plugins' native code (their addons) here, before the tree is measured, and
+      // electron-builder.yml's signIgnore keeps the app's signing off it: signing changes a file's bytes, so the
+      // manifest the core carries must name the signed ones. Notarization needs every Mach-O in the app signed.
+      if (a.sign && a.os === "mac") {
+        for (const rel of machOFiles(stagedPlugins)) {
+          must(`sign the plugins' ${rel}`, codesignArgs(join(stagedPlugins, rel), process.env.CLOVER_MAC_IDENTITY!, nativeIdentifier(rel)), root);
+        }
+      }
+      // --sign-dev likewise, in its dev form (lib.ts's codesignDevArgs: the team requirement, no timestamp).
+      if (a.signDev) {
+        for (const rel of machOFiles(stagedPlugins)) {
+          must(`sign the plugins' ${rel} (dev)`, codesignDevArgs(join(stagedPlugins, rel), dev!.hash, nativeIdentifier(rel), CLOVER_TEAM_ID, undefined, process.env.CLOVER_MAC_DEV_KEYCHAIN || undefined), root);
+        }
+      }
       manifest = writeStagedManifest(stagedPlugins, manifestFile);
       console.log(`release/build: the bundled plugins: ${builtPlugins.files.length} files built (${builtPlugins.natives.length} native addon files), ${Object.keys(manifest.files).length} measured`);
       if (runScriptLine(`bun scripts/build-daemon.ts --target ${target} --plugins-manifest ${JSON.stringify(manifestFile)}`, root) !== 0) throw new Error("the daemon's build failed");
