@@ -5,7 +5,8 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
+import { builderEnv, buildOsFor, CLOVER_APP_REQUIREMENT, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
+import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import {
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
@@ -186,6 +187,13 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(signingInputs("mac", {})).toEqual({ missing: ["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"], problems: [] });
     expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Apple Development: x (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toHaveLength(1);
     expect(signingInputs("win", { WIN_CSC_LINK: "secret-path" })).toEqual({ missing: ["WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"], problems: [] });
+  });
+
+  test("--sign on macOS takes only Clover's team, whose app requirement the release checks", () => {
+    expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: `Developer ID Application: Example Ltd (${CLOVER_TEAM_ID})`, APPLE_KEYCHAIN_PROFILE: "p" })).toEqual({ missing: [], problems: [] });
+    expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems)
+      .toEqual([`CLOVER_MAC_IDENTITY is team AB12CD34EF's, not Clover's (${CLOVER_TEAM_ID})`]);
+    expect(CLOVER_APP_REQUIREMENT).toBe(`identifier "com.waifucave.clover" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
   });
 });
 

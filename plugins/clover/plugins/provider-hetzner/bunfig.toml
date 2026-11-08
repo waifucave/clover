@@ -1,0 +1,2 @@
+[test]
+# No preload: the tests run the client against the fake Hetzner API in test/, with no home, no secret store and no network.

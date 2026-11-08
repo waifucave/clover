@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DAEMON_TARGETS, daemonCompileCommand, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs } from "./build-daemon";
+import { DAEMON_TARGETS, daemonCompileCommand, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs } from "./build-daemon";
 
 const compileCore = (JSON.parse(readFileSync(join(import.meta.dir, "..", "packages", "cli", "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"]!;
 
@@ -39,6 +39,27 @@ describe("build:daemon", () => {
       expect(steps.slice(0, 2)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true ")).slice(0, 2));
       expect(steps[2]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts");
     }
+  });
+
+  test("--plugins-manifest: the compile step embeds the manifest file (a fourth input, beside the worker bundles)", () => {
+    const command = daemonCompileCommand(compileCore, "darwin-arm64", true);
+    const steps = command.split("&&").map((s) => s.trim());
+    expect(steps[2]).toContain(`src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts ${MANIFEST_EMBED} --outfile ../../dist/daemon/darwin-arm64/clover-core`);
+    expect(MANIFEST_EMBED).toBe(".build/clover-bundled-plugins.manifest");
+    expect(steps.slice(0, 2).join(" ")).not.toContain(MANIFEST_EMBED);
+    expect(daemonCompileCommand(compileCore, "darwin-arm64")).not.toContain(MANIFEST_EMBED);
+    expect(parseBuildDaemonArgs(["--plugins-manifest", "/x/m.manifest"], "darwin-arm64")).toEqual({ targets: ["darwin-arm64"], smoke: false, dryRun: false, pluginsManifest: "/x/m.manifest" });
+    expect(parseBuildDaemonArgs(["--plugins-manifest=/y"], "darwin-arm64").pluginsManifest).toBe("/y");
+    expect(() => parseBuildDaemonArgs(["--plugins-manifest"], "darwin-arm64")).toThrow("--plugins-manifest takes a file");
+  });
+
+  test("a cross-built core is checked by the manifest's bytes in it, exactly once", () => {
+    const m = new TextEncoder().encode('{"format":1,"files":{}}\n');
+    const bin = (...parts: Uint8Array[]) => new Uint8Array(Buffer.concat(parts.map((p) => Buffer.from(p))));
+    const junk = new Uint8Array([0, 1, 2, 3]);
+    expect(occurrences(bin(junk, m, junk), m)).toBe(1);
+    expect(occurrences(bin(junk, junk), m)).toBe(0);
+    expect(occurrences(bin(m, junk, m), m)).toBe(2);
   });
 
   test("a compile:core of another shape is refused, not guessed at", () => {
