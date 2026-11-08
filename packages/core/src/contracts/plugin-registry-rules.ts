@@ -243,6 +243,10 @@ export function computeRegistry(plugins: ReadonlyMap<string, RegistryPlugin>, op
       folder: held.folder ?? `/plugins/${id.replace("/", "/plugins/")}`,
       manifest: held.invalid === undefined ? structuredClone(m) : undefined,
       capabilities: [...(m.capabilities ?? [])],
+      // Granted: what the user's OK covers and the plugin may use now. A change that adds a capability asks again
+      // (§5.6), so an OK'd tree's capabilities are always the OK's or fewer; nothing is granted before the OK, after a
+      // refusal or a block, or for an invalid plugin.
+      granted: held.approved && top.approved && !["found", "refused", "invalid", "blocked"].includes(state) ? [...(m.capabilities ?? [])] : [],
       issues: structuredClone(held.issues ?? []),
       provenance: held.provenance ?? { by: "user-app", at: 0 },
     });

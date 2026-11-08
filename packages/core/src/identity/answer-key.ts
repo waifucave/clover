@@ -9,7 +9,8 @@
 //   could approve actions on other computers.
 //
 // Nothing here ever asks for Face ID, Touch ID, Windows Hello, a passcode or any other presence check (the owner's
-// decision): a key is protected by where it is stored, and using it never prompts. `held` says where it is stored.
+// decision): a key is protected by where it is stored, and using it never prompts (no `userPresence`, biometry or
+// passcode access control, no DPAPI prompt flag, no user-auth policy on the TPM key). `held` says where it is stored.
 //
 // This module is for the app's main process (lane E): it makes or loads the key through storage the app provides,
 // proves it to the core (`registration`, which `FileDeviceRegistry.setOwnAnswerKey` checks), and signs answers.
@@ -32,9 +33,8 @@ export function answerKeyHolder(os: Os, can: AnswerKeyProtections): AnswerKeyHol
   return answerKeyHolderFor(os, can);
 }
 
-/** Where the app keeps the key's seed: its Keychain item, its TPM-wrapped blob, or (for `none`) DPAPI, the Secret
- *  Service or a file the app alone writes; none of them prompts to be read. The seed passes through here only as a
- *  `Secret`. */
+/** Where the app keeps the key's seed: its Keychain item, its TPM- or DPAPI-wrapped blob, its Secret Service item, or (for `none`) a file the
+ *  app alone writes. The seed passes through here only as a `Secret`. */
 export interface AnswerKeyStorage {
   load(): Promise<Secret | null>;
   save(seed: Secret): Promise<void>;

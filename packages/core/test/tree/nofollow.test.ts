@@ -186,9 +186,16 @@ describe("the read-denied items", () => {
         expect(await code(tree.read("home/Laptop1/.clover/run/core.json", { as, noFollow: true }))).toBe("fenced");
         expect(await code(tree.stat("home/Laptop1/.clover/run/core.json", { as }))).toBe("fenced");
         expect(await code(tree.list("home/Laptop1/.clover/run", { as }))).toBe("fenced");
-        expect((await tree.list("home/Laptop1/.clover", { as })).map((e) => e.path)).not.toContain("home/Laptop1/.clover/run");
-        expect(await tree.glob("**/*", { as, cwd: "home/Laptop1/.clover" })).not.toContain("home/Laptop1/.clover/run/core.json");
-        expect(await tree.read("home/Laptop1/.clover/notes.md", { as })).toEqual(utf8("fine"));
+        if (tree === laptop.node.tree) {
+          expect((await tree.list("home/Laptop1/.clover", { as })).map((e) => e.path)).not.toContain("home/Laptop1/.clover/run");
+          expect(await tree.glob("**/*", { as, cwd: "home/Laptop1/.clover" })).not.toContain("home/Laptop1/.clover/run/core.json");
+          expect(await tree.read("home/Laptop1/.clover/notes.md", { as })).toEqual(utf8("fine"));
+        } else {
+          // Through another computer the call is a peer's, and #234's home default-deny refuses a peer the whole Clover
+          // home, its listing and the rest of it included.
+          expect(await code(tree.list("home/Laptop1/.clover", { as }))).toBe("fenced");
+          expect(await code(tree.read("home/Laptop1/.clover/notes.md", { as }))).toBe("fenced");
+        }
       }
     } finally {
       cluster.close();

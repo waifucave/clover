@@ -34,7 +34,8 @@ import { ensureOutdir } from "./sessions/outdir";
 import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
-import { createCloverServer, type CloverHandler, type CloverServer } from "./ipc/clover";
+import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
+import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
@@ -119,6 +120,7 @@ import { PluginSupervisor } from "./plugins/supervisor";
 import { PluginContribRegistry } from "./plugins/contrib";
 import { HookRegistry, HookFacade } from "./plugins/hook-registry";
 import { HookRunner } from "./plugins/hook-runner";
+import { ensurePluginRunFiles, type PluginRunGuard } from "./registry/plugin-run";
 import { BashReviewer } from "./agent/reviewer";
 import { AuditLog } from "./peripheral/audit";
 import { PeripheralBroker, type PeripheralClass } from "./peripheral/broker";
@@ -454,7 +456,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none).
    *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
    *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
-  links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
+  links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "account" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
   /** The daemon integration: this computer's node and bot side, started over the links once they're up. `node: false`
    *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
@@ -1335,10 +1337,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `registry` const, which isn't in scope here) so it keeps behaving correctly either way — a safe
   // no-op via optional chaining while `sharedRegistry` is still null (no provider).
   const allPlugins = pluginStore.list();
+  // #234, F2: Clover's bunfig and load guard for every plugin process (supervised hosts and hooks), in the run folder.
+  // On a failure each runner falls back to its own (the supervisor refuses to spawn; a hook uses a private temp one).
+  let pluginRun: PluginRunGuard | undefined;
+  try {
+    pluginRun = { files: ensurePluginRunFiles(dirs.runDir) };
+  } catch (err) {
+    console.error(`plugin run files: ${(err as Error).message}`);
+  }
   // WS-21 (L4 request 2): no boot-time plugin hook build — a plugin's hooks are claude-native
   // `hooks/hooks.json` content the runtimes load themselves (spec §5.1/§5.3).
   const pluginSupervisor = new PluginSupervisor({
     runDir: dirs.runDir,
+    pluginRun,
     socketPath: dirs.socketPath,
     mintToken: (id) => store.mintPluginToken(id),
     settings: settings?.plugins?.supervisor,
@@ -2078,7 +2089,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const hookFacade = new HookFacade({
     registry: hookRegistry,
-    runner: new HookRunner(),
+    runner: new HookRunner(pluginRun),
     hooksEnabled: cloverHooksEnabled,
     cwdForSession: (sid) => { try { return store.meta(sid).cwd ?? undefined; } catch { return undefined; } },
   });
@@ -3223,6 +3234,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
+  if (opts.modelPluginHost !== undefined) {
+    Object.assign(cloverLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
+  }
   // This device's id is its link key's (H-M1): the one the links below load from the same store. A store that is
   // still locked (a keyring locked at the login screen) can't give it yet: the hello carries a stand-in id, stable per
   // home, and the links wait for the store to unlock (below). The boot never waits on it.

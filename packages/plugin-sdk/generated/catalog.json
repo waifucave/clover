@@ -880,7 +880,7 @@
       "shape": "keyed",
       "declaredBy": "shell",
       "inBotTab": false,
-      "doc": "The panel's contents: the browser, and later the diff view, editor, file tree and terminal.",
+      "doc": "A spot inside each panel view, keyed by the view's id.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1884,13 +1884,13 @@
       "shape": "list",
       "declaredBy": "conversation",
       "inBotTab": true,
-      "needs": [
-        "conversation.read"
-      ],
+      "gates": {
+        "message.text": "conversation.read"
+      },
       "context": [
         "bot"
       ],
-      "doc": "Items in a message's menu.",
+      "doc": "Items in a message's menu. Picking one runs its `command` (`command.run`) with these props as its args; the message's text is there only for a plugin with `conversation.read`.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1922,10 +1922,15 @@
             "maxLength": 1024,
             "format": "path",
             "description": "A path relative to the plugin folder, with `/`; it must resolve inside it."
+          },
+          "command": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*\\.[a-z][a-zA-Z0-9_-]{0,63}$"
           }
         },
         "required": [
-          "title"
+          "title",
+          "command"
         ]
       },
       "props": {
@@ -1968,39 +1973,33 @@
           "session": {
             "type": "string"
           },
-          "item": {
+          "message": {
             "type": "object",
             "properties": {
               "id": {
                 "type": "string"
               },
-              "kind": {
+              "text": {
                 "type": "string"
-              },
-              "at": {
-                "type": "number"
               }
             },
             "required": [
-              "id",
-              "kind",
-              "at"
-            ],
-            "additionalProperties": {}
+              "id"
+            ]
           },
-          "ctx": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {}
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "bot"
+            ]
           }
         },
         "required": [
           "bot",
           "session",
-          "item",
-          "ctx"
+          "message",
+          "role"
         ]
       }
     },

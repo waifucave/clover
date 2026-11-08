@@ -28,7 +28,8 @@ import type { ProcessTableReader } from "../process/table";
 import { FAKE_AGENT_PATH, fakeLaunch, readReport, writeFakeAgent, type FakeAgentRun } from "../testing/harness";
 import type { FakeAcpStep } from "../testing/fake-acp-agent";
 import { StallWatchdog } from "../watchdog";
-import type { SandboxAdmission } from "../sandbox/admission";
+import type { SandboxAdmission, SandboxWriter } from "../sandbox/admission";
+import type { ModeFloor } from "../acp/session";
 import type { AgentOks } from "../sandbox/oks";
 
 /** The scripted agent's "own sandbox", admitted for the tests: the fenced set written as a file its env names. */
@@ -43,8 +44,9 @@ export const FAKE_PROTECTED: SandboxAdmission = {
 };
 
 /** The scripted agent's admission on every OS. */
-export function fakeAdmissions(sandbox: "protected" | "none") {
-  const row: SandboxAdmission = sandbox === "none" ? { status: "unsupported", reason: "the test's agent has none" } : FAKE_PROTECTED;
+export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level: Level | undefined) => ModeFloor) {
+  const writer: SandboxWriter = (policy, ctx) => ({ ...(FAKE_PROTECTED as { writer: SandboxWriter }).writer(policy, ctx), modeFloor: modeFloor! });
+  const row: SandboxAdmission = sandbox === "none" ? { status: "unsupported", reason: "the test's agent has none" } : modeFloor ? { ...FAKE_PROTECTED, writer } as SandboxAdmission : FAKE_PROTECTED;
   return { fake: { macos: row, linux: row, windows: row } };
 }
 
@@ -63,8 +65,16 @@ export interface WorldOptions {
   /** The plugins' parts for every session, and the backend's placement of them (Claude Code's). */
   pluginParts?: PluginPartsSource;
   place?: AcpBackendOptions["place"];
-  /** The scripted agent's `mode` option values, and the backend's read-only mode. */
+  /** The scripted agent's `mode` option values (the first is current at the start), and the backend's read-only mode. */
   modes?: string[];
+  /** The scripted agent's writer's mode floor, by level. */
+  modeFloor?: (level: Level | undefined) => ModeFloor;
+  /** The scripted agent's ACP session modes, whether its `session/set_mode` stays unconfirmed, whether its edits ask
+   *  by mode (as Claude Code's), and how long the session waits for a mode's confirmation. */
+  acpModes?: string[];
+  silentSetMode?: boolean;
+  editsFollowMode?: boolean;
+  modeConfirmMs?: number;
   readOnlyMode?: { option: string; values: readonly string[] };
   askDuringReplay?: boolean;
   selections?: UserSelections;
@@ -115,6 +125,13 @@ export class World {
   readonly agent: FakeAgentRun;
   level: Level;
   readonly computer: string;
+  readonly #levelWatchers = new Set<() => void>();
+
+  /** Changes the computer's level and tells the manager, as the registry's watch does. */
+  changeLevel(level: Level): void {
+    this.level = level;
+    for (const fn of [...this.#levelWatchers]) fn();
+  }
 
   constructor(o: WorldOptions = {}) {
     this.computer = o.computer ?? "Studio";
@@ -137,6 +154,7 @@ export class World {
     this.agent = writeFakeAgent(join(this.root, "agent"), {
       quirks, script: o.script ?? [], ...(o.history ? { history: o.history } : {}), version: "fake-agent 1.0.0",
       ...(o.modes ? { modes: o.modes } : {}), ...(o.askDuringReplay ? { askDuringReplay: true } : {}),
+      ...(o.acpModes ? { acpModes: o.acpModes } : {}), ...(o.silentSetMode ? { silentSetMode: true } : {}), ...(o.editsFollowMode ? { editsFollowMode: true } : {}),
     });
     const sock = socketPath(this.root);
     let manager!: AgentManager;
@@ -144,7 +162,8 @@ export class World {
       id: "fake", pluginId: "clover/agent-fake", quirks, clock: this.clock,
       command: { program: process.execPath, prefixArgs: [FAKE_AGENT_PATH, this.agent.config], acpArgs: ["acp"] },
       wire: (id) => manager.wire(id),
-      admissions: fakeAdmissions(o.sandbox ?? "protected"),
+      admissions: fakeAdmissions(o.sandbox ?? "protected", o.modeFloor),
+      ...(o.modeConfirmMs === undefined ? {} : { modeConfirmMs: o.modeConfirmMs }),
       ...(o.place ? { place: o.place } : {}),
       ...(o.readOnlyMode ? { readOnlyMode: o.readOnlyMode } : {}), ...(o.selections ? { selections: o.selections } : {}),
     });
@@ -156,6 +175,10 @@ export class World {
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
       levelOf: () => this.level,
+      watchLevels: (fn) => {
+        this.#levelWatchers.add(fn);
+        return () => void this.#levelWatchers.delete(fn);
+      },
       ...(o.pause ? { pause: o.pause } : {}),
     });
     this.manager = manager;

@@ -403,7 +403,7 @@ describe("a bot's memory across computers", () => {
   test("the sync methods carry sessions' records and memory side by side", async () => {
     const w = await world(["Studio", "Laptop"]);
     const { SessionRecordSync } = await import("../session-records");
-    const host = { tap: () => () => {}, history: () => [], list: () => [], get: () => undefined, head: () => 0, ingest: () => {} };
+    const host = { tap: () => () => {}, history: () => [], list: () => [], get: () => undefined, head: () => 0, ingest: () => {}, setAside: () => [], appendLate: () => {}, earlier: () => [], readEarlier: () => [], ackEarlier: () => {} };
     for (const n of ["Studio", "Laptop"]) {
       const d = w.at(n).d;
       const s = new SessionRecordSync({ self: d.id, computer: () => n, transport: d.transport, registry: d.registry, host });

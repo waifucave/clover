@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import type { Secret } from "../../contracts/secret-store";
 import { FileDeviceRegistry } from "../../devices/registry";
-import { cardAnswerSigningInput } from "@waifucave/clover-protocol";
+import { ANSWER_KEY_HOLDERS, cardAnswerSigningInput } from "@waifucave/clover-protocol";
 import { fromBase64, utf8 } from "../bytes";
 import { AnswerKey, answerKeyHolder } from "../answer-key";
 import { DeviceKey } from "../device-key";

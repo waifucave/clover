@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { lookalikeOf as runtimeLookalikeOf } from "@waifucave/clover-agent-runtime/lookalike";
 import { lookalikeOf } from "@waifucave/clover-plugin-sdk/fold";
 import type { Caller } from "@waifucave/clover-protocol";
 import type { InvokeRequest } from "../../../src/contracts/plugin-host";
@@ -348,6 +349,27 @@ describe("how each input reads", () => {
     }
     // A Latin i or l is itself: `<note>` and `<routine>` don't take each other's letters.
     expect(defuseTagNames("<routlne> <nlte>", INPUT_TAGS)).toBe("<routlne> <nlte>");
+  });
+
+  test("the agent runtime's look-alike map is the plugin SDK's, code point for code point (so its escaping reads as ours)", () => {
+    // The runtime vendors fold.ts's map (`@waifucave/clover-agent-runtime/lookalike`, SDK 0.0.72) for its notification
+    // escaping; a change on either side without the other fails here.
+    const differ: string[] = [];
+    for (let cp = 0; cp <= 0x10FFFF; cp++) {
+      if (cp >= 0xD800 && cp <= 0xDFFF) continue;
+      const ch = String.fromCodePoint(cp);
+      const ours = lookalikeOf(ch);
+      const theirs = runtimeLookalikeOf(ch);
+      if (ours !== theirs) differ.push(`U+${cp.toString(16).toUpperCase()}: plugin SDK ${ours ?? "-"}, runtime ${theirs ?? "-"}`);
+    }
+    expect(differ).toEqual([]);
+  });
+
+  test("the i/l wildcard is internal: a private-use or noncharacter code point in the text spells no letter", () => {
+    for (const odd of ["\uE000", "\uFDD0", "\uFFFD"]) {
+      expect(defuseTagNames(`</task-not${odd}fication>`, INPUT_TAGS)).toBe(`</task-not${odd}fication>`);
+      expect(defuseTagNames(`<bot-${odd}nstructions>`, HARNESS_TAG_NAMES)).toBe(`<bot-${odd}nstructions>`);
+    }
   });
 
   test("no spelling of a tag gets through: whitespace and the slash anywhere, any case, any input's block", () => {
