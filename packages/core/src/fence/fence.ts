@@ -13,7 +13,8 @@ import type { Caller, Os } from "@waifucave/clover-protocol";
 import { isAnyPluginId } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, judge, READ_DENIED_KINDS, fenceContextFor, patternItemAt, windowsAlias,
+  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, judge, READ_DENIED_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, pluginLoadDenies, windowsAlias,
+  writesPluginLoadDeny,
   type CallerFence, type Fence, type FenceContext, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../contracts/fence";
 import { canonicalPath } from "./canonical";
@@ -34,6 +35,8 @@ export interface CloverFenceOptions {
   agentInstalls?: string[];
   /** The app's userData folder (E's); per-OS default under `home` when absent. */
   userData?: string;
+  /** Other folders plugin code loads from (the app's bundled plugins), for `pluginLoadDenies` (B's #234). */
+  pluginLoadFolders?: string[];
   /** Replaces the layout for some items (tests). */
   layout?: Partial<Record<FencedKind, string[]>>;
   /** The Clover Browser's SOCKS5 filter's loopback ports (lane L's `DaemonBrowser.filterPorts()`): unauthenticated, since
@@ -62,6 +65,7 @@ export class CloverFence implements Fence {
   readonly #agentInstalls: string[];
   readonly #userData: string | undefined;
   #devFolders: string[];
+  readonly #pluginLoadFolders: string[];
 
   constructor(opts: CloverFenceOptions) {
     this.os = opts.os ?? osOf();
@@ -70,6 +74,7 @@ export class CloverFence implements Fence {
     this.#cloverHome = this.#canonical(opts.cloverHome);
     this.#temp = this.#canonical(opts.temp ?? (this.os === "windows" ? win32.join(opts.home, "AppData", "Local", "Temp") : "/tmp"));
     this.#devFolders = (opts.devFolders ?? []).map((p) => this.#canonical(p));
+    this.#pluginLoadFolders = (opts.pluginLoadFolders ?? []).map((p) => this.#canonical(p));
     this.#bots = [...(opts.bots ?? [])];
     this.#agentInstalls = [...(opts.agentInstalls ?? [])];
     this.#userData = opts.userData;
@@ -158,6 +163,14 @@ export class CloverFence implements Fence {
     // The folded item first, so a name that folds onto one (`ſettings`) is refused as that item; then a hard link to
     // one (for a read, to a read-denied one: #205's B2); then a name that isn't ASCII where Clover names things,
     // whatever it folds to (B's contract, #179's F1).
+    // B's #234 (check 4, H1): a `node_modules` above a folder plugin code loads from is no one's to write but the user's.
+    if (write && ctx?.user !== true) {
+      const denies = this.#pluginLoadDenies();
+      for (const p of all) {
+        const deny = writesPluginLoadDeny({ op: "write", path: p }, denies, this.os);
+        if (deny !== undefined) return { allowed: false, reason: "plugins", path: deny };
+      }
+    }
     const { set, back } = this.#folded();
     const judgeOpts = { os: this.os, cloverHome: this.#cloverHome, ...(ctx === undefined ? {} : { caller: ctx }) };
     for (const p of all) {
@@ -243,6 +256,13 @@ export class CloverFence implements Fence {
     return { allowed: true };
   }
 
+  /** `node_modules` above every folder plugin code loads from (B's #234): the plugins folder, the development folders and
+   *  the others the fence was given. */
+  #pluginLoadDenies(): string[] {
+    const plugins = this.fencedSet().filter((i) => i.kind === "plugins").map((i) => i.path);
+    return pluginLoadDenies([...plugins, ...(this.#layout["dev-folders"] ?? this.#devFolders), ...this.#pluginLoadFolders]);
+  }
+
   policy(ctx?: FenceContext): SandboxPolicy {
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
     const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
@@ -250,14 +270,17 @@ export class CloverFence implements Fence {
       allowWrite: [this.#home, this.#temp],
       // The whole bots folder is write-denied (agents and the rest of a bot's folder are read-only); the
       // runner's own memory comes back below as `ownMemory`.
-      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
+      // B's #234: the whole Clover home too, for every runner (the home default-deny; its own folders come back below,
+      // `ownFoldersOf`), and every `node_modules` above a folder plugin code loads from.
+      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns, this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES, ...this.#loopbackPorts().flatMap((port) => [`127.0.0.1:${port}`, `[::1]:${port}`])],
       network: "none",
-      // Only a valid bot id builds the way back in (`..` would climb out of `bots/`).
-      ...(ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
+      // The runner's own folders, its memory included: only a valid bot id builds the way back in (`..` would climb
+      // out of `bots/`).
+      ...ownFoldersOf(ctx, this.#cloverHome),
     };
   }
 

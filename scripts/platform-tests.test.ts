@@ -24,7 +24,7 @@ describe("platform-tests", () => {
     const files = testFiles(repo, "scripts");
     expect(select(files, true)).toEqual([
       "scripts/build-winter.darwin.test.ts", "scripts/cowork-native-bundle.darwin.test.ts", "scripts/cu-live/generic.darwin.test.ts",
-      "scripts/embed-computer-helper.darwin.test.ts", "scripts/embed-cowork-native.darwin.test.ts", "scripts/embed-headless-helper.darwin.test.ts",
+      "scripts/dev-plugin-bun.darwin.test.ts", "scripts/embed-computer-helper.darwin.test.ts", "scripts/embed-cowork-native.darwin.test.ts", "scripts/embed-headless-helper.darwin.test.ts",
       "scripts/embed-runtimes.darwin.test.ts",
     ]);
     expect(select(files, false)).toContain("scripts/platform-tests.test.ts");

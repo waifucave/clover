@@ -37,7 +37,7 @@ describe("answer keys by algorithm (B's #187, the conformance case \"answer-alg\
     expect(await registry.verifyAnswer(enclave.id, data, ecSig)).toBe(true);
     expect(await registry.verifyAnswer(enclave.id, new TextEncoder().encode("other"), ecSig)).toBe(false);
     const relabelled = await DeviceKey.loadOrCreate(new MemorySecretStore());
-    await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKeyBase64, answerKey: { publicKey: ecPublic, held: "secure-enclave" } }, { via: "terminal" });
+    await registry.add({ id: relabelled.id, name: "Laptop3", kind: "desktop", runsCore: true, computer: "Laptop3", publicKey: relabelled.publicKeyBase64, answerKey: { publicKey: ecPublic, held: "keychain" } }, { via: "terminal" });
     expect(await registry.verifyAnswer(relabelled.id, data, ecSig)).toBe(false);
   });
 });
