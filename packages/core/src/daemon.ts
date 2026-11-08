@@ -1,5 +1,5 @@
-import { missingProcessHolder } from "./build-kind";
-import { loadBundledManifest } from "./bundled-plugins-dir";
+import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
+import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBundledDir } from "./registry/bundled-stage";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -7,7 +7,8 @@ import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWir
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
 import { dirname, join } from "node:path";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
+import { DIST_BUILD, isCompiledBinary, missingProcessHolder } from "./build-kind";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 import { assertNotOtherInstallHome } from "./other-installs";
@@ -41,7 +42,9 @@ import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
-import { startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { computerNameFor } from "./devices/registry";
+import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
 import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
@@ -54,7 +57,7 @@ import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
 import { hostOs } from "./tree/names";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
@@ -120,7 +123,7 @@ import { PluginSupervisor } from "./plugins/supervisor";
 import { PluginContribRegistry } from "./plugins/contrib";
 import { HookRegistry, HookFacade } from "./plugins/hook-registry";
 import { HookRunner } from "./plugins/hook-runner";
-import { ensurePluginRunFiles, type PluginRunGuard } from "./registry/plugin-run";
+import { ensurePluginRunFiles, isTestKeychainService, type PluginRunGuard } from "./registry/plugin-run";
 import { BashReviewer } from "./agent/reviewer";
 import { AuditLog } from "./peripheral/audit";
 import { PeripheralBroker, type PeripheralClass } from "./peripheral/broker";
@@ -450,6 +453,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** A-M2: lane B's plugin registry and plugin host, which the model plugins load through (`startModelPlugins`).
    *  Absent (today, until B-M1's registry and B-M2's host): sessions use the SDK's compiled catalog. */
   modelPluginHost?: Pick<StartModelPluginsOptions, "registry" | "host" | "pluginSecrets">;
+  /** B-M2: the daemon's one plugin host, injected (a test's). Absent: it starts over the plugin registry when the bot
+   *  side opens it (`startPluginHost`). */
+  pluginHost?: (registry: OpenedRegistry["registry"]) => Promise<DaemonPluginHost>;
+  /** B-M2: false starts no plugin registry or host (and so no bot side over them). Default: they start once the store
+   *  answers, with or without the links. */
+  plugins?: false;
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
@@ -3480,21 +3489,63 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
   const partsClock = new SystemClock();
   let partsRegistry: OpenedRegistry | undefined;
+  // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
+  // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
+  let pluginHost: DaemonPluginHost | undefined;
   let partsStopping = false;
-  const daemonBots = async (): Promise<DaemonBotsInput> => {
-    // The bots come from the plugins folder and the app's bundled plugins (B-M1's registry, signed with the store's
-    // key). The bundled ones are lane M's place (#259): `resources/plugins` beside `resources/daemon/` for a compiled
-    // core. From source there are none here: the repository's `plugins/` holds workspace `node_modules` whose links
-    // leave the folder, which the registry refuses (B-M2 decides the dev layout, in the plugin host).
-    const bundled = isCompiledDaemon() ? join(dirname(process.execPath), "..", "plugins") : undefined;
+  // B-M2: the plugin registry and the plugin host start once the store answers, whatever the links do (a Mac with no
+  // sidecar, a test daemon without links): plugins don't wait on the device links. The bot side takes this registry.
+  const stageBundled = async (): Promise<string | undefined> => {
+    const log = (line: string) => console.error(`[plugins] ${line}`);
+    let source: { root: string; manifest: BundledManifest } | undefined;
+    if (DIST_BUILD) {
+      const root = bundledPluginsDir(process.execPath, { cloverHome });
+      source = root === undefined ? undefined : { root, manifest: bundledManifest() };
+    } else {
+      // From source (not a test daemon, which has its own store): the dev stage from this checkout's plugins/.
+      const sources = join(import.meta.dir, "..", "..", "..", "plugins");
+      if (opts.secrets === undefined && !isTestKeychainService(process.env.CLOVER_KEYCHAIN_SERVICE) && !isCompiledBinary() && existsSync(sources)) {
+        const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
+        const built = await buildDevBundledPlugins({ sources, ids, cloverHome });
+        log(`built the dev bundled plugins (${built.built.join(", ")}) in ${built.ms} ms`);
+      }
+      source = devBundledSource(cloverHome);
+    }
+    if (source === undefined) return undefined;
+    const staged = stageBundledPlugins({ ...source, out: stagedBundledDir(cloverHome), log });
+    if (staged.dir !== undefined) log(`bundled: ${staged.staged.join(", ") || "none"}${staged.refused.length > 0 ? ` (refused ${staged.refused.length})` : ""}`);
+    return staged.dir;
+  };
+  const startPlugins = async (): Promise<OpenedRegistry["registry"] | undefined> => {
+    if (opts.plugins === false) return undefined;
+    // The plugins folder and the bundled plugins (B-M1's registry, signed with the store's key), the bundled ones loaded
+    // from a private copy of their verified bytes (`stageBundledPlugins`, #259's rule):
+    // - a dist core: the manifest compiled into it, over `resources/plugins` (or a server's `<home>/bin/plugins`);
+    // - otherwise the dev stage (`<home>/run/dev-bundled/`): `dev:daemon` builds it, and so does a core run from source
+    //   here, from the repository's `plugins/` (`buildPluginForShipping` with `dev: true`). A dist core never reads one.
+    const bundled = await stageBundled().catch((err: unknown) => {
+      console.error(`[plugins] the bundled plugins weren't staged: ${(err as Error).message}`);
+      return undefined;
+    });
     mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
     const opened = await openPluginRegistry({
-      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined && existsSync(bundled) ? { bundledDirs: [bundled] } : {}),
+      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled] } : {}),
       log: (line) => console.error(`[plugins] ${line}`),
     });
     partsRegistry = opened;
+    pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
+      home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      log: (line) => console.error(line),
+    })))(opened.registry);
+    Object.assign(cloverLaneHandlers, laneMethodHandlers({
+      ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
+    }));
+    return opened.registry;
+  };
+  const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
+    // The bots come from the plugin registry (`startPlugins`).
     return {
-      registry: opened.registry,
+      registry: registry,
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
@@ -3502,7 +3553,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked.
         canUseTool: () => refuseUntilApprovals,
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
-        registry: opened.registry,
+        registry: registry,
         epoch: () => main.epoch() ?? 0,
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
@@ -3523,6 +3574,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
+    const host = pluginHost;
+    pluginHost = undefined;
+    await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
     const registry = partsRegistry;
     partsRegistry = undefined;
     registry?.close();
@@ -3539,11 +3593,20 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     function done() { clearTimeout(timer); off(); resolve(); }
   });
   const partsReady = (async () => {
-    if (opts.links === false) return;
-    for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
-      await untilStoreAnswers();
-      if (partsStopping) return;
+    if (opts.links !== false) {
+      for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
+        await untilStoreAnswers();
+        if (partsStopping) return;
+      }
     }
+    // The plugins start beside the links, whatever the links do (no sidecar, a hung wire); a registry or host that can't
+    // start leaves the rest running. One that finishes starting after the stop closes itself as it does.
+    const pluginsStarted = startPlugins().catch((err: unknown) => {
+      console.error(`[plugins] not started: ${(err as Error).message}`);
+      return undefined;
+    });
+    void pluginsStarted.then(async () => { if (partsStopping) await closeStarted(); });
+    if (opts.links === false) return void (await pluginsStarted);
     const started = await startDaemonLinks({
       home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
@@ -3554,12 +3617,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     daemonLinks = started;
     if (partsStopping) return void (await closeStarted());
-    if (!started.links) return;
+    if (!started.links) return void (await pluginsStarted);
     const links = started.links;
+    const pluginRegistry = await pluginsStarted;
+    if (partsStopping) return void (await closeStarted());
     // A node or bot side that can't start leaves the links up (their methods answer), and says why.
     try {
       const p = opts.parts ?? {};
-      const bots = p.bots === false ? false : p.bots ?? await daemonBots();
+      const bots = p.bots === false ? false : p.bots ?? (pluginRegistry !== undefined ? await daemonBots(pluginRegistry) : false);
       if (partsStopping) return void (await closeStarted());
       // The tree folder only for the default home: a dev or test daemon never makes the shared one.
       const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
