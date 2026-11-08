@@ -38,6 +38,9 @@ export const CONTRACT_ERROR_CODES = [
   /** Refused by a rule this contract states (a capability, a viewport, a size, an id already taken). */
   "refused",
   "conflict",
+  /** The other side is in the middle of something (a session running a turn); the same call succeeds once it ends, so
+   *  a caller tries again rather than giving up. */
+  "busy",
   "invalid",
   /** A peer on an older protocol can't take the call as meant (a `noFollow` read to a tree 1.0 holder): refused here,
    *  never sent. */
