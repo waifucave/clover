@@ -8,9 +8,10 @@
 //   (`session_grant`, never sent to clients), and a stopped session's grants end with it.
 // * **It is the session's own, never another's:** the grant is looked up by the session the call came from, which the
 //   core binds from the tool call (R7), never from what a plugin says.
-// * **Only the user's own yes on a card grants it.** The request is always a `confirm` card, which no level or saved
-//   rule answers (the broker's rule 1), and only a decision `by: "card"` counts: a broker that says yes by level, by
-//   rule or any other way grants nothing (review B1).
+// * **Only the user's own yes on a card grants it.** The request is a `confirm` card, or a `change` card for a sensitive
+//   change (a bot's plugin-chosen provider, `bots/provider-consent.ts`); no level or saved rule answers either (the
+//   broker's rule 1), and only a decision `by: "card"` counts: a broker that says yes by level, by rule or any other way
+//   grants nothing (review B1).
 // * The card's effect and sealed fields (from the built-in tables) are the asker's to build; the grant adds the kind,
 //   the session, its bot and its turn's origin, so the user's own turn waits for the answer and any other expires.
 import type { ApprovalBroker, ApprovalDecision, ApprovalRequest } from "../contracts/approval-broker";
@@ -26,8 +27,9 @@ const GRANT_SCAN = 50_000;
 
 export type GrantDecision = ApprovalDecision | { allowed: true; by: "grant"; cardId?: string };
 
-/** What a grant's card is built from: everything but its kind (always `confirm`), session, bot and origin. */
-export type GrantCard = Omit<ApprovalRequest, "kind" | "session" | "bot" | "origin" | "ruleKey" | "options">;
+/** What a grant's card is built from: everything but its session, bot and origin. Its kind is `confirm` unless it says
+ *  `change` (both always cards, never an "always"). */
+export type GrantCard = Omit<ApprovalRequest, "kind" | "session" | "bot" | "origin" | "ruleKey" | "options"> & { kind?: "confirm" | "change" };
 
 export interface SessionGrantsOptions {
   host: Pick<DurableSessionHost, "get" | "callerOf" | "turnOrigin" | "recordCore" | "history" | "length">;
@@ -63,10 +65,10 @@ export class SessionGrants {
     const already = this.#asking.get(asking);
     if (already) return already;
     const caller = this.#o.host.callerOf(session);
-    const { ruleKey: _ruleKey, options: _options, ...rest } = card as GrantCard & Partial<Pick<ApprovalRequest, "ruleKey" | "options">>;
+    const { ruleKey: _ruleKey, options: _options, kind, ...rest } = card as GrantCard & Partial<Pick<ApprovalRequest, "ruleKey" | "options">>;
     const request: ApprovalRequest = {
       ...rest,
-      kind: "confirm",
+      kind: kind === "change" ? "change" : "confirm",
       session,
       ...(caller.bot === undefined ? {} : { bot: caller.bot }),
       origin: this.#o.host.turnOrigin(session) ?? "bot",

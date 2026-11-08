@@ -15,6 +15,7 @@ import type { BotGate } from "../gate";
 import type { MainComputer } from "../main-computer";
 import type { BotRelay } from "../service";
 import { createBotSide, type BotSide, type BotSideOptions } from "../wiring";
+import { BotProviderConsent } from "../provider-consent";
 import { BotService, type BotSessionContext } from "../service";
 import { catalogPointDecl } from "../../../../plugin-sdk/src/catalogs/index";
 
@@ -119,6 +120,9 @@ export async function boot(opts: {
   onSessionEnded?: BotSideOptions["onSessionEnded"];
   updateGate?: BotSideOptions["updateGate"];
   voices?: BotSideOptions["voices"];
+  /** Ask for a provider the bot's plugin chose, as the daemon does (provider-consent.ts); by default the fixture's
+   *  bots hold every provider already, so a test about something else never meets the card. */
+  askProvider?: boolean;
 }): Promise<Boot & { side: BotSide; shutdown(): Promise<void> }> {
   const clock = opts.clock ?? new FakeClock();
   const warnings: string[] = [];
@@ -132,6 +136,7 @@ export async function boot(opts: {
     ...(opts.relay === undefined ? {} : { relay: opts.relay }),
     ...(opts.compaction === undefined ? {} : { compaction: opts.compaction }),
     ...(opts.approvals === undefined ? {} : { approvals: opts.approvals }),
+    ...(opts.askProvider === true ? {} : { providerConsent: new BotProviderConsent({ grants: { has: () => true, ensure: async () => ({ allowed: true, by: "grant" }) } }) }),
     ...(opts.reattach === undefined ? {} : { reattach: opts.reattach }),
     ...(opts.userHome === undefined ? {} : { userHome: opts.userHome }),
     ...(opts.agents === undefined ? {} : { agents: opts.agents }),

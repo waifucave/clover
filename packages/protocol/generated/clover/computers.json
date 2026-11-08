@@ -623,7 +623,8 @@
                           "computer-resize",
                           "computer-delete",
                           "agent-unsandboxed",
-                          "core-setting"
+                          "core-setting",
+                          "bot-provider"
                         ]
                       },
                       "binds": {
@@ -1071,7 +1072,8 @@
                         "computer-resize",
                         "computer-delete",
                         "agent-unsandboxed",
-                        "core-setting"
+                        "core-setting",
+                        "bot-provider"
                       ]
                     },
                     "binds": {
@@ -1785,7 +1787,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -2309,7 +2312,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -2831,7 +2835,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -3354,7 +3359,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -3874,7 +3880,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -4357,7 +4364,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -4844,7 +4852,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -5344,7 +5353,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -5871,7 +5881,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -6351,7 +6362,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -6831,7 +6843,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -7317,7 +7330,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -7850,7 +7864,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -8483,7 +8498,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -9354,7 +9370,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "bot-provider"
                     ]
                   },
                   "binds": {
@@ -9862,7 +9879,8 @@
                           "computer-resize",
                           "computer-delete",
                           "agent-unsandboxed",
-                          "core-setting"
+                          "core-setting",
+                          "bot-provider"
                         ]
                       },
                       "binds": {

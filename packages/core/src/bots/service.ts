@@ -54,6 +54,7 @@ import { seedMemory } from "./memory";
 import { botPaths, botStateFile, homeTreePath, sessionScratchDir, type BotPaths } from "./paths";
 import { botEntries, loadPluginBot, type PluginBot } from "./plugin-bot";
 import { parseUserLayerPatch, userLayerFields, UserLayerStore, type UserLayer, type UserLayerField } from "./user-layer";
+import type { BotProviderConsent } from "./provider-consent";
 
 /** A bot as it stands now: its plugin's entry under the user layer. */
 export interface EffectiveBot {
@@ -62,6 +63,9 @@ export interface EffectiveBot {
   /** The `<bot-instructions>` text (§6.1). */
   instructions: string;
   model: string;
+  /** Who chose the model: the user (the bot's user layer), the user's default model (the plugin named none, or one the
+   *  user has no key for), or the bot's plugin, whose provider the user approves once (provider-consent.ts). */
+  modelFrom: "user" | "default" | "plugin";
   effort?: string;
   voice?: { provider: string; voice: string; model?: string };
   avatar?: { file: string; format: string; portrait?: string };
@@ -156,6 +160,8 @@ export interface BotServiceOptions {
    *  `AgentManager.reattach`, which gives each its driver again). */
   reattach?(sessions: SessionView[]): Promise<void> | void;
   drivers: DriverFactory;
+  /** Asks before a bot spends a provider its plugin chose (provider-consent.ts); without it, no turn asks. */
+  providerConsent?: BotProviderConsent;
   clock: Clock;
   /** The user's default model and effort (§6.1). */
   defaultModel(): { model: string; effort?: string };
@@ -430,7 +436,7 @@ export class BotService {
     host.open({
       id: session, kind: "side-thread", bot: id, parent: live.mainSession, computer, title: run.name, routine: run.routine,
       model: eff.model, ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-    }, this.#o.drivers(this.#context(live, session, "side-thread", computer, run.level)));
+    }, this.#driver(live, this.#context(live, session, "side-thread", computer, run.level)));
     run.onSession?.(session);
     const ended = new Promise<TurnEnd>((resolve) => {
       const off = host.subscribe(session, (r) => {
@@ -585,7 +591,7 @@ export class BotService {
       host.open({
         id: live.mainSession, kind: "bot", bot: bot.id, computer: runner, title: plainText(eff.name).slice(0, 200), model: eff.model,
         ...(eff.effort === undefined ? {} : { effort: eff.effort }),
-      }, this.#o.drivers(this.#context(live, live.mainSession, "bot", runner)));
+      }, this.#driver(live, this.#context(live, live.mainSession, "bot", runner)));
     } catch (err) {
       this.#warn(`the bot ${bot.id}'s conversation didn't open: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -671,16 +677,20 @@ export class BotService {
     const layer = this.#layers.get(live.plugin.id);
     const hasKey = this.#o.hasKeyFor ?? (() => true);
     let model: string;
+    let modelFrom: EffectiveBot["modelFrom"];
     let effort: string | undefined;
     if (layer.model !== undefined) {
       model = layer.model;
+      modelFrom = "user";
       effort = layer.effort;
     } else if (entry.model !== undefined && hasKey(entry.model.default)) {
       model = entry.model.default;
+      modelFrom = "plugin";
       effort = layer.effort ?? entry.model.effort;
     } else {
       const fallback = this.#o.defaultModel();
       model = fallback.model;
+      modelFrom = "default";
       effort = layer.effort ?? fallback.effort;
     }
     const voice = layer.voice ?? (entry.voice === undefined ? undefined : { provider: entry.voice.provider, voice: entry.voice.voice, ...(entry.voice.model === undefined ? {} : { model: entry.voice.model }) });
@@ -692,6 +702,7 @@ export class BotService {
       name: layer.name ?? entry.name,
       instructions: layer.instructions ?? live.plugin.instructions,
       model,
+      modelFrom,
       ...(effort === undefined ? {} : { effort }),
       ...(voice === undefined ? {} : { voice }),
       ...(avatar === undefined ? {} : { avatar: structuredClone(avatar) }),
@@ -701,6 +712,27 @@ export class BotService {
       ...(layer.lan === true ? { lan: true } : {}),
       userLayer: userLayerFields(layer),
     };
+  }
+
+  /** The session's driver, behind the provider check: a turn on a provider the bot's plugin chose waits for the
+   *  user's yes the first time, and fails with the reason on a no (provider-consent.ts); a compaction, which never
+   *  asks, doesn't run on a provider not yet allowed. */
+  #driver(live: Live, ctx: BotSessionContext): SessionDriver {
+    const driver = this.#o.drivers(ctx);
+    const consent = this.#o.providerConsent;
+    if (consent === undefined) return driver;
+    const turn = driver.turn.bind(driver);
+    driver.turn = async (input, ctl): Promise<TurnEnd> => {
+      const verdict = await consent.check(this.#effective(live), live.mainSession, { signal: ctl.signal });
+      if (verdict.ok) return turn(input, ctl);
+      ctl.record({ type: "agent_error", threadId: ctx.sessionId, message: verdict.reason, code: "provider_not_allowed" });
+      return { reason: "failed", failure: "error", text: verdict.reason };
+    };
+    const compact = driver.compact?.bind(driver);
+    if (compact !== undefined) {
+      driver.compact = async (req) => (consent.allowedNow(this.#effective(live), live.mainSession) ? compact(req) : { compacted: false });
+    }
+    return driver;
   }
 
   #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string, level?: Level): BotSessionContext {
