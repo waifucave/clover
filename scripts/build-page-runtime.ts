@@ -15,7 +15,7 @@ const OUT = join(DIR, "bundle.generated.ts");
 
 /** The generated module's text for a fresh build (the same function the stale-bundle test calls). */
 export async function renderPageRuntimeModule(): Promise<string> {
-  const built = await Bun.build({ entrypoints: [ENTRY], root: DIR, target: "browser", format: "iife", minify: false, sourcemap: "none" });
+  const built = await Bun.build({ entrypoints: [ENTRY], root: DIR, target: "browser", format: "iife", minify: false, sourcemap: "none", ...{ macros: false } });
   if (!built.success) throw new Error(`page runtime build failed:\n${built.logs.map((l) => String(l)).join("\n")}`);
   // Bun names each bundled module with a path relative to the CWD: kept to its file name, so the bytes do not depend
   // on where the build ran (the stale-bundle test runs from the package, the script from the repo root).
