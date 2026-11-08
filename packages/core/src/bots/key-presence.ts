@@ -26,7 +26,8 @@ export interface BotKeyPresenceOptions {
 export async function botKeyPresence(secrets: SecretStore, home: string, opts: BotKeyPresenceOptions = {}): Promise<(model: string) => boolean> {
   const now = opts.now ?? (() => Date.now());
   const pluginServes = opts.pluginServes ?? ((provider: string) => installedModelPlugins()?.snapshot?.set.byProvider.has(provider) ?? false);
-  let presence = await credentialPresenceFrom(secrets);
+  // A store that fails at boot (locked, broken) reads as no key, so the bots still start; the next read heals it.
+  let presence: Awaited<ReturnType<typeof credentialPresenceFrom>> = await credentialPresenceFrom(secrets).catch(() => ({ byProvider: {} }));
   let readAt = now();
   let reading = false;
   const read = () => {

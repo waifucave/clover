@@ -52,4 +52,20 @@ describe("the daemon's hasKeyFor", () => {
     served.add("anthropic");
     expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(false);
   });
+
+  test("a store that fails at boot reads as no key, so the bots still start, and the next read heals it", async () => {
+    const home = tempDir();
+    const store = new FileSecretStore(join(home, "secrets.json"));
+    await store.set(slotOf("anthropic"), JSON.stringify({ kind: "api-key", key: "sk-ant-test" }));
+    let failing = true;
+    const flaky = { get: (name: string) => (failing ? Promise.reject(new Error("the store is locked")) : store.get(name)), set: store.set.bind(store), delete: store.delete.bind(store) } as unknown as FileSecretStore;
+    let now = 1_000;
+    const hasKeyFor = await botKeyPresence(flaky, home, { now: () => now });
+    expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(false);
+    failing = false;
+    now += BOT_KEY_PRESENCE_MS + 1;
+    hasKeyFor("anthropic/claude-sonnet-5-5");
+    for (let i = 0; i < 20 && !hasKeyFor("anthropic/claude-sonnet-5-5"); i++) await flush();
+    expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(true);
+  });
 });
