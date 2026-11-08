@@ -117,6 +117,8 @@ export function projectRecord(record: SessionRecord, opts: ProjectOptions): Wire
     sessionId: record.sessionId,
     ts: record.ts,
     ...(record.epoch === undefined ? {} : { epoch: record.epoch }),
+    // An event that reached the log after later ones (another lease's, or another computer's after a fork): history.
+    ...((record as { late?: unknown }).late === true ? { late: true as const } : {}),
   };
   const threadId = record.sessionId;
   switch (record.type) {
