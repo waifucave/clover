@@ -101,6 +101,21 @@ describe("what runs, whatever its extension (#197's review)", () => {
     expect(await again({ "clover.json": stdio("python3", ["${plugin}/server.txt"]), "server.txt": "1", "art/a.png": "a" }, { "art/a.png": "b" })).toBe("applies");
   });
 
+  test("every file an agent backend names is code, its quirks file included (lane K's ask)", async () => {
+    const backend = (extra: Record<string, unknown>) => manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor", protocol: "acp", command: "cursor-agent", ...extra }] } });
+    const quirks = backend({ quirks: "quirks/cursor.json" });
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}" }, { "quirks/cursor.json": '{"launch":1}' })).toBe("asks-again");
+    expect(await again({ "clover.json": backend({ command: "${plugin}/bin/agent.md" }), "bin/agent.md": "a" }, { "bin/agent.md": "b" })).toBe("asks-again");
+    expect(await again({ "clover.json": backend({ command: "agent", args: ["./lib"] }), "lib/a.txt": "a" }, { "lib/a.txt": "b" })).toBe("asks-again");
+    // Pointing at another quirks file asks again too; the entry's display name, and other data, apply at once.
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "quirks/b.json": "{}" }, { "clover.json": backend({ quirks: "quirks/b.json" }) })).toBe("asks-again");
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}" }, {
+      "clover.json": manifest({ contributes: { agentBackends: [{ id: "cursor", name: "Cursor CLI", protocol: "acp", command: "cursor-agent", quirks: "quirks/cursor.json" }] } }),
+    })).toBe("applies");
+    // A plugin with an agent backend has every file counted as code (lane K, #233): a quirks env can point anywhere in it.
+    expect(await again({ "clover.json": quirks, "quirks/cursor.json": "{}", "README.md": "a" }, { "README.md": "b" })).toBe("asks-again");
+  });
+
   test("a model's endpoint, an http server's url or headers, and a host from settings ask again", async () => {
     const model = (baseUrl: string, extra: Record<string, unknown> = {}) => manifest({
       settings: { region: { type: "string", title: "Region" } }, ...extra,
@@ -190,5 +205,21 @@ describe("spellings a disk reads alike (#197's check 4)", () => {
     const data = manifest();
     const before = await snapOf({ "clover.json": data, "README.md": "a" });
     expect(classifyChange(before, await snapOf({ "clover.json": data, "README.md": "a", "SERVER~1.TXT": "x" }))).toBe("asks-again");
+  });
+});
+
+describe("an 8.3 alias in a run field (#197's check 5)", () => {
+  test("names its whole folder as code", async () => {
+    const snapOf = async (arg: string, files: Record<string, string>) => {
+      const root = folder({ "clover.json": manifest({ contributes: { mcpServers: { s: { type: "stdio", command: "python3", args: [arg] } } } }), ...files });
+      const entries = treeEntries(root);
+      const tree = await validateTree(folderReader(root), { folderName: "tarot" });
+      return okSnapshot(await treeHash(entries), entries, tree, catalogCodeFields);
+    };
+    expect((await snapOf("${plugin}/lib/SERVER~1.TXT", { "lib/server-long-name.txt": "1" })).codePaths).toContain("lib");
+    expect((await snapOf("${plugin}/LIB~1/x.txt", { "library/x.txt": "1" })).codePaths).toContain("");
+    const a = await snapOf("${plugin}/lib/SERVER~1.TXT", { "lib/server-long-name.txt": "1", "README.md": "a" });
+    const b = await snapOf("${plugin}/lib/SERVER~1.TXT", { "lib/server-long-name.txt": "2", "README.md": "a" });
+    expect(classifyChange(a, b)).toBe("asks-again");
   });
 });

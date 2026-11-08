@@ -499,9 +499,10 @@ export interface ApprovalsApi {
   watch(listener: (cards: CardMeta[]) => void): Unsubscribe;
 }
 
-/** `files`: the folder tree (§9.1), inside the fence. Paths are tree paths (`home/<Computer>/…`). Reads take
- *  `noFollow` whole: no link anywhere on the way is followed, for a component that shows a file, so a planted link
- *  stays refused (F-M3's review). */
+/** `files`: the folder tree (§9.1), inside the fence. Paths are tree paths (`home/<Computer>/…`). `noFollow` (lane J's
+ *  `tree/nofollow.ts`, tree protocol 1.1) follows no link anywhere on the way, refusing one, and reads only a plain file
+ *  reached without one: for a viewer of files a runner may have left a link among. A computer on an older build can't
+ *  honour it, so the call is refused (`unsupported`) rather than sent. */
 export interface FilesApi {
   stat(path: string, opts?: { noFollow?: boolean }): Promise<FileStat | null>;
   readText(path: string, opts?: { offset?: number; length?: number; noFollow?: boolean }): Promise<string>;

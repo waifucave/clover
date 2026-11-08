@@ -43,6 +43,10 @@ export const UiSettings = z.object({
    *  cleaner, so the user's layer can't load a remote file either; `ui.set` refuses what fails. */
   overrides: z.object({ tokens: z.record(z.string(), z.union([utf16(300), z.number().finite()])).optional(), css: utf16(200_000).optional() }).optional(),
   language: utf16(35).optional(),
+  /** Light, dark or the OS's choice (lane F's Appearance section); unset is `system`. */
+  appearance: z.enum(["light", "dark", "system"]).optional(),
+  /** The app's text size; unset is `default`. */
+  textSize: z.enum(["small", "default", "large"]).optional(),
   /** A pack chosen for a language when two translate the same keys (§5.5). */
   packs: z.record(z.string(), AnyPluginId).optional(),
 });

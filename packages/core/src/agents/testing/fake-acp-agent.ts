@@ -48,6 +48,12 @@ export interface FakeAcpConfig {
   selection: string;
   /** A `mode` config option with these values (Cursor's `agent`, `plan`, `ask`), the first one current. */
   modes?: string[];
+  /** ACP's session modes (`modes` at `session/new`, `session/set_mode`, `current_mode_update`), the first current. */
+  acpModes?: string[];
+  /** `session/set_mode` answers but never sends `current_mode_update` (an agent that doesn't confirm). */
+  silentSetMode?: boolean;
+  /** As Claude Code: an `edit` tool asks unless the current mode is `acceptEdits` or `bypassPermissions`. */
+  editsFollowMode?: boolean;
   /** Asks a permission while it replays a `session/load`'s history, and reports the answer. */
   askDuringReplay?: boolean;
 }
@@ -65,6 +71,7 @@ const report = (rec: Record<string, unknown>) => appendFileSync(cfg.report, `${J
 report({ type: "started", pid: process.pid, env: Object.keys(process.env).sort() });
 
 let sessionSeq = 0;
+let acpMode = cfg.acpModes?.[0];
 let toolSeq = 0;
 let sessionId = "";
 let bridgeToken = "";
@@ -184,7 +191,17 @@ async function handle(method: string, params: Record<string, unknown>): Promise<
       sessionId = `fake-session-${++sessionSeq}`;
       report({ type: "session", how: "new", sessionId, meta: params["_meta"] ?? null, servers: names(params["mcpServers"]), cwd: params["cwd"] ?? null });
       startMcpServers(params["mcpServers"]);
-      return { sessionId, configOptions: configOptions() };
+      return { sessionId, configOptions: configOptions(), ...(cfg.acpModes?.length ? { modes: { currentModeId: acpMode, availableModes: cfg.acpModes.map((id) => ({ id, name: id })) } } : {}) };
+    }
+    case "session/set_mode": {
+      const id = String(params["modeId"]);
+      if (!cfg.acpModes?.includes(id)) throw new RpcError(-32602, `no mode ${id}`);
+      report({ type: "set-mode", mode: id, turn: turn !== undefined });
+      if (!cfg.silentSetMode) {
+        acpMode = id;
+        update({ sessionUpdate: "current_mode_update", currentModeId: id });
+      }
+      return {};
     }
     case "session/load":
     case "session/resume": {
@@ -347,7 +364,9 @@ async function runTurn(params: Record<string, unknown>): Promise<unknown> {
       const locations = (s.paths ?? []).map((path) => ({ path }));
       const raw = s.mcp ? rawFor(s.mcp.server, s.mcp.tool, s.rawInput) : s.rawInput;
       update({ sessionUpdate: "tool_call", toolCallId: id, title: s.title, kind: s.kind, status: "pending", ...(raw === undefined ? {} : { rawInput: raw }), ...(locations.length ? { locations } : {}) });
-      if (s.ask !== false) {
+      const unasked = cfg.editsFollowMode && s.kind === "edit" && (acpMode === "acceptEdits" || acpMode === "bypassPermissions" || (current.mode ?? cfg.modes?.[0]) === "acceptEdits");
+      if (unasked) report({ type: "unasked-edit", toolCallId: id, mode: acpMode ?? current.mode ?? null });
+      if (s.ask !== false && !unasked) {
         const a = await askPermission(id, s.kind, s.title);
         if (a.cancelled) return finish("cancelled");
         if (!a.allowed) {

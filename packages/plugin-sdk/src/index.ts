@@ -18,6 +18,7 @@ export * from "./manifest/interpolation";
 export * from "./manifest/names";
 export * from "./manifest/validate";
 export * from "./manifest/tree";
+export * from "./manifest/args";
 
 export * from "./formats/theme";
 export * from "./formats/css-url";

@@ -252,6 +252,25 @@ export class SessionLogFile {
     this.#size = size;
   }
 
+  /** Cuts the log back to its first `to` records, flushed to the drive (a fork set aside, `DurableSessionHost.setAside`).
+   *  What was cut is the caller's to keep first. */
+  cut(to: number): void {
+    if (!this.#loaded) throw new Error(`session ${this.#sessionId}: its log is cut before it was loaded`);
+    if (to < 0 || to > this.#offsets.length) throw new Error(`session ${this.#sessionId}: can't cut its log to ${to} records (it holds ${this.#offsets.length})`);
+    if (to === this.#offsets.length) return;
+    const size = this.#offsets[to]!;
+    const fd = openSync(this.path, "r+");
+    try {
+      ftruncateSync(fd, size);
+      syncFile(fd);
+    } finally {
+      closeSync(fd);
+    }
+    this.#offsets.length = to;
+    this.#size = size;
+    for (const seq of [...this.#recent.keys()]) if (seq >= to) this.#recent.delete(seq);
+  }
+
   /** Appends one record, whose `seq` must be the log's length. `durable` flushes it to the drive before returning. */
   append(record: SessionRecord, opts: { durable: boolean }): void {
     if (!this.#loaded) throw new Error(`session ${this.#sessionId}: its log is appended to before it was loaded`);

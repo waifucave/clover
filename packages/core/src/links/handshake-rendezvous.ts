@@ -65,7 +65,8 @@ export class HandshakeRendezvous implements PairingRendezvous {
 
   async #call(method: string, slot: string, body?: string, headers: Record<string, string> = {}): Promise<Response> {
     const url = `${this.#base}/v1/rendezvous/${encodeURIComponent(slot)}`;
-    const init: RequestInit = { method, headers: { ...headers, ...(body !== undefined ? { "content-type": "application/json" } : {}) }, signal: AbortSignal.timeout(this.#timeoutMs) };
+    // Never followed: a 307 or 308 would send the body or the removal token to whatever origin it names.
+    const init: RequestInit = { method, headers: { ...headers, ...(body !== undefined ? { "content-type": "application/json" } : {}) }, signal: AbortSignal.timeout(this.#timeoutMs), redirect: "error" };
     if (body !== undefined) init.body = body;
     try {
       return await this.#fetch(new Request(url, init));

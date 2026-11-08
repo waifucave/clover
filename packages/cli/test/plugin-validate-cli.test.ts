@@ -31,6 +31,24 @@ describe("clover plugin validate", () => {
     expect(run.output.trim().endsWith("valid")).toBe(true);
   });
 
+  test("a loader config reaching outside the folder is an error before the plugin ships (#234's review, F2)", async () => {
+    const host = { host: { entry: "host/index.ts" } };
+    for (const [file, text] of [
+      ["tsconfig.json", JSON.stringify({ extends: "../../tsconfig.base.json" })],
+      ["host/tsconfig.json", JSON.stringify({ compilerOptions: { paths: { lib: ["../../elsewhere/lib.ts"] } } })],
+      ["package.json", JSON.stringify({ imports: { "#lib": "../outside.js" } })],
+    ] as const) {
+      const root = folder({ "clover.json": manifest(host), "host/index.ts": "export const main = () => 1;\n", [file]: text });
+      const run = await runPluginValidate([root, "--json"]);
+      expect([file, run.code]).toEqual([file, 1]);
+      const report = JSON.parse(run.output);
+      expect(report.issues.filter((i: { code: string; severity: string }) => i.code === "loader_outside" && i.severity === "error").map((i: { file: string }) => i.file)).toEqual([file]);
+    }
+    // Inside the folder it is fine, and counted as code by the registry.
+    const ok = folder({ "clover.json": manifest(host), "host/index.ts": "export const main = () => 1;\n", "tsconfig.json": JSON.stringify({ extends: "./base.json" }), "base.json": "{}" });
+    expect((await runPluginValidate([ok])).code).toBe(0);
+  });
+
   test("--json is the whole report, and an error exits 1", async () => {
     const root = folder({ "clover.json": manifest({ id: "taro" }) });
     const run = await runPluginValidate([root, "--json"]);
