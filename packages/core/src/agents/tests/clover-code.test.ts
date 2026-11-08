@@ -3,10 +3,12 @@
 // client talks to it through an in-memory pipe, its writes ask through `session/request_permission` and the approval
 // level, its bridge is in-process, and the pause holds its tool calls, read-only ones too.
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import { buildCoreBrand } from "../../runtime-sdk/brand";
+import { BOT_SANDBOX } from "../../runtime-sdk/turn-loop/driver";
 import { testProviderNameFor } from "../../runtime-sdk/provider-selection";
 import { describeWithEmbeddedRuntime } from "../../../test/helpers/embedded-runtime";
 import { darwinTest } from "../../../test/helpers/darwin-only";
@@ -117,6 +119,41 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
 
   // macOS only: the agent's Bash runs in the runtime's sandbox, which is Seatbelt today; elsewhere no background shell
   // starts to stop (lane C's fence brings Linux and Windows).
+  // macOS only, as for every sandboxed command here (Seatbelt today).
+  darwinTest("its commands never run outside the sandbox: asking for dangerouslyDisableSandbox doesn't, at the level that allows every command", async () => {
+    const w = make(spawn);
+    writeFileSync(join(w.cloverHome, "secret.txt"), "TOPSECRET");
+    const leak = (n: number) => join(w.project, `leak${n}.txt`);
+    const probe = (n: number) => `cat "$(dirname "$PWD")/.clo""ver/secret.txt" > ${JSON.stringify(leak(n))} 2>&1; true`;
+    await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user", level: "automatic" },
+      backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "Probe", model: MODEL,
+      prompt: [`CALL Bash ${JSON.stringify({ command: probe(1) })}`, `CALL Bash ${JSON.stringify({ command: probe(2), dangerouslyDisableSandbox: true })}`].join("\n"),
+    });
+    await waitFor(() => notification(w), "the turn's end");
+    for (const n of [1, 2]) expect([n, existsSync(leak(n)) && readFileSync(leak(n), "utf8").includes("TOPSECRET")]).toEqual([n, false]);
+  }, 60_000);
+
+  darwinTest("its commands can't reach launchd: launchctl and open fail inside the sandbox (no job, no app)", async () => {
+    const w = make(spawn);
+    const lc = join(w.project, "launchctl.txt");
+    const op = join(w.project, "open.txt");
+    // A read-only launchctl, and an open of an app that doesn't exist: nothing could start even outside the sandbox.
+    const cmd = `launchctl print gui/$(id -u) > /dev/null 2>&1; echo $? > ${JSON.stringify(lc)}; /usr/bin/open -b com.waifucave.clover.no-such-app > ${JSON.stringify(op)} 2>&1; echo "exit $?" >> ${JSON.stringify(op)}`;
+    await w.manager.start({
+      caller: { kind: "bot", bot: "alpha", session: "s_alpha", origin: "user", level: "automatic" },
+      backend: CLOVER_CODE_ID, root: "home/Studio/project1", title: "launchd", model: MODEL, prompt: `CALL Bash ${JSON.stringify({ command: cmd })}`,
+    });
+    await waitFor(() => notification(w), "the turn's end");
+    const inside = { launchctl: readFileSync(lc, "utf8").trim(), open: readFileSync(op, "utf8") };
+    // Outside the sandbox the same launchctl answers, and open reaches LaunchServices (only to find no such app).
+    expect(spawnSync("/bin/launchctl", ["print", `gui/${process.getuid!()}`]).status).toBe(0);
+    const outside = spawnSync("/usr/bin/open", ["-b", "com.waifucave.clover.no-such-app"], { encoding: "utf8" });
+    expect(inside.launchctl).not.toBe("0");
+    expect(inside.open).not.toContain("exit 0");
+    expect(inside.open.trim()).not.toBe(`${outside.stderr.trim()}\nexit ${outside.status}`);
+  }, 60_000);
+
   darwinTest("the pause stops the agent's background shells (lane A's rule)", async () => {
     let paused = false;
     const listeners = new Set<() => void>();
@@ -227,6 +264,8 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
     expect(seen!.hooks!.PostToolUse![1]!.hooks[0]).toBe(post);
     expect(seen!.hooks!.PostToolUseFailure).toEqual([seen!.hooks!.PostToolUse![0]!]);
     expect(seen!.hooks!.UserPromptSubmit!.length).toBe(1);
+    // Lane A's sandbox floor, last: on, no unsandboxed command, launchd's paths closed (F8).
+    expect(seen!.sandbox).toMatchObject(BOT_SANDBOX);
 
     // The fence's file-tool denials reach the rules, the bots' folders and the transcript stores among them.
     expect(seen!.permissions!.deny).toEqual(expect.arrayContaining([`Read(/${w.cloverHome}/**)`, `Grep(/${w.cloverHome}/**)`, `Write(/${w.cloverHome}/**)`]));

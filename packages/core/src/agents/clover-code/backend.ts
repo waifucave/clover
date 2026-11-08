@@ -33,7 +33,7 @@ import type { AcpStartSpec, AgentWire } from "../backend";
 import type { AgentPauseGate } from "../manager";
 import { agentPolicyOf, fileToolDenials, homeReach } from "../memory";
 import { inProcessSandboxReady, notAvailableHere } from "../sandbox/in-process";
-import { isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
+import { BOT_SANDBOX, isUnknownTask } from "../../runtime-sdk/turn-loop/driver";
 import { fillProvider } from "../../runtime-sdk/turn-loop/embedded-session";
 import { mergedHooks } from "../../runtime-sdk/turn-loop/hook-merge";
 
@@ -354,8 +354,10 @@ export class CloverCodeBackend implements AgentBackend {
       hooks,
       // An empty allow list is the runtime's "anywhere": the fence always names at least the root.
       sandbox: {
-        enabled: true,
         filesystem: { allowWrite: fence.allowWrite.length > 0 ? [...fence.allowWrite] : [spec.root], denyWrite: [...fence.denyWrite], denyRead: [...fence.denyRead] },
+        // On, no unsandboxed command (`dangerouslyDisableSandbox` is refused), and launchd's paths closed (F8): lane A's
+        // floor for bots and in-process agents, set last so nothing here overrides it.
+        ...BOT_SANDBOX,
       },
       // The sandbox holds Bash; the file tools get the same denials as deny rules (the fenced set and bots' memory).
       ...(denials.length === 0 && base.permissions === undefined ? {} : { permissions: { ...(base.permissions ?? {}), deny: denials } }),
