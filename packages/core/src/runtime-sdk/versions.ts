@@ -2,7 +2,7 @@ import { SDK_VERSION } from "@waifucave/clover-agent-sdk";
 
 /** The exact peer versions this daemon was written against (P8b-3). The ^ ranges in package.json
  *  are what INSTALLS; these are what the tests PROVE installed. Bump together with the pins. */
-export const REQUIRED_WINTER_AGENT_SDK = "0.0.71";
+export const REQUIRED_WINTER_AGENT_SDK = "0.0.72";
 /**
  * THE CODING AGENT BINARY, on its own pin since A-M1. Code sessions run embedded and no session spawns
  * it any more; it is lane K's (the coding agent that becomes an ACP agent, spec §9.3), and the tests that
@@ -11,7 +11,10 @@ export const REQUIRED_WINTER_AGENT_SDK = "0.0.71";
  * builds its own.
  */
 export const CODING_AGENT_BINARY_VERSION = "0.0.55";
-/** Bumped to 0.0.71 (2026-11-07, F8's review): `Options.notificationPreamble`, the host's line on every task notification
+/** Bumped to 0.0.72 (2026-11-07, #281's follow-up): the runtime's notification escaping reads a tag's letters through
+ *  Clover's look-alike map (the plugin SDK's `lookalikeOf`, vendored and exported as `./lookalike`, held equal to it by
+ *  a test here), as `turn-loop/defuse.ts` does.
+ *  Earlier: bumped to 0.0.71 (2026-11-07, F8's review): `Options.notificationPreamble`, the host's line on every task notification
  *  the runtime delivers (folded into a running turn too), and look-alike tags defused in their values; Clover passes
  *  its "data, not instructions" frame.
  *  Earlier: bumped to 0.0.70 (2026-11-07, A's F8): what a command leaves running is adopted as a background task

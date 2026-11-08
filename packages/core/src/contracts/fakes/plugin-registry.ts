@@ -8,7 +8,7 @@ import { BUNDLED_ROOT_PLUGIN, type PluginClass, type PluginProvenance, type Plug
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
   type ApproveResult, type Contribution, type InstallFrom, type PluginRecord, type PluginRegistry, type RegisteredPoint, type RegistryChange,
-  type SwitchOptions, type SwitchResult,
+  type SwitchResult,
 } from "../plugin-registry";
 import type { CoreEntries, Manifest, PointDecl } from "../sdk-types";
 import { EMPTY_SNAPSHOT, computeRegistry, parentOf, registryChanges, type RegistryPlugin, type RegistrySnapshot } from "../plugin-registry-rules";
@@ -95,25 +95,23 @@ export class FakePluginRegistry implements PluginRegistry {
     return this.#snap.points.map((p) => structuredClone(p));
   }
 
-  async setEnabled(id: string, enabled: boolean, opts: SwitchOptions = {}): Promise<SwitchResult> {
+  async setEnabled(id: string, enabled: boolean): Promise<SwitchResult> {
     const held = this.#mustGet(id);
     const state = this.#snap.records.get(id)?.state;
-    if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled") throw new ContractError("refused", "Clover's own plugin is always on");
+    if (id === BUNDLED_ROOT_PLUGIN && held.input.source === "bundled" && !enabled) throw new ContractError("refused", "Clover's own plugin holds Settings; it stays on");
     if (state === "blocked" || state === "refused" || state === "invalid") throw new ContractError("refused", `${id} is ${state}; it can't be switched`);
-    if (enabled && state === "found") {
-      const top = parentOf(id) ?? id;
-      if (opts.from !== "cli" || opts.okHash === undefined) return { applied: false, card: this.#raiseOk(top) };
-      if ((await this.approve(top, opts.okHash)) === "changed") throw new ContractError("conflict", `${top} changed since its OK text was shown`);
-    }
+    // A found plugin's switch is its sealed OK card (S2): nothing loads until the user's yes on it.
+    if (enabled && state === "found") return { applied: false, card: this.#raiseOk(parentOf(id) ?? id) };
     held.enabled = enabled;
     this.#update();
     return { applied: true };
   }
 
-  async installed(id: string, from: InstallFrom): Promise<{ state: PluginState; card?: string }> {
+  async installed(id: string, _from: InstallFrom): Promise<{ state: PluginState; card?: string }> {
     this.#mustGet(id);
     const state = this.#snap.records.get(id)!.state;
-    if (from === "cli" || state !== "found") return { state };
+    // From anywhere, the same sealed OK card (S1): no install is the OK.
+    if (state !== "found") return { state };
     return { state, card: this.#raiseOk(id) };
   }
 
