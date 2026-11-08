@@ -189,6 +189,28 @@ describe("sessions' records across computers", () => {
     expect(w.h("Laptop").openTurn("b_alpha")).toEqual({ on: "Studio", calls: ["call_1"] });
   });
 
+  test("a normal live push is taken in one round: no stale base, no resend, no heads asked", async () => {
+    const w = await world(["Studio", "Laptop"]);
+    const studioDev = w.c.devices.get("Studio")!;
+    await studioDev.transport.connect(w.c.devices.get("Laptop")!.id);
+    const studio = w.h("Studio");
+    studio.open(view("Studio"));
+    studio.record("b_alpha", { type: "turn_started", origin: "user" });
+    await waitFor(() => w.h("Laptop").head("b_alpha") === 1);
+    // Every request the studio's sync makes from here on.
+    const asked: string[] = [];
+    const connect = studioDev.transport.connect.bind(studioDev.transport);
+    studioDev.transport.connect = async (peer: string) => {
+      const link = await connect(peer);
+      return new Proxy(link, { get: (t, k) => (k === "request" ? (m: string, p: unknown, o?: unknown) => (asked.push(m), (t.request as (...a: unknown[]) => unknown)(m, p, o)) : Reflect.get(t, k)) });
+    };
+    studio.record("b_alpha", { type: "driver", event: { type: "assistant_message", text: "hi" } });
+    await waitFor(() => w.h("Laptop").head("b_alpha") === 2);
+    await Bun.sleep(50);
+    // One push, overlapping the record both hold: a lost overlap would show as a stale base and a resend.
+    expect(asked).toEqual(["sync.push"]);
+  });
+
   test("a computer whose link comes up later catches up from the runner's history", async () => {
     const w = await world(["Studio", "Laptop"]);
     const studio = w.h("Studio");

@@ -320,7 +320,9 @@ export class SessionRecordSync {
       next++;
     }
     // The records this computer holds already are compared here (a grant the same as its copy): a different one is a
-    // fork. Only the new ones go to the host.
+    // fork. Only the new ones go to the host. A one-record overlap finds a fork only where the two records differ: by
+    // their epoch under the lease, by their timestamp otherwise. Two identical records written in the same millisecond
+    // with no epoch would go unseen, which real clocks make negligible.
     const heldCount = Math.max(0, Math.min(records.length, head - (base + 1)));
     if (heldCount > 0) {
       const mine = this.#o.host.history(id, { afterSeq: base, limit: heldCount });
