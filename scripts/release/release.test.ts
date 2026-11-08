@@ -4,7 +4,8 @@
 import { PLUGIN_BUN } from "../bundled-binaries";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { builderEnv, buildOsFor, devSigningIdentity, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
@@ -307,6 +308,30 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(builderEnv(dev, { ...env, CLOVER_MAC_DEV_KEYCHAIN: "/s/dev.keychain-db", CSC_KEYCHAIN: "/elsewhere" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_KEYCHAIN: "/s/dev.keychain-db" });
     // An unsigned build drops any keychain it's handed.
     expect(builderEnv(parseReleaseBuildArgs([], "darwin", "arm64"), { PATH: "/bin", CSC_KEYCHAIN: "/k", CLOVER_MAC_DEV_KEYCHAIN: "/k" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+  });
+
+  // codesign itself, with no identity and no keychain: an ad hoc signature takes the same arguments but the identity,
+  // and records the designated requirement given, which the real team identity's signature carries the same way.
+  test.if(process.platform === "darwin")("codesign records --sign-dev's team requirement as the designated one, which compiles, and an unsigned-by-the-team copy fails it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-sign-dev-"));
+    try {
+      const bin = join(dir, "clover-plugin-bun");
+      writeFileSync(bin, readFileSync("/usr/bin/true"));
+      const plugin = RESOURCE_BINARIES[2];
+      const args = codesignDevArgs(bin, HASH_B, plugin.identifier, CLOVER_TEAM_ID);
+      args[args.indexOf(HASH_B)] = "-";
+      const signed = spawnSync(args[0]!, args.slice(1), { encoding: "utf8" });
+      expect([signed.status, signed.stderr.replace(/^.*replacing existing signature\n/m, "")]).toEqual([0, ""]);
+      const shown = spawnSync("codesign", ["-d", "-r-", bin], { encoding: "utf8" });
+      const recorded = /^designated => (.+)$/m.exec(`${shown.stdout}${shown.stderr}`)?.[1]?.trim();
+      expect(recorded).toBe(teamRequirement(plugin.identifier, CLOVER_TEAM_ID));
+      // The text compiles as a requirement (csreq), and this ad hoc copy doesn't meet it: only the team's identity does.
+      expect(spawnSync("csreq", ["-r", `=${recorded}`, "-b", join(dir, "req.bin")]).status).toBe(0);
+      expect(spawnSync("codesign", ["--verify", "--strict", `-R=${recorded}`, bin]).status).not.toBe(0);
+      expect(spawnSync("codesign", ["--verify", "--strict", `-R=identifier "${plugin.identifier}"`, bin]).status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("a dev-signed binary is held to the signed build's checks but the timestamp", () => {
