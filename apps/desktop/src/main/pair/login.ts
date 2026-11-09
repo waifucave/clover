@@ -16,9 +16,9 @@
 // tests until C-M1 lands.
 import { execFile, spawn as nodeSpawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, chmodSync } from "node:fs";
+import { copyFileSync, existsSync, realpathSync, mkdirSync, readFileSync, renameSync, statSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 
 export interface LoginResult {
   ok: boolean;
@@ -146,6 +146,8 @@ export interface DevDaemonConfig {
   platform?: NodeJS.Platform;
   /** How a Windows child tree dies; `taskkill /T /F /PID` by default (`child.kill` stops one process). */
   killTree?: (pid: number) => void;
+  /** The clock (ms); `Date.now` by default. */
+  now?: () => number;
 }
 
 /** The checkout holding `dir` (B1): walks up, bounded, for `scripts/dev-daemon.ts`. The built main
@@ -162,16 +164,41 @@ export function findRepoRoot(fromDir: string, maxUp = 8): string | undefined {
   return undefined;
 }
 
-/** Whether the dev launcher may run on this home (S3): never the default dist home (`~/.clover`) and
- *  never Winter's homes (`~/.winter`, which the harness's own daemons use). The dev script alone must
- *  not be the only guard: the app itself refuses. */
-export function devDaemonHomeAllowed(home: string, userHome: string = homedir()): boolean {
-  const h = resolve(home);
-  if (h === resolve(join(userHome, ".clover"))) return false;
-  const winter = resolve(join(userHome, ".winter"));
-  if (h === winter || h.startsWith(winter + sep)) return false;
-  return true;
+/** Other installs' homes under the user's home; a copy of `OTHER_INSTALL_HOMES` (`packages/core/src/other-installs.ts`,
+ *  pinned equal in a test) because the app does not import the core's source. */
+export const OTHER_INSTALL_HOME_DIRS: readonly string[] = [".winter", ".winter-dev", ".norma", ".norma-dev"];
+
+/** `path`'s real path, through its nearest existing parent when it does not exist yet (as `realPathOf` in the core). */
+function realPathOf(path: string): string {
+  let current = resolve(path);
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...rest);
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return join(current, ...rest);
+      rest.unshift(basename(current));
+      current = parent;
+    }
+  }
 }
+
+const within = (path: string, root: string): boolean => path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
+
+/** Whether the dev launcher may run on this home (S3): by real path (links followed), never the dist home
+ *  `~/.clover` or anything inside it, and never any other install's home or a folder inside one. Mirrors
+ *  `devDaemonHome` (scripts/dev-daemon-lib.ts) and `otherInstallHome` (other-installs.ts): the app refuses too,
+ *  the dev script is not the only guard. */
+export function devDaemonHomeAllowed(home: string, userHome: string = homedir()): boolean {
+  const real = realPathOf(home);
+  const user = realPathOf(userHome);
+  if (within(real, realPathOf(join(userHome, ".clover"))) || within(real, join(user, ".clover"))) return false;
+  return !OTHER_INSTALL_HOME_DIRS.some((d) => within(real, join(user, d)) || within(real, realPathOf(join(userHome, d))));
+}
+
+/** An exit within this long of a start counts toward the 3-exit limit. */
+const EARLY_EXIT_MS = 10_000;
 
 /** The dev daemon, as the dev app's own child: when no daemon answers and no binary is configured, an unpackaged run
  *  starts `bun run dev:daemon --no-build` itself instead of telling the person to start it by hand. No login item
@@ -199,11 +226,16 @@ export function devDaemonLauncher(cfg: DevDaemonConfig): DaemonLauncher {
   let child: DevChild | undefined;
   // A child that exits at once is logged only once, and after 3 such exits the launcher stops trying:
   // something structural is wrong, and a tight start loop would thrash it (each start says to run it by hand).
+  // Only an exit soon after a start counts (EARLY_EXIT_MS): a daemon that ran for a while and then died is
+  // restarted, not given up on.
+  const now = cfg.now ?? Date.now;
+  let startedAt = 0;
   let exits = 0;
   let exitLogged = false;
   const noteExit = (why: string) => {
     child = undefined;
-    exits++;
+    if (now() - startedAt <= EARLY_EXIT_MS) exits++;
+    else exits = 0;
     if (!exitLogged) {
       exitLogged = true;
       cfg.log(`dev: the dev daemon exited at once (${why}); start it by hand if it keeps happening`);
@@ -231,6 +263,7 @@ export function devDaemonLauncher(cfg: DevDaemonConfig): DaemonLauncher {
           env: { ...process.env, CLOVER_HOME: cfg.home, CLOVER_PROFILE: "dev" },
         });
         child = c;
+        startedAt = now();
         // A spawn failure arrives as `error`, never as a throw (which would surface Electron's error
         // dialog — a window on the owner's screen): it is logged, and the launcher stays down.
         c.on("error", (err) => {

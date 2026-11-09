@@ -4,12 +4,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash, createHmac } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloverHelloParams } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
-import { parseAutostartStatus, devDaemonHomeAllowed, devDaemonLauncher, findRepoRoot, type DaemonLauncher, type DevChild } from "../src/main/pair/login";
+import { parseAutostartStatus, devDaemonHomeAllowed, OTHER_INSTALL_HOME_DIRS, devDaemonLauncher, findRepoRoot, type DaemonLauncher, type DevChild } from "../src/main/pair/login";
 import { Pair, daemonProof, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
@@ -417,7 +417,7 @@ describe("the dev daemon as the app's own child (Gap A: no more starting it by h
       };
     };
     const trees: number[] = [];
-    const reg = (extra: { platform?: NodeJS.Platform; bun?: string } = {}) => devDaemonLauncher({
+    const reg = (extra: { platform?: NodeJS.Platform; bun?: string; now?: () => number } = {}) => devDaemonLauncher({
       root, home, log: (l) => lines.push(l), spawn,
       killTree: (pid) => { kills.push("tree"); trees.push(pid); },
       ...extra,
@@ -465,6 +465,53 @@ describe("the dev daemon as the app's own child (Gap A: no more starting it by h
     expect(devDaemonHomeAllowed(join(user, ".winter"), user)).toBe(false);
     expect(devDaemonHomeAllowed(join(user, ".winter", "wt", "e2"), user)).toBe(false);
     expect(devDaemonHomeAllowed(mkdtempSync(join(tmpdir(), "clover-dev-ok-")), user)).toBe(true);
+  });
+
+  test("the dev home check matches the script's: real path, every other install, folders inside the dist home", () => {
+    const user = mkdtempSync(join(tmpdir(), "clover-dev-user-"));
+    homes.push(user);
+    for (const d of [".winter-dev", ".norma", ".norma-dev"]) {
+      expect(devDaemonHomeAllowed(join(user, d), user)).toBe(false);
+      expect(devDaemonHomeAllowed(join(user, d, "x", "y"), user)).toBe(false);
+    }
+    expect(devDaemonHomeAllowed(join(user, ".clover", "dev"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(user, ".clover-dev"), user)).toBe(true);
+    // A link into the dist home or another install's is refused by where it leads.
+    mkdirSync(join(user, ".clover"), { recursive: true });
+    mkdirSync(join(user, ".winter"), { recursive: true });
+    const viaDist = join(user, "link-dist");
+    const viaWinter = join(user, "link-winter");
+    symlinkSync(join(user, ".clover"), viaDist);
+    symlinkSync(join(user, ".winter"), viaWinter);
+    expect(devDaemonHomeAllowed(viaDist, user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(viaWinter, "sub"), user)).toBe(false);
+    // The copy of the list equals the core's.
+    const core = readFileSync(join(import.meta.dir, "..", "..", "..", "packages", "core", "src", "other-installs.ts"), "utf8");
+    const legacy = readFileSync(join(import.meta.dir, "..", "..", "..", "packages", "core", "src", "legacy-names.ts"), "utf8");
+    const named = (n: string) => new RegExp(`${n}\\s*=\\s*"([^"]+)"`).exec(core + legacy)![1]!;
+    expect([...OTHER_INSTALL_HOME_DIRS]).toEqual([named("WINTER_HOME_DIR"), named("WINTER_DEV_HOME_DIR"), named("LEGACY_HOME_DIR"), named("LEGACY_DEV_HOME_DIR")]);
+  });
+
+  test("only exits soon after a start count toward the 3-exit limit", async () => {
+    let t = 0;
+    const s = setup();
+    withBinary(s.root);
+    const reg = s.makeReg({ now: () => t });
+    // Three exits, each after a long run: restarts stay possible.
+    for (let i = 0; i < 4; i++) {
+      expect((await reg.start()).ok).toBe(true);
+      t += 60_000;
+      s.listeners[i]!.exit.forEach((l) => l());
+    }
+    expect(s.spawned).toHaveLength(4);
+    // Three exits within 10 s of a start stop it.
+    for (let i = 4; i < 7; i++) {
+      expect((await reg.start()).ok).toBe(true);
+      t += 1_000;
+      s.listeners[i]!.exit.forEach((l) => l());
+    }
+    expect((await reg.start()).ok).toBe(false);
+    expect(s.spawned).toHaveLength(7);
   });
 
   test("a spawn failure is logged, never thrown (no Electron error dialog, S2)", async () => {
