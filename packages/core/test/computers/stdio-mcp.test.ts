@@ -131,9 +131,8 @@ describe("a stdio server's life", () => {
     ch.close();
     await until(() => launcher.running().length === 0);
     await until(() => !alive(pid));
-    // POSIX: the whole process group goes.
-    if (process.platform !== "win32") await until(() => !alive(grandchild));
-    else process.kill(grandchild);
+    // The whole tree goes (a process group on POSIX, `taskkill /T` on Windows).
+    await until(() => !alive(grandchild));
     expect(releases).toEqual(["acme/tools/echo#1"]);
     expect(launcher.state("acme/tools")).toEqual({ crashes: 0 });
     // A send after the stop says so.

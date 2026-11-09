@@ -357,7 +357,8 @@ export class StdioMcpLauncher {
   #signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
     if (child.pid === undefined) return;
     try {
-      if (process.platform === "win32") child.kill(signal);
+      // Windows has no process groups: `taskkill /T` ends the tree (forced: a console program takes no SIGTERM).
+      if (process.platform === "win32") nodeSpawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => child.kill(signal));
       else process.kill(-child.pid, signal);
     } catch {
       // Already gone.
