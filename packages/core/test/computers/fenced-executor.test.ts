@@ -56,6 +56,12 @@ describe("fencedExecutor over a spawner", () => {
     }
   });
 
+  test("TMPDIR is the fence's temp folder when given", async () => {
+    const s = fake(() => ({ kind: "exited", code: 0, stdout: "", stderr: "", shell: "sh" }));
+    await fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", os: "macos" }).run("Bash", { command: "true" }, ctx());
+    expect(s.runs[0]!.env).toEqual({ PATH: fencedPath("macos"), HOME: "/Users/me", LANG: "en_US.UTF-8", TERM: "dumb", TMPDIR: "/private/tmp" });
+  });
+
   test("another computer's call runs as that peer; a timeout asked for is capped", async () => {
     const s = fake(() => ({ kind: "exited", code: 3, stdout: "", stderr: "", shell: "sh" }));
     const r = await fencedExecutor({ spawner: s, home: "/home/me", os: "linux" }).run("Bash", { command: "false", cwd: "home/Studio", timeoutMs: 24 * 3600 * 1000 }, ctx({ as: PEER }));
@@ -106,7 +112,7 @@ darwinDescribe("on this Mac's real fenced process (Seatbelt)", () => {
     for (const d of [join(clover, "settings"), project, join(root, "tmp")]) mkdirSync(d, { recursive: true });
     writeFileSync(join(clover, "settings.json"), "orig");
     const spawner = fencedSpawner({ fence: new CloverFence({ os: hostOs(), home, cloverHome: clover, temp: join(root, "tmp") }) });
-    const exec = fencedExecutor({ spawner, home, os: hostOs() });
+    const exec = fencedExecutor({ spawner, home, temp: join(root, "tmp"), os: hostOs() });
     const coding: Caller = { kind: "session", sessionId: "s_code", sessionKind: "coding" };
     process.env.LANE_J_DAEMON_ONLY = "never-in-a-child";
     try {
@@ -117,6 +123,10 @@ darwinDescribe("on this Mac's real fenced process (Seatbelt)", () => {
     } finally {
       delete process.env.LANE_J_DAEMON_ONLY;
     }
+    // Tools that make temp files land in the fence's temp folder, which the sandbox lets every caller write.
+    const tmp = await exec.run("Bash", { command: 'f=$(mktemp "$TMPDIR/lane-j.XXXXXX") && echo made > "$f" && cat "$f"' }, ctx({ as: coding, cwd: project }));
+    expect(tmp.isError).toBe(false);
+    expect((tmp.output as { stdout: string }).stdout).toBe("made\n");
     const fenced = await exec.run("Bash", { command: `echo planted > ${JSON.stringify(join(clover, "settings.json"))}` }, ctx({ as: coding, cwd: project }));
     expect(fenced.isError).toBe(true);
     expect(readFileSync(join(clover, "settings.json"), "utf8")).toBe("orig");
