@@ -984,9 +984,12 @@ export function describeOk(
     if (text) lines.push(`It ${text}.`);
   }
   if (opts.restylesCards && !report.capabilities.includes("approvals")) lines.push(`It ${capabilityOkText("approvals")}.`);
+  // Host code is held to the list where the fence holds it to its proxy (macOS, B-M2's 2g); elsewhere it isn't.
+  const hostHeld = opts.os === "macos";
   if (report.networkHosts.length > 0) {
-    lines.push(`Its components reach only ${report.networkHosts.join(", ")}${report.class === "code" ? "; its host code can reach any host" : ""}.`);
-  } else if (report.class === "code") lines.push("Its components reach no host; its host code can reach any host.");
+    const host = report.class !== "code" ? "" : hostHeld ? "; so does its host code" : "; its host code can reach any host";
+    lines.push(`Its components reach only ${report.networkHosts.join(", ")}${host}.`);
+  } else if (report.class === "code") lines.push(hostHeld ? "Its code reaches no host." : "Its components reach no host; its host code can reach any host.");
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);

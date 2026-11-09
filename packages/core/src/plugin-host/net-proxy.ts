@@ -10,9 +10,14 @@
 //   request line rewritten to origin form, one request per connection (`Connection: close`, so a kept-alive client's
 //   next request, which may name another host, comes on a new connection and is checked).
 // * A raw IP address only when the list names that address.
+// * A listed name is resolved here and connected to by the address it resolved to (no second lookup to rebind). A name
+//   that resolves to a loopback or private address is refused (a plugin's own DNS record could otherwise point its
+//   listed host at this computer's or the LAN's services), unless the name says so itself (`localhost`, `*.local`).
 // * Anything else: `403 Forbidden`, and the connection closes. A refusal names the host in the proxy's log.
 import type { Socket, TCPSocketListener } from "bun";
+import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { ipAddressClass } from "../agent/tools/web";
 
 /** One `network:` entry as the proxy reads it. */
 interface HostRule {
@@ -74,8 +79,15 @@ interface ConnState {
 
 /** Starts one plugin process's proxy on 127.0.0.1. `capabilities` is read at each connection, so a grant or a
  *  revocation applies to the next one. */
-export function startPluginProxy(o: { pluginId: string; capabilities: () => readonly string[]; log?: (line: string) => void; connect?: typeof Bun.connect }): PluginProxy {
+/** The addresses a name resolves to (the system's resolver). */
+export type ResolveHost = (host: string) => Promise<string[]>;
+const systemResolve: ResolveHost = async (host) => (await lookup(host, { all: true, verbatim: true })).map((a) => a.address);
+/** A name that says it's on this computer or the local network, so a private address is what it declares. */
+const localName = (host: string) => /(^|\.)(localhost|local)\.?$/i.test(host);
+
+export function startPluginProxy(o: { pluginId: string; capabilities: () => readonly string[]; log?: (line: string) => void; connect?: typeof Bun.connect; resolve?: ResolveHost }): PluginProxy {
   const connect = o.connect ?? Bun.connect;
+  const resolve = o.resolve ?? systemResolve;
   const refuse = (sock: Socket<ConnState>, why: string) => {
     o.log?.(`[net ${o.pluginId}] refused ${why}`);
     sock.data.done = true;
@@ -83,10 +95,25 @@ export function startPluginProxy(o: { pluginId: string; capabilities: () => read
     sock.end();
   };
   const open = async (sock: Socket<ConnState>, host: string, port: number, first: Buffer | undefined, tunnel: boolean) => {
+    let address = host;
+    if (isIP(host) === 0) {
+      let addresses: string[];
+      try {
+        addresses = await resolve(host);
+      } catch (err) {
+        sock.write(`HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+        sock.end();
+        o.log?.(`[net ${o.pluginId}] ${host} didn't resolve: ${(err as Error).message}`);
+        return;
+      }
+      const inside = localName(host) ? undefined : addresses.find((a) => ipAddressClass(a) !== null);
+      if (addresses.length === 0 || inside !== undefined) return refuse(sock, `${host}, which resolves to ${inside ?? "nothing"}, a private address`);
+      address = addresses[0]!;
+    }
     let upstream: Upstream;
     try {
       upstream = await connect({
-        hostname: host, port,
+        hostname: address, port,
         socket: {
           data: (_u, d) => void sock.write(d),
           close: () => void sock.end(),

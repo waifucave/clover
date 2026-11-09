@@ -39,10 +39,18 @@ function upstream(text: string): number {
   servers.push(s);
   return s.port!;
 }
-/** The proxies' upstream: `<name>.test` is this computer, as a resolver would make it; any other name fails. */
+/** The proxies' resolver: `<name>.test` resolves to a public documentation address (TEST-NET-3), `rebind.test` to
+ *  this computer, and `printer.local` too; any other name fails. */
+const PUBLIC_STAND_IN = "203.0.113.7";
+const testResolve = async (host: string): Promise<string[]> => {
+  if (host === "rebind.test" || host === "printer.local") return ["127.0.0.1"];
+  if (host.endsWith(".test")) return [PUBLIC_STAND_IN];
+  throw new Error(`no such host ${host}`);
+};
+/** The proxies' upstream: the stand-in public address (and a raw loopback one, when listed) is this computer. */
 const testConnect = ((o: Parameters<typeof Bun.connect>[0]) => {
-  const name = (o as unknown as { hostname: string }).hostname;
-  if (!name.endsWith(".test") && name !== "127.0.0.1") return Promise.reject(new Error(`no such host ${name}`));
+  const address = (o as unknown as { hostname: string }).hostname;
+  if (address !== PUBLIC_STAND_IN && address !== "127.0.0.1") return Promise.reject(new Error(`no route to ${address}`));
   return Bun.connect({ ...(o as object), hostname: "127.0.0.1" } as unknown as Parameters<typeof Bun.connect>[0]);
 }) as typeof Bun.connect;
 
@@ -59,7 +67,7 @@ describe("the network list", () => {
     const listed = upstream("listed");
     const other = upstream("other");
     const lines: string[] = [];
-    const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => [`network:api.test:${listed}`], connect: testConnect, log: (l) => lines.push(l) });
+    const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => [`network:api.test:${listed}`], connect: testConnect, resolve: testResolve, log: (l) => lines.push(l) });
     try {
       // Plain HTTP in absolute form, as fetch sends it to an HTTP proxy.
       expect(await (await fetch(`http://api.test:${listed}/`, { proxy: `http://127.0.0.1:${proxy.port}` })).text()).toBe("listed");
@@ -95,6 +103,27 @@ describe("the network list", () => {
       expect(raw).toStartWith("HTTP/1.1 403");
       expect(tunnel).toContain("listed");
       expect(lines.some((l) => l.includes(`other.test:${other}`))).toBe(true);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  // 2g's self-probe: a plugin controls its own DNS, so a listed name could point at this computer or the LAN.
+  test("a listed name that resolves to a private address is refused, unless the name says it's local; the connection goes to the address checked", async () => {
+    const listed = upstream("listed");
+    const lines: string[] = [];
+    const seen: string[] = [];
+    const connect = ((o: Parameters<typeof Bun.connect>[0]) => (seen.push((o as unknown as { hostname: string }).hostname), testConnect(o))) as typeof Bun.connect;
+    const caps = [`network:rebind.test:${listed}`, `network:api.test:${listed}`, `network:printer.local:${listed}`];
+    const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => caps, connect, resolve: testResolve, log: (l) => lines.push(l) });
+    try {
+      const via = { proxy: `http://127.0.0.1:${proxy.port}` };
+      expect((await fetch(`http://rebind.test:${listed}/`, via)).status).toBe(403);
+      expect(lines.some((l) => l.includes("rebind.test, which resolves to 127.0.0.1, a private address"))).toBe(true);
+      expect(await (await fetch(`http://api.test:${listed}/`, via)).text()).toBe("listed");
+      expect(await (await fetch(`http://printer.local:${listed}/`, via)).text()).toBe("listed");
+      // Never the name again (no second lookup to rebind): the address the check passed.
+      expect(seen).toEqual([PUBLIC_STAND_IN, "127.0.0.1"]);
     } finally {
       proxy.close();
     }
@@ -165,7 +194,7 @@ out.direct = await new Promise((resolve) => {
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
     const secrets = new MemorySecretStore();
     const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, settleMs: 50 });
-    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: temp("cf-net-user-"), netConnect: testConnect });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, userHome: temp("cf-net-user-"), netConnect: testConnect, netResolve: testResolve });
     try {
       const { card } = await opened.registry.installed("spy", "app");
       const shown = broker.cards().find((c) => c.id === card)!;

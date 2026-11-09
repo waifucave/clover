@@ -106,6 +106,8 @@ export interface StartPluginHostOptions {
   fence?: false;
   /** Test seam: how the proxies open their upstream connections (default `Bun.connect`). */
   netConnect?: typeof Bun.connect;
+  /** Test seam: how the proxies resolve a listed name (default: the system's resolver). */
+  netResolve?: (host: string) => Promise<string[]>;
   /** The user's home the fence denies (default: `os.homedir()`; tests pass a temp one). */
   userHome?: string;
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
@@ -245,6 +247,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
         capabilities: () => o.registry.list().filter((r) => topPluginIdOf(r.id) === top && r.enabled).flatMap((r) => r.granted),
         log,
         ...(o.netConnect !== undefined ? { connect: o.netConnect } : {}),
+        ...(o.netResolve !== undefined ? { resolve: o.netResolve } : {}),
       });
       proxies.set(top, p);
     }
