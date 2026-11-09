@@ -17,7 +17,7 @@ import {
   DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  ALWAYS_CARD_KINDS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
+  ALWAYS_CARD_KINDS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
   type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../contracts/approval-broker";
@@ -45,6 +45,9 @@ export interface RuleStore {
  *  computer other than the session's, so not real paths). */
 export interface CloverApprovalRequest extends ApprovalRequest {
   pathsUnresolved?: boolean;
+  /** The card waits for the person however its turn started: no 10-minute deny (rule 6). Its requester closes it when
+   *  what it asks about is gone (the cloud cards: approvals/cloud-cards.ts, the controller's ruling on #290). */
+  waitsForUser?: boolean;
 }
 
 /** The card's reason for a request whose paths are unresolved, from Clover's own table. */
@@ -210,6 +213,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     if (level === "read-only" && levelDecision(level, req.effect) !== "allow") return { allowed: false, by: "level", level };
     if (this.#unresolved(req)) return undefined; // paths no one resolved: a card every time, whatever rule or level
     if (level === "read-only") return { allowed: true, by: "level", level };
+    if (writesRunLater(req, this.#fence)) return { allowed: false, by: "fence" }; // rule 3: no bot or agent writes there
     if (req.paths?.length && this.#fence) { // rule 3
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }
@@ -227,7 +231,8 @@ export class CloverApprovalBroker implements ApprovalBroker {
 
   #showCard(req: ApprovalRequest, signal: AbortSignal | undefined): Promise<ApprovalDecision> {
     const issuedAt = this.#clock.now();
-    const expires = cardExpires(req.kind, req.origin); // rule 6
+    // rule 6; `waitsForUser` holds only for a sensitive change (the cloud cards): a plugin's `confirm` always expires.
+    const expires = req.kind === "change" && (req as CloverApprovalRequest).waitsForUser === true ? false : cardExpires(req.kind, req.origin);
     const once = ALWAYS_CARD_KINDS.includes(req.kind);
     const options = once || !this.#rememberable(req)
       ? (req.options ?? DEFAULT_OPTIONS).filter((o) => o.remember === undefined)

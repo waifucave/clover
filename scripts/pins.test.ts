@@ -120,6 +120,15 @@ describe("the Bun pins follow .bun-version", () => {
   const manifests = Bun.spawnSync(["git", "ls-files", "*package.json"], { cwd: REPO_ROOT }).stdout.toString().split("\n")
     .filter((f) => f.endsWith("package.json") && !f.startsWith("spikes/"));
 
+  test(".bun-sha256 pins the binary of every asset scripts/pinned-bun can pick, for the pinned version", () => {
+    const lines = readFileSync(join(REPO_ROOT, ".bun-sha256"), "utf8").split("\n").filter((l) => l.trim() !== "" && !l.startsWith("#"));
+    const pinned = new Map(lines.map((l) => l.split(/\s+/)).filter((f) => f[0] === PINNED_BUN).map((f) => [f[1]!, f[2]!]));
+    const assets = ["darwin-aarch64", "darwin-x64", "darwin-x64-baseline", "linux-aarch64", "linux-aarch64-musl", "linux-x64", "linux-x64-baseline", "linux-x64-musl", "linux-x64-musl-baseline"].map((a) => `bun-${a}`);
+    for (const asset of assets) expect(pinned.get(asset)).toMatch(/^[0-9a-f]{64}$/);
+    // Every line is `<version> <asset> <sha256>`.
+    for (const l of lines) expect(l).toMatch(/^\d+\.\d+\.\d+ bun-[a-z0-9-]+ [0-9a-f]{64}$/);
+  });
+
   test("every tracked package.json's @types/bun is exactly the pinned version", () => {
     expect(manifests.length).toBeGreaterThan(10);
     const drift: string[] = [];

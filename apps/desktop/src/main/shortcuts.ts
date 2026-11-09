@@ -3,6 +3,15 @@
 // accelerators stay too, for when no page has the focus. Pure, so it is unit-tested.
 export type AppShortcut = "quit" | "close-window" | "settings";
 
+// The smoke run's real input (E-M3's end-to-end): CDP-dispatched presses travel the browser's real input path
+// into out-of-process sealed frames, where sendInputEvent's mouse path stops at the main frame. Test-only on every
+// axis: an unpackaged, headless run alone. A packaged app started with the smoke's env vars must never attach
+// webContents.debugger or dispatch CDP input (B1's gate), so both click paths ask first. Pure, so it is unit-tested
+// (packaged mode ignores the smoke's presses).
+export function sealedInputAllowed(input: { packaged: boolean; headless: boolean }): boolean {
+  return input.packaged !== true && input.headless === true;
+}
+
 export interface KeyInput {
   type: string;
   key: string;

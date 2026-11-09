@@ -53,9 +53,12 @@
     "libreoffice:fetch": "bun run scripts/fetch-libreoffice.ts"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@resvg/resvg-js": "^2.6.2",
     "@types/bun": "1.4.4",
-    "typescript": "^5.6.0"
+    "openpgp": "6.3.2",
+    "typescript": "^5.6.0",
+    "wrangler": "4.153.0"
   },
   "workspaces": [
     "packages/*",
@@ -75,7 +78,8 @@
       "fast-uri": ">=3.1.9 <4",
       "@types/node": "25.9.3",
       "sharp": "0.35.5",
-      "undici": "7.30.1"
+      "undici": "7.30.1",
+      "minimatch@>=7 <11.0.1": "11.0.1"
     }
   },
   "overrides": {
@@ -83,6 +87,7 @@
     "fast-uri": ">=3.1.9 <4",
     "@types/node": "25.9.3",
     "sharp": "0.35.5",
-    "undici": "7.30.1"
+    "undici": "7.30.1",
+    "minimatch@>=7 <11.0.1": "11.0.1"
   }
 }

@@ -26,7 +26,7 @@ export class InProcessWorker {
   private current: { id: string; handlers: RunHandlers; settle(o: WorkerRunOutcome): void } | undefined;
   private readonly rt = createAutomationRuntime({
     post: (m) => this.fromRuntime(m),
-    transpile: (code) => new Bun.Transpiler({ loader: "ts" }).transformSync(code),
+    transpile: (code) => new Bun.Transpiler({ loader: "ts", ...({ macro: false } as object) }).transformSync(code),
   });
 
   get alive(): boolean { return !this.dead; }

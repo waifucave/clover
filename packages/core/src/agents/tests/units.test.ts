@@ -270,17 +270,25 @@ describe("the bridge's tokens", () => {
     expect((await t.accept(token, "s1", 777)).ok).toBe(true);
   });
 
-  test("the bridge's methods on C's server refuse a session whose token is gone", async () => {
+  test("the bridge's methods refuse a connection that isn't its session token's live one", async () => {
     const t = new BridgeTokens({ table: table(tree) });
-    t.mint("s1");
+    const token = t.mint("s1");
+    t.bind("s1", 500);
+    const v = await t.accept(token, "s1", 501);
+    if (!v.ok) throw new Error(v.reason);
     const parts = bridgeCloverParts(t, {
       sessionInfo: () => ({ bot: "alpha" }), tools: async () => ({ tools: [], instructions: "" }),
       call: async () => ({ content: [], isError: false }), sendMessage: async () => {}, glossary: async () => ({ results: [], loaded: [] }),
     });
-    const conn = { caller: { kind: "session", sessionId: "s1", sessionKind: "agent", bot: "alpha" } } as unknown as CloverConn;
+    const caller = { kind: "session", sessionId: "s1", sessionKind: "agent", bot: "alpha" };
+    const conn = { caller, bridgeConnection: v.connection } as unknown as CloverConn;
+    const refusal = (c: CloverConn) => Promise.resolve().then(() => parts.handlers["bridge.tools"]!(c, {})).then(() => "ran", (e: unknown) => (e as Error).message);
     expect(await parts.handlers["bridge.tools"]!(conn, {})).toEqual({ tools: [], instructions: "" });
+    // No connection number, or another one: refused while the session's token is live.
+    expect(await refusal({ caller } as unknown as CloverConn)).toBe("this bridge's connection isn't its token's live one");
+    expect(await refusal({ caller, bridgeConnection: v.connection + 1 } as unknown as CloverConn)).toBe("this bridge's connection isn't its token's live one");
     t.revoke("s1");
-    expect(await Promise.resolve(parts.handlers["bridge.tools"]!(conn, {})).catch((e: unknown) => (e as Error).message)).toBe("this bridge's token was revoked");
+    expect(await refusal(conn)).toBe("this bridge's connection isn't its token's live one");
   });
 
   test("minting again revokes the earlier token (a reattach)", async () => {

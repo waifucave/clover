@@ -11,14 +11,14 @@ import { appendFileSync } from "node:fs";
 
 export type CiArea =
   | "workspaces" | "daemon" | "app" | "packages" | "installers" | "gallery" | "typecheck" | "lockfiles"
-  | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link";
+  | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link" | "linuxrepo";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
 type Pattern = string;
 
 /** Changes to any of these run every area: CI itself, the toolchain, the root manifest and the lockfiles. */
 export const CI_GLOBAL: readonly Pattern[] = [
-  ".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", "package.json", "bun.lock", "pnpm-lock.yaml",
+  ".github/workflows/ci.yml", "scripts/ci-changes.ts", ".bun-version", ".bun-sha256", "package.json", "bun.lock", "pnpm-lock.yaml",
   "pnpm-workspace.yaml", "tsconfig.base.json", "bunfig.toml",
 ];
 
@@ -72,6 +72,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
     "packages/core/src/contracts/", "packages/core/src/clock/", "packages/protocol/"],
+  // the Linux repositories' signatures, checked with gpgv and sqv
+  linuxrepo: ["scripts/release/linux-repo.ts", "scripts/release/linux-repo-verify.ts"],
 };
 
 /** The CI_GLOBAL changes that still run the Swift kits: CI's own definition, not the toolchain or the lockfiles. */

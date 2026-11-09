@@ -37,6 +37,29 @@ export async function windowsUserSid(run: Runner): Promise<string | undefined> {
   return r.ok && m ? m[1] : undefined;
 }
 
+/** The profile folder Windows gives the account `sid` at logon (the registry's ProfileList `ProfileImagePath`, its
+ *  `%VAR%`s expanded from `env`): what `%USERPROFILE%` is when its logon task runs, whatever this process's own
+ *  USERPROFILE says. Undefined when it can't be read. */
+export async function windowsProfilePath(sid: string, run: Runner, env: Record<string, string | undefined> = process.env): Promise<string | undefined> {
+  if (!/^S-1-[\d-]+$/.test(sid)) return undefined;
+  const r = await run(["reg", "query", `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${sid}`, "/v", "ProfileImagePath"]);
+  return r.ok ? parseProfileImagePath(r.out, env) : undefined;
+}
+
+/** `reg query … /v ProfileImagePath`'s value, with its `%VAR%`s expanded (one that isn't set: undefined). */
+export function parseProfileImagePath(out: string, env: Record<string, string | undefined>): string | undefined {
+  const m = /^\s*ProfileImagePath\s+REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/m.exec(out);
+  if (m === null) return undefined;
+  let missing = false;
+  const value = m[1]!.replace(/%([^%]+)%/g, (_, name: string) => {
+    const key = Object.keys(env).find((k) => k.toLowerCase() === name.toLowerCase());
+    const v = key === undefined ? undefined : env[key];
+    if (v === undefined) missing = true;
+    return v ?? "";
+  });
+  return missing ? undefined : value;
+}
+
 /** Writes a task's XML as UTF-16LE with a BOM (what `schtasks /XML` reads) to a temp file. */
 export type TaskXmlWriter = (xml: string) => { path: string; cleanup(): void };
 

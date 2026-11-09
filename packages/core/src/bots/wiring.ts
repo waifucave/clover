@@ -13,8 +13,11 @@ import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeliveredInput } from "../contracts/session-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
+import type { PluginHost } from "../contracts/plugin-host";
+import { pillMethods } from "../pill/rpc";
 import { CacheTimedCompaction, type CompactionPolicy } from "../sessions/compaction";
 import { DurableSessionHost, type DurableSessionHostOptions } from "../sessions/durable-host";
+import { SessionGrants } from "../sessions/grants";
 import { BotGate } from "./gate";
 import { soleComputer, type MainComputer } from "./main-computer";
 import { sessionsMethods, type MethodHandler, type SessionsMethodsDeps } from "./rpc";
@@ -68,6 +71,9 @@ export interface BotSideOptions {
     /** The plugin registry's `triggers` entries: which plugin may fire which trigger type (`RoutineEngine.fire`). */
     triggers?: Pick<PluginRegistry, "entries">;
   };
+  /** The plugin host that runs `pill.target` entries' handlers (lane G's `pill.send`); absent, a send to an entry is
+   *  refused as not installed, and sends to bots and sessions still work. */
+  pillTargets?: Pick<PluginHost, "invoke">;
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
   onSessionEnded?: (id: string) => void;
   /** Lane M's update gate (`RunningDaemon.updateGate`, #198): its turns are a busy source, and none starts while an
@@ -99,6 +105,11 @@ export interface BotSide {
   ingress?: WebhookIngress;
   /** Bots' voices here, when voices were given. */
   voices?: VoiceService;
+  /** The one `SessionGrants` of this computer (R10: what the user allowed one session, such as driving their own
+   *  browser partition), over this side's host and the approval broker; present when `approvals` can `request`.
+   *  The daemon hands this same instance to the browser (`personsBrowserGrants(side.grants)`), so a grant the user
+   *  gave is the one every reader sees. */
+  grants?: SessionGrants;
   /** `SendMessage` and `ListAgents` for one bot's session (or an agent's, through the bridge), with K's agent rows. */
   tools(sessionId: string): CoreToolDef[];
   /** Lane D's sessions methods, with K's `setAgentModel`. */
@@ -170,6 +181,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
   ingress = routines === undefined || o.routines?.ingress === undefined ? undefined : new WebhookIngress({
     registry: o.routines.ingress.registry, host: o.routines.ingress.host, engine: routines, clock: o.clock, ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
+  const grants = o.approvals?.request === undefined ? undefined : new SessionGrants({ host, approvals: { request: o.approvals.request.bind(o.approvals) } });
   const voices = o.voices === undefined ? undefined : new VoiceService({
     ...o.voices,
     voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
@@ -201,21 +213,28 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(routines === undefined ? {} : { routines }),
     ...(ingress === undefined ? {} : { ingress }),
     ...(voices === undefined ? {} : { voices }),
+    ...(grants === undefined ? {} : { grants }),
     tools: (sessionId) => {
       const defs = botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId);
       const bot = host.callerOf(sessionId).bot;
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
       return defs;
     },
-    methods: (deps) => ({
-      ...sessionsMethods({
+    methods: (deps) => {
+      const sessions = sessionsMethods({
         home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
         ...(updates === undefined ? {} : { updateGate: updates }),
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
-      }),
+      });
+      return {
+      ...sessions,
+      // Lane G's `pill.send`: the Dispatch pill's words go through the same session.send as the composer's, and to a
+      // `pill.target` entry's handler through the plugin host, when there is one.
+      ...pillMethods({ bots, sessions, ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
       ...(voices === undefined ? {} : voicesMethods({ voices })),
-    }),
+      };
+    },
     start: async () => {
       await bots.start();
       await routines?.start();

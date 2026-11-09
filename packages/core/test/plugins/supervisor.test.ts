@@ -165,7 +165,8 @@ describe("startAll / spawn", () => {
     supervisor.startAll([p]);
     expect(supervisor.status(p.id)).toBe("starting");
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.cmd).toEqual(["bun", "index.ts"]);
+    // Clover's own Bun, whatever `bun` the manifest names (#234's check 4, H3).
+    expect(calls[0]!.cmd).toEqual([process.execPath, "index.ts"]);
     expect(calls[0]!.opts.cwd).toBe("/plugins/demo");
     expect(calls[0]!.opts.env.CLOVER_PLUGIN_TOKEN).toBe(mints[0]);
     expect(calls[0]!.opts.env.CLOVER_SOCKET).toBe("/tmp/clover-test.sock");

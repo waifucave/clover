@@ -22,6 +22,7 @@ import { SharedClock, type TimeSource } from "../clock/shared-clock";
 import { AccountDirectory } from "./account-directory";
 import { DirectoryDriver, type DirectoryDriverOptions } from "./directory-driver";
 import { FileDeviceRegistry, type FileDeviceRegistryOptions } from "../devices/registry";
+import { publicKeyFromBase64 } from "../identity/keys";
 import { DialPolicy, type NatMapping } from "./dial-policy";
 import { GroupKeeper } from "./group";
 import { MemorySync, type MemorySyncOptions } from "../sync/memory";
@@ -103,6 +104,8 @@ export interface DeviceLinks {
   networkChanged(): Promise<void>;
   /** Where this device is reached, as the sidecar's last net report said (empty on another wire). */
   localAddresses(): { relay?: string; direct: string[] };
+  /** The link sidecar's pid, while it runs (none on another wire). */
+  sidecarPid(): number | undefined;
   close(): Promise<void>;
 }
 
@@ -186,12 +189,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
       },
     })
     : undefined;
-  const fallback = (id: string): DialTarget | undefined => {
-    const d = registry.get(id);
-    if (!d || d.revokedAt !== undefined) return undefined;
-    const k = Buffer.from(d.publicKey, "base64");
-    return k.length === 32 ? { key: new Uint8Array(k) as DialTarget["key"] } : undefined;
-  };
+  const fallback = (id: string): DialTarget | undefined => fallbackDialTarget(registry, id);
   let main: MainComputerHandle | undefined;
   const accountDirectory = o.handshake && o.account
     ? new AccountDirectory({
@@ -386,6 +384,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
     },
     networkChanged,
     localAddresses: () => ({ ...local, direct: [...local.direct] }),
+    sidecarPid: () => sidecar?.pid,
     async close() {
       driver?.close();
       groups?.close();
@@ -406,4 +405,12 @@ function isPrivate(addr: string): boolean {
   if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
   const h = host.toLowerCase();
   return h === "::1" || h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80");
+}
+
+/** Where to dial a device with no directory: its registry key, only a strict Ed25519 point (publicKeyFromBase64). */
+export function fallbackDialTarget(registry: Pick<FileDeviceRegistry, "get">, id: string): DialTarget | undefined {
+  const d = registry.get(id);
+  if (!d || d.revokedAt !== undefined) return undefined;
+  const key = publicKeyFromBase64(d.publicKey);
+  return key ? { key: key as DialTarget["key"] } : undefined;
 }

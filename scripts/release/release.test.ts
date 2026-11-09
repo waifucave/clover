@@ -1,17 +1,21 @@
 // The release (scripts/release/): the channels and feed, the update files, the signing commands and their checks,
 // the release build's and the owner's publish step's plans, and the release workflow's limits (no secrets, nothing
 // published). Nothing here signs, builds or publishes.
+import { PLUGIN_BUN } from "../bundled-binaries";
+import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, buildOsFor, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs } from "./build";
-import {
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
+import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
-  notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
+  notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
   writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys,
 } from "./lib";
-import { coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
+import { pluginsFeedFile, pluginsTarballFile, parsePluginsFeed, unpackTarball, pluginBunBinaryFile, pluginBunFeedFile, coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
 import { FEED_KEY_ITEM, generate, signingKey, withPublicKey, type KeyStore } from "./feed-key";
 import { draftReleaseArgs, parsePublishArgs, planRelease, promotedName, promotedSignature, RELEASE_OSES, signFeeds, proveShippedMacCore, sealProofCommand, sealProofProblem, type ShippedOpeners } from "./publish";
 
@@ -52,8 +56,59 @@ describe("the feed and the channels", () => {
     expect(read("packaging/clover.rb.tmpl")).toContain("/releases/download/v#{version}/Clover-#{version}.dmg");
     expect(installers("1.2.3", "mac")).toEqual(["Clover-1.2.3.dmg", "Clover-1.2.3-mac.zip"]);
     expect(installers("1.2.3", "linux-arm64")).toEqual(["clover_1.2.3_arm64.deb", "clover-1.2.3.arm64.rpm", "Clover-1.2.3-arm64.AppImage"]);
-    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml", "clover-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml"]);
+    expect(expectedArtifacts("1.2.3", "win", "latest")).toEqual(["Clover-Setup-1.2.3.exe", "latest.yml", "beta.yml", "clover-core-1.2.3-windows-x64.exe", "latest-core-windows-x64.yml", "beta-core-windows-x64.yml",
+      `clover-plugin-bun-${PLUGIN_BUN.version}-windows-x64.exe`, "latest-plugin-bun-windows-x64.yml", "beta-plugin-bun-windows-x64.yml",
+      "clover-plugins-1.2.3-windows-x64.tar.gz", "latest-plugins-windows-x64.yml", "beta-plugins-windows-x64.yml"]);
+    expect(pluginsArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-plugins-1.2.3-linux-arm64.tar.gz", "beta-plugins-linux-arm64.yml"]);
+    expect(pluginBunArtifacts("linux-arm64", "beta")).toEqual([`clover-plugin-bun-${PLUGIN_BUN.version}-linux-arm64`, "beta-plugin-bun-linux-arm64.yml"]);
     expect(coreArtifacts("1.2.3", "linux-arm64", "beta")).toEqual(["clover-core-1.2.3-linux-arm64", "beta-core-linux-arm64.yml"]);
+  });
+
+  test("a release builds from a fully clean checkout: an edit, a staged change or an untracked file anywhere refuses it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-release-checkout-"));
+    const git = (...args: string[]) => {
+      const r = Bun.spawnSync(["git", ...args], { cwd: dir, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } });
+      if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+      return r.stdout.toString().trim();
+    };
+    git("init", "-q");
+    mkdirSync(join(dir, "packages", "core"), { recursive: true });
+    writeFileSync(join(dir, "packages", "core", "a.ts"), "export {};\n");
+    writeFileSync(join(dir, ".gitignore"), "dist/\n");
+    git("add", "-A");
+    git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "c");
+    const head = git("rev-parse", "HEAD");
+    expect(checkoutCommit(dir)).toBe(head);
+    // What the build writes is ignored: still clean.
+    mkdirSync(join(dir, "dist"));
+    writeFileSync(join(dir, "dist", "clover-core"), "built");
+    expect(checkoutCommit(dir)).toBe(head);
+    writeFileSync(join(dir, "packages", "core", "a.ts"), "export const x = 1;\n");
+    expect(() => checkoutCommit(dir)).toThrow("fully clean checkout");
+    git("checkout", "--", ".");
+    writeFileSync(join(dir, "services.ts"), "untracked");
+    expect(() => checkoutCommit(dir)).toThrow("services.ts");
+    git("add", "services.ts");
+    expect(() => checkoutCommit(dir)).toThrow("fully clean checkout");
+    expect(dirtyEntries("")).toEqual([]);
+    expect(dirtyEntries(" M a.ts\n?? b.ts\n")).toEqual([" M a.ts", "?? b.ts"]);
+  });
+
+  test("the bundled plugins' release files: the app's resources/plugins packed, and an update file naming it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-plugins-assets-"));
+    const plugins = join(dir, "resources", "plugins");
+    mkdirSync(join(plugins, "clover", "bin"), { recursive: true });
+    writeFileSync(join(plugins, "clover", "clover.json"), "{}");
+    writeFileSync(join(plugins, "clover", "bin", "run.sh"), "#!/bin/sh\n", { mode: 0o755 });
+    const out = join(dir, "out");
+    mkdirSync(out);
+    expect(writePluginsAssets(out, "1.2.3", "linux-x64", "latest", plugins)).toEqual(["clover-plugins-1.2.3-linux-x64.tar.gz", "latest-plugins-linux-x64.yml", "beta-plugins-linux-x64.yml"]);
+    const tarball = new Uint8Array(readFileSync(join(out, "clover-plugins-1.2.3-linux-x64.tar.gz")));
+    const files = unpackTarball(tarball);
+    expect(files.map((f) => [f.path, f.executable])).toEqual([["clover/bin/run.sh", process.platform !== "win32"], ["clover/clover.json", false]]);
+    const feed = parsePluginsFeed(readFileSync(join(out, "beta-plugins-linux-x64.yml"), "utf8"));
+    expect(feed).toEqual({ version: "1.2.3", file: "clover-plugins-1.2.3-linux-x64.tar.gz", sha512: sha512Base64(tarball), size: tarball.length });
+    expect(tarballFilesOf(plugins).map((f) => f.path)).toEqual(["clover/bin/run.sh", "clover/clover.json"]);
   });
 
   test("the daemon's release files: its binary and an update file naming it, for each channel served", () => {
@@ -76,11 +131,15 @@ describe("the feed and the channels", () => {
     expect(builder.mac.identity).toBeNull();
     expect(builder.mac.notarize).toBe(false);
     expect(builder.mac.hardenedRuntime).toBe(true);
-    expect(builder.mac.signIgnore).toEqual(["Contents/Resources/daemon/"]);
+    expect(builder.mac.signIgnore).toEqual(["Contents/Resources/daemon/", "Contents/Resources/plugins/"]);
     const ent = read("packaging/macos/entitlements.mac.plist");
     expect(ent).toContain("com.apple.security.cs.allow-jit");
     expect(ent).not.toContain("disable-library-validation");
     expect(RESOURCE_BINARIES.map((b) => b.file)).toEqual(builder.extraResources[0].filter.filter((f: string) => !f.endsWith(".exe")));
+    // Each its own identifier; only the core's is the core's.
+    expect(new Set(RESOURCE_BINARIES.map((b) => b.identifier)).size).toBe(RESOURCE_BINARIES.length);
+    expect(RESOURCE_BINARIES.find((b) => b.file === "clover-plugin-bun")?.entitlements).toBe("scripts/clover-plugin-bun.entitlements");
+    expect(RESOURCE_BINARIES.find((b) => b.file === "clover-process-holder")?.entitlements).toBeUndefined();
     expect(read("scripts/clover-core.entitlements")).toContain("com.apple.security.cs.allow-jit");
   });
 });
@@ -160,8 +219,8 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(buildOsFor("win32", "x64")).toBe("win");
     expect(buildOsFor("darwin", "x64")).toBeUndefined();
     expect(buildOsFor("linux", "x64")).toBeUndefined();
-    expect(parseReleaseBuildArgs([], "darwin", "arm64")).toEqual({ os: "mac", channel: "latest", sign: false, dryRun: false });
-    expect(parseReleaseBuildArgs(["--channel=beta", "--sign"], "win32", "x64")).toEqual({ os: "win", channel: "beta", sign: true, dryRun: false });
+    expect(parseReleaseBuildArgs([], "darwin", "arm64")).toEqual({ os: "mac", channel: "latest", sign: false, signDev: false, dryRun: false });
+    expect(parseReleaseBuildArgs(["--channel=beta", "--sign"], "win32", "x64")).toEqual({ os: "win", channel: "beta", sign: true, signDev: false, dryRun: false });
     expect(parseReleaseBuildArgs(["--os", "win", "--dry-run"], "darwin", "arm64").os).toBe("win");
     expect(() => parseReleaseBuildArgs(["--os", "win"], "darwin", "arm64")).toThrow(/dry run/);
     expect(() => parseReleaseBuildArgs([], "linux", "x64")).toThrow(/build-packages/);
@@ -170,13 +229,16 @@ describe("the release build (scripts/release/build.ts)", () => {
 
   test("unsigned unless --sign, whatever the environment holds; never publishing", () => {
     const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", CSC_LINK: "x", WIN_CSC_LINK: "y", PATH: "/bin" };
-    const unsigned = { os: "mac", channel: "latest", sign: false, dryRun: false } as const;
+    const unsigned = { os: "mac", channel: "latest", sign: false, signDev: false, dryRun: false } as const;
     expect(releaseBuilderArgs(unsigned, env)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
     expect(builderEnv(unsigned, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
     const signed = { ...unsigned, sign: true };
-    expect(releaseBuilderArgs(signed, env)).toEqual([...releaseBuilderArgs(unsigned, env), "-c.mac.identity=Developer ID Application: Example Ltd (AB12CD34EF)", "-c.mac.notarize=true"]);
+    // electron-builder refuses the "Developer ID Application: " prefix (it picks the type itself): the name without it.
+    expect(releaseBuilderArgs(signed, env)).toEqual([...releaseBuilderArgs(unsigned, env), "-c.mac.identity=Example Ltd (AB12CD34EF)", "-c.mac.notarize=true"]);
+    expect(builderIdentity("Developer ID Application: Example Ltd (AB12CD34EF)")).toBe("Example Ltd (AB12CD34EF)");
+    expect(() => builderIdentity("Example Ltd (AB12CD34EF)")).toThrow(/named in full/);
     expect(builderEnv(signed, env)).toBe(env);
-    const win = { os: "win", channel: "beta", sign: true, dryRun: false } as const;
+    const win = { os: "win", channel: "beta", sign: true, signDev: false, dryRun: false } as const;
     expect(releaseBuilderArgs(win, { CLOVER_WIN_PUBLISHER: "Example Ltd" })).toEqual(
       ["electron-builder", "--win", "nsis", "--x64", "--publish", "never", "-c.publish.channel=beta", "-c.win.forceCodeSigning=true", "-c.win.signtoolOptions.publisherName=Example Ltd"]);
     for (const a of [unsigned, signed, win]) expect(releaseBuilderArgs(a, env)).toContain("never");
@@ -187,6 +249,138 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Apple Development: x (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toHaveLength(1);
     expect(signingInputs("win", { WIN_CSC_LINK: "secret-path" })).toEqual({ missing: ["WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"], problems: [] });
   });
+
+  test("a macOS release signs with Clover's team only: the Keychain items and plugin Bun's requirement name it", () => {
+    expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: `Developer ID Application: Clover (${CLOVER_TEAM_ID})`, APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([]);
+    expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Developer ID Application: Someone (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([`CLOVER_MAC_IDENTITY is team AB12CD34EF, not Clover's ${CLOVER_TEAM_ID}: the core's Keychain items and plugin Bun's check would refuse what it signs`]);
+    expect(CLOVER_APP_REQUIREMENT).toBe(`identifier "com.waifucave.clover" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
+  });
+
+  // The owner's alpha before the Developer ID (the controller's ruling: an alpha is a beta, no third channel).
+  test("--sign-dev: macOS only, the beta channel, never with --sign", () => {
+    expect(parseReleaseBuildArgs(["--sign-dev"], "darwin", "arm64")).toEqual({ os: "mac", channel: "beta", sign: false, signDev: true, dryRun: false });
+    expect(parseReleaseBuildArgs(["--sign-dev", "--channel", "beta"], "darwin", "arm64").channel).toBe("beta");
+    expect(() => parseReleaseBuildArgs(["--sign-dev", "--channel=latest"], "darwin", "arm64")).toThrow(/beta channel/);
+    expect(() => parseReleaseBuildArgs(["--sign-dev", "--sign"], "darwin", "arm64")).toThrow(/one or the other/);
+    expect(() => parseReleaseBuildArgs(["--sign-dev"], "win32", "x64")).toThrow(/macOS/);
+    expect(() => parseReleaseBuildArgs(["--sign-dev", "--os", "win", "--dry-run"], "darwin", "arm64")).toThrow(/macOS/);
+  });
+
+  const HASH_A = "A".repeat(40), HASH_B = "B".repeat(40), HASH_C = "C".repeat(40);
+  const identities = [
+    `  1) ${HASH_A} "Developer ID Application: Clover (${CLOVER_TEAM_ID})"`,
+    `  2) ${HASH_B} "Apple Development: Someone (PERSON1234)"`,
+    `  3) ${HASH_C} "Apple Development: Other (OTHER12345)"`,
+    "     3 valid identities found",
+  ].join("\n");
+  const subjects: Record<string, string> = {
+    [`Developer ID Application: Clover (${CLOVER_TEAM_ID})`]: `subject=UID=${CLOVER_TEAM_ID}, CN=Developer ID Application: Clover (${CLOVER_TEAM_ID}), OU=${CLOVER_TEAM_ID}, O=Clover, C=US`,
+    "Apple Development: Someone (PERSON1234)": `subject=UID=X, CN=Apple Development: Someone (PERSON1234), OU=${CLOVER_TEAM_ID}, O=Clover, C=US`,
+    "Apple Development: Other (OTHER12345)": "subject=UID=Y, CN=Apple Development: Other (OTHER12345), OU=ZZZZZZZZZZ, O=Elsewhere, C=US",
+  };
+  const subjectOf = (name: string) => subjects[name];
+
+  test("--sign-dev's identity: the Apple Development one of Clover's team, by its certificate's OU, named by SHA-1", () => {
+    expect(devSigningIdentity({ identitiesOutput: identities, subjectOf })).toEqual({ hash: HASH_B, name: "Apple Development: Someone (PERSON1234)" });
+    // Only a Developer ID of the team: that's --sign's (notarized), refused here.
+    expect(() => devSigningIdentity({ identitiesOutput: identities.split("\n").filter((l) => !l.includes("Someone")).join("\n"), subjectOf })).toThrow(/--sign \(notarized\)/);
+    // Another team's Apple Development certificate never counts.
+    expect(() => devSigningIdentity({ identitiesOutput: identities.split("\n").filter((l) => l.includes("Other")).join("\n"), subjectOf })).toThrow(/no code-signing identity for team/);
+    // The override is a SHA-1, nothing else.
+    expect(devSigningIdentity({ identitiesOutput: "", subjectOf, override: "d".repeat(40) })).toEqual({ hash: "D".repeat(40), name: "(CLOVER_MAC_DEV_IDENTITY)" });
+    expect(() => devSigningIdentity({ identitiesOutput: identities, subjectOf, override: "Apple Development: Someone" })).toThrow(/SHA-1/);
+  });
+
+  test("--sign-dev signs the resources with the team requirement and no timestamp, and electron-builder with the same identity, unnotarized", () => {
+    const [core, link] = RESOURCE_BINARIES;
+    expect(teamRequirement(core.identifier, CLOVER_TEAM_ID)).toBe(`identifier "com.waifucave.clover.core" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
+    expect(codesignDevArgs("x/clover-core", HASH_B, core.identifier, CLOVER_TEAM_ID, core.entitlements)).toEqual([
+      "codesign", "--force", "--sign", HASH_B, "--options", "runtime", "--timestamp=none", "--identifier", "com.waifucave.clover.core",
+      `-r=designated => identifier "com.waifucave.clover.core" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`,
+      "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
+    expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID)).not.toContain("--entitlements");
+    // A keychain for this build only: codesign looks there, and the search list isn't touched.
+    expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID, undefined, "/s/dev.keychain-db").slice(-3)).toEqual(["--keychain", "/s/dev.keychain-db", "x/clover-link"]);
+    expect(() => codesignDevArgs("x", "Apple Development: Someone", core.identifier, CLOVER_TEAM_ID)).toThrow(/SHA-1/);
+    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "a", CSC_LINK: "x", PATH: "/bin" };
+    const dev = parseReleaseBuildArgs(["--sign-dev"], "darwin", "arm64");
+    expect(releaseBuilderArgs(dev, env, HASH_B)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=beta",
+      `-c.mac.identity=${HASH_B}`, "-c.mac.notarize=false", "-c.mac.timestamp=none"]);
+    expect(() => releaseBuilderArgs(dev, env)).toThrow(/SHA-1/);
+    // Nothing a Developer ID build or notarization would use reaches it.
+    expect(builderEnv(dev, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+    expect(builderEnv(dev, { ...env, CLOVER_MAC_DEV_KEYCHAIN: "/s/dev.keychain-db", CSC_KEYCHAIN: "/elsewhere" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_KEYCHAIN: "/s/dev.keychain-db" });
+    // An unsigned build drops any keychain it's handed.
+    expect(builderEnv(parseReleaseBuildArgs([], "darwin", "arm64"), { PATH: "/bin", CSC_KEYCHAIN: "/k", CLOVER_MAC_DEV_KEYCHAIN: "/k" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+  });
+
+  // codesign itself, with no identity and no keychain: an ad hoc signature takes the same arguments but the identity,
+  // and records the designated requirement given, which the real team identity's signature carries the same way.
+  darwinTest("codesign records --sign-dev's team requirement as the designated one, which compiles, and an unsigned-by-the-team copy fails it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-sign-dev-"));
+    try {
+      const bin = join(dir, "clover-plugin-bun");
+      writeFileSync(bin, readFileSync("/usr/bin/true"));
+      const plugin = RESOURCE_BINARIES[2];
+      const args = codesignDevArgs(bin, HASH_B, plugin.identifier, CLOVER_TEAM_ID);
+      args[args.indexOf(HASH_B)] = "-";
+      const signed = spawnSync(args[0]!, args.slice(1), { encoding: "utf8" });
+      expect([signed.status, signed.stderr.replace(/^.*replacing existing signature\n/m, "")]).toEqual([0, ""]);
+      const shown = spawnSync("codesign", ["-d", "-r-", bin], { encoding: "utf8" });
+      const recorded = /^designated => (.+)$/m.exec(`${shown.stdout}${shown.stderr}`)?.[1]?.trim();
+      expect(recorded).toBe(teamRequirement(plugin.identifier, CLOVER_TEAM_ID));
+      // The text compiles as a requirement (csreq), and this ad hoc copy doesn't meet it: only the team's identity does.
+      expect(spawnSync("csreq", ["-r", `=${recorded}`, "-b", join(dir, "req.bin")]).status).toBe(0);
+      expect(spawnSync("codesign", ["--verify", "--strict", `-R=${recorded}`, bin]).status).not.toBe(0);
+      expect(spawnSync("codesign", ["--verify", "--strict", `-R=identifier "${plugin.identifier}"`, bin]).status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a dev-signed binary is held to the signed build's checks but the timestamp", () => {
+    const dev = parseCodesignDisplay([
+      "Identifier=com.waifucave.clover.core",
+      "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1+7 location=embedded",
+      "Authority=Apple Development: Someone (PERSON1234)",
+      "Timestamp=none",
+      `TeamIdentifier=${CLOVER_TEAM_ID}`,
+    ].join("\n").replace("Timestamp=none\n", ""));
+    expect(dev.timestamped).toBe(false);
+    expect(signatureProblems("clover-core", dev, CLOVER_TEAM_ID, "com.waifucave.clover.core", { dev: true })).toEqual([]);
+    expect(signatureProblems("clover-core", dev, CLOVER_TEAM_ID, "com.waifucave.clover.core")).toEqual(["clover-core has no secure timestamp"]);
+    const adhoc = parseCodesignDisplay("Identifier=x\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
+    expect(signatureProblems("x", adhoc, CLOVER_TEAM_ID, undefined, { dev: true })).toEqual([`x is not signed with team ${CLOVER_TEAM_ID}'s identity`, "x has no hardened runtime"]);
+  });
+});
+
+describe("the bundled plugins' native code on a signed Mac build", () => {
+  test("Mach-O files are found by their magic, any byte order, thin or universal; nothing else is", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-macho-"));
+    try {
+      mkdirSync(join(dir, "p", "node_modules", "x"), { recursive: true });
+      writeFileSync(join(dir, "p", "node_modules", "x", "addon.node"), new Uint8Array([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]));
+      writeFileSync(join(dir, "p", "fat.dylib"), new Uint8Array([0xca, 0xfe, 0xba, 0xbe, 1]));
+      writeFileSync(join(dir, "p", "index.js"), "export {};\n");
+      writeFileSync(join(dir, "p", "tiny"), new Uint8Array([0xcf, 0xfa]));
+      expect(machOFiles(dir)).toEqual(["p/fat.dylib", "p/node_modules/x/addon.node"]);
+      expect(isMachO(new Uint8Array([0xfe, 0xed, 0xfa, 0xcf]))).toBe(true);
+      // Universal binaries with 64-bit offsets, in either byte order.
+      expect(isMachO(new Uint8Array([0xca, 0xfe, 0xba, 0xbf]))).toBe(true);
+      expect(isMachO(new Uint8Array([0xbf, 0xba, 0xfe, 0xca]))).toBe(true);
+      expect(isMachO(new TextEncoder().encode("#!/b"))).toBe(false);
+      // A real one: this machine's own executable, when it's a Mac.
+      if (process.platform === "darwin") expect(isMachO(new Uint8Array(readFileSync("/usr/bin/true")).slice(0, 4))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("each signs under its own identifier, from its path", () => {
+    expect(nativeIdentifier("clover/plugins/companion-web/node_modules/@node-datachannel/darwin-arm64/node_datachannel.node"))
+      .toBe("com.waifucave.clover.plugin.clover.plugins.companion.web.node.modules.node.datachannel.darwin.arm64.node.datachannel.node");
+  });
+
 });
 
 describe("the owner's publish step (scripts/release/publish.ts)", () => {
@@ -203,6 +397,12 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
       const core = coreBinaryFile(version, CORE_TARGET[os]);
       blobs.set(core, utf8(`${core} bytes`));
       for (const c of channelsServed(channel)) blobs.set(coreFeedFile(c, CORE_TARGET[os]), utf8(formatCoreFeed({ version, file: core, sha512: sha512Base64(blobs.get(core)!), size: blobs.get(core)!.length })));
+      const bun = pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]);
+      blobs.set(bun, utf8(`${bun} bytes`));
+      for (const c of channelsServed(channel)) blobs.set(pluginBunFeedFile(c, CORE_TARGET[os]), utf8(formatCoreFeed({ version: PLUGIN_BUN.version, file: bun, sha512: sha512Base64(blobs.get(bun)!), size: blobs.get(bun)!.length })));
+      const tarball = pluginsTarballFile(version, CORE_TARGET[os]);
+      blobs.set(tarball, utf8(`${tarball} bytes`));
+      for (const c of channelsServed(channel)) blobs.set(pluginsFeedFile(c, CORE_TARGET[os]), utf8(formatCoreFeed({ version, file: tarball, sha512: sha512Base64(blobs.get(tarball)!), size: blobs.get(tarball)!.length })));
       blobs.set(buildCommitFile(os), utf8(`${COMMIT}\n`));
       dirs.set(`out/${os}`, blobs);
     }
@@ -242,6 +442,9 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
     const badCore = builds("beta");
     badCore.get("out/linux-x64")!.set("clover-core-1.2.3-linux-x64", utf8("tampered"));
     expect(plan(badCore, "beta").problems).toContain("beta-core-linux-x64.yml: clover-core-1.2.3-linux-x64's sha512 doesn't match");
+    const badPlugins = builds("beta");
+    badPlugins.get("out/mac")!.set("clover-plugins-1.2.3-darwin-arm64.tar.gz", utf8("tampered"));
+    expect(plan(badPlugins, "beta").problems).toContain("beta-plugins-darwin-arm64.yml: clover-plugins-1.2.3-darwin-arm64.tar.gz's sha512 doesn't match");
     const twice = builds("beta");
     twice.get("out/win")!.set("Clover-1.2.3.dmg", utf8("x"));
     expect(plan(twice, "beta").problems.some((x) => x.includes("is in both"))).toBe(true);
@@ -250,7 +453,7 @@ describe("the owner's publish step (scripts/release/publish.ts)", () => {
   test("each update file and daemon binary is signed with the Keychain's key, checked against the app's, and nothing else is signed", () => {
     const dirs = builds("latest");
     const p = plan(dirs, "latest");
-    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => [...channelsServed("latest").flatMap((c) => [feedFile(c, os), coreFeedFile(c, CORE_TARGET[os])]), coreBinaryFile(version, CORE_TARGET[os])]).sort());
+    expect(p.feeds.sort()).toEqual(RELEASE_OSES.flatMap((os) => [...channelsServed("latest").flatMap((c) => [feedFile(c, os), coreFeedFile(c, CORE_TARGET[os]), pluginBunFeedFile(c, CORE_TARGET[os]), pluginsFeedFile(c, CORE_TARGET[os])]), coreBinaryFile(version, CORE_TARGET[os]), pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]), pluginsTarballFile(version, CORE_TARGET[os])]).sort());
     const key = generateFeedKey();
     const sigs = signFeeds(p, (d, n) => dirs.get(d)!.get(n)!, key.privateKey, key.publicKey);
     expect(sigs.map((s) => s.name).sort()).toEqual(p.feeds.map((f) => `${f}.sig`).sort());
@@ -384,6 +587,161 @@ describe("the signed builds' checks", () => {
     expect(authenticodeProblems("clover-link.exe", "Valid|CN=Someone Else", "Example Ltd")).toEqual(["clover-link.exe is signed by Someone Else, not Example Ltd"]);
     expect(authenticodeProblems("x.exe", "", "Example Ltd")).toEqual(["x.exe's Authenticode signature is missing, not Valid"]);
     expect(authenticodeCommand("C:\\a'b\\Clover.exe").at(-1)).toContain("-LiteralPath 'C:\\a''b\\Clover.exe'");
+  });
+});
+
+describe("the name scan (scripts/release/name-scan.ts)", () => {
+  test("fails closed without the owner's local guard", async () => {
+    const { nameScan } = await import("./name-scan");
+    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-home-"));
+    const r = nameScan([], [], home);
+    expect(r.problems).toHaveLength(1);
+    expect(r.problems[0]).toContain("can't cut a release");
+  });
+
+  test("opens every kind of asset, and what nests inside, without running anything", async () => {
+    const { openerFor, TOOLS } = await import("./name-scan");
+    const names = ["Clover-1.dmg", "Clover-1-mac.zip", "Clover-Setup-1.exe", "clover_1_amd64.deb", "clover-1.x86_64.rpm", "Clover-1-x86_64.AppImage",
+      "data.tar.xz", "control.tar.zst", "x.tar", "app-64.7z", "a.gz", "Clover-1.dmg.blockmap", "b.br", "latest.yml", "clover-core.exe", "app.asar"];
+    expect(names.map(openerFor)).toEqual(["dmg", "zip", "nsis", "deb", "rpm", "appimage", "xz", "zst", "tar", "7z", "gz", "gz", "br", "raw", "raw", "asar"]);
+    const more = ["hidden.tgz", "x.tbz", "x.bz2", "x.lz4", "x.lzma", "x.cab", "x.msi", "x.jar", "x.crx", "x.squashfs", "x.rar", "x.lz", "libx.a"];
+    expect(more.map(openerFor)).toEqual(["gz", "bz2", "bz2", "lz4", "lzma", "cab", "msi", "zip", "crx", "squashfs", "rar", "lzip", "ar"]);
+    expect(TOOLS.dmg).toBe("hdiutil");
+    expect(TOOLS.appimage).toBe("unsquashfs");
+    expect(read("scripts/release/name-scan.ts")).toContain('"hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint"');
+  });
+
+  test("knows a file by its bytes, whatever it is called", async () => {
+    const { magicOf, decompressedName, TOOLS } = await import("./name-scan");
+    const b = (...x: Array<number | string>): Uint8Array => {
+      const out: number[] = [];
+      for (const v of x) typeof v === "string" ? out.push(...[...v].map((c) => c.charCodeAt(0))) : out.push(v);
+      return new Uint8Array(out);
+    };
+    const tar = new Uint8Array(512);
+    tar.set(b("ustar"), 257);
+    const asar = new Uint8Array(40);
+    asar.set([4, 0, 0, 0], 0);
+    asar.set(b('{"files":{}}'), 16);
+    const lzma = b(0x5d, 0, 0, 0x80, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0);
+    const koly = new Uint8Array(512);
+    koly.set(b("koly"), 0);
+    const elfAi = b(0x7f, "ELF", 2, 1, 1, 0, "AI", 2);
+    const cases: Array<[Uint8Array, string | undefined]> = [
+      [b("PK", 3, 4), "zip"], [b("PK", 5, 6), "zip"], [b("Cr24"), "crx"], [b(0x1f, 0x8b, 8), "gz"], [b(0xfd, "7zXZ", 0), "xz"],
+      [b(0x28, 0xb5, 0x2f, 0xfd), "zst"], [b("7z", 0xbc, 0xaf, 0x27, 0x1c), "7z"], [b("BZh9"), "bz2"], [b("!<arch>\n"), "ar"],
+      [b("hsqs"), "squashfs"], [elfAi, "appimage"], [b(0xed, 0xab, 0xee, 0xdb), "rpm"], [b("MSCF", 0, 0, 0, 0), "cab"],
+      [b(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1), "msi"], [b("Rar!", 0x1a, 7), "rar"], [b(4, 0x22, 0x4d, 0x18), "lz4"],
+      [b("LZIP"), "lzip"], [tar, "tar"], [asar, "asar"], [lzma, "lzma"],
+      // Not formats: an ELF that is no AppImage, plain text, "BZh" without a block size, an implausible LZMA header.
+      [b(0x7f, "ELF", 2, 1, 1, 0, 0, 0, 0), undefined], [b("hello"), undefined], [b("BZhx"), undefined], [b(0x5d, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9), undefined],
+    ];
+    for (const [bytes, want] of cases) expect(magicOf(bytes)).toBe(want as never);
+    expect(magicOf(b("x"), koly)).toBe("dmg");
+    expect(decompressedName("hidden.tgz")).toBe("hidden.tar");
+    expect(decompressedName("a.tar.bz2")).toBe("a.tar");
+    expect(decompressedName("blob.bin")).toBe("blob.bin.out");
+    // Every format it knows has a way to open it (in-process, or a tool it checks for, failing when it's missing).
+    expect(TOOLS.lz4).toBe("lz4");
+    expect(TOOLS.cab).toBe("7z");
+  });
+
+  test("an AppImage's squashfs starts where its ELF runtime ends", async () => {
+    const { elfEnd } = await import("./name-scan");
+    const elf = new Uint8Array(128);
+    const v = new DataView(elf.buffer);
+    v.setUint32(0, 0x7f454c46);
+    elf[4] = 2;
+    v.setBigUint64(0x28, 1000n, true);
+    v.setUint16(0x3a, 64, true);
+    v.setUint16(0x3c, 3, true);
+    expect(elfEnd(elf)).toBe(1192);
+    expect(() => elfEnd(new Uint8Array(64))).toThrow(/not an ELF/);
+  });
+
+  test("reads every file, lists every path and link target, refuses an absolute link, and accepts only the shipped notices", async () => {
+    const { walkTree } = await import("./name-scan");
+    const root = mkdtempSync(join(tmpdir(), "clover-name-walk-"));
+    mkdirSync(join(root, "resources", "daemon"), { recursive: true });
+    writeFileSync(join(root, "resources", "daemon", "srt-win.exe"), "x");
+    writeFileSync(join(root, "resources", "daemon", "srt-win.THIRD_PARTY_NOTICES.txt"), "license");
+    writeFileSync(join(root, "srt-win.THIRD_PARTY_NOTICES.txt"), "elsewhere");
+    writeFileSync(join(root, ".DS_Store"), "ds");
+    writeFileSync(join(root, "data.tar.xz"), "xz");
+    symlinkSync("resources/daemon/srt-win.exe", join(root, "rel-link"));
+    symlinkSync("/Users/someone/thing", join(root, "abs-link"));
+    const w = walkTree(root);
+    expect(w.read.map((p) => p.slice(root.length + 1)).sort()).toEqual([".DS_Store", "data.tar.xz", "resources/daemon/srt-win.exe", "srt-win.THIRD_PARTY_NOTICES.txt"]);
+    expect(w.accepted.map((p) => p.slice(root.length + 1))).toEqual(["resources/daemon/srt-win.THIRD_PARTY_NOTICES.txt"]);
+    expect(w.names).toContain("resources/daemon/srt-win.THIRD_PARTY_NOTICES.txt");
+    expect(w.names).toContain("resources/daemon/srt-win.exe");
+    expect(w.names).toContain("/Users/someone/thing");
+    expect(w.problems).toEqual(["abs-link links to an absolute path (/Users/someone/thing)"]);
+    expect(w.nested.map((p) => p.slice(root.length + 1))).toEqual(["data.tar.xz"]);
+  });
+});
+
+describe("the privacy scrub", () => {
+  test("the sidecar's build remaps the cargo home, the checkout and the home folder, after any flags already set", async () => {
+    const { linkBuildEnv } = await import("../build-packages");
+    const env = linkBuildEnv({ HOME: "/Users/someone", RUSTFLAGS: "-C opt-level=3" }, "/Users/someone/Xcode projects/clover");
+    // rustc takes the last match: the home folder first, the paths inside it after; a space stays inside its flag.
+    expect(env.CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-C", "opt-level=3", "--remap-path-prefix=/Users/someone=/home", "--remap-path-prefix=/Users/someone/.cargo=/cargo", "--remap-path-prefix=/Users/someone/Xcode projects/clover=/clover"]);
+    expect(env.RUSTFLAGS).toBeUndefined();
+    expect(linkBuildEnv({ HOME: "/h", CARGO_HOME: "/c", CARGO_ENCODED_RUSTFLAGS: "-Cx\x1f-Cy" }, "/r").CARGO_ENCODED_RUSTFLAGS!.split("\x1f")).toEqual(["-Cx", "-Cy", "--remap-path-prefix=/h=/home", "--remap-path-prefix=/c=/cargo", "--remap-path-prefix=/r=/clover"]);
+  });
+});
+
+describe("the name scan, end to end with a stand-in guard", () => {
+  test("hands the guard the asset, what is inside it (a nested gzip too) and the names list, and reports a hit", async () => {
+    if (process.platform === "win32") return;
+    const { nameScan } = await import("./name-scan");
+    const { createPackage } = await import("@electron/asar");
+    const home = mkdtempSync(join(tmpdir(), "clover-name-scan-e2e-"));
+    const log = join(home, "read.log");
+    mkdirSync(join(home, "norma-private", "git-hooks"), { recursive: true });
+    // The stand-in reads what it's given and "finds" a hit in any file holding PLANTED.
+    writeFileSync(join(home, "norma-private", "git-hooks", "name-guard.sh"), `#!/bin/sh\nshift\nfor f in "$@"; do echo "$f" >> '${log}'; if grep -q PLANTED "$f"; then exit 1; fi; done\n`, { mode: 0o755 });
+    const tree = join(home, "tree");
+    mkdirSync(join(tree, "resources"), { recursive: true });
+    const packed = join(home, "packed");
+    mkdirSync(join(packed, "lib"), { recursive: true });
+    writeFileSync(join(packed, "lib", "inside-asar.txt"), "packed words");
+    writeFileSync(join(packed, "lib", "deeper.gz"), Bun.gzipSync(new TextEncoder().encode("asar PLANTED words")));
+    await createPackage(packed, join(tree, "resources", "app.asar"));
+    const enc = (t: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(t) as Uint8Array<ArrayBuffer>;
+    writeFileSync(join(tree, "notes.txt.gz"), Bun.gzipSync(enc("hidden PLANTED words")));
+    // A gzip by another name, and one by no archive name at all: both are opened by their bytes.
+    const tarDir = join(home, "tgz");
+    mkdirSync(tarDir);
+    writeFileSync(join(tarDir, "in-the-tgz.txt"), "tgz PLANTED words");
+    const tarFile = join(home, "inner.tar");
+    expect(Bun.spawnSync(["bsdtar", "-cf", tarFile, "-C", tarDir, "."]).exitCode).toBe(0);
+    writeFileSync(join(tree, "hidden.tgz"), Bun.gzipSync(new Uint8Array(readFileSync(tarFile))));
+    writeFileSync(join(tree, "blob.bin"), Bun.gzipSync(enc("renamed PLANTED words")));
+    // A format it knows that doesn't open (an LZ4 frame header and nothing after) fails the scan, never read raw only.
+    writeFileSync(join(tree, "junk.bin"), new Uint8Array([4, 0x22, 0x4d, 0x18, 1, 2, 3]));
+    const zip = join(home, "Clover-1.2.3-mac.zip");
+    expect(Bun.spawnSync(["bsdtar", "-a", "-cf", zip, "-C", tree, "."]).exitCode).toBe(0);
+    const r = nameScan([zip], [], home);
+    const seen = readFileSync(log, "utf8");
+    expect(seen).toContain("Clover-1.2.3-mac.zip");
+    expect(seen).toContain("app.asar");
+    expect(seen).toContain("inside-asar.txt");
+    expect(seen).toMatch(/notes\.txt(\n|$)/);
+    expect(seen).toContain("in-the-tgz.txt");
+    expect(seen).toContain("blob.bin.out");
+    expect(seen).toContain("names.txt");
+    expect(r.read).toBeGreaterThanOrEqual(8);
+    const hit = (where: string): boolean => r.problems.some((p) => p.includes(`found the owner's identity in Clover-1.2.3-mac.zip/${where}`));
+    expect(hit("notes.txt.gz")).toBe(true);
+    expect(hit("hidden.tgz/hidden.tar")).toBe(true);
+    expect(hit("blob.bin")).toBe(true);
+    expect(hit("resources/app.asar/asar/lib/deeper.gz")).toBe(true);
+    expect(r.problems.some((p) => p.startsWith("junk.bin ") && /lz4/.test(p) || p === "junk.bin doesn't open for the scan")).toBe(true);
+    // Nothing else failed to open: the asar, the tgz and the renamed gzip all did.
+    expect(r.problems.filter((p) => p.startsWith("junk.bin ")).length).toBe(1);
+    expect(r.problems.filter((p) => !p.startsWith("junk.bin ") && !p.includes("found the owner's identity"))).toEqual([]);
   });
 });
 

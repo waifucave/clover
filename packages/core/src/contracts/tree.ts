@@ -46,7 +46,7 @@ import {
   type TreeTransferParams,
 } from "@waifucave/clover-protocol";
 import { levelDecision, strictestLevel } from "./approval-broker";
-import type { Unsubscribe } from "./common";
+import { ContractError, type Unsubscribe } from "./common";
 import { foldName } from "./fence";
 
 export type { TreePath };
@@ -131,13 +131,24 @@ export function peerTreeDecision(levels: readonly Level[], callLevel: Level, eff
   return d === "allow" ? "allow" : d === "deny" ? "refuse" : d === "review" ? "review" : "answer";
 }
 
+/** `noFollow` is honoured (lane J's #225); a value other than true or false is refused (`invalid`), never read as false
+ *  (#234's check 2). Every door that takes the flag calls this first. */
+export function checkNoFollow(opts: { noFollow?: unknown }): void {
+  if (opts.noFollow === undefined || opts.noFollow === true || opts.noFollow === false) return;
+  throw new ContractError("invalid", "noFollow must be true or false");
+}
+
 export interface Tree {
   /** Rejects `not_found` for an unknown computer, `invalid` for a path outside `home/` and `bots/`. */
   resolve(path: string): TreeLocation;
   /** A real path inside a computer's home folder, as a tree path; null outside it. */
   toTreePath(computer: string, realPath: string): string | null;
-  stat(path: string, opts: TreeCallOptions): Promise<FileStat | null>;
-  read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64" }): Promise<TreeData>;
+  /** `noFollow` (tree protocol 1.1, lane J's `tree/nofollow.ts`): no link anywhere on the way is followed; one is
+   *  refused. For the user's own file viewers. To a peer on tree 1.0, which would drop it, it is refused here
+   *  (`unsupported`), never sent. */
+  stat(path: string, opts: TreeCallOptions & { noFollow?: boolean }): Promise<FileStat | null>;
+  /** `noFollow`: as `stat`, in the same call: only a plain file reached without a link is read. */
+  read(path: string, opts: TreeCallOptions & { encoding?: "utf8" | "base64"; noFollow?: boolean }): Promise<TreeData>;
   write(path: string, data: TreeData, opts: TreeCallOptions & { executable?: boolean }): Promise<void>;
   list(path: string, opts: TreeCallOptions): Promise<FileStat[]>;
   remove(path: string, opts: TreeCallOptions & { recursive?: boolean }): Promise<void>;

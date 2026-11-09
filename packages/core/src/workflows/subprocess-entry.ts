@@ -1,3 +1,4 @@
+import { guardScriptProcess } from "../security/no-macros";
 import { refuseUnlessKeychainSandboxed } from "./sandbox-guard";
 import { runWorkflow } from "./worker-harness";
 import type { BridgeRequest, BridgeResponse, WorkerInit } from "./bridge";
@@ -6,6 +7,9 @@ import type { AgentOpts } from "./types";
 export function runWorkflowSubprocess(): void {
   // WS-27: before any input is read — outside a sandbox that denies the Keychain, never run a script.
   refuseUnlessKeychainSandboxed("workflow worker");
+  // No Bun macro in any thread, and no thread (security/no-macros.ts): installed while `Bun` is still here; the script
+  // runs only once the Worker refusal is verified.
+  const guarded = guardScriptProcess("the workflow worker");
   const IN = process.stdin;
   const OUT = process.stdout;
   // Defense-in-depth (belt-and-suspenders under the seatbelt). Do NOT null `process` — the entry
@@ -58,6 +62,7 @@ export function runWorkflowSubprocess(): void {
     const init = (await next()) as WorkerInit;   // FIRST line is the init
     void pumpResponses();                          // all later lines are agent replies
     try {
+      await guarded;
       const { result } = await runWorkflow({
         source: init.source, args: init.args, concurrency: init.concurrency,
         agent,

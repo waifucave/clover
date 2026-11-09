@@ -70,6 +70,7 @@ jobs:
       verify: ${{ steps.areas.outputs.verify }}
       tree: ${{ steps.areas.outputs.tree }}
       link: ${{ steps.areas.outputs.link }}
+      linuxrepo: ${{ steps.areas.outputs.linuxrepo }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -135,8 +136,8 @@ jobs:
   #    Unsigned on every OS but for the gate's own ad hoc hardened-runtime copy on macOS; signing is the release's.
   #  - the app (apps/desktop), built and packaged unsigned and unpacked by electron-builder (`bun run build:app`), then
   #    the UI test opens it twice, under Electron and as the packaged app, and reads back its one sandboxed window.
-  #    Linux runs it under xvfb, with unprivileged user namespaces allowed again for Chromium's sandbox (Ubuntu 24.04's
-  #    AppArmor turns them off by default).
+  #    Linux runs it, and the browser tests, under xvfb, with unprivileged user namespaces allowed again for Chromium's
+  #    sandbox (Ubuntu 24.04's AppArmor turns them off by default).
   # One job, not three, so a macOS runner (five at once on the org's plan) is taken once per change, not three times.
   # A later part still runs after an earlier one fails, so one run reports all three.
   machine:
@@ -179,6 +180,13 @@ jobs:
         if: env.WORKSPACES == 'true' && runner.os == 'Linux'
         run: scripts/with-private-secret-service.sh bun scripts/workspaces.ts run test
 
+      # A server's install and self-update on Windows (#244): the cli's suite runs on macOS in its own job, so the
+      # durable flushes (FlushFileBuffers needs write access), the swaps, the recovery and the install run here too.
+      - name: CLI · a server's install and update (Windows)
+        if: ${{ !cancelled() && env.DAEMON == 'true' && runner.os == 'Windows' }}
+        working-directory: packages/cli
+        run: bun test test/durable.test.ts test/self-update.test.ts test/plugins-install.test.ts test/server-install.test.ts test/plugin-bun-install.test.ts
+
       - name: Daemon · build clover-core for ${{ matrix.target }}, and run its --version
         id: daemon-build
         if: ${{ !cancelled() && env.DAEMON == 'true' }}
@@ -203,44 +211,45 @@ jobs:
           retention-days: 5
           if-no-files-found: error
 
+      # Chromium's sandbox on Linux needs unprivileged user namespaces, which Ubuntu 24.04's AppArmor turns off by
+      # default: allowed once, for the headless browser's test and the app's tests alike.
+      - name: Chromium's sandbox (Linux)
+        if: ${{ !cancelled() && runner.os == 'Linux' && (env.DAEMON == 'true' || env.APP == 'true') }}
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # The Clover Browser where no app runs (lane L, plan §4 L M2): the pinned headless shell installed into a temp
+      # folder, then a bot's tab, its pictures, the URL rule, the refused DevTools domains, R13 through the real network
+      # filter, a stream and a page's window (`packages/core/test/browser/headless-real.test.ts`). The headless shell
+      # opens no window.
+      - name: Daemon · Headless browser test
+        if: ${{ !cancelled() && env.DAEMON == 'true' }}
+        working-directory: packages/core
+        env:
+          CLOVER_HEADLESS_TESTS: "1"
+        run: bun test test/browser/headless
+
       - name: App · build the unsigned app
         id: app-build
         if: ${{ !cancelled() && env.APP == 'true' }}
         run: bun run build:app
 
+      # The app's window tests run under xvfb on Linux, directly elsewhere.
       - name: App · UI test
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
-        run: bun test test/ui-smoke.test.ts
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui-smoke.test.ts test/sealed-ui.test.ts
 
-      - name: App · the sandbox (Linux)
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
-        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-
-      - name: App · UI test (under xvfb)
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
+      # The Clover Browser in a real Electron (lane L, plan §4 L M1 and M2): offscreen bot tabs, the viewport, the
+      # person's selecting and copying through it, the screen-reader hybrid, and the streamed view. CI only, like the
+      # UI test.
+      - name: App · Browser tests
+        if: ${{ !cancelled() && steps.app-build.outcome == 'success' }}
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
-        run: xvfb-run -a bun test test/ui-smoke.test.ts
-
-      # The Clover Browser in a real Electron (lane L, plan §4 L M1): offscreen bot tabs, the viewport, the person's
-      # selecting and copying through it, the screen-reader hybrid. CI only, like the UI test.
-      - name: App · Browser test
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os != 'Linux' }}
-        working-directory: apps/desktop
-        env:
-          CLOVER_UI_TESTS: "1"
-        run: bun test test/browser.test.ts
-
-      - name: App · Browser test (under xvfb)
-        if: ${{ !cancelled() && steps.app-build.outcome == 'success' && runner.os == 'Linux' }}
-        working-directory: apps/desktop
-        env:
-          CLOVER_UI_TESTS: "1"
-        run: xvfb-run -a bun test test/browser.test.ts
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/browser.test.ts test/browser-stream.test.ts
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ !cancelled() && steps.app-build.outcome == 'success' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
@@ -326,7 +335,18 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and check the packages
+        env:
+          # The bundled plugins' inputs are checked against the tarballs bun.lock pins (#285): GitHub Packages needs
+          # the token to read the @waifucave ones, as for the install.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bun scripts/build-packages.ts --arch ${{ matrix.arch }} --check
+
+      # A server on this architecture takes the daemon's release file and the bundled plugins' tarball: the tarball is
+      # the tree that daemon embeds the manifest of (#244).
+      - name: The bundled plugins' tarball is the tree the daemon's manifest names
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-linux-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-linux-*.tar.gz)"
 
       - name: Install the deb, check it, and remove it
         run: |
@@ -355,10 +375,10 @@ jobs:
     timeout-minutes: 45
     strategy:
       fail-fast: false
+      # The local gate (owner's ruling, November 7): a pull request's macOS legs run on the lane's own Mac, so PR runs
+      # take no hosted macOS runner; the merge queue (and push, and dispatch) still builds the dmg.
       matrix:
-        include:
-          - { os: mac, runner: macos-latest, what: "dmg, zip" }
-          - { os: win, runner: windows-latest, what: NSIS }
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"win","runner":"windows-latest","what":"NSIS"}]' || '[{"os":"mac","runner":"macos-latest","what":"dmg, zip"},{"os":"win","runner":"windows-latest","what":"NSIS"}]') }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -381,6 +401,10 @@ jobs:
 
       - name: Build the installers (unsigned) and check them
         shell: bash
+        env:
+          # The bundled plugins' inputs are checked against the tarballs bun.lock pins (#285): GitHub Packages needs
+          # the token to read the @waifucave ones, as for the install.
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun scripts/release/build.ts --channel latest
           ls -l apps/desktop/out/dist
@@ -397,6 +421,14 @@ jobs:
           said=$(env -i PATH="$PATH" "${extra[@]}" "$bin" --version)
           echo "$bin --version: $said"
           test "$said" = "clover $version"
+
+      # The bundled plugins' tarball for a server is the tree that daemon embeds the manifest of (#244), as the daemon
+      # itself reports it, run as a server's self-update runs it.
+      - name: The bundled plugins' tarball is the tree the daemon's manifest names
+        shell: bash
+        run: |
+          version=$(bun -e 'console.log(require("./apps/desktop/package.json").version)')
+          bun scripts/release/check-plugins-tarball.ts "$(ls apps/desktop/out/dist/clover-core-"$version"-*)" "$(ls apps/desktop/out/dist/clover-plugins-"$version"-*.tar.gz)"
 
   # The tree and the computers (J-M1) on Linux and Windows: the core's tree and computers tests, with lane B's
   # conformance suites run against the real code, and several computers on the fake link. macOS runs them in the core
@@ -485,6 +517,34 @@ jobs:
           CLOVER_LINK_BIN: ${{ github.workspace }}/native/link/target/release/clover-link${{ runner.os == 'Windows' && '.exe' || '' }}
           CLOVER_LINK_REQUIRE_BINARY: "1"
         run: bun test --timeout 60000 src/links
+
+  # The Linux repositories' signatures against the verifiers users run: a throwaway key signs a fixture Release and
+  # repomd.xml as `linux-repo.ts sign` does, and gpgv and sqv must accept them and refuse a changed one.
+  linux-repo-signatures:
+    name: linux repositories · signatures
+    needs: changes
+    if: needs.changes.outputs.linuxrepo == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: gpgv, sqv and apt-ftparchive
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends gpgv sqv apt-utils
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The signatures verify with gpgv and sqv, and apt-get update takes the signed repository
+        run: bun scripts/release/linux-repo-verify.ts
 
   # P8b-9: `bun test` does not typecheck — bun strips types and runs, so a compile error in a project nobody
   # compiles is not a tripwire (the protocol checklist's step 4 trap, `satisfies Record<SessionEvent["type"],
@@ -781,9 +841,11 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      # xmllint, for release-lib's appcast checks (macOS has it built in).
-      - name: xmllint
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils
+      # xmllint, for release-lib's appcast checks, and bsdtar (libarchive-tools), which the name scan opens zips, tars,
+      # debs and rpms with and its tests build their fixtures with. macOS has both built in. The scan itself runs only
+      # in publish.ts on the owner's Mac, so this changes no release behaviour: Linux CI gets the same bsdtar the Mac has.
+      - name: xmllint and bsdtar
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends libxml2-utils libarchive-tools
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -981,7 +1043,7 @@ jobs:
   gate:
     name: gate
     if: always()
-    needs: [changes, names, machine, packages, installers, tree, link, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
+    needs: [changes, names, machine, packages, installers, tree, link, linux-repo-signatures, gallery, typecheck, lockfiles, test-extension, macos, core-linux, scripts, protocol-codegen, swift]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

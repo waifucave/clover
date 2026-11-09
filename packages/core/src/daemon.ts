@@ -1,11 +1,14 @@
+import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
+import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBundledDir } from "./registry/bundled-stage";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
 import { createCoworkNativeWiring, type CoworkNativeWiring, type CoworkNativeWiringOptions } from "./cowork/native-wiring";
 import { CoworkRepository } from "./cowork/repository";
 import { CoworkWorkspaceService, type CoworkHostPorts } from "./cowork/service";
-import { join } from "node:path";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
+import { DIST_BUILD, isCompiledBinary, missingProcessHolder } from "./build-kind";
 import { randomBytes } from "node:crypto";
 import { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 import { assertNotOtherInstallHome } from "./other-installs";
@@ -32,15 +35,30 @@ import { ensureOutdir } from "./sessions/outdir";
 import { writeDiff, type DiffHeader } from "./diffs/store";
 import type { ActivityDeriver, SessionSignalsDeriver } from "./sessions/activity";
 import { startIpcServer, type InternalSessionCreator, type IpcServer, type IpcServerOptions } from "./ipc/server";
-import { createCloverServer, type CloverHandler, type CloverServer } from "./ipc/clover";
+import { createCloverServer, laneMethodHandlers, type CloverHandler, type CloverServer } from "./ipc/clover";
+import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
-import { startDaemonLinks, type DaemonLinks } from "./ipc/device-links";
-import { SystemClock } from "./clock/system-clock";
+import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { computerNameFor } from "./devices/registry";
+import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
+import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
+import { DeviceKey } from "./identity/device-key";
+import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
 import { createHash as createDeviceHash } from "node:crypto";
+import type { DeviceLinks } from "./links/node";
+import type { ComputerNode } from "./computers/node";
+import type { BotSide } from "./bots/wiring";
+import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
+import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
+import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
+import { defaultTreeRoot } from "./tree/root";
+import { hostOs } from "./tree/names";
+import { homedir, hostname } from "node:os";
+import { SystemClock } from "./clock/system-clock";
 import { DispatchChildren } from "./agent/dispatch-children";
 import { SessionMessaging } from "./agent/session-messaging";
 import { loadSettings, loadPermissionDirs, effortRefusalFor, hooksEnabledFrom, lspAutoDiagnosticsEnabledFrom, workflowsEnabledFrom, keywordTriggerEnabledFrom, cleanerEnabledFrom, retiredRuntimeSettingKeys, winterLegDisabledKeys, cloverOptionsFromSettings, ownProviderFor, pinsFor, INTERNAL_PROVIDER_IDS, stdioMcpServersFor, computerUseEnabledFrom, computerUseLegacyComputerFrom, lspEnabledFrom, sdkAllowRules, sdkAutoMemory, sdkLocalMcpServers, sdkOutputStyle, sdkUserMcpServers, liveSettingsView, type Settings } from "./settings";
@@ -105,6 +123,7 @@ import { PluginSupervisor } from "./plugins/supervisor";
 import { PluginContribRegistry } from "./plugins/contrib";
 import { HookRegistry, HookFacade } from "./plugins/hook-registry";
 import { HookRunner } from "./plugins/hook-runner";
+import { ensurePluginRunFiles, isTestKeychainService, type PluginRunGuard } from "./registry/plugin-run";
 import { BashReviewer } from "./agent/reviewer";
 import { AuditLog } from "./peripheral/audit";
 import { PeripheralBroker, type PeripheralClass } from "./peripheral/broker";
@@ -121,12 +140,13 @@ import { advanceAuthorityRevision, authorityRevision } from "./authority-revisio
 import { startRuntimeState, runtimeStateOnline, type DaemonRuntimeState } from "./runtime-state/wiring";
 import { restampStep } from "./runtime-state/recovery";
 import { createWinterRuntimeSdk, describeLoadError, type WinterRuntimeSdk } from "./runtime-sdk/create";
-import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
+import { createEmbeddedSessionHost, embeddedVersionCheck, EMBEDDED_SHUTDOWN_BUDGET_MS, isCompiledDaemon, type EmbeddedSessionHost, type EmbeddedSessionHostDeps } from "./runtime-sdk/embedded";
 import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
-import type { ProviderRefresher } from "./runtime-sdk/host-credentials";
+import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
+import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -187,6 +207,11 @@ export { CORE_VERSION } from "./version";
 export function sessionPermissionDirs(home: string, primary: string, trust: Pick<TrustStore, "isTrusted">): string[] {
   return loadPermissionDirs(home, projectScopeRootFor(primary), projectScopeTrusted(primary, trust));
 }
+
+/** How long the stop waits for the links, node and bot side to finish starting before it closes what has started. */
+const PARTS_STOP_WAIT_MS = 5_000;
+/** How often the links try a locked secret store again when it says nothing on unlocking. */
+const LOCKED_RETRY_MS = 30_000;
 
 export interface RunningDaemon {
   socketPath: string;
@@ -264,6 +289,10 @@ export interface RunningDaemon {
    * child) off this rather than off a mirror it built itself.
    */
   clover: CloverSessionDrivers;
+  /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
+   *  background after the socket is bound. `ready` settles once they are up (local-only with no sidecar), or failed
+   *  (logged); each getter is undefined before then and without one. */
+  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined };
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
    *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
   updateGate: UpdateGate;
@@ -424,11 +453,31 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** A-M2: lane B's plugin registry and plugin host, which the model plugins load through (`startModelPlugins`).
    *  Absent (today, until B-M1's registry and B-M2's host): sessions use the SDK's compiled catalog. */
   modelPluginHost?: Pick<StartModelPluginsOptions, "registry" | "host" | "pluginSecrets">;
+  /** B-M2: the daemon's one plugin host, injected (a test's). Absent: it starts over the plugin registry when the bot
+   *  side opens it (`startPluginHost`). */
+  pluginHost?: (registry: OpenedRegistry["registry"]) => Promise<DaemonPluginHost>;
+  /** B-M2: false starts no plugin registry or host (and so no bot side over them). Default: they start once the store
+   *  answers, with or without the links. */
+  plugins?: false;
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
-  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none). */
-  links?: false;
+  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar runs them local-only, and says so).
+   *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
+   *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
+  links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "account" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
+  /** The daemon integration: this computer's node and bot side, started over the links once they're up. `node: false`
+   *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
+   *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
+  parts?: {
+    node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string;
+    /** TEST SEAMS: the computer node's safety reviewer (default: the daemon's own `BashReviewer`) and an approval
+     *  broker for its cards (lane J's `nodeParts`). */
+    reviewer?: DaemonPartsInput["reviewer"]; approvals?: DaemonPartsInput["approvals"];
+  };
+  /** TEST ONLY: the contract secret store (a test's store that starts locked). Default: the OS store, or an in-memory
+   *  one when `secrets` is given. */
+  contractSecrets?: ContractSecretStore;
   /** undefined: try settings.json (production default). null: agent disabled (tests, Phase 0
    *  behavior). object: use this provider directly (tests inject FakeProvider). `live`, when
    *  present, is threaded into EngineConfig.provider.live (no-restart model resolution) — tests
@@ -668,6 +717,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `tools.json`, …). One line when any exist — never touched, only named (`clover doctor` repeats it).
   const deadLegacyLine = describeDeadLegacyFiles(findDeadLegacyFiles(home), home);
   if (deadLegacyLine !== undefined) console.error(deadLegacyLine);
+  // Lane A's F8 process holder ships beside a compiled macOS core (scripts/bundled-binaries.ts); without it a bot's
+  // commands fall back to process-group tracking, which a packaged build never does (its package gate). Said loudly.
+  {
+    const holder = missingProcessHolder();
+    if (holder !== undefined) console.error(`error: ${holder} is missing beside this clover-core: a bot's commands fall back to process-group tracking, and what they leave running (setsid, double forks) can outlive a pause. Reinstall Clover.`);
+  }
 
 
   // WS-25 §7 B: the app reads `harness-token`/`remote-token` without a Keychain prompt once their access
@@ -1296,10 +1351,19 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // `registry` const, which isn't in scope here) so it keeps behaving correctly either way — a safe
   // no-op via optional chaining while `sharedRegistry` is still null (no provider).
   const allPlugins = pluginStore.list();
+  // #234, F2: Clover's bunfig and load guard for every plugin process (supervised hosts and hooks), in the run folder.
+  // On a failure each runner falls back to its own (the supervisor refuses to spawn; a hook uses a private temp one).
+  let pluginRun: PluginRunGuard | undefined;
+  try {
+    pluginRun = { files: ensurePluginRunFiles(dirs.runDir, { cloverHome }) };
+  } catch (err) {
+    console.error(`plugin run files: ${(err as Error).message}`);
+  }
   // WS-21 (L4 request 2): no boot-time plugin hook build — a plugin's hooks are claude-native
   // `hooks/hooks.json` content the runtimes load themselves (spec §5.1/§5.3).
   const pluginSupervisor = new PluginSupervisor({
     runDir: dirs.runDir,
+    pluginRun,
     socketPath: dirs.socketPath,
     mintToken: (id) => store.mintPluginToken(id),
     settings: settings?.plugins?.supervisor,
@@ -2039,7 +2103,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const hookFacade = new HookFacade({
     registry: hookRegistry,
-    runner: new HookRunner(),
+    runner: new HookRunner(pluginRun),
     hooksEnabled: cloverHooksEnabled,
     cwdForSession: (sid) => { try { return store.meta(sid).cwd ?? undefined; } catch { return undefined; } },
   });
@@ -2202,6 +2266,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       if (!result.ok) throw new Error("console_bearer_refresh_failed");
     },
   };
+  // WS-25 §7: ONE credential broker for the daemon, the sessions' and the bots' (A-M3's provider fill): its generation
+  // registry and its refresh single-flights are per item, so a session and a bot asking for the same bearer share one
+  // renewal. Built as the session table built it before (the same service, store, refreshers and log).
+  const hostCredentials = createHostCredentialBroker({
+    secrets,
+    keychainService: keychainService(undefined, cloverHome),
+    mcpOAuthStore: sessionMcpOAuthStore,
+    refreshers: credentialRefreshers,
+    log: (line) => console.error(`clover-leg: ${line}`),
+  });
   const cloverDrivers: CloverSessionDrivers = createCloverSessionDrivers({
     // M-M2: no new turn while the update gate closes for a restart (`updateGate` is set further down, before any turn).
     updateClosing: () => updateGate.closed,
@@ -2297,6 +2371,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // Review r1 (i): the enabled plugins' http/sse servers join the MCP sign-in allowlist (live per incarnation).
     pluginMcpServers: () => pluginMcpServersFor(pluginStore.list().filter((p) => !p.disabled).map((p) => p.installPath)),
     credentialRefreshers,
+    hostCredentials,
   });
   // A-M2: the model plugins, when the daemon was handed lane B's plugin registry and plugin host (B-M1/B-M2; none
   // until then, and the SDK's compiled catalog, which the bundled model plugins are generated from, serves the same
@@ -3162,17 +3237,41 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
-  let selfUpdate: SelfUpdate | undefined;
+  // The Clover `computer.acting` seam reads the live service through a getter, never a captured copy: after a live
+  // toggle the check reads the service as it is now (check 3). With no service, nothing is acting.
   // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' Clover
   // methods, filled in as their parts come up (H's devices methods once the links are). A test daemon (its own
   // `secrets`) keeps the store in memory, so no test touches the real Keychain.
-  const contractSecrets = opts.secrets !== undefined
+  const contractSecrets: ContractSecretStore = opts.contractSecrets ?? (opts.secrets !== undefined
     ? new CloverSecretStore({ home: dirs.home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } })
-    : await openCloverSecretStore({ home: dirs.home, service: keychainService(profile, home) });
+    : await openCloverSecretStore({ home: dirs.home, service: keychainService(profile, home) }));
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
-  // M-M2b: the update methods (`update.*`) go into the one lanes map, never a second `handlers` key.
+  // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
+  if (opts.modelPluginHost !== undefined) {
+    Object.assign(cloverLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
+  }
+  // This device's id is its link key's (H-M1): the one the links below load from the same store. A store that is
+  // still locked (a keyring locked at the login screen) can't give it yet: the hello carries a stand-in id, stable per
+  // home, and the links wait for the store to unlock (below). The boot never waits on it.
+  let liveDeviceId = createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32);
+  const loadDeviceId = async (): Promise<boolean> => {
+    try {
+      liveDeviceId = (await DeviceKey.loadOrCreate(contractSecrets)).id;
+      return true;
+    } catch (err) {
+      console.error(`[links] this device's key can't be read yet (${(err as Error).message}): its links start once the secret store answers`);
+      return false;
+    }
+  };
+  const keyLoaded = await loadDeviceId();
+  // The daemon integration: links, then node and bot side, in the background (below); `pair.quit{handOver}` and the
+  // stop reach them through these.
+  let daemonLinks: DaemonLinks | undefined;
+  let daemonParts: DaemonParts | undefined;
+  let selfUpdate: SelfUpdate | undefined;
+  // M-M2: `update.status` and `update.apply` join the lanes' handlers (one map: the links, node and bot side add theirs).
   Object.assign(cloverLaneHandlers, updateHandlers({
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
@@ -3183,9 +3282,15 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     tokens: cloverTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
-    deviceId: createDeviceHash("sha256").update(`clover-local-device\0${dirs.home}`).digest("hex").slice(0, 32),
+    get deviceId() { return liveDeviceId; },
+    handOver: async () => { await daemonLinks?.handOver(); },
+    // The link sidecar (lane H): the one local process whose hello may be `remote`, `web` or `peer`.
+    linkPid: () => daemonLinks?.links?.sidecarPid(),
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
+    computerUse: {
+      acting: () => Promise.resolve({ running: computerUse?.anyActing() ?? false, session: computerUse?.anyActing() === true ? "s_cu" : undefined }),
+    },
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
   });
@@ -3389,16 +3494,191 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   } catch (err) {
     console.error(`[browser-host] could not listen on ${join(dirs.runDir, BROWSER_HOST_SOCKET_NAME)}: ${err instanceof Error ? err.message : String(err)}`);
   }
-  // C-M2: H's links, started in the background so a slow sidecar never holds the daemon's start; their methods join
-  // the Clover server's handlers when they're up.
-  let daemonLinks: DaemonLinks | undefined;
-  const linksReady = (opts.links === false ? Promise.resolve(undefined) : startDaemonLinks({
-    home: dirs.home, store: contractSecrets, clock: new SystemClock(), handlers: cloverLaneHandlers,
-    dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
-    // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
-    clients: { server: cloverServer, tokens: cloverTokens },
-    log: (line) => console.error(line),
-  })).then((d) => { daemonLinks = d; return d; }, (err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); return undefined; });
+  // C-M2 and the daemon integration: H's links, then J's computer node and D's bot side over them (daemon-parts.ts),
+  // started in the background so a slow sidecar never holds the daemon's start; their methods join the Clover server's
+  // handlers when they're up. A daemon with no sidecar (run from source, a build without it) runs them local-only,
+  // with no other device on its links, and says so: one Mac on its own is the main case. The stop
+  // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
+  const partsClock = new SystemClock();
+  let partsRegistry: OpenedRegistry | undefined;
+  // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
+  // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
+  let pluginHost: DaemonPluginHost | undefined;
+  let partsStopping = false;
+  // B-M2: the plugin registry and the plugin host start once the store answers, whatever the links do (a Mac with no
+  // sidecar, a test daemon without links): plugins don't wait on the device links. The bot side takes this registry.
+  const stageBundled = async (): Promise<{ dir: string; digests: ReadonlyMap<string, string> } | undefined> => {
+    const log = (line: string) => console.error(`[plugins] ${line}`);
+    let source: { root: string; manifest: BundledManifest } | undefined;
+    if (DIST_BUILD) {
+      const root = bundledPluginsDir(process.execPath, { cloverHome });
+      source = root === undefined ? undefined : { root, manifest: bundledManifest() };
+    } else {
+      // From source (not a test daemon, which has its own store): the dev stage from this checkout's plugins/.
+      const sources = join(import.meta.dir, "..", "..", "..", "plugins");
+      if (opts.secrets === undefined && !isTestKeychainService(process.env.CLOVER_KEYCHAIN_SERVICE) && !isCompiledBinary() && existsSync(sources)) {
+        const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
+        const built = await buildDevBundledPlugins({ sources, ids, cloverHome });
+        log(`built the dev bundled plugins (${built.built.join(", ")}) in ${built.ms} ms`);
+      }
+      source = devBundledSource(cloverHome);
+    }
+    if (source === undefined) return undefined;
+    const staged = stageBundledPlugins({ ...source, out: stagedBundledDir(cloverHome), log });
+    if (staged.dir === undefined) return undefined;
+    log(`bundled: ${staged.staged.join(", ") || "none"}${staged.refused.length > 0 ? ` (refused ${staged.refused.length})` : ""}`);
+    return { dir: staged.dir, digests: staged.digests };
+  };
+  const startPlugins = async (): Promise<OpenedRegistry["registry"] | undefined> => {
+    if (opts.plugins === false) return undefined;
+    // The plugins folder and the bundled plugins (B-M1's registry, signed with the store's key), the bundled ones loaded
+    // from a private copy of their verified bytes (`stageBundledPlugins`, #259's rule):
+    // - a dist core: the manifest compiled into it, over `resources/plugins` (or a server's `<home>/bin/plugins`);
+    // - otherwise the dev stage (`<home>/run/dev-bundled/`): `dev:daemon` builds it, and so does a core run from source
+    //   here, from the repository's `plugins/` (`buildPluginForShipping` with `dev: true`). A dist core never reads one.
+    const bundled = await stageBundled().catch((err: unknown) => {
+      console.error(`[plugins] the bundled plugins weren't staged: ${(err as Error).message}`);
+      return undefined;
+    });
+    mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
+    const opened = await openPluginRegistry({
+      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
+      log: (line) => console.error(`[plugins] ${line}`),
+    });
+    partsRegistry = opened;
+    pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
+      home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
+      log: (line) => console.error(line),
+    })))(opened.registry);
+    Object.assign(cloverLaneHandlers, laneMethodHandlers({
+      ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
+    }));
+    return opened.registry;
+  };
+  const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
+    // The bots come from the plugin registry (`startPlugins`).
+    return {
+      registry: registry,
+      defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
+      drivers: ({ side, node, main }) => botDriverFactory({
+        home: cloverHome,
+        spawn: (options) => embeddedSessions.spawn(options),
+        // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked.
+        canUseTool: () => refuseUntilApprovals,
+        coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
+        registry: registry,
+        epoch: () => main.epoch() ?? 0,
+        // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
+        // through the daemon's one broker (as a session's).
+        provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
+        ...(node ? {
+          holds: node.holds, terminals: node.terminals,
+          computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
+        } : {}),
+        log: (line) => console.error(`[bots] ${line}`),
+      }),
+    };
+  };
+  // The stop: it waits up to PARTS_STOP_WAIT_MS for a start under way, then closes whatever has started; anything that
+  // finishes starting after that closes itself as it does (`partsStopping`).
+  let stopRequested: () => void = () => {};
+  const stopSignal = new Promise<void>((resolve) => { stopRequested = resolve; });
+  const closeStarted = async (): Promise<void> => {
+    const parts = daemonParts;
+    daemonParts = undefined;
+    await parts?.close();
+    const host = pluginHost;
+    pluginHost = undefined;
+    await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
+    const registry = partsRegistry;
+    partsRegistry = undefined;
+    registry?.close();
+    const links = daemonLinks;
+    daemonLinks = undefined;
+    await links?.close();
+  };
+  /** A locked store: until it says it unlocked (its status event), a retry for a keyring that says nothing, or the stop. */
+  const untilStoreAnswers = (): Promise<void> => new Promise((resolve) => {
+    const timer = setTimeout(done, LOCKED_RETRY_MS);
+    timer.unref?.();
+    const off = contractSecrets.watch((c) => { if ("status" in c && c.status.state !== "locked") done(); });
+    void stopSignal.then(done);
+    function done() { clearTimeout(timer); off(); resolve(); }
+  });
+  // The plugins start once the store answers (a locked one: once it unlocks), and wait on nothing else: not this device's
+  // key, which gates the links alone (#322's review, S1), and not the links, whatever they do (no sidecar, a hung
+  // wire). A registry or host that can't start leaves the rest running; one that finishes starting after the stop
+  // closes itself as it does.
+  const pluginsStarted = (async (): Promise<OpenedRegistry["registry"] | undefined> => {
+    while (contractSecrets.status().state === "locked") {
+      await untilStoreAnswers();
+      if (partsStopping) return undefined;
+    }
+    return startPlugins();
+  })().catch((err: unknown) => {
+    console.error(`[plugins] not started: ${(err as Error).message}`);
+    return undefined;
+  });
+  void pluginsStarted.then(async () => { if (partsStopping) await closeStarted(); });
+  const partsReady = (async () => {
+    if (opts.links === false) return void (await pluginsStarted);
+    for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
+      await untilStoreAnswers();
+      if (partsStopping) return;
+    }
+    const started = await startDaemonLinks({
+      home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
+      dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
+      // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
+      updateGate,
+      // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
+      clients: { server: cloverServer, tokens: cloverTokens },
+      log: (line) => console.error(line),
+      ...(opts.links ?? {}),
+    });
+    daemonLinks = started;
+    if (partsStopping) return void (await closeStarted());
+    if (!started.links) return void (await pluginsStarted);
+    const links = started.links;
+    const pluginRegistry = await pluginsStarted;
+    if (partsStopping) return void (await closeStarted());
+    // A node or bot side that can't start leaves the links up (their methods answer), and says why.
+    try {
+      const p = opts.parts ?? {};
+      const bots = p.bots === false ? false : p.bots ?? (pluginRegistry !== undefined ? await daemonBots(pluginRegistry) : false);
+      if (partsStopping) return void (await closeStarted());
+      // The tree folder only for the default home: a dev or test daemon never makes the shared one.
+      const treeRoot = opts.secrets === undefined && isDefaultCloverHome(home, profile) ? (() => { try { return defaultTreeRoot(); } catch { return undefined; } })() : undefined;
+      daemonParts = await startDaemonParts({
+        cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: cloverLaneHandlers,
+        node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
+        bots,
+        // The computer node judges another computer's calls at "ask for risky actions" with the daemon's safety
+        // reviewer (lane J's `nodeParts`; it fails closed without one).
+        ...((p.reviewer ?? bashReviewer) !== undefined ? { reviewer: (p.reviewer ?? bashReviewer)! } : {}),
+        ...(p.approvals ? { approvals: p.approvals } : {}),
+        // The bots' running turns keep an update's restart waiting.
+        updateGate,
+        log: (line) => console.error(line),
+      });
+      if (partsStopping) return void (await closeStarted());
+    } catch (err) {
+      console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
+    }
+  })().catch((err: unknown) => { console.error(`[links] not started: ${(err as Error).message}`); });
+  const closeParts = async (): Promise<void> => {
+    partsStopping = true;
+    stopRequested();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      partsReady.then(() => true),
+      new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), PARTS_STOP_WAIT_MS); }),
+    ]);
+    clearTimeout(timer);
+    if (!settled) console.error(`[parts] still starting after ${PARTS_STOP_WAIT_MS / 1000} s: closing what has started; the rest closes as it finishes`);
+    await closeStarted().catch((err: unknown) => { console.error(`[parts] closing failed: ${(err as Error).message}`); });
+  };
   return {
     socketPath: dirs.socketPath,
     ...(pairSide ? { pair: pairSide } : {}),
@@ -3416,6 +3696,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sessions: store,
     buildSessionCapabilities,
     clover: cloverDrivers,
+    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots },
     updateGate,
     setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
@@ -3431,7 +3712,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       pairSide?.pair.quit("quit");
       pairSide?.dispose();
       cloverServer?.dispose();
-      void linksReady.then(() => daemonLinks?.close()).catch(() => undefined);
+      // The bot side, the node and the links close first, the sidecar with them; the stop's promise waits for it.
+      // The drain order: the bot side lets its sessions go (each driver ends its runtime query, and the sessions stay
+      // on disk for the next daemon) while the runtime SDK's own sessions end in `runtimeSdk.dispose()` below; both
+      // run on the embedded host, whose `shutdown` comes after the dispose and terminates any bot Worker still there.
+      // Everything here settles before the session store and runtime-state.db close (`settled` waits for it).
+      const partsClosed = opts.links === false ? undefined : closeParts();
       // lspManager: killAllNow() FIRST delivers a synchronous SIGTERM to every warm child (the real
       // shutdown protection — mcp/pluginSupervisor's stopAll are likewise synchronous kills), since
       // the `void stopAll()` graceful path below is async and process.exit(0) (direct-run path) drops
@@ -3508,7 +3794,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       };
       // Synchronous when there is no Clover handle — `stop()`'s existing contract for every pre-8b
       // caller is unchanged (everything but the runtime drain has already happened on return).
-      const settled = cloverDone === undefined ? guestsDrained : guestsDrained === undefined ? cloverDone : Promise.all([cloverDone, guestsDrained]).then(() => undefined);
+      const drains = [cloverDone, guestsDrained, partsClosed].filter((p): p is Promise<void> => p !== undefined);
+      const settled = drains.length === 0 ? undefined : drains.length === 1 ? drains[0] : Promise.all(drains).then(() => undefined);
       return settled === undefined ? closeRest() : settled.then(closeRest);
     },
   };
@@ -3522,6 +3809,9 @@ export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] =
   const claimed = claimDaemonChildren();
   if (process.platform === "win32" && !claimed.job) throw new Error("the daemon could not make its own job object, so it can't tell its children from the user");
   if (process.platform === "linux" && !claimed.subreaper) console.error("[caller] PR_SET_CHILD_SUBREAPER refused: a double-forked child is told from the user by the floor alone");
+  // #259: the bundled plugins' manifest, from the core's own embedded Blob, before anything asks for a bundled plugin
+  // (empty outside a compiled core; one that doesn't parse leaves nothing bundled, and says why).
+  await loadBundledManifest().catch((err: unknown) => console.error(`[caller] the bundled-plugins manifest is unreadable, so nothing is bundled: ${err instanceof Error ? err.message : String(err)}`));
   let embedded: { shutdown(budgetMs?: number): Promise<void> } | undefined;
   try { return await startDaemonInner(host => { embedded = host; }, opts); }
   catch (error) { void embedded?.shutdown(EMBEDDED_SHUTDOWN_BUDGET_MS).catch(() => {}); throw error; }

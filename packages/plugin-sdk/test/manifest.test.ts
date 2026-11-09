@@ -131,6 +131,35 @@ describe("code, engines and platforms", () => {
     }
   });
 
+  test("a command's args schema uses only what command.run checks (F-M3's review N4)", () => {
+    const withArgs = (args: unknown) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" },
+      contributes: { commands: [{ name: "draw", description: "Draw", handler: "draw", args }] } });
+    const ok = withArgs({ type: "object", required: ["n"], properties: { n: { type: "integer", minimum: 1 } } });
+    expect(ok.manifest?.contributes?.commands?.length).toBe(1);
+    for (const [args, path] of [
+      [{ type: "object", properties: { n: { $ref: "#/x" } } }, "/contributes/commands/0/args/properties/n"],
+      [{ type: "string", pattern: "(" }, "/contributes/commands/0/args"],
+    ] as const) {
+      const r = withArgs(args);
+      expect(r.manifest?.contributes?.commands).toEqual([]);
+      expect(codes(r)).toContain(`error:entry:args_schema:${path}`);
+    }
+  });
+
+  test("a built plugin (`built: true`, the release build's) names JavaScript modules only", () => {
+    const code = { ...min(), engines: { clover: "^1.0.0" }, built: true };
+    const bundled = { bundled: true };
+    expect(codes(validateManifest({ ...code, host: { entry: "host/index.js" }, client: { entry: "client/index.js", css: ["client/index.css"] } }, bundled))).toEqual([]);
+    // An installed plugin can't claim it: only bundled trees are built by Clover's release (#271's L2).
+    const claimed = validateManifest({ ...code, host: { entry: "host/index.js" } });
+    expect([claimed.ok, has(claimed, "built_not_bundled", "plugin")]).toEqual([false, true]);
+    const ts = validateManifest({ ...code, host: { entry: "host/index.ts" }, client: { entry: "client/index.tsx" } }, bundled);
+    expect(ts.issues.filter((i) => i.code === "built_entry").map((i) => `${i.refuses}:${i.path}`)).toEqual(["plugin:/host/entry", "plugin:/client/entry"]);
+    expect(ts.ok).toBe(false);
+    expect(has(validateManifest({ ...code, built: false }), "schema", "plugin")).toBe(true);
+    expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" } }).ok).toBe(true);
+  });
+
   test("handlers need host code, components need a client module", () => {
     const r = validateManifest({ ...min(), contributes: { commands: [{ name: "draw", description: "Draw a card", handler: "draw" }] } });
     expect(r.ok).toBe(true);
@@ -228,6 +257,15 @@ describe("servers, tools and interpolation", () => {
     expect(has(s({ type: "stdio", command: "x", perComputer: true }), "server_fields")).toBe(true);
   });
 
+  test("a server's env never sets Clover's names, or what changes how Bun, Node or the loader loads code (#322's review)", () => {
+    const s = (env: Record<string, string>) => validateManifest({ ...code, contributes: { mcpServers: { x: { type: "stdio", command: "bun", env } } } });
+    for (const name of ["CLOVER_PLUGIN_HOST", "CLOVER_PLUGIN_ROOT", "CLOVER_PLUGIN_SHARED", "CLOVER_PLUGIN_WORKER", "BUN_OPTIONS", "NODE_OPTIONS", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]) {
+      const r = s({ TOKEN: "t", [name]: "1" });
+      expect([has(r, "reserved_env"), r.issues.find((i) => i.code === "reserved_env")?.message.includes(name)]).toEqual([true, true]);
+    }
+    expect(has(s({ NODE_ENV: "production", NODE_NO_WARNINGS: "1", TOKEN: "t" }), "reserved_env")).toBe(false);
+  });
+
   test("tool names are mcp__<namespace>__<Tool>, unique, never with __ (§6.7)", () => {
     const r = validateManifest({ ...code, contributes: { mcpServers: {
       a: { type: "stdio", command: "a", tools: { Render: "preload", "*": "on-demand" } },
@@ -284,6 +322,36 @@ describe("declared points (§5.4)", () => {
     const ok = validateManifest({ ...base, contributes: { ui: [{ spot: "panel", key: "luna", component: "Panel", declares: spot }] } });
     expect(ok.issues).toEqual([]);
     expect(ok.declares[0]).toEqual({ name: "luna.deck", by: "ui/0", shape: "list", spot: true, wellKnown: false });
+  });
+
+  test("a plugin declares one spot on several of its entries, each the same; any other point once (lane F's file.preview)", () => {
+    const preview = { "file.preview": { shape: "keyed", props: {} } };
+    const two = validateManifest({ ...base, contributes: { ui: [
+      { id: "files", spot: "panel.view", key: "files", title: "Files", component: "Files", declares: preview },
+      { id: "editor", spot: "panel.view", key: "editor", title: "Editor", component: "Editor", declares: preview },
+    ] } });
+    expect(codes(two)).toEqual([]);
+    expect(two.declares.map((d) => [d.name, d.by])).toEqual([["file.preview", "ui/0"], ["file.preview", "ui/1"]]);
+    const own = (props: Record<string, unknown>) => ({ "luna.deck": { shape: "list", props } });
+    const differ = validateManifest({ ...base, contributes: { ui: [
+      { id: "a", spot: "panel", key: "a", component: "A", declares: own({}) },
+      { id: "b", spot: "panel", key: "b", component: "B", declares: own({ type: "object" }) },
+    ] } });
+    expect(codes(differ)).toContain("error:entry:point_duplicate:/contributes/ui/1/declares/luna.deck");
+    const data = validateManifest({ ...base, host: { ...base.host, declares: { "luna.cards": { shape: "list" } } },
+      contributes: { triggers: [{ type: "t", title: "T", handler: "t", declares: { "luna.cards": { shape: "list" } } }] } });
+    expect(has(data, "point_duplicate")).toBe(true);
+  });
+
+  test("a message menu item runs one of the plugin's own commands, never another plugin's (F-M3)", () => {
+    const item = (command: unknown, extra: Record<string, unknown> = {}) => validateManifest({ ...min(), contributes: { ui: [{ spot: "menu.message", id: "quote", title: "Quote it", command, ...extra }] } });
+    expect(codes(item("luna.quote"))).toEqual([]);
+    for (const command of ["tarot.quote", "quote", ".quote", 3]) {
+      expect([command, codes(item(command)).some((c) => c.includes("menu_command_namespace") || c.includes(":schema:"))]).toEqual([command, true]);
+      expect(item(command).manifest?.contributes?.ui ?? []).toEqual([]);
+    }
+    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "moon.quote" }] } }))).toEqual([]);
+    expect(codes(validateManifest({ ...min(), namespace: "moon", contributes: { ui: [{ spot: "menu.message", id: "q", title: "Q", command: "luna.quote" }] } }))).toContain("error:entry:menu_command_namespace:/contributes/ui/0/command");
   });
 
   test("core points can't be declared; well-known names take the catalog's declaration", () => {
@@ -380,5 +448,20 @@ describe("lane A's asks: settings in hosts, the core's own sign-ins, a Bun proce
     expect(issues({ auth: [{ method: "core", flow: "somewhere-else" }] }, true).length).toBeGreaterThan(0);
     expect(issues({ host: { entry: "host/index.ts", process: "own" } })).toEqual([]);
     expect(issues({ host: { entry: "host/index.ts", process: "shared" } }).length).toBeGreaterThan(0);
+  });
+});
+
+describe("a host runs under Bun (#234's check 3)", () => {
+  test("a Node host is refused outside Clover's own plugins; programs of its own say so in the OK", () => {
+    const node = { ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.js", runtime: "node" } };
+    expect(has(validateManifest(node), "host_runtime_bundled_only", "plugin")).toBe(true);
+    const own = validateManifest({ ...node, id: "clover" }, { bundled: true });
+    expect([has(own, "host_runtime_bundled_only"), own.ownPrograms]).toEqual([false, true]);
+    const bun = validateManifest({ ...node, host: { entry: "host/index.ts" } });
+    expect([bun.ok, bun.ownPrograms, describeOk(bun).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, false, false]);
+    for (const extra of [{ contributes: { mcpServers: { s: { type: "stdio", command: "node", args: ["server.js"] } } } }, { helper: { bin: { macos: "bin/helper" } } }]) {
+      const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...extra });
+      expect([r.ownPrograms, describeOk(r).includes("It runs its own programs, which Clover doesn't confine.")]).toEqual([true, true]);
+    }
   });
 });

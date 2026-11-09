@@ -16,10 +16,10 @@ import { DeviceKey } from "../../identity/device-key";
 import { FrameReader, MAX_FRAME } from "../frames";
 import { bundledLinkBinary } from "../sidecar-binary";
 import { PairingService } from "../pairing";
-import { followRegistry, pipeWriter, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, STREAM_WINDOW } from "../sidecar-wire";
+import { followRegistry, pipeWriter, type SidecarProcess, SidecarWire, type SidecarWireOptions, spawnSidecar, INCOMING_STREAM_WINDOW, STREAM_WINDOW } from "../sidecar-wire";
 import { type DeviceLinks, startDeviceLinks } from "../node";
 import { CloverLinkTransport } from "../transport";
-import { CLOSE_LOST, RESET_CONN_LOST, type WireConn, WireOffline, type WireStream } from "../wire";
+import { CLOSE_LOST, LIVE_STREAM_WINDOW, RESET_CONN_LOST, type WireConn, WireOffline, type WireStream } from "../wire";
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../../native/link/target/release/clover-link");
 const built = existsSync(BIN);
@@ -486,7 +486,7 @@ class FakeSidecar implements SidecarProcess {
   #exit!: (n: number) => void;
   #dead = false;
 
-  constructor(readonly publicKey: string, readonly fail = false) {
+  constructor(readonly publicKey: string, readonly fail = false, readonly ready: Record<string, unknown> = {}) {
     this.stdout = new ReadableStream<Uint8Array>({ start: (c) => void (this.#ctl = c) });
     this.exited = new Promise((r) => (this.#exit = r));
   }
@@ -501,7 +501,7 @@ class FakeSidecar implements SidecarProcess {
         if (this.fail) {
           this.emit({ ev: "error", message: "bind failed", fatal: true });
           this.kill();
-        } else this.emit({ ev: "ready", publicKey: this.publicKey, relay: null });
+        } else this.emit({ ev: "ready", publicKey: this.publicKey, relay: null, ...this.ready });
       } else if (m.op === "shutdown") this.kill();
     }
   }
@@ -537,6 +537,47 @@ describe("the link sidecar's binary", () => {
     stops.push(() => wire.close());
     expect(argv).toEqual([[bundledLinkBinary()]]);
   });
+});
+
+describe("per-stream windows need a sidecar that has them (#288 N1)", () => {
+  for (const has of [true, false]) {
+    test(has ? "a sidecar that says it has them gets the open's window and the window op" : "an older sidecar (its ready says nothing) gets neither: every stream keeps the wire's window", async () => {
+      const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
+      let proc!: FakeSidecar;
+      const wire = await SidecarWire.start({
+        binary: "clover-link", key, relay: "disabled", n0Lookup: false,
+        spawn: () => (proc = new FakeSidecar(toHex(key.publicKey), false, has ? { streamWindows: true } : {})),
+      });
+      stops.push(() => wire.close());
+      expect(wire.streamWindows).toBe(has);
+      const conns: WireConn[] = [];
+      wire.onIncoming("clover/link/1", (c) => conns.push(c));
+      proc.emit({ ev: "incoming", conn: 1, peerKey: toHex(new Uint8Array(32).fill(7)), alpn: "clover/link/1", path: { kind: "lan" } });
+      await waitFor(() => conns.length === 1);
+      // An incoming stream starts small where the sidecar has windows; its header read, it's widened (as a lane is).
+      const streams: WireStream[] = [];
+      conns[0]!.onStream((st) => streams.push(st));
+      proc.emit({ ev: "stream", conn: 1, stream: 1 });
+      await waitFor(() => streams.length === 1);
+      expect((streams[0] as unknown as { window: number }).window).toBe(has ? INCOMING_STREAM_WINDOW : STREAM_WINDOW);
+      streams[0]!.setWindow?.(STREAM_WINDOW);
+      // A stream opened with a live window.
+      const opened = conns[0]!.openStream(1, { window: LIVE_STREAM_WINDOW });
+      await Bun.sleep(20);
+      const window = proc.ops.filter((o) => o.op === "window");
+      const open = proc.ops.find((o) => o.op === "open");
+      if (has) {
+        expect(window).toEqual([expect.objectContaining({ stream: 1, window: STREAM_WINDOW })]);
+        expect(open).toMatchObject({ window: LIVE_STREAM_WINDOW });
+        expect((opened as unknown as { window: number }).window).toBe(LIVE_STREAM_WINDOW);
+      } else {
+        expect(window).toEqual([]);
+        expect(open && "window" in open).toBe(false);
+        expect((opened as unknown as { window: number }).window).toBe(STREAM_WINDOW);
+        expect((streams[0] as unknown as { window: number }).window).toBe(STREAM_WINDOW);
+      }
+    });
+  }
 });
 
 describe("the sidecar's stdin", () => {

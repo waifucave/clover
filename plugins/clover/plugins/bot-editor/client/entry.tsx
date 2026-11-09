@@ -111,6 +111,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       {...(picked && bot.userLayer.includes("avatar") ? { avatar: picked } : {})}
       themes={themes}
       {...(bot.theme ? { theme: bot.theme } : {})}
+      lan={bot.lan === true}
       {...(waiting ? { waiting: waiting.field } : {})}
       onChange={change}
       onBack={() => props.navigate?.({ route: "bot", params: { bot: bot.id } })}

@@ -47,7 +47,8 @@ import { ContributedBackendCache, type ContributedBackend } from "./plugin-backe
 import { ADMISSIONS } from "./sandbox/admission";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
-import { inProcessSandboxReady, notAvailableHere } from "./sandbox/in-process";
+import { codeAgentDoor, CodeAgentService } from "./code-agent/service";
+import type { CodeAgentDoor } from "../ipc/clover";
 import { StallWatchdog } from "./watchdog";
 import { AgentPeers, type AgentPeersOptions } from "./remote";
 import { inProcessAgentBackend, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
@@ -69,7 +70,9 @@ export { buildAgentEnv, launchContained } from "./process/launch";
 export { AgentQuirksSchema, QuirksFileSchema, bundledAgentPluginId, contributedBackends, quirksWithCommand, readQuirksFile, type ContributedBackend, type FileQuirks, type QuirksFile } from "./plugin-backends";
 export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 export { inProcessBridgeServer } from "./bridge/in-process";
-export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentActFence, type AgentPeersOptions } from "./remote";
+export { codeAgentDoor, CodeAgentService, type CodeAgentServiceOptions } from "./code-agent/service";
+export { codeAgentMain, runCodeAgentRelay, type CodeAgentRelayOptions } from "./code-agent/relay";
+export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentPeersOptions } from "./remote";
 export { UserSelections } from "./acp/selections";
 export { agentMethods } from "./rpc";
 export { agentToolDefs, type CoreToolDef } from "./tools";
@@ -79,6 +82,7 @@ export { placeInClaudeCode, matcherOf, shellQuote } from "./claude-code/placemen
 export { dropAllow, hookShimCommand, hookShimMain, runHook } from "./claude-code/hook-shim";
 export { AGENT_COMMAND_MAX_MS, StallWatchdog } from "./watchdog";
 export { ADMISSIONS, admissionFor, type SandboxAdmission, type SandboxSetup, type SandboxWriter } from "./sandbox/admission";
+export { WRITERS, codexWriter, claudeCodeWriter } from "./sandbox/writers";
 export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOkKey } from "./sandbox/oks";
 
 export interface AgentsOptions {
@@ -99,6 +103,8 @@ export interface AgentsOptions {
   pluginParts?: PluginPartsSource;
   /** A computer's level, for the read-only mode of an agent that acts without asking; read-only when unknown. */
   levelOf?: (computer: string) => Level | undefined;
+  /** The levels changed (the computer registry's `watch`): running agents follow straight away (`levelsChanged`). */
+  watchLevels?: (fn: () => void) => () => void;
   /** The pause switch (lane D's gate): paused, delegated agents are held. */
   pause?: AgentPauseGate;
   /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
@@ -111,6 +117,9 @@ export interface AgentsOptions {
    *  default model. The pause and the folders it may never reach are the core's (`inProcessBackend`). Without it the
    *  backend isn't offered. */
   inProcess?: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">;
+  /** The user's home folder, which `home/<Computer>/` names (the OS's by default): where an outside ACP client's folder
+   *  is placed in the tree (`clover-core code-agent`). */
+  userHome?: string;
   log?: (line: string) => void;
 }
 
@@ -135,17 +144,20 @@ export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor"
   const gate = o.pause ?? OPEN_PAUSE_GATE;
   // The session's own pause when the manager hands one (for an agent run for another computer, that computer's
   // forwarded switch too), else this computer's.
-  const b = inProcessAgentBackend({ ...deps, pauseGateFor: (spec) => (spec as AcpStartSpec).pause ?? gate, privateFoldersFor: () => homeFoldersOf(o.home) });
-  // Its sandbox is the embedded runtime's, which only macOS has for now: elsewhere it isn't available, with the reason.
-  const ready = o.sandboxReady ?? inProcessSandboxReady;
-  return { ...b, start: (spec) => b.start(spec), detect: async () => (ready() ? b.detect() : notAvailableHere(b.id)) };
+  // Its sandbox is the embedded runtime's, which only macOS has for now: the backend's own `detect` says it isn't
+  // available elsewhere, with the reason (`sandboxReady`, the check it reads, passed through).
+  const b = inProcessAgentBackend({
+    ...deps, pauseGateFor: (spec) => (spec as AcpStartSpec).pause ?? gate, privateFoldersFor: () => homeFoldersOf(o.home),
+    ...(o.sandboxReady !== undefined ? { sandboxReady: o.sandboxReady } : {}),
+  });
+  return { ...b, start: (spec) => b.start(spec) };
 }
 
 /** Wires the Agent tool for one daemon: the tokens, the bridge's parts for lane C's Clover server (`clover`: pass
  *  them to `createCloverServer` as its `bridge`, and its `handlers` among the server's), the watchdog,
  *  the backends and the manager. `close` ends every agent's process (the sessions stay to be reattached), revokes
  *  every token. */
-export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; close(): Promise<void> } {
+export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; codeAgent: CodeAgentDoor; close(): Promise<void> } {
   const tokens = new BridgeTokens();
   // The bridge connects to the daemon's own endpoint, where lane C serves the `bridge` role.
   const socketPath = o.socketPath;
@@ -159,6 +171,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
     ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
+    ...(o.watchLevels ? { watchLevels: o.watchLevels } : {}),
     ...(o.pause ? { pause: o.pause } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
@@ -178,7 +191,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const cache = new ContributedBackendCache(build);
   // Core backends: Clover's own coding agent and lane A's in-process subagents.
   const core: AgentBackend[] = [
-    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })] : []),
+    ...(o.cloverCode ? [new CloverCodeBackend({ ...o.cloverCode, clock: o.clock, wire, selections, pause: o.pause ?? OPEN_PAUSE_GATE, ...(o.log ? { log: o.log } : {}) })] : []),
     ...(o.inProcess ? [inProcessBackend({ ...(o.log ? { log: o.log } : {}), ...o.inProcess }, { home: o.home, ...(o.pause ? { pause: o.pause } : {}) })] : []),
   ];
   if (o.backends) {
@@ -192,8 +205,18 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const peers = o.peers
     ? new AgentPeers(manager, { ...o.peers, home: o.home, clock: o.clock, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })
     : undefined;
+  // `clover-core code-agent` (K-M3b): Clover's coding agent for an outside ACP client, on the daemon's endpoint
+  // (`CloverServerDeps.codeAgent`).
+  const codeAgents = new CodeAgentService({
+    home: o.home, computer: o.computer, host: o.host, tree: o.tree, fence: o.fence, clock: o.clock,
+    backend: () => backends().find((b): b is CloverCodeBackend => b instanceof CloverCodeBackend),
+    ...(o.userHome === undefined ? {} : { userHome: o.userHome }),
+    ...(o.levelOf ? { levelOf: o.levelOf } : {}),
+    ...(o.log ? { log: o.log } : {}),
+  });
+  const codeAgent: CodeAgentDoor = codeAgentDoor(codeAgents);
   return {
-    manager, clover, tokens, backends: () => backends(),
+    manager, clover, tokens, backends: () => backends(), codeAgent,
     close: async () => {
       peers?.close();
       await manager.close();
