@@ -25,8 +25,9 @@
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
-import { DEFAULT_LEVEL } from "@waifucave/clover-protocol";
+import { DEFAULT_LEVEL, type AgentDefView } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
+import { pluginAgentDefinitions } from "./agents/rpc";
 import { CloverApprovalBroker } from "./approvals/broker";
 import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
@@ -93,6 +94,8 @@ export interface DaemonParts {
   bots?: BotSide;
   /** Lane K's agents, when they run here. */
   agents?: DaemonAgents;
+  /** The agent presets the bots' plugins contribute (`agents` point), for `agent.definitions`. */
+  agentDefinitions?: () => AgentDefView[];
   /** Lane C's approval broker for the agents (#267). */
   broker?: CloverApprovalBroker;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
@@ -329,7 +332,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));
     }
-    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
+    const registry = input.bots ? input.bots.registry : undefined;
+    return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(agents && registry ? { agentDefinitions: () => pluginAgentDefinitions(registry) } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
   } catch (err) {
     await close();
     throw err;

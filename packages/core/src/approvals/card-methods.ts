@@ -3,11 +3,17 @@
 // so each call reads it through a getter; until it is up, and after it stops, a call is refused, never answered by a
 // second broker. The server has checked the role and the params against the method's spec before a handler runs.
 //
+// card.list and card.get hand out a card's sealed fields (the exact command, the paths, a sign-in link), so they are
+// never read for a session: the spec says so (`noSessions`) and the server's gate refuses it; the handlers check again.
+//
 // card.answer's origin is the connection's, never the answer's: its role (a sealed frame's proof counts only through the
-// app) and, for a device link, the device the link authenticated.
-import { APPROVALS_METHODS, ERR, type Card, type CardAnswerProof, type CloverRole } from "@waifucave/clover-protocol";
+// app) and, for a device link, the device the link authenticated. A user's device (`remote`) answers with its own key
+// only: a device proof naming another device is refused there. A paired computer (`peer`) may relay another device's
+// signed answer, which holds end to end (the broker's `deviceProofVerifier`).
+import { APPROVALS_METHODS, CLOVER_ERR, ERR, type Card, type CardAnswerProof, type CloverRole } from "@waifucave/clover-protocol";
+import { isForSession } from "../auth/clover-caller";
 import type { AnswerOrigin, AnswerResult, ApprovalBroker } from "../contracts/approval-broker";
-import { CloverRpcError, type CloverHandler } from "../ipc/clover";
+import { CloverRpcError, type CloverConn, type CloverHandler } from "../ipc/clover";
 
 type CardBroker = Pick<ApprovalBroker, "cards" | "get" | "frameChannel" | "answer">;
 
@@ -32,6 +38,10 @@ function linkDevice(role: CloverRole, caller: { kind: string; device?: string })
   return caller.kind === "user" || caller.kind === "peer" ? caller.device : undefined;
 }
 
+function notForSessions(conn: CloverConn, method: string): void {
+  if (isForSession(conn.caller)) throw new CloverRpcError(CLOVER_ERR.NOT_THE_USER, `${method} isn't read for a session`);
+}
+
 export function cardMethods(broker: () => CardBroker | undefined): Record<string, CloverHandler> {
   const up = (): CardBroker => {
     const b = broker();
@@ -39,8 +49,12 @@ export function cardMethods(broker: () => CardBroker | undefined): Record<string
     return b;
   };
   return {
-    [APPROVALS_METHODS.cardList.name]: async (): Promise<{ cards: Card[] }> => ({ cards: up().cards() }),
-    [APPROVALS_METHODS.cardGet.name]: async (_conn, params) => {
+    [APPROVALS_METHODS.cardList.name]: async (conn): Promise<{ cards: Card[] }> => {
+      notForSessions(conn, APPROVALS_METHODS.cardList.name);
+      return { cards: up().cards() };
+    },
+    [APPROVALS_METHODS.cardGet.name]: async (conn, params) => {
+      notForSessions(conn, APPROVALS_METHODS.cardGet.name);
       const { id } = params as { id: string };
       const r = up().get(id);
       if (!r) throw new CloverRpcError(ERR.NOT_FOUND, `no card ${id}`);
@@ -62,6 +76,11 @@ export function cardMethods(broker: () => CardBroker | undefined): Record<string
       const p = params as { id: string; hash: string; option: string; proof: CardAnswerProof; children?: string[] };
       const device = linkDevice(conn.role, conn.caller);
       const from: AnswerOrigin = { role: conn.role, ...(device === undefined ? {} : { device }) };
+      // A user's device answers for itself: its link's device must be the one whose key signed.
+      if (conn.role === "remote" && p.proof.via === "device" && p.proof.device !== device) {
+        up();
+        return { accepted: false, reason: REASONS["bad-origin"] };
+      }
       const result = await up().answer(p.id, { optionId: p.option, hash: p.hash, proof: p.proof, ...(p.children ? { children: p.children } : {}) }, from);
       return result === "accepted" ? { accepted: true } : { accepted: false, reason: REASONS[result] };
     },

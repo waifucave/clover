@@ -3285,7 +3285,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }));
   // Lane C's cards and lane K's agent.* methods: the broker and the agents come up with the parts (below) and go with
   // them, so each call reads them then; until they are up, and after they stop, a call is told to try again.
-  Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents)));
+  Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
+    // A user's call made on this computer (the app or the terminal here) is this computer's device.
+    localDevice: () => liveDeviceId,
+    definitions: () => daemonParts?.agentDefinitions?.() ?? [],
+  })));
   const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,

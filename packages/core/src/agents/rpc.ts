@@ -5,9 +5,10 @@
 //
 // `session.setModel` for agents and coding sessions is lane D's method; D's handler calls `AgentManager.setModel`.
 import { randomUUID } from "node:crypto";
-import { AGENTS_METHODS, ERR, type AgentBackendView, type AgentDefView, type BackendMark, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
+import { AGENTS_METHODS, AgentDefView, ERR, type AgentBackendView, type BackendMark, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { AgentBackend } from "../contracts/agent-backend";
+import type { PluginRegistry } from "../contracts/plugin-registry";
 import { ContractError } from "../contracts/common";
 import { MethodError, toMethodError } from "../rpc/handler";
 import type { AgentManager } from "./manager";
@@ -19,8 +20,11 @@ export interface AgentMethodsOptions {
   computer: string;
   /** Display names by backend id; the id when missing. */
   names?: Readonly<Record<string, string>>;
-  /** Agent definitions from plugins (B-M2's registry); none until then. */
+  /** Agent definitions from plugins (`pluginAgentDefinitions` over B-M2's registry). */
   definitions?: () => AgentDefView[];
+  /** This computer's device id: the device of a user's call made on this computer (the app or the terminal here), whose
+   *  caller names none. */
+  localDevice: () => string;
 }
 
 export type AgentMethod = (params: unknown, ctx: { caller: Caller }) => Promise<unknown>;
@@ -66,7 +70,7 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
       if (ctx.caller.kind !== "user") throw new ContractError("refused", "only the user starts a coding session");
       if (p.definition !== undefined) throw new ContractError("invalid", "agent definitions come with K-M2");
       const r = await o.manager.start({
-        caller: { kind: "user", device: ctx.caller.device ?? "local", clientMessageId: randomUUID() },
+        caller: { kind: "user", device: ctx.caller.device ?? o.localDevice(), clientMessageId: randomUUID() },
         backend: p.backend, computer: p.computer, root: p.root, prompt: p.prompt ?? "",
         ...(p.model === undefined ? {} : { model: p.model }), ...(p.effort === undefined ? {} : { effort: p.effort }),
       });
@@ -78,13 +82,34 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
 /** What `agentMethods` needs of the agents the daemon runs (`createAgents`'s). */
 export type RunningAgents = Pick<AgentMethodsOptions, "manager" | "backends" | "computer">;
 
+/** The agent definitions plugins contribute (the `agents` point, §5.3): each active entry that is a preset, as the
+ *  protocol shows it. An entry that is a path (a Claude-style agent file) isn't a preset, and one that doesn't fit the
+ *  view (a computer or root folder it can't name) is left out. */
+export function pluginAgentDefinitions(registry: Pick<PluginRegistry, "entries">): AgentDefView[] {
+  const out: AgentDefView[] = [];
+  for (const c of registry.entries("agents")) {
+    if (c.state !== "active" || typeof c.value !== "object" || c.value === null) continue;
+    const d = c.value as { id: string; name: string; backend: string; model?: string; effort?: string; computer?: string; root?: string };
+    const view = AgentDefView.safeParse({
+      id: d.id, name: d.name, pluginId: c.pluginId, backend: d.backend,
+      ...(d.model === undefined ? {} : { model: d.model }), ...(d.effort === undefined ? {} : { effort: d.effort }),
+      ...(d.computer === undefined ? {} : { computer: d.computer }), ...(d.root === undefined ? {} : { root: d.root }),
+    });
+    if (view.success) out.push(view.data);
+  }
+  return out;
+}
+
 /** `agentMethods` over agents that start after the server and stop before it: each call reads them through the
  *  getter, and is refused while none run. A thrown `ContractError` becomes its JSON-RPC code (`toMethodError`). */
-export function lateAgentMethods(agents: () => RunningAgents | undefined): Record<string, AgentMethod> {
+export function lateAgentMethods(
+  agents: () => RunningAgents | undefined,
+  o: Pick<AgentMethodsOptions, "localDevice" | "definitions">,
+): Record<string, AgentMethod> {
   const made = new WeakMap<RunningAgents, Record<string, AgentMethod>>();
   const methodsOf = (a: RunningAgents): Record<string, AgentMethod> => {
     let m = made.get(a);
-    if (!m) made.set(a, (m = agentMethods({ manager: a.manager, backends: a.backends, computer: a.computer })));
+    if (!m) made.set(a, (m = agentMethods({ manager: a.manager, backends: a.backends, computer: a.computer, localDevice: o.localDevice, ...(o.definitions ? { definitions: o.definitions } : {}) })));
     return m;
   };
   const names = [AGENTS_METHODS.agentBackends.name, AGENTS_METHODS.agentDefinitions.name, AGENTS_METHODS.agentStart.name];

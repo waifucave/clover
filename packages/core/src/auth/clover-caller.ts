@@ -125,5 +125,11 @@ export function gateCloverRequest(role: CloverRole, caller: Caller, method: stri
     if (role === "layer" && spec.change !== undefined) return null;
     return notTheUser(`${method} is the user's`);
   }
+  if (spec.noSessions && isForSession(caller)) return notTheUser(`${method} isn't read for a session`);
   return null;
+}
+
+/** A caller acting for a session: a bot's or agent's here, or one of a paired computer's (`peer.call` as a session). */
+export function isForSession(caller: Caller): boolean {
+  return caller.kind === "session" || (caller.kind === "peer" && caller.sessionId !== undefined);
 }
