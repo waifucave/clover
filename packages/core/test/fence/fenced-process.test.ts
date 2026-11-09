@@ -28,7 +28,7 @@ function world() {
   writeFileSync(join(clover, "run", "token"), "secret-ish");
   const fence = new CloverFence({ os: here, home, cloverHome: clover, temp });
   const spawner = fencedSpawner({ fence });
-  const run = (command: string, who: FencedRun["who"] = { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } }) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who });
+  const run = (command: string, who: FencedRun["who"] = { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } }) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: RUN_BOUND_MS, who });
   return { root, home, clover, temp, outside, fence, spawner, run };
 }
 
@@ -41,11 +41,17 @@ function worldBot() {
   const fence = new CloverFence({ os: here, home, cloverHome: clover, temp });
   const spawner = fencedSpawner({ fence });
   // A bot's own session (main conversation or side thread)
-  const run = (command: string, who: FencedRun["who"] = { caller: botCaller("luna", "s1") }) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who });
+  const run = (command: string, who: FencedRun["who"] = { caller: botCaller("luna", "s1") }) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: RUN_BOUND_MS, who });
   return { root, home, clover, temp, outside, fence, spawner, run };
 }
 
 const ok = (r: FencedRunResult) => r.kind === "exited" && r.code === 0;
+/** A refusal the sandbox gave: the command ran and failed. Never a timeout or a spawn refusal, which `!ok` would also
+ *  be: an assertion that something is denied must not pass because a loaded runner ran out of time. */
+const denied = (r: FencedRunResult) => r.kind === "exited" && r.code !== 0;
+/** Each fenced run's own bound in these suites: generous, as a loaded CI runner (or the Linux VM, where bwrap and the
+ *  supervisor start per run) takes seconds per command. A run that finishes is never waited on longer. */
+const RUN_BOUND_MS = 60_000;
 
 describe("the macOS profile, as text", () => {
   test("Clover home default-deny first; holder folders; outside naming; specific fenced denies", () => {
@@ -952,7 +958,7 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     writeFileSync(gold, "[user]\n\tname = Sol\n");
     expect(revertPlantedGitKeys(new Map([[gold, "[user]\n\tname = Luna\n"]]))).toBeNull();
     expect(readFileSync(gold, "utf8")).toBe("[user]\n\tname = Sol\n");
-  }, 90_000);
+  }, 600_000);
 
   test("bots' folders for runners: its own bot's whole folder reads, every other runner sees none; transcripts hidden", async () => {
     const w = world();
@@ -966,9 +972,9 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
     const owner = { caller: botCaller("luna", "s1") };
     expect(ok(await w.run(`cat '${b("luna", "agents", "t.json")}' && cat '${b("luna", "memory", "MEMORY.md")}' && cat '${b("luna", "memory", "MEMORY.md")}'`, owner))).toBe(true);
     expect(ok(await w.run(`ls '${b("luna")}'`, owner))).toBe(true);
-    expect(ok(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, owner))).toBe(false);
-    expect(ok(await w.run(`cat '${store("key", "s.jsonl")}'`, owner))).toBe(false);
-    expect(ok(await w.run(`echo x > '${store("key", "s2.jsonl")}'`, owner))).toBe(false);
+    expect(denied(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, owner))).toBe(true);
+    expect(denied(await w.run(`cat '${store("key", "s.jsonl")}'`, owner))).toBe(true);
+    expect(denied(await w.run(`echo x > '${store("key", "s2.jsonl")}'`, owner))).toBe(true);
     if (here === "linux") {
       // The tmpfs view holds only its own folder (the folder name is there, nothing of any other bot).
       expect(ok(await w.run(`test "$(ls -A '${b()}')" = luna`, owner))).toBe(true);
@@ -978,18 +984,18 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
       // Its plugin-data doesn't open for it; another plugin's neither opens for anyone else.
       expect(ok(await w.run(`echo x > '${join(w.clover, "plugin-data", "tarot", "d.json")}'`, { caller: { kind: "plugin", pluginId: "tarot" } }))).toBe(true);
     } else {
-      expect(ok(await w.run(`ls '${b()}'`, owner))).toBe(false); // a listing would name every bot: denied outright
+      expect(denied(await w.run(`ls '${b()}'`, owner))).toBe(true); // a listing would name every bot: denied outright
     }
     // Everyone else, its own agent and a coding session included: no bot folder, and the store still hidden.
     for (const who of [{ caller: session("c1") }, { caller: agent("luna") }]) {
-      expect(ok(await w.run(`cat '${b("luna", "agents", "t.json")}'`, who))).toBe(false);
-      expect(ok(await w.run(`cat '${b("luna", "memory", "MEMORY.md")}'`, who))).toBe(false);
-      expect(ok(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, who))).toBe(false);
+      expect(denied(await w.run(`cat '${b("luna", "agents", "t.json")}'`, who))).toBe(true);
+      expect(denied(await w.run(`cat '${b("luna", "memory", "MEMORY.md")}'`, who))).toBe(true);
+      expect(denied(await w.run(`cat '${b("sol", "memory", "MEMORY.md")}'`, who))).toBe(true);
       if (here === "linux") expect(ok(await w.run(`test -z "$(ls -A '${b()}')"`, who))).toBe(true);
-      else expect(ok(await w.run(`ls '${b()}'`, who))).toBe(false);
-      expect(ok(await w.run(`cat '${store("key", "s.jsonl")}'`, who))).toBe(false);
+      else expect(denied(await w.run(`ls '${b()}'`, who))).toBe(true);
+      expect(denied(await w.run(`cat '${store("key", "s.jsonl")}'`, who))).toBe(true);
     }
-  }, 90_000);
+  }, 600_000);
 
   test("ordinary work runs: a shell pipeline, git init and commit in the project, mktemp", async () => {
     const w = world();
