@@ -1,6 +1,9 @@
 // scripts/dev-app.ts's plan. Nothing here builds or opens the app: a window on this screen is CI's alone (plan §8).
 import { describe, expect, test } from "bun:test";
-import { describeDevAppPlan, devAppPlan } from "./dev-app";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describeDevAppPlan, devAppPlan, electronBinaryMissing } from "./dev-app";
 
 const plan = (argv: string[], platform: NodeJS.Platform = "linux", env: NodeJS.ProcessEnv = {}) => devAppPlan({ argv, env, platform, userHome: "/home/u" });
 
@@ -39,5 +42,18 @@ describe("the dev app's plan", () => {
       "  run      /x/electron apps/desktop",
       "  as       Clover Dev (com.waifucave.clover.dev), CLOVER_HOME=/home/u/.clover-dev CLOVER_PROFILE=dev",
     ]);
+  });
+});
+
+describe("Electron's binary", () => {
+  test("is missing until its install step wrote path.txt (bun skips the postinstall)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-electron-"));
+    try {
+      expect(electronBinaryMissing(dir)).toBe(true);
+      writeFileSync(join(dir, "path.txt"), "Electron.app/Contents/MacOS/Electron");
+      expect(electronBinaryMissing(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
