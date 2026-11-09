@@ -111,6 +111,7 @@ describe("RemoteMcpListings: revokes and clashes", () => {
     return {
       listings,
       revoke: (id: string) => { revoked.add(id); for (const w of watchers) w({ type: "revoked", id }); },
+      repair: (id: string) => { revoked.delete(id); for (const w of watchers) w({ type: "added", device: devices.get(id)! }); },
       hello: (d: string) => { for (const h of hellos) h(d); },
       fetching: () => until(() => pending.length > 0, 2000, "the fetch"),
       answer: async (servers: unknown[] = [entry("blender")]) => { await until(() => pending.length > 0, 2000, "the fetch"); pending.shift()!({ servers }); await listings.idle(); },
@@ -129,6 +130,17 @@ describe("RemoteMcpListings: revokes and clashes", () => {
     r.hello("studio");
     await new Promise((res) => setTimeout(res, 50));
     expect(r.asked()).toBe(0);
+  });
+
+  test("a device paired again under the same id is heard again", async () => {
+    const r = rig();
+    r.hello("studio");
+    await r.answer();
+    r.revoke("studio");
+    r.repair("studio");
+    r.hello("studio");
+    await r.answer();
+    expect(r.listings.listing("blender", ["studio"])?.plugin).toBe("acme/blender");
   });
 
   test("a fetch in flight at the revoke keeps nothing", async () => {

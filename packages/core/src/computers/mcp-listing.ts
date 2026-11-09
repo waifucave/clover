@@ -235,7 +235,7 @@ export class RemoteMcpListings {
   readonly #listings = new Map<string, McpListing[]>();
   readonly #fetching = new Map<string, { again: boolean }>();
   readonly #off: Unsubscribe[] = [];
-  /** Devices revoked while this ran: a fetch in flight for one keeps nothing. */
+  /** Devices revoked while this ran (until paired again): a fetch in flight for one keeps nothing. */
   readonly #revoked = new Set<string>();
   #closed = false;
 
@@ -243,7 +243,11 @@ export class RemoteMcpListings {
     this.#o = o;
     this.#off.push(o.onHello((device) => this.#heard(device)));
     this.#off.push(o.devices.watch((change) => {
-      if (change.type !== "revoked") return;
+      if (change.type !== "revoked") {
+        // Paired again under the same id: its hellos count again.
+        if (change.device.revokedAt === undefined) this.#revoked.delete(change.device.id);
+        return;
+      }
       this.#revoked.add(change.id);
       this.#listings.delete(change.id);
     }));
