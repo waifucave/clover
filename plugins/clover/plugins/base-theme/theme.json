@@ -161,7 +161,7 @@
     "plugin.clover.diff.removed.soft": "#C2364F17",
     "plugin.clover.branch": "#6F52C4",
     "plugin.clover.unread": "#8A8A8A",
-    "plugin.clover.mark": "#C2387A"
+    "plugin.clover.mark": "#3D7655"
   },
   "dark": {
     "tokens": {
@@ -226,7 +226,7 @@
       "plugin.clover.diff.removed.soft": "#DA6F8024",
       "plugin.clover.branch": "#B19EDE",
       "plugin.clover.unread": "#848484",
-      "plugin.clover.mark": "#FF7AB6"
+      "plugin.clover.mark": "#FFFFFF"
     }
   },
   "css": "theme.css"

@@ -22,7 +22,11 @@ describe("throwaway secret stores", () => {
 
   test("on Linux only inside the private bus wrapper", () => {
     expect(throwawaySecretStoreAvailable({}, "linux")).toBe(false);
-    expect(throwawaySecretStoreAvailable({ CLOVER_PRIVATE_SECRET_SERVICE: "1" }, "linux")).toBe(true);
+    const bus = "unix:path=/tmp/dbus-private,guid=abc";
+    expect(throwawaySecretStoreAvailable({ CLOVER_PRIVATE_SECRET_SERVICE: bus, DBUS_SESSION_BUS_ADDRESS: bus }, "linux")).toBe(true);
+    // A bare flag, or a bus that isn't the session's, never counts.
+    expect(throwawaySecretStoreAvailable({ CLOVER_PRIVATE_SECRET_SERVICE: "1" }, "linux")).toBe(false);
+    expect(throwawaySecretStoreAvailable({ CLOVER_PRIVATE_SECRET_SERVICE: bus, DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" }, "linux")).toBe(false);
     expect(throwawaySecretStoreAvailable({}, "darwin")).toBe(true);
   });
 
