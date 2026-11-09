@@ -27,7 +27,6 @@ import { MemoryNetwork } from "../src/links/memory-wire";
 import type { DeviceLinks } from "../src/links/node";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../src/secrets/clover-secret-store";
 import { mainSessionIdFor } from "../src/sessions/ids";
-import { PASTE_CANT_ASK } from "../src/tree/terminals";
 
 const clock = new SystemClock();
 const posix = process.platform !== "win32";
@@ -86,17 +85,25 @@ async function boot(o: { approvals?: { request(r: ApprovalRequest): Promise<{ al
 const LUNA = { kind: "session", sessionId: mainSessionIdFor("luna"), sessionKind: "bot", bot: "luna" } as const;
 
 describe("a bot's terminal on a real daemon", () => {
-  test("opens and runs; a paste of several lines is refused with a reason while there's no broker, never dropped silently", async () => {
+  test("opens and runs; a paste of several lines waits on the daemon's own broker's card, never dropped silently", async () => {
     if (!posix || typeof Bun.Terminal !== "function") return;
     const { node } = await boot();
+    const broker = daemon!.cloverParts.broker()!;
     let seen = "";
     node.terminals.onOutput((out) => { seen += out.data; });
     const t = await node.terminals.open({ computer: "Studio", cols: 80, rows: 24, session: LUNA.sessionId }, LUNA);
     await waitFor("the shell", () => seen.includes("ready"));
     await node.terminals.write(t.terminalId, "hello from luna\n");
     await waitFor("the echo", () => seen.includes("hello from luna"));
-    const refused = await node.terminals.write(t.terminalId, "one\ntwo\n", { paste: true }).catch((e: Error) => e);
-    expect((refused as Error).message).toBe(PASTE_CANT_ASK);
+    // The daemon's one broker (INT, #292) asks: a card shows, and the paste waits for it.
+    const pasted = node.terminals.write(t.terminalId, "one\ntwo\n", { paste: true }).catch((e: Error) => e);
+    await waitFor("the paste's card", () => broker.cards().length === 1);
+    let settled = false;
+    void pasted.then(() => (settled = true));
+    await Bun.sleep(50);
+    // Nothing went in while the card is open (a no or a yes is the next test's, with a broker of its own).
+    expect(settled).toBe(false);
+    expect(seen.includes("two")).toBe(false);
     await node.terminals.close(t.terminalId);
   }, 30_000);
 
