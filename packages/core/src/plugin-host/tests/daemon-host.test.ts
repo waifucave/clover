@@ -14,6 +14,12 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { hostedRecordOf, pluginLogWriter, startPluginHost } from "../daemon-host";
 
+/** Waits for an OK'd plugin to leave "found" (its start runs after the answer), up to 5 s: a fixed sleep lost the race
+ *  under a loaded machine. */
+async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
+  for (let i = 0; i < 500 && registry.get(id)?.state === "found"; i++) await Bun.sleep(10);
+}
+
 const USER: Caller = { kind: "user", client: "app" };
 
 describe("startPluginHost", () => {
@@ -42,7 +48,7 @@ describe("startPluginHost", () => {
       const { card } = await opened.registry.installed("tarot", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "tarot");
       expect(opened.registry.get("tarot")?.state).toBe("running");
       expect(hostedRecordOf(opened.registry, home, "tarot")).toMatchObject({ id: "tarot", folder, root: folder, entry: "host/index.js" });
 
@@ -96,7 +102,7 @@ describe("startPluginHost", () => {
       const { card } = await opened.registry.installed("tarot", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "tarot");
       const err = (await ph.host.invoke({ pluginId: "tarot", handler: "hi", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(err).toBeInstanceOf(ContractError);
       expect(err.message).toContain("no host bundles in this build");

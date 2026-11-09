@@ -16,8 +16,16 @@ import { HookRunner } from "../../plugins/hook-runner";
 import { openPluginRegistry } from "../open";
 import { LAUNCH_SERVICES_DENIES, pluginFenceProfile } from "../plugin-fence";
 import { ensurePluginRunFiles, guardedMcpServer } from "../plugin-run";
+import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
 const USER: Caller = { kind: "user", client: "app" };
+
+/** Waits for an OK'd plugin to leave "found" (its start runs after the answer), up to 5 s: a fixed sleep lost the race
+ *  under a loaded machine. */
+async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
+  for (let i = 0; i < 500 && registry.get(id)?.state === "found"; i++) await Bun.sleep(10);
+}
+
 const temps: string[] = [];
 const temp = (prefix: string) => {
   const d = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -124,7 +132,7 @@ const untouched = (w: ReturnType<typeof world>) => {
   expect(existsSync(join(w.root, "planted.txt"))).toBe(false);
 };
 
-describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () => {
+darwinDescribe("the plugin-process fence", () => {
   test("the launch-services list is the agent runtime's", () => {
     const dist = dirname(Bun.resolveSync("@waifucave/clover-agent-runtime", import.meta.dir));
     const text = [...new Bun.Glob("**/*.js").scanSync({ cwd: dist })].map((f) => readFileSync(join(dist, f), "utf8")).find((t) => t.includes("com.apple.lsd.mapdb"))!;
@@ -156,7 +164,7 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
         const { card } = await opened.registry.installed("spy", "app");
         const shown = broker.cards().find((c) => c.id === card)!;
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-        await Bun.sleep(5);
+        await approved(opened.registry, "spy");
         const out = (await ph.host.invoke({ pluginId: "spy", handler: "probe", args: null, caller: USER })) as Record<string, string>;
         expect(out).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "EPERM", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
         untouched(w);
@@ -218,7 +226,7 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
       const { card } = await opened.registry.installed("own", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "own");
       const run = (pluginId: string, handler: string) => ph.host.invoke({ pluginId, handler, args: null, caller: USER });
       expect(await run("clover", "ffi")).toContain("bun:ffi isn't available in a process that holds more than one plugin");
       expect(await run("clover", "addon")).toContain("a native addon doesn't load in a process that holds more than one plugin");
