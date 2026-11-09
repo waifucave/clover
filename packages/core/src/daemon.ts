@@ -1350,7 +1350,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // On a failure each runner falls back to its own (the supervisor refuses to spawn; a hook uses a private temp one).
   let pluginRun: PluginRunGuard | undefined;
   try {
-    pluginRun = { files: ensurePluginRunFiles(dirs.runDir) };
+    pluginRun = { files: ensurePluginRunFiles(dirs.runDir, { cloverHome }) };
   } catch (err) {
     console.error(`plugin run files: ${(err as Error).message}`);
   }
@@ -3495,7 +3495,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let partsStopping = false;
   // B-M2: the plugin registry and the plugin host start once the store answers, whatever the links do (a Mac with no
   // sidecar, a test daemon without links): plugins don't wait on the device links. The bot side takes this registry.
-  const stageBundled = async (): Promise<string | undefined> => {
+  const stageBundled = async (): Promise<{ dir: string; digests: ReadonlyMap<string, string> } | undefined> => {
     const log = (line: string) => console.error(`[plugins] ${line}`);
     let source: { root: string; manifest: BundledManifest } | undefined;
     if (DIST_BUILD) {
@@ -3513,8 +3513,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     }
     if (source === undefined) return undefined;
     const staged = stageBundledPlugins({ ...source, out: stagedBundledDir(cloverHome), log });
-    if (staged.dir !== undefined) log(`bundled: ${staged.staged.join(", ") || "none"}${staged.refused.length > 0 ? ` (refused ${staged.refused.length})` : ""}`);
-    return staged.dir;
+    if (staged.dir === undefined) return undefined;
+    log(`bundled: ${staged.staged.join(", ") || "none"}${staged.refused.length > 0 ? ` (refused ${staged.refused.length})` : ""}`);
+    return { dir: staged.dir, digests: staged.digests };
   };
   const startPlugins = async (): Promise<OpenedRegistry["registry"] | undefined> => {
     if (opts.plugins === false) return undefined;
@@ -3529,12 +3530,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     });
     mkdirSync(join(cloverHome, "plugins"), { recursive: true, mode: 0o700 });
     const opened = await openPluginRegistry({
-      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled] } : {}),
+      cloverHome, os: hostOs(), secrets: contractSecrets, ...(bundled !== undefined ? { bundledDirs: [bundled.dir] } : {}),
       log: (line) => console.error(`[plugins] ${line}`),
     });
     partsRegistry = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
+      ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line),
     })))(opened.registry);
     Object.assign(cloverLaneHandlers, laneMethodHandlers({
@@ -3592,21 +3594,27 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     void stopSignal.then(done);
     function done() { clearTimeout(timer); off(); resolve(); }
   });
-  const partsReady = (async () => {
-    if (opts.links !== false) {
-      for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
-        await untilStoreAnswers();
-        if (partsStopping) return;
-      }
+  // The plugins start once the store answers (a locked one: once it unlocks), and wait on nothing else: not this device's
+  // key, which gates the links alone (#322's review, S1), and not the links, whatever they do (no sidecar, a hung
+  // wire). A registry or host that can't start leaves the rest running; one that finishes starting after the stop
+  // closes itself as it does.
+  const pluginsStarted = (async (): Promise<OpenedRegistry["registry"] | undefined> => {
+    while (contractSecrets.status().state === "locked") {
+      await untilStoreAnswers();
+      if (partsStopping) return undefined;
     }
-    // The plugins start beside the links, whatever the links do (no sidecar, a hung wire); a registry or host that can't
-    // start leaves the rest running. One that finishes starting after the stop closes itself as it does.
-    const pluginsStarted = startPlugins().catch((err: unknown) => {
-      console.error(`[plugins] not started: ${(err as Error).message}`);
-      return undefined;
-    });
-    void pluginsStarted.then(async () => { if (partsStopping) await closeStarted(); });
+    return startPlugins();
+  })().catch((err: unknown) => {
+    console.error(`[plugins] not started: ${(err as Error).message}`);
+    return undefined;
+  });
+  void pluginsStarted.then(async () => { if (partsStopping) await closeStarted(); });
+  const partsReady = (async () => {
     if (opts.links === false) return void (await pluginsStarted);
+    for (let loaded = keyLoaded; !loaded; loaded = await loadDeviceId()) {
+      await untilStoreAnswers();
+      if (partsStopping) return;
+    }
     const started = await startDaemonLinks({
       home: dirs.home, store: contractSecrets, clock: partsClock, handlers: cloverLaneHandlers,
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),

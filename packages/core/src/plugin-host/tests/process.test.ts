@@ -148,6 +148,37 @@ describe("the process's heartbeat", () => {
   });
 });
 
+describe("the process's streams", () => {
+  test("a worker's chunk reaches the daemon only for a call made to its own plugin", async () => {
+    const [daemon, host] = loopbackPeers();
+    const chunks: unknown[] = [];
+    daemon.handle("pluginHost.chunk", (x) => void chunks.push(x));
+    const workers = new Map<string, RpcPeer>();
+    const release = new Map<string, () => void>();
+    const mux = new HostMux({
+      daemon: host,
+      spawnWorker: (x) => {
+        const [w, worker] = loopbackPeers();
+        worker.handle("pluginHost.start", () => ({ ok: true }));
+        worker.handle("ping", () => "pong");
+        worker.handle("pluginHost.invoke", (p: { callId: string }) => new Promise((resolve) => release.set(p.callId, () => resolve(1))));
+        workers.set(x.pluginId, worker);
+        return { peer: w, terminate: () => {}, onExit: () => {} };
+      },
+    });
+    for (const pluginId of ["alpha", "bravo"]) await daemon.request("pluginHost.start", { pluginId, folder: "/x", entry: "e.js", runtime: "bun", dataFolder: "/d", process: "shared" });
+    const call = daemon.request("pluginHost.invoke", { callId: "c-alpha", pluginId: "alpha" });
+    await Bun.sleep(5);
+    workers.get("bravo")!.notify("pluginHost.chunk", { callId: "c-alpha", seq: 0, value: "forged" });
+    workers.get("alpha")!.notify("pluginHost.chunk", { callId: "c-alpha", seq: 0, value: "real" });
+    await Bun.sleep(5);
+    release.get("c-alpha")!();
+    await call;
+    expect(chunks).toEqual([{ callId: "c-alpha", seq: 0, value: "real" }]);
+    mux.close();
+  });
+});
+
 describe("a guarded plugin-host process (per-worker folders)", () => {
   test("each worker is held to its own plugin's folder: another plugin's file, or a nested worker claiming the host, is refused", async () => {
     const { hostProcessLaunch } = await import("../launch");
@@ -220,5 +251,42 @@ export const nested = () => new Promise((resolve) => {
     const later = (await host.invoke({ pluginId: "lazy", handler: "late", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
     expect([later.code, later.message.includes("a Bun macro")]).toEqual(["failed", true]);
     expect(existsSync(ran)).toBe(false);
+  }, 60_000);
+});
+
+// #322's review, S4: a host process is its group's leader, and ending it ends what its plugins started.
+describe.skipIf(process.platform === "win32")("what a plugin starts ends with its host process", () => {
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const gone = async (pid: number) => { for (let i = 0; i < 100 && alive(pid); i++) await Bun.sleep(50); return !alive(pid); };
+  const start = async () => {
+    const { hostProcessLaunch } = await import("../launch");
+    const base = mkdtempSync(join(tmpdir(), "clover-b2-group-"));
+    const folder = join(base, "plugins", "spawner");
+    mkdirSync(join(folder, "host"), { recursive: true });
+    writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
+    // A child that ignores SIGTERM, so only the SIGKILL after the grace ends it.
+    writeFileSync(join(folder, "host", "index.js"), `export const spawn = () => Bun.spawn(["/bin/sh", "-c", "trap '' TERM; while :; do sleep 1; done"], { stdio: ["ignore", "ignore", "ignore"] }).pid;\n`);
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [] });
+    const p = spawnHostProcess({ ...launch, graceMs: 300 });
+    processes.push(p);
+    const records = new Map<string, HostedRecord>([["spawner", { id: "spawner", source: "local", folder, entry: "host/index.js", dataFolder: join(base, "data") }]]);
+    const host = new CorePluginHost({ clock: new SystemClock(), computer: "Studio", record: (id) => records.get(id), connect: () => p.peer });
+    const child = await host.invoke({ pluginId: "spawner", handler: "spawn", args: null, caller: USER }) as number;
+    expect(alive(child)).toBe(true);
+    return { p, child };
+  };
+
+  test("the daemon's stop: the host and a worker's Bun.spawn child are gone", async () => {
+    const { p, child } = await start();
+    p.kill();
+    expect(await gone(p.pid!)).toBe(true);
+    expect(await gone(child)).toBe(true);
+  }, 60_000);
+
+  test("the host crashing: a worker's Bun.spawn child is gone too", async () => {
+    const { p, child } = await start();
+    process.kill(p.pid!, "SIGKILL");
+    expect(await gone(p.pid!)).toBe(true);
+    expect(await gone(child)).toBe(true);
   }, 60_000);
 });

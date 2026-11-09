@@ -8,10 +8,12 @@
 //   copy theirs from it.
 // * The router: the process check (S4) and the capability gate, in front of the areas it serves (none yet: every call
 //   answers `refused`, "not served on this computer", until B-M2's API PR adds them).
-// * Logs: a worker's console lines go to `<home>/logs/plugins/<id>.log`, a process's own output to the daemon's log.
-// * `pluginSecrets`: the contract store narrowed to `get`, for the model plugins (lane A). A plugin's own secrets sit
-//   under `{ owner: { kind: "plugin", pluginId }, name }`.
-import { appendFileSync, mkdirSync } from "node:fs";
+// * Logs: a worker's console lines go to `<home>/logs/plugins/<id>.log` (rate-limited, rotated at a cap:
+//   `pluginLogWriter`), a process's own output to the daemon's log.
+// * `pluginSecrets`: one plugin's own items, read-only, for the model plugins (lane A): `forPlugin(id).get(name)`
+//   reads `{ owner: { kind: "plugin", pluginId: id }, name }` and nothing else, so no reference to the core's, the
+//   user's or another plugin's items passes through (#322's review, S3).
+import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
@@ -19,7 +21,7 @@ import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import { guardApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
-import type { SecretStore } from "../contracts/secret-store";
+import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { createApiRouter, type ApiHandlers } from "./api/router";
 import { pluginDataFolder, pluginPath } from "./paths";
 import { CorePluginHost, type HostedRecord } from "./core-host";
@@ -34,10 +36,31 @@ export interface DaemonPluginHost {
   readonly host: PluginHost;
   /** The registry it serves. */
   readonly registry: PluginRegistry;
-  /** The contract store narrowed to `get`: a plugin's own items are `{ owner: { kind: "plugin", pluginId }, name }`. */
-  readonly pluginSecrets: Pick<SecretStore, "get">;
+  /** One plugin's own items, read-only: the owner is fixed as `{ kind: "plugin", pluginId }`. */
+  readonly pluginSecrets: PluginSecrets;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
+}
+
+/** A plugin's own secrets, read-only, by name: the owner is the plugin the handle was made for, never a reference. */
+export interface PluginSecrets {
+  forPlugin(pluginId: string): { get(name: string): Promise<SecretValue | null> };
+}
+
+/** `PluginSecrets` over the contract store. */
+export function pluginSecretsOf(store: Pick<SecretStore, "get">): PluginSecrets {
+  return {
+    forPlugin(pluginId) {
+      if (typeof pluginId !== "string" || pluginId === "") throw new ContractError("invalid", "a plugin's secrets need its id");
+      const owner = Object.freeze({ kind: "plugin" as const, pluginId });
+      return Object.freeze({
+        get: (name: string) => {
+          if (typeof name !== "string" || name === "") return Promise.reject(new ContractError("invalid", `${pluginId}'s secret needs a name`));
+          return store.get({ owner, name });
+        },
+      });
+    },
+  };
 }
 
 export interface StartPluginHostOptions {
@@ -50,9 +73,59 @@ export interface StartPluginHostOptions {
   /** The daemon's log, for a process's own output. */
   log?: (line: string) => void;
   clock?: Clock;
+  /** The bundled plugins' files as staging verified them (`stageBundledPlugins`' `digests`): a bundled plugin's entry
+   *  runs only from bytes matching its digest, and not at all without one. */
+  bundledDigests?: ReadonlyMap<string, string>;
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
   env?: Readonly<Record<string, string | undefined>>;
+}
+
+/** A plugin's log file's cap: past it, the file moves to `<id>.log.1` (replacing the one before) and a new one starts. */
+export const PLUGIN_LOG_MAX_BYTES = 4 * 1024 * 1024;
+/** Lines a plugin may log per `PLUGIN_LOG_WINDOW_MS`; the rest of that window's are counted, then noted once. */
+export const PLUGIN_LOG_LINES_PER_WINDOW = 1_000;
+export const PLUGIN_LOG_WINDOW_MS = 10_000;
+
+/** Writes plugins' console lines to `<dir>/<id>.log`, rate-limited per plugin and rotated at `PLUGIN_LOG_MAX_BYTES`
+ *  (#322's review): a noisy plugin can't fill the disk. */
+export function pluginLogWriter(o: { dir: string; log: (line: string) => void; now: () => number; maxBytes?: number; perWindow?: number; windowMs?: number }): (pluginId: string, lines: readonly string[]) => void {
+  const maxBytes = o.maxBytes ?? PLUGIN_LOG_MAX_BYTES;
+  const perWindow = o.perWindow ?? PLUGIN_LOG_LINES_PER_WINDOW;
+  const windowMs = o.windowMs ?? PLUGIN_LOG_WINDOW_MS;
+  const windows = new Map<string, { start: number; written: number; dropped: number }>();
+  return (pluginId, lines) => {
+    const now = o.now();
+    let w = windows.get(pluginId);
+    const out: string[] = [];
+    const stamp = new Date(now).toISOString();
+    if (w === undefined || now - w.start >= windowMs) {
+      if (w !== undefined && w.dropped > 0) out.push(`${stamp} [clover] ${w.dropped} more lines dropped (over ${perWindow} in ${windowMs / 1000} s)`);
+      w = { start: now, written: 0, dropped: 0 };
+      windows.set(pluginId, w);
+    }
+    for (const l of lines) {
+      if (w.written < perWindow) {
+        w.written++;
+        out.push(`${stamp} ${l}`);
+      } else w.dropped++;
+    }
+    if (out.length === 0) return;
+    try {
+      const file = `${pluginPath(o.dir, pluginId)}.log`;
+      mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+      let size = 0;
+      try {
+        size = statSync(file).size;
+      } catch {
+        size = 0;
+      }
+      if (size >= maxBytes) renameSync(file, `${file}.1`);
+      appendFileSync(file, out.map((l) => `${l}\n`).join(""), { mode: 0o600 });
+    } catch (err) {
+      o.log(`[plugin-host] ${pluginId}'s log not written: ${(err as Error).message}`);
+    }
+  };
 }
 
 /** The registry states a plugin's host half may run in: OK'd and on (`running`, `waiting`), or stopped by the crash
@@ -62,7 +135,7 @@ const STARTABLE = new Set(["running", "waiting", "stopped"]);
 
 /** The core's record of a plugin it may start, from the registry's: undefined when it isn't installed, isn't OK'd and
  *  on, or has no host code. */
-export function hostedRecordOf(registry: Pick<PluginRegistry, "get">, home: string, pluginId: string): HostedRecord | undefined {
+export function hostedRecordOf(registry: Pick<PluginRegistry, "get">, home: string, pluginId: string, verified?: ReadonlyMap<string, string>): HostedRecord | undefined {
   const r = registry.get(pluginId);
   const host = r?.manifest?.host;
   if (r === undefined || host === undefined || !r.enabled || !STARTABLE.has(r.state)) return undefined;
@@ -73,7 +146,19 @@ export function hostedRecordOf(registry: Pick<PluginRegistry, "get">, home: stri
     root: top?.folder ?? r.folder,
     entry: host.entry,
     dataFolder: pluginDataFolder(home, pluginId),
+    // A bundled plugin runs only the entry bytes its staging verified (S2); with no digest recorded, it doesn't run.
+    ...(r.source === "bundled" ? { entrySha256: verifiedDigest(verified, join(r.folder, host.entry)) } : {}),
   };
+}
+
+function verifiedDigest(verified: ReadonlyMap<string, string> | undefined, file: string): string {
+  let real: string;
+  try {
+    real = realpathSync(file);
+  } catch {
+    return "";
+  }
+  return verified?.get(real) ?? "";
 }
 
 function installRecordOf(r: PluginRecord): InstallRecord {
@@ -96,7 +181,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   let launch: HostProcessLaunch | Error;
   try {
     launch = typeof o.launch === "function" ? await o.launch()
-      : o.launch ?? await hostProcessLaunch({ runDir: join(o.home, "run", "plugin-host"), computer: o.computer, base });
+      : o.launch ?? await hostProcessLaunch({ runDir: join(o.home, "run", "plugin-host"), computer: o.computer, base, cloverHome: o.home });
   } catch (err) {
     launch = err instanceof Error ? err : new Error(String(err));
     log(`[plugin-host] plugin processes can't start: ${launch.message}`);
@@ -104,20 +189,12 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   const processes = new Map<string, { peer: RpcPeer; kill(): void }>();
   let closed = false;
 
-  const pluginLog = (pluginId: string, lines: readonly string[]) => {
-    try {
-      const file = `${pluginPath(join(o.home, "logs", "plugins"), pluginId)}.log`;
-      mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-      appendFileSync(file, lines.map((l) => `${new Date().toISOString()} ${l}\n`).join(""), { mode: 0o600 });
-    } catch (err) {
-      log(`[plugin-host] ${pluginId}'s log not written: ${(err as Error).message}`);
-    }
-  };
+  const pluginLog = pluginLogWriter({ dir: join(o.home, "logs", "plugins"), log, now: () => Date.now() });
 
   const host = new CorePluginHost({
     clock: o.clock ?? new SystemClock(),
     computer: o.computer,
-    record: (id) => hostedRecordOf(o.registry, o.home, id),
+    record: (id) => hostedRecordOf(o.registry, o.home, id, o.bundledDigests),
     connect(process: HostProcess, pluginId: string): RpcPeer {
       if (closed) throw new ContractError("cancelled", "the plugin host is closing");
       if (process === "own" && o.registry.get(pluginId)?.manifest?.host?.runtime === "node") {
@@ -153,7 +230,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   const offRegistry = o.registry.watch((c) => {
     if (c.type === "entries") return;
     const fail = (err: unknown) => log(`[plugin-host] ${c.id}: ${(err as Error).message}`);
-    if (c.type === "removed" || hostedRecordOf(o.registry, o.home, c.id) === undefined) {
+    if (c.type === "removed" || hostedRecordOf(o.registry, o.home, c.id, o.bundledDigests) === undefined) {
       startedFrom.delete(c.id);
       return void host.removed(c.id).catch(fail);
     }
@@ -163,7 +240,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   return {
     host,
     registry: o.registry,
-    pluginSecrets: { get: (ref) => o.secrets.get(ref) },
+    pluginSecrets: pluginSecretsOf(o.secrets),
     async close() {
       if (closed) return;
       closed = true;
