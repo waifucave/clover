@@ -17,6 +17,7 @@ import type { SecretStore } from "../contracts/secret-store";
 import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
+import { PluginSecretFiles } from "../registry/secret-files";
 
 /** The last `n` lines of a plugin's log (`<home>/logs/plugins/<id>.log`). */
 export function pluginLogTail(home: string, pluginId: string, n: number): string[] {
@@ -66,6 +67,8 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
     rmSync(`${pluginPath(join(o.home, "settings", "plugins"), pluginId)}.json`, { force: true });
     rmSync(`${pluginPath(join(o.home, "settings", "plugin-stores"), pluginId)}.json`, { force: true });
   }
+  // Its secrets' files (`${secretFile:…}`) go with it.
+  new PluginSecretFiles(o.home).releasePlugin(o.record.id);
   const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
   if (!existsSync(data)) return {};
   const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);

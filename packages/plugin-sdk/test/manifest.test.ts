@@ -1,7 +1,7 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
-import { describeOk, localNetworkHosts, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { describeOk, interpolate, localNetworkHosts, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -422,6 +422,21 @@ describe("the OK's text", () => {
     expect(describeOk(r, { os: "macos" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this Mac could read.");
     expect(describeOk(r, { os: "linux" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this computer could read.");
     expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { plain: { type: "stdio", command: "luna-tools" } } } }).envSecrets).toEqual([]);
+  });
+
+  // The controller's ruling on #377: a key handed over as a 0600 file instead of the environment.
+  test("${secretFile:k} is a stdio server's env or args only, and a server given its key that way shows no env warning", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: { filed: { type: "stdio", command: "luna-mcp", args: ["--key-file", "${secretFile:LUNA_KEY}"], env: { LUNA_KEY_FILE: "${secretFile:LUNA_KEY}" } } } },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.envSecrets).toEqual([]);
+    expect(describeOk(r, { os: "macos" }).some((l) => l.includes("environment"))).toBe(false);
+    const http = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { web: { type: "http", url: "https://x.example/mcp", headers: { Authorization: "${secretFile:LUNA_KEY}" } } } } });
+    expect(http.issues.some((i) => i.code === "secret_file_outside_stdio")).toBe(true);
+    expect(parseInterpolation("${secretFile:LUNA_KEY}")).toEqual({ ok: true, parts: [{ kind: "secretFile", key: "LUNA_KEY" }] });
+    expect(interpolate("--key=${secretFile:K}", { plugin: "", data: "", setting: () => undefined, secret: () => "v", secretFile: (k) => `/run/${k}` })).toBe("--key=/run/K");
   });
 
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {

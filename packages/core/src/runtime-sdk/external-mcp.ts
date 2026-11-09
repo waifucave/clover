@@ -33,6 +33,8 @@ import type { McpServerSettingsEntry, Settings } from "../settings";
 import { extractRawMcpServers, parseProjectMcpServers, projectMcpConfigPath } from "../agent/mcp/project-file";
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
 import { guardedMcpServer, type PluginRunGuard } from "../registry/plugin-run";
+import { interpolate, type InterpolationValues } from "@waifucave/clover-plugin-sdk";
+import type { PluginSecretFiles } from "../registry/secret-files";
 
 // The project `.mcp.json` schema/parser now lives in `../agent/mcp/project-file` — shared with
 // `agent/mcp/manager.ts`'s own reader and the CLI's `mcp add/remove --scope project`/`mcp get`
@@ -196,4 +198,47 @@ export function pluginMcpServersFor(pluginRoots: readonly string[], readFile: (p
     }
   }
   return out;
+}
+
+/** What a plugin's stdio server's `${…}` are filled from (spec §5.9): its folder, its data folder, its settings and its
+ *  own secrets; `${secretFile:k}` becomes the path of a 0600 file holding secret `k` (`PluginSecretFiles`), which
+ *  `release` removes when the server stops. */
+export interface PluginServerValues {
+  pluginId: string;
+  /** The server's name in the manifest's `mcpServers`. */
+  server: string;
+  dataDir: string;
+  setting(key: string): string | undefined;
+  secret(key: string): string | undefined;
+  secretFiles: PluginSecretFiles;
+}
+
+/** `pluginStdioMcpServer` with the entry's placeholders filled; a missing setting or secret throws (a server never
+ *  starts half-configured), and any secret file written on the way is removed again. */
+export function resolvedPluginStdioMcpServer(
+  entry: { command: string; args?: string[]; env?: Record<string, string>; versionNegotiation?: VersionNegotiation },
+  pluginRoot: string,
+  guard: PluginRunGuard,
+  values: PluginServerValues,
+): { config: McpServerConfig; release(): void } {
+  const release = () => values.secretFiles.release(values.pluginId, values.server);
+  const fill: InterpolationValues = {
+    plugin: pluginRoot, data: values.dataDir, setting: values.setting, secret: values.secret,
+    secretFile: (key) => {
+      const v = values.secret(key);
+      return v === undefined ? undefined : values.secretFiles.write(values.pluginId, values.server, key, v);
+    },
+  };
+  try {
+    const resolved = {
+      ...entry,
+      command: interpolate(entry.command, fill),
+      ...(entry.args !== undefined ? { args: entry.args.map((a) => interpolate(a, fill)) } : {}),
+      ...(entry.env !== undefined ? { env: Object.fromEntries(Object.entries(entry.env).map(([k, v]) => [k, interpolate(v, fill)])) } : {}),
+    };
+    return { config: pluginStdioMcpServer(resolved, pluginRoot, guard, values.pluginId), release };
+  } catch (err) {
+    release();
+    throw err;
+  }
 }

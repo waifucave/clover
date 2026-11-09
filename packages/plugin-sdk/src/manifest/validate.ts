@@ -21,7 +21,7 @@ import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, POINT_NAME_RE } from "./fields";
 import { checkArgsSchema } from "./args";
-import { parseInterpolation, usesSecrets } from "./interpolation";
+import { parseInterpolation, usesSecretFiles, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
@@ -210,8 +210,9 @@ function hostOf(url: string): { host?: string; dynamic: boolean } {
   }
 }
 
-/** Checks a value that may hold interpolation (§5.9); `secrets` says whether `${secret:…}` may appear. */
-function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: boolean): boolean {
+/** Checks a value that may hold interpolation (§5.9); `secrets` says whether `${secret:…}` may appear, `secretFiles`
+ *  whether `${secretFile:…}` may (a stdio server's `env` and `args`). */
+function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: boolean, secretFiles = false): boolean {
   if (typeof value !== "string") return true;
   const parsed = parseInterpolation(value);
   if (!parsed.ok) {
@@ -220,6 +221,10 @@ function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: bo
   }
   if (!secrets && usesSecrets(parsed.parts)) {
     f.error("entry", "secret_outside_env", path, "secrets may appear only in `env` and `headers`");
+    return false;
+  }
+  if (!secretFiles && usesSecretFiles(parsed.parts)) {
+    f.error("entry", "secret_file_outside_stdio", path, "a secret's file may appear only in a stdio server's `env` and `args`");
     return false;
   }
   return true;
@@ -773,8 +778,9 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
         }
       }
       let ok = checkInterpolated(f, [...at, "command"], e.command, false) && checkInterpolated(f, [...at, "url"], e.url, false);
-      if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false) && ok; });
-      if (isObject(e.env)) for (const [k, v] of Object.entries(e.env)) ok = checkInterpolated(f, [...at, "env", k], v, true) && ok;
+      const stdio = e.type === "stdio";
+      if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false, stdio) && ok; });
+      if (isObject(e.env)) for (const [k, v] of Object.entries(e.env)) ok = checkInterpolated(f, [...at, "env", k], v, true, stdio) && ok;
       if (isObject(e.headers)) for (const [k, v] of Object.entries(e.headers)) ok = checkInterpolated(f, [...at, "headers", k], v, true) && ok;
       return ok;
     }
