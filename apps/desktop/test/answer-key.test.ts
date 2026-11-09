@@ -94,7 +94,11 @@ describe("replacing the answer key, against the core's own handler", () => {
     const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-e-akr-")), key: device, clock, self: { name: "Studio", os: "macos" } });
     const broker = new CloverApprovalBroker({ clock });
     const m = devicesMethods({ registry, clock, answerKeyRotation: () => ({ broker, computer: "Studio" }) } as unknown as DevicesMethodsDeps);
-    const hooks: { beforeCardGet?: () => Promise<void>; lose?: (method: string, params: unknown) => boolean } = {};
+    const hooks: {
+      beforeCardGet?: () => Promise<void>;
+      lose?: (method: string, params: unknown) => boolean;
+      onSet?: (params: { publicKey: string }) => Promise<"timeout" | undefined>;
+    } = {};
     // The app's client: device.answerKey.set through the core's handler, card.get from the broker (lane C's method).
     const client = {
       request: async <T,>(method: string, params?: unknown): Promise<T> => {
@@ -103,6 +107,9 @@ describe("replacing the answer key, against the core's own handler", () => {
           const r = broker.get((params as { id: string }).id);
           if (!r) throw new RpcCallError(-32004, `no card ${(params as { id: string }).id}`);
           return { card: r.card, ...(r.outcome ? { outcome: r.outcome } : {}) } as T;
+        }
+        if (method === "device.answerKey.set" && hooks.onSet && (await hooks.onSet(params as { publicKey: string })) === "timeout") {
+          throw new RpcCallError(CLIENT_ERR.TIMEOUT, `${method} took longer than 10000 ms`);
         }
         if (hooks.lose?.(method, params)) {
           await m[method]!(params, { caller: { kind: "user", client: "app" } }).catch(() => undefined);
@@ -316,6 +323,50 @@ describe("replacing the answer key, against the core's own handler", () => {
     expect(await key.register(c.client, c.id)).toBe(true);
     expect(vault.loadStaged()).toBeUndefined();
     expect(key.publicKey()).toBe(first);
+  });
+
+  test("an over-age staged key whose looks get no answer survives, and the next connection adopts it", async () => {
+    const c = await core();
+    const vault = memoryVault("app-keychain");
+    const key = new AnswerKey(vault, undefined, { now: c.now });
+    await key.register(c.client, c.id);
+    const { card } = (await key.rotate(c.client, c.id, c.clock.now())) as { card: string };
+    const staged = stagedPublic(vault);
+    // The phone says yes at minute 9, while the app is away: the core holds the staged key.
+    c.clock.advance(9 * 60 * 1000);
+    expect(await c.answer(card, "approve")).toBe("accepted");
+    await c.waitHeld(staged);
+    // The app comes back at minute 12, past the age rule, and every look at the staged key times out.
+    c.clock.advance(3 * 60 * 1000);
+    let looks = 0;
+    c.hooks.onSet = async (p) => (p.publicKey === staged ? (looks++, "timeout") : undefined);
+    expect(await key.rotate(c.client, c.id, c.clock.now())).toEqual({ refused: "a replacement already waits on its card" });
+    expect(await key.resolved(c.client, c.id, card, "cancelled")).toBe(false);
+    expect(looks).toBeGreaterThanOrEqual(2);
+    // Never dropped on a look that got no answer.
+    expect(vault.loadStaged()).toBeDefined();
+    // The next connection with answers adopts it.
+    c.hooks.onSet = undefined;
+    expect(await key.register(c.client, c.id)).toBe(true);
+    expect(key.publicKey()).toBe(staged);
+    expect(vault.loadStaged()).toBeUndefined();
+  });
+
+  test("rotate() adopts a staged key the core already holds, then hands over from it", async () => {
+    const c = await core();
+    const vault = memoryVault("app-keychain");
+    const key = new AnswerKey(vault, undefined, { now: c.now });
+    await key.register(c.client, c.id);
+    const first = (await key.rotate(c.client, c.id, c.clock.now())) as { card: string };
+    const staged = stagedPublic(vault);
+    // The yes the app missed.
+    await c.answer(first.card, "approve");
+    await c.waitHeld(staged);
+    const second = await key.rotate(c.client, c.id, c.clock.now());
+    // The core took the new hand-over, so it came from the key it holds: the adopted one.
+    expect(second).toEqual({ card: expect.any(String) });
+    expect(key.publicKey()).toBe(staged);
+    expect(stagedPublic(vault)).not.toBe(staged);
   });
 
   test("the OS store keeps the staged key in its own file, and promotes it by a rename over the key", () => {

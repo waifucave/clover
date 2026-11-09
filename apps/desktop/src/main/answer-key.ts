@@ -283,7 +283,10 @@ export class AnswerKey {
     const st = this.staged();
     if (!st || st.card !== cardId) return false;
     if (outcome !== "approved") {
-      if (await this.adoptIfHeld(client, deviceId, st.key)) return true;
+      const look = await this.adoptIfHeld(client, deviceId, st.key);
+      if (look === "held") return true;
+      // No answer: kept staged, and the next connection looks again.
+      if (look === "unknown") return false;
       this.vault.clearStaged();
       this.log(`answer key: kept (the replacement was ${outcome})`);
       return false;
@@ -296,7 +299,7 @@ export class AnswerKey {
    *  promoted first; one no card can approve any more is dropped. */
   async register(client: AnswerKeyClient, deviceId: string): Promise<boolean> {
     const st = this.staged();
-    if (st && (await this.adoptIfHeld(client, deviceId, st.key))) return true;
+    if (st && (await this.adoptIfHeld(client, deviceId, st.key)) === "held") return true;
     try {
       const publicKey = this.publicKey();
       const signature = Buffer.from(this.sign(answerKeyStatement(deviceId, publicKey, this.held))).toString("base64");
@@ -318,7 +321,10 @@ export class AnswerKey {
   private async resolveStaged(client: AnswerKeyClient, deviceId: string): Promise<"adopted" | "dropped" | "waiting"> {
     const st = this.staged();
     if (!st) return "dropped";
-    if (await this.adoptIfHeld(client, deviceId, st.key)) return "adopted";
+    const first = await this.adoptIfHeld(client, deviceId, st.key);
+    if (first === "held") return "adopted";
+    // No answer from the core: nothing is known, so nothing is dropped.
+    if (first === "unknown") return "waiting";
     let over = this.now() - st.at > ROTATION_CARD_MS + ROTATION_MARGIN_MS;
     if (!over && st.card !== undefined) {
       const card = await client.request<{ outcome?: string }>("card.get", { id: st.card }, 10_000)
@@ -333,8 +339,10 @@ export class AnswerKey {
       }
     }
     if (!over) return "waiting";
-    // One last look: a yes may have landed since the first.
-    if (await this.adoptIfHeld(client, deviceId, st.key)) return "adopted";
+    // One last look: a yes may have landed since the first. Dropped only on a definitive "not held".
+    const last = await this.adoptIfHeld(client, deviceId, st.key);
+    if (last === "held") return "adopted";
+    if (last === "unknown") return "waiting";
     this.vault.clearStaged();
     this.log("answer key: kept (the replacement's card is over)");
     return "dropped";
@@ -343,7 +351,7 @@ export class AnswerKey {
   /** The core applies an approved key just after its card resolves: look a few times. */
   private async adoptWithRetries(client: AnswerKeyClient, deviceId: string, key: KeyObject): Promise<boolean> {
     for (let i = 0; i < ADOPT_TRIES; i++) {
-      if (await this.adoptIfHeld(client, deviceId, key)) return true;
+      if ((await this.adoptIfHeld(client, deviceId, key)) === "held") return true;
       await new Promise((r) => setTimeout(r, ADOPT_GAP_MS));
     }
     // Kept staged: the next connection adopts it if the core holds it by then.
@@ -351,19 +359,21 @@ export class AnswerKey {
     return false;
   }
 
-  /** Whether the core holds `key`: registering it again applies at once only then. If it does, it becomes the key. */
-  private async adoptIfHeld(client: AnswerKeyClient, deviceId: string, key: KeyObject): Promise<boolean> {
+  /** Whether the core holds `key` (registering it again applies at once only then): `held`, and it becomes the key;
+   *  `not-held` on a definitive answer (not applied, or a refusal from the core); `unknown` when no answer came (a
+   *  timeout, a closed connection, an internal error), which never counts as not held. */
+  private async adoptIfHeld(client: AnswerKeyClient, deviceId: string, key: KeyObject): Promise<"held" | "not-held" | "unknown"> {
     const to = rawPublic(key);
     const signature = b64(sign(null, Buffer.from(answerKeyStatement(deviceId, to, this.held)), key));
     try {
       const r = await client.request<{ applied?: boolean }>("device.answerKey.set", { publicKey: to, held: this.held, signature }, 10_000);
-      if (r?.applied !== true) return false;
-    } catch {
-      return false;
+      if (r?.applied !== true) return "not-held";
+    } catch (err) {
+      return isRefusal(err) ? "not-held" : "unknown";
     }
     this.promote();
     this.log("answer key: replaced");
-    return true;
+    return "held";
   }
 
   /** The staged key becomes the current one, in the vault and for signing. */
