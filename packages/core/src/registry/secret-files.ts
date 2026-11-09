@@ -54,7 +54,9 @@ function ownFolder(path: string): void {
 }
 
 export class PluginSecretFiles {
-  constructor(private readonly cloverHome: string) {}
+  /** `beforeWrite`: a test seam, run between the folders being made and the file written (where another instance's
+   *  `release` can remove the server folder). */
+  constructor(private readonly cloverHome: string, private readonly seams: { beforeWrite?: () => void } = {}) {}
 
   /** A new instance's id: each running instance of a server has its own folder. */
   static instance(): string {
@@ -69,17 +71,28 @@ export class PluginSecretFiles {
     mkdirSync(join(this.cloverHome, "run"), { recursive: true, mode: 0o700 });
     const top = secretFilesFolder(this.cloverHome, pluginId);
     const folder = join(top, server, instance);
-    for (const d of [secretFilesRoot(this.cloverHome), top, join(top, server), folder]) ownFolder(d);
     const file = join(folder, key);
-    const tmp = join(folder, `.${key}.${randomBytes(8).toString("hex")}`);
-    try {
-      writeFileSync(tmp, value, { mode: 0o600, flag: "wx" });
-      renameSync(tmp, file);
-    } catch (err) {
-      rmSync(tmp, { force: true });
-      throw err;
+    // Once more on ENOENT: another instance's `release` can remove the shared server folder between this one's
+    // folders being made and its file written (#405's review).
+    for (let attempt = 0; ; attempt++) {
+      try {
+        for (const d of [secretFilesRoot(this.cloverHome), top, join(top, server), folder]) ownFolder(d);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT" && attempt === 0) continue;
+        throw err;
+      }
+      const tmp = join(folder, `.${key}.${randomBytes(8).toString("hex")}`);
+      try {
+        this.seams.beforeWrite?.();
+        writeFileSync(tmp, value, { mode: 0o600, flag: "wx" });
+        renameSync(tmp, file);
+        return file;
+      } catch (err) {
+        rmSync(tmp, { force: true });
+        if ((err as NodeJS.ErrnoException).code === "ENOENT" && attempt === 0) continue;
+        throw err;
+      }
     }
-    return file;
   }
 
   /** Its instance stopped: that instance's files go, and no other's. */

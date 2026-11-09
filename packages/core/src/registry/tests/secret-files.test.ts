@@ -67,6 +67,25 @@ describe("a secret's file", () => {
     for (const d of [secretFilesRoot(home), secretFilesFolder(home, "tarot")]) expect(statSync(d).mode & 0o777).toBe(0o700);
   });
 
+  test("a release that removes the shared server folder mid-write: the write makes its folders again once and lands", () => {
+    const home = temp("clover-sf-");
+    const first = PluginSecretFiles.instance();
+    const second = PluginSecretFiles.instance();
+    let races = 0;
+    const files: PluginSecretFiles = new PluginSecretFiles(home, {
+      // Once, while the second instance writes: the first instance's release takes the server folder with it.
+      beforeWrite: () => {
+        if (races++ !== 1) return;
+        files.release("luna", "keyed", first);
+        rmSync(join(secretFilesFolder(home, "luna"), "keyed"), { recursive: true, force: true });
+      },
+    });
+    files.write("luna", "keyed", "LUNA_KEY", "x", first);
+    const path = files.write("luna", "keyed", "LUNA_KEY", "y", second);
+    expect(races).toBe(3);
+    expect(readFileSync(path, "utf8")).toBe("y");
+  });
+
   test("its plugin removed, or the daemon started: none is left", () => {
     const home = temp("clover-sf-");
     const files = new PluginSecretFiles(home);
