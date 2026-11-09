@@ -25,12 +25,14 @@ describe("the core's own files in a caller's own folders", () => {
   const luna = fence.forCaller(bot("luna", "s1"));
   const coding = fence.forCaller(bot(undefined, "c1", "coding"));
 
-  test("its own memory reads and writes; another bot's neither", () => {
+  test("a bot's memory reads and writes, any bot's (the owner's ruling of November 9 and its amendment); a coding session's neither", () => {
     expect(readOwnFile(luna, b("luna", "memory", "MEMORY.md")).toString()).toBe("luna's");
     writeOwnFile(luna, b("luna", "memory", "new.md"), "new");
     expect(readOwnFile(luna, b("luna", "memory", "new.md")).toString()).toBe("new");
-    expect(() => readOwnFile(luna, b("sol", "memory", "MEMORY.md"))).toThrow(FenceRefused);
-    expect(() => writeOwnFile(luna, b("sol", "memory", "new.md"), "x")).toThrow(FenceRefused);
+    expect(readOwnFile(luna, b("sol", "memory", "MEMORY.md")).toString()).toBe("sol's");
+    writeOwnFile(luna, b("sol", "memory", "from-luna.md"), "x");
+    expect(readOwnFile(luna, b("sol", "memory", "from-luna.md")).toString()).toBe("x");
+    expect(() => writeOwnFile(luna, b("sol", "agents.json"), "x")).toThrow(FenceRefused);
     expect(readOwnFile(luna, b("luna", "agents", "t.json")).toString()).toBe("{}"); // its own folder reads
     expect(() => writeOwnFile(luna, b("luna", "agents", "x.json"), "x")).toThrow(FenceRefused); // but never writes
     const outs = join(clover, "outputs", "c1");

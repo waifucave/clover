@@ -134,16 +134,25 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   // Without a caller every own folder is absent: the view holds nothing.
   if (fs.kind(cloverHome) === "dir") {
     const c = input.caller;
-    a.push("--tmpfs", cloverHome);
+    // A bot's open access (the owner's ruling of November 9): the home itself, read-only, in place of the empty view;
+    // its own folders and every bot's scratch folder bound read-write over it, and what it still can't read masked
+    // below.
+    const open = c?.botAccess ?? null;
+    a.push(...(open !== null ? ["--ro-bind", cloverHome, cloverHome] : ["--tmpfs", cloverHome]));
     // Shallow first: the top folders exist so a runner can list its own view, and each folder on the way to a
     // bind is made, so no bind needs its destination to exist.
     const ro: [string | null | undefined] = [c?.ownBot];
-    const rw = [c?.ownOutputs, c?.ownScratch, c?.ownRoutines, c?.ownPluginData, c?.ownMemory];
+    // Every bot's scratch folder and every bot's memory there when the run starts, read-write (the owner's ruling and
+    // its amendment).
+    const listed = (dir: string) => (fs.kind(dir) === "dir" ? fs.list(dir).sort() : []);
+    const scratchAll = open !== null ? listed(open.scratch).map((x) => `${open.scratch}/${x}`) : [];
+    const memoryAll = open !== null ? listed(open.bots).map((x) => `${open.bots}/${x}/memory`) : [];
+    const rw = [...new Set([c?.ownOutputs, c?.ownScratch, c?.ownRoutines, c?.ownPluginData, c?.ownMemory, ...scratchAll, ...memoryAll])];
     const dirs = new Set(["bots", "outputs", "scratch", "routines", "plugin-data"].map((t) => `${cloverHome}/${t}`));
     for (const p of [...ro, ...rw].filter((p): p is string => typeof p === "string")) {
       for (let d = dirname(p); d !== cloverHome && inside(d, cloverHome); d = dirname(d)) dirs.add(d);
     }
-    for (const d of [...dirs].sort((x, y) => x.length - y.length)) a.push("--dir", d);
+    if (open === null) for (const d of [...dirs].sort((x, y) => x.length - y.length)) a.push("--dir", d);
     if (c?.ownBot !== null && c?.ownBot !== undefined && fs.kind(c.ownBot) === "dir") a.push("--ro-bind", c.ownBot, c.ownBot);
     for (const p of rw) {
       if (p === null || p === undefined) continue;
@@ -153,9 +162,9 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     // A deny always wins over an allow (the controller's ruling): a fenced item strictly inside a bound own folder is
     // masked again after the binds, read-only, or hidden when it is read-denied.
     const own = [...ro, ...rw].filter((p): p is string => typeof p === "string");
-    const strictlyIn = (d: string) => own.some((o) => d !== o && inside(d, o));
-    const hidden = new Set(policy.denyRead.filter(strictlyIn));
-    for (const d of [...new Set([...policy.denyWrite.filter(strictlyIn), ...hidden])].sort((x, y) => x.length - y.length)) {
+    const strictlyIn = (list: readonly string[]) => (d: string) => list.some((o) => d !== o && inside(d, o));
+    const hidden = new Set(policy.denyRead.filter(strictlyIn(open !== null ? [...own, cloverHome] : own)));
+    for (const d of [...new Set([...policy.denyWrite.filter(strictlyIn(own)), ...hidden])].sort((x, y) => x.length - y.length)) {
       const k = fs.kind(d);
       if (k === null) continue;
       if (hidden.has(d)) {
@@ -169,7 +178,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     // the tmpfs, which would otherwise hide it.
     const template = gitTemplateDir(cloverHome);
     if (fs.kind(template) === "dir") a.push("--ro-bind", template, template);
-    a.push("--remount-ro", cloverHome);
+    if (open === null) a.push("--remount-ro", cloverHome);
   }
   // The closed doors: the user's session bus and systemd (systemd-run --user), and the system bus.
   if (policy.closedDoors.length > 0) {

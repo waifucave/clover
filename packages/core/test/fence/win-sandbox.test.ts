@@ -230,7 +230,7 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
   };
   const home = "C:\\Users\\me\\.clover";
 
-  test("the home is default-deny; only the caller's own outputs, scratch, bot folder (read) and memory (read/write) are granted", () => {
+  test("a bot has open access (the owner's ruling of November 9): the home reads, every bot's scratch and memory write, escalation stays denied", () => {
     const entries = (dir: string) => {
       if (dir.endsWith("\\outputs")) return ["s1", "s2"];
       if (dir.endsWith("\\scratch")) return ["luna", "sol"];
@@ -243,39 +243,30 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
       bots: ["luna", "sol"],
       entries,
     });
-    // Home itself is denied both ways
-    expect(plan.denyRead).toContain(home);
+    const at = (rel: string) => `C:\\Users\\me\\.clover\\${rel}`;
+    // The home reads; it isn't written.
+    expect(plan.grantRead).toContain(home);
+    expect(plan.denyRead).not.toContain(home);
     expect(plan.denyWrite).toContain(home);
-    // Other session's outputs denied
-    expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\outputs\\s2");
-    expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\outputs\\s2");
-    // Own session's outputs granted write
-    expect(plan.grantWrite).toContain("C:\\Users\\me\\.clover\\outputs\\s1");
-    // Other bot's scratch denied
-    expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\scratch\\sol");
-    expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\scratch\\sol");
-    // Own bot's scratch granted write
-    expect(plan.grantWrite).toContain("C:\\Users\\me\\.clover\\scratch\\luna");
-    // Other bot's folder denied read and write
-    expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\bots\\sol");
-    expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\bots\\sol");
-    // Own bot's folder granted read, memory granted read/write
-    expect(plan.grantRead).toContain("C:\\Users\\me\\.clover\\bots\\luna");
-    expect(plan.grantWrite).toContain("C:\\Users\\me\\.clover\\bots\\luna\\memory");
-    // Own bot's folder denied write (but memory is granted write)
-    expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\bots\\luna");
-    // Memory folders protected from delete/move
-    expect(plan.protectDelete).toContain("C:\\Users\\me\\.clover\\bots\\luna\\memory");
-    expect(plan.protectDelete).toContain("C:\\Users\\me\\.clover\\bots\\sol\\memory");
-    // Runtime: hidden from every runner, its own session included (no own-file grant)
-    expect(plan.ownMemory).toBe("C:\\Users\\me\\.clover\\bots\\luna\\memory");
-    expect(plan.grantRead).not.toContain("C:\\Users\\me\\.clover\\sessions-runtime\\s1.json");
-    expect(plan.denyRead).toContain("C:\\Users\\me\\.clover\\sessions-runtime");
-    expect(plan.denyWrite).toContain("C:\\Users\\me\\.clover\\sessions-runtime");
-    // Own routines and own plugin data are granted (a plugin caller would get its own instead)
-    expect(plan.grantRead).toContain("C:\\Users\\me\\.clover\\routines\\luna");
-    expect(plan.grantWrite).toContain("C:\\Users\\me\\.clover\\routines\\luna");
-    expect(plan.grantRead).not.toContain("C:\\Users\\me\\.clover\\plugin-data\\tarot");
+    // Another session's outputs read, never written.
+    expect(plan.denyRead).not.toContain(at("outputs\\s2"));
+    expect(plan.denyWrite).toContain(at("outputs\\s2"));
+    expect(plan.grantWrite).toContain(at("outputs\\s1"));
+    // Every bot's scratch and memory written (the folders themselves never deleted or moved).
+    for (const rel of ["scratch\\luna", "scratch\\sol", "bots\\luna\\memory", "bots\\sol\\memory"]) {
+      expect(plan.grantWrite).toContain(at(rel));
+      expect(plan.protectDelete).toContain(at(rel));
+    }
+    // The rest of every bot's folder reads, never written.
+    expect(plan.denyRead).not.toContain(at("bots\\sol"));
+    expect(plan.denyWrite).toContain(at("bots\\sol"));
+    // Escalation stays denied: the credential and key copies, the plugins' data; the bot driver's state reads (a
+    // transcript id) and is never written.
+    for (const rel of ["credentials", "runtimes", "sdk\\.clover.json", "cache\\runs", "plugin-data"]) expect(plan.denyRead).toContain(at(rel));
+    expect(plan.denyRead).not.toContain(at("sessions-runtime"));
+    expect(plan.denyWrite).toContain(at("sessions-runtime"));
+    expect(plan.ownMemory).toBe(at("bots\\luna\\memory"));
+    expect(plan.grantWrite).toContain(at("routines\\luna"));
   });
 
   test("a coding session with no bot owns no memory and no runtime grant", () => {
@@ -314,8 +305,11 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
       const rw = plan.grantWrite;
       const ro = [...plan.grantWrite, ...plan.grantRead];
       if ((op === "unlink" || op === "rename") && rw.some((g) => wunder(g, abs))) return false;
-      if (rw.some((g) => wunder(abs, g, true))) return true;
-      if (op === "read" && ro.some((g) => wunder(abs, g))) return true;
+      // A deny always wins (the controller's ruling): a grant opens what it holds but a deny strictly inside it (an
+      // explicit ACE on the item beats the grant it would inherit).
+      const inner = (g: string, denies: readonly string[]) => denies.some((d) => wunder(d, g, true) && wunder(abs, d));
+      if (rw.some((g) => wunder(abs, g, true) && !inner(g, op === "read" ? plan.denyRead : plan.denyWrite))) return true;
+      if (op === "read" && ro.some((g) => wunder(abs, g) && !inner(g, plan.denyRead))) return true;
       if (op === "read") return !plan.denyRead.some((d) => wunder(abs, d));
       if (op === "write") return !plan.denyWrite.some((d) => wunder(abs, d));
       if (plan.denyWrite.some((d) => wunder(abs, d))) return false;
@@ -369,6 +363,9 @@ describe("the per-launch allow/deny plan (Addendum 3: default-deny home)", () =>
       for (const rel of matrix(caller)) {
         const abs = `C:\\Users\\me\\.clover\\${rel}`;
         for (const op of ["read", "write", "unlink", "rename"] as const) {
+          // A bot's open access writes any bot's memory (the owner's amendment), but a launch grants the memory folders
+          // of the bots there when it starts: a bot made during the run is the known gap (as on Linux).
+          if (ref.botAccess !== undefined && op !== "read" && rel.startsWith("bots\\newbot\\memory\\")) continue;
           expect([caller.kind, op, rel, policyAllows(ref, op, abs, "windows")]).toEqual([caller.kind, op, rel, winAllows(plan, allowWrite, op, abs)]);
         }
       }

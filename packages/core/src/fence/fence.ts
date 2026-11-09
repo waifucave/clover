@@ -17,7 +17,7 @@ import { join, posix, win32 } from "node:path";
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  agentConfigPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
+  agentConfigPaths, BOT_READ_DENIED, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, isBotCaller, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
   READ_DENIED_KINDS, writesPluginLoadDeny,
   type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
   type SandboxPolicy,
@@ -354,7 +354,12 @@ export class CloverFence implements Fence {
       // B's #234: the whole Clover home too, for every runner (the home default-deny; its own folders come back below,
       // `ownFoldersOf`), and every `node_modules` above a folder plugin code loads from.
       denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns, this.#cloverHome],
+      // A bot's own conversation and side threads have open access to the home (the owner's ruling of November 9):
+      // no memory or sessions-runtime pattern in their read list (the bot driver's state is a transcript id, no
+      // secret), and what they still can't read named one by one (`BOT_READ_DENIED`),
+      // so the open read can't re-open it (a deny always wins).
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path),
+        ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => joinHome(this.#cloverHome, this.os, ...rel)) : patterns), this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES, ...this.#loopbackPorts().flatMap((port) => [`127.0.0.1:${port}`, `[::1]:${port}`])],
@@ -362,6 +367,7 @@ export class CloverFence implements Fence {
       // The runner's own folders, its memory included: only a valid bot id builds the way back in (`..` would climb
       // out of `bots/`).
       ...ownFoldersOf(ctx, this.#cloverHome),
+      ...(isBotCaller(ctx) ? { botAccess: { home: this.#cloverHome, scratch: joinHome(this.#cloverHome, this.os, "scratch"), bots: joinHome(this.#cloverHome, this.os, "bots") } } : {}),
     };
   }
 
