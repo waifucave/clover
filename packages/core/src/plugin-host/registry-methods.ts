@@ -7,12 +7,13 @@
 // is named by its manifest's id today), `plugin.setEnabled`'s `bots` (a plugin's `when.bot` override), and
 // `plugin.dev.add` from the app (a sensitive change: it waits for the approval broker's card, C-M3; the CLI's applies).
 // `plugin.auth.*` are lane A's.
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { PLUGINS_METHODS, PluginDetail, PluginSummary } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord } from "../contracts/plugin-registry";
+import type { SecretStore } from "../contracts/secret-store";
 import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
@@ -53,7 +54,29 @@ const notServed = (what: string, why: string): never => {
   throw new ContractError("refused", `${what} isn't served on this computer yet: ${why}`);
 };
 
-export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<PluginHost, "restart">; home: string }): Record<string, MethodHandler> {
+/** What removing a plugin leaves behind, and where (#332's review): its secrets, its settings file and its synced store
+ *  are deleted, for it and each of its children, so a later plugin installed under the same id inherits none of them.
+ *  Its data folder is kept, as the spec says (§5.4), but moved out of the id's path to
+ *  `<home>/plugin-data/.removed/<id>/<when>-<tree hash>/`, keyed to that install, so another publisher's plugin with
+ *  the same id starts with an empty one. No plugin id starts with a dot. */
+export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<SecretStore, "list" | "delete">; record: PluginRecord; children: readonly string[]; now?: () => number }): Promise<{ dataKeptAt?: string }> {
+  const ids = [o.record.id, ...o.children];
+  for (const pluginId of ids) {
+    if (o.secrets !== undefined) for (const meta of await o.secrets.list({ kind: "plugin", pluginId })) await o.secrets.delete(meta.ref);
+    rmSync(`${pluginPath(join(o.home, "settings", "plugins"), pluginId)}.json`, { force: true });
+    rmSync(`${pluginPath(join(o.home, "settings", "plugin-stores"), pluginId)}.json`, { force: true });
+  }
+  const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
+  if (!existsSync(data)) return {};
+  const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);
+  const kept = join(o.home, "plugin-data", ".removed", ...o.record.id.split("/"), `${new Date(o.now?.() ?? Date.now()).toISOString().replace(/[:.]/g, "-")}-${hash}`);
+  mkdirSync(join(kept, ".."), { recursive: true, mode: 0o700 });
+  renameSync(data, kept);
+  writeFileSync(join(kept, ".clover-removed.json"), JSON.stringify({ id: o.record.id, source: o.record.source, treeHash: o.record.treeHash, okHash: o.record.okHash, provenance: o.record.provenance, removedAt: o.now?.() ?? Date.now() }), { mode: 0o600 });
+  return { dataKeptAt: kept };
+}
+
+export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<PluginHost, "restart">; home: string; secrets?: Pick<SecretStore, "list" | "delete"> }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   const { registry, folders } = o.opened;
   const must = (id: string): PluginRecord => {
@@ -68,12 +91,14 @@ export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<Pl
   return {
     [M.pluginList.name]: handler(M.pluginList, () => ({ plugins: registry.list().map(summaryOf), adultConfirmed: registry.adultConfirmed })),
     [M.pluginGet.name]: handler(M.pluginGet, ({ id }) => ({ plugin: detailOf(must(id), o.home) })),
-    [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots }) => {
+    [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots }, ctx) => {
+      requireUser(ctx, "switch a plugin on or off");
       if (bots !== undefined) notServed("choosing the bots a plugin dresses", "a plugin's `when.bot` override isn't kept yet");
       must(id);
       return registry.setEnabled(id, enabled);
     }),
-    [M.pluginRestart.name]: handler(M.pluginRestart, async ({ id }) => {
+    [M.pluginRestart.name]: handler(M.pluginRestart, async ({ id }, ctx) => {
+      requireUser(ctx, "restart a plugin");
       must(id);
       await o.host.restart(id);
       return { ok: true as const };
@@ -96,8 +121,10 @@ export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<Pl
       const pluginsDir = resolve(join(o.home, "plugins"));
       const folder = resolve(r.folder);
       if (!folder.startsWith(pluginsDir + sep) || !existsSync(folder)) throw new ContractError("refused", `${id}'s folder isn't in the plugins directory`);
+      const children = registry.list().filter((c) => c.parent === r.id).map((c) => c.id);
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
+      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
       return { ok: true as const };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),

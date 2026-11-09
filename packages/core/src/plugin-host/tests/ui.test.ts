@@ -27,7 +27,9 @@ describe("plugin.ui and plugin.layer.api", () => {
         contributes: { themes: [{ id: "night", file: "themes/night.json" }], locales: [{ lang: "fr", file: "locales/fr.json" }] },
       }),
       "package.json": JSON.stringify({ type: "module" }),
-      "host/index.js": "export const draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, session: ctx.session ?? null }; };\n",
+      "host/index.js": "export const draw = async (args, ctx) => { await ctx.api.ui.send(\"drawn\", { card: args.card }); return { drew: args.card, by: ctx.caller.kind, as: ctx.caller.pluginId ?? null, session: ctx.session ?? null }; };\n"
+        + "export const big = async (args, ctx) => { try { await ctx.api.ui.send(\"big\", \"x\".repeat(70000)); return \"sent\"; } catch (e) { return e.message; } };\n"
+        + "export const spam = async (args, ctx) => { for (let i = 0; i < 60; i++) { try { await ctx.api.ui.send(\"s\", i); } catch (e) { return [i, e.message]; } } return \"all sent\"; };\n",
       "client/index.js": "export const Tarot = () => null;\n",
       "client/index.css": ".x { color: red }\n",
       "themes/night.json": JSON.stringify({ tokens: {} }),
@@ -62,11 +64,14 @@ describe("plugin.ui and plugin.layer.api", () => {
       }]);
       expect(views.plugins[0]!.treeHash).toMatch(/^sha256:[0-9a-f]{64}$/);
 
-      // host.call: the plugin's host handler runs, as the user, for the session the component shows; its ui.send
-      // reaches the app as plugin_ui_message.
+      // host.call: the plugin's host handler runs, as the plugin (never the user, the coordinator's ruling), for the
+      // session the component shows; its ui.send reaches the app as plugin_ui_message.
       const api = ui.methods[PLUGINS_METHODS.pluginLayerApi.name]!;
       expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "draw", { card: "The Star" }), session: "s_1" }, ctx))
-        .toEqual({ result: { drew: "The Star", by: "user", session: "s_1" } });
+        .toEqual({ result: { drew: "The Star", by: "plugin", as: "tarot", session: "s_1" } });
+      // ui.send: a value over 64 KiB is refused, and so is a plugin's 51st message in a second (#333's review).
+      expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "big", null) }, ctx)).toEqual({ result: expect.stringContaining("at most 65536") });
+      expect(await api({ pluginId: "tarot", ...layerApiCall("host.call", "spam", null) }, ctx)).toEqual({ result: [expect.any(Number), expect.stringContaining("more than 50 UI messages this second")] });
       expect(events.find((e) => e.type === "plugin_ui_message")).toMatchObject({ pluginId: "tarot", event: "drawn", value: { card: "The Star" } });
       // A "both" call works from a component; a host-only one doesn't exist there.
       expect(await api({ pluginId: "tarot", ...layerApiCall("storage.synced.set", "k", 1) }, ctx)).toEqual({ result: undefined });
@@ -88,6 +93,19 @@ describe("plugin.ui and plugin.layer.api", () => {
       opened.close();
     }
   }, 60_000);
+
+  test("every layer call is the plugin's: commands.run, host.call and the areas see the plugin, never the user", async () => {
+    const seen: unknown[] = [];
+    const registry = { list: () => [], entries: () => [], get: () => undefined, watch: () => () => {} } as never;
+    const ui = pluginUi({ registry, router: async (call) => (seen.push([call.path, call.caller, call.process]), null), emit: () => {} });
+    try {
+      const api = ui.methods[PLUGINS_METHODS.pluginLayerApi.name]!;
+      for (const call of ["commands.run", "host.call", "conversation.history", "conversation.send", "storage.synced.get"]) await api({ pluginId: "luna/tarot", call, args: [] }, ctx);
+      expect(seen).toEqual(["commands.run", "host.call", "conversation.history", "conversation.send", "storage.synced.get"].map((p) => [p, { kind: "plugin", pluginId: "luna/tarot" }, "ui"]));
+    } finally {
+      ui.close();
+    }
+  });
 
   test("layers: the whole clover tree shares `clover`; any other id writes `/` as `--`", () => {
     expect([layerOf("clover"), layerOf("clover/island"), layerOf("luna"), layerOf("luna/tarot-panel"), layerOf("cloverish")]).toEqual(["clover", "clover", "luna", "luna--tarot-panel", "cloverish"]);

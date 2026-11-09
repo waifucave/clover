@@ -447,8 +447,8 @@ export const PLUGINS_METHODS = {
       /** The method's parameters in order, typed by the SDK's `ApiCallSignatures` (`layerApiCall` builds them):
        *  `host.call` takes the handler's name, its args and options. A listener can't be one. */
       args: z.array(z.unknown()).max(64),
-      /** The bot whose tab the component is in, and the session it shows, for calls scoped to them. */
-      bot: BotId.optional(),
+      /** The session the component shows, for calls scoped to it. (No `bot`: nothing scopes a layer call to a bot yet,
+       *  so the core takes none rather than ignore one, #333's review.) */
       session: SessionId.optional(),
     }),
     result: z.object({ result: z.unknown() }),

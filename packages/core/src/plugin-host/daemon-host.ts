@@ -30,7 +30,7 @@ import { pointsApi } from "./api/points";
 import { createApiRouter, type ApiHandlers } from "./api/router";
 import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
 import { fileSyncedStores, storageApi, SyncedStores } from "./api/storage";
-import { pluginDataFolder, pluginPath } from "./paths";
+import { assetPath, pluginDataFolder, pluginPath } from "./paths";
 import { CorePluginHost, type HostedRecord } from "./core-host";
 import { hostProcessLaunch, spawnHostProcess, type HostProcessLaunch } from "./launch";
 import type { RpcPeer } from "./link";
@@ -101,11 +101,17 @@ export interface StartPluginHostOptions {
   env?: Readonly<Record<string, string | undefined>>;
 }
 
+/** `ui.send`'s limits: the serialized value's size, and messages per plugin per second. */
+export const UI_SEND_MAX_BYTES = 64 * 1024;
+export const UI_SEND_PER_SECOND = 50;
+
 /** Where a plugin's files are served from until lane E names it: the layer of its top-level plugin. */
-function defaultAssetUrl(pluginId: string, path: string): string {
+export function defaultAssetUrl(pluginId: string, path: string): string {
+  const safe = assetPath(path);
+  if (safe === undefined) throw new ContractError("invalid", `${JSON.stringify(path.slice(0, 200))} isn't a path inside ${pluginId}'s folder`);
   const top = pluginId.split("/")[0]!;
   const rest = pluginId.includes("/") ? `${pluginId.slice(top.length + 1)}/` : "";
-  return `clover-plugin://${top}/${rest}${path.replace(/^\/+/, "")}`;
+  return `clover-plugin://${top}/${rest}${safe}`;
 }
 
 /** A plugin's log file's cap: past it, the file moves to `<id>.log.1` (replacing the one before) and a new one starts. */
@@ -242,6 +248,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   });
 
   const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets });
+  const uiSendWindows = new Map<string, { start: number; n: number }>();
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
     storageApi(new SyncedStores(fileSyncedStores(o.home))),
@@ -259,10 +266,24 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
         return host.invoke({ pluginId: ctx.pluginId, handler, args: callArgs ?? null, caller: ctx.caller, ...(ctx.session !== undefined ? { session: ctx.session } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
       },
       // A host half's message to its components, relayed by the app to their `host.on`.
+      // The value is capped at UI_SEND_MAX_BYTES serialized, and each plugin at UI_SEND_PER_SECOND (#333's review).
       "ui.send": (ctx, args) => {
         const event = args[0];
         if (typeof event !== "string" || event === "" || event.length > 128) throw new ContractError("invalid", "ui.send takes an event name");
-        o.emit?.({ type: "plugin_ui_message", pluginId: ctx.pluginId, event, value: args[1] ?? null });
+        let text: string | undefined;
+        try {
+          text = JSON.stringify(args[1] ?? null);
+        } catch {
+          text = undefined;
+        }
+        if (text === undefined) throw new ContractError("invalid", "ui.send takes a JSON value");
+        const size = new TextEncoder().encode(text).length;
+        if (size > UI_SEND_MAX_BYTES) throw new ContractError("invalid", `ui.send's value is ${size} bytes; at most ${UI_SEND_MAX_BYTES}`);
+        const now = Date.now();
+        const w = uiSendWindows.get(ctx.pluginId);
+        if (w === undefined || now - w.start >= 1000) uiSendWindows.set(ctx.pluginId, { start: now, n: 1 });
+        else if (++w.n > UI_SEND_PER_SECOND) throw new ContractError("refused", `${ctx.pluginId} sent more than ${UI_SEND_PER_SECOND} UI messages this second`);
+        o.emit?.({ type: "plugin_ui_message", pluginId: ctx.pluginId, event, value: JSON.parse(text) });
       },
     },
   ];
