@@ -305,7 +305,7 @@ describe("the real fence on a real disk", () => {
     const bots: (Caller | undefined)[] = [main, session("luna", "side-thread", "s_1"), session("alpha", "bot", "s_9")];
     for (const top of ["projects", "sdk/projects", "sessions", "transcripts", "diffs", "cache/runs", "logs", "usage", "whatever-comes-next"]) {
       for (const c of [...bots, session("luna", "agent", "a_1"), session(undefined, "coding", "c_1"), { kind: "plugin", pluginId: "tarot" } as Caller, undefined]) {
-        expect([top, reach(c, join(clover, top, "x.json"))]).toEqual([top, bots.includes(c)]);
+        expect([top, reach(c, join(clover, top, "x.json"))]).toEqual([top, bots.includes(c) && top !== "cache/runs"]);
         expect([top, reach(c, join(clover, top, "x.json"), "write")]).toEqual([top, false]);
       }
     }
@@ -467,13 +467,13 @@ describe("the real fence on a real disk", () => {
     expect(() => makeBotFolders(clover, "sol")).toThrow(/link/);
   });
 
-  test("the bot driver's state is hidden from every runner but a bot's sessions, which read it; nobody writes it", () => {
+  test("the bot driver's state is hidden from every runner, its own session's included (`BOT_READ_DENIED` for a bot)", () => {
     const { clover, fence } = make();
     const rt = (n: string) => join(clover, "sessions-runtime", n);
     const s1 = fence.forCaller(session("luna", "bot", "s1"));
-    expect(s1.check({ op: "read", path: rt("s1.json") })).toEqual({ allowed: true });
+    expect(s1.check({ op: "read", path: rt("s1.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
     expect(s1.check({ op: "write", path: rt("s1.json") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
-    expect(s1.check({ op: "list", path: join(clover, "sessions-runtime") })).toEqual({ allowed: true });
+    expect(s1.check({ op: "list", path: join(clover, "sessions-runtime") })).toMatchObject({ allowed: false, reason: "sessions-runtime" });
     expect(fence.forCaller(session(undefined, "coding", "c1")).check({ op: "read", path: rt("s1.json") })).toMatchObject({ allowed: false });
     expect(fence.forCaller({ kind: "user", client: "app" }).check({ op: "read", path: rt("s1.json") })).toEqual({ allowed: true });
     expect(fence.policy().denyWrite).toEqual(expect.arrayContaining([join(clover, "sessions-runtime")]));

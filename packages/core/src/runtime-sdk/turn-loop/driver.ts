@@ -55,7 +55,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { CONFIG_COPY_FILES, configCopyDenies, namesOtherThan } from "./home-deny";
+import { BOT_READ_DENIED, CONFIG_COPY_FILES, configCopyDenies, namesOtherThan } from "./home-deny";
 import { CloverFence } from "../../fence/fence";
 import { selfGrantDenyWrite } from "../mode-options";
 import { escapeSandboxGlobPath } from "../host/run-home/settings";
@@ -89,16 +89,11 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
 
 /** What a bot's Bash may not read (the owner's ruling of November 9: bots read the whole Clover home, and only
- *  escalation is denied): the fence's read-denied items (the run folder, with the app token, the core's socket and
- *  the plugins' run files; the secrets file and its keys; the browser profiles), the credential index, the plugins'
- *  own data, the secret store's files on every OS, and every config copy that carries keys (`configCopyDenies`, and
- *  any `.clover.json`, `.claude.json` or `.credentials.json` in the home, the store's `sdk/.clover.json` with them). */
+ *  escalation is denied): `BOT_READ_DENIED`, the fence's other read-denied items (the browser profiles), and every
+ *  config copy that carries keys, at any depth in the home and under the staging roots (`configCopyDenies`). In the
+ *  sandbox's glob grammar. */
 export function botDenyRead(home: string, fence: Pick<Fence, "fencedSet"> = homeFence(home)): string[] {
-  const set = fence.fencedSet();
-  const literal = [
-    ...set.filter((i) => i.deny === "read-write" || i.kind === "credential-store" || i.kind === "plugin-data").map((i) => i.path),
-    ...["secrets.enc", "secrets.key", "secrets.key.cred"].map((n) => join(home, n)),
-  ];
+  const literal = [...BOT_READ_DENIED.map((rel) => join(home, rel)), ...fence.fencedSet().filter((i) => i.deny === "read-write").map((i) => i.path)];
   return [...new Set([
     ...literal.map(escapeSandboxGlobPath),
     ...CONFIG_COPY_FILES.map((f) => `${escapeSandboxGlobPath(home)}/**/${f}`),

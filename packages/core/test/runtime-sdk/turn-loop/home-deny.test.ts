@@ -102,7 +102,7 @@ describe("a bot's Bash (botHomeSandbox, what the daemon passes): the owner's rul
     const h = temp("clover-bot-read-");
     const { reads } = sandbox(h);
     for (const p of ["bots/pack--mira/memory/MEMORY.md", "bots/pack--mira/agents/a_1/acp.ndjson", "scratch/pack--mira/x", "transcripts/pack--mira/b_mira.ndjson",
-      "transcripts/_/s_1.ndjson", "sessions/s_1.jsonl", "outputs/s_1/r.md", "sdk/projects/-p/t.jsonl", "routines/pack--mira/r.md", "settings.json", "plugins/x/clover.json", "cache/runs/r1/settings.json"]) {
+      "transcripts/_/s_1.ndjson", "sessions/s_1.jsonl", "outputs/s_1/r.md", "sdk/projects/-p/t.jsonl", "routines/pack--mira/r.md", "settings.json", "plugins/x/clover.json", "cache/views/v/SKILL.md", "sdk/skills/a/SKILL.md"]) {
       expect([p, reads(p)]).toEqual([p, true]);
     }
   });
@@ -111,7 +111,8 @@ describe("a bot's Bash (botHomeSandbox, what the daemon passes): the owner's rul
     const h = temp("clover-bot-escalation-");
     const { reads } = sandbox(h);
     for (const p of ["secrets.enc", "secrets.key", "secrets.key.cred", "run/app.token", "run/core.sock", "cache/runs/r1/.clover.json", "cache/runs/r1/.claude.json",
-      "cache/runs/r1/.credentials.json", "cache/runs/r1/backups/.claude.json.backup.1", "sdk/.clover.json", "credentials/index.json", "plugin-data/tarot/token.json"]) {
+      "cache/runs/r1/.credentials.json", "cache/runs/r1/backups/.claude.json.backup.1", "cache/runs/r1/settings.json", "sdk/.clover.json", "credentials/index.json",
+      "plugin-data/tarot/token.json", "runtimes/bin/winter", "sessions-runtime/b_luna.json", "bots/pack--mira/memory/.clover.json"]) {
       expect([p, reads(p)]).toEqual([p, false]);
     }
     const fs = botHomeSandbox(h)(ctx(h)).filesystem!;

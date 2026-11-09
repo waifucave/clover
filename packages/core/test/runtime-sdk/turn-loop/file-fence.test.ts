@@ -51,7 +51,8 @@ describe("a bot's file tools meet the Clover home as the owner's ruling sets it"
     const { home, paths, refused } = setup();
     for (const f of [join(home, "secrets.enc"), join(home, "secrets.key.cred"), join(home, "run", "app.token"), join(home, "cache", "runs", "r1", ".clover.json"),
       join(home, "cache", "runs", "r1", "backups", "b.json"), join(home, "sdk", ".clover.json"), join(home, "credentials", "index.json"), join(home, "plugin-data", "tarot", "t.json"),
-      join(paths.scratch, "keys"), join(paths.root, "run-link", "app.token"), "../../secrets.enc"]) {
+      join(paths.scratch, "keys"), join(paths.root, "run-link", "app.token"), "../../secrets.enc",
+      join(home, "cache", "runs", "r1", "settings.json"), join(home, "runtimes", "bin", "winter"), join(home, "sessions-runtime", "b_luna.json")]) {
       expect([f, refused("Read", { file_path: f }) !== undefined]).toEqual([f, true]);
     }
     expect(refused("Grep", { pattern: "x", path: join(home, "run") })).toBeDefined();

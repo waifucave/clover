@@ -22,6 +22,9 @@ import type { Os } from "@waifucave/clover-protocol";
 import { fenceLayout } from "../../fence/layout";
 import { escapeSandboxGlobPath } from "../host/run-home/settings";
 
+/** What a bot may never read in the Clover home (the fence's list, `contracts/fence.ts`). */
+export { BOT_READ_DENIED } from "../../contracts/fence";
+
 /** The generated config copies of a run folder or a staging root (the MCP fold with stdio servers' `env`, the
  *  official child's credentials): never readable by a runner's Bash. */
 export const CONFIG_COPY_FILES = [".clover.json", ".claude.json", ".credentials.json"] as const;

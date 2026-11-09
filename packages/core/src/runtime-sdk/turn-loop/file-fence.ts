@@ -1,7 +1,7 @@
 // The Clover home for a bot's own file tools (the owner's ruling of November 9, amended; lane C's fence). Owner: lane A.
 // The bot's Bash meets it in its sandbox (`botHomeSandbox`); its Read, Glob, Grep and writes meet it here, through the
 // same fence the other runners' real-path checks use (`Fence.forCaller(…).check`): a bot reads the whole home but the
-// escalation list (the fence's read-denied items, plugin data, and the config copies that carry keys, `carriesKeys`),
+// escalation list (the fence's read-denied items, and `botReadDenied`: lane C's list and the config copies that carry keys),
 // and writes any bot's scratch and memory and its own routines and outputs. Every path is judged as it really is (a
 // link from a bot's folder is judged where it points, and a pattern's `..` like a path's). What a search walks into is
 // filtered by the runtime against the same escalation list in the sandbox's `denyRead`.
@@ -9,7 +9,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { FenceOp, FenceVerdict } from "../../contracts/fence";
 import { homeReach, realPathOf } from "../../agents/memory";
-import { CONFIG_COPY_FILES } from "./home-deny";
+import { BOT_READ_DENIED, CONFIG_COPY_FILES } from "./home-deny";
 import { RESUME_STAGING_PREFIX } from "../host/vendor-paths";
 
 /** The file tools this check judges: what each does, and whether it searches. */
@@ -36,18 +36,15 @@ function globRoot(pattern: string, base: string): string {
   return isAbsolute(pattern) ? at || "/" : resolve(base, at);
 }
 
-/** Whether a path, as written or as it really is, is one of the config copies that carry keys (a run folder's or a
- *  staging root's `.clover.json`, `.claude.json`, `.credentials.json` or `backups/`, the store's `.clover.json`), the
- *  credential index or the secret store's files: the bots' escalation list, as their Bash meets it (`botDenyRead`). */
-export function carriesKeys(home: string, path: string, cwd: string): boolean {
+/** Whether a path, as written or as it really is, is on the bots' escalation list as their Bash meets it
+ *  (`botDenyRead`): in `BOT_READ_DENIED`, or a config copy that carries keys (a `.clover.json`, `.claude.json` or
+ *  `.credentials.json` in the home or a staging root, or a staging root's `backups/`). */
+export function botReadDenied(home: string, path: string, cwd: string): boolean {
   for (const p of new Set([isAbsolute(path) ? resolve(path) : resolve(cwd, path), realPathOf(path, cwd)])) {
     const segs = p.split(/[\\/]/);
+    if (BOT_READ_DENIED.some((rel) => homeReach(join(home, rel), p, cwd) === "inside")) return true;
     if (segs.some((s) => (CONFIG_COPY_FILES as readonly string[]).includes(s)) && homeReach(home, p, cwd) === "inside") return true;
     if (segs.some((s) => s.startsWith(RESUME_STAGING_PREFIX)) && segs.some((s) => (CONFIG_COPY_FILES as readonly string[]).includes(s) || s === "backups")) return true;
-    if (homeReach(join(home, "cache", "runs"), p, cwd) === "inside" && segs.includes("backups")) return true;
-    if (homeReach(join(home, "credentials"), p, cwd) === "inside" || p === join(home, "credentials")) return true;
-    // The secret store's files on every OS (the fence names them off macOS only, where the store is a file).
-    if (["secrets.enc", "secrets.key", "secrets.key.cred"].some((n) => homeReach(join(home, n), p, cwd) === "inside" || p === join(home, n))) return true;
   }
   return false;
 }
@@ -83,7 +80,7 @@ export function fileToolFenceRefusal(name: string, input: unknown, fence: FileFe
   for (const raw of paths) {
     const path = isAbsolute(raw) ? raw : resolve(cwd, raw);
     const verdict = fence.check({ op: tool.op, path });
-    if (verdict.allowed && tool.op === "read" && carriesKeys(fence.home, path, cwd)) return `${name} was not run: ${raw} holds secrets or keys, which bots never read.`;
+    if (verdict.allowed && tool.op === "read" && botReadDenied(fence.home, path, cwd)) return `${name} was not run: ${raw} holds secrets or keys, which bots never read.`;
     if (!verdict.allowed) return `${name} was not run: ${raw} is in Clover's folder, outside what this session may ${tool.op === "read" ? "read" : "write"}.`;
   }
   return undefined;

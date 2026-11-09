@@ -335,6 +335,12 @@ export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: Fence
   return item.bot !== undefined && reachesMemoryFolder(item.bot.replace("/", "--"), ctx, os);
 }
 
+/** What a bot may never read in the Clover home, relative to it (the owner's ruling of November 9: bots read the rest):
+ *  the run folder (the app token, the core's socket, the plugins' run files and guards), the secret store's files, the
+ *  credential index, the runtimes, the store's MCP list, the run folders, plugin data and the bot driver's state. It
+ *  mirrors lane C's list of the same name (on lane C's branch lane/c-bots-read), which replaces it when that lands. */
+export const BOT_READ_DENIED = ["run", "secrets.enc", "secrets.key", "secrets.key.cred", "credentials", "runtimes", "sdk/.clover.json", "cache/runs", "plugin-data", "sessions-runtime"] as const;
+
 /** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). Exported for the OS sandboxes, which enforce the same rule when granting `own…` folders. */
 export const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
 
@@ -347,9 +353,12 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
   if (segs.length < home.length || !home.every((h, i) => same(h, segs[i]!))) return true; // not in the home
   const [area, x, sub, ...deeper] = segs.slice(home.length);
   const bot = ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? ctx.memoryOf.replace("/", "--") : undefined;
-  // The owner's ruling of November 9 (amended): a bot's sessions read the whole Clover home (the escalation list, the
-  // fenced set's read-denied items and plugin data, is judged apart), and write any bot's scratch and memory.
-  if (bot !== undefined && !writes && !same(area ?? "", "plugin-data")) return true;
+  // The owner's ruling of November 9 (amended): a bot's sessions read the whole Clover home but `BOT_READ_DENIED` (the
+  // fenced set's read-denied items are judged apart too), and write any bot's scratch and memory.
+  if (bot !== undefined && !writes) {
+    const rel = segs.slice(home.length);
+    return !BOT_READ_DENIED.some((d) => { const ds = d.split("/"); return ds.length <= rel.length && ds.every((n, i) => same(n, rel[i]!)); });
+  }
   if (area === undefined || x === undefined) return false; // the home itself, or a top folder in it
   const inside = sub !== undefined; // strictly inside `<area>/<x>`
   // 1. A session's own outputs.
@@ -541,7 +550,7 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
         if (!reachesMemoryFolder(pattern.folder, o.caller, o.os, writes)) return { allowed: false, reason: "bot-memory", path: pattern.root };
         if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
       }
-    } else if (pattern?.kind === "sessions-runtime" && (writes || !(o.caller?.user || (o.caller?.memoryOf !== undefined && isAnyPluginId(o.caller.memoryOf))))) {
+    } else if (pattern?.kind === "sessions-runtime" && (writes || !o.caller?.user)) {
       return { allowed: false, reason: "sessions-runtime", path: pattern.root };
     }
     for (const item of set) {

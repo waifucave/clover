@@ -235,11 +235,11 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       const callers = { main, side: session("luna", "side-thread"), agent: session("luna", "agent"), coding: session(undefined, "coding"), other: session("alpha", "bot", "s_9"),
         plugin: { kind: "plugin", pluginId: "tarot" } as const, peer: { kind: "peer", device: "desk0000000000000001", sessionId: "s_1", bot: "luna" } as const };
       // Everything a conversation lives in, and every other top folder: no caller writes it; only a bot's sessions read it
-      // (the owner's ruling of November 9), never a plugin's own data.
+      // (the owner's ruling of November 9), never what `BOT_READ_DENIED` names (plugin data, the run folders…).
       const bots = new Set<unknown>([main, callers.side, callers.other]);
       for (const top of ["projects", "sdk/projects", "sessions", "transcripts", "diffs", "cache/runs", "logs", "usage", "routines", "routines/x", "plugin-data", "plugin-data/x", "whatever-comes-next"]) {
         for (const [name, c] of [...Object.entries(callers), ["none", undefined] as const]) {
-          expect([top, name, reach(c, `${CLOVER}/${top}/x.json`)]).toEqual([top, name, [bots.has(c) && !top.startsWith("plugin-data"), false]]);
+          expect([top, name, reach(c, `${CLOVER}/${top}/x.json`)]).toEqual([top, name, [bots.has(c) && !top.startsWith("plugin-data") && top !== "cache/runs", false]]);
         }
       }
       // 1. A session's own outputs, read and write; another session's, neither.
@@ -324,15 +324,16 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       }
     });
 
-    test("sessions-runtime: write-denied; a bot's sessions read it, no other session does (#197's check 4, the owner's ruling of November 9)", () => {
+    test("sessions-runtime: write-denied; a session reads only its own state (#197's check 4)", () => {
       const f = fence("macos");
       const RT = `${CLOVER}/sessions-runtime`;
       const own = { kind: "session", sessionId: "s_1", sessionKind: "bot", bot: "luna" } as const;
       const other = { kind: "session", sessionId: "s_2", sessionKind: "coding" } as const;
       expect(f.check({ op: "write", path: `${RT}/s_1.json` })).toEqual({ allowed: false, reason: "sessions-runtime", path: RT });
       expect(f.forCaller(own).check({ op: "write", path: `${RT}/s_1.json` }).allowed).toBe(false);
-      // The home default-deny: no other tool reads runtime state; a bot's sessions read the home, this with it.
-      expect(f.forCaller(own).check({ op: "read", path: `${RT}/s_1.json` }).allowed).toBe(true);
+      // The home default-deny: no tool reads runtime state, its own session's included (a bot's, `BOT_READ_DENIED`); the
+      // core reads it for the session.
+      expect(f.forCaller(own).check({ op: "read", path: `${RT}/s_1.json` }).allowed).toBe(false);
       expect(f.forCaller(other).check({ op: "read", path: `${RT}/s_1.json` })).toEqual({ allowed: false, reason: "sessions-runtime", path: RT });
       expect(f.check({ op: "read", path: `${RT}/s_1.json` }).allowed).toBe(false);
       expect(f.forCaller({ kind: "user", client: "app" }).check({ op: "read", path: `${RT}/s_1.json` }).allowed).toBe(true);
