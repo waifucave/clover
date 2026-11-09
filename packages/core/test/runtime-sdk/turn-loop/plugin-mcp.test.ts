@@ -94,8 +94,8 @@ test("a host server's tools are listed with their loading and instructions, plac
     expect(web.tools[0]!.inputSchema.properties).toHaveProperty("saveTo");
     expect(mcp.fields("web").saveTo).toBe("saveTo");
     // An agents-only, per-computer server: placed here, never a bot's.
-    expect(mcp.servers("agent").map((s) => s.server)).toEqual(["web", "acme__blender"]);
-    expect(mcp.placement("acme__blender")).toEqual({ name: "acme__blender", kind: "local", computers: ["Studio"] });
+    expect(mcp.servers("agent").map((s) => s.server)).toEqual(["web", "acme-blender"]);
+    expect(mcp.placement("acme-blender")).toEqual({ name: "acme-blender", kind: "local", computers: ["Studio"] });
     expect(mcp.servers("agent")[1]!.tools.every((t) => t.load === "preload")).toBe(true);
     // stdio and waiting entries aren't served here.
     expect(mcp.placement("files")).toBeUndefined();
@@ -112,39 +112,39 @@ test("a per-computer server is placed on exactly the computers lane J's node say
     entry("clover", "web", { type: "host" }),
   ], { acme: "/nonexistent", clover: "/nonexistent" });
   // blender is ticked here and on the Laptop; maya only on the Laptop.
-  const running: Record<string, string[]> = { acme__blender: ["Studio", "Laptop"], acme__maya: ["Laptop"] };
+  const running: Record<string, string[]> = { "acme-blender": ["Studio", "Laptop"], "acme-maya": ["Laptop"] };
   const fake = fakeHost();
   const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", computers: (server) => running[server] ?? [] });
   try {
     await mcp.refresh();
     // Both are declared (J's node ticks them per computer), whatever this computer ticks, and naming them starts nothing.
-    expect(mcp.localServers()).toEqual([{ server: "acme__blender", plugin: "acme" }, { server: "acme__maya", plugin: "acme" }]);
+    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme" }, { server: "acme-maya", plugin: "acme" }]);
     // maya's process never started here: no channel was opened to it, and it isn't listed or called here.
     expect(fake.opened.map((o) => o.server).sort()).toEqual(["blender", "web"]);
-    expect(mcp.placement("acme__maya")).toBeUndefined();
-    await expect(mcp.call({ server: "acme__maya", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(mcp.placement("acme-maya")).toBeUndefined();
+    await expect(mcp.call({ server: "acme-maya", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
     expect(fake.opened.map((o) => o.server).sort()).toEqual(["blender", "web"]);
     // blender runs here and on the Laptop: the model gets the `computer` field.
-    expect(mcp.placement("acme__blender")).toEqual({ name: "acme__blender", kind: "local", computers: ["Studio", "Laptop"] });
-    expect(mcp.fields("acme__blender").computer).toBeDefined();
+    expect(mcp.placement("acme-blender")).toEqual({ name: "acme-blender", kind: "local", computers: ["Studio", "Laptop"] });
+    expect(mcp.fields("acme-blender").computer).toBeDefined();
     // Its tick here goes: a call before the next refresh is refused and its channel closed; the refresh drops it.
-    running.acme__blender = ["Laptop"];
-    expect(mcp.placement("acme__blender")!.computers).toEqual(["Laptop"]);
-    expect(mcp.fields("acme__blender").computer).toBeUndefined();
-    await expect(mcp.call({ server: "acme__blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
+    running["acme-blender"] = ["Laptop"];
+    expect(mcp.placement("acme-blender")!.computers).toEqual(["Laptop"]);
+    expect(mcp.fields("acme-blender").computer).toBeUndefined();
+    await expect(mcp.call({ server: "acme-blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
     expect(fake.opened.find((o) => o.server === "blender")!.channel.closed).toBe(true);
     await mcp.refresh();
-    expect(mcp.placement("acme__blender")).toBeUndefined();
+    expect(mcp.placement("acme-blender")).toBeUndefined();
     expect(fake.opened.filter((o) => o.server === "blender")).toHaveLength(1);
     // Ticked nowhere: it runs nowhere. A remote server is untouched by any of it.
-    running.acme__blender = [];
+    running["acme-blender"] = [];
     await mcp.refresh();
-    expect(mcp.placement("acme__blender")).toBeUndefined();
+    expect(mcp.placement("acme-blender")).toBeUndefined();
     expect(mcp.placement("web")).toEqual({ name: "web", kind: "remote", computers: [] });
     // Ticked here again: it starts and is listed.
-    running.acme__maya = ["Laptop", "Studio"];
+    running["acme-maya"] = ["Laptop", "Studio"];
     await mcp.refresh();
-    expect(mcp.placement("acme__maya")).toEqual({ name: "acme__maya", kind: "local", computers: ["Laptop", "Studio"] });
+    expect(mcp.placement("acme-maya")).toEqual({ name: "acme-maya", kind: "local", computers: ["Laptop", "Studio"] });
     expect(fake.opened.filter((o) => o.server === "maya")).toHaveLength(1);
   } finally {
     mcp.close();
@@ -158,36 +158,36 @@ test("remote servers fill only names this computer doesn't list; listing() gives
     entry("clover", "web", { type: "host" }),
   ], { acme: "/nonexistent", clover: "/nonexistent" });
   // blender runs here; maya only on the Laptop.
-  const running: Record<string, string[]> = { acme__blender: ["Studio"], acme__maya: ["Laptop"] };
+  const running: Record<string, string[]> = { "acme-blender": ["Studio"], "acme-maya": ["Laptop"] };
   const remote = (server: string, plugin: string) => ({ server, plugin, tools: [{ name: "Render", inputSchema: { type: "object" as const }, load: "preload" as const }], computers: ["Laptop"], reachable: true });
   const mcp = new PluginMcp({
     registry, host: fakeHost().host, self: () => "Studio", computers: (s) => running[s] ?? [],
     remoteServers: () => [
-      remote("acme__maya", "acme"), // runs on the Laptop only: fills the gap
-      remote("acme__blender", "acme"), // listed here: this computer's own wins, even where scoped out for bots
+      remote("acme-maya", "acme"), // runs on the Laptop only: fills the gap
+      remote("acme-blender", "acme"), // listed here: this computer's own wins, even where scoped out for bots
       remote("web", "evil"), // a name this registry gives another plugin: never taken
       remote("clover_core", "evil"), // a reserved name: never taken
-      remote("other__tool", "other"), // a name this computer doesn't know at all: filled
+      remote("other-tool", "other"), // a name this computer doesn't know at all: filled
     ],
   });
   try {
     await mcp.refresh();
     const forAgent = mcp.servers("agent");
     // This computer's own first (in its listing's order), then the remote ones filling gaps.
-    expect(forAgent.slice(0, 2).map((s) => s.server).sort()).toEqual(["acme__blender", "web"]);
-    expect(forAgent.slice(2).map((s) => s.server)).toEqual(["acme__maya", "other__tool"]);
+    expect(forAgent.slice(0, 2).map((s) => s.server).sort()).toEqual(["acme-blender", "web"]);
+    expect(forAgent.slice(2).map((s) => s.server)).toEqual(["acme-maya", "other-tool"]);
     expect(forAgent.find((s) => s.server === "web")!.plugin).toBe("clover");
-    expect(forAgent.find((s) => s.server === "acme__blender")!.computers).toEqual(["Studio"]);
-    expect(forAgent.find((s) => s.server === "acme__maya")!.computers).toEqual(["Laptop"]);
+    expect(forAgent.find((s) => s.server === "acme-blender")!.computers).toEqual(["Studio"]);
+    expect(forAgent.find((s) => s.server === "acme-maya")!.computers).toEqual(["Laptop"]);
     // For a bot, blender is scoped out here, and the remote copy doesn't bring it back.
-    expect(mcp.servers("bot").map((s) => s.server)).toEqual(["web", "acme__maya", "other__tool"]);
+    expect(mcp.servers("bot").map((s) => s.server)).toEqual(["web", "acme-maya", "other-tool"]);
     // The listing: per-computer servers listed here, raw tools with their loading, scope; never web, never maya.
     const listing = mcp.listing();
-    expect(listing.map((l) => l.server)).toEqual(["acme__blender"]);
+    expect(listing.map((l) => l.server)).toEqual(["acme-blender"]);
     // The name round-trips: the served key is the plugin's and its own name's.
     expect(listing[0]!.name).toBe("blender");
     expect(pluginMcpServerKey(listing[0]!.plugin, listing[0]!.name)).toBe(listing[0]!.server);
-    expect(pluginMcpServerKey("acme/sub", "x.y")).toBe("acme_sub__x_y");
+    expect(pluginMcpServerKey("acme/sub", "x.y")).toBe("acme-sub-x-y");
     expect(listing[0]!.scope).toBe("agents");
     expect(listing[0]!.tools.map((t) => [t.name, t.load])).toEqual([["WebSearch", "preload"], ["WebFetch", "on-demand"], ["Later", "on-demand"]]);
     expect(Object.keys(listing[0]!.tools[0]!.inputSchema.properties ?? {})).not.toContain("computer");
@@ -201,7 +201,7 @@ test("with no tick list from the host, a per-computer server runs here, as befor
   const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
   try {
     await mcp.refresh();
-    expect(mcp.placement("acme__blender")).toEqual({ name: "acme__blender", kind: "local", computers: ["Studio"] });
+    expect(mcp.placement("acme-blender")).toEqual({ name: "acme-blender", kind: "local", computers: ["Studio"] });
   } finally {
     mcp.close();
   }
@@ -271,9 +271,9 @@ test("a third-party server is served under its plugin's key; a bundled one keeps
   const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio" });
   try {
     await mcp.refresh();
-    expect(names(mcp)).toEqual(["web", "acme_tools__blender"]);
+    expect(names(mcp)).toEqual(["web", "acme-tools-blender"]);
     // The call reaches the plugin under its own server name.
-    await mcp.call({ server: "acme_tools__blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" });
+    await mcp.call({ server: "acme-tools-blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" });
     expect(fake.opened.map((o) => [o.plugin, o.server])).toEqual([["clover", "web"], ["acme/tools", "blender"]]);
   } finally {
     mcp.close();
@@ -293,10 +293,49 @@ test("a third-party `web` server can't take mcp__web__*, and a third-party `clov
   const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: (l) => lines.push(l) });
   try {
     await mcp.refresh();
-    expect(new Set(names(mcp))).toEqual(new Set(["web", "acme__fine"]));
+    expect(new Set(names(mcp))).toEqual(new Set(["web", "acme-fine"]));
     expect(mcp.servers("agent").find((s) => s.server === "web")!.plugin).toBe("clover");
     expect(lines.filter((l) => l.includes("refused"))).toHaveLength(3);
     expect(fake.opened.map((o) => o.plugin + "/" + o.server).sort()).toEqual(["acme/fine", "clover/web"]);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("every server key round-trips through a tool name, never holds `__`, and is a namespace; a name that gives none is refused", async () => {
+  const { isServerKey } = await import("../../../src/runtime-sdk/turn-loop/plugin-mcp");
+  const { mcpToolName, parseMcpToolName } = await import("../../../src/computers/mcp");
+  const cases: [string, string][] = [["acme", "blender"], ["acme/sub", "x.y"], ["Acme_Tools", "Big__Server"], ["a--b", "_x_"], ["clover/model-google", "web"], ["x", "Ünïcode name"]];
+  for (const [plugin, name] of cases) {
+    const key = pluginMcpServerKey(plugin, name)!;
+    expect(key).toBeDefined();
+    expect(key).not.toContain("__");
+    expect(key).not.toContain("_");
+    expect(isServerKey(key)).toBe(true);
+    expect(parseMcpToolName(mcpToolName(key, "Some__Tool"))).toEqual({ server: key, tool: "Some__Tool" });
+  }
+  expect(pluginMcpServerKey("acme", "___")).toBeUndefined();
+  expect(pluginMcpServerKey("@@", "x")).toBeUndefined();
+  for (const bad of ["a__b", "a_b", "_a", "a-", "A", "a--b", ""]) expect(isServerKey(bad)).toBe(false);
+  // Served keys too: each one the registry gives round-trips, and a plugin whose server name gives no key is refused.
+  const registry = fakeRegistry([
+    entry("Acme_Tools", "Big__Server", { type: "host" }),
+    entry("acme", "___", { type: "host" }),
+    entry("clover", "web", { type: "host" }),
+    entry("clover", "Not_A_Namespace", { type: "host" }),
+  ], { Acme_Tools: "/nonexistent", acme: "/nonexistent", clover: "/nonexistent" });
+  const lines: string[] = [];
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", log: (l) => lines.push(l) });
+  try {
+    await mcp.refresh();
+    expect(new Set(names(mcp))).toEqual(new Set(["web", "acme-tools-big-server"]));
+    for (const key of names(mcp)) expect(parseMcpToolName(mcpToolName(key, "T"))!.server).toBe(key);
+    // The bot driver keeps them (its server names are namespaces): none refused on the way to the runtime.
+    const { mergedServers } = await import("../../../src/runtime-sdk/turn-loop/driver");
+    const driverRefused: string[] = [];
+    expect(mergedServers(mcp.servers("agent"), (s) => driverRefused.push(s.server)).map((s) => s.server).sort()).toEqual(["acme-tools-big-server", "web"]);
+    expect(driverRefused).toEqual([]);
+    expect(lines.filter((l) => l.includes("refused"))).toHaveLength(2);
   } finally {
     mcp.close();
   }
@@ -312,8 +351,8 @@ test("two plugins that come to the same key are both refused, logged, never firs
   const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", log: (l) => lines.push(l) });
   try {
     await mcp.refresh();
-    expect(names(mcp)).toEqual(["other__y"]);
-    expect(lines.filter((l) => l.includes("a_b__x"))).toHaveLength(2);
+    expect(names(mcp)).toEqual(["other-y"]);
+    expect(lines.filter((l) => l.includes("a-b-x"))).toHaveLength(2);
   } finally {
     mcp.close();
   }
@@ -385,7 +424,7 @@ test("servers are listed at once; a hung one times out (open included), is repor
     const t0 = Date.now();
     await mcp.refresh();
     expect(Date.now() - t0).toBeLessThan(1000);
-    expect(new Set(names(mcp))).toEqual(new Set(["web", "acme__ok"]));
+    expect(new Set(names(mcp))).toEqual(new Set(["web", "acme-ok"]));
     expect(lines.some((l) => l.includes("acme/stuck") && l.includes("couldn't be listed"))).toBe(true);
   } finally {
     mcp.close();

@@ -26,7 +26,8 @@ import type { Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { McpChannel, PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
-import { placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
+import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
+import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
 import { isBundledClover } from "../model-plugins/load";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
 
@@ -45,11 +46,32 @@ export const RESULT_MAX_CHARS = 1_048_576;
 /** Server names only the core owns, which no non-bundled plugin may serve under. */
 const RESERVED_NAMES: readonly string[] = ["clover", "clover_core"];
 
-/** The key a non-bundled plugin's `host` server is served under: `<pluginId>__<name>`, every character but
- *  `[A-Za-z0-9_-]` written `_` (a bundled server keeps its own name). Lane J's node checks a remote listing's
- *  `server` against this key of its `plugin` and `name`, so a peer can't name a server another plugin's key. */
-export function pluginMcpServerKey(pluginId: string, name: string): string {
-  return `${pluginId}__${name}`.replace(/[^A-Za-z0-9_-]/g, "_");
+/** One part of a server key: lower case, every run of characters but `[a-z0-9]` written as one `-`, none at the ends. */
+function keySegment(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/** Whether `key` can name a server: a namespace (the driver's grammar, lower-case letters and digits joined by single
+ *  hyphens, so never `__`), and it comes back whole from a tool name (`parseMcpToolName(mcpToolName(key, tool))`), so
+ *  approvals, saved rules and hooks see the server it is. */
+export function isServerKey(key: string): boolean {
+  if (!NAMESPACE_RE.test(key)) return false;
+  const parsed = parseMcpToolName(mcpToolName(key, "Tool"));
+  return parsed !== null && parsed.server === key && parsed.tool === "Tool";
+}
+
+/** The key a non-bundled plugin's `host` server is served under: `<plugin id>-<name>`, each part lower case with every
+ *  run of other characters one `-` (a bundled server keeps its own name). Undefined when the result can't name a
+ *  server (`isServerKey`). The key is never parsed back: which plugin and server it is comes from the registry. It is
+ *  lossy (`a/b` and `a.b` both give `a-b`), so a key two plugins reach, or one that is a bundled server's name or a
+ *  reserved one, is refused for both, here and in a remote listing. Lane J's node checks a remote listing's `server`
+ *  against this key of its `plugin` and `name`. */
+export function pluginMcpServerKey(pluginId: string, name: string): string | undefined {
+  const plugin = keySegment(pluginId);
+  const server = keySegment(name);
+  if (plugin === "" || server === "") return undefined;
+  const key = `${plugin}-${server}`;
+  return isServerKey(key) ? key : undefined;
 }
 /** The note a cut result ends with. */
 const TRUNCATED_NOTE = "[result truncated: it was over 1 MiB]";
@@ -192,7 +214,7 @@ export interface PluginMcpListing {
   server: string;
   plugin: string;
   /** The server's own name, as its plugin declares it: `server` is `pluginMcpServerKey(plugin, name)`, or `name` itself
-   *  for a bundled plugin's server. */
+   *  for a bundled plugin's server; either way `isServerKey(server)`. */
   name: string;
   tools: (McpToolDef & { load: "preload" | "on-demand" })[];
   instructions?: string;
@@ -277,12 +299,26 @@ export class PluginMcp {
       const name = this.#nameOf(c);
       const isBundled = bundled(c);
       let key = name;
-      if (!isBundled) {
+      if (isBundled) {
+        if (!isServerKey(key)) {
+          refused.push({ c, why: `the name ${name} can't name a server (lower-case letters and digits, single hyphens)` });
+          continue;
+        }
+      } else {
         if (RESERVED_NAMES.includes(name) || bundledNames.has(name)) {
           refused.push({ c, why: `the name ${name} is reserved` });
           continue;
         }
-        key = pluginMcpServerKey(c.pluginId, name);
+        const minted = pluginMcpServerKey(c.pluginId, name);
+        if (minted === undefined) {
+          refused.push({ c, why: `the name ${name} gives no server key` });
+          continue;
+        }
+        if (RESERVED_NAMES.includes(minted) || bundledNames.has(minted)) {
+          refused.push({ c, why: `its key ${minted} is reserved` });
+          continue;
+        }
+        key = minted;
       }
       const group = groups.get(key) ?? [];
       group.push({ c, bundled: isBundled });
@@ -416,7 +452,7 @@ export class PluginMcp {
     const declared = new Map(this.#keys().served.map(({ key, c }) => [key, c.pluginId] as const));
     for (const r of this.#o.remoteServers?.(kind) ?? []) {
       if (this.#listed.has(r.server) || out.some((s) => s.server === r.server)) continue;
-      if (RESERVED_NAMES.includes(r.server)) continue;
+      if (RESERVED_NAMES.includes(r.server) || !isServerKey(r.server)) continue;
       const owner = declared.get(r.server);
       if (owner !== undefined && owner !== r.plugin) continue;
       out.push(r);
