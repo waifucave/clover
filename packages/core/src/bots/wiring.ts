@@ -245,7 +245,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
       ...sessions,
       // Lane G's `pill.send`: the Dispatch pill's words go through the same session.send as the composer's, and to a
       // `pill.target` entry's handler through the plugin host, when there is one.
-      ...pillMethods({ bots, sessions, ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
+      ...pillMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
       ...(voices === undefined ? {} : voicesMethods({ voices })),
       };

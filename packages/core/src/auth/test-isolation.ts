@@ -8,7 +8,7 @@
 //   macOS    the throwaway keychain FILE the preload made (`login-keychain.ts`'s pinned backend); `Bun.secrets`
 //            (which searches the user's keychain list and creates in the login keychain) is never isolated
 //   Linux    the Secret Service only on the private session bus `scripts/with-private-secret-service.sh` gives
-//            the test command (`CLOVER_PRIVATE_SECRET_SERVICE=1`)
+//            the test command (`CLOVER_PRIVATE_SECRET_SERVICE` is that bus's address, and the session bus is it)
 //   Windows  Credential Manager only under a throwaway test service (`THROWAWAY_SERVICE_PREFIX…`, the harness's)
 // and anything else goes to a store in this process's memory (`isolatedTestBackend`). `Bun.secrets` itself is
 // fenced the same way (`guardBunSecrets`): an un-isolated call throws, rather than reach the user's store.
@@ -18,7 +18,7 @@ import { DIST_BUILD } from "../build-kind";
 export const TEST_KEYCHAIN_ENV = "CLOVER_TEST_KEYCHAIN";
 /** Any of these in the environment means a test preload set this process up. */
 export const UNDER_TEST_ENV = ["CLOVER_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN", TEST_KEYCHAIN_ENV] as const;
-/** Set by scripts/with-private-secret-service.sh: the session bus is the wrapper's private one. */
+/** Set by scripts/with-private-secret-service.sh, inside its private bus, to that bus's address. */
 export const PRIVATE_SECRET_SERVICE_ENV = "CLOVER_PRIVATE_SECRET_SERVICE";
 /** Every throwaway test service starts with this (packages/test-harness's `TEST_SERVICE_PREFIX`). */
 export const THROWAWAY_SERVICE_PREFIX = "com.waifucave.clover.core.test.";
@@ -34,12 +34,19 @@ export function underTest(env: Env = process.env, distBuild: boolean = DIST_BUIL
   return UNDER_TEST_ENV.some((k) => env[k] !== undefined) || (!distBuild && env.NODE_ENV === "test");
 }
 
+/** Linux: the session bus is the wrapper's private one: `CLOVER_PRIVATE_SECRET_SERVICE` names a bus address and it is
+ *  the one `DBUS_SESSION_BUS_ADDRESS` names (a bare flag, or a bus the developer's own session gives, never counts). */
+export function privateBus(env: Env = process.env): boolean {
+  const named = env[PRIVATE_SECRET_SERVICE_ENV];
+  return named !== undefined && /^(unix|tcp):/.test(named) && named === env.DBUS_SESSION_BUS_ADDRESS;
+}
+
 /** Whether a test may reach the OS store through `Bun.secrets` for `service`: never on macOS, on Linux only on the
  *  private bus, on Windows only under a throwaway test service. */
 export function osStoreIsolated(service: string, env: Env = process.env, platform: NodeJS.Platform = process.platform): boolean {
   if (platform === "darwin") return false;
   if (platform === "win32") return service.startsWith(THROWAWAY_SERVICE_PREFIX) && /^[A-Za-z0-9._-]+$/.test(service.slice(THROWAWAY_SERVICE_PREFIX.length)) && service.length > THROWAWAY_SERVICE_PREFIX.length;
-  return env[PRIVATE_SECRET_SERVICE_ENV] === "1";
+  return privateBus(env);
 }
 
 /** This process's in-memory store (shared by every isolated backend in it), by service and name. */

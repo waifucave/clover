@@ -84,6 +84,13 @@ class SessionConfigs {
 
 const sessionOf = (r: FencedRun): string | undefined => (r.who.caller.kind === "session" ? r.who.caller.sessionId : undefined);
 
+/** At a run's start: the session's watched configs looked at again against what its last run left, before this run
+ *  takes its own snapshot. */
+function recheckBefore(configs: SessionConfigs, r: FencedRun): string | null {
+  const id = sessionOf(r);
+  return id === undefined ? null : configs.recheck(id);
+}
+
 export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
   const os = o.os ?? o.fence.os;
   const configs = new SessionConfigs();
@@ -98,6 +105,9 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         const ctx = fenceContextFor(r.who.caller);
         const policy = o.fence.policy(ctx);
         const profile = macFenceProfile({ policy, cloverHome: o.fence.cloverHome, home: o.fence.home, perUserTemp: (o.perUserTemp ?? darwinUserTemp)(), caller: callerPlaces(o.fence.cloverHome, os, ctx) });
+        // A key set since the session's last run ended is reverted first, so it never becomes this run's baseline
+        // (#321's check 2).
+        const between = recheckBefore(configs, r);
         const configBefore = snapshotFiles(watchedConfigFiles(o.fence.home, r.cwd));
         // Everything the command starts ends with the run (#321's review): under the holder, or by its recorded tree,
         // a `set -m` job and a double fork included. Only then are the git keys looked at, so nothing is left to set
@@ -110,9 +120,9 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
         if (result.kind === "refused") return result;
         // Repos made during the run weren't on disk at snapshot time: watch their configs as newly appeared.
         for (const p of watchedConfigFiles(o.fence.home, r.cwd)) if (!configBefore.has(p)) configBefore.set(p, null);
-        const note = revertPlantedGitKeys(configBefore);
+        const notes = [between, revertPlantedGitKeys(configBefore)].filter((n): n is string => n !== null);
         configs.settled(sessionOf(r), configBefore.keys());
-        return note === null ? result : { ...result, stderr: result.stderr + note };
+        return notes.length === 0 ? result : { ...result, stderr: result.stderr + notes.join("") };
       },
     };
   }
@@ -219,6 +229,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
             return { kind: "refused", reason: `a fenced process can't be started here: a login-start place can't be made (${e instanceof Error ? e.message : String(e)})` };
           }
           const beltBefore = new Map(supervisedFiles.map((p) => [p, existsNoFollow(p)]));
+          const between = recheckBefore(configs, r); // as on macOS: never a key set between two runs as a baseline
           const configBefore = snapshotFiles(watchedConfigFiles(o.fence.home, r.cwd));
           // Fail closed: no supervisor, no run. The shim exits 127 with a `(closed)` marker when it can't start
           // one; a command that prints the marker and exits 127 only refuses itself.
@@ -237,6 +248,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           // Repos made during the run weren't on disk at snapshot time: watch their configs as newly appeared.
           for (const p of watchedConfigFiles(o.fence.home, r.cwd)) if (!configBefore.has(p)) configBefore.set(p, null);
           const notes = [
+            between,
             heldFolderNote(result.stderr, plan.held),
             quarantinePlanted(beltBefore, o.fence.cloverHome),
             revertPlantedGitKeys(configBefore),
