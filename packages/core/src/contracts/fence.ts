@@ -137,7 +137,11 @@ export interface SandboxPolicy {
    *     `memory-x` is not inside `memory`), a glob's `*` one whole name;
    *  2. unlinking or renaming an `own…` folder itself, or any folder that holds one, is denied;
    *  3. inside `ownMemory`, `ownOutputs`, `ownScratch`, `ownRoutines` and `ownPluginData`, reading and writing pass; `ownBot` and the `own…` folders
-   *     themselves, reading;
+   *     themselves, reading. An `own…` folder is carved out of the denies that hold it (the Clover home, `bots`,
+   *     the memory pattern): those are read as "everything there but the runner's own folders", never as a deny an
+   *     allow re-opens. A deny strictly inside an `own…` folder still denies there: a DENY always wins over an
+   *     ALLOW, whatever the order or how specific each is (the controller's ruling), so no allow ever re-opens
+   *     `sessions/`, the secrets or `run/`;
    *  4. otherwise `denyWrite` and `denyRead` deny, the Clover home included.
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
    *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
@@ -280,9 +284,12 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
   const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
   // 2. An `own…` folder itself, and every folder that holds one, is never unlinked or renamed.
   if ((op === "unlink" || op === "rename") && rw.some((own) => under(own, realPath))) return false;
-  // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading.
-  if (rw.some((own) => under(realPath, own, true))) return true;
-  if (op === "read" && ro.some((own) => under(realPath, own))) return true;
+  // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading. Each is
+  // carved out of the denies that hold it; a deny strictly inside one still wins (deny over allow, always).
+  const deniesHere = op === "read" ? policy.denyRead : policy.denyWrite;
+  const innerDeny = (own: string) => deniesHere.some((d) => under(d, own, true) && under(realPath, d));
+  if (rw.some((own) => under(realPath, own, true) && !innerDeny(own))) return true;
+  if (op === "read" && ro.some((own) => under(realPath, own) && !innerDeny(own))) return true;
   // 4. The denies, the Clover home included.
   if (op === "read") return !policy.denyRead.some((d) => under(realPath, d));
   if (policy.denyWrite.some((d) => under(realPath, d))) return false;
