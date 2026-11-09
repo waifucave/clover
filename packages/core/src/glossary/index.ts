@@ -20,6 +20,7 @@ import { foldTitle } from "@waifucave/clover-plugin-sdk";
 import { PLUGINS_METHODS } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "../contracts/common";
 import type { PluginRegistry } from "../contracts/plugin-registry";
+import { BUILTIN_TOOL_NAMES } from "../approvals/bot-check";
 import { pointViews } from "../commands/views";
 import { handler, type MethodHandler } from "../rpc/handler";
 
@@ -61,6 +62,13 @@ export interface GlossaryOptions {
   readText?: (path: string) => string | undefined;
 }
 
+/** The core's tools a plugin's skill or agent never stands in for (#332's second review): the agent SDK's built-ins and
+ *  the core's own tools, whether or not this index was given them in `tools`. */
+export const CORE_TOOL_NAMES: readonly string[] = [
+  ...BUILTIN_TOOL_NAMES, "Agent", "Task", "SendMessage", "ListAgents", "TaskStop", "Glossary", "Search", "ReadPage", "Skill", "ToolSearch",
+  "WebFetch", "WebSearch", "AskQuestion",
+];
+
 /** Clover's own names, besides the core tools': a plugin's skill or agent never takes one, or one that reads as one. */
 export const RESERVED_GLOSSARY_NAMES: readonly string[] = ["clover", "waifucave", "system", "glossary", "user", "core"];
 
@@ -92,6 +100,9 @@ export class GlossaryIndex {
   readonly #o: GlossaryOptions;
   #entries: GlossaryEntry[] = [];
   #stale = true;
+  #built = false;
+  #rebuilding = false;
+  #rebuilt: (() => void) | undefined;
   readonly #stop: Unsubscribe;
 
   constructor(o: GlossaryOptions) {
@@ -105,13 +116,34 @@ export class GlossaryIndex {
     this.#stop();
   }
 
-  /** Every item, rebuilt when the registry changed since the last read. */
+  /** Every item. The first read builds the index; after a registry change the next read serves the last index while
+   *  a new one builds in the background (#332's review: a rebuild reads every skill file, and never blocks a call). */
   entries(): readonly GlossaryEntry[] {
-    if (this.#stale) {
+    if (!this.#built) {
       this.#entries = this.#build();
+      this.#built = true;
       this.#stale = false;
+    } else if (this.#stale && !this.#rebuilding) {
+      this.#rebuilding = true;
+      setImmediate(() => {
+        this.#stale = false;
+        try {
+          this.#entries = this.#build();
+        } finally {
+          this.#rebuilding = false;
+        }
+        this.#rebuilt?.();
+      });
     }
     return this.#entries;
+  }
+
+  /** Resolves once the index reflects every registry change so far (tests, and a caller that must see one). */
+  async settled(): Promise<void> {
+    for (let i = 0; i < 100 && (this.#stale || this.#rebuilding); i++) {
+      if (this.#stale && !this.#rebuilding) this.entries();
+      await new Promise<void>((resolve) => { this.#rebuilt = resolve; setTimeout(resolve, 50); });
+    }
   }
 
   #build(): GlossaryEntry[] {
@@ -120,7 +152,7 @@ export class GlossaryIndex {
     const tools = this.#o.tools?.() ?? [];
     // A plugin's skill or agent whose name reads as a core tool's or Clover's own (folded: case, accents, look-alike
     // letters, spacing; #332's review) is indexed under its plugin's name, so it never stands in for one.
-    const reserved = new Set([...RESERVED_GLOSSARY_NAMES, ...tools.filter((t) => t.pluginId === undefined).map((t) => t.name)].map(foldTitle));
+    const reserved = new Set([...RESERVED_GLOSSARY_NAMES, ...CORE_TOOL_NAMES, ...tools.filter((t) => t.pluginId === undefined).map((t) => t.name)].map(foldTitle));
     const owned = (name: string, pluginId: string): string => (reserved.has(foldTitle(name)) ? `${pluginId}:${name}` : name);
     for (const r of records.values()) {
       if (!r.enabled || r.state !== "running") continue;

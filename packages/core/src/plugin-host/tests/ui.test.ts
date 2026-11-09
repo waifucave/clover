@@ -1,7 +1,7 @@
 // The app's side of plugins with UI (`plugin.ui`, `plugin.layer.api`, `plugin_ui_message`, `plugin_ui_changed`), over a
 // real registry and a real plugin-host process. Temp homes, the fake approval broker, an in-memory secret store.
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync as makeTemp, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { layerApiCall, PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -13,6 +13,16 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { startPluginHost } from "../daemon-host";
 import { layerOf, pluginUi, uiPluginViews } from "../ui";
+
+const temps: string[] = [];
+const mkdtempSync = (prefix: string): string => {
+  const d = makeTemp(prefix);
+  temps.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of temps) rmSync(d, { recursive: true, force: true });
+});
 
 const ctx = { caller: { kind: "core" } } as never;
 

@@ -43,6 +43,9 @@ const BUILTIN_EFFECTS: ReadonlyMap<string, ActionEffect> = new Map<string, Actio
   ["TodoWrite", "think"], ["ExitPlanMode", "think"], ["AskUserQuestion", "think"], ["TaskCreate", "think"], ["TaskUpdate", "think"],
 ]);
 
+/** The agent SDK's built-in tools' names (the Glossary reserves them, so no plugin's skill or agent stands in for one). */
+export const BUILTIN_TOOL_NAMES: readonly string[] = [...BUILTIN_EFFECTS.keys()];
+
 /** The built-ins whose command is the call (`command`), keyed on the exact command in a rule. */
 const COMMAND_TOOLS: ReadonlySet<string> = new Set(["Bash", "PowerShell", "Monitor"]);
 

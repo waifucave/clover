@@ -101,6 +101,24 @@ describe("plugin.* over the registry", () => {
     }
   });
 
+  test("a secret that can't be deleted stops the removal: the folder stays, so nothing is left for a same-id reinstall (#332's second review)", async () => {
+    const home = temp("clover-b2-methods-");
+    mkdirSync(join(home, "plugins", "tarot"), { recursive: true });
+    writeFileSync(join(home, "plugins", "tarot", "clover.json"), manifest("tarot"));
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker: new FakeApprovalBroker({ clock: new FakeClock() }), secrets, settleMs: 50 });
+    await secrets.set({ owner: { kind: "plugin", pluginId: "tarot" }, name: "key" }, "sk" as never);
+    const failing = { list: secrets.list.bind(secrets), delete: async () => { throw new Error("the store is locked"); } };
+    const m = pluginRegistryMethods({ opened, host: { restart: async () => {} }, home, secrets: failing });
+    try {
+      expect((await m["plugin.remove"]!({ id: "tarot" }, CLI).catch((e: Error) => e.message)) as string).toContain("locked");
+      expect(existsSync(join(home, "plugins", "tarot"))).toBe(true);
+      expect(opened.registry.get("tarot")).toBeDefined();
+    } finally {
+      opened.close();
+    }
+  });
+
   test("before the registry opens, the lists are empty and anything else is refused while it opens", () => {
     expect(beforePluginsOpen("plugin.list")).toEqual({ plugins: [], adultConfirmed: false });
     expect(beforePluginsOpen("point.list")).toEqual({ points: [] });
