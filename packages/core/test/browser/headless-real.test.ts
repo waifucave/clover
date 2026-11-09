@@ -14,8 +14,13 @@ import { BrowserError, partitionFor } from "../../src/browser/policy";
 import type { AppTabEvent, StreamChunk, TabOwner, TabView } from "../../src/browser/contract";
 import { HeadlessBrowser, imageSize } from "../../src/browser/headless";
 import { startBrowser } from "../../src/browser/daemon";
+import type { BrowserEvent } from "../../src/browser/service";
 
 const RUN = process.env.CLOVER_HEADLESS_TESTS === "1";
+/** One install folder for the whole file (CI's cache when it gives one): the second describe reuses the first's
+ *  install instead of downloading the shell again. */
+let sharedDir: string | undefined;
+const SHARED_DIR = (): string => (sharedDir ??= process.env.CLOVER_HEADLESS_DIR ?? mkdtempSync(join(tmpdir(), "clover-headless-")));
 const T = 120_000;
 
 /** A bot allowed loopback, so its tab can load the local fixture server: only the R13 checks use the real policies. */
@@ -25,7 +30,7 @@ const coding: TabOwner = { kind: "session", session: "sess_r13" };
 let labPolicy: AddressPolicy = { loopback: true, privateNetworks: false, linkLocal: false };
 
 describe.skipIf(!RUN)("the headless shell, for real", () => {
-  const dir = process.env.CLOVER_HEADLESS_DIR ?? mkdtempSync(join(tmpdir(), "clover-headless-"));
+  const dir = SHARED_DIR();
   const events: AppTabEvent[] = [];
   const chunks: { stream: string; chunk: StreamChunk }[] = [];
   const names: string[] = [];
@@ -221,26 +226,30 @@ describe.skipIf(!RUN)("the headless shell, for real", () => {
 
 describe.skipIf(!RUN)("the daemon's browser where no app runs, for real", () => {
   test("startBrowser: the headless shell drives tabs through the service, and its filter takes only the shell's own connections", async () => {
-    const dir = process.env.CLOVER_HEADLESS_DIR;
+    const dir = SHARED_DIR();
     const home = mkdtempSync(join(tmpdir(), "clover-daemon-browser-"));
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => html(`<title>Daemon</title><p>DAEMON-MARKER</p>`) });
     const logs: string[] = [];
+    const events: BrowserEvent[] = [];
     const browser = startBrowser({
-      computer: "Server", home, headless: true, log: (l) => logs.push(l),
-      // A reused install from the test above's cache; and a bot allowed loopback, for the fixture.
-      headlessOptions: { ...(dir !== undefined ? { dir } : {}), policyFor: (owner, lan) => (owner.kind === "bot" && owner.bot === "lab" ? { loopback: true, privateNetworks: false, linkLocal: false } : policyFor(owner, lan)) },
+      computer: "Server", home, headless: true, log: (l) => logs.push(l), emit: (e) => events.push(e),
+      // The install the tests above made (or CI's cache); and a bot allowed loopback, for the fixture.
+      headlessOptions: { dir, policyFor: (owner, lan) => (owner.kind === "bot" && owner.bot === "lab" ? { loopback: true, privateNetworks: false, linkLocal: false } : policyFor(owner, lan)) },
     });
     try {
       const tab = await browser.service.open({ kind: "user" }, { owner: lab, url: `http://127.0.0.1:${server.port}/` });
+      // Wait on the condition, not a guess: the shell's own report that the page loaded (the filter's owner lookups
+      // can take Windows seconds on a loaded runner). A DevTools call sent while the page is still committing can go
+      // unanswered, so the page is read only once it has loaded, and a read that fails is tried again.
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline && !events.some((e) => e.type === "tab_changed" && e.tab.id === tab.id && e.tab.title === "Daemon" && !e.tab.loading)) await Bun.sleep(100);
       let text = "";
-      // The filter checks who connects through the OS's socket and process tables, which Windows takes seconds over
-      // on a loaded runner, so the page may take a while; wait for the marker, not for a guess at how long.
-      for (let i = 0; i < 300 && !text.includes("DAEMON-MARKER"); i++) {
-        await Bun.sleep(200);
-        const r = (await browser.service.cdp({ kind: "user" }, tab.id, "Runtime.evaluate", { expression: "document.body ? document.body.innerText : ''", returnByValue: true })) as { result?: { value?: string } };
-        text = r.result?.value ?? "";
+      while (Date.now() < deadline && !text.includes("DAEMON-MARKER")) {
+        const r = (await browser.service.cdp({ kind: "user" }, tab.id, "Runtime.evaluate", { expression: "document.body ? document.body.innerText : ''", returnByValue: true }).catch(() => undefined)) as { result?: { value?: string } } | undefined;
+        text = r?.result?.value ?? "";
+        if (!text.includes("DAEMON-MARKER")) await Bun.sleep(250);
       }
-      expect(text).toContain("DAEMON-MARKER");
+      expect(`${text} ${JSON.stringify(events.filter((e) => e.type === "tab_changed").slice(-3))}`).toContain("DAEMON-MARKER");
       // This test's own process is not the shell's: its connection to the filter is closed unanswered.
       const ports = browser.filterPorts();
       expect(ports.length).toBeGreaterThanOrEqual(3);
@@ -257,7 +266,7 @@ describe.skipIf(!RUN)("the daemon's browser where no app runs, for real", () => 
       await browser.shutdown();
       server.stop(true);
     }
-  }, T);
+  }, 300_000);
 });
 
 function html(body: string): Response {
