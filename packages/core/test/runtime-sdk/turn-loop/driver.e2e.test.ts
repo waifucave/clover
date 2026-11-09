@@ -3,7 +3,7 @@
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
@@ -515,22 +515,37 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
-  // The fence's hook on a bot's own file tools (`botFileFence`), through the real runtime: refused calls never run.
-  test("a bot's file tools: its own memory read; the secrets file never read, the settings never written", async () => {
+  // The fence's hook on a bot's own file tools (`botFileFence`), through the real runtime: refused calls never run, and
+  // a search's hits through a link the bot planted in its scratch (to a file in run/, to run/ itself) never show.
+  test("a bot's file tools: its own memory read; the secrets file never read, the settings never written; no search through a link to run/", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
     mkdirSync(ctx.paths.memory, { recursive: true });
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    mkdirSync(join(home, "run"), { recursive: true });
     writeFileSync(join(ctx.paths.memory, "MEMORY.md"), "READ-own");
     writeFileSync(join(home, "secrets.enc"), "SECRET");
+    writeFileSync(join(home, "run", "app.token"), "SECRET-token");
     writeFileSync(join(home, "settings.json"), "{}");
+    writeFileSync(join(ctx.paths.scratch, "notes.txt"), "SECRET-free notes");
+    symlinkSync(join(home, "run", "app.token"), join(ctx.paths.scratch, "tok"));
+    symlinkSync(join(home, "run"), join(ctx.paths.scratch, "rundir"));
     const fence = new CloverFence({ home: dirname(home), cloverHome: home });
-    const driver = new BotSessionDriver(ctx, deps(home, spawn, { fileFence: botFileFence(fence, home) }));
+    // Any read denial in the sandbox (as lane C's will have) makes the runtime's search walk its folder by hand, and that
+    // walk takes a link to a file as the file: without the hook's filter, Glob lists `tok` and Grep shows the token.
+    const sandbox = () => ({ filesystem: { denyRead: [join(home, "elsewhere")] } });
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { fileFence: botFileFence(fence, home), sandbox }));
     try {
       const q = JSON.stringify;
       const calls = [
         `CALL Read ${q({ file_path: join(home, "secrets.enc") })}`,
         `CALL Write ${q({ file_path: join(home, "settings.json"), content: "{\"x\":2}" })}`,
         `CALL Read ${q({ file_path: join(ctx.paths.memory, "MEMORY.md") })}`,
+        `CALL Glossary ${q({ load: ["Glob", "Grep"] })}`,
+        `CALL Glob ${q({ pattern: "**/*", path: ctx.paths.scratch })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: ctx.paths.scratch, output_mode: "content" })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: ctx.paths.scratch, output_mode: "files_with_matches" })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: ctx.paths.scratch, glob: "rundir/**", output_mode: "content" })}`,
       ].join("\n");
       const end = await driver.turn(user(calls), control());
       expect(end.reason).toBe("end_turn");
@@ -542,6 +557,19 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       expect(reads[0]?.content).not.toContain("SECRET");
       expect(r.find((x) => x.name === "Write")?.content).toContain("Write was not run");
       expect(reads[1]?.content).toContain("READ-own");
+      const glob = r.find((x) => x.name === "Glob")?.content ?? "";
+      expect(glob).toContain("notes.txt");
+      expect(glob).not.toContain("tok");
+      expect(glob).not.toContain("app.token");
+      const greps = r.filter((x) => x.name === "Grep");
+      expect(greps.length).toBe(3);
+      expect(greps[0]?.content).toContain("notes.txt");
+      expect(greps[1]?.content).toContain("notes.txt");
+      for (const g of greps) {
+        expect(g.content).not.toContain("SECRET-token");
+        expect(g.content).not.toContain("tok\"");
+        expect(g.content).not.toContain("app.token");
+      }
     } finally {
       await driver.stop();
     }

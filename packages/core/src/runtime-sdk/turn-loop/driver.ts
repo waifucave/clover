@@ -55,7 +55,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { fileToolFenceRefusal, type FileFence } from "./file-fence";
+import { fenceSearchOutput, fileToolFenceRefusal, type FileFence } from "./file-fence";
 import type { Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
@@ -571,7 +571,9 @@ export class BotSessionDriver implements SessionDriver {
         const input = raw as ToolUseInput;
         const name = input.tool_name ?? "";
         this.#dropCallId(name, input.tool_use_id ?? toolUseId);
-        const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, input.tool_response, signal);
+        // A search's hits through a link out of the session's folders are dropped before anyone sees them, plugins too.
+        const fenced = this.#fileFence === undefined ? undefined : fenceSearchOutput(name, input.tool_response, this.#fileFence, this.#ctx.paths.scratch);
+        const result = await this.#hooks.toolAfter(this.#hookSession, { name, callId: input.tool_use_id ?? toolUseId ?? "" }, input.tool_input, fenced ?? input.tool_response, signal);
         if (result === input.tool_response) return {};
         return { hookSpecificOutput: { hookEventName: "PostToolUse", ...(name.startsWith("mcp__") ? { updatedMCPToolOutput: result } : { updatedToolOutput: result }) } };
       }],

@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { CloverFence } from "../../../src/fence/fence";
 import { botPaths } from "../../../src/bots/paths";
 import { botFileFence } from "../../../src/runtime-sdk/turn-loop/driver";
-import { fileToolFenceRefusal } from "../../../src/runtime-sdk/turn-loop/file-fence";
+import * as fenceContract from "../../../src/contracts/fence";
+import { BOT_KEY_PATHS, fenceSearchOutput, fileToolFenceRefusal } from "../../../src/runtime-sdk/turn-loop/file-fence";
 import type { BotSessionContext } from "../../../src/bots/service";
 
 const temps: string[] = [];
@@ -89,8 +90,67 @@ describe("files that carry keys are refused even where the fence lets a read thr
       join(tmpdir(), "claude-resume-1/.clover.json"), join(tmpdir(), "claude-resume-1/backups/b")]) {
       expect([f, fileToolFenceRefusal("Read", { file_path: f }, open(home), "/")]).toEqual([f, expect.stringContaining("holds secrets or keys")]);
     }
-    for (const f of [`${home}/settings.json`, `${home}/bots/a/memory/M.md`, join(tmpdir(), "claude-resume-1/projects/k/s.jsonl")]) {
+    for (const f of [`${home}/runtimes/console/x`, `${home}/plugin-data/tarot/t.json`, `${home}/cache/runs/r/settings.json`, `${home}/browser/profile/Cookies`,
+      `${home}/sdk/projects/-p/s.provider-state.jsonl`, `${home}/projects/-p/sub/s.provider-state.jsonl`]) {
+      expect([f, fileToolFenceRefusal("Read", { file_path: f }, open(home), "/")]).toEqual([f, expect.stringContaining("holds secrets or keys")]);
+    }
+    for (const f of [`${home}/settings.json`, `${home}/bots/a/memory/M.md`, `${home}/sdk/projects/-p/s.jsonl`, `${home}/scratch/b/x.provider-state.jsonl`, `${home}/cache/views/v/SKILL.md`,
+      join(tmpdir(), "claude-resume-1/projects/k/s.jsonl")]) {
       expect([f, fileToolFenceRefusal("Read", { file_path: f }, open(home), "/")]).toEqual([f, undefined]);
     }
+  });
+});
+
+describe("the bots' key list (BOT_KEY_PATHS) is lane C's BOT_READ_DENIED", () => {
+  test("equal to the fence's list once contracts/fence.ts exports it; till then, the list as #355 has it with browser/", () => {
+    const sorted = (l: readonly (readonly string[])[]) => l.map((r) => r.join("/")).sort();
+    const theirs = (fenceContract as Record<string, unknown>)["BOT_READ_DENIED"] as readonly (readonly string[])[] | undefined;
+    expect(sorted(BOT_KEY_PATHS)).toEqual(theirs !== undefined ? sorted(theirs) : ["browser", "cache/runs", "credentials", "plugin-data", "runtimes", "sdk/.clover.json"]);
+  });
+});
+
+describe("a search's hits through a link out of the bot's folders are dropped (fenceSearchOutput)", () => {
+  function linked() {
+    const user = realpathSync(mkdtempSync(join(tmpdir(), "clover-file-fence-hits-")));
+    temps.push(user);
+    const home = join(user, ".clover");
+    const scratch = join(home, "scratch", "pack--luna");
+    mkdirSync(scratch, { recursive: true });
+    mkdirSync(join(home, "run"), { recursive: true });
+    writeFileSync(join(home, "run", "app.token"), "SECRET");
+    writeFileSync(join(scratch, "notes.txt"), "mine");
+    symlinkSync(join(home, "run", "app.token"), join(scratch, "tok"));
+    symlinkSync(join(home, "run"), join(scratch, "rundir"));
+    // A fence that lets everything through: the hits are dropped by what they really are.
+    return { home, scratch, fence: { check: () => ({ allowed: true }) as never, home } };
+  }
+
+  test("Glob: a link to a file in run/ and a path through a link to run/ are dropped; the bot's own file stays", () => {
+    const { scratch, fence } = linked();
+    const out = [join(scratch, "notes.txt"), join(scratch, "tok"), join(scratch, "rundir", "app.token"), "", "[Truncated to 100 of 103 total matches]"].join("\n");
+    expect(fenceSearchOutput("Glob", out, fence, scratch)).toBe([join(scratch, "notes.txt"), "", "[Truncated to 100 of 103 total matches]"].join("\n"));
+    expect(fenceSearchOutput("Glob", join(scratch, "notes.txt"), fence, scratch)).toBeUndefined();
+  });
+
+  test("Grep: files, counts and content rows through the links are dropped", () => {
+    const { scratch, fence } = linked();
+    const tok = join(scratch, "tok");
+    const viaDir = join(scratch, "rundir", "app.token");
+    const own = join(scratch, "notes.txt");
+    const files = JSON.parse(fenceSearchOutput("Grep", JSON.stringify({ mode: "files_with_matches", files: [own, tok, viaDir], truncated: false }), fence, scratch)!);
+    expect(files.files).toEqual([own]);
+    const counts = JSON.parse(fenceSearchOutput("Grep", JSON.stringify({ mode: "count", counts: { [own]: 1, [tok]: 1, [viaDir]: 2 } }), fence, scratch)!);
+    expect(counts.counts).toEqual({ [own]: 1 });
+    const content = fenceSearchOutput("Grep", JSON.stringify({ mode: "content", content: [{ file: own, text: "mine" }, { file: tok, text: "SECRET" }, { file: viaDir, text: "SECRET" }] }), fence, scratch)!;
+    expect(content).not.toContain("SECRET");
+    expect(JSON.parse(content).content).toEqual([{ file: own, text: "mine" }]);
+    expect(fenceSearchOutput("Grep", JSON.stringify({ mode: "files_with_matches", files: [own] }), fence, scratch)).toBeUndefined();
+  });
+
+  test("a hit the fence refuses is dropped too, and other tools' output is left alone", () => {
+    const { home, scratch } = linked();
+    const fence = { check: (op: { path: string }) => ({ allowed: !op.path.includes("notes") }) as never, home };
+    expect(fenceSearchOutput("Glob", join(scratch, "notes.txt"), fence, scratch)).toBe("");
+    expect(fenceSearchOutput("Read", "SECRET", fence, scratch)).toBeUndefined();
   });
 });
