@@ -253,6 +253,18 @@ export class CloverFence implements Fence {
     // B's shared `judge`: the fenced kinds, then the home default-deny, folded on every OS. Each folded item maps
     // back to its own; the pattern roots (`bots/<x>/memory`, `sessions-runtime`) come back in the home's own form.
     const set = this.fencedSet();
+    // A held link (#392's review), or a folder holding one, by its own path (the folder resolved, the last name as
+    // written): removing, moving or replacing it would point a fenced item elsewhere, so the core's own file tools
+    // refuse it as the sandboxes do.
+    if (write && this.os !== "windows") {
+      const held = set.flatMap((i) => (i.links ?? []).map((l) => ({ l, kind: i.kind })));
+      for (const raw of held.length > 0 ? (op.op === "move" ? [op.path, op.to] : [op.path]) : []) {
+        let own: string;
+        try { own = posix.join(this.#canonical(posix.dirname(raw)), posix.basename(raw)); } catch { continue; }
+        const hit = held.find((h) => inside(h.l, own, this.os));
+        if (hit) return { allowed: false, reason: hit.kind, path: own };
+      }
+    }
     for (const p of all) {
       const v = judge(set, { op: write ? "write" : "read", path: p }, { os: this.os, cloverHome: this.#cloverHome, ...(ctx ? { caller: ctx } : {}) });
       if (v.allowed) continue;

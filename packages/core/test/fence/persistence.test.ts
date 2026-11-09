@@ -388,6 +388,45 @@ darwinDescribe("Seatbelt, live", () => {
     expect(run(bare, ['ln -sf "$2" "$1.probe" && rm "$1.probe"', at("dotfiles", "gitconfig"), at("project", "evil")])).toBe(true);
   });
 
+  test("the folders above a held link can't be renamed away and replaced, in the fence's Seatbelt: ~/dotfiles, and a deep ~/a/b/c (#392's review)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-above-")));
+    const at = (...p: string[]) => join(home, ...p);
+    for (const d of [at("dotfiles"), at("a", "b", "c"), at("a", "x"), at("real"), at("project")]) mkdirSync(d, { recursive: true });
+    writeFileSync(at("real", "gitconfig"), "[user]\n\tname = me\n");
+    writeFileSync(at("real", "deep"), "[user]\n\tname = me\n");
+    symlinkSync(at("real", "gitconfig"), at("dotfiles", "gitconfig"));
+    symlinkSync(at("dotfiles", "gitconfig"), at(".gitconfig")); // ~/.gitconfig → ~/dotfiles/gitconfig → real
+    symlinkSync(at("real", "deep"), at("a", "b", "c", "gitconfig"));
+    symlinkSync(at("a", "b", "c", "gitconfig"), at(".gitconfig.local")); // an include path's chain, deep
+    writeFileSync(at(".gitconfig.real-include"), "");
+    writeFileSync(at("real", "gitconfig"), "[user]\n\tname = me\n[include]\n\tpath = ~/.gitconfig.local\n");
+    const fence = new CloverFence({ os: "macos", home, cloverHome: at(".clover"), temp: at("tmp") });
+    const ctx = fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" });
+    const policy = fence.policy(ctx);
+    expect(policy.holdLinks).toEqual(expect.arrayContaining([at("dotfiles", "gitconfig"), at("a", "b", "c", "gitconfig")]));
+    const profile = macFenceProfile({ policy, cloverHome: at(".clover"), home, perUserTemp: null, caller: callerPlaces(at(".clover"), "macos", ctx) });
+    const run = (script: string, ...args: string[]) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", ...args], { encoding: "utf8" }).status === 0;
+    // The review's run: rename ~/dotfiles away, put a link to a project folder in its place, write a config there.
+    writeFileSync(at("project", "gitconfig"), "[core]\n\tfsmonitor = evil\n");
+    expect(run('mv "$1" "$1.away" && ln -s "$2" "$1"', at("dotfiles"), at("project"))).toBe(false);
+    for (const f of [at("a", "b"), at("a"), at("a", "b", "c")]) expect([f, run('mv "$1" "$1.away"', f)]).toEqual([f, false]);
+    expect(readlinkSync(at("dotfiles", "gitconfig"))).toBe(at("real", "gitconfig"));
+    expect(readlinkSync(at("a", "b", "c", "gitconfig"))).toBe(at("real", "deep"));
+    expect(existsSync(at("dotfiles.away"))).toBe(false);
+    expect(existsSync(at("a", "b.away"))).toBe(false);
+    // Ordinary work beside them stays open.
+    expect(run('printf x > "$1"', at("a", "b", "notes.md"))).toBe(true);
+    expect(run('mkdir "$1"', at("project", "new"))).toBe(true);
+    // The core's own file tools refuse the same moves (a bot's or an agent's Write, Edit, rm through the fence).
+    const f = fence.forCaller({ kind: "session", sessionId: "b1", sessionKind: "bot", bot: "luna" });
+    for (const op of [{ op: "move", path: at("dotfiles"), to: at("dotfiles.away") }, { op: "delete", path: at("dotfiles", "gitconfig") },
+      { op: "move", path: at("a", "b"), to: at("a", "b2") }, { op: "delete", path: at("a") }, { op: "move", path: at("project"), to: at("dotfiles") }] as const) {
+      expect([op, f.check(op).allowed]).toEqual([op, false]);
+    }
+    expect(f.check({ op: "write", path: at("a", "b", "notes.md") }).allowed).toBe(true);
+    expect(f.check({ op: "move", path: at("a", "x"), to: at("a", "y") }).allowed).toBe(true);
+  });
+
   test("a link loop on the way to ~/.gitconfig: the fence holds it under its own name, and a run isn't thrown out (#392's review)", async () => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-loop-")));
     symlinkSync(join(home, ".gitconfig"), join(home, ".gitconfig")); // a loop

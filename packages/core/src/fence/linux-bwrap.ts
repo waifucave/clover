@@ -106,7 +106,9 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   }
   // Folders between a writable root and an outside fenced item: mount points, so it can't be renamed out.
   const holders = new Set<string>();
-  for (const d of fenced) {
+  // A held link's folders too (#392's review): its own folder is a naming folder (a mount already), and each above it
+  // up to the writable root a mount point, so none is renamed away and replaced.
+  for (const d of [...fenced, ...(policy.holdLinks ?? [])]) {
     for (let p = dirname(d); p !== dirname(p); p = dirname(p)) {
       if (naming.has(p) || inside(p, cloverHome)) continue;
       if (!writable.some((w) => inside(p, w))) break;

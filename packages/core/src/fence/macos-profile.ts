@@ -106,8 +106,6 @@ export function macFenceProfile(input: MacProfileInput): string {
   const cloverHomeDenyRead = policy.denyRead.filter((d) => d === input.cloverHome);
   if (cloverHomeDenyWrite.length > 0) lines.push(`(deny file-write* ${cloverHomeDenyWrite.map((d) => `(subpath ${q(d)})`).join(" ")})`);
   if (cloverHomeDenyRead.length > 0) lines.push(`(deny file-read* ${cloverHomeDenyRead.map((d) => `(subpath ${q(d)})`).join(" ")})`);
-  // 2. Holder folders: specific folder denies (between writable root and fenced item).
-  for (const h of holders(policy.denyWrite, writable)) lines.push(`(deny file-write* (literal ${q(h)}))`);
   // 3. Naming folders outside the home (where Clover names things beyond it): deny non-ASCII names, then allow
   // ASCII names. Inside the home the home deny rules alone: no allow ever reopens a new name there.
   for (const f of [...naming].sort()) {
@@ -123,6 +121,10 @@ export function macFenceProfile(input: MacProfileInput): string {
   // (#392's review). After the naming folders' allows, which would otherwise take a new name there back. A write
   // through one lands at its target, which its item's own deny judges.
   for (const l of policy.holdLinks ?? []) lines.push(`(deny file-write* (literal ${q(l)}))`);
+  // Holder folders, every folder between a writable root and a fenced item or a held link (#392's review): a literal
+  // deny on each, so none is renamed away and replaced (a rename is a write to the folder itself). After the naming
+  // folders' allows, whose ASCII-name allow would otherwise take the folder's own entry back.
+  for (const h of holders([...policy.denyWrite, ...(policy.holdLinks ?? [])], writable)) lines.push(`(deny file-write* (literal ${q(h)}))`);
   if (specificDenyRead.length > 0) lines.push(`(deny file-read* ${specificDenyRead.map((d) => `(subpath ${q(d)})`).join(" ")})`);
   if (doors.length > 0) lines.push(`(deny process-exec ${doors.map((d) => `(literal ${q(d)})`).join(" ")})`);
   // 5. The caller's rules (B's contract, `policyAllows`'s order): the home deny above refuses everything under

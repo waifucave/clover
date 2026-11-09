@@ -67,7 +67,7 @@ describe("the macOS profile, as text", () => {
     const denyRunSubpath = '(deny file-read* (subpath "/U/me/.clover/run")';
     // 1. Clover home default-deny (subpath) comes after allowWrite
     expect(at(denyCloverHome)).toBeGreaterThan(at(allowWriteSubpath));
-    // 2. Holder folder denies (literal) come after Clover home deny
+    // 2. Holder folder denies (literal) come after the Clover home deny (and after the naming allows, below)
     expect(at(denyHomeLiteral)).toBeGreaterThan(at(denyCloverHome)); // renaming home moves Clover home
     expect(p).not.toContain('(literal "/U")'); // above writable roots nothing writable
     // 3. No naming handling for folders inside the Clover home: the home deny refuses every new name there.
@@ -77,7 +77,11 @@ describe("the macOS profile, as text", () => {
     const nameLaunchAgentsDeny = '(deny file-write* (regex #"^/U/me/Library/LaunchAgents/[^/]"))';
     const nameLaunchAgentsAllow = '(allow file-write* (regex #"^/U/me/Library/LaunchAgents/[ -.0-~]+(/|$)"))';
     expect(p).toContain(nameLaunchAgentsDeny);
-    expect(at(nameLaunchAgentsAllow)).toBeGreaterThan(at(denyHomeLiteral));
+    // Holder folders' literal denies come after the naming allows (#392's review): a naming folder's ASCII-name allow
+    // (`~` holding a missing `.zshrc`) would otherwise take a holder's own entry (`~/Library`) back, and it could be
+    // renamed away and replaced.
+    expect(at(denyHomeLiteral)).toBeGreaterThan(at(nameLaunchAgentsAllow));
+    expect(at('(deny file-write* (literal "/U/me/Library")')).toBeGreaterThan(at(nameLaunchAgentsAllow));
     // 4. Specific fenced item denies come AFTER naming folder allows so they can't be overridden by them.
     expect(at(denySettingsJson)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(at(denyPluginsStateOks)).toBeGreaterThan(at(nameLaunchAgentsAllow));
@@ -359,6 +363,23 @@ describe("the Linux sandbox's mounts, as arguments", () => {
     expect(s).toContain("--bind /h/dotfiles/sub /h/dotfiles/sub");
     expect(s).not.toContain("--bind /h/dotfiles/gitconfig");
     expect(plan.held).toContainEqual({ folder: "/h/dotfiles", because: "/h/dotfiles/gitconfig" });
+  });
+
+  test("the folders above a held link are mount points: a deep ~/a/b/c/gitconfig can't have ~/a/b renamed (#392's review)", () => {
+    const dirs = new Set(["/h", "/h/a", "/h/a/b", "/h/a/b/c", "/h/a/x", "/h/p", "/h/.clover", "/t"]);
+    const links = new Set(["/h/a/b/c/gitconfig"]);
+    const fs = {
+      kind: (p: string) => (dirs.has(p) ? "dir" as const : links.has(p) ? "other" as const : null),
+      list: (d: string) => [...dirs, ...links].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
+    };
+    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/real/deep", "/h/.clover"], denyRead: ["/h/.clover"], holdLinks: ["/h/a/b/c/gitconfig"],
+      closedDoors: [], blockedAddresses: [], network: "none" as const };
+    const s = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, policy }).args.join(" ");
+    expect(s).toContain("--bind /h/a/b /h/a/b");
+    expect(s).toContain("--bind /h/a /h/a");
+    expect(s).toContain("--ro-bind /h/a/b/c /h/a/b/c");
+    // A mount point can't be renamed (EBUSY): each is bound before the link's own folder takes its read-only shape.
+    expect(s.indexOf("--bind /h/a/b /h/a/b")).toBeLessThan(s.indexOf("--ro-bind /h/a/b/c /h/a/b/c"));
   });
 
   test("the Clover home is a tmpfs view holding nothing without a caller; outside items read-only", () => {
