@@ -8,6 +8,7 @@ import { lookalikeOf as runtimeLookalikeOf } from "@waifucave/clover-agent-runti
 import { lookalikeOf } from "@waifucave/clover-plugin-sdk/fold";
 import type { Caller } from "@waifucave/clover-protocol";
 import type { InvokeRequest } from "../../../src/contracts/plugin-host";
+import type { FencedRun, FencedRunResult, FencedSpawner } from "../../../src/fence/spawn";
 import type { Contribution } from "../../../src/contracts/plugin-registry";
 import {
   cappedInstructions, defuseTags, devicesBlock, harnessPrompt, MCP_INSTRUCTIONS_MAX_CHARS, mcpBlock, mcpChangesSince, mcpFingerprint,
@@ -145,6 +146,87 @@ describe("the hook events", () => {
     expect(calls.map((c) => c.pluginId)).toEqual(["boom", "boom"]);
     expect(skipped.filter((s) => s.pluginId === "boom").map((s) => s.reason)).toEqual(["kaboom", "kaboom"]);
     expect(skipped.filter((s) => s.pluginId === "cmd")).toHaveLength(1);
+  });
+});
+
+/** Hooks over a fake process door: each run recorded, answered by `answer`. */
+function commandHooksOver(entries: Contribution[], answer: (r: FencedRun) => FencedRunResult | Promise<FencedRunResult>, available = true) {
+  const runs: FencedRun[] = [];
+  const skipped: { pluginId: string; hook: string; reason: string }[] = [];
+  const commandSpawner: FencedSpawner = { available, run: async (r) => { runs.push(r); return answer(r); } };
+  const hooks = pluginHooks({
+    registry: { entries: ((point: string) => (point === "hooks" ? entries : [])) as never, get: ((id: string) => ({ id, manifest: {}, folder: `/plugins/${id}` })) as never },
+    host: { invoke: (async () => { throw new Error("a command hook never goes through invoke"); }) as never },
+    onSkipped: (s) => skipped.push(s),
+    commandSpawner,
+  });
+  return { hooks, runs, skipped };
+}
+
+const exited = (code: number, stdout = "", stderr = ""): FencedRunResult => ({ kind: "exited", code, stdout, stderr, shell: "sh" });
+
+describe("command hooks, through the process door (Claude Code's protocol)", () => {
+  test("it runs as the hooked session, never the core or the plugin: the input on stdin, the plugin's folder, a clean environment, the 30 s cap", async () => {
+    const { hooks, runs } = commandHooksOver([hookEntry("guard", { id: "g", on: ["tool.before"], command: "./guard.sh", timeoutMs: 600_000 })], () => exited(0, JSON.stringify({ input: { command: "ls -la" } })));
+    const sessions: HookSession[] = [
+      session,
+      { id: "t_side", kind: "side-thread", caller: { kind: "session", sessionId: "t_side", sessionKind: "side-thread", bot: "luna" }, bot: "luna", computer: "Studio" },
+      { id: "a_1", kind: "agent", caller: { kind: "session", sessionId: "a_1", sessionKind: "agent", bot: "luna" }, bot: "luna", computer: "Studio" },
+    ];
+    for (const s of sessions) expect(await hooks.toolBefore(s, { name: "Bash", callId: "c1" }, { command: "ls" })).toEqual({ input: { command: "ls -la" } });
+    expect(runs.map((r) => r.who)).toEqual(sessions.map((s) => ({ caller: s.caller, hook: "g" })));
+    const r = runs[0]!;
+    expect(r.command).toBe("./guard.sh");
+    expect(r.cwd).toBe("/plugins/guard");
+    expect(r.timeoutMs).toBe(30_000);
+    expect(JSON.parse(r.stdin!)).toMatchObject({ event: "tool.before", session: { id: "b_luna", caller }, tool: { name: "Bash" }, input: { command: "ls" } });
+    expect(Object.keys(r.env).sort()).toEqual(["CLAUDE_PLUGIN_ROOT", "CLOVER_PLUGIN_ID", "CLOVER_PLUGIN_ROOT", "CLOVER_SESSION_ID", "HOME", "PATH"].filter((k) => k !== "HOME" || process.env.HOME !== undefined).sort());
+  });
+
+  test("a refused run of a tool.before hook (no fence here) DENIES the call with the reason; a non-blocking one is skipped and the action goes on", async () => {
+    const refused = commandHooksOver([
+      hookEntry("guard", { id: "g", on: ["tool.before", "message.in"], command: "./guard.sh" }),
+    ], () => ({ kind: "refused", reason: "no fence on this computer (bubblewrap isn't installed)" }), false);
+    const r = await refused.hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "rm -rf x" });
+    expect(r.deny).toContain('the hook "g" of plugin "guard" couldn\'t run');
+    expect(r.deny).toContain("bubblewrap isn't installed");
+    expect(refused.skipped.map((s) => s.reason)).toEqual(["no fence on this computer (bubblewrap isn't installed)"]);
+    expect(await refused.hooks.messageIn(session, "hi")).toBe("hi");
+    // A door that throws counts as a refusal.
+    const thrown = commandHooksOver([hookEntry("guard", { id: "g", on: ["tool.before"], command: "./guard.sh" })], () => { throw new Error("spawn failed"); });
+    expect((await thrown.hooks.toolBefore(session, { name: "Bash", callId: "c1" }, {})).deny).toContain("spawn failed");
+  });
+
+  test("exit 2 denies with stderr; a timeout, another exit or output that isn't JSON fails a blocking hook closed; exit 0 with nothing changes nothing", async () => {
+    const cases: [FencedRunResult, string | undefined][] = [
+      [exited(2, "", "dangerous command\nsecond line"), "dangerous command second line"],
+      [{ kind: "timeout", stdout: "", stderr: "", shell: "sh" }, "timed out"],
+      [exited(1, "", "oops"), "failed (exit 1)"],
+      [exited(0, "not json"), "isn't JSON"],
+      [exited(0, ""), undefined],
+    ];
+    for (const [result, deny] of cases) {
+      const { hooks } = commandHooksOver([hookEntry("guard", { id: "g", on: ["tool.before"], command: "./guard.sh" })], () => result);
+      const r = await hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" });
+      if (deny === undefined) expect(r).toEqual({ input: { command: "ls" } });
+      else expect(r.deny).toContain(deny);
+    }
+    // On a non-blocking event, exit 2 and a failure are reported and skipped.
+    const msg = commandHooksOver([hookEntry("m", { id: "m", on: ["message.in"], command: "./m.sh" })], () => exited(2, "", "no"));
+    expect(await msg.hooks.messageIn(session, "hi")).toBe("hi");
+    expect(msg.skipped.map((s) => s.reason)).toEqual(["exited 2: no"]);
+  });
+
+  test("its JSON is read like a handler's: only what the event allows", async () => {
+    const { hooks } = commandHooksOver([hookEntry("m", { id: "m", on: ["message.in"], command: "./m.sh" })], () => exited(0, JSON.stringify({ text: "rewritten", deny: { reason: "not allowed here" } })));
+    expect(await hooks.messageIn(session, "hi")).toBe("rewritten");
+  });
+
+  test("with no process door at all, a command hook is skipped and reported once", async () => {
+    const { hooks, skipped } = hooksOver([hookEntry("cmd", { id: "c", on: ["message.in"], command: "./hook.sh" })], () => ({}));
+    await hooks.messageIn(session, "hi");
+    await hooks.messageIn(session, "hi");
+    expect(skipped).toHaveLength(1);
   });
 });
 

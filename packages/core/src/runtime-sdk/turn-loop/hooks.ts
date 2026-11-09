@@ -23,6 +23,7 @@
 import type { Caller } from "@waifucave/clover-protocol";
 import { hookMatchesTool, hookOrder, HOOK_DEFAULT_TIMEOUT_MS, HOOK_RETURNS, type HookEvent, type HookInput } from "../../../../plugin-sdk/src/catalogs/hooks";
 import type { PluginHost } from "../../contracts/plugin-host";
+import type { FencedRunResult, FencedSpawner } from "../../fence/spawn";
 import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
 
 export type { HookEvent, HookInput };
@@ -80,10 +81,12 @@ export interface PluginHooksOptions {
   host: Pick<PluginHost, "invoke">;
   /** A hook skipped: it threw, ran past its limit, or can't run here yet. Settings shows it. */
   onSkipped?(skip: { pluginId: string; hook: string; event: HookEvent; reason: string }): void;
+  /** The door a `command` hook runs through (lane C's `hookSpawner`: the fenced process, or a refusal where there is
+   *  no fence). Left out, a command hook is skipped and reported. */
+  commandSpawner?: FencedSpawner;
 }
 
-/** The most an inline hook may run: a hook holds the turn (or the message) up while it runs. The catalog's larger
- *  maximum stays for a `command` hook, which runs in a sandbox of its own once lane C lands. */
+/** The most a hook may run, a `handler` or a `command`: either holds the turn (or the message) up while it runs. */
 export const INLINE_HOOK_MAX_TIMEOUT_MS = 30_000;
 /** The events whose hooks can deny the action; a crash or timeout there fails closed. */
 const BLOCKING_EVENTS: ReadonlySet<HookEvent> = new Set((Object.keys(HOOK_RETURNS) as HookEvent[]).filter((e) => HOOK_RETURNS[e].includes("deny")));
@@ -128,11 +131,19 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
   async function run<T>(event: HookEvent, s: HookSession, input: Omit<HookInput, "event" | "session" | "bot" | "computer">, initial: T, step: (acc: T, out: Record<string, unknown>, hook: { pluginId: string; id: string }) => { value: T; stop?: boolean }, signal?: AbortSignal, tool?: string): Promise<T> {
     let acc = initial;
     for (const { pluginId, entry } of hooksFor(event, s, tool)) {
-      if (entry.handler === undefined) {
+      const failClosed = (why: string): boolean => {
+        if (!BLOCKING_EVENTS.has(event)) return false;
+        const reason = sanitizeReason(`the hook "${entry.id}" of plugin "${pluginId}" ${why}, so the action was refused`);
+        const next = step(acc, { deny: { reason } }, { pluginId, id: entry.id });
+        acc = next.value;
+        return next.stop === true;
+      };
+      if (entry.handler === undefined && entry.command === undefined) continue;
+      if (entry.handler === undefined && o.commandSpawner === undefined) {
         const key = `${pluginId}/${entry.id}`;
-        if (entry.command !== undefined && !reportedCommand.has(key)) {
+        if (!reportedCommand.has(key)) {
           reportedCommand.add(key);
-          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason("a command hook needs lane C's sandbox, which doesn't run hooks yet") });
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason("a command hook has no process door on this computer yet") });
         }
         continue;
       }
@@ -147,26 +158,80 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
         ...(event === "tool.after" ? { result: acc } : {}),
       };
       let out: unknown;
-      try {
-        out = await o.host.invoke({
-          pluginId, handler: entry.handler, args, caller: s.caller, session: s.id,
-          timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS), ownLimit: true,
-          ...(signal === undefined ? {} : { signal }),
-        });
-      } catch (err) {
-        if (signal?.aborted === true) throw err;
-        const timedOut = (err as { code?: unknown } | null)?.code === "timeout";
-        const detail = err instanceof Error ? err.message : String(err);
-        o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(detail) });
-        if (BLOCKING_EVENTS.has(event)) {
-          // Fail closed: the reason carries no stack and none of the error's text, which might hold a secret.
-          const why = timedOut ? "timed out" : "crashed";
-          const reason = sanitizeReason(`the hook "${entry.id}" of plugin "${pluginId}" ${why}, so the action was refused`);
-          const next = step(acc, { deny: { reason } }, { pluginId, id: entry.id });
+      if (entry.handler === undefined) {
+        // A `command` hook: Claude Code's protocol (the input as JSON on stdin; JSON on stdout; exit 2 denies, with its
+        // stderr as the reason), run through the process door as the hooked session (`who`), never as the core or the
+        // plugin. Where the door can't run it (no fence: `refused`), a hook that can deny denies: the action is never
+        // let through unhooked.
+        const record = o.registry.get(pluginId);
+        let r: FencedRunResult;
+        try {
+          r = await o.commandSpawner!.run({
+            command: entry.command!,
+            cwd: record?.folder ?? process.cwd(),
+            env: commandHookEnv(pluginId, record?.folder, s),
+            stdin: JSON.stringify(args),
+            timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS),
+            ...(signal === undefined ? {} : { signal }),
+            who: { caller: s.caller, hook: entry.id },
+          });
+        } catch (err) {
+          if (signal?.aborted === true) throw err;
+          r = { kind: "refused", reason: err instanceof Error ? err.message : String(err) };
+        }
+        if (signal?.aborted === true) throw signal.reason ?? new Error("aborted");
+        if (r.kind === "refused") {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(r.reason) });
+          if (failClosed(`couldn't run (${sanitizeReason(r.reason)})`)) break;
+          continue;
+        }
+        if (r.kind === "timeout") {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "timed out" });
+          if (failClosed("timed out")) break;
+          continue;
+        }
+        if (r.code === 2) {
+          // Exit 2: a hook that can deny denies, with its stderr; on any other event it's an error, reported.
+          const said = sanitizeReason(r.stderr) || "a plugin's hook refused it";
+          if (!BLOCKING_EVENTS.has(event)) {
+            o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(`exited 2: ${said}`) });
+            continue;
+          }
+          const next = step(acc, { deny: { reason: said } }, { pluginId, id: entry.id });
           acc = next.value;
           if (next.stop === true) break;
+          continue;
         }
-        continue;
+        if (r.code !== 0) {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(`exited ${r.code}`) });
+          if (failClosed(`failed (exit ${r.code})`)) break;
+          continue;
+        }
+        const stdout = r.stdout.trim();
+        if (stdout === "") continue;
+        try {
+          out = JSON.parse(stdout) as unknown;
+        } catch {
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its output isn't JSON" });
+          if (failClosed("answered something that isn't JSON")) break;
+          continue;
+        }
+      } else {
+        try {
+          out = await o.host.invoke({
+            pluginId, handler: entry.handler, args, caller: s.caller, session: s.id,
+            timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS), ownLimit: true,
+            ...(signal === undefined ? {} : { signal }),
+          });
+        } catch (err) {
+          if (signal?.aborted === true) throw err;
+          const timedOut = (err as { code?: unknown } | null)?.code === "timeout";
+          const detail = err instanceof Error ? err.message : String(err);
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(detail) });
+          // Fail closed: the reason carries no stack and none of the error's text, which might hold a secret.
+          if (failClosed(timedOut ? "timed out" : "crashed")) break;
+          continue;
+        }
       }
       if (!isObject(out)) continue;
       // Only what the event allows (§5.3); `event` in the output, when given, must be this one.
@@ -221,4 +286,20 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
     },
     rewritesReplies: () => o.registry.entries("hooks").some((c) => c.state === "active" && (c.value as HookEntryValue).on?.includes("message.out")),
   };
+}
+
+/** A command hook's whole environment: nothing of the core's is inherited (no key, no token), only what a hook
+ *  written for Claude Code expects to find, under Clover's names and Claude Code's. */
+function commandHookEnv(pluginId: string, folder: string | undefined, s: HookSession): Record<string, string> {
+  const env: Record<string, string> = {
+    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
+    CLOVER_PLUGIN_ID: pluginId,
+    CLOVER_SESSION_ID: s.id,
+  };
+  if (folder !== undefined) {
+    env.CLOVER_PLUGIN_ROOT = folder;
+    env.CLAUDE_PLUGIN_ROOT = folder;
+  }
+  if (process.env.HOME !== undefined) env.HOME = process.env.HOME;
+  return env;
 }
