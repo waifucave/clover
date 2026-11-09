@@ -8,6 +8,7 @@ import type { Caller } from "@waifucave/clover-protocol";
 import { Listeners } from "../../../src/contracts/common";
 import type { McpChannel } from "../../../src/contracts/plugin-host";
 import type { Contribution, PluginRecord, RegistryChange } from "../../../src/contracts/plugin-registry";
+import { ContractError } from "../../../src/contracts/common";
 import { pluginMcpServerKey, PluginMcp, RESULT_MAX_CHARS } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
 
 const temps: string[] = [];
@@ -421,6 +422,56 @@ test("localServers: the per-computer servers of plugins enabled and OK'd here, r
     expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme" }, { server: "tree-kid-y", plugin: "tree/kid" }]);
   } finally {
     mcp.close();
+  }
+});
+
+test("stdio servers: opened through the launcher, local (ticked), framed like host servers; a stopped plugin keeps its listing and its calls say why", async () => {
+  const registry = fakeRegistry([
+    entry("acme", "files", { type: "stdio", command: "x", tools: { "*": "preload" } }),
+    entry("clover", "web", { type: "host" }),
+  ], { acme: "/nonexistent", clover: "/nonexistent" });
+  const host = fakeHost();
+  const launcher = fakeHost();
+  let stopped: string | undefined;
+  const stdio = { openMcp: async (plugin: string, server: string) => {
+    if (stopped !== undefined) throw new ContractError("plugin_stopped", stopped);
+    return launcher.host.openMcp(plugin, server);
+  } };
+  const running: Record<string, string[]> = { "acme-files": ["Studio"] };
+  const mcp = new PluginMcp({ registry, host: host.host, self: () => "Studio", computers: (s) => running[s] ?? [], stdio });
+  try {
+    await mcp.refresh();
+    // Through the launcher, never the plugin host; local, on the computers that tick it.
+    expect(launcher.opened.map((o) => o.server)).toEqual(["files"]);
+    expect(host.opened.map((o) => o.server)).toEqual(["web"]);
+    expect(mcp.placement("acme-files")).toEqual({ name: "acme-files", kind: "local", computers: ["Studio"] });
+    expect(mcp.localServers()).toEqual([{ server: "acme-files", plugin: "acme" }]);
+    expect(mcp.servers("agent").find((s) => s.server === "acme-files")!.tools.every((t) => t.load === "preload")).toBe(true);
+    expect(await mcp.call({ server: "acme-files", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).toEqual({ content: [{ type: "text", text: "ran WebSearch" }] });
+    // It crashed too often: the launcher refuses with the reason. The listing stays, and a call answers the reason.
+    launcher.opened[0]!.channel.kill();
+    stopped = "plugin stopped: it crashed 3 times in 10 minutes";
+    await mcp.refresh();
+    expect(mcp.placement("acme-files")).toBeDefined();
+    await expect(mcp.call({ server: "acme-files", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "plugin_stopped", message: stopped });
+    // Restarted: the next listing serves it again.
+    stopped = undefined;
+    await mcp.refresh();
+    expect(await mcp.call({ server: "acme-files", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).toEqual({ content: [{ type: "text", text: "ran WebSearch" }] });
+    // Unticked here: it doesn't start, as a per-computer host server.
+    running["acme-files"] = [];
+    await mcp.refresh();
+    expect(mcp.placement("acme-files")).toBeUndefined();
+  } finally {
+    mcp.close();
+  }
+  // Without the launcher, a stdio entry isn't served here at all.
+  const none = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", computers: () => ["Studio"] });
+  try {
+    await none.refresh();
+    expect(none.placement("acme-files")).toBeUndefined();
+  } finally {
+    none.close();
   }
 });
 

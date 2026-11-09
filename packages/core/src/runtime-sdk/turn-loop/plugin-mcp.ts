@@ -9,13 +9,18 @@
 // * **The tools** are listed when the registry changes (`refresh`), each with its loading from the manifest (`preload`
 //   or `on-demand`, `"*"` the default for the rest, on-demand when it says nothing). A server not listed yet isn't
 //   offered; the MCP block reaches the conversation at the next turn once it is (driver.ts).
-// * **Placement** (lane J's `McpRouter`): a server `perComputer` runs on this computer (local); any other only talks to
-//   the web and runs where the session does (remote), its tools taking J's optional `saveTo`. The router runs a call
-//   here through `call`, and files it returns are saved by the router.
+// * **Placement** (lane J's `McpRouter`): a `stdio` server, and a `host` one marked `perComputer`, is local: it runs on
+//   the computers that tick it, and starts here only when this one does (fail closed with no tick list). Any other
+//   only talks to the web and runs where the session does (remote), its tools taking J's optional `saveTo`. The router
+//   runs a call here through `call`, and files it returns are saved by the router.
+// * **stdio servers** open through lane J's launcher (`stdio`, the fenced process with the plugin's key files), and
+//   are otherwise the same as host ones: listing, keys, scope, deferral and the prompt's `<mcp-server>` block. A
+//   stopped plugin's server (crashed too often) keeps its last listing, and its calls answer why.
 // * **Scope:** a server's own `scope`, else its plugin's, says whether bots get it (`both` by default).
 // * **Names:** a bundled plugin's server (registry source `bundled`, top plugin `clover`) keeps its plain name, so
 //   `mcp__web__WebSearch` is the web plugin's. Any other plugin's server is served under the key
-//   `<plugin id, anything but letters, digits, `_` and `-` as `_`>__<server>`, so it can't take another's tools. A
+//   `pluginMcpServerKey`: `<plugin id, its "/" as "-">-<server>`, a namespace that round-trips through a tool name, so
+//   it can't take another's tools. A
 //   non-bundled server named like a reserved name (`clover`, `clover_core`) or like any bundled plugin's server is
 //   refused and logged. Two servers that come to the same key are refused and logged (never first wins): both of them,
 //   unless exactly one is bundled, which keeps the key.
@@ -203,6 +208,9 @@ export interface PluginMcpOptions {
   /** Per-computer servers another computer runs and lists (lane J's node, `mcpRemoteServers`), ready for the prompt:
    *  placement fields, scope applied, `load` set. They fill only names this computer doesn't list itself. */
   remoteServers?(kind: "bot" | "side-thread" | "agent" | "coding"): readonly BotMcpServer[];
+  /** The door to the plugins' `stdio` servers (lane J's `StdioMcpLauncher`: each open spawns the server fenced, a close
+   *  stops it and releases what it held). Left out, `stdio` entries aren't served here. */
+  stdio?: Pick<PluginHost, "openMcp">;
 }
 
 /** One per-computer server as this computer lists it, for lane J's node to serve to the others (`mcp.list`): the raw
@@ -225,6 +233,15 @@ interface Listed {
   entry: HostServerEntry;
   tools: McpToolDef[];
   instructions?: string;
+  /** Its plugin is stopped (a stdio server that crashed too often, §5.1): its last listing is kept, and its calls
+   *  answer this reason. */
+  stopped?: string;
+}
+
+/** A server that runs on the computers that tick it (local): a `stdio` one always, a `host` one marked `perComputer`
+ *  (spec §5.4). */
+function isLocal(entry: HostServerEntry): boolean {
+  return entry.perComputer === true || entry.type === "stdio";
 }
 
 /** The plugins' `host` MCP servers for bots: listed, placed and called through the plugin host. */
@@ -244,21 +261,26 @@ export class PluginMcp {
     });
   }
 
-  #client(key: string, plugin: string, name: string): ChannelClient {
+  #client(key: string, plugin: string, name: string, stdio = false): ChannelClient {
     let c = this.#clients.get(key);
     if (c !== undefined && (c.plugin !== plugin || c.name !== name)) {
       c.client.close();
       c = undefined;
     }
     if (c === undefined) {
-      c = { plugin, name, client: new ChannelClient(() => this.#o.host.openMcp(plugin, name), this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS) };
+      const door: Pick<PluginHost, "openMcp"> = stdio && this.#o.stdio !== undefined ? this.#o.stdio : this.#o.host;
+      c = { plugin, name, client: new ChannelClient(() => door.openMcp(plugin, name), this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS) };
       this.#clients.set(key, c);
     }
     return c.client;
   }
 
   #hostEntries(): Contribution[] {
-    return this.#o.registry.entries("mcpServers").filter((c) => c.state === "active" && isObject(c.value) && (c.value as { type?: unknown }).type === "host");
+    return this.#o.registry.entries("mcpServers").filter((c) => {
+      if (c.state !== "active" || !isObject(c.value)) return false;
+      const type = (c.value as { type?: unknown }).type;
+      return type === "host" || (type === "stdio" && this.#o.stdio !== undefined);
+    });
   }
 
   #nameOf(c: Contribution): string {
@@ -338,7 +360,7 @@ export class PluginMcp {
   async #list(key: string, c: Contribution): Promise<Listed> {
     const name = this.#nameOf(c);
     const timeoutMs = this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS;
-    const client = this.#client(key, c.pluginId, name);
+    const client = this.#client(key, c.pluginId, name, (c.value as HostServerEntry).type === "stdio");
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -382,6 +404,12 @@ export class PluginMcp {
             return { key, listed: await this.#list(key, c) };
           } catch (err) {
             this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}`);
+            // A stopped plugin's server keeps its last listing, its calls answering why (§5.1); any other failure
+            // drops it until a listing succeeds.
+            const before = this.#listed.get(key);
+            if ((err as { code?: unknown } | null)?.code === "plugin_stopped" && before !== undefined) {
+              return { key, listed: { ...before, stopped: err instanceof Error ? err.message : "plugin stopped" } };
+            }
             return undefined;
           }
         }));
@@ -402,7 +430,7 @@ export class PluginMcp {
   placement(server: string): McpServerPlacement | undefined {
     const l = this.#listed.get(server);
     if (l === undefined) return undefined;
-    if (l.entry.perComputer !== true) return { name: server, kind: "remote", computers: [] };
+    if (!isLocal(l.entry)) return { name: server, kind: "remote", computers: [] };
     // Exactly the computers that tick it: none ticked (no OK card answered on any computer), or no list, runs it nowhere.
     return { name: server, kind: "local", computers: [...(this.#o.computers?.(server) ?? [])] };
   }
@@ -413,7 +441,7 @@ export class PluginMcp {
     // Only plugins installed, enabled and OK'd HERE (a synced plugin not OK'd here is never offered for a tick, so J's
     // first-run adoption can't tick it), whether their servers run yet or not.
     return this.#keys().served.filter(({ c }) => {
-      if ((c.value as HostServerEntry).perComputer !== true) return false;
+      if (!isLocal(c.value as HostServerEntry)) return false;
       const record = this.#o.registry.get(c.pluginId);
       return record !== undefined && record.enabled === true && this.#okd(record);
     }).map(({ key, c }) => ({ server: key, plugin: c.pluginId }));
@@ -422,7 +450,7 @@ export class PluginMcp {
   /** Whether `key`'s process may start on this computer: any server but a per-computer one, and a per-computer one only
    *  where it's ticked (lane J's `computers`). With no list it fails closed: no per-computer server starts. */
   #runsHere(key: string, c: Contribution): boolean {
-    if ((c.value as HostServerEntry).perComputer !== true) return true;
+    if (!isLocal(c.value as HostServerEntry)) return true;
     return this.#o.computers?.(key).includes(this.#o.self()) ?? false;
   }
 
@@ -474,7 +502,7 @@ export class PluginMcp {
     if (record === undefined || record.enabled !== true || (record.state !== "running" && record.state !== "stopped")) return undefined;
     if (!this.#okd(record)) return undefined;
     const hit = this.#keys().served.find(({ c }) => c.pluginId === plugin && this.#nameOf(c) === name);
-    if (hit === undefined || (hit.c.value as HostServerEntry).perComputer !== true) return undefined;
+    if (hit === undefined || !isLocal(hit.c.value as HostServerEntry)) return undefined;
     return { server: hit.key, scope: this.#scopeOf(plugin, hit.c.value as HostServerEntry) };
   }
 
@@ -495,7 +523,7 @@ export class PluginMcp {
   listing(): PluginMcpListing[] {
     const out: PluginMcpListing[] = [];
     for (const [server, l] of this.#listed) {
-      if (l.entry.perComputer !== true) continue;
+      if (!isLocal(l.entry)) continue;
       const loads = l.entry.tools ?? {};
       out.push({
         server, plugin: l.plugin, name: l.name,
@@ -513,13 +541,14 @@ export class PluginMcp {
     const l = this.#listed.get(server);
     if (l === undefined) throw new ContractError("not_installed", `no MCP server ${server}`);
     // Its tick may have gone since the listing: then nothing starts it here, and its channel closes.
-    if (l.entry.perComputer === true && !(this.#o.computers?.(server).includes(this.#o.self()) ?? false)) {
+    if (isLocal(l.entry) && !(this.#o.computers?.(server).includes(this.#o.self()) ?? false)) {
       this.#clients.get(server)?.client.close();
       this.#clients.delete(server);
       throw new ContractError("not_installed", `the MCP server ${server} isn't ticked on this computer`);
     }
+    if (l.stopped !== undefined) throw new ContractError("plugin_stopped", l.stopped);
     if (!l.tools.some((t) => t.name === tool)) throw new ContractError("not_found", `the MCP server ${server} has no tool ${tool}`);
-    const r = await this.#client(server, l.plugin, l.name).request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
+    const r = await this.#client(server, l.plugin, l.name, l.entry.type === "stdio").request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
     if (!isObject(r)) return { content: [{ type: "text", text: "" }], isError: true };
     return capResult({ ...(r as McpResult), content: Array.isArray(r.content) ? r.content as McpResult["content"] : [] });
   };
