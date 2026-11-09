@@ -4,12 +4,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash, createHmac } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloverHelloParams } from "@waifucave/clover-protocol";
 import { daemonEndpoint } from "../src/main/protocol/client";
-import { parseAutostartStatus, type DaemonLauncher } from "../src/main/pair/login";
+import { parseAutostartStatus, devDaemonHomeAllowed, OTHER_INSTALL_HOME_DIRS, devDaemonLauncher, findRepoRoot, type DaemonLauncher, type DevChild } from "../src/main/pair/login";
 import { Pair, daemonProof, type PairState } from "../src/main/pair/pair";
 import { quitQuestion } from "../src/main/pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo, startFilePath } from "../src/main/pair/start";
@@ -380,6 +380,188 @@ describe("Quit's question", () => {
     const q = quitQuestion({ bots: [], routines: 1, agents: 0, canHandOver: true, safeMode: false });
     expect(q.ask).toBe(true);
     expect(q.buttons.map((b) => b.id)).toEqual(["quit", "cancel"]);
+  });
+});
+
+describe("the dev daemon as the app's own child (Gap A: no more starting it by hand)", () => {
+  function setup() {
+    const root = mkdtempSync(join(tmpdir(), "clover-dev-root-"));
+    homes.push(root);
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    writeFileSync(join(root, "scripts", "dev-daemon.ts"), "// stand-in");
+    const home = mkdtempSync(join(tmpdir(), "clover-dev-home-"));
+    homes.push(home);
+    const lines: string[] = [];
+    const spawned: { command: string; args: readonly string[]; cwd: string; env: NodeJS.ProcessEnv }[] = [];
+    const listeners: { exit: Array<() => void>; error: Array<(err?: Error) => void> }[] = [];
+    const kills: (NodeJS.Signals | "tree")[] = [];
+    let alive = false;
+    const spawn = (command: string, args: readonly string[], opts: { cwd: string; env: NodeJS.ProcessEnv }): DevChild => {
+      spawned.push({ command, args, cwd: opts.cwd, env: opts.env });
+      alive = true;
+      const l: { exit: Array<() => void>; error: Array<(err?: Error) => void> } = { exit: [], error: [] };
+      listeners.push(l);
+      return {
+        get pid() { return 4242; },
+        get exitCode() { return alive ? null : 1; },
+        get signalCode() { return null; },
+        kill: (signal?: NodeJS.Signals) => {
+          kills.push(signal ?? "SIGTERM");
+          alive = false;
+          return true;
+        },
+        on: (event: "exit" | "error", listener: (err?: Error) => void) => {
+          if (event === "exit") l.exit.push(listener as () => void);
+          else l.error.push(listener);
+        },
+      };
+    };
+    const trees: number[] = [];
+    const reg = (extra: { platform?: NodeJS.Platform; bun?: string; now?: () => number } = {}) => devDaemonLauncher({
+      root, home, log: (l) => lines.push(l), spawn,
+      killTree: (pid) => { kills.push("tree"); trees.push(pid); },
+      ...extra,
+    });
+    return { root, home, lines, spawned, listeners, kills, trees, reg: reg(), makeReg: reg };
+  }
+
+  function withBinary(root: string): void {
+    const dir = join(root, "dist", "dev");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, process.platform === "win32" ? "clover-core.exe" : "clover-core"), "stand-in");
+  }
+
+  test("starts pinned-bun run dev:daemon in the checkout, on the dev home and profile", async () => {
+    const { root, home, reg, spawned } = setup();
+    withBinary(root);
+    expect(await reg.status()).toBeUndefined();
+    const r = await reg.start();
+    expect(r.ok).toBe(true);
+    expect(spawned).toHaveLength(1);
+    // Never `bun` from PATH: the checkout's pinned Bun.
+    expect(spawned[0]!.command).toBe(join(root, "scripts", "pinned-bun"));
+    expect([...spawned[0]!.args]).toEqual(["run", "dev:daemon", "--no-build"]);
+    expect(spawned[0]!.cwd).toBe(root);
+    expect(spawned[0]!.env.CLOVER_HOME).toBe(home);
+    expect(spawned[0]!.env.CLOVER_PROFILE).toBe("dev");
+    expect(await reg.status()).toEqual({ registered: true, running: true });
+    // Already running: no second child.
+    expect((await reg.start()).ok).toBe(true);
+    expect(spawned).toHaveLength(1);
+  });
+
+  test("findRepoRoot walks up to the checkout from the built main process (B1)", () => {
+    const { root } = setup();
+    // `here` is `<root>/apps/desktop/out/main`: a fixed three-level climb lands in `<root>/apps`.
+    expect(findRepoRoot(join(root, "apps", "desktop", "out", "main"))).toBe(root);
+    expect(findRepoRoot(root)).toBe(root);
+    expect(findRepoRoot(join(tmpdir(), "clover-dev-root-nonexistent"))).toBeUndefined();
+  });
+
+  test("the dev home refuses the dist default and Winter's homes (S3)", () => {
+    const user = mkdtempSync(join(tmpdir(), "clover-dev-user-"));
+    homes.push(user);
+    expect(devDaemonHomeAllowed(join(user, ".clover"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(user, ".winter"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(user, ".winter", "wt", "e2"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(mkdtempSync(join(tmpdir(), "clover-dev-ok-")), user)).toBe(true);
+  });
+
+  test("the dev home check matches the script's: real path, every other install, folders inside the dist home", () => {
+    const user = mkdtempSync(join(tmpdir(), "clover-dev-user-"));
+    homes.push(user);
+    for (const d of [".winter-dev", ".norma", ".norma-dev"]) {
+      expect(devDaemonHomeAllowed(join(user, d), user)).toBe(false);
+      expect(devDaemonHomeAllowed(join(user, d, "x", "y"), user)).toBe(false);
+    }
+    expect(devDaemonHomeAllowed(join(user, ".clover", "dev"), user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(user, ".clover-dev"), user)).toBe(true);
+    // A link into the dist home or another install's is refused by where it leads.
+    mkdirSync(join(user, ".clover"), { recursive: true });
+    mkdirSync(join(user, ".winter"), { recursive: true });
+    const viaDist = join(user, "link-dist");
+    const viaWinter = join(user, "link-winter");
+    symlinkSync(join(user, ".clover"), viaDist);
+    symlinkSync(join(user, ".winter"), viaWinter);
+    expect(devDaemonHomeAllowed(viaDist, user)).toBe(false);
+    expect(devDaemonHomeAllowed(join(viaWinter, "sub"), user)).toBe(false);
+    // The copy of the list equals the core's.
+    const core = readFileSync(join(import.meta.dir, "..", "..", "..", "packages", "core", "src", "other-installs.ts"), "utf8");
+    const legacy = readFileSync(join(import.meta.dir, "..", "..", "..", "packages", "core", "src", "legacy-names.ts"), "utf8");
+    const named = (n: string) => new RegExp(`${n}\\s*=\\s*"([^"]+)"`).exec(core + legacy)![1]!;
+    expect([...OTHER_INSTALL_HOME_DIRS]).toEqual([named("WINTER_HOME_DIR"), named("WINTER_DEV_HOME_DIR"), named("LEGACY_HOME_DIR"), named("LEGACY_DEV_HOME_DIR")]);
+  });
+
+  test("only exits soon after a start count toward the 3-exit limit", async () => {
+    let t = 0;
+    const s = setup();
+    withBinary(s.root);
+    const reg = s.makeReg({ now: () => t });
+    // Three exits, each after a long run: restarts stay possible.
+    for (let i = 0; i < 4; i++) {
+      expect((await reg.start()).ok).toBe(true);
+      t += 60_000;
+      s.listeners[i]!.exit.forEach((l) => l());
+    }
+    expect(s.spawned).toHaveLength(4);
+    // Three exits within 10 s of a start stop it.
+    for (let i = 4; i < 7; i++) {
+      expect((await reg.start()).ok).toBe(true);
+      t += 1_000;
+      s.listeners[i]!.exit.forEach((l) => l());
+    }
+    expect((await reg.start()).ok).toBe(false);
+    expect(s.spawned).toHaveLength(7);
+  });
+
+  test("a spawn failure is logged, never thrown (no Electron error dialog, S2)", async () => {
+    const { root, reg, listeners, lines, spawned } = setup();
+    withBinary(root);
+    await reg.start();
+    expect(spawned).toHaveLength(1);
+    listeners[0]!.error.forEach((l) => l(new Error("spawn ENOENT")));
+    expect(await reg.status()).toBeUndefined();
+    expect(lines.join("\n")).toContain("exited at once");
+  });
+
+  test("a child that exits at once is logged once, and after 3 exits nothing starts", async () => {
+    const { root, reg, listeners, lines, spawned } = setup();
+    withBinary(root);
+    for (let i = 0; i < 3; i++) {
+      expect((await reg.start()).ok).toBe(true);
+      listeners[i]!.exit.forEach((l) => l());
+    }
+    expect(spawned).toHaveLength(3);
+    expect(lines.filter((l) => l.includes("exited at once"))).toHaveLength(1);
+    expect((await reg.start()).ok).toBe(false);
+    expect(spawned).toHaveLength(3);
+  });
+
+  test("stopping on Windows kills the tree; elsewhere one process (S4)", async () => {
+    const s = setup();
+    withBinary(s.root);
+    const win = s.makeReg({ platform: "win32" });
+    await win.start();
+    win.stop?.();
+    expect(s.kills).toEqual(["tree"]);
+    expect(s.trees).toEqual([4242]);
+  });
+
+  test("without a built binary it starts nothing and says to build it once", async () => {
+    const { reg, spawned, lines } = setup();
+    const r = await reg.start();
+    expect(r.ok).toBe(false);
+    expect(spawned).toHaveLength(0);
+    expect(lines.join("\n")).toContain("bun run dev:daemon");
+  });
+
+  test("stopping the pair stops the child", async () => {
+    const { root, reg, kills } = setup();
+    withBinary(root);
+    await reg.start();
+    reg.stop?.();
+    expect(kills).toEqual(["SIGTERM"]);
+    expect(await reg.status()).toBeUndefined();
   });
 });
 

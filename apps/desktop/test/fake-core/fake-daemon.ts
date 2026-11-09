@@ -177,8 +177,8 @@ export async function startFakeDaemon(opts: FakeOptions): Promise<FakeDaemon> {
       }
       if (method === "terminal.write" || method === "terminal.resize" || method === "terminal.close") return reply({ ok: true });
       // The bots the registry's bot plugins are, and no sessions, computers or devices yet.
-      const bots = (opts.ui ?? []).map((v) => v as { pluginId: string; isBot?: boolean; name?: string }).filter((v) => v.isBot === true)
-        .map((v) => ({ id: v.pluginId, name: v.name ?? v.pluginId, model: "fake/model", userLayer: [], state: "idle", computer: "Laptop", mainSession: `${v.pluginId}:main` }));
+      const bots = (opts.ui ?? []).map((v) => v as { pluginId: string; name?: string; bot?: { name: string }; isBot?: boolean }).filter((v) => v.bot !== undefined || v.isBot === true)
+        .map((v) => ({ id: v.pluginId, name: v.name ?? v.bot?.name ?? v.pluginId, model: "fake/model", userLayer: [], state: "idle", computer: "Laptop", mainSession: `${v.pluginId}:main` }));
       if (method === "bot.list") return reply({ bots });
       if (method === "bot.get") {
         const bot = bots.find((b) => b.id === params.id);

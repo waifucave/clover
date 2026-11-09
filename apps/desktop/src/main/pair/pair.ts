@@ -57,7 +57,8 @@ export interface PairOptions {
   /** The hello's params, read afresh for every connection (the token can change when the daemon restarts);
    *  undefined when the app has no token yet. */
   hello: () => HelloParamsOrUndefined;
-  /** How to install and start the daemon; undefined when the app has no daemon binary (the unpackaged dev app). */
+  /** How to install and start the daemon: the OS login item for a binary, or the dev daemon as the app's own child
+   *  for an unpackaged dev run with no binary configured. */
   launcher?: DaemonLauncher;
   /** Lane C's `protocol.prove` before the hello, on the same connection: the daemon answers the app's nonce with an
    *  HMAC under the app's token over the nonce and the pid it sees at the other end, which must be this process. A
@@ -371,6 +372,9 @@ export class Pair {
     this.leaving = true;
     this.current?.close();
     this.current = undefined;
+    try {
+      this.opts.launcher?.stop?.();
+    } catch { /* gone */ }
     this.setState({ kind: "stopped" });
   }
 

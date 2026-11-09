@@ -39,6 +39,7 @@ import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
+import type { AppLauncher } from "./platform/pair/launch";
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
@@ -451,8 +452,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
    *  Absent (today, until B-M1's registry and B-M2's host): sessions use the SDK's compiled catalog. */
   modelPluginHost?: Pick<StartModelPluginsOptions, "registry" | "host" | "pluginSecrets">;
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
-   *  installed it runs alone anyway. */
-  pair?: false;
+   *  installed it runs alone anyway. TEST ONLY: `{ launcher: null }` keeps the pair side (token, hello)
+   *  while forcing no launcher, so a test daemon can never start an app through the OS. */
+  pair?: false | { launcher?: AppLauncher | null };
   /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none).
    *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
    *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
@@ -3221,6 +3223,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     profile: resolveCloverProfile(),
     execPath: process.execPath,
     env: process.env,
+    // TEST ONLY (`pair: { launcher }`): a forced launcher (null: none) skips the OS lookup.
+    ...(typeof opts.pair === "object" && opts.pair.launcher !== undefined ? { launcher: opts.pair.launcher } : {}),
     tellAppQuit: (reason, ids) => cloverServer?.tellAppQuit(reason, ids),
     // Deferred a moment, so the answer to the `pair.quit` that stopped the pair reaches its caller;
     // nothing when `stop()` itself stopped the pair.
