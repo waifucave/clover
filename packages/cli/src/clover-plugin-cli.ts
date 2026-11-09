@@ -10,7 +10,7 @@
 //   clover plugin new <template> [<folder>]     writes a plugin folder from the plugin SDK's templates
 //   clover plugin validate [<folder>] [--json] [--upgrade]   (plugin-validate-cli.ts)
 //
-// The Claude-plugin manager Winter's `clover plugin` was (WS-21: install, marketplace, …) is `clover plugin claude …`.
+// The old Claude-plugin manager (WS-21: install, marketplace, …) is now `clover plugin claude …`.
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { PLUGIN_TEMPLATES, templateFiles, templateIdProblem } from "@waifucave/clover-plugin-sdk/templates";
