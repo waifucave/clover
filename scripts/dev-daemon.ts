@@ -51,7 +51,7 @@
  * daemon is prompted for every item, so dev-profile commands go through the signed binary from then on.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,6 +60,7 @@ import { DEV_KEYCHAIN_SERVICE, oldCreatorStillOwnsItems, transitionDevKeychain }
 import { keychainUnlocked } from "../packages/core/src/auth/keychain-ffi";
 import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { pluginBunDigest } from "../packages/core/src/registry/plugin-run";
+import { buildDevBundledPlugins, devBundledDir } from "../packages/core/src/registry/bundled-stage";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { hostTarget, runScriptLine } from "./build-daemon";
 import { BUNDLED_IDENTIFIERS, buildHolder, HOLDER_FILE, holderSource, PLUGIN_BUN_ENTITLEMENTS } from "./bundled-binaries";
@@ -252,6 +253,14 @@ async function main(): Promise<void> {
   if (!existsSync(binary)) die(`${binary} does not exist — run without --no-build`);
   // Plugin code never runs on the core's binary: its own Bun, beside it (with --no-build too, when it's missing).
   stageDevPluginBun(home);
+  // The bundled plugins, built from this checkout's plugins/ for this computer (B-M2's dev layout): the compiled dev core
+  // loads them from the dev stage, through a private copy of its verified bytes, as a release loads its own.
+  {
+    const sources = join(REPO_ROOT, "plugins");
+    const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
+    const built = await buildDevBundledPlugins({ sources, ids, cloverHome: home });
+    console.error(`dev:daemon: bundled plugins ${built.built.join(", ")} built into ${devBundledDir(home)} (${built.ms} ms)`);
+  }
   const env = devEnv(plan);
 
   if (plan.transition) {
