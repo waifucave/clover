@@ -205,11 +205,13 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     // card), the agents and the bot side all go through these, never a copy of their own.
     const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
     let broker: CloverApprovalBroker | undefined;
-    const lateApprovals: Pick<CloverApprovalBroker, "request"> = {
+    const lateApprovals: Pick<CloverApprovalBroker, "request" | "get"> = {
       request: async (r, o) => {
         if (!broker) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
         return broker.request(r, o);
       },
+      // A level raise's card is read back from the broker itself (J's #342): none before the broker is up.
+      get: (id) => broker?.get(id),
     };
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
