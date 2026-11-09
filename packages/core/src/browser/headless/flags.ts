@@ -2,7 +2,7 @@
 // named as the app names its partitions, its traffic all through the network filter, and nothing of its own that
 // reaches out (no updates, no sync, no crash upload, no field trials, no discovery on the local network). Pure, so the
 // flags are tested without a browser.
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import { AGENT_VIEWPORT, type TabOwner } from "../contract";
 import { partitionFor } from "../policy";
 
@@ -102,11 +102,42 @@ export function headlessArgs(opts: HeadlessArgsOptions): string[] {
   ];
 }
 
+/** The browser's environment on Windows: a short list of the system's own variables Chromium needs, and a home of its
+ *  own under `<dir>\\home` for everything it keeps (`TEMP`, `TMP`, `LOCALAPPDATA`, `APPDATA`, `USERPROFILE`), so nothing
+ *  lands in the person's profile and none of the daemon's variables (tokens, keys, `PATH` entries) reach it. `PATH` is
+ *  System32 only. Pure; paths are Windows paths whichever OS builds them. */
+export function windowsBrowserEnv(dir: string, env: Record<string, string | undefined> = process.env): Record<string, string> {
+  const root = env.SystemRoot ?? env.SYSTEMROOT ?? env.windir ?? "C:\\Windows";
+  const home = win32.join(dir, "home");
+  const out: Record<string, string> = {
+    SystemRoot: root,
+    windir: root,
+    SystemDrive: env.SystemDrive ?? root.slice(0, 2),
+    ComSpec: win32.join(root, "System32", "cmd.exe"),
+    PATH: win32.join(root, "System32"),
+    TEMP: win32.join(home, "Temp"),
+    TMP: win32.join(home, "Temp"),
+    LOCALAPPDATA: win32.join(home, "LocalAppData"),
+    APPDATA: win32.join(home, "AppData"),
+    USERPROFILE: home,
+  };
+  for (const name of ["ProgramData", "ProgramFiles", "ProgramFiles(x86)", "CommonProgramFiles", "ALLUSERSPROFILE", "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "OS"]) {
+    const v = env[name];
+    if (v !== undefined && v !== "") out[name] = v;
+  }
+  return out;
+}
+
+/** The folders a Windows browser's own home needs to exist (it won't make them). */
+export function windowsBrowserDirs(env: Record<string, string>): string[] {
+  return [env.TEMP!, env.LOCALAPPDATA!, env.APPDATA!, env.USERPROFILE!];
+}
+
 /** The browser's environment on macOS and Linux: only what it needs, never the daemon's own (its tokens and keys stay
  *  out of the browser's process), and a home of its own under `<dir>/home`, so nothing it keeps (NSS's database,
- *  caches, fontconfig's) lands in the person's home or `~/.cache`. Windows passes the daemon's environment as it is
- *  (`winpipe.ts`; Chromium there needs the system's own variables). Pure. */
-export function browserEnv(dir: string, env: Record<string, string | undefined> = process.env): Record<string, string> {
+ *  caches, fontconfig's) lands in the person's home or `~/.cache`. On Windows, `windowsBrowserEnv`. Pure. */
+export function browserEnv(dir: string, env: Record<string, string | undefined> = process.env, platform: string = process.platform): Record<string, string> {
+  if (platform === "win32") return windowsBrowserEnv(dir, env);
   const home = join(dir, "home");
   const out: Record<string, string> = {
     HOME: home,
