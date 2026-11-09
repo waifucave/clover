@@ -29,7 +29,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { SandboxContext } from "./admission";
-import type { SandboxPolicy } from "../../contracts/fence";
+import { agentConfigEntries, autoRunEntries, type SandboxPolicy } from "../../contracts/fence";
 import { CloverFence } from "../../fence/fence";
 import { agentPolicyOf, withHomeDenied } from "../memory";
 import { CODEX_PROFILE, claudeCodeOptions, codexProfile, codexWriter, writerDenials } from "./writers";
@@ -98,10 +98,12 @@ export function gateFixture(base = tmpdir(), options: GateFixtureOptions = {}): 
     writeFileSync(path, content);
     planted.set(path, content);
   };
-  // One file inside every literal fenced folder (or the file itself), each bot's memory, and the runtime state.
+  // One file inside every literal fenced folder (or the file itself), each bot's memory, and the runtime state. The
+  // persistence list's single files (`.zshrc`, `.codex/config.toml` …) are files, whatever their names end in.
+  const files = new Set([...autoRunEntries(os, home), ...agentConfigEntries(os, home)].filter((e) => e.file).map((e) => e.path));
   for (const item of fence.fencedSet()) {
     if (!item.path.startsWith(root)) continue;
-    plant(/\.(json|enc|key|plist|service)$/.test(item.path) ? item.path : join(item.path, "probe.txt"));
+    plant(files.has(item.path) || /\.(json|enc|key|plist|service)$/.test(item.path) ? item.path : join(item.path, "probe.txt"));
   }
   for (const p of ["credentials/token", "credentials/rmme", "run/moveme", "bots/beta/memory/notes.md", "sessions-runtime/s1/state.json"]) plant(join(cloverHome, p));
   for (const d of [dev, devA, devB]) plant(join(d, "clover.json"));
