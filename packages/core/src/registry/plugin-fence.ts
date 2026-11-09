@@ -41,7 +41,7 @@
 //
 // Linux and Windows: not fenced yet (Linux under bubblewrap comes next; Windows waits, the owner's priority).
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { PluginRunFiles } from "./plugin-run";
@@ -81,14 +81,69 @@ export const CREDENTIAL_FILES: readonly string[] = [
   ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
 ];
 
-/** Inside a project folder, never written by a fenced process: what runs later on its own outside the fence. Git's
- *  hooks and config (the ruling on project writes); the project's own MCP servers, settings and hooks for Clover and
- *  Claude Code (`.mcp.json`, `.clover/`, `.claude/`), which start programs unfenced; and direnv's `.envrc`, which runs
- *  when a shell enters the folder. Relative to the project folder. Its credential files (`CREDENTIAL_FILES`) are
- *  neither read nor written. */
+/** Inside a project folder, never written by a fenced process: anything that runs on its own without the user running
+ *  their project (the controller's rulings on #352). The whole `.git` (hooks, config, attributes, and every submodule's
+ *  under `.git/modules`); the project's own MCP servers, settings and hooks for Clover and Claude Code (`.mcp.json`,
+ *  `.clover/`, `.claude/`), which start programs unfenced; direnv's `.envrc`, which runs when a shell enters the folder;
+ *  and VS Code's `.vscode/tasks.json`, which can run on folder open. Relative to the project folder. Git's `core.hooksPath`
+ *  folder is denied too (`gitHooksPaths`). Its credential files (`CREDENTIAL_FILES`) are neither read nor written. */
 export const PROJECT_DENIES: readonly string[] = [
-  ".git/hooks", ".git/config", ".git/info/attributes", ".mcp.json", ".clover", ".claude", ".envrc", ...CREDENTIAL_FILES,
+  ".git", ".mcp.json", ".clover", ".claude", ".envrc", ".vscode/tasks.json", ...CREDENTIAL_FILES,
 ];
+
+/** `core.hooksPath` as a Git config file sets it, or undefined (the last one in a `[core]` section wins, as in Git). */
+function hooksPathIn(file: string): string | undefined {
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch {
+    return undefined;
+  }
+  let section = "";
+  let found: string | undefined;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/(^|\s)[#;].*$/, "").trim();
+    const head = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"]*")?\s*\]$/.exec(line);
+    if (head !== null) {
+      section = head[1]!.toLowerCase();
+      continue;
+    }
+    const kv = /^([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*)$/.exec(line);
+    if (section === "core" && kv !== null && kv[1]!.toLowerCase() === "hookspath") found = kv[2]!.replace(/^"(.*)"$/, "$1").trim();
+  }
+  return found === "" ? undefined : found;
+}
+
+/** The project's own Git config file: `.git/config`, or for a linked worktree (`.git` a file) its common folder's. */
+function projectGitConfig(project: string): string | undefined {
+  const dotGit = join(project, ".git");
+  try {
+    if (statSync(dotGit).isDirectory()) return join(dotGit, "config");
+    const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    if (gitdir === undefined) return undefined;
+    const dir = resolve(project, gitdir);
+    let common = dir;
+    try {
+      common = resolve(dir, readFileSync(join(dir, "commondir"), "utf8").trim());
+    } catch {
+      /* a plain gitdir */
+    }
+    return join(common, "config");
+  } catch {
+    return undefined;
+  }
+}
+
+/** The folders Git runs hooks from for a project besides `.git/hooks`: its effective `core.hooksPath`, from the
+ *  project's config or else the user's global config (read here, never written), resolved against the project
+ *  (`~/` against the user's home). Husky's `.husky` and a `.githooks` setup are found this way. */
+export function gitHooksPaths(project: string, userHome: string): string[] {
+  const value = [projectGitConfig(project), join(userHome, ".gitconfig"), join(userHome, ".config", "git", "config")]
+    .map((f) => (f === undefined ? undefined : hooksPathIn(f))).find((v) => v !== undefined);
+  if (value === undefined) return [];
+  const path = value.startsWith("~/") ? join(userHome, value.slice(2)) : resolve(project, value);
+  return [path];
+}
 
 /** The session's working directories a hook or MCP server is given: absolute folders that are none of the homes, never
  *  a folder above one (`/`, `/Users`), never inside the Clover home. Real paths. */
@@ -228,7 +283,7 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
     `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
     // In a project folder: what Git runs on its own, and the same credential files (the ruling on project writes).
-    ...(projects.length > 0 ? [`(deny file-write* ${subpaths(projects.flatMap((p) => PROJECT_DENIES.map((f) => join(p, f))))})`, `(deny file-read* ${subpaths(projects.flatMap((p) => CREDENTIAL_FILES.map((f) => join(p, f))))})`] : []),
+    ...(projects.length > 0 ? [`(deny file-write* ${subpaths(projects.flatMap((p) => [...PROJECT_DENIES.map((f) => join(p, f)), ...gitHooksPaths(p, user)]))})`, `(deny file-read* ${subpaths(projects.flatMap((p) => CREDENTIAL_FILES.map((f) => join(p, f))))})`] : []),
     `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services, ...SCREEN_AND_CLIPBOARD_SERVICES].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
     // Signals only to itself and its own children: never the daemon, the app or another plugin (#345's second review).
     "(deny signal)",

@@ -14,7 +14,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { startPluginHost } from "../../plugin-host/daemon-host";
 import { HookRunner } from "../../plugins/hook-runner";
 import { openPluginRegistry } from "../open";
-import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
+import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, gitHooksPaths, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
 import { ensurePluginRunFiles, guardedMcpServer } from "../plugin-run";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
@@ -301,9 +301,10 @@ darwinDescribe("the plugin-process fence", () => {
       const code = join(w.userHome, "code");
       const project = join(code, "app");
       const sibling = join(code, "other");
-      for (const d of [join(project, ".git", "hooks"), sibling]) mkdirSync(d, { recursive: true });
+      for (const d of [join(project, ".git", "hooks"), join(project, ".git", "modules", "x", "hooks"), join(project, ".husky"), join(project, ".vscode"), sibling]) mkdirSync(d, { recursive: true });
       writeFileSync(join(project, "src.ts"), "unformatted\n");
-      writeFileSync(join(project, ".git", "config"), "[core]\n");
+      // Husky's setup: hooks run from .husky (core.hooksPath), which the fence finds in the project's config.
+      writeFileSync(join(project, ".git", "config"), "[core]\n\trepositoryformatversion = 0\n\thooksPath = .husky\n");
       writeFileSync(join(sibling, "secret.txt"), "the other project's");
       const q = (p: string) => JSON.stringify(p);
       const command = [
@@ -312,6 +313,9 @@ darwinDescribe("the plugin-process fence", () => {
         "(printf 'formatted\\n' > src.ts) 2>/dev/null && echo write=ok || echo write=denied",
         "(echo x > .git/hooks/pre-commit) 2>/dev/null && echo githook=ok || echo githook=denied",
         "(echo x >> .git/config) 2>/dev/null && echo gitconfig=ok || echo gitconfig=denied",
+        "(echo x > .git/modules/x/hooks/pre-commit) 2>/dev/null && echo submodulehook=ok || echo submodulehook=denied",
+        "(echo x > .husky/pre-commit) 2>/dev/null && echo hookspath=ok || echo hookspath=denied",
+        "(echo '{}' > .vscode/tasks.json) 2>/dev/null && echo vscodetasks=ok || echo vscodetasks=denied",
         "(echo '{}' > .mcp.json) 2>/dev/null && echo mcpjson=ok || echo mcpjson=denied",
         `(echo x > ${q(join(sibling, "x"))}) 2>/dev/null && echo siblingwrite=ok || echo siblingwrite=denied`,
         `cat ${q(join(sibling, "secret.txt"))} >/dev/null 2>&1 && echo siblingread=ok || echo siblingread=denied`,
@@ -322,18 +326,38 @@ darwinDescribe("the plugin-process fence", () => {
         const r = (await runner.run({ pluginId: "spy", event: "PostToolUse", command, cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "PostToolUse" } as never)) as { stdout: string };
         return Object.fromEntries(r.stdout.trim().split("\n").map((l) => l.split("=") as [string, string]));
       };
-      expect(await run(false)).toEqual({ read: "ok", write: "denied", githook: "denied", gitconfig: "denied", mcpjson: "denied", siblingwrite: "denied", siblingread: "denied" });
+      const refused = { githook: "denied", gitconfig: "denied", submodulehook: "denied", hookspath: "denied", vscodetasks: "denied", mcpjson: "denied", siblingwrite: "denied", siblingread: "denied" };
+      expect(await run(false)).toEqual({ read: "ok", write: "denied", ...refused });
       expect(readFileSync(join(project, "src.ts"), "utf8")).toBe("unformatted\n");
-      expect(await run(true)).toEqual({ read: "ok", write: "ok", githook: "denied", gitconfig: "denied", mcpjson: "denied", siblingwrite: "denied", siblingread: "denied" });
+      expect(await run(true)).toEqual({ read: "ok", write: "ok", ...refused });
       expect(readFileSync(join(project, "src.ts"), "utf8")).toBe("formatted\n");
       expect(existsSync(join(project, ".git", "hooks", "pre-commit"))).toBe(false);
-      expect(readFileSync(join(project, ".git", "config"), "utf8")).toBe("[core]\n");
+      expect(readFileSync(join(project, ".git", "config"), "utf8")).toBe("[core]\n\trepositoryformatversion = 0\n\thooksPath = .husky\n");
+      for (const f of [".git/modules/x/hooks/pre-commit", ".husky/pre-commit", ".vscode/tasks.json"]) expect(existsSync(join(project, f))).toBe(false);
       expect(existsSync(join(project, ".mcp.json"))).toBe(false);
       expect(existsSync(join(sibling, "x"))).toBe(false);
     } finally {
       stop(w);
     }
   }, 60_000);
+
+  test("Git's hooks folder for a project: its own config's core.hooksPath, else the user's global one, against the project or ~", () => {
+    const user = temp("cf-hp-user-");
+    const project = join(user, "code", "app");
+    mkdirSync(join(project, ".git"), { recursive: true });
+    expect(gitHooksPaths(project, user)).toEqual([]);
+    writeFileSync(join(user, ".gitconfig"), "[user]\n\tname = x\n[core]\n\thooksPath = ~/.githooks\n");
+    expect(gitHooksPaths(project, user)).toEqual([join(user, ".githooks")]);
+    writeFileSync(join(project, ".git", "config"), "[core]\n\thooksPath = .husky ; Husky\n[remote \"origin\"]\n\thooksPath = elsewhere\n");
+    expect(gitHooksPaths(project, user)).toEqual([join(project, ".husky")]);
+    // A linked worktree: its .git is a file, and the config is its common folder's.
+    const wt = join(user, "code", "wt");
+    mkdirSync(join(project, ".git", "worktrees", "wt"), { recursive: true });
+    writeFileSync(join(project, ".git", "worktrees", "wt", "commondir"), "../..\n");
+    mkdirSync(wt, { recursive: true });
+    writeFileSync(join(wt, ".git"), `gitdir: ${join(project, ".git", "worktrees", "wt")}\n`);
+    expect(gitHooksPaths(wt, user)).toEqual([join(wt, ".husky")]);
+  });
 
   test("a project folder is never a home, a folder above one, or inside the Clover home", () => {
     const user = temp("cf-pf-user-");
