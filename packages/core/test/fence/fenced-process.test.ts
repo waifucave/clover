@@ -268,6 +268,15 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       expect(spawner.recheck!("s-w2")).toMatch(/core\.fsmonitor/);
       expect(readFileSync(join(fresh, ".git", "config"), "utf8")).not.toContain("fsmonitor");
       expect(readFileSync(join(fresh, ".git", "config"), "utf8")).toContain("[core]");
+      // A link planted as another repo's config, to a file the bot wrote: removed, never written through.
+      const evil = join(other, "evil.cfg");
+      writeFileSync(evil, "[core]\n\tfsmonitor = /tmp/x\n");
+      const linked = join(other, "deep", "er", "b", ".git", "config");
+      rmSync(linked);
+      symlinkSync(evil, linked);
+      expect(spawner.recheck!("s-w2")).toMatch(/link planted as a git config.*core\.fsmonitor/);
+      expect(existsSync(linked)).toBe(false);
+      expect(readFileSync(evil, "utf8")).toContain("fsmonitor");
       // A scratch folder made mid-session (a new bot's) is looked over too.
       const newbot = join(clover, "scratch", "newbot", "r");
       expect(Bun.spawnSync(["git", "init", "-q", newbot]).exitCode).toBe(0);
@@ -280,15 +289,14 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test("reposUnder: at any level to the depth, never through a link or into node_modules, within the budget", () => {
+  test("reposUnder: at any level to the depth, a node_modules included, never through a link, within the budget", () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-repos-")));
     try {
       const at = (...p: string[]) => join(root, ...p);
       for (const d of [at("a", ".git"), at("b", "c", "d", ".git"), at("node_modules", "x", ".git"), at("elsewhere", ".git"), at("a", "sub", ".git")]) mkdirSync(d, { recursive: true });
       symlinkSync(at("elsewhere"), at("link"));
       const found = reposUnder([root]).filter((f) => f.endsWith("/config")).sort(); // each repo's config.worktree is there too
-      expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config")].sort());
-      expect(found).not.toContain(at("node_modules", "x", ".git", "config"));
+      expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config"), at("node_modules", "x", ".git", "config")].sort());
       expect(found).not.toContain(at("link", ".git", "config"));
       expect(reposUnder([root], 2)).not.toContain(at("b", "c", "d", ".git", "config"));
       expect(reposUnder([root], 2)).toContain(at("a", "sub", ".git", "config"));

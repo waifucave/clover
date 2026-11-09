@@ -62,6 +62,8 @@ class SessionConfigs {
   readonly #by = new Map<string, Map<string, string | null>>();
   /** A watched session's places, looked over again at each `recheck` for repos made since. */
   readonly #places = new Map<string, { home: string; cwd: string; writable: readonly string[] }>();
+  /** A watched path that is a link: what it led to when last looked at (a dotfile manager's `~/.gitconfig`). */
+  readonly #through = new Map<string, Map<string, string | null>>();
   constructor(private readonly scan: (home: string, cwd: string, writable: readonly string[]) => string[] = sessionConfigFiles) {}
   /** After a run: what each watched file holds now is what the next look compares against. */
   settled(sessionId: string | undefined, paths: Iterable<string>): void {
@@ -74,8 +76,10 @@ class SessionConfigs {
    *  global ones are watched from now, each as it is now; a file already watched keeps its baseline. */
   watch(sessionId: string, home: string, cwd: string, writable: readonly string[]): void {
     const m = this.#by.get(sessionId) ?? new Map<string, string | null>();
-    for (const p of this.scan(home, cwd, writable)) if (!m.has(p)) m.set(p, readIfFile(p));
+    const t = this.#through.get(sessionId) ?? new Map<string, string | null>();
+    for (const p of this.scan(home, cwd, writable)) if (!m.has(p)) { m.set(p, readIfFile(p)); t.set(p, readThroughLink(p)); }
     this.#by.set(sessionId, m);
+    this.#through.set(sessionId, t);
     const was = this.#places.get(sessionId);
     this.#places.set(sessionId, { home, cwd, writable: [...new Set([...(was?.writable ?? []), ...writable])] });
   }
@@ -86,8 +90,28 @@ class SessionConfigs {
     // is watched as newly appeared, so a risky key it carries is reverted now.
     const at = this.#places.get(sessionId);
     if (at !== undefined) for (const p of this.scan(at.home, at.cwd, at.writable)) if (!m.has(p)) m.set(p, null);
-    const note = revertPlantedGitKeys(m);
-    if (opts.end) { this.#by.delete(sessionId); this.#places.delete(sessionId); }
+    // A link planted at a watched config (`.git/config` → a file it wrote) is never written through: inside the
+    // session's writable folders, where nothing but a runner made it, the link is removed when what it leads to sets
+    // a risky key it didn't; elsewhere it is reported.
+    const t = this.#through.get(sessionId) ?? new Map<string, string | null>();
+    const links: string[] = [];
+    for (const p of m.keys()) {
+      const now = readThroughLink(p);
+      if (now === null) { t.delete(p); continue; }
+      const changed = watchedGitChanges(t.get(p) ?? null, now);
+      if (changed.length === 0) { t.set(p, now); continue; }
+      const keys = changed.map((c) => c.dotted).join(", ");
+      const mine = at !== undefined && at.writable.some((w) => p.startsWith(w.endsWith("/") ? w : `${w}/`));
+      if (mine) {
+        try { unlinkSync(p); links.push(`${p}: removed a link planted as a git config (risky git keys: ${keys})`); t.delete(p); }
+        catch { links.push(`${p}: kept a link planted as a git config (risky git keys: ${keys}): could not remove it`); }
+      } else links.push(`${p}: kept a link at a git config that now sets risky git keys (${keys})`);
+    }
+    this.#through.set(sessionId, t);
+    const reverted = revertPlantedGitKeys(m);
+    const linked = links.length === 0 ? null : `clover: a git config was a link to risky git keys; ${links.join("; ")}\n`;
+    const note = reverted === null && linked === null ? null : `${reverted ?? ""}${linked ?? ""}`;
+    if (opts.end) { this.#by.delete(sessionId); this.#places.delete(sessionId); this.#through.delete(sessionId); }
     else for (const p of m.keys()) m.set(p, readIfFile(p));
     return note;
   }
@@ -262,6 +286,14 @@ function withGitTemplate(r: FencedRun, template: string): FencedRun {
 }
 
 /** Reads a file's bytes without following a link, or null when it isn't a plain file. */
+/** What a watched path that is a link leads to, read through the link; null when it isn't a link or can't be read. */
+function readThroughLink(path: string): string | null {
+  try {
+    if (!lstatSync(path).isSymbolicLink()) return null;
+    return readFileSync(path, "utf8");
+  } catch { return null; }
+}
+
 function readIfFile(path: string): string | null {
   try {
     const st = lstatSync(path);
@@ -490,7 +522,8 @@ export const WATCH_REPO_DEPTH = 6;
 export const WATCH_REPO_BUDGET = 20_000;
 
 /** Every repo's git config files under `roots`: each folder holding `.git`, at any level to `WATCH_REPO_DEPTH`,
- *  never through a link, never into a `.git` or a `node_modules`. */
+ *  level by level (a big tree spends the budget on its deeper levels last), never through a link, never into a
+ *  `.git`. No folder name is skipped: a `node_modules` would be a place to hide a repo in. */
 export function reposUnder(roots: readonly string[], depth = WATCH_REPO_DEPTH, budget = WATCH_REPO_BUDGET): string[] {
   const out = new Set<string>();
   let left = budget;
@@ -503,7 +536,7 @@ export function reposUnder(roots: readonly string[], depth = WATCH_REPO_DEPTH, b
       try { names = readdirSync(dir); } catch { continue; }
       for (const n of names) {
         if (--left < 0) break;
-        if (n === ".git" || n === "node_modules") continue;
+        if (n === ".git") continue;
         const c = join(dir, n);
         try { const st = lstatSync(c); if (st.isDirectory() && !st.isSymbolicLink()) next.push(c); } catch { /* gone */ }
       }
