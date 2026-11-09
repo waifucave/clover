@@ -46,6 +46,9 @@ export interface FencedSpawner {
    *  the watched git config files the session's runs touched are looked at again, and a risky key set since its last
    *  run ended is reverted the same way. `end` forgets the session. The report line, or null. */
   recheck?(sessionId: string, opts?: { end?: boolean }): string | null;
+  /** Does, off the event loop, what the first run would otherwise do (Linux: the bwrap probe), so no run waits on it
+   *  (INT, #369's review: the daemon warms it at its start). */
+  warm?(): Promise<void>;
 }
 
 /** The door until the fenced process lands for this OS (C-M2's Bash under the fence). */

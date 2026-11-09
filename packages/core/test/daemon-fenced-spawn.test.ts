@@ -105,6 +105,18 @@ describe("recheckAtTurnEnds", () => {
     expect(s.calls).toHaveLength(3);
   });
 
+  test("#369's review: the end pass waits on its notes only so long (a note to a computer that's gone can't hang the stop)", async () => {
+    const host = fakeHost();
+    host.deliver = () => new Promise(() => {}); // never answers
+    const lines: string[] = [];
+    const watch = recheckAtTurnEnds(host as never, { recheck: () => "reverted core.hooksPath" }, (l) => lines.push(l));
+    host.emit("a", "idle");
+    const started = Date.now();
+    await watch.endPass();
+    expect(Date.now() - started).toBeLessThan(7_000);
+    expect(lines).toContain("the stop's recheck notes weren't all recorded within 4 s");
+  }, 10_000);
+
   test("#365 should-fix 2: a revert and a recheck that throws reach the log and the session's own record", () => {
     const host = fakeHost();
     let n = 0;

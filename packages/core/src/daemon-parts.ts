@@ -229,6 +229,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     // C-M2 part 2 (#321): the fenced process over the same fence, and hooks' commands through `hookSpawner`.
     const spawner = input.spawner ?? fencedSpawner({ fence, os: hostOs() });
     const hooksSpawner = hookSpawner(hostOs(), spawner);
+    // What a first run would do (Linux: the bwrap probe), done now and off the event loop (#369's review).
+    void spawner.warm?.().catch(() => undefined);
     let broker: CloverApprovalBroker | undefined;
     const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
@@ -401,6 +403,9 @@ function followMain(node: ComputerNode, main: MainComputer, links: DeviceLinks):
   };
 }
 
+/** How long the stop's end pass waits on its notes. */
+const END_PASS_NOTES_MS = 4_000;
+
 /** The most stopped sessions the recheck remembers as ended (a resumed one leaves the set; the oldest go first). */
 const RECHECK_ENDED_MAX = 4096;
 
@@ -458,7 +463,13 @@ export function recheckAtTurnEnds(host: Pick<SessionHost, "watch" | "deliver">, 
       for (const id of [...open]) recheck(id, true);
       open.clear();
       running.clear();
-      await Promise.all(pending.splice(0));
+      // Bounded: a note for a session another computer runs can wait on a link that's down (#369's review).
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), END_PASS_NOTES_MS); });
+      if ((await Promise.race([Promise.all(pending.splice(0)).then(() => "done" as const), late])) === "late") {
+        log(`the stop's recheck notes weren't all recorded within ${END_PASS_NOTES_MS / 1000} s`);
+      }
+      clearTimeout(timer);
     },
     close() {
       off();

@@ -49,6 +49,9 @@ export interface AgentsHandle {
   close(): Promise<void>;
 }
 
+/** How long the close waits on `beforeRelease` before it lets go of the sessions anyway. */
+export const BEFORE_RELEASE_MS = 5_000;
+
 export interface BotSideOptions {
   home: string;
   /** This computer's name in the folder tree. */
@@ -270,10 +273,18 @@ export function createBotSide(o: BotSideOptions): BotSide {
       }
       compaction.close();
       if (o.beforeRelease !== undefined) {
+        // Bounded (INT, #369's review): a note for a session another computer runs could wait on a link that's down,
+        // and the host's release must always come.
+        let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          await o.beforeRelease();
+          const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), BEFORE_RELEASE_MS); });
+          if ((await Promise.race([Promise.resolve(o.beforeRelease()).then(() => "done" as const), late])) === "late") {
+            o.warn?.(`before the sessions' release: still running after ${BEFORE_RELEASE_MS / 1000} s; releasing them anyway`);
+          }
         } catch (err) {
           o.warn?.(`before the sessions' release: ${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+          clearTimeout(timer);
         }
       }
       await host.close();
