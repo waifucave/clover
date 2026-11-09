@@ -16,6 +16,7 @@ import { EXA_API_KEY_SECRET } from "../agent/exa-key";
 import { approvedProjectRulesDir, homeCacheDir, sdkHomeFor, storeHomeFor, trustRecordFile } from "../agent/paths";
 import { repoRootFor } from "../agent/memory-dir";
 import { projectWalk } from "./project-walk";
+import { homeDenyReadExcept } from "./turn-loop/home-deny";
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
 import { parseRule } from "../agent/permission-rules";
 import { keychainService } from "../profile";
@@ -1084,6 +1085,8 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
       // would be expressible in `childSandboxConfigFor`'s form since both runtimes read the glob grammar —
       // R.3 I-4 — but that row is not added there): the deny rules and the path fence hook carry them
       // (DECISION 12).
+      // …and, in what the spawn is sent only (`childSandboxConfigFor`), the Clover home's default-deny (the owner's
+      // November 6 ruling): this literal list stays what the real-path fences compare against.
       denyRead: [...new Set([join(home, "run"), join(home, "runtimes"), join(sdkHomeFor(home), ".clover.json"),
         ...hostStorageReadPatterns(home, options).filter(({ tail }) => tail === "**").map(({ root }) => root),
         // Cowork backing/control/socket trees belong in this ONE ordinary Bash profile.
@@ -1102,6 +1105,20 @@ export function sandboxConfigFor(home: string, cwd?: string | null, options?: Ho
     // 0.0.20, which replaced RULING P3-J (every escape a mandatory interaction) with claude's rule,
     // behind claude's own write-target checks.
   };
+}
+
+/**
+ * The folders of the Clover home a coding session's Bash still reads, under the home's default-deny (the owner's
+ * November 6 ruling): the runtime's store (`<home>/sdk`: the skills and plugins a skill's own scripts run from, and
+ * the MEMDIR), the run folders and plugin views (`<home>/cache`, the child's own home), the installed plugins, the
+ * outputs folder, and its working directories where they are in the home. Everything else in the home is
+ * read-denied: the sessions' logs, the secrets file and its key, the credential index, the bots' folders…
+ *
+ * The whole outputs folder, not just `$OUTDIR`: each session has a folder there, so the literal list of the others
+ * would grow with every session, past what a sandbox profile carries. Other sessions' outputs stay readable.
+ */
+export function codeSessionHomeFolders(home: string, cwd?: string | null, extraDirs: readonly string[] = []): string[] {
+  return [sdkHomeFor(home), storeHomeFor(home), homeCacheDir(home), join(home, "plugins"), join(home, "outputs"), ...(cwd ? [cwd] : []), ...extraDirs];
 }
 
 /**
@@ -1138,8 +1155,11 @@ export function childSandboxConfigFor(home: string, cwd?: string | null, extraDi
     filesystem: {
       ...fs,
       ...(fs.denyWrite === undefined ? {} : { denyWrite: [...new Set([...fs.denyWrite.map(escapeSandboxGlobPath), ...anyDepth])] }),
-      ...(fs.denyRead === undefined ? {} : { denyRead: [...fs.denyRead.map(escapeSandboxGlobPath),
-        ...hostStorageReadPatterns(home).filter(({ tail }) => tail !== "**").map(({ root, tail }) => `${escapeSandboxGlobPath(root)}/${tail}`)] }),
+      ...(fs.denyRead === undefined ? {} : { denyRead: [...new Set([...fs.denyRead.map(escapeSandboxGlobPath),
+        ...hostStorageReadPatterns(home).filter(({ tail }) => tail !== "**").map(({ root, tail }) => `${escapeSandboxGlobPath(root)}/${tail}`),
+        // The home's default-deny (`codeSessionHomeFolders`), taken when the session's options are built. Child-only,
+        // like the any-depth fence: the literal list above feeds the fences that compare real paths.
+        ...homeDenyReadExcept(home, codeSessionHomeFolders(home, cwd, extraDirs)).map(escapeSandboxGlobPath)])] }),
     },
   };
 }

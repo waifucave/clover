@@ -53,7 +53,7 @@ import type { DeviceLinks } from "./links/node";
 import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
-import { botDriverFactory } from "./runtime-sdk/turn-loop/driver";
+import { botDriverFactory, botHomeSandbox } from "./runtime-sdk/turn-loop/driver";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
 import { hostOs } from "./tree/names";
@@ -3572,6 +3572,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
         provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
+        // The Clover home is read-denied to a bot's Bash but for the session's own folders (the owner's November 6 ruling).
+        sandbox: botHomeSandbox(cloverHome),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),

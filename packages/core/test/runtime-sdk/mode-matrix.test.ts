@@ -556,9 +556,15 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
     // R.3 I-4: the any-depth project fence (child-only; `sandboxConfigFor`'s literal list has none).
     "/repo/**/.clover/skills", "/repo/**/.clover/commands", "/repo/**/.clover/rules", "/repo/**/.clover/output-styles", "/repo/**/.clover/agents",
   ]);
-  // CLAUDE.md: "the sole read denial is ~/.clover/run" — reads are otherwise unrestricted.
-  // WS-21 (spec §7.1): + the user's MCP server list.
-  expect(sb.filesystem!.denyRead).toEqual(["/h/run", "/h/runtimes", "/h/sdk/.clover.json"]);   // Task 17: runtimes/ is model-denied (8a)
+  // The run folder, the runtimes (Task 17: model-denied, 8a) and (WS-21 spec §7.1) the user's MCP server list; then
+  // the home's default-deny (the owner's November 6 ruling, `codeSessionHomeFolders`): `/h` doesn't exist, so only
+  // the names that matter, denied whether or not they exist yet. Those in a kept folder (`sdk/settings.json`, the
+  // plugins folder) are left out.
+  expect(sb.filesystem!.denyRead).toEqual(["/h/run", "/h/runtimes", "/h/sdk/.clover.json",
+    "/h/connectors", "/h/credentials", "/h/devices", "/h/levels", "/h/plugin-data", "/h/plugins-state/adult.json",
+    "/h/plugins-state/installed.json", "/h/plugins-state/oks", "/h/rules", "/h/secrets.enc", "/h/secrets.key",
+    "/h/secrets.key.cred", "/h/sessions", "/h/sessions-runtime", "/h/settings", "/h/settings.json", "/h/trust",
+    "/h/trust.json", "/h/usage", "/h/user-layers"]);
   for (const p of [...sb.filesystem!.denyWrite!, ...sb.filesystem!.denyRead!]) {
     const anyDepth = /^\/repo\/\*\*\/\.clover\/(?:skills|commands|rules|output-styles|agents)$/.test(p);
     expect({ p, glob: p.includes("*") }).toEqual({ p, glob: anyDepth });

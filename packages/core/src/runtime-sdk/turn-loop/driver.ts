@@ -55,6 +55,8 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
+import { homeDenyReadExcept } from "./home-deny";
+import { fenceContextFor, ownFoldersOf } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -79,6 +81,20 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
  *  and in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
+
+/** The folders of the Clover home a bot's session reads from its Bash: its bot's folder (memory and agents' transcripts
+ *  in it), its scratch folder and its routines (the fence's `own…` folders for a bot's runner, `ownFoldersOf`). Not the
+ *  outputs folder, which is a coding session's. */
+export function botOwnFolders(home: string, ctx: Pick<BotSessionContext, "paths" | "caller">): string[] {
+  const own = ownFoldersOf(fenceContextFor(ctx.caller), home);
+  return [ctx.paths.root, ctx.paths.scratch, ...(own.ownRoutines === undefined ? [] : [own.ownRoutines])];
+}
+
+/** The daemon's Bash sandbox for a bot's session (the owner's November 6 ruling): the Clover home is read-denied but
+ *  for the session's own folders (`botOwnFolders`), taken when the session's runtime is built (`homeDenyReadExcept`). */
+export function botHomeSandbox(home: string): (ctx: BotSessionContext) => SandboxSettingsConfig {
+  return (ctx) => ({ filesystem: { denyRead: homeDenyReadExcept(home, botOwnFolders(home, ctx)) } });
+}
 
 export interface BotDriverDeps {
   /** The Clover home: the runtime's own home (`CLOVER_HOME`), its transcripts and this driver's state. */

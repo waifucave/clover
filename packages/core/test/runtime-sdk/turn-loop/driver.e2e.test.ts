@@ -3,14 +3,14 @@
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_SANDBOX, BotSessionDriver, botHomeSandbox, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import type { CoreToolDef, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
 import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
@@ -507,6 +507,37 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         expect(readFileSync(join(dir, `${tag}.outside`), "utf8").trim()).not.toBe("0");
         expect(existsSync(`${outside}.${tag}`)).toBe(false);
       }
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  darwinTest("the Clover home is read-denied to a bot's Bash but for its own folders (the daemon's botHomeSandbox)", async () => {
+    const home = tempHome();
+    const ctx = context(home, "winter-test/calls");
+    // Another session's log and the secrets file, as the daemon and the file store keep them.
+    mkdirSync(join(home, "sessions"), { recursive: true });
+    writeFileSync(join(home, "sessions", "s_other.jsonl"), "SESSION-LOG-SECRET\n");
+    writeFileSync(join(home, "secrets.enc"), "SECRETS-FILE-SECRET");
+    mkdirSync(ctx.paths.memory, { recursive: true });
+    writeFileSync(join(ctx.paths.memory, "MEMORY.md"), "OWN-MEMORY");
+    const out = join(ctx.paths.scratch, "probe");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { sandbox: botHomeSandbox(home) }));
+    try {
+      const sh = (command: string) => `CALL Bash ${JSON.stringify({ command, description: "probe" })}`;
+      const calls = [
+        sh(`cat ${JSON.stringify(join(home, "sessions", "s_other.jsonl"))} > ${JSON.stringify(`${out}.sessions`)} 2>/dev/null; echo "$?" >> ${JSON.stringify(`${out}.sessions`)}`),
+        sh(`cat ${JSON.stringify(join(home, "secrets.enc"))} > ${JSON.stringify(`${out}.secrets`)} 2>/dev/null; echo "$?" >> ${JSON.stringify(`${out}.secrets`)}`),
+        sh(`cat ${JSON.stringify(join(ctx.paths.memory, "MEMORY.md"))} > ${JSON.stringify(`${out}.memory`)}`),
+      ].join("\n");
+      expect((await driver.turn(user(calls), control())).reason).toBe("end_turn");
+      for (const tag of ["sessions", "secrets"]) {
+        const got = readFileSync(`${out}.${tag}`, "utf8");
+        expect(got).not.toContain("SECRET");
+        expect(got.trim()).not.toBe("0");
+      }
+      // The scratch folder is the session's own: written and read back. So is its memory.
+      expect(readFileSync(`${out}.memory`, "utf8")).toBe("OWN-MEMORY");
     } finally {
       await driver.stop();
     }
