@@ -1,6 +1,7 @@
 // What the Worker checks before any Durable Object is called: Ed25519 signatures over statements and requests, and
 // socket tickets.
 
+import { isStrictEd25519Point, isStrictEd25519Signature } from "../../shared/ed25519-strict";
 import { b64u, equalBytes, fromB64u, utf8 } from "../../shared/encoding";
 import type { ScopeKind } from "../client/wire";
 
@@ -17,11 +18,14 @@ function importKey(key: string): Promise<CryptoKey> {
   return cached;
 }
 
-/** Whether `sig` (base64url) is `key`'s Ed25519 signature over the UTF-8 text. Never throws. */
+/** Whether `sig` (base64url) is `key`'s Ed25519 signature over the UTF-8 text. Never throws. Strict, as the core's: the
+ *  key and the signature's R canonical points outside the small-order subgroup, S below the group order (WebCrypto's
+ *  Ed25519 verify alone doesn't check these). */
 export async function verifySignature(key: string, sig: string, text: string): Promise<boolean> {
   try {
     const signature = fromB64u(sig);
     if (signature.length !== 64) return false;
+    if (!isStrictEd25519Point(fromB64u(key)) || !isStrictEd25519Signature(signature)) return false;
     return await crypto.subtle.verify({ name: "Ed25519" }, await importKey(key), signature, utf8(text));
   } catch {
     keyCache.delete(key);

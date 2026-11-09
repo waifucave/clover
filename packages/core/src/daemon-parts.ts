@@ -50,7 +50,8 @@ export interface DaemonPartsInput {
   /** The user's home folder: `home/<this computer>/` in the tree. */
   userHome: string;
   clock: Clock;
-  /** This device's links; null when it runs without them (no sidecar): no computer node then, and the bot side runs as
+  /** This device's links (local-only when there's no sidecar: no other device on them); null only when a test starts
+   *  none (`links: false`): no computer node then, and the bot side runs as
    *  the only computer. */
   links: DeviceLinks | null;
   /** The Clover server's lane handlers: the bot side's methods join them. */
