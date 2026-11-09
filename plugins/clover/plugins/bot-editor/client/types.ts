@@ -1,6 +1,6 @@
 // The bot editor's props: a bot's fields as the user's own layer sets them over its plugin's (spec §6.1, open
 // question 14's answer): its name, the instructions the user adds, its model and effort, its avatar, its voice, its
-// theme (a plain one among them) and its layout. Every change is a patch to the user layer; a field cleared (Reset)
+// theme (a plain one among them), its layout and its LAN switch. Every change is a patch to the user layer; a field cleared (Reset)
 // goes back to what the bot's plugin says.
 
 /** A change to the user layer (lane B's `UserLayerPatch`): `null` clears a field, absent leaves it. */
@@ -13,6 +13,9 @@ export interface BotPatch {
   avatar?: { file: string; format: string; portrait?: string } | null;
   theme?: string | null;
   layout?: string | null;
+  /** The LAN switch (spec's `lan`): `true` turns it on, `null` turns it off. It is never `false`, since off is the
+   *  bot's default, so turning it off clears the field. */
+  lan?: true | null;
 }
 
 export type BotField = keyof BotPatch;
@@ -48,6 +51,8 @@ export interface BotEditorProps {
   themes: { id: string; name: string }[];
   /** The theme the bot wears, or none for the app's own. */
   theme?: string;
+  /** The LAN switch is on: the bot's browser tabs may reach the local network. Off by default. */
+  lan?: boolean;
   /** A field whose change waits on a card. */
   waiting?: BotField;
   onChange: (patch: BotPatch) => void;
