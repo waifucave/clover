@@ -656,7 +656,8 @@
                           "computer-resize",
                           "computer-delete",
                           "agent-unsandboxed",
-                          "core-setting"
+                          "core-setting",
+                          "answer-key-rotate"
                         ]
                       },
                       "binds": {
@@ -1104,7 +1105,8 @@
                         "computer-resize",
                         "computer-delete",
                         "agent-unsandboxed",
-                        "core-setting"
+                        "core-setting",
+                        "answer-key-rotate"
                       ]
                     },
                     "binds": {
@@ -1818,7 +1820,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -2345,7 +2348,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -2870,7 +2874,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -3393,7 +3398,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -3913,7 +3919,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -4396,7 +4403,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -4883,7 +4891,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -5383,7 +5392,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -5910,7 +5920,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -6390,7 +6401,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -6870,7 +6882,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -7356,7 +7369,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -7889,7 +7903,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -8522,7 +8537,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -9393,7 +9409,8 @@
                       "computer-resize",
                       "computer-delete",
                       "agent-unsandboxed",
-                      "core-setting"
+                      "core-setting",
+                      "answer-key-rotate"
                     ]
                   },
                   "binds": {
@@ -9901,7 +9918,8 @@
                           "computer-resize",
                           "computer-delete",
                           "agent-unsandboxed",
-                          "core-setting"
+                          "core-setting",
+                          "answer-key-rotate"
                         ]
                       },
                       "binds": {

@@ -48,6 +48,11 @@ import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, 
 import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
+import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
+import type { MethodContext, MethodHandler } from "./rpc/handler";
+import { pluginSettingsMethods } from "./plugin-host/api/settings";
+import { commandListMethods } from "./commands/views";
+import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
@@ -3251,6 +3256,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
+  // are empty and anything else is refused while it opens; then the registry's handlers serve them.
+  let pluginMethods: Record<string, MethodHandler> = {};
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
+    async (params: unknown, ctx: MethodContext) => {
+      const h = pluginMethods[name];
+      return h !== undefined ? h(params, ctx) : beforePluginsOpen(name);
+    }]))));
   // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
   if (opts.modelPluginHost !== undefined) {
     Object.assign(cloverLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
@@ -3513,6 +3526,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // B-M2: the daemon's one plugin host, over that registry: lane A's consumers (the model plugins, the bots' hooks and
   // host MCP servers) take `pluginHost.host`, `.registry` and `.pluginSecrets`.
   let pluginHost: DaemonPluginHost | undefined;
+  let glossary: GlossaryIndex | undefined;
   let partsStopping = false;
   // B-M2: the plugin registry and the plugin host start once the store answers, whatever the links do (a Mac with no
   // sidecar, a test daemon without links): plugins don't wait on the device links. The bot side takes this registry.
@@ -3560,15 +3574,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line),
     })))(opened.registry);
-    Object.assign(cloverLaneHandlers, laneMethodHandlers({
+    glossary = new GlossaryIndex({ registry: opened.registry });
+    pluginMethods = {
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
-    }));
+      ...commandListMethods(opened.registry),
+      ...pluginSettingsMethods(pluginHost.settings),
+      ...glossaryMethods(glossary),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets }),
+    };
     return opened.registry;
   };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`).
     return {
       registry: registry,
+      // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
+      ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
@@ -3598,6 +3619,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
+    pluginMethods = {};
+    glossary?.close();
+    glossary = undefined;
     const host = pluginHost;
     pluginHost = undefined;
     await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });
