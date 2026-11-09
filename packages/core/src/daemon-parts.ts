@@ -53,7 +53,9 @@ export interface DaemonBotsInput {
   /** The plugin registry the bots come from (`openPluginRegistry` in the daemon). */
   registry: PluginRegistry;
   /** Each session's driver, given the bot side (for its core tools, read at each build) and the computer node. */
-  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer }): DriverFactory;
+  /** The bots' drivers, given the daemon's one approval broker (when the node runs): a bot's calls that ask raise a card
+   *  on it (lane C's `botApprovalCheck`). */
+  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
 }
@@ -288,7 +290,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       const s = createBotSide({
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
-        drivers: b.drivers({ side: () => side, node, main: runner }),
+        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence }),
         defaultModel: b.defaultModel,
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),

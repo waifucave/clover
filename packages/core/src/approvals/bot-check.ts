@@ -17,10 +17,12 @@
 // time and never matches or saves a rule for them (the controller's ruling on #267).
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { SealedValue, TurnOrigin } from "@waifucave/clover-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
+import { WRITE_EFFECTS } from "../contracts/approval-broker";
+import { fenceContextFor, type Fence } from "../contracts/fence";
 import type { CloverApprovalRequest } from "./broker";
 import type { BotSessionContext } from "../bots/service";
 import { looksCredentialBearing, plainOf, shownCode } from "./strings";
@@ -157,13 +159,37 @@ export function botToolRequest(
 /** The turn loop's approval check over `broker`. A turn whose origin isn't known is not the user's, so its card is
  *  denied after 10 minutes unanswered (rule 6). `hostTools(ctx)` names the tools the session's host serves itself. */
 export function botApprovalCheck(
-  broker: Pick<ApprovalBroker, "request">, opts: { hostTools?: (ctx: BotSessionContext) => Iterable<string>; home?: string; localComputer?: string } = {},
+  broker: Pick<ApprovalBroker, "request">,
+  opts: {
+    hostTools?: (ctx: BotSessionContext) => Iterable<string>; home?: string; localComputer?: string;
+    /** This computer's fence and its Clover home: a path the fence refuses the bot (secrets, run/, writes to the
+     *  permission, trust, settings and plugin files) is refused with no card, and a read or write inside the home the
+     *  fence lets the bot make (the owner's ruling: reads anywhere in the home, writes to any bot's scratch, as lane C's
+     *  `homeAllows` says) runs with no card either. */
+    fence?: Pick<Fence, "check">; cloverHome?: string;
+  } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
     const hostTools = new Set(opts.hostTools?.(ctx) ?? []);
     const req = botToolRequest(ctx, origin() ?? "bot", tool, input, {
       hostTools, ...(opts.home === undefined ? {} : { home: opts.home }), ...(opts.localComputer === undefined ? {} : { localComputer: opts.localComputer }),
     });
+    // This computer's fence first (INT, the broker swap; #347's review and the owner's ruling): a path it refuses the
+    // bot is refused outright and never becomes a card; a file read or write it allows inside the Clover home runs
+    // outright. Only a path outside the home can still ask.
+    if (opts.fence && req.paths?.length && !req.pathsUnresolved) {
+      const ctxFence = fenceContextFor(ctx.caller);
+      const writes = WRITE_EFFECTS.includes(req.effect);
+      for (const path of req.paths) {
+        const v = opts.fence.check({ op: writes ? "write" : "read", path }, ctxFence);
+        if (!v.allowed) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: that place is fenced on this computer (Clover's own folder, or a file no bot ${writes ? "writes" : "reads"}).` };
+      }
+      const home = opts.cloverHome === undefined ? undefined : realFolder(opts.cloverHome);
+      const fileWork = req.effect === "read" || req.effect === "search" || writes;
+      if (fileWork && home !== undefined && req.paths.every((p) => insideFolder(p, home))) {
+        return { behavior: "allow", updatedInput: input };
+      }
+    }
     const decision = await broker.request(req, { signal: call.signal });
     if (decision.allowed) return { behavior: "allow", updatedInput: input };
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
@@ -173,4 +199,19 @@ export function botApprovalCheck(
       : "the person declined it";
     return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: ${why}.` };
   };
+}
+
+/** Whether `path` is `folder` or inside it (both absolute, as `botToolRequest` resolves them). */
+function insideFolder(path: string, folder: string): boolean {
+  const rel = relative(folder, path);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/** A folder's real path (as `resolveSessionPath` gives the paths it is compared with), or the path as given. */
+function realFolder(folder: string): string {
+  try {
+    return realpathSync.native(folder);
+  } catch {
+    return folder;
+  }
 }

@@ -12,6 +12,7 @@ import { runApprovalBrokerConformance } from "../../src/contracts/conformance/ap
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { ApprovalRequest, Reviewer } from "../../src/contracts/approval-broker";
 import type { BotSessionContext } from "../../src/bots/service";
+import { CloverFence } from "../../src/fence/fence";
 
 // B's suite: every rule of the contract, against the real broker.
 runApprovalBrokerConformance((opts) => new CloverApprovalBroker(opts));
@@ -359,5 +360,54 @@ describe("the broker's close (INT, #292 review: the daemon closes it first at th
     expect(b.cards()).toEqual([]);
     expect(await b.request(bash())).toEqual({ allowed: false, by: "cancelled" });
     expect(b.cards()).toEqual([]);
+  });
+});
+
+describe("a bot's calls on this computer's fence first (INT, the broker swap; #347's review and the owner's ruling)", () => {
+  const userHome = realpathSync(home());
+  const cloverHome = join(userHome, ".clover");
+  mkdirSync(join(cloverHome, "run"), { recursive: true });
+  mkdirSync(join(cloverHome, "bots", "luna", "memory"), { recursive: true });
+  const fence = new CloverFence({ home: userHome, cloverHome });
+  const scratch = join(cloverHome, "scratch", "luna");
+  mkdirSync(scratch, { recursive: true });
+  const ctx = {
+    botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch },
+    caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
+  } as unknown as BotSessionContext;
+  const call = (b: CloverApprovalBroker, tool: string, input: Record<string, unknown>) =>
+    botApprovalCheck(b, { home: userHome, localComputer: "Studio", fence, cloverHome })(ctx, () => "user")(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" });
+
+  test("a place the fence refuses the bot (the credentials, run/, the settings) is refused with no card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    for (const [tool, input] of [
+      ["Read", { file_path: join(cloverHome, "credentials", "keys") }],
+      ["Grep", { pattern: "token", path: join(cloverHome, "run") }],
+      ["Write", { file_path: join(cloverHome, "settings.json"), content: "{}" }],
+    ] as const) {
+      const d = await call(b, tool, input);
+      expect(d?.behavior).toBe("deny");
+      expect((d as { message: string }).message).toContain("fenced on this computer");
+    }
+    expect(b.cards()).toEqual([]);
+  });
+
+  test("a file read or write the fence lets the bot make inside the home runs with no card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const memory = join(cloverHome, "bots", "luna", "memory", "MEMORY.md");
+    expect(await call(b, "Read", { file_path: memory })).toEqual({ behavior: "allow", updatedInput: { file_path: memory } });
+    const edit = { file_path: join(scratch, "notes.md"), old_string: "a", new_string: "b" };
+    expect(await call(b, "Edit", edit)).toEqual({ behavior: "allow", updatedInput: edit });
+    expect(b.cards()).toEqual([]);
+  });
+
+  test("outside the home, the broker decides as before: a read at ask runs, a write asks on a card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    expect(await call(b, "Read", { file_path: join(userHome, "project", "a.txt") })).toMatchObject({ behavior: "allow" });
+    const pending = call(b, "Write", { file_path: join(userHome, "project", "a.txt"), content: "x" });
+    await Bun.sleep(0);
+    expect(b.cards()).toHaveLength(1);
+    b.close();
+    expect((await pending)?.behavior).toBe("deny");
   });
 });

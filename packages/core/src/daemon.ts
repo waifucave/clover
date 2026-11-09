@@ -45,7 +45,11 @@ import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
 import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
-import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
+import { botApprovalCheck } from "./approvals/bot-check";
+import { approvalCoreEvents } from "./approvals/core-events";
+import { brokerCardOpener } from "./devices/rpc";
+import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
 import { lateAgentDoors, refuseUntilApprovals, startDaemonParts, type DaemonAgents, type DaemonAgentsInput, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
@@ -3579,12 +3583,22 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     return {
       registry: registry,
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
-      drivers: ({ side, node, main }) => botDriverFactory({
+      drivers: ({ side, node, main, broker, fence }) => {
+        // C-M3: a bot's call that would ask raises a card on the daemon's one broker (lane C's `botApprovalCheck`); the
+        // tools its host serves itself (the core tools and Glossary, under their plain names) are never taken for the
+        // built-ins they may be named after. With no broker (no node), such a call is refused, never run unasked. A
+        // bot's `AskUserQuestion` is asked of the user around it (lane D's questions; `session.answer` answers it).
+        const check = broker === undefined ? undefined : botApprovalCheck(broker, {
+          hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME],
+          home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
+        });
+        return botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
-        // TODO(C-M3): the approval broker's check; until then a call that would ask is refused, never run unasked. A
-        // bot's `AskUserQuestion` is asked of the user (lane D's questions; `session.answer` answers it).
-        canUseTool: (ctx) => side()?.questions.canUseTool(ctx.sessionId, refuseUntilApprovals) ?? refuseUntilApprovals,
+        canUseTool: (ctx, origin) => {
+          const own = check ? check(ctx, origin) : refuseUntilApprovals;
+          return side()?.questions.canUseTool(ctx.sessionId, own) ?? own;
+        },
         coreTools: botCoreTools({ side: { tools: (id) => side()?.tools(id) ?? [] } }),
         registry: registry,
         epoch: () => main.epoch() ?? 0,
@@ -3595,14 +3609,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
         } : {}),
         log: (line) => console.error(`[bots] ${line}`),
-      }),
+        });
+      },
     };
   };
   // The stop: it waits up to PARTS_STOP_WAIT_MS for a start under way, then closes whatever has started; anything that
   // finishes starting after that closes itself as it does (`partsStopping`).
   let stopRequested: () => void = () => {};
   const stopSignal = new Promise<void>((resolve) => { stopRequested = resolve; });
+  let offCardEvents: (() => void) | undefined;
   const closeStarted = async (): Promise<void> => {
+    offCardEvents?.();
+    offCardEvents = undefined;
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
@@ -3652,6 +3670,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       updateGate,
       // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
       clients: { server: cloverServer, tokens: cloverTokens },
+      // A sensitive device change asks on the daemon's one broker once the parts are up (C-M3); before, it's refused.
+      openCard: (req) => (daemonParts?.broker ? brokerCardOpener(daemonParts.broker)(req) : refuseUntilBroker(req)),
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });
@@ -3689,6 +3709,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         log: (line) => console.error(line),
       });
       if (partsStopping) return void (await closeStarted());
+      // The broker's cards reach the app, remote clients and plugins with `approvals` as core events (C-M3 item 2),
+      // stamped with the shared clock. They stop with the parts.
+      const cards = daemonParts.broker;
+      if (cards) offCardEvents = approvalCoreEvents(cards, (e) => cloverServer?.coreEvent(e), () => links.clock.now());
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
