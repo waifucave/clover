@@ -149,6 +149,9 @@ interface Entry {
   parts?: PluginParts;
   daemon: DaemonAgentRecord;
   session?: AgentSession;
+  /** The level last held against the running session (at its turn, or at a change): `levelsChanged` acts only when
+   *  the level really moved from it (#292 check 2: the registry's watch fires on every computer change). */
+  appliedLevel?: Level;
   /** Holds waiting for the pause switch. */
   held: number;
   /** Aborted when the session ends or the daemon closes: a held call never runs after that. */
@@ -688,6 +691,7 @@ export class AgentManager {
   async #applyLevel(e: Entry, session: AgentSession): Promise<void> {
     const s = session as { setReadOnly?: (on: boolean) => Promise<void>; setLevel?: (level: Level) => Promise<void> };
     const level = this.#levelOf(e);
+    e.appliedLevel = level;
     if (e.backend.quirks.marks.includes("unasked-actions")) {
       if (s.setReadOnly) await s.setReadOnly(level === "read-only");
       else if (level === "read-only") throw new ContractError("refused", `${e.backend.id} acts without asking and can't be held at read-only, so this turn wasn't sent`);
@@ -706,7 +710,11 @@ export class AgentManager {
       if (!e.session) continue;
       const s = e.session as { setReadOnly?: (on: boolean) => Promise<void>; setLevel?: (level: Level) => Promise<void> };
       const level = this.#levelOf(e);
-      if (level === "read-only" && e.backend.quirks.marks.includes("unasked-actions")) {
+      // Only a real change: a hold, the user's typing or a computer going online fires the same watch.
+      const before = e.appliedLevel;
+      if (level === before) continue;
+      e.appliedLevel = level;
+      if (level === "read-only" && before !== undefined && e.backend.quirks.marks.includes("unasked-actions")) {
         if (e.driver.busy()) {
           e.transcript.call({ ts: this.#o.clock.now(), type: "level-dropped", level, cancelled: true });
           void e.session.cancel().catch(warn(e));

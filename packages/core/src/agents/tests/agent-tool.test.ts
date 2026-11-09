@@ -670,6 +670,21 @@ describe("a level drop reaches every running agent at once (INT, #292 review)", 
     await waitFor(() => w.report("config").length > 0, "the read-only mode");
     expect(w.report("config").map((c) => [c["option"], c["value"]])).toEqual([["mode", "ask"]]);
   });
+
+  test("S2, check 2: a registry event that isn't a level change (a hold, the user's typing) never cancels a turn already at read-only", async () => {
+    const quirks: AgentQuirks = { ...WELL_BEHAVED_QUIRKS, marks: ["unasked-actions"] };
+    const w = make({ quirks, level: "read-only", modes: ["agent", "plan", "ask"], readOnlyMode: { option: "mode", values: ["ask", "plan"] }, script: [[{ wait: true }, { say: "read it" }]] });
+    await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    // The registry's watch fires with the level unchanged.
+    w.changeLevel("read-only");
+    w.changeLevel("read-only");
+    await Bun.sleep(100);
+    process.kill(Number(w.report("started")[0]!["pid"]), "SIGUSR2");
+    const done = await waitFor(() => notification(w), "the notification");
+    expect(done.stopReason).toBe("end_turn");
+    expect(done.text).toBe("read it");
+  });
 });
 
 /** Lane D's gate, as lane K reads it. */
