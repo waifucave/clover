@@ -134,9 +134,13 @@ describe("the used cards on disk", () => {
     clock.correct(clock.now() + 1);
     expect(corrupt.claim("card_new")).toBe(true);
     expect(Object.keys((JSON.parse(readFileSync(path, "utf8")) as { used: object }).used)).toEqual(["card_new"]);
-    // A record of the wrong shape counts as unreadable too.
+    // A record of the wrong shape counts as unreadable too, and so does one entry that isn't a time.
     writeFileSync(path, JSON.stringify({ used: ["card_x"] }));
     expect(new FileAnswerLedger(path, clock).claim("card_y")).toBe(false);
+    writeFileSync(path, JSON.stringify({ used: { card_a: clock.now(), card_b: "yesterday" } }));
+    const odd = new FileAnswerLedger(path, clock);
+    expect(odd.claim("card_y")).toBe(false);
+    expect(odd.claim("card_b")).toBe(false);
   });
 
   test("a claim that can't be written is refused", () => {
