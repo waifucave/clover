@@ -81,6 +81,31 @@ export const CREDENTIAL_FILES: readonly string[] = [
   ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
 ];
 
+/** Inside a project folder, never written by a fenced process: what runs later on its own outside the fence. Git's
+ *  hooks and config (the ruling on project writes); the project's own MCP servers, settings and hooks for Clover and
+ *  Claude Code (`.mcp.json`, `.clover/`, `.claude/`), which start programs unfenced; and direnv's `.envrc`, which runs
+ *  when a shell enters the folder. Relative to the project folder. Its credential files (`CREDENTIAL_FILES`) are
+ *  neither read nor written. */
+export const PROJECT_DENIES: readonly string[] = [
+  ".git/hooks", ".git/config", ".git/info/attributes", ".mcp.json", ".clover", ".claude", ".envrc", ...CREDENTIAL_FILES,
+];
+
+/** The session's working directories a hook or MCP server is given: absolute folders that are none of the homes, never
+ *  a folder above one (`/`, `/Users`), never inside the Clover home. Real paths. */
+export function projectFolders(dirs: readonly string[], o: { userHome: string; cloverHome: string }): string[] {
+  const homes = [o.userHome, o.cloverHome].map(realOrResolved);
+  const inside = (p: string, root: string) => p === root || p.startsWith(root.endsWith(sep) ? root : root + sep);
+  const out: string[] = [];
+  for (const d of dirs) {
+    if (typeof d !== "string" || !d.startsWith("/")) continue;
+    const p = realOrResolved(d);
+    if (homes.some((h) => inside(h, p))) continue; // a home, or a folder above one
+    if (inside(p, homes[1]!)) continue; // inside the Clover home
+    if (!out.includes(p)) out.push(p);
+  }
+  return out;
+}
+
 /** The system's DNS resolver socket: the one Unix socket every fenced process may reach (name lookups go through it). */
 export const DNS_SOCKETS: readonly string[] = ["/private/var/run/mDNSResponder", "/var/run/mDNSResponder"];
 
@@ -128,6 +153,11 @@ export interface PluginFenceInput {
   /** No native code but its Bun's (`execs`) and the system's (`file-map-executable` denied everywhere else): the
    *  clover process (B3, and #345's review). */
   noNativeCode?: boolean;
+  /** The session's project folders (its working directories), for a hook or MCP server of that session: readable,
+   *  and writable when `projectWrite` (its plugin holds `project.write`). `.git/hooks`, `.git/config` and the credential
+   *  files inside each stay denied. `projectFolders` chooses them. */
+  projects?: readonly string[];
+  projectWrite?: boolean;
   /** The Unix sockets it may connect to (a supervised host's daemon socket) besides the DNS resolver; every other one
    *  is denied (S1). A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
   sockets?: readonly string[];
@@ -174,8 +204,9 @@ function ancestorsWithin(ps: readonly string[], roots: readonly string[]): strin
  *  allowed back, then what no process gets is denied last. */
 export function pluginFenceProfile(i: PluginFenceInput): string {
   const user = i.userHome;
-  const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : [])];
-  const write = [...i.write];
+  const projects = i.projects ?? [];
+  const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : []), ...projects];
+  const write = [...i.write, ...(i.projectWrite ? projects : [])];
   const closed = [user, i.cloverHome, ...darwinUserFolders()];
   const lines = [
     "(version 1)",
@@ -196,6 +227,8 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     `(allow file-read* file-write* ${subpaths(write)})`,
     // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
     `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
+    // In a project folder: what Git runs on its own, and the same credential files (the ruling on project writes).
+    ...(projects.length > 0 ? [`(deny file-write* ${subpaths(projects.flatMap((p) => PROJECT_DENIES.map((f) => join(p, f))))})`, `(deny file-read* ${subpaths(projects.flatMap((p) => CREDENTIAL_FILES.map((f) => join(p, f))))})`] : []),
     `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services, ...SCREEN_AND_CLIPBOARD_SERVICES].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
     // Signals only to itself and its own children: never the daemon, the app or another plugin (#345's second review).
     "(deny signal)",
@@ -252,6 +285,13 @@ export function fenceFolders(cloverHome: string, pluginId: string | undefined, n
   return { data, tmp };
 }
 
+/** A session's project folders for a hook or MCP server of it: its working directories, and whether its plugin holds
+ *  `project.write`. */
+export interface ProjectAccess {
+  dirs: readonly string[];
+  write: boolean;
+}
+
 /** The env a hook or MCP server runs with besides its TMPDIR: every package manager's cache in a folder of its own
  *  temp folder, and npm's user config a file there (`~/.npmrc` is a credential file, denied; S4). */
 export function toolCacheEnv(tmp: string): Record<string, string> {
@@ -271,13 +311,16 @@ export function toolCacheEnv(tmp: string): Record<string, string> {
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
  *  any program, fenced the same. Returns its temp folder and the env it runs with (`toolCacheEnv`). */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
+  const userHome = o.userHome ?? homedir();
+  const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, cloverHome: o.files.cloverHome }) : [];
   return {
     tmp,
     env: toolCacheEnv(tmp),
     fence: {
-      cloverHome: o.files.cloverHome, userHome: o.userHome ?? homedir(),
+      cloverHome: o.files.cloverHome, userHome,
+      ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
       read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun"))],
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
     },

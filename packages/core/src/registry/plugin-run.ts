@@ -27,7 +27,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { RESERVED_ENV } from "@waifucave/clover-plugin-sdk";
-import { fencedCommand, pluginFenceAvailable, toolFence } from "./plugin-fence";
+import { fencedCommand, pluginFenceAvailable, toolFence, type ProjectAccess } from "./plugin-fence";
 import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
@@ -449,7 +449,7 @@ export function pluginBunLaunch(args: readonly string[], base: Readonly<Record<s
  *  `BUN_OPTIONS` back; `BUN_BE_BUN` it never carries, and the guard deletes it. A Bun command runs on the plugin Bun (`pluginBun`); any other program
  *  is the plugin's own, which the OK covers and Clover doesn't confine. Every plugin-sourced stdio entry goes through
  *  this. */
-export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard, pluginId?: string): E {
+export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard, pluginId?: string, project?: ProjectAccess): E {
   const own = entry.env ?? {};
   refuseReservedPluginEnv(own, `the plugin MCP server at ${pluginRoot} (${basename(entry.command)})`);
   const env = guardedPluginEnv({ ...own, PATH: [guard.files.bin, own.PATH ?? process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter) }, { pluginRoot, ...guard });
@@ -458,7 +458,7 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
   // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
   if (guard.fence !== false && pluginFenceAvailable()) {
-    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}` });
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}) });
     Object.assign(env, toolEnv);
     const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
     return { ...entry, command: cmd!, args, env };

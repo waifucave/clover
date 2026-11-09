@@ -396,6 +396,15 @@ describe("the OK's text", () => {
     expect(describeOk(r)).not.toContain("It restyles approval cards.");
     expect(describeOk(r, { restylesCards: true })).toContain("It restyles approval cards.");
   });
+
+  // The controller's ruling after #345: a plugin whose hooks or MCP servers change project files says so.
+  test("project.write is a capability any plugin may hold, and the OK names it in plain words", () => {
+    const r = validateManifest({ ...min(), capabilities: ["project.write"] });
+    expect(r.ok).toBe(true);
+    expect(r.capabilities).toEqual(["project.write"]);
+    expect(describeOk(r)).toContain("It changes files in your project folders.");
+    expect(describeOk(validateManifest(min()))).not.toContain("It changes files in your project folders.");
+  });
 });
 
 describe("JSON with comments", () => {

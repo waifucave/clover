@@ -14,7 +14,7 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { startPluginHost } from "../../plugin-host/daemon-host";
 import { HookRunner } from "../../plugins/hook-runner";
 import { openPluginRegistry } from "../open";
-import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, pluginFenceProfile, toolCacheEnv } from "../plugin-fence";
+import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
 import { ensurePluginRunFiles, guardedMcpServer } from "../plugin-run";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
@@ -291,6 +291,58 @@ darwinDescribe("the plugin-process fence", () => {
       stop(w);
     }
   }, 90_000);
+
+  // The controller's ruling after #345: a session's project folders are readable to its plugins' hooks and MCP
+  // servers, and writable only with `project.write`; never Git's hooks or config, the project's own MCP servers or
+  // settings, or a sibling project.
+  test("project folders: read always, written only with project.write, never .git/hooks, .git/config or .mcp.json, never a sibling", async () => {
+    const w = world();
+    try {
+      const code = join(w.userHome, "code");
+      const project = join(code, "app");
+      const sibling = join(code, "other");
+      for (const d of [join(project, ".git", "hooks"), sibling]) mkdirSync(d, { recursive: true });
+      writeFileSync(join(project, "src.ts"), "unformatted\n");
+      writeFileSync(join(project, ".git", "config"), "[core]\n");
+      writeFileSync(join(sibling, "secret.txt"), "the other project's");
+      const q = (p: string) => JSON.stringify(p);
+      const command = [
+        `cd ${q(project)}`,
+        "cat src.ts >/dev/null 2>&1 && echo read=ok || echo read=denied",
+        "(printf 'formatted\\n' > src.ts) 2>/dev/null && echo write=ok || echo write=denied",
+        "(echo x > .git/hooks/pre-commit) 2>/dev/null && echo githook=ok || echo githook=denied",
+        "(echo x >> .git/config) 2>/dev/null && echo gitconfig=ok || echo gitconfig=denied",
+        "(echo '{}' > .mcp.json) 2>/dev/null && echo mcpjson=ok || echo mcpjson=denied",
+        `(echo x > ${q(join(sibling, "x"))}) 2>/dev/null && echo siblingwrite=ok || echo siblingwrite=denied`,
+        `cat ${q(join(sibling, "secret.txt"))} >/dev/null 2>&1 && echo siblingread=ok || echo siblingread=denied`,
+      ].join("; ");
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const run = async (write: boolean) => {
+        const runner = new HookRunner(guard, { projectFor: () => ({ dirs: [project], write }) });
+        const r = (await runner.run({ pluginId: "spy", event: "PostToolUse", command, cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "PostToolUse" } as never)) as { stdout: string };
+        return Object.fromEntries(r.stdout.trim().split("\n").map((l) => l.split("=") as [string, string]));
+      };
+      expect(await run(false)).toEqual({ read: "ok", write: "denied", githook: "denied", gitconfig: "denied", mcpjson: "denied", siblingwrite: "denied", siblingread: "denied" });
+      expect(readFileSync(join(project, "src.ts"), "utf8")).toBe("unformatted\n");
+      expect(await run(true)).toEqual({ read: "ok", write: "ok", githook: "denied", gitconfig: "denied", mcpjson: "denied", siblingwrite: "denied", siblingread: "denied" });
+      expect(readFileSync(join(project, "src.ts"), "utf8")).toBe("formatted\n");
+      expect(existsSync(join(project, ".git", "hooks", "pre-commit"))).toBe(false);
+      expect(readFileSync(join(project, ".git", "config"), "utf8")).toBe("[core]\n");
+      expect(existsSync(join(project, ".mcp.json"))).toBe(false);
+      expect(existsSync(join(sibling, "x"))).toBe(false);
+    } finally {
+      stop(w);
+    }
+  }, 60_000);
+
+  test("a project folder is never a home, a folder above one, or inside the Clover home", () => {
+    const user = temp("cf-pf-user-");
+    const clover = join(user, ".clover");
+    mkdirSync(join(user, "code", "app"), { recursive: true });
+    mkdirSync(join(clover, "plugins"), { recursive: true });
+    expect(projectFolders([user, dirname(user), "/", clover, join(clover, "plugins"), "relative/path", join(user, "code", "app"), join(user, "code", "app")], { userHome: user, cloverHome: clover }))
+      .toEqual([join(user, "code", "app")]);
+  });
 
   test("the clover process, which holds many plugins, runs no plugin's native code: bun:ffi is disarmed and no addon loads; a third-party plugin's own process keeps both (B3)", async () => {
     const home = temp("cf-natives-");
