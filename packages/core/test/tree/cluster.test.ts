@@ -72,8 +72,7 @@ describe("one tree across computers", () => {
     await cluster.join();
     expect(studio.node.tree.resolve("bots/alpha/memory/MEMORY.md")).toMatchObject({ computer: "Laptop1", area: "bot", bot: "alpha" });
     // A bot's memory is its own sessions' alone (the owner's decision, #197): another computer's call is a peer's, so the
-    // holder refuses it there. The rest of the bot's folder (its agents' transcripts) is read-only to every caller;
-    // only the core and the user write it.
+    // holder refuses it there. The rest of the bot's folder is the Clover home's too, default-deny: fenced as well.
     expect(await code(studio.node.tree.write("bots/alpha/memory/MEMORY.md", { encoding: "utf8", text: "# Memory\n" }, { as: BOT }))).toBe("fenced");
     expect(await code(studio.node.tree.write("bots/alpha/agents/a_1.md", { encoding: "utf8", text: "# Agent\n" }, { as: BOT }))).toBe("fenced");
     expect(existsSync(join(laptop.cloverHome, "bots/alpha/agents/a_1.md"))).toBe(false);
