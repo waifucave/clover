@@ -13,6 +13,8 @@ import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeliveredInput } from "../contracts/session-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
+import type { PluginHost } from "../contracts/plugin-host";
+import { pillMethods } from "../pill/rpc";
 import { CacheTimedCompaction, type CompactionPolicy } from "../sessions/compaction";
 import { DurableSessionHost, type DurableSessionHostOptions } from "../sessions/durable-host";
 import { SessionGrants } from "../sessions/grants";
@@ -70,6 +72,9 @@ export interface BotSideOptions {
     /** The plugin registry's `triggers` entries: which plugin may fire which trigger type (`RoutineEngine.fire`). */
     triggers?: Pick<PluginRegistry, "entries">;
   };
+  /** The plugin host that runs `pill.target` entries' handlers (lane G's `pill.send`); absent, a send to an entry is
+   *  refused as not installed, and sends to bots and sessions still work. */
+  pillTargets?: Pick<PluginHost, "invoke">;
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
   onSessionEnded?: (id: string) => void;
   /** Lane M's update gate (`RunningDaemon.updateGate`, #198): its turns are a busy source, and none starts while an
@@ -221,16 +226,22 @@ export function createBotSide(o: BotSideOptions): BotSide {
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
       return defs;
     },
-    methods: (deps) => ({
-      ...sessionsMethods({
+    methods: (deps) => {
+      const sessions = sessionsMethods({
         home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
         ...(updates === undefined ? {} : { updateGate: updates }),
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
         questions: questions.broker,
-      }),
+      });
+      return {
+      ...sessions,
+      // Lane G's `pill.send`: the Dispatch pill's words go through the same session.send as the composer's, and to a
+      // `pill.target` entry's handler through the plugin host, when there is one.
+      ...pillMethods({ bots, sessions, ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
       ...(voices === undefined ? {} : voicesMethods({ voices })),
-    }),
+      };
+    },
     start: async () => {
       await bots.start();
       await routines?.start();
