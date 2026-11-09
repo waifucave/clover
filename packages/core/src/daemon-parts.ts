@@ -35,6 +35,8 @@ import { fencedSpawner } from "./fence/fenced-process";
 import { hookSpawner, type FencedSpawner } from "./fence/spawn";
 import { hostOs } from "./tree/names";
 import type { SessionHost } from "./contracts/session-host";
+import { approvalCoreEvents } from "./approvals/core-events";
+import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
 import { CloverRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/clover";
 import { embeddedSessionOptions } from "./runtime-sdk/turn-loop/embedded-session";
 import { ERR } from "@waifucave/clover-protocol";
@@ -85,6 +87,9 @@ export interface DaemonPartsInput {
   reviewer?: SafetyReviewer;
   /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
    *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
+  /** The Clover server's `coreEvent` (its own signature, shared with lane J's terminals in #335): the broker's cards go
+   *  out through it as core events. */
+  coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
   approvals?: Pick<ApprovalBroker, "request">;
   /** TEST SEAM: the fenced process in place of `fencedSpawner({ fence })` (C-M2 part 2, #321). */
   spawner?: FencedSpawner;
@@ -224,14 +229,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     const spawner = input.spawner ?? fencedSpawner({ fence, os: hostOs() });
     const hooksSpawner = hookSpawner(hostOs(), spawner);
     let broker: CloverApprovalBroker | undefined;
-    const lateApprovals: Pick<CloverApprovalBroker, "request" | "get"> = {
-      request: async (r, o) => {
-        if (!broker) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
-        return broker.request(r, o);
-      },
-      // A level raise's card is read back from the broker itself (J's #342): none before the broker is up.
-      get: (id) => broker?.get(id),
-    };
+    const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
@@ -268,6 +266,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
         log: (line) => log(`[approvals] ${line}`),
       });
+      // Its cards as core events (lane C's `approvalCoreEvents`), stamped with the shared clock, from before the bot
+      // side starts, so a card raised while it starts is heard too.
+      if (input.coreEvent) {
+        const send = input.coreEvent;
+        closers.push(approvalCoreEvents(broker, (e) => send(e), () => links.clock.now()));
+      }
     }
 
     let agents: DaemonAgents | undefined;
@@ -414,4 +418,18 @@ export function recheckAtTurnEnds(host: Pick<SessionHost, "watch">, spawner: Pic
       recheck(view.id, true);
     }
   });
+}
+
+/** The broker, bound late (the node needs it before it exists: it is made from the node's own registry). Its `request`
+ *  refuses until then, and its `get` finds nothing; once bound, both are the broker's own. A level raise's card is
+ *  read back through `get` (J's #342, which fails closed without it), so both must always forward. */
+export function lateBroker(current: () => CloverApprovalBroker | undefined): Pick<CloverApprovalBroker, "request" | "get"> {
+  return {
+    request: async (r, o) => {
+      const b = current();
+      if (!b) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
+      return b.request(r, o);
+    },
+    get: (id) => current()?.get(id),
+  };
 }

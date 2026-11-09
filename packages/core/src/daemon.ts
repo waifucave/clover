@@ -47,7 +47,6 @@ import { claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, refuseUntilBroker, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { botApprovalCheck } from "./approvals/bot-check";
-import { approvalCoreEvents } from "./approvals/core-events";
 import { brokerCardOpener } from "./devices/rpc";
 import { GLOSSARY_TOOL_NAME } from "./runtime-sdk/turn-loop/glossary";
 import { computerNameFor } from "./devices/registry";
@@ -3591,6 +3590,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         const check = broker === undefined ? undefined : botApprovalCheck(broker, {
           hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME],
           home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
+          levelOf: (c) => node?.registry.get(c)?.level,
+          // Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card.
+          commandsAlwaysCard: true,
         });
         return botDriverFactory({
         home: cloverHome,
@@ -3617,10 +3619,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // finishes starting after that closes itself as it does (`partsStopping`).
   let stopRequested: () => void = () => {};
   const stopSignal = new Promise<void>((resolve) => { stopRequested = resolve; });
-  let offCardEvents: (() => void) | undefined;
   const closeStarted = async (): Promise<void> => {
-    offCardEvents?.();
-    offCardEvents = undefined;
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
@@ -3706,13 +3705,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           fillProvider: p.agents?.fillProvider ?? ((model, options) => partsProviderFill(model, options)),
           ...(p.agents?.backends ? { backends: p.agents.backends } : {}),
         },
+        // The Clover server's core events: the broker's cards reach the app, remote clients and plugins with
+        // `approvals` (C-M3 item 2), from before the bot side starts.
+        coreEvent: (event, o) => cloverServer?.coreEvent(event, o) ?? 0,
         log: (line) => console.error(line),
       });
       if (partsStopping) return void (await closeStarted());
-      // The broker's cards reach the app, remote clients and plugins with `approvals` as core events (C-M3 item 2),
-      // stamped with the shared clock. They stop with the parts.
-      const cards = daemonParts.broker;
-      if (cards) offCardEvents = approvalCoreEvents(cards, (e) => cloverServer?.coreEvent(e), () => links.clock.now());
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
