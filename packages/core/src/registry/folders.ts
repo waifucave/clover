@@ -236,13 +236,13 @@ export class PluginFolders {
   }
 
   /** The OK's text for a top-level plugin as last read (§5.6): what it is, adds and reaches, and who wrote it. */
-  okText(id: string, os: "macos" | "windows" | "linux", hostNetworkHeld = false): OkText {
+  okText(id: string, os: "macos" | "windows" | "linux", hostNetworkHeld = false, sandboxed?: boolean): OkText {
     const r = this.#reports.get(id);
     if (!r) return { title: id, lines: [`${id} was found on disk.`], source: PROVENANCE_TEXT.found };
     const name = r.tree.top.manifest?.name;
     return {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
-      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld }), ...agentEnvLines(r.folder, r.tree)],
+      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld, ...(sandboxed !== undefined ? { sandboxed } : {}) }), ...agentEnvLines(r.folder, r.tree)],
       source: PROVENANCE_TEXT[r.provenance.by],
     };
   }
