@@ -62,7 +62,7 @@ export interface GlossaryOptions {
 }
 
 /** Clover's own names, besides the core tools': a plugin's skill or agent never takes one, or one that reads as one. */
-export const RESERVED_GLOSSARY_NAMES: readonly string[] = ["clover", "waifucave", "winter", "system", "glossary", "user", "core"];
+export const RESERVED_GLOSSARY_NAMES: readonly string[] = ["clover", "waifucave", "system", "glossary", "user", "core"];
 
 /** The label a loaded skill's instructions start with: the plugin's words, never Clover's or the user's. */
 export const skillLabel = (pluginId: string): string =>
