@@ -71,6 +71,11 @@ describe("the envelope", () => {
     expect(v.ok).toBe(true);
     expect(has(v, "version_child")).toBe(true);
     expect(has(validateManifest({ manifest: 1, name: "T", adult: true }, { folderName: "tarot-panel", parent }), "adult_child")).toBe(true);
+    // A child's `builtins` would widen what the tree's code may load without showing on the OK card (#337's S2).
+    const widened = validateManifest({ manifest: 1, name: "T", builtins: ["child_process"] }, { folderName: "tarot-panel", parent });
+    expect(widened.ok).toBe(false);
+    expect(has(widened, "builtins_child")).toBe(true);
+    expect(has(validateManifest({ ...min(), builtins: ["child_process"] }), "builtins_child")).toBe(false);
     expect(has(validateManifest({ ...min(), enabledByDefault: false }), "enabled_by_default_top")).toBe(true);
   });
 
@@ -164,6 +169,7 @@ describe("code, engines and platforms", () => {
     const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.js" }, builtins: ["child_process"] });
     expect([r.ok, r.builtins]).toEqual([true, ["child_process"]]);
     expect(describeOk(r).join(" ")).toContain("Its code can load or run other code, which Clover doesn't check (child_process).");
+    expect(describeOk(r).join(" ")).toContain("a best-effort lint, not a sandbox; what holds its code is the fence its process runs in.");
     expect(validateManifest({ ...min(), builtins: ["fs"] }).ok).toBe(false);
   });
 

@@ -291,27 +291,36 @@ describe("buildPluginForShipping", () => {
       ["import.meta.require", "export const f = (x: string) => import.meta.require(x);"],
       ["createRequire", `import { createRequire } from "node:module";\nexport const f = () => createRequire(import.meta.url)("x");`],
       ["getBuiltinModule", `export const f = () => process.getBuiltinModule("module");`],
-      ["a Worker", `export const f = () => new Worker("./w.js");`],
-      ["Bun.resolveSync", `export const f = () => Bun.resolveSync("x", ".");`],
+      ["a Worker (host-only)", `export const f = () => new Worker("./w.js");`],
+      ["Bun.resolveSync (host-only)", `export const f = () => Bun.resolveSync("x", ".");`],
       ["a literal require of what isn't shipped", `declare const require: (s: string) => unknown;\nexport const f = () => require("left-pad");`],
       // R1: aliases a pattern per call would miss.
       ["createRequire aliased", `import { createRequire as cr } from "node:module";\nexport const f = () => cr(import.meta.url);`],
       ["require aliased", "declare const require: unknown;\nexport const f = () => { const r = require; return r; };"],
       ["dlopen through computed members", `export const f = () => (globalThis as any)["process"]["dlopen"]({}, "x.node");`],
-      ["Worker aliased", `import { Worker as W } from "node:worker_threads";\nexport const f = () => new W("./w.js");`],
+      ["Worker aliased (host-only)", `import { Worker as W } from "node:worker_threads";\nexport const f = () => new W("./w.js");`],
       ["Module._load", `import Module from "node:module";\nexport const f = () => (Module as any)._load("x");`],
       ["import.meta.resolve", "export const f = () => import.meta.resolve(\"x\");"],
       ["import.meta passed on", "export const f = () => { const m = import.meta; return m; };"],
       ["child_process fork", `import { fork } from "node:child_process";\nexport const f = () => fork("./x.js");`],
       ["vm", `import vm from "node:vm";\nexport const f = (s: string) => vm.runInThisContext(s);`],
-      ["Bun.spawn", "export const f = () => Bun.spawn([\"x\"]);"],
-      ["Bun.build", "export const f = () => Bun.build({ entrypoints: [] });"],
-      ["Bun passed on", "export const f = () => { const b = Bun; return b; };"],
+      ["Bun.spawn (host-only)", "export const f = () => Bun.spawn([\"x\"]);"],
+      ["Bun.build (host-only)", "export const f = () => Bun.build({ entrypoints: [] });"],
+      ["Bun passed on (host-only)", "export const f = () => { const b = Bun; return b; };"],
+      // #337's review: forms the old pattern scan missed, each through the real build.
+      ["require after a division", "declare const require: (s: string) => unknown;\nexport const f = (name: string) => { var q = ({} as any) / 1 + (require(name) as any) / 1; return q; };"],
+      ["process.mainModule.require", "export const f = (n: string) => (process as any).mainModule.require(n);"],
+      ["module.require", 'declare const module: any;\nexport const f = () => module.require("child_process");'],
+      ["Bun.$ (host-only)", "export const f = () => Bun.$`ls`;"],
+      ["eval", "export const f = (s: string) => eval(s);"],
+      ["new Function", "export const f = (s: string) => new Function(s);"],
+      ["process.binding", 'export const f = () => (process as any).binding("fs");'],
+      ['globalThis["Bun"].spawn (host-only)', 'export const f = () => (globalThis as any)["Bun"].spawn(["x"]);'],
     ];
     for (const [what, code] of forms) {
       const c = await checkout({ plugin: { "host/index.ts": `${code}\nexport const start = () => 1;\n` } });
       const e = await buildPluginForShipping(c.plugin, { target: "linux-arm64", download: c.download }).catch((x) => x);
-      expect([what, e instanceof PluginBuildError && /can't be checked|requires left-pad at run time|loads or runs other code|Could not resolve: "left-pad"/.test(e.message) ? true : String(e?.message ?? e)]).toEqual([what, true]);
+      expect([what, e instanceof PluginBuildError && /can't be checked|requires left-pad at run time|requires child_process|loads or runs other code|Could not resolve: "left-pad"/.test(e.message) ? true : String(e?.message ?? e)]).toEqual([what, true]);
     }
     const client = await checkout({ plugin: { "client/index.tsx": `export const load = (url: string) => import(url);\n` } });
     const ce = await buildPluginForShipping(client.plugin, { target: "linux-arm64", download: client.download }).catch((x) => x);

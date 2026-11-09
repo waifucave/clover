@@ -19,18 +19,29 @@
 //   (`import.meta.dirname`/`filename`; in a client, `/`); the bundler's per-input path comments are removed; and every
 //   file the build writes (modules, stylesheets, assets) is scanned for the strings `forbid` names (the builder's home,
 //   user name and checkout), failing the build if one is there;
-// * no load the scan can't check (`runtimeLoadProblems`; #271's review M1, then R1's sturdier rule, since a pattern
-//   for each call misses aliases):
+// * no load the scan can't check (`runtimeLoadProblems`; #271's review M1, R1's sturdier rule, then #337's: a parse of
+//   each module with acorn, never a pattern over its text, which a regular expression or a division could fool):
 //   - host code imports a built-in that loads or runs other code (`module`, `worker_threads`, `vm`, `child_process`)
-//     only when its plugin names it in the manifest's `builtins`; the bundler's own Node shim (`createRequire`) is the
-//     one exception;
-//   - outside the bundler's own shim lines, a module loader (`require`, `__require`, `import.meta.require`,
-//     `import.meta.resolve`) may only be called with a literal the module may import, and any other reference to one,
-//     or to `dlopen`, `getBuiltinModule` or `Module._load`, fails the build;
-//   - `import()` takes a string literal only;
-//   - host code names no `Worker`, no `Bun.spawn`/`build`/`plugin`/`resolve`, and doesn't pass `Bun` itself on.
+//     only when its top-level plugin names it in the manifest's `builtins` (which the OK card lists; a child can't);
+//     the bundler's own Node shim (`createRequire`) is the one exception;
+//   - outside the bundler's own shim, a module loader (`require`, `__require`, `import.meta.require`) may only be
+//     called with one literal the module may import; any other reference to one, a `.require` member
+//     (`module.require`, `process.mainModule.require`), `import.meta.resolve`, `dlopen`, `binding`, `mainModule`,
+//     `getBuiltinModule`, `createRequire` or Module's loader, `eval`, `Function` (and a `.constructor(…)` call), as a
+//     name, a member or a destructured key, fails the build;
+//   - `import()` takes a string literal only, and `import.meta` isn't passed on;
+//   - host code names no `Worker`, no `Bun.spawn`/`spawnSync`/`$`/`build`/`plugin`/`resolve`/`FFI` (however `Bun`
+//     is reached: `globalThis["Bun"]`, destructured), and doesn't pass `Bun` itself on;
+//   - a module that doesn't parse fails the build.
 //   A client's Worker is the layer's to allow: its CSP gives `worker-src` only `'self' blob:` (lane E).
+//
+//   This is a best-effort lint, not containment: it keeps the common ways to load or run code out of what Clover
+//   builds and ships, and a determined plugin can still get past it (a computed member it can't name, code it
+//   assembles). What holds a plugin's host code is its process's fence (`plugin-fence.ts`, 2f), and the OK card says
+//   so.
 import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
+import * as acorn from "acorn";
+import * as walk from "acorn-walk";
 import { mkdirSync, readFileSync, renameSync } from "node:fs";
 import { isBuiltin } from "node:module";
 import { basename, dirname, extname, resolve } from "node:path";
@@ -212,8 +223,8 @@ export function buildMachineStrings(folders: readonly { path: string; label: str
     if (path.length < 2) continue;
     for (const v of both(path)) out.push({ text: v, label });
   }
-  // A short user name would match ordinary words in a path ("me", "ci"): only one of 3 or more characters is looked for.
-  if (user.length >= 3) out.push({ text: new RegExp(`[/\\\\]${user.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[/\\\\]`), label: "the user's name in a path" });
+  // As a whole path segment only (`/ci/`, never "ci" in a word), so a short name is looked for too (#337's review).
+  if (user !== "") out.push({ text: new RegExp(`[/\\\\]${user.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[/\\\\]`), label: "the user's name in a path" });
   return out;
 }
 
@@ -320,46 +331,161 @@ export function codeOnly(source: string): string {
   return out.join("");
 }
 
-/** The loads in a module the scan can't check (see the file's header); `allowed` says which literal specifiers
- *  `require` may name (a client may name none), and `builtins` the code-loading built-ins the plugin named. */
+/** Names that load, run or reach code the scan can't follow, flagged wherever they're referenced (as a bare name, a
+ *  property, a computed `["…"]` member or a destructured key). */
+const LOADER_NAMES = new Set(["dlopen", "getBuiltinModule", "_load", "_resolveFilename", "createRequire"]);
+/** `process`'s members that reach a loader or native code, flagged on `process` however it's reached (a library's own
+ *  `binding` or `mainModule` is no loader). */
+const PROCESS_LOADERS = new Set(["binding", "_linkedBinding", "mainModule"]);
+/** Bun's members that run, build or load code: flagged on `Bun` however it's reached (`Bun.x`, `globalThis.Bun.x`,
+ *  `globalThis["Bun"]["x"]`). */
+const BUN_RUNNERS = new Set(["spawn", "spawnSync", "build", "plugin", "resolve", "resolveSync", "$", "Transpiler", "FFI", "dlopen", "connect", "listen"]);
+const GLOBAL_OBJECTS = new Set(["globalThis", "global", "self", "window"]);
+
+/** The name a member's property gives, when it's a plain name or a string literal; undefined when computed. */
+function memberName(m: acorn.MemberExpression): string | undefined {
+  if (!m.computed && m.property.type === "Identifier") return m.property.name;
+  if (m.computed && m.property.type === "Literal" && typeof m.property.value === "string") return m.property.value;
+  if (m.computed && m.property.type === "TemplateLiteral" && m.property.expressions.length === 0) return m.property.quasis[0]?.value.cooked ?? undefined;
+  return undefined;
+}
+
+/** Whether an expression is a global (`Bun`, `process`): the name, or a global object's member of that name. */
+function isGlobal(e: acorn.AnyNode | null | undefined, name: string): boolean {
+  if (e == null) return false;
+  if (e.type === "Identifier") return e.name === name;
+  if (e.type === "MemberExpression") return memberName(e) === name && e.object.type === "Identifier" && GLOBAL_OBJECTS.has(e.object.name);
+  return false;
+}
+const isBun = (e: acorn.AnyNode) => isGlobal(e, "Bun");
+
+/** The loads in a module the scan can't check (see the file's header): a parse of the module (acorn), never a pattern
+ *  over its text (#337's review: a regular expression after `}` and `.require` slipped past the old reading).
+ *  `allowed` says which literal specifiers `require` may name (a client may name none), and `builtins` the
+ *  code-loading built-ins the plugin named. A module that doesn't parse is refused. This is a lint that keeps the
+ *  common ways out of a plugin's build, not a boundary: the plugin-process fence is (2f). */
 export function runtimeLoadProblems(source: string, file: string, o: { client: boolean; allowed: (spec: string) => boolean; builtins?: readonly string[] }): string[] {
   const problems: string[] = [];
-  const say = (n: number, what: string) => {
-    if (n > 0) problems.push(`${file}: ${n} ${what}, which can't be checked`);
-  };
-  // The bundler's shim lines go first (they are the only places its loaders may be named); then only code is read.
-  let text = source;
-  const nodeShim = NODE_SHIM_IMPORT.test(text) && SHIM_LINES[1]!.test(text);
-  for (const line of SHIM_LINES) text = text.replace(line, "");
-  if (nodeShim) text = text.replace(NODE_SHIM_IMPORT, "");
-  const code = codeOnly(text);
-  const literalAt = (at: number) => new RegExp(String.raw`^\s*\(${literal}`).exec(text.slice(at));
-  // import(): a string literal only (its specifier is checked with the static imports).
-  let computedImports = 0;
-  for (const m of code.matchAll(/(?<![\w$.])import\s*(?=\()/g)) if (literalAt(m.index! + m[0].length) === null) computedImports++;
-  say(computedImports, "import() of a computed specifier");
-  // A loader may only be called with a literal the module may import; any other reference to one is a load the scan
-  // can't follow (aliased, passed on, read as a property; R1).
-  let loaderRefs = 0;
-  for (const m of code.matchAll(/(?<![\w$.])(?:require|__require)(?![\w$])|import\s*\.\s*meta\s*\.\s*(?:require|resolve)(?![\w$])/g)) {
-    const call = m[0].endsWith("resolve") ? null : literalAt(m.index! + m[0].length);
-    if (call === null) {
-      loaderRefs++;
-      continue;
-    }
-    const spec = call[2]!;
+  const counts = new Map<string, number>();
+  const flag = (what: string) => counts.set(what, (counts.get(what) ?? 0) + 1);
+  let ast: acorn.Program;
+  try {
+    ast = acorn.parse(source, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true, allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true });
+  } catch (err) {
+    return [`${file}: doesn't parse as a JavaScript module (${(err as Error).message}), so its loads can't be checked`];
+  }
+  const nodeShim = NODE_SHIM_IMPORT.test(source) && SHIM_LINES[1]!.test(source);
+  const checkSpec = (spec: string) => {
     const builtin = codeLoadingBuiltinOf(spec);
     if (o.client || !o.allowed(spec)) problems.push(`${file}: requires ${spec} at run time, which ${o.client ? "a client module never does" : "the build neither bundled nor ships"}`);
     else if (builtin !== undefined && !(o.builtins ?? []).includes(builtin)) problems.push(`${file}: requires ${spec}, which loads or runs other code; the plugin names it in its manifest's \`builtins\` to use it`);
-  }
-  say(loaderRefs, "reference(s) to a module loader outside a literal require");
-  say([...code.matchAll(/\bdlopen\b|\bgetBuiltinModule\b|\b_load\b|\b_resolveFilename\b/g)].length, "reference(s) to process.dlopen, getBuiltinModule or Module's loader");
-  // The same names reached by a computed member (`globalThis["process"]["dlopen"]`), and import.meta passed on.
-  say([...text.matchAll(/\[\s*(["'`])(?:dlopen|getBuiltinModule|_load|_resolveFilename|require|__require|Worker|spawn|spawnSync|build|plugin|resolve|resolveSync|createRequire)\1\s*\]/g)].length, "computed reference(s) to a loader or a way to run code");
-  say([...code.matchAll(/import\s*\.\s*meta(?!\s*\.\s*(?:url|dir|dirname|file|filename|path|main|env|require|resolve)\b)/g)].length, "use(s) of import.meta passed on");
+  };
+  // First pass: the nodes the checks account for (the bundler's shim, a loader called with a literal), so the second
+  // pass, which visits children before their parents, doesn't flag their parts.
+  const handled = new Set<acorn.AnyNode>();
+  const handle = (e: acorn.AnyNode) => {
+    handled.add(e);
+    if (e.type === "MemberExpression") handled.add(e.object);
+  };
+  walk.full(ast, (node) => {
+    const n = node as acorn.AnyNode;
+    if (n.type === "VariableDeclarator" && n.id.type === "Identifier" && n.id.name === "__require" && n.init) {
+      // The bundler's shims: `var __require = import.meta.require;` and `var __require = createRequire(import.meta.url);`.
+      const init = n.init;
+      if (init.type === "MemberExpression" && init.object.type === "MetaProperty" && memberName(init) === "require") handle(init);
+      if (nodeShim && init.type === "CallExpression" && init.callee.type === "Identifier" && init.callee.name === "createRequire" && init.arguments.length === 1) {
+        const arg = init.arguments[0]!;
+        if (arg.type === "MemberExpression" && arg.object.type === "MetaProperty" && memberName(arg) === "url") {
+          handle(init.callee);
+          handle(arg);
+        }
+      }
+    } else if (n.type === "CallExpression") {
+      // A loader called with one literal: the literal is checked, the loader is accounted for.
+      const c = n.callee;
+      const loader = (c.type === "Identifier" && (c.name === "require" || c.name === "__require"))
+        || (c.type === "MemberExpression" && c.object.type === "MetaProperty" && memberName(c) === "require");
+      const arg = n.arguments[0];
+      if (loader && n.arguments.length === 1 && arg?.type === "Literal" && typeof arg.value === "string") {
+        handle(c);
+        checkSpec(arg.value);
+      }
+    }
+  });
+  const loaderRef = "reference(s) to a module loader outside a literal require";
+  const loaderName = "reference(s) to a loader (process.dlopen, binding or mainModule, getBuiltinModule, Module's loader, createRequire)";
+  const bunRunner = "reference(s) to Bun's spawn, build, plugin, resolve, $ or FFI";
+  const bunItself = "reference(s) to Bun itself passed on";
+  // A name read: as a reference (`eval`), a member (`process.binding`, `x["dlopen"]`) or a destructured key.
+  const named = (name: string, onBun: boolean, onProcess = false) => {
+    if (name === "require" || name === "__require") flag(loaderRef);
+    else if (LOADER_NAMES.has(name) || (onProcess && PROCESS_LOADERS.has(name))) flag(loaderName);
+    else if (name === "eval") flag("use(s) of eval");
+    else if (name === "Function") flag("use(s) of Function (new Function runs a string as code)");
+    else if (!o.client && name === "Worker") flag("reference(s) to Worker");
+    else if (!o.client && onBun && BUN_RUNNERS.has(name)) flag(bunRunner);
+    else if (!o.client && name === "Bun") flag(bunItself);
+  };
+  walk.fullAncestor(ast, (node, _state, ancestors, type) => {
+    const n = node as acorn.AnyNode;
+    if (handled.has(n)) return;
+    const parent = ancestors[ancestors.length - 2] as acorn.AnyNode | undefined;
+    const isObjectOf = parent?.type === "MemberExpression" && parent.object === n;
+    switch (n.type) {
+      case "ImportExpression":
+        if (n.source.type !== "Literal" || typeof n.source.value !== "string") flag("import() of a computed specifier");
+        return;
+      case "CallExpression":
+        // `(…).constructor("code")`: Function by another name.
+        if (n.callee.type === "MemberExpression" && memberName(n.callee) === "constructor") flag("call(s) of a constructor property (Function by another name)");
+        return;
+      case "Identifier":
+        // A reference, not a name being declared or bound (a declared name does nothing by itself; reading it is
+        // what's judged, and a destructured key is judged at its pattern). A non-computed key is never visited. Bun as
+        // a member's object is judged at the member.
+        if (type === "VariablePattern" || type === "Pattern") return;
+        if (n.name === "Bun" && isObjectOf) return;
+        named(n.name, false);
+        return;
+      case "MemberExpression": {
+        if (n.object.type === "MetaProperty") {
+          const name = memberName(n);
+          // import.meta's plain facts are fine; require only in a literal call (the first pass), resolve never.
+          if (name === "require" || name === "resolve") flag(loaderRef);
+          else if (name === undefined || !["url", "dir", "dirname", "file", "filename", "path", "main", "env"].includes(name)) flag("use(s) of import.meta passed on");
+          return;
+        }
+        const name = memberName(n);
+        if (name === undefined) return; // a computed key the scan can't name: the fence's
+        const viaGlobal = n.object.type === "Identifier" && GLOBAL_OBJECTS.has(n.object.name);
+        if (name === "Bun" && viaGlobal && isObjectOf) return; // judged at the member it's the object of
+        named(name, isBun(n.object), isGlobal(n.object, "process"));
+        return;
+      }
+      case "ObjectPattern": {
+        // `const { spawn } = Bun`, `const { mainModule } = process`, `const { Bun: B } = globalThis`: a key is read
+        // from what the pattern destructures, when the scan can see it.
+        const from = parent?.type === "VariableDeclarator" && parent.id === n ? parent.init : parent?.type === "AssignmentExpression" && parent.left === n ? parent.right : undefined;
+        for (const p of n.properties) {
+          if (p.type !== "Property") continue;
+          const key = !p.computed && p.key.type === "Identifier" ? p.key.name : p.key.type === "Literal" && typeof p.key.value === "string" ? p.key.value : undefined;
+          if (key === undefined) continue;
+          const onGlobalObject = from?.type === "Identifier" && GLOBAL_OBJECTS.has(from.name);
+          if (key === "Bun") {
+            if (onGlobalObject) named(key, false);
+          } else if (key === "process") {
+            if (onGlobalObject) flag(loaderName);
+          } else named(key, isGlobal(from, "Bun"), isGlobal(from, "process"));
+        }
+        return;
+      }
+      case "MetaProperty":
+        if (!isObjectOf) flag("use(s) of import.meta passed on");
+        return;
+    }
+  });
+  for (const [what, n] of counts) problems.push(`${file}: ${n} ${what}, which can't be checked`);
   if (!o.client) {
-    say([...code.matchAll(/(?<![\w$.])Worker(?![\w$])/g)].length, "reference(s) to Worker");
-    say([...code.matchAll(/\bBun\s*\.\s*(?:spawn|spawnSync|build|plugin|resolve|resolveSync)\b|\bBun\s*\[|(?<![\w$.])Bun\s*(?=[;,)}\]])|=\s*Bun\s*(?![\s.\w$])|\}\s*=\s*Bun\b(?!\s*\.)/g)].length, "reference(s) to Bun's spawn, build, plugin or resolve, or Bun itself passed on");
     // A code-loading built-in, imported (statically, or with a literal import()), only when the plugin named it.
     for (const i of new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source)) {
       const b = codeLoadingBuiltinOf(i.path);

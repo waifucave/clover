@@ -348,6 +348,9 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     if (top.namespace !== undefined) f.error("plugin", "namespace_child", ["namespace"], "a child shares its top-level plugin's namespace");
     if (top.version !== undefined) f.warn("version_child", ["version"], "a child inherits its top-level plugin's version; this one is ignored");
     if (top.adult !== undefined) f.error("plugin", "adult_child", ["adult"], "`adult` covers the whole tree; set it on the top-level plugin");
+    // The OK card lists the top manifest's `builtins` only, so a child's would widen what its code may load unseen
+    // (#337's review S2).
+    if (top.builtins !== undefined) f.error("plugin", "builtins_child", ["builtins"], "`builtins` covers the whole tree; set it on the top-level plugin");
     if (folder !== undefined && !isPluginId(folder)) f.error("plugin", "child_folder", [], `the folder "${folder}" is not a plugin id`);
     id = folder !== undefined ? `${opts.parent!.id}/${folder}` : undefined;
     namespace = opts.parent!.namespace;
@@ -984,7 +987,10 @@ export function describeOk(
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
   if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
-  if (report.builtins.length > 0) lines.push(`Its code can load or run other code, which Clover doesn't check (${report.builtins.join(", ")}).`);
+  // Said plainly (#337's review): the build's scan is a lint, and what holds the code is its process's fence.
+  if (report.builtins.length > 0) {
+    lines.push(`Its code can load or run other code, which Clover doesn't check (${report.builtins.join(", ")}). Clover's check of what plugin code loads is a best-effort lint, not a sandbox; what holds its code is the fence its process runs in.`);
+  }
   if (report.adult) lines.push("It may contain adult content.");
   if (opts.source === "other") lines.push("Not reviewed: it isn't from the official index.");
   return lines;
