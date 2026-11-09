@@ -13,7 +13,7 @@
 // it waits it pins below it rather than scroll under it (styles.css).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import type { MessageContext, MessageSpotProps } from "./context";
-import { afterContentChange, isAtBottom } from "./follow";
+import { afterContentChange, distanceFromBottom, isAtBottom } from "./follow";
 import { IconArrowDown, IconClover } from "./icons";
 import { AgentReport } from "./messages/AgentReport";
 import { ApprovalMessage } from "./messages/ApprovalMessage";
@@ -88,6 +88,10 @@ export interface ConversationViewProps extends ConversationActions {
   /** Older items exist beyond what the host has handed over. */
   hasEarlier?: boolean;
   onLoadEarlier?: () => void;
+  /** Later items exist beyond what the host has handed over (a transcript read from its start, as the archive's is):
+   *  the view asks for them as the reader nears the end, or when what it has doesn't fill the view. */
+  hasLater?: boolean;
+  onLoadLater?: () => void;
   renderers?: Partial<MessageRenderers>;
   /** The `tool.result` spot: a replacement for a call's result, or `undefined` for the default (`standard`). */
   renderToolResult?: (call: ToolCall, standard: ReactNode) => ReactNode | undefined;
@@ -190,6 +194,8 @@ export function ConversationView(props: ConversationViewProps) {
     device,
     hasEarlier,
     onLoadEarlier,
+    hasLater,
+    onLoadLater,
     renderToolResult,
     renderMessageExtra,
     initialFollow = true,
@@ -239,6 +245,13 @@ export function ConversationView(props: ConversationViewProps) {
     if (next.scrollToBottom) el.scrollTop = el.scrollHeight;
     setShowJump(next.showJump);
   }, [growth]);
+  // A transcript read from its start: the next part comes as the reader nears the end, and at once while what is
+  // here doesn't fill the view (nothing to scroll yet).
+  const nearEnd = (el: HTMLElement) => distanceFromBottom(el) <= el.clientHeight;
+  useLayoutEffect(() => {
+    const el = viewport.current;
+    if (el && hasLater && onLoadLater && nearEnd(el)) onLoadLater();
+  }, [growth, hasLater, onLoadLater]);
   // Content can also grow inside an item already drawn (a code block's last line, a tool run opening, an
   // app page sizing itself): while following, any growth of the column keeps the bottom in view.
   const column = useRef<HTMLDivElement>(null);
@@ -270,6 +283,7 @@ export function ConversationView(props: ConversationViewProps) {
     if (!el) return;
     following.current = isAtBottom(el);
     if (following.current) setShowJump(false);
+    if (hasLater && onLoadLater && nearEnd(el)) onLoadLater();
   };
   const jump = () => {
     const el = viewport.current;
@@ -326,6 +340,11 @@ export function ConversationView(props: ConversationViewProps) {
                 {unit.type === "message" && renderMessageExtra && <div className="cl-conv__extra">{renderMessageExtra(unit.item)}</div>}
               </div>
             ),
+          )}
+          {hasLater && onLoadLater && (
+            <button type="button" className="cl-conv__later" onClick={onLoadLater}>
+              {S.showLater}
+            </button>
           )}
           {status && (
             <div className="cl-conv-working" data-phase={turn?.phase ?? "thinking"}>

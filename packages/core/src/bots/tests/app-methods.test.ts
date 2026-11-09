@@ -129,8 +129,8 @@ describe("the archive of the previous app's sessions", () => {
     const list = methods[SESSIONS_METHODS.archiveList.name]!;
     const all = await list({}, { caller: theUser } as never) as { sessions: { id: string; mode: string; messages: number; project?: string; model?: string; updatedAt: number }[]; more: boolean };
     expect(all.sessions.map((s) => s.id)).toEqual([chat, code]);
-    // The index's counts: the log's length (session_created and the two messages).
-    expect(all.sessions[1]).toMatchObject({ id: code, mode: "code", messages: 3, project: "/Users/me/garden", model: "openai/gpt-6.1-sol" });
+    // The index's message count: the user's and the assistant's.
+    expect(all.sessions[1]).toMatchObject({ id: code, mode: "code", messages: 2, project: "/Users/me/garden", model: "openai/gpt-6.1-sol" });
     expect(all.more).toBe(false);
     expect((await list({ query: "BEANS" }, { caller: theUser } as never) as { sessions: { id: string }[] }).sessions.map((s) => s.id)).toEqual([code]);
     expect((await list({ query: "garden" }, { caller: theUser } as never) as { sessions: { id: string }[] }).sessions.map((s) => s.id)).toEqual([code]);
@@ -156,7 +156,7 @@ describe("the archive of the previous app's sessions", () => {
     const rows = ["s_d", "s_b", "s_a", "s_c", "s_e"].map((id): SessionRow => ({ sessionId: id, scope: "global", createdAt: 1, lastSeq: 1, approvalPolicy: "ask", mode: "chat" }));
     // Three share their last write; the others are older and newer.
     const at: Record<string, number> = { s_a: 500, s_b: 500, s_c: 500, s_d: 900, s_e: 100 };
-    const store = { list: () => rows, lastEventTs: (id: string) => at[id]!, firstMessage: () => undefined, readRange: () => ({ events: [], more: false }) };
+    const store = { list: () => rows, lastEventTs: (id: string) => at[id]!, firstMessage: () => undefined, messageCount: () => 0, readRange: () => ({ events: [], more: false }) };
     const list = archiveMethods({ store })[SESSIONS_METHODS.archiveList.name]!;
     const seen: string[] = [];
     let cursor: string | undefined;
@@ -188,13 +188,49 @@ describe("the archive of the previous app's sessions", () => {
     // A dispatch session's child is its parent's; a mode the previous app didn't run isn't archived.
     expect(String(await caught(() => history({ id: child }, { caller: theUser } as never)))).toContain(`no archived session ${child}`);
     const other: SessionRow = { sessionId: "s_bot", scope: "global", createdAt: 1, lastSeq: 1, approvalPolicy: "ask", mode: "cowork" };
-    const fake = { list: () => [other], lastEventTs: () => 1, firstMessage: () => undefined, readRange: () => ({ events: [], more: false }) };
+    const fake = { list: () => [other], lastEventTs: () => 1, firstMessage: () => undefined, messageCount: () => 0, readRange: () => ({ events: [], more: false }) };
     expect(String(await caught(() => archiveMethods({ store: fake })[SESSIONS_METHODS.archiveHistory.name]!({ id: "s_bot" }, { caller: theUser } as never)))).toContain("no archived session s_bot");
+  });
+
+  test("the message count is the index's: kept on append and on a synced push, and backfilled from the logs on open", async () => {
+    const home = tempDir();
+    let store = new SessionStore(home);
+    const id = store.createSession("global", { mode: "chat" });
+    expect(store.messageCount(id)).toBe(0);
+    store.append(id, { type: "user_message", sessionId: id, threadId: "main", text: "hi", clientName: "t" });
+    store.append(id, { type: "assistant_message", sessionId: id, threadId: "main", text: "hello" } as never);
+    store.append(id, { type: "session_titled", sessionId: id, threadId: "main", title: "Greetings" } as never);
+    expect(store.messageCount(id)).toBe(2);
+    // A synced push counts its messages too.
+    const next = (seq: number, type: "user_message" | "assistant_message", text: string) => {
+      const event = { type, sessionId: id, threadId: "main", text, ...(type === "user_message" ? { clientName: "t" } : {}), seq, ts: 1_000 + seq };
+      return { raw: JSON.stringify(event), event: event as never };
+    };
+    store.appendSynced(id, [next(5, "user_message", "again"), next(6, "assistant_message", "again to you")]);
+    expect(store.messageCount(id)).toBe(4);
+    // An index from before the column: reopening fills it from the log, with the parse recovery already does.
+    store.close();
+    const { Database } = await import("bun:sqlite");
+    const db = new Database(join(home, "sessions", "index.db"));
+    db.run("ALTER TABLE sessions DROP COLUMN message_count");
+    db.close();
+    store = new SessionStore(home);
+    expect(store.messageCount(id)).toBe(4);
+    const listed = await archiveMethods({ store })[SESSIONS_METHODS.archiveList.name]!({}, { caller: theUser } as never) as { sessions: { id: string; messages: number }[] };
+    expect(listed.sessions).toEqual([expect.objectContaining({ id, messages: 4 })]);
+    // A lost index is rebuilt with it too.
+    store.close();
+    const { rmSync } = await import("node:fs");
+    for (const f of ["index.db", "index.db-wal", "index.db-shm"]) rmSync(join(home, "sessions", f), { force: true });
+    store = new SessionStore(home);
+    expect(store.messageCount(id)).toBe(4);
+    store.close();
   });
 
   test("a history page is found by bisecting the log, skips lines that don't parse, and stops at its byte budget", async () => {
     const path = join(tempDir(), "log.jsonl");
-    const line = (seq: number, text = `m${seq}`) => JSON.stringify({ type: "user_message", sessionId: "s_x", threadId: "main", text, clientName: "t", seq, ts: 1_000 + seq }) + "\n";
+    // As the store writes them: `seq` first (the event schema's key order), which is how a line too long to read names it.
+    const line = (seq: number, text = `m${seq}`) => JSON.stringify({ seq, sessionId: "s_x", ts: 1_000 + seq, type: "user_message", threadId: "main", text, clientName: "t" }) + "\n";
     writeFileSync(path, "");
     for (let seq = 1; seq <= 300; seq++) {
       appendFileSync(path, line(seq));
@@ -208,6 +244,8 @@ describe("the archive of the previous app's sessions", () => {
       expect(page.events.map((e) => e.seq)).toEqual([after + 1, after + 2, after + 3].filter((s) => s <= 300));
       expect(page.more).toBe(after + 3 < 300);
     }
+    // A page that ends where only the cut tail remains says there is no more.
+    expect(readLogRange(path, 297, { ...big, limit: 3 })).toMatchObject({ more: false });
     expect(readLogRange(path, 300, big)).toEqual({ events: [], more: false });
     expect(readLogRange(path, 10_000, big)).toEqual({ events: [], more: false });
     // The byte budget: as many whole lines as fit, never none.
@@ -222,6 +260,75 @@ describe("the archive of the previous app's sessions", () => {
     expect(readLogRange(huge, 2, { limit: 10, maxBytes: 1 << 20, maxOne: 1_000 })).toMatchObject({ events: [{ seq: 3 }], more: false });
     // The page sizes archive.history uses fit one request line.
     expect(HISTORY_PAGE_BYTES + HISTORY_EVENT_MAX_BYTES).toBeLessThan(8 * 1024 * 1024);
+  });
+
+  test("a line longer than the cap is never read whole, and a stretch the bisect scanned is never scanned again", async () => {
+    const path = join(tempDir(), "runs.jsonl");
+    const line = (seq: number) => JSON.stringify({ seq, sessionId: "s_x", ts: 1_000 + seq, type: "user_message", threadId: "main", text: `m${seq}`, clientName: "t" }) + "\n";
+    const MB = 1 << 20;
+    writeFileSync(path, "");
+    for (let seq = 1; seq <= 20; seq++) appendFileSync(path, line(seq));
+    // A huge record: its head names its seq (the store writes `{"seq":N,` first).
+    const huge = JSON.stringify({ seq: 21, sessionId: "s_x", ts: 1_021, type: "user_message", threadId: "main", text: "h".repeat(3 * MB), clientName: "t" });
+    appendFileSync(path, huge + "\n");
+    // A corrupt run with no seq and no newline for 3 MB.
+    appendFileSync(path, "z".repeat(3 * MB) + "\n");
+    for (let seq = 22; seq <= 40; seq++) appendFileSync(path, line(seq));
+    const size = Bun.file(path).size;
+    let largest = 0;
+    const alloc = Buffer.alloc, allocUnsafe = Buffer.allocUnsafe;
+    Buffer.alloc = ((n: number, ...rest: unknown[]) => ((largest = Math.max(largest, n)), (alloc as (...a: unknown[]) => Buffer)(n, ...rest))) as typeof Buffer.alloc;
+    Buffer.allocUnsafe = ((n: number) => ((largest = Math.max(largest, n)), allocUnsafe(n))) as typeof Buffer.allocUnsafe;
+    try {
+      const o = { limit: 3, maxBytes: MB, maxOne: 4_096, stats: { scanned: 0 } };
+      for (const after of [0, 5, 19]) {
+        expect(readLogRange(path, after, o).events.map((e) => e.seq)).toEqual([after + 1, after + 2, after + 3].filter((s) => s <= 20));
+      }
+      // The huge record is named by its head's seq and its length, read no further than the cap.
+      expect(readLogRange(path, 20, o)).toMatchObject({ events: [], oversized: { seq: 21, bytes: huge.length }, more: true });
+      // Past it, the corrupt run is skipped like any line that doesn't parse.
+      for (const after of [21, 22, 37]) {
+        expect(readLogRange(path, after, o).events.map((e) => e.seq)).toEqual([Math.max(22, after + 1), Math.max(22, after + 1) + 1, Math.max(22, after + 1) + 2].filter((s) => s <= 40));
+      }
+      // A page at the start bisects through both stretches several times: each is read at most once.
+      readLogRange(path, 2, o);
+      expect(o.stats.scanned).toBeLessThan(6 * MB + 512 * 1024);
+      expect(o.stats.scanned).toBeLessThan(size + 512 * 1024);
+      expect(largest).toBeLessThanOrEqual(64 * 1024);
+    } finally {
+      Buffer.alloc = alloc;
+      Buffer.allocUnsafe = allocUnsafe;
+    }
+  });
+
+  test("a synced line is stored starting with its own seq: a forged head seq or a seq written last can't hide records", async () => {
+    const { SessionEvent } = await import("@waifucave/clover-protocol");
+    const { readFileSync } = await import("node:fs");
+    const home = tempDir();
+    const store = new SessionStore(home);
+    const id = store.createSession("global", { mode: "chat" });
+    store.append(id, { type: "user_message", sessionId: id, threadId: "main", text: "one", clientName: "t" });
+    store.append(id, { type: "assistant_message", sessionId: id, threadId: "main", text: "two" } as never);
+    const long = "x".repeat(2_000);
+    const synced = (raw: string) => ({ raw, event: SessionEvent.parse(JSON.parse(raw)) });
+    // Seq 4 forged to name 999 at its head (JSON.parse keeps the last key, so validation sees 4); 5 written seq last,
+    // as another encoder may; 6 as the core writes it.
+    const forged = `{"seq":999,"sessionId":"${id}","ts":1004,"type":"user_message","threadId":"main","text":"${long}","clientName":"t","seq":4}`;
+    const seqLast = `{"type":"user_message","sessionId":"${id}","threadId":"main","text":"${long}","clientName":"t","ts":1005,"seq":5}`;
+    const honest = JSON.stringify(SessionEvent.parse({ type: "user_message", sessionId: id, threadId: "main", text: "six", clientName: "t", seq: 6, ts: 1006 }));
+    const shortSeqLast = `{"type":"assistant_message","sessionId":"${id}","threadId":"main","text":"seven","ts":1007,"seq":7}`;
+    expect(store.appendSynced(id, [synced(forged), synced(seqLast), synced(honest), synced(shortSeqLast)])).toBe(7);
+    // On disk every line starts with its own seq; the core's own line is the client's bytes exactly.
+    const lines = readFileSync(join(home, "sessions", "global", `${id}.jsonl`), "utf8").trim().split("\n");
+    expect(lines.slice(3).map((l) => l.slice(0, 10))).toEqual(['{"seq":4,"', '{"seq":5,"', '{"seq":6,"', '{"seq":7,"']);
+    expect(lines[5]).toBe(honest);
+    expect(JSON.parse(lines[6]!)).toEqual(JSON.parse(shortSeqLast));
+    // With a 1 KiB cap: 4 and 5 are named, each in turn, and 6 and 7 still come.
+    const o = { limit: 10, maxBytes: 1 << 20, maxOne: 1_024 };
+    expect(store.readRange(id, 3, o)).toMatchObject({ events: [], oversized: { seq: 4 }, more: true });
+    expect(store.readRange(id, 4, o)).toMatchObject({ events: [], oversized: { seq: 5 }, more: true });
+    expect(store.readRange(id, 5, o).events.map((e) => e.seq)).toEqual([6, 7]);
+    store.close();
   });
 
   test("archive.history names an event too long to send and pages past it", async () => {

@@ -102,6 +102,7 @@
 }
 
 .cl-conv__earlier,
+.cl-conv__later,
 .cl-conv-link-button,
 .cl-conv-fold__toggle {
   padding: 0;
@@ -112,11 +113,13 @@
   cursor: pointer;
 }
 
-.cl-conv__earlier {
+.cl-conv__earlier,
+.cl-conv__later {
   align-self: center;
 }
 
 .cl-conv__earlier:hover,
+.cl-conv__later:hover,
 .cl-conv-link-button:hover,
 .cl-conv-fold__toggle:hover {
   text-decoration: underline;
