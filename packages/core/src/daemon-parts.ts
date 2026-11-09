@@ -31,6 +31,8 @@ import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
 import { CloverFence } from "./fence/fence";
+import { approvalCoreEvents } from "./approvals/core-events";
+import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
 import { CloverRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/clover";
 import { embeddedSessionOptions } from "./runtime-sdk/turn-loop/embedded-session";
 import { ERR } from "@waifucave/clover-protocol";
@@ -81,6 +83,9 @@ export interface DaemonPartsInput {
   reviewer?: SafetyReviewer;
   /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
    *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
+  /** The Clover server's `coreEvent` (its own signature, shared with lane J's terminals in #335): the broker's cards go
+   *  out through it as core events. */
+  coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
   approvals?: Pick<ApprovalBroker, "request">;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
@@ -253,6 +258,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
         log: (line) => log(`[approvals] ${line}`),
       });
+      // Its cards as core events (lane C's `approvalCoreEvents`), stamped with the shared clock, from before the bot
+      // side starts, so a card raised while it starts is heard too.
+      if (input.coreEvent) {
+        const send = input.coreEvent;
+        closers.push(approvalCoreEvents(broker, (e) => send(e), () => links.clock.now()));
+      }
     }
 
     let agents: DaemonAgents | undefined;

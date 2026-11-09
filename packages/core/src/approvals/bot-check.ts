@@ -19,7 +19,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
-import type { SealedValue, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Level, SealedValue, TurnOrigin } from "@waifucave/clover-protocol";
 import type { ActionEffect, ApprovalBroker } from "../contracts/approval-broker";
 import { WRITE_EFFECTS } from "../contracts/approval-broker";
 import { fenceContextFor, type Fence } from "../contracts/fence";
@@ -167,6 +167,12 @@ export function botApprovalCheck(
      *  fence lets the bot make (the owner's ruling: reads anywhere in the home, writes to any bot's scratch, as lane C's
      *  `homeAllows` says) runs with no card either. */
     fence?: Pick<Fence, "check">; cloverHome?: string;
+    /** Each computer's level now, for the writes the fence lets through inside the home: read-only stays absolute
+     *  (#353's blocker), so they run with no card only at a level above it. Without it, those writes go to the broker. */
+    levelOf?: (computer: string) => Level | undefined;
+    /** A bot's commands always ask on a card (no level, rule or reviewer answers them) while its Bash sandbox isn't
+     *  drawn from this computer's fence (#353's S3; lane C's `sandboxSettingsOf`, #356, wires it). */
+    commandsAlwaysCard?: boolean;
   } = {},
 ): (ctx: BotSessionContext, origin: () => TurnOrigin | undefined) => CanUseTool {
   return (ctx, origin) => async (tool, input, call) => {
@@ -185,11 +191,16 @@ export function botApprovalCheck(
         if (!v.allowed) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: that place is fenced on this computer (Clover's own folder, or a file no bot ${writes ? "writes" : "reads"}).` };
       }
       const home = opts.cloverHome === undefined ? undefined : realFolder(opts.cloverHome);
-      const fileWork = req.effect === "read" || req.effect === "search" || writes;
-      if (fileWork && home !== undefined && req.paths.every((p) => insideFolder(p, home))) {
+      const inHome = home !== undefined && req.paths.every((p) => insideFolder(p, home));
+      if (inHome && (req.effect === "read" || req.effect === "search")) return { behavior: "allow", updatedInput: input };
+      if (inHome && writes && opts.levelOf) {
+        // Read-only stays absolute, the bot's own folders included: a routine's level, or its computer's now.
+        const readOnly = ctx.level === "read-only" || (opts.levelOf(ctx.computer) ?? "read-only") === "read-only";
+        if (readOnly) return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: this computer's level doesn't allow it.` };
         return { behavior: "allow", updatedInput: input };
       }
     }
+    if (opts.commandsAlwaysCard && isBuiltinTool(tool, hostTools) && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
     const decision = await broker.request(req, { signal: call.signal });
     if (decision.allowed) return { behavior: "allow", updatedInput: input };
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
