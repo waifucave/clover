@@ -1,7 +1,8 @@
-// Builds the web companion's page into dist/: one bundled, minified script, the HTML and the stylesheet.
+// Builds the web companion's page into dist/: one bundled, minified script, the HTML, the stylesheet, the manifest and
+// its icons.
 //   bun scripts/build.ts [--out <dir>]
 
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
@@ -27,4 +28,7 @@ if (!result.success) {
 }
 copyFileSync(join(root, "src/index.html"), join(out, "index.html"));
 copyFileSync(join(root, "src/style.css"), join(out, "style.css"));
+// The manifest, and the favicon and app icons it and the page name (src/icons, drawn by scripts/brand-icons.ts).
+copyFileSync(join(root, "src/manifest.webmanifest"), join(out, "manifest.webmanifest"));
+cpSync(join(root, "src/icons"), join(out, "icons"), { recursive: true });
 console.log(`built the web companion into ${out}`);

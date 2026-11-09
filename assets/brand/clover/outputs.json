@@ -1,0 +1,127 @@
+{
+  "renderer": "@resvg/resvg-js 2.6.2",
+  "sources": {
+    "assets/brand/clover/clover-white-on-green.svg": "9d7feb10c5c4384e08a378e22c520e5b2477a6236a814901e07e358c35632250",
+    "assets/brand/clover/clover-green-on-white.svg": "1f95cb9f0f00c123cd9e1916357a647de8b312a3f841b74b0ed170264f21108a",
+    "assets/brand/clover/clover-green-on-transparent.svg": "46ca778b5107a3302ef1da097538491e217d79466d10027b1b646f0a7e35f9dc",
+    "assets/brand/clover/clover-green-on-dark.svg": "052aaa9dadb9c68539b167209a27bbb958769eebca42388da5506fb017cb3ad6",
+    "assets/brand/clover/clover-white-on-transparent.svg": "12938f4028b65f6aa11ae91697255b978d0176586d686877935883e6f48fe6a3",
+    "assets/brand/clover/clover-white-on-dark.svg": "ec822f00ce67d6eb6b3e35baba14f578454827c4cc8b4427b0d8e62d9a3edae3",
+    "assets/brand/clover/clover-dark-on-white.svg": "b5c25ef9227b6590c23af0a8a083aef78d604d19be7e3d28f85d7e7c06ef1b3e",
+    "assets/brand/clover/clover-dark-on-transparent.svg": "0bd73dff54ef9c6582df4c08344b6278e816e27e63c316e4b4ff2b6763bb9fa4"
+  },
+  "outputs": {
+    "apps/desktop/build/icon.icns": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "e0aa5def71c1f3b2856e66a721245b2f1bdd1fb90e75d100da1d47fd962b8a83"
+    },
+    "apps/desktop/build/icon.ico": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "c20bda83fe59a0737a0f2e139cec5678ecfa1a9b8ce44e168d2e378a7abf74b5"
+    },
+    "apps/desktop/build/icons/16x16.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "7e2fe5bae6343f9d3234c63a79c355345ba121b58b6a046b015448e61557208a"
+    },
+    "apps/desktop/build/icons/24x24.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "a0f239b6e6148530c27ef8591d66066f8f1d552d6b89c9b852c27dd4c99e9a81"
+    },
+    "apps/desktop/build/icons/32x32.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "555de98e1cdb5f2b46a981af42671c490e0de385aeaeab40caf1e2da9d31c9a4"
+    },
+    "apps/desktop/build/icons/48x48.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "ffa184af2a809c782823d16d3bbaf61abb655be440ba6fe52ea8b2b235988fd6"
+    },
+    "apps/desktop/build/icons/64x64.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "bbb9d08a262d0f3faa14d1eb27fa5a6a8cf423c2a19bd6cc6ddbbc063cfedb15"
+    },
+    "apps/desktop/build/icons/128x128.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "6bbf36b553bd4b78b2996480b7dfb8b1c481e28b047ec664916f05ea98101f85"
+    },
+    "apps/desktop/build/icons/256x256.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "c093edf4812b3e58031791c1f435c80dc05e7d41a0fc5e96b987a4775de07d5a"
+    },
+    "apps/desktop/build/icons/512x512.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "cdf34f2f0304e7d8efcfd23749adc540c3ffdaa614889d54cae52968187ef09a"
+    },
+    "apps/desktop/resources/icons/dev-dock.png": {
+      "from": "assets/brand/clover/clover-green-on-dark.svg",
+      "sha256": "bc83b370300aa56fff09537b3030cea69fe084a05a95a918cb5a44865087c0eb"
+    },
+    "apps/desktop/resources/icons/dev-window.png": {
+      "from": "assets/brand/clover/clover-green-on-dark.svg",
+      "sha256": "4f4f246066872cd7ce7233d56cb2bafa0e824a86fcb2c68f0192af5c1f0e749a"
+    },
+    "apps/desktop/resources/icons/trayTemplate.png": {
+      "from": "assets/brand/clover/clover-dark-on-transparent.svg",
+      "sha256": "10cf6995c0816b73ed971f0893e4ae97f31b5c84166b356bf57a9961e5210b85"
+    },
+    "apps/desktop/resources/icons/trayTemplate@2x.png": {
+      "from": "assets/brand/clover/clover-dark-on-transparent.svg",
+      "sha256": "049698cbb2f542ad392934bcac47cf1346c28ecead3ae57d4daa7e9e5d4ff2b9"
+    },
+    "apps/desktop/resources/icons/tray16Template.png": {
+      "from": "assets/brand/clover/clover-dark-on-transparent.svg",
+      "sha256": "165d83f4981d38381bd327ff113359a15922f2ce447160923f7f4a48fefd15fc"
+    },
+    "apps/desktop/resources/icons/tray16Template@2x.png": {
+      "from": "assets/brand/clover/clover-dark-on-transparent.svg",
+      "sha256": "afe5c3f93ac606e41c6a219af35293e96fe56520a9bba51f9c493dd131ab64b5"
+    },
+    "apps/desktop/resources/icons/tray-on-dark.png": {
+      "from": "assets/brand/clover/clover-white-on-transparent.svg",
+      "sha256": "69aaba2b72cd86d1efd811a839189891b711ec5d9c02a391532ea7de238aa7c5"
+    },
+    "apps/desktop/resources/icons/tray-on-dark@2x.png": {
+      "from": "assets/brand/clover/clover-white-on-transparent.svg",
+      "sha256": "37c9ac8d7ea9112fd5d25a95059319546409eb700ea4d70e39bd31870580d9eb"
+    },
+    "apps/desktop/resources/icons/tray-on-light.png": {
+      "from": "assets/brand/clover/clover-dark-on-transparent.svg",
+      "sha256": "bbe0a2a9d53e997b6b20c4e343221af537d26d02bcf6a6821e51113ed7bab689"
+    },
+    "apps/desktop/resources/icons/tray-on-light@2x.png": {
+      "from": "assets/brand/clover/clover-dark-on-transparent.svg",
+      "sha256": "c01461521e1beb79f286e9ba55bad25dfd686a06e61b136274c5fd045fa9e561"
+    },
+    "services/web/src/icons/favicon.svg": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "9d7feb10c5c4384e08a378e22c520e5b2477a6236a814901e07e358c35632250"
+    },
+    "services/web/src/icons/favicon-32.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "555de98e1cdb5f2b46a981af42671c490e0de385aeaeab40caf1e2da9d31c9a4"
+    },
+    "services/web/src/icons/icon-192.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "f1fd234de20220b505856aa621a7fbc985ab9e1db704c94be965958fbcdc94f0"
+    },
+    "services/web/src/icons/icon-512.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "cdf34f2f0304e7d8efcfd23749adc540c3ffdaa614889d54cae52968187ef09a"
+    },
+    "services/web/src/icons/icon-maskable-512.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "b3ca63ed7f265ebf83f863dcd3ce05b34c280d0063f39c4add881c3acfc77026"
+    },
+    "services/web/src/icons/apple-touch-icon.png": {
+      "from": "assets/brand/clover/clover-white-on-green.svg",
+      "sha256": "4308377618e80800abf194026ac0687d9566f6a43719bdf853226f247de2c49c"
+    },
+    "services/web/src/icons/mark-green.svg": {
+      "from": "assets/brand/clover/clover-green-on-transparent.svg",
+      "sha256": "46ca778b5107a3302ef1da097538491e217d79466d10027b1b646f0a7e35f9dc"
+    },
+    "services/web/src/icons/mark-white.svg": {
+      "from": "assets/brand/clover/clover-white-on-transparent.svg",
+      "sha256": "12938f4028b65f6aa11ae91697255b978d0176586d686877935883e6f48fe6a3"
+    }
+  }
+}

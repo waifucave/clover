@@ -27,6 +27,8 @@ function security(env: Env): Record<string, string> {
       "script-src 'self'",
       "style-src 'self'",
       "img-src 'self' data:",
+      // The page's manifest (an installed companion's name and icons).
+      "manifest-src 'self'",
       `connect-src 'self' ${handshake.origin} ${ws} ${extra.join(" ")}`.trim(),
       "base-uri 'none'",
       "form-action 'none'",
