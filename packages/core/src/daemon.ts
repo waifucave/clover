@@ -290,7 +290,7 @@ export interface RunningDaemon {
    */
   clover: CloverSessionDrivers;
   /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
-   *  background after the socket is bound. `ready` settles once they are up, or found absent (no sidecar), or failed
+   *  background after the socket is bound. `ready` settles once they are up (local-only with no sidecar), or failed
    *  (logged); each getter is undefined before then and without one. */
   cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined };
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
@@ -462,7 +462,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
-  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none).
+  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar runs them local-only, and says so).
    *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
    *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
   links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "account" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
@@ -3237,6 +3237,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
+  // The Clover `computer.acting` seam reads the live service through a getter, never a captured copy: after a live
+  // toggle the check reads the service as it is now (check 3). With no service, nothing is acting.
   // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' Clover
   // methods, filled in as their parts come up (H's devices methods once the links are). A test daemon (its own
   // `secrets`) keeps the store in memory, so no test touches the real Keychain.
@@ -3274,9 +3276,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
+  const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
-    tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
+    tokens: cloverTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
     get deviceId() { return liveDeviceId; },
@@ -3285,6 +3288,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     linkPid: () => daemonLinks?.links?.sidecarPid(),
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
+    computerUse: {
+      acting: () => Promise.resolve({ running: computerUse?.anyActing() ?? false, session: computerUse?.anyActing() === true ? "s_cu" : undefined }),
+    },
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
   });
@@ -3490,7 +3496,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }
   // C-M2 and the daemon integration: H's links, then J's computer node and D's bot side over them (daemon-parts.ts),
   // started in the background so a slow sidecar never holds the daemon's start; their methods join the Clover server's
-  // handlers when they're up. A daemon with no sidecar (run from source) runs none of them, and says so. The stop
+  // handlers when they're up. A daemon with no sidecar (run from source, a build without it) runs them local-only,
+  // with no other device on its links, and says so: one Mac on its own is the main case. The stop
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
   const partsClock = new SystemClock();
   let partsRegistry: OpenedRegistry | undefined;
@@ -3625,6 +3632,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
       // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
       updateGate,
+      // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
+      clients: { server: cloverServer, tokens: cloverTokens },
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });

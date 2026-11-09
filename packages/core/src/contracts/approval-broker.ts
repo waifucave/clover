@@ -13,7 +13,10 @@
 //    "always", whatever `ruleKey` or `options` the requester passes: each is answered on its own (`ALWAYS_CARD_KINDS`).
 // 2. An agent's request that exactly names the session's bridge server and one of the bridge's own tools is answered
 //    at once: the bridge applies Clover's approval itself when the call arrives (S5 edit 7). Never read from the title.
-// 3. A request that touches a fenced path is always a card, at every level, and no saved rule covers it (§9.3).
+// 3. A request that touches a fenced path is always a card, at every level, and no saved rule covers it (§9.3). One
+//    that would write (edit, move, delete) where a file runs later outside any sandbox (`RUN_LATER_KINDS`: shell start
+//    files, login items, the coding agents' installs and settings) is refused without a card (`by: "fence"`), at every
+//    level: no bot or agent writes there, whoever answers (the #301 review's ruling).
 // 4. A saved rule (from a card's "always") covers the same rule key on the same computers, except at read-only, which
 //    is absolute: there only reads run, whatever was saved.
 // 5. Otherwise the level decides (`levelDecision`): the strictest level of the computers touched (§9.1 "a move between
@@ -43,6 +46,7 @@ import {
 } from "@waifucave/clover-protocol";
 import { fromBase64, type Unsubscribe } from "./common";
 import { mayAnswerCards, type DeviceRegistry } from "./device-registry";
+import { RUN_LATER_KINDS, type Fence } from "./fence";
 
 /** The kinds that are always cards and never offer "always" (rule 1). */
 export const ALWAYS_CARD_KINDS: readonly CardKind[] = ["change", "confirm", "plugin-ok", "elicitation", "person-browser"];
@@ -114,7 +118,20 @@ export interface ApprovalRequest {
   options?: CardOption[];
 }
 
-export type DecisionSource = "level" | "rule" | "bridge" | "card" | "expired" | "withdrawn" | "cancelled";
+export type DecisionSource = "level" | "rule" | "bridge" | "card" | "expired" | "withdrawn" | "cancelled" | "fence";
+
+/** The effects that write a path (rule 3's refusal). */
+export const WRITE_EFFECTS: readonly ActionEffect[] = ["edit", "move", "delete"];
+
+/** Rule 3's refusal: the request would write a `RUN_LATER_KINDS` item on one of its computers. Each path is asked on its
+ *  own, as `touches` names only the first item it finds. */
+export function writesRunLater(req: Pick<ApprovalRequest, "effect" | "paths" | "computers">, fence: ((computer: string) => Pick<Fence, "touches"> | undefined) | undefined): boolean {
+  if (fence === undefined || !req.paths?.length || !WRITE_EFFECTS.includes(req.effect)) return false;
+  return req.computers.some((c) => {
+    const f = fence(c);
+    return f !== undefined && req.paths!.some((p) => { const hit = f.touches([p]); return hit !== null && RUN_LATER_KINDS.includes(hit.kind); });
+  });
+}
 
 export interface ApprovalDecision {
   allowed: boolean;

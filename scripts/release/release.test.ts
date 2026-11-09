@@ -5,12 +5,14 @@ import { PLUGIN_BUN } from "../bundled-binaries";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, builderIdentity, buildOsFor, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
-  notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems,
+  notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
   writeCoreAssets, writeServedCopies, authenticodeCommand, authenticodeProblems, buildCommitFile, parseEntitlementKeys,
 } from "./lib";
 import { pluginsFeedFile, pluginsTarballFile, parsePluginsFeed, unpackTarball, pluginBunBinaryFile, pluginBunFeedFile, coreBinaryFile, coreFeedFile, formatCoreFeed, generateFeedKey, parseCoreFeed, publicKeyOf, verifyFeed } from "../../packages/update-feed/src/index";
@@ -217,8 +219,8 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(buildOsFor("win32", "x64")).toBe("win");
     expect(buildOsFor("darwin", "x64")).toBeUndefined();
     expect(buildOsFor("linux", "x64")).toBeUndefined();
-    expect(parseReleaseBuildArgs([], "darwin", "arm64")).toEqual({ os: "mac", channel: "latest", sign: false, dryRun: false });
-    expect(parseReleaseBuildArgs(["--channel=beta", "--sign"], "win32", "x64")).toEqual({ os: "win", channel: "beta", sign: true, dryRun: false });
+    expect(parseReleaseBuildArgs([], "darwin", "arm64")).toEqual({ os: "mac", channel: "latest", sign: false, signDev: false, dryRun: false });
+    expect(parseReleaseBuildArgs(["--channel=beta", "--sign"], "win32", "x64")).toEqual({ os: "win", channel: "beta", sign: true, signDev: false, dryRun: false });
     expect(parseReleaseBuildArgs(["--os", "win", "--dry-run"], "darwin", "arm64").os).toBe("win");
     expect(() => parseReleaseBuildArgs(["--os", "win"], "darwin", "arm64")).toThrow(/dry run/);
     expect(() => parseReleaseBuildArgs([], "linux", "x64")).toThrow(/build-packages/);
@@ -227,7 +229,7 @@ describe("the release build (scripts/release/build.ts)", () => {
 
   test("unsigned unless --sign, whatever the environment holds; never publishing", () => {
     const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", CSC_LINK: "x", WIN_CSC_LINK: "y", PATH: "/bin" };
-    const unsigned = { os: "mac", channel: "latest", sign: false, dryRun: false } as const;
+    const unsigned = { os: "mac", channel: "latest", sign: false, signDev: false, dryRun: false } as const;
     expect(releaseBuilderArgs(unsigned, env)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=latest"]);
     expect(builderEnv(unsigned, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
     const signed = { ...unsigned, sign: true };
@@ -236,7 +238,7 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(builderIdentity("Developer ID Application: Example Ltd (AB12CD34EF)")).toBe("Example Ltd (AB12CD34EF)");
     expect(() => builderIdentity("Example Ltd (AB12CD34EF)")).toThrow(/named in full/);
     expect(builderEnv(signed, env)).toBe(env);
-    const win = { os: "win", channel: "beta", sign: true, dryRun: false } as const;
+    const win = { os: "win", channel: "beta", sign: true, signDev: false, dryRun: false } as const;
     expect(releaseBuilderArgs(win, { CLOVER_WIN_PUBLISHER: "Example Ltd" })).toEqual(
       ["electron-builder", "--win", "nsis", "--x64", "--publish", "never", "-c.publish.channel=beta", "-c.win.forceCodeSigning=true", "-c.win.signtoolOptions.publisherName=Example Ltd"]);
     for (const a of [unsigned, signed, win]) expect(releaseBuilderArgs(a, env)).toContain("never");
@@ -253,6 +255,103 @@ describe("the release build (scripts/release/build.ts)", () => {
     expect(signingInputs("mac", { CLOVER_MAC_IDENTITY: "Developer ID Application: Someone (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p" }).problems).toEqual([`CLOVER_MAC_IDENTITY is team AB12CD34EF, not Clover's ${CLOVER_TEAM_ID}: the core's Keychain items and plugin Bun's check would refuse what it signs`]);
     expect(CLOVER_APP_REQUIREMENT).toBe(`identifier "com.waifucave.clover" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
   });
+
+  // The owner's alpha before the Developer ID (the controller's ruling: an alpha is a beta, no third channel).
+  test("--sign-dev: macOS only, the beta channel, never with --sign", () => {
+    expect(parseReleaseBuildArgs(["--sign-dev"], "darwin", "arm64")).toEqual({ os: "mac", channel: "beta", sign: false, signDev: true, dryRun: false });
+    expect(parseReleaseBuildArgs(["--sign-dev", "--channel", "beta"], "darwin", "arm64").channel).toBe("beta");
+    expect(() => parseReleaseBuildArgs(["--sign-dev", "--channel=latest"], "darwin", "arm64")).toThrow(/beta channel/);
+    expect(() => parseReleaseBuildArgs(["--sign-dev", "--sign"], "darwin", "arm64")).toThrow(/one or the other/);
+    expect(() => parseReleaseBuildArgs(["--sign-dev"], "win32", "x64")).toThrow(/macOS/);
+    expect(() => parseReleaseBuildArgs(["--sign-dev", "--os", "win", "--dry-run"], "darwin", "arm64")).toThrow(/macOS/);
+  });
+
+  const HASH_A = "A".repeat(40), HASH_B = "B".repeat(40), HASH_C = "C".repeat(40);
+  const identities = [
+    `  1) ${HASH_A} "Developer ID Application: Clover (${CLOVER_TEAM_ID})"`,
+    `  2) ${HASH_B} "Apple Development: Someone (PERSON1234)"`,
+    `  3) ${HASH_C} "Apple Development: Other (OTHER12345)"`,
+    "     3 valid identities found",
+  ].join("\n");
+  const subjects: Record<string, string> = {
+    [`Developer ID Application: Clover (${CLOVER_TEAM_ID})`]: `subject=UID=${CLOVER_TEAM_ID}, CN=Developer ID Application: Clover (${CLOVER_TEAM_ID}), OU=${CLOVER_TEAM_ID}, O=Clover, C=US`,
+    "Apple Development: Someone (PERSON1234)": `subject=UID=X, CN=Apple Development: Someone (PERSON1234), OU=${CLOVER_TEAM_ID}, O=Clover, C=US`,
+    "Apple Development: Other (OTHER12345)": "subject=UID=Y, CN=Apple Development: Other (OTHER12345), OU=ZZZZZZZZZZ, O=Elsewhere, C=US",
+  };
+  const subjectOf = (name: string) => subjects[name];
+
+  test("--sign-dev's identity: the Apple Development one of Clover's team, by its certificate's OU, named by SHA-1", () => {
+    expect(devSigningIdentity({ identitiesOutput: identities, subjectOf })).toEqual({ hash: HASH_B, name: "Apple Development: Someone (PERSON1234)" });
+    // Only a Developer ID of the team: that's --sign's (notarized), refused here.
+    expect(() => devSigningIdentity({ identitiesOutput: identities.split("\n").filter((l) => !l.includes("Someone")).join("\n"), subjectOf })).toThrow(/--sign \(notarized\)/);
+    // Another team's Apple Development certificate never counts.
+    expect(() => devSigningIdentity({ identitiesOutput: identities.split("\n").filter((l) => l.includes("Other")).join("\n"), subjectOf })).toThrow(/no code-signing identity for team/);
+    // The override is a SHA-1, nothing else.
+    expect(devSigningIdentity({ identitiesOutput: "", subjectOf, override: "d".repeat(40) })).toEqual({ hash: "D".repeat(40), name: "(CLOVER_MAC_DEV_IDENTITY)" });
+    expect(() => devSigningIdentity({ identitiesOutput: identities, subjectOf, override: "Apple Development: Someone" })).toThrow(/SHA-1/);
+  });
+
+  test("--sign-dev signs the resources with the team requirement and no timestamp, and electron-builder with the same identity, unnotarized", () => {
+    const [core, link] = RESOURCE_BINARIES;
+    expect(teamRequirement(core.identifier, CLOVER_TEAM_ID)).toBe(`identifier "com.waifucave.clover.core" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`);
+    expect(codesignDevArgs("x/clover-core", HASH_B, core.identifier, CLOVER_TEAM_ID, core.entitlements)).toEqual([
+      "codesign", "--force", "--sign", HASH_B, "--options", "runtime", "--timestamp=none", "--identifier", "com.waifucave.clover.core",
+      `-r=designated => identifier "com.waifucave.clover.core" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`,
+      "--entitlements", "scripts/clover-core.entitlements", "x/clover-core"]);
+    expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID)).not.toContain("--entitlements");
+    // A keychain for this build only: codesign looks there, and the search list isn't touched.
+    expect(codesignDevArgs("x/clover-link", HASH_B, link.identifier, CLOVER_TEAM_ID, undefined, "/s/dev.keychain-db").slice(-3)).toEqual(["--keychain", "/s/dev.keychain-db", "x/clover-link"]);
+    expect(() => codesignDevArgs("x", "Apple Development: Someone", core.identifier, CLOVER_TEAM_ID)).toThrow(/SHA-1/);
+    const env = { CLOVER_MAC_IDENTITY: "Developer ID Application: Example Ltd (AB12CD34EF)", APPLE_KEYCHAIN_PROFILE: "p", APPLE_ID: "a", CSC_LINK: "x", PATH: "/bin" };
+    const dev = parseReleaseBuildArgs(["--sign-dev"], "darwin", "arm64");
+    expect(releaseBuilderArgs(dev, env, HASH_B)).toEqual(["electron-builder", "--mac", "dmg", "zip", "--arm64", "--publish", "never", "-c.publish.channel=beta",
+      `-c.mac.identity=${HASH_B}`, "-c.mac.notarize=false", "-c.mac.timestamp=none"]);
+    expect(() => releaseBuilderArgs(dev, env)).toThrow(/SHA-1/);
+    // Nothing a Developer ID build or notarization would use reaches it.
+    expect(builderEnv(dev, env)).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+    expect(builderEnv(dev, { ...env, CLOVER_MAC_DEV_KEYCHAIN: "/s/dev.keychain-db", CSC_KEYCHAIN: "/elsewhere" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false", CSC_KEYCHAIN: "/s/dev.keychain-db" });
+    // An unsigned build drops any keychain it's handed.
+    expect(builderEnv(parseReleaseBuildArgs([], "darwin", "arm64"), { PATH: "/bin", CSC_KEYCHAIN: "/k", CLOVER_MAC_DEV_KEYCHAIN: "/k" })).toEqual({ PATH: "/bin", CSC_IDENTITY_AUTO_DISCOVERY: "false" });
+  });
+
+  // codesign itself, with no identity and no keychain: an ad hoc signature takes the same arguments but the identity,
+  // and records the designated requirement given, which the real team identity's signature carries the same way.
+  darwinTest("codesign records --sign-dev's team requirement as the designated one, which compiles, and an unsigned-by-the-team copy fails it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-sign-dev-"));
+    try {
+      const bin = join(dir, "clover-plugin-bun");
+      writeFileSync(bin, readFileSync("/usr/bin/true"));
+      const plugin = RESOURCE_BINARIES[2];
+      const args = codesignDevArgs(bin, HASH_B, plugin.identifier, CLOVER_TEAM_ID);
+      args[args.indexOf(HASH_B)] = "-";
+      const signed = spawnSync(args[0]!, args.slice(1), { encoding: "utf8" });
+      expect([signed.status, signed.stderr.replace(/^.*replacing existing signature\n/m, "")]).toEqual([0, ""]);
+      const shown = spawnSync("codesign", ["-d", "-r-", bin], { encoding: "utf8" });
+      const recorded = /^designated => (.+)$/m.exec(`${shown.stdout}${shown.stderr}`)?.[1]?.trim();
+      expect(recorded).toBe(teamRequirement(plugin.identifier, CLOVER_TEAM_ID));
+      // The text compiles as a requirement (csreq), and this ad hoc copy doesn't meet it: only the team's identity does.
+      expect(spawnSync("csreq", ["-r", `=${recorded}`, "-b", join(dir, "req.bin")]).status).toBe(0);
+      expect(spawnSync("codesign", ["--verify", "--strict", `-R=${recorded}`, bin]).status).not.toBe(0);
+      expect(spawnSync("codesign", ["--verify", "--strict", `-R=identifier "${plugin.identifier}"`, bin]).status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a dev-signed binary is held to the signed build's checks but the timestamp", () => {
+    const dev = parseCodesignDisplay([
+      "Identifier=com.waifucave.clover.core",
+      "CodeDirectory v=20500 size=1 flags=0x10000(runtime) hashes=1+7 location=embedded",
+      "Authority=Apple Development: Someone (PERSON1234)",
+      "Timestamp=none",
+      `TeamIdentifier=${CLOVER_TEAM_ID}`,
+    ].join("\n").replace("Timestamp=none\n", ""));
+    expect(dev.timestamped).toBe(false);
+    expect(signatureProblems("clover-core", dev, CLOVER_TEAM_ID, "com.waifucave.clover.core", { dev: true })).toEqual([]);
+    expect(signatureProblems("clover-core", dev, CLOVER_TEAM_ID, "com.waifucave.clover.core")).toEqual(["clover-core has no secure timestamp"]);
+    const adhoc = parseCodesignDisplay("Identifier=x\nCodeDirectory v=20400 size=1 flags=0x20002(adhoc,linker-signed) hashes=1\nSignature=adhoc\nTeamIdentifier=not set\n");
+    expect(signatureProblems("x", adhoc, CLOVER_TEAM_ID, undefined, { dev: true })).toEqual([`x is not signed with team ${CLOVER_TEAM_ID}'s identity`, "x has no hardened runtime"]);
+  });
 });
 
 describe("the bundled plugins' native code on a signed Mac build", () => {
@@ -266,6 +365,9 @@ describe("the bundled plugins' native code on a signed Mac build", () => {
       writeFileSync(join(dir, "p", "tiny"), new Uint8Array([0xcf, 0xfa]));
       expect(machOFiles(dir)).toEqual(["p/fat.dylib", "p/node_modules/x/addon.node"]);
       expect(isMachO(new Uint8Array([0xfe, 0xed, 0xfa, 0xcf]))).toBe(true);
+      // Universal binaries with 64-bit offsets, in either byte order.
+      expect(isMachO(new Uint8Array([0xca, 0xfe, 0xba, 0xbf]))).toBe(true);
+      expect(isMachO(new Uint8Array([0xbf, 0xba, 0xfe, 0xca]))).toBe(true);
       expect(isMachO(new TextEncoder().encode("#!/b"))).toBe(false);
       // A real one: this machine's own executable, when it's a Mac.
       if (process.platform === "darwin") expect(isMachO(new Uint8Array(readFileSync("/usr/bin/true")).slice(0, 4))).toBe(true);

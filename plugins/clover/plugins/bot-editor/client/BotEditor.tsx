@@ -1,6 +1,7 @@
 // The bot editor: a page in the main area (`main` keyed `bot-editor`), one row per field of the bot's user layer.
 // A text field saves when the user says so; a pick saves at once. A field the user set shows Reset, which clears it
-// back to the bot's plugin. A change that waits on a card says so under its field.
+// back to the bot's plugin. A change that waits on a card says so under its field. The LAN switch is the person's
+// alone (§9.1, lane D's #263): off by default, and turning it off clears it.
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { IconBack, IconCheck } from "./icons";
 import { S } from "./strings";
@@ -182,6 +183,13 @@ export function BotEditor(props: BotEditorProps) {
 
         <Row label={S.layout} detail={S.layoutDetail} {...row("layout")}>
           <span className="cl-bot-editor__value">{is("layout") ? S.layoutYours : S.layoutOwn}</span>
+        </Row>
+
+        {/* The switch is the whole field: off clears it, so it has no Reset of its own. */}
+        <Row label={S.lan} detail={S.lanDetail(bot.name)} {...row("lan")} own={false}>
+          <button type="button" role="switch" aria-checked={props.lan === true} aria-label={S.lan} className="cl-bot-editor__switch" onClick={() => onChange({ lan: props.lan === true ? null : true })}>
+            <span className="cl-bot-editor__knob" />
+          </button>
         </Row>
       </div>
     </div>
