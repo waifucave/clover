@@ -1,6 +1,6 @@
 // The daemon's one plugin host (`startPluginHost`) over a real plugin registry and a real plugin-host process: a
-// plugin's handler runs in its worker, its API calls reach the router, its console reaches its log, and switching it off
-// drops it. Temp homes, the fake approval broker and an in-memory secret store; nothing opens a window.
+// plugin's handler runs in its worker, its API calls reach the router (and handlers added after start, behind its gate),
+// its console reaches its log, and switching it off drops it. Temp homes, the fake approval broker and an in-memory secret store; nothing opens a window.
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,10 +50,24 @@ describe("startPluginHost", () => {
         // No area is served yet (B-M2's API PR adds them): a call the gate lets through answers "not served".
       const notServed = (await ph.host.invoke({ pluginId: "tarot", handler: "store", args: { card: "x" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(notServed.message).toContain("storage.synced.set is not served on this computer");
+      // A handler added after start serves at once, behind the same gate; a second for the same path is refused, and
+      // taking it away leaves the call unserved again.
+      const seen: unknown[] = [];
+      const offStore = ph.addApiHandlers({ "storage.synced.set": (ctx, args) => { seen.push([ctx.pluginId, ctx.process, args[1]]); return "kept"; } });
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "store", args: { card: "The Sun" }, caller: USER })).toBe("kept");
+      expect(seen).toEqual([["tarot", "shared", "The Sun"]]);
+      expect(() => ph.addApiHandlers({ "storage.synced.set": () => "other" })).toThrow("already served");
+      expect(() => ph.addApiHandlers({ "nope.call": () => 1 } as never)).toThrow("isn't a call of the plugin API");
+      const offSecrets = ph.addApiHandlers({ "secrets.get": () => "leaked" });
+      offStore();
+      offStore();
+      const again = (await ph.host.invoke({ pluginId: "tarot", handler: "store", args: { card: "x" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
+      expect(again.message).toContain("storage.synced.set is not served on this computer");
       // A call the plugin may not make here (`secrets.get` outside a process of its own) is refused by the router.
       const refused = (await ph.host.invoke({ pluginId: "tarot", handler: "forbidden", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(refused).toBeInstanceOf(ContractError);
       expect(refused.message).toContain("secrets.get");
+      offSecrets();
       // The worker's console, in the plugin's own log.
       const logFile = join(home, "logs", "plugins", "tarot.log");
       for (let i = 0; i < 50 && !(existsSync(logFile) && readFileSync(logFile, "utf8").includes("remembering")); i++) await Bun.sleep(20);

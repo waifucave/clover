@@ -15,6 +15,7 @@
 //   user's or another plugin's items passes through (#322's review, S3).
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
+import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { fencedCommand, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
@@ -27,7 +28,7 @@ import { ContractError } from "../contracts/common";
 import { guardApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
-import { createApiRouter, type ApiHandlers } from "./api/router";
+import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
 import { pluginDataFolder, pluginPath } from "./paths";
 import { CorePluginHost, type HostedRecord } from "./core-host";
 import type { VerifiedFiles } from "./runtime";
@@ -46,6 +47,11 @@ export interface DaemonPluginHost {
   readonly pluginSecrets: PluginSecrets;
   /** A plugin tree's network proxy, for a hook or MCP server of one of its plugins (2g); undefined once closed. */
   proxyFor(pluginId: string): PluginProxy | undefined;
+  /** Serves more of the API after start (a core area that starts later, like the model plugins' keyed `net.fetch` and
+   *  `secrets.get`). The router's gate (the call exists there, the plugin is on and running, its OK granted the call's
+   *  capability) runs before any of them. A path another handler already serves is refused, never silently replaced.
+   *  The result takes them away again. */
+  addApiHandlers(handlers: ApiHandlers): () => void;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -308,6 +314,20 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     registry: o.registry,
     pluginSecrets: pluginSecretsOf(o.secrets),
     proxyFor,
+    addApiHandlers(added) {
+      const paths = Object.keys(added) as ApiCallPath[];
+      for (const p of paths) {
+        if (!Object.hasOwn(API_CALLS, p)) throw new ContractError("invalid", `${p} isn't a call of the plugin API`);
+        if (typeof added[p] !== "function") throw new ContractError("invalid", `${p}'s handler isn't a function`);
+        if (handlerOf(handlers, p) !== undefined) throw new ContractError("invalid", `${p} is already served`);
+      }
+      const entry: ApiHandlers = Object.freeze({ ...added });
+      handlers.push(entry);
+      return () => {
+        const i = handlers.indexOf(entry);
+        if (i >= 0) handlers.splice(i, 1);
+      };
+    },
     async close() {
       if (closed) return;
       closed = true;
