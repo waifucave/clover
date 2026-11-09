@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
+import { fencedCommand, pluginFenceAvailable, toolFence } from "../registry/plugin-fence";
 /**
  * HookRunner — pure process mechanics for ONE plugin hook invocation (Phase 4f design §Protocol,
  * plan Task 1). Spawns `sh -c <command>` with the event JSON on stdin, races the exit against a
@@ -126,13 +127,19 @@ export class HookRunner {
     const startTime = Date.now(); // for the stream-read deadline below (remaining timeout budget)
     let proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
     try {
-      proc = Bun.spawn(["sh", "-c", spec.command], {
+      // Under the fence (2f): its plugin's tree, its data and temp folders, the package managers' folders.
+      const guard = this.guardFor();
+      const fenced = guard.fence !== false && pluginFenceAvailable()
+        ? toolFence({ files: guard.files, ...(guard.shared ? { shared: guard.shared } : {}), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}` })
+        : undefined;
+      proc = Bun.spawn(fencedCommand(["sh", "-c", spec.command], fenced?.fence), {
         cwd: spec.cwd,
         // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
         // The hook's `bun` is the plugin Bun (#234's check 5, K1): its folder comes first on the PATH.
         env: guardedPluginEnv(
           {
             ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
+            ...(fenced !== undefined ? { TMPDIR: fenced.tmp } : {}),
             PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
           },
           { pluginRoot: spec.cwd, ...this.guardFor() },

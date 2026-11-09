@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
+import { fencedCommand, pluginFenceAvailable, toolFence } from "../registry/plugin-fence";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -781,8 +782,17 @@ export class PluginSupervisor {
         { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: config.dir },
         { pluginRoot: config.dir, ...this.pluginRun },
       );
-      const cmd = this.deps.bun === undefined ? launch.cmd : [this.deps.bun, ...launch.cmd.slice(1)];
+      const bunCmd = this.deps.bun === undefined ? launch.cmd : [this.deps.bun, ...launch.cmd.slice(1)];
+      // Under the fence (2f): a host is Bun, running only its Bun and its plugin's own files; it reaches the daemon
+      // through its socket alone.
+      const guard = this.pluginRun;
+      let cmd = bunCmd;
       const env = launch.env;
+      if (guard.fence !== false && pluginFenceAvailable()) {
+        const { fence, tmp } = toolFence({ files: guard.files, ...(guard.shared ? { shared: guard.shared } : {}), pluginRoot: config.dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}` });
+        cmd = fencedCommand(bunCmd, { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, sockets: [this.deps.socketPath] });
+        env.TMPDIR = tmp;
+      }
       proc = this.spawnFn(cmd, { cwd, env });
     } catch (err) {
       rt.pid = undefined;

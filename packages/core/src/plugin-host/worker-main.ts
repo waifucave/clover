@@ -25,11 +25,21 @@ new HostRuntime({
   peer,
   computer,
   load: async (p) => {
-    const file = join(p.folder, p.entry);
+    // By its real path: under the fence a folder above the plugin's may only be stat'ed, which this resolution needs
+    // and Bun's own (it opens the folders) doesn't get (2f).
+    const file = join(realFolder(p.folder), p.entry);
     if (p.entrySha256 !== undefined) runVerifiedBytes(p.pluginId, p.entry, file, p.entrySha256);
     return (await import(pathToFileURL(file).href)) as HostModule;
   },
 });
+
+function realFolder(folder: string): string {
+  try {
+    return realpathSync(folder);
+  } catch {
+    return folder;
+  }
+}
 
 /** A bundled plugin's entry runs from the bytes checked against the SHA-256 recorded when it was staged (#322's
  *  review, S2): read once here, refused when they differ, and handed to Bun for this one file (`onLoad`), so a file

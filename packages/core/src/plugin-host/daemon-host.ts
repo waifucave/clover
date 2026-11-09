@@ -14,6 +14,10 @@
 //   reads `{ owner: { kind: "plugin", pluginId: id }, name }` and nothing else, so no reference to the core's, the
 //   user's or another plugin's items passes through (#322's review, S3).
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { topPluginIdOf } from "@waifucave/clover-protocol";
+import { fencedCommand, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
+import { stagedBundledDir } from "../registry/bundled-stage";
 import { dirname, join } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
@@ -76,6 +80,10 @@ export interface StartPluginHostOptions {
   /** The bundled plugins' files as staging verified them (`stageBundledPlugins`' `digests`): a bundled plugin's entry
    *  runs only from bytes matching its digest, and not at all without one. */
   bundledDigests?: ReadonlyMap<string, string>;
+  /** False runs plugin processes unfenced (tests of what the fence doesn't cover). Default: fenced where the OS has one. */
+  fence?: false;
+  /** The user's home the fence denies (default: `os.homedir()`; tests pass a temp one). */
+  userHome?: string;
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
   env?: Readonly<Record<string, string | undefined>>;
@@ -187,6 +195,22 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log(`[plugin-host] plugin processes can't start: ${launch.message}`);
   }
   const processes = new Map<string, { peer: RpcPeer; kill(): void }>();
+  // The fence for one process (2f): its plugin tree's folder (for `clover`, the verified copy of the bundled plugins),
+  // its data folder and its own temp folder, with what every host process reads.
+  const fencedLaunch = (l: HostProcessLaunch, key: string, top: string): HostProcessLaunch => {
+    if (o.fence === false || !pluginFenceAvailable()) return l;
+    const tree = top === "clover" ? join(stagedBundledDir(o.home), "clover") : o.registry.get(top)?.folder;
+    if (tree === undefined) return l;
+    const tmp = join(o.home, "run", "plugin-tmp", key.replace(/[^a-z0-9-]/g, "_"));
+    mkdirSync(tmp, { recursive: true, mode: 0o700 });
+    const data = pluginPath(join(o.home, "plugin-data"), top);
+    mkdirSync(data, { recursive: true, mode: 0o700 });
+    const fence: PluginFenceInput = {
+      cloverHome: o.home, userHome: o.userHome ?? homedir(),
+      read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!],
+    };
+    return { ...l, cmd: fencedCommand(l.cmd, fence), env: { ...l.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp } };
+  };
   let closed = false;
 
   const pluginLog = pluginLogWriter({ dir: join(o.home, "logs", "plugins"), log, now: () => Date.now() });
@@ -200,11 +224,17 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       if (process === "own" && o.registry.get(pluginId)?.manifest?.host?.runtime === "node") {
         throw new ContractError("refused", `${pluginId} runs on Node, whose plugin processes this Clover doesn't start yet`);
       }
-      const key = process === "own" ? `own:${pluginId}` : process;
+      // One process per plugin tree (the coordinator's ruling on 2f, a change to spec §5.2): a third-party plugin, and
+      // its children, never share a process with another plugin, so each process's fence names that plugin's folder
+      // and data only. The bundled `clover` tree keeps its one process. The cost is a Bun process per installed plugin
+      // with host code (about 30 to 50 MB each).
+      const top = topPluginIdOf(pluginId);
+      const key = process === "clover" ? "clover" : `${process}:${top}`;
       if (launch instanceof Error) throw new ContractError("failed", `plugin processes can't start here: ${launch.message}`);
       const live = processes.get(key);
       if (live !== undefined && !live.peer.closed) return live.peer;
-      const started = spawnHostProcess({ ...launch, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
+      const fenced = fencedLaunch(launch, key, process === "clover" ? "clover" : top);
+      const started = spawnHostProcess({ ...fenced, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
       processes.set(key, started);
       started.peer.onClose(() => {
         if (processes.get(key) === started) processes.delete(key);
@@ -253,3 +283,4 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     },
   };
 }
+

@@ -27,6 +27,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { RESERVED_ENV } from "@waifucave/clover-plugin-sdk";
+import { fencedCommand, pluginFenceAvailable, toolFence } from "./plugin-fence";
 import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
@@ -329,6 +330,9 @@ export function isBunCommand(command: string): boolean {
 export interface PluginRunGuard {
   files: PluginRunFiles;
   shared?: readonly string[];
+  /** The plugin-process fence (`plugin-fence.ts`, 2f): on by default where the OS has one; false runs unfenced (tests
+   *  of what the load guard alone holds); `userHome` names the home it denies (tests pass a temp one). */
+  fence?: false | { userHome?: string };
 }
 
 /** Writes Clover's bunfig and guard for plugin processes into `dir` (the daemon's run folder), and returns their paths.
@@ -347,7 +351,10 @@ export function ensurePluginRunFiles(dir: string, o: { cloverHome?: string } = {
     throw new Error(`${folder} is not a private folder of this user's; plugin processes can't start`);
   }
   const cloverHome = o.cloverHome ?? resolveCloverHome();
-  const files: PluginRunFiles = { bunfig: join(folder, "bunfig.toml"), guard: join(folder, "guard.mjs"), hostGuard: join(folder, "host-guard.mjs"), bin: join(folder, "bin"), cloverHome };
+  // Every run file by its real path (`/var` is `/private/var` on macOS): a fenced process can't resolve a link through
+  // a folder it may only stat, so what it's handed must need no resolving (2f).
+  const real = realpathSync(folder);
+  const files: PluginRunFiles = { bunfig: join(real, "bunfig.toml"), guard: join(real, "guard.mjs"), hostGuard: join(real, "host-guard.mjs"), bin: join(real, "bin"), cloverHome };
   mkdirSync(files.bin, { recursive: true, mode: 0o700 });
   const bunLink = join(files.bin, process.platform === "win32" ? "bun.exe" : "bun");
   let linked: string | undefined;
@@ -418,13 +425,21 @@ export function pluginBunLaunch(args: readonly string[], base: Readonly<Record<s
  *  `BUN_OPTIONS` back; `BUN_BE_BUN` it never carries, and the guard deletes it. A Bun command runs on the plugin Bun (`pluginBun`); any other program
  *  is the plugin's own, which the OK covers and Clover doesn't confine. Every plugin-sourced stdio entry goes through
  *  this. */
-export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard): E {
+export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard, pluginId?: string): E {
   const own = entry.env ?? {};
   refuseReservedPluginEnv(own, `the plugin MCP server at ${pluginRoot} (${basename(entry.command)})`);
   const env = guardedPluginEnv({ ...own, PATH: [guard.files.bin, own.PATH ?? process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter) }, { pluginRoot, ...guard });
   // Never `BUN_BE_BUN`, not even empty: Bun may take it as set. The runtime's merge copies six baseline names only.
   for (const k of ["NODE_OPTIONS", "NODE_PATH", ...Object.keys(process.env).filter((k) => DROPPED_ENV.test(k) && k !== "BUN_OPTIONS" && k !== "BUN_BE_BUN")]) env[k] = "";
-  return { ...entry, ...(isBunCommand(entry.command) ? { command: pluginBun(guard.files.cloverHome) } : {}), env };
+  const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
+  // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
+  if (guard.fence !== false && pluginFenceAvailable()) {
+    const { fence, tmp } = toolFence({ files: guard.files, ...(guard.shared ? { shared: guard.shared } : {}), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}` });
+    env.TMPDIR = tmp;
+    const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
+    return { ...entry, command: cmd!, args, env };
+  }
+  return { ...entry, command, env };
 }
 
 /** The packages a plugin may load from Clover's own install (the plugin SDK and what it imports), as folders. */

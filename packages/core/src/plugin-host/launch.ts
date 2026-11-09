@@ -28,13 +28,22 @@ export async function hostProcessLaunch(o: { runDir: string; computer: string; b
   delete env.BUN_OPTIONS;
   env.CLOVER_PLUGIN_WORKER = bundles.worker;
   env.CLOVER_COMPUTER = o.computer;
-  return { cmd: [pluginBun(files.cloverHome), ...pluginHostBunFlags(files), bundles.host], env, ...(o.onOutput ? { onOutput: o.onOutput } : {}) };
+  const bun = pluginBun(files.cloverHome);
+  const shared = o.shared ?? cloverSharedRoots();
+  return {
+    cmd: [bun, ...pluginHostBunFlags(files), bundles.host], env,
+    reads: [dirname(files.guard), ...shared, bun],
+    ...(o.onOutput ? { onOutput: o.onOutput } : {}),
+  };
 }
 
 export interface HostProcessLaunch {
   /** The command: the plugin Bun and its flags, then `HOST_PROCESS_ENTRY`. */
   cmd: readonly string[];
   env: Record<string, string>;
+  /** What every host process reads besides its plugin's tree, under the fence: the run files, the shared packages and
+   *  its Bun (`cmd[0]`, the one program it runs). */
+  reads?: readonly string[];
   onOutput?: (line: string) => void;
 }
 

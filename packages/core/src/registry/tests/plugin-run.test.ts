@@ -303,7 +303,8 @@ describe("a plugin process loads only its own tree", () => {
 
   test("a plugin's Bun stdio MCP server runs guarded, whatever environment the runtime merges under it", () => {
     const root = w.plugin("mcp", { "bunfig.toml": "preload = [\"$OUTSIDE/evil.ts\"]\n", ".env": "X=1\n", "server.ts": "console.log(\"server ran\");\n" });
-    const guard = { files: w.files, shared: [] };
+    // The load guard's own test: the fence (2f, plugin-fence.test.ts) wraps the command, so it's off here.
+    const guard = { files: w.files, shared: [], fence: false as const };
     // A manifest's env that sets what loads code is refused outright (#322's review, B1).
     expect(() => pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t", NODE_OPTIONS: "--require x" } }, root, guard)).toThrow("sets NODE_OPTIONS in its environment, which only Clover sets");
     const cfg = pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t" } }, root, guard);
@@ -389,7 +390,7 @@ describe("a plugin process loads only its own tree", () => {
     const seen: string[][] = [];
     const sup = new PluginSupervisor({
       runDir: join(w.base, "sup-run-2"), socketPath: "/s", mintToken: () => "t",
-      pluginRun: { files: w.files, shared: [] },
+      pluginRun: { files: w.files, shared: [], fence: false },
       spawn: (cmd) => { seen.push(cmd); return { pid: 999_998, exited: new Promise<number>(() => {}), kill() {} }; },
       isAlivePid: () => false, signalPid: () => {}, processStartedAt: () => null,
     });
