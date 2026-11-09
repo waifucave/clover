@@ -573,6 +573,19 @@ describe("the session's own repo", () => {
     expect(s).toContain("--ro-bind /h/.clover/git-template /h/.clover/git-template");
   });
 
+  test("a missing ~/node_modules (B's #234 plugin-load deny) never holds the home: the real fence's policy, supervised as the spawner does", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-nm-")));
+    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
+    for (const d of [clover, join(home, "project"), temp]) mkdirSync(d, { recursive: true });
+    const policy = new CloverFence({ os: "linux", home, cloverHome: clover, temp }).policy();
+    const loadDenies = policy.denyWrite.filter((d) => d.endsWith("/node_modules") && !d.startsWith(`${clover}/`));
+    expect(loadDenies).toContain(join(home, "node_modules"));
+    const base = { policy, cloverHome: clover, cwd: join(home, "project"), uid: 1 };
+    // Without supervising it the home is held (the CI failure the review round met); supervised, it isn't.
+    expect(bwrapPlan(base).held.map((h) => h.folder)).toContain(home);
+    expect(bwrapPlan({ ...base, supervised: loadDenies }).held.map((h) => h.because)).not.toContain(join(home, "node_modules"));
+  });
+
   test("supervised files are never held for: the supervisor refuses them instead", () => {
     const dirs = new Set(["/h", "/h/.clover", "/t"]);
     const fs = { kind: (p: string) => (dirs.has(p) ? "dir" as const : p === "/h/.bashrc" ? "file" as const : null), list: () => [] as string[] };

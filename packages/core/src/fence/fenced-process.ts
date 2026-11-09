@@ -174,7 +174,11 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           // Lane M's self-update files live under the Clover home, which the default-deny view already hides:
           // nothing is created for them, and they never hold anything. The supervisor still refuses plants by
           // identity, with the post-command belt behind it.
-          const supervisedFiles = [...loginStartUnsafeFiles(o.fence.home, "linux"), ...selfUpdateFiles(o.fence.cloverHome, "linux")];
+          // …and B's #234 plugin-load denies (`node_modules` above every folder plugin code loads from, `~/node_modules`
+          // first): one that isn't there is supervised, never made and never held, so a missing `~/node_modules`
+          // doesn't hold the home and ordinary new top-level names stay writable (the controller's ruling).
+          const loadDenies = o.fence.policy(ctx).denyWrite.filter((d) => basename(d) === "node_modules" && d !== o.fence.cloverHome && !d.startsWith(`${o.fence.cloverHome}/`));
+          const supervisedFiles = [...loginStartUnsafeFiles(o.fence.home, "linux"), ...selfUpdateFiles(o.fence.cloverHome, "linux"), ...loadDenies];
           try {
             for (const d of [...loginDirs, ...browserProfiles, ...hooksDirs]) mkdirNoLinks(d);
             for (const f of loginSafe) ensureEmptyFile(f);
