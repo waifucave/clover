@@ -36,6 +36,8 @@ export const ComputerHello = z.object({
   agents: z.array(utf16(128)).max(64),
   level: Level,
   tree: TreeRoots,
+  /** The local MCP servers ticked on this computer (`mcp-ticks.ts`): the `computer` field's list (J-M2). */
+  mcpServers: z.array(utf16(256, 1)).max(1024).optional(),
 });
 export type ComputerHello = z.infer<typeof ComputerHello>;
 
@@ -48,6 +50,8 @@ export interface ComputerPeersOptions {
   transport: LinkTransport;
   /** This computer's part of the tree. */
   roots: () => TreeRoots;
+  /** The local MCP servers ticked here, for the hello. */
+  mcpServers?: () => readonly string[];
   /** The device list: the only source of the computers in the tree and their names (review minor 1). */
   devices: DeviceRegistry;
   /** Which computer runs a bot, from lane D's registry (review S2). Left out, the hellos say, and a bot that two
@@ -63,6 +67,8 @@ export interface ComputerPeersOptions {
 export class ComputerPeers {
   readonly #o: ComputerPeersOptions;
   readonly #roots = new Map<string, TreeRoots>();
+  /** Each computer's ticked local MCP servers, from its last hello (kept while it is off, as its roots are). */
+  readonly #mcp = new Map<string, readonly string[]>();
   readonly #off: Unsubscribe[] = [];
   readonly #helloed = new Listeners<string>();
   #lastSelf = "";
@@ -76,6 +82,7 @@ export class ComputerPeers {
         const c = registry.byDevice(change.id);
         if (c) registry.remove(c.name);
         this.#roots.delete(change.id);
+        this.#mcp.delete(change.id);
         return;
       }
       this.#fromDevice(change.device);
@@ -137,6 +144,16 @@ export class ComputerPeers {
     return r ? structuredClone(r) : undefined;
   }
 
+  /** The local MCP servers another computer said it runs, in its last hello. */
+  mcpServers(device: string): readonly string[] {
+    return this.#mcp.get(device) ?? [];
+  }
+
+  /** Sends this computer's hello again to every computer online (its MCP ticks changed). */
+  announce(): void {
+    for (const v of this.#o.transport.links()) if (v.up) this.#sendHello(v.peer);
+  }
+
   /** Once per hello received, with the device that sent it (tests wait on it). */
   onHello(fn: (device: string) => void): Unsubscribe {
     return this.#helloed.add(fn);
@@ -185,7 +202,8 @@ export class ComputerPeers {
 
   #hello_(): ComputerHello {
     const self = this.#o.registry.self();
-    return { name: self.name, os: self.os, hasDisplay: self.hasDisplay, agents: self.agents, level: self.level, tree: this.#o.roots() };
+    const mcp = this.#o.mcpServers?.();
+    return { name: self.name, os: self.os, hasDisplay: self.hasDisplay, agents: self.agents, level: self.level, tree: this.#o.roots(), ...(mcp === undefined ? {} : { mcpServers: [...mcp].slice(0, 1024) }) };
   }
 
   #sendHello(device: string): void {
@@ -208,6 +226,7 @@ export class ComputerPeers {
       return;
     }
     this.#roots.set(from, h.tree);
+    this.#mcp.set(from, h.mcpServers ?? []);
     const up = this.#o.transport.links().find((v) => v.peer === from)?.up ?? true;
     registry.update(c.name, { os: h.os, hasDisplay: h.hasDisplay, agents: h.agents, level: h.level });
     registry.setOnline(registry.byDevice(from)!.name, up);
