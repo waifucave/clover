@@ -36,7 +36,8 @@ export type ApiHandlers = Partial<Record<ApiCallPath, ApiHandler>>;
 
 export interface ApiRouterOptions {
   registry: Pick<PluginRegistry, "get">;
-  /** The handlers each area serves (`pointsApi`, `storageApi`, `settingsApi` …), merged; a later one wins. */
+  /** The handlers each area serves (`pointsApi`, `storageApi`, `settingsApi` …); a later one wins. Read on every call,
+   *  so a list the owner changes later (`DaemonPluginHost.addApiHandlers`) takes effect at once. */
   handlers: readonly ApiHandlers[];
   /** The top-level plugin whose namespace a command name starts with (`commands.run`'s target), or undefined. */
   commandOwner?: (name: string) => string | undefined;
@@ -47,8 +48,16 @@ export interface ApiRouterOptions {
 /** The states in which a plugin's host half may use the API. */
 const LIVE = new Set(["running", "waiting"]);
 
+/** The handler a list serves for a path: the last one that has it. */
+export function handlerOf(list: readonly ApiHandlers[], path: ApiCallPath): ApiHandler | undefined {
+  for (let i = list.length - 1; i >= 0; i--) {
+    const h = list[i]!;
+    if (Object.hasOwn(h, path) && h[path] !== undefined) return h[path];
+  }
+  return undefined;
+}
+
 export function createApiRouter(o: ApiRouterOptions): ApiRouter {
-  const handlers: ApiHandlers = Object.assign({}, ...o.handlers);
   return async (call) => {
     const path = call.path as ApiCallPath;
     if (!Object.hasOwn(API_CALLS, path)) throw new ContractError("refused", `${call.path} isn't a call of the plugin API`);
@@ -61,7 +70,7 @@ export function createApiRouter(o: ApiRouterOptions): ApiRouter {
     if (!apiCallAllowed(path, call.process, record.granted, target, o.allowNetwork)) {
       throw new ContractError("refused", refusal(path, call.process, target), { call: path });
     }
-    const fn = handlers[path];
+    const fn = handlerOf(o.handlers, path);
     if (fn === undefined) throw new ContractError("refused", `${path} is not served on this computer`, { call: path });
     return await fn({ pluginId: call.pluginId, process: call.process, caller: call.caller, record, path, ...(call.session !== undefined ? { session: call.session } : {}) }, call.args);
   };
