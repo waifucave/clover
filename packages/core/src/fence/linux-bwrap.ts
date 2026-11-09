@@ -63,6 +63,10 @@ export function bwrapArgs(input: BwrapInput): string[] {
   return bwrapPlan(input).args;
 }
 
+/** How many files a bot's glob read-denies (the provider-state sidecars) are masked one by one; past it, the folders
+ *  holding them are hidden whole. */
+export const GLOB_MASK_CAP = 1000;
+
 /** A folder held read-only for new names because a fenced item in it isn't there yet. */
 export interface HeldFolder { readonly folder: string; readonly because: string }
 
@@ -191,6 +195,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     // as it is when the run starts: each match masked. One made mid-run in a bound folder is the known gap the fence's
     // own check still covers.
     if (open !== null) {
+      const matches: { path: string; kind: "dir" | "file" | "other" }[] = [];
       for (const g of policy.denyRead.filter((d) => d.includes("*") && inside(d, cloverHome))) {
         let at = [cloverHome];
         for (const seg of g.slice(cloverHome.length + 1).split("/")) {
@@ -202,10 +207,16 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
           }
           at = next;
         }
-        for (const m of at) {
-          const k = fs.kind(m);
-          if (k === "dir") a.push("--tmpfs", m, "--remount-ro", m);
-          else if (k !== null) a.push("--ro-bind", "/dev/null", m);
+        for (const m of at) { const k = fs.kind(m); if (k !== null) matches.push({ path: m, kind: k }); }
+      }
+      // One mount per sidecar is one per session: past `GLOB_MASK_CAP` the folders holding them are hidden instead
+      // (their transcripts with them, failing closed), so the arguments and the mounts stay bounded.
+      if (matches.length > GLOB_MASK_CAP) {
+        for (const d of [...new Set(matches.map((m) => dirname(m.path)))].sort()) a.push("--tmpfs", d, "--remount-ro", d);
+      } else {
+        for (const m of matches) {
+          if (m.kind === "dir") a.push("--tmpfs", m.path, "--remount-ro", m.path);
+          else a.push("--ro-bind", "/dev/null", m.path);
         }
       }
     }
