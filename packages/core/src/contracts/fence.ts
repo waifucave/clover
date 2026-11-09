@@ -594,7 +594,7 @@ function underHome(os: Os, home: string, parts: readonly string[]): string {
 
 /** The shells' start and end files, on every OS (Git Bash and WSL-style shells read them on Windows too), and
  *  readline's `.inputrc` (its macros type commands). */
-const SHELL_FILES = [
+export const SHELL_FILES = [
   ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout", ".bashrc", ".bash_profile", ".profile", ".bash_login",
   ".bash_logout", ".cshrc", ".tcshrc", ".login", ".kshrc", ".inputrc",
 ] as const;

@@ -3,7 +3,7 @@
 // the user's shell profile and LaunchAgents, the Keychain, launchd) and what it may (its own tree, its data folder).
 // The user's home here is a temp folder of the test's; the Keychain item is in a throwaway keychain file. macOS only.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
@@ -13,8 +13,9 @@ import { FakeClock } from "../../contracts/fakes/clock";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { startPluginHost } from "../../plugin-host/daemon-host";
 import { HookRunner } from "../../plugins/hook-runner";
+import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
 import { openPluginRegistry } from "../open";
-import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, gitHooksPaths, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
+import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, gitFoldersOf, gitHooksPaths, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
 import { ensurePluginRunFiles, guardedMcpServer } from "../plugin-run";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
@@ -336,6 +337,100 @@ darwinDescribe("the plugin-process fence", () => {
       for (const f of [".git/modules/x/hooks/pre-commit", ".husky/pre-commit", ".vscode/tasks.json"]) expect(existsSync(join(project, f))).toBe(false);
       expect(existsSync(join(project, ".mcp.json"))).toBe(false);
       expect(existsSync(join(sibling, "x"))).toBe(false);
+    } finally {
+      stop(w);
+    }
+  }, 60_000);
+
+  // #352's review, blocker 1: renaming a folder above a denied path, writing under the new name and renaming it back.
+  test("project folders: a denied path can't be planted by renaming the folder above it, whole entries or nested ones", async () => {
+    const w = world();
+    try {
+      const project = join(w.userHome, "code", "app");
+      for (const d of [join(project, ".git", "hooks"), join(project, ".vscode"), join(project, ".docker")]) mkdirSync(d, { recursive: true });
+      const q = (p: string) => JSON.stringify(p);
+      const command = [
+        `cd ${q(project)}`,
+        "(mv .git .git2 && echo x > .git2/hooks/pre-commit && mv .git2 .git) 2>/dev/null && echo git=planted || echo git=refused",
+        "(mv .vscode .vscode2 && echo '{}' > .vscode2/tasks.json && mv .vscode2 .vscode) 2>/dev/null && echo vscode=planted || echo vscode=refused",
+        "(mv .docker .docker2 && echo '{}' > .docker2/config.json && mv .docker2 .docker) 2>/dev/null && echo docker=planted || echo docker=refused",
+        "(echo '{}' > .docker/config.json) 2>/dev/null && echo dockerconfig=ok || echo dockerconfig=denied",
+        "(echo x > .docker/other.json) 2>/dev/null && echo dockerother=ok || echo dockerother=denied",
+        "(rmdir .vscode) 2>/dev/null && echo rmvscode=ok || echo rmvscode=denied",
+      ].join("; ");
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const runner = new HookRunner(guard, { projectFor: () => ({ dirs: [project], write: true }) });
+      const r = (await runner.run({ pluginId: "spy", event: "PostToolUse", command, cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "PostToolUse" } as never)) as { stdout: string };
+      expect(Object.fromEntries(r.stdout.trim().split("\n").map((l) => l.split("=") as [string, string])))
+        .toEqual({ git: "refused", vscode: "refused", docker: "refused", dockerconfig: "denied", dockerother: "ok", rmvscode: "denied" });
+      for (const d of [".git2", ".vscode2", ".docker2"]) expect(existsSync(join(project, d))).toBe(false);
+      expect(existsSync(join(project, ".git", "hooks", "pre-commit"))).toBe(false);
+    } finally {
+      stop(w);
+    }
+  }, 60_000);
+
+  // #352's review, blocker 2: persistence files reached through a project folder.
+  test("project folders: a dotfiles project can't write the real file of ~/.zshrc, and ~/Library is never a project folder", async () => {
+    const w = world();
+    try {
+      const dotfiles = join(w.userHome, "dotfiles");
+      mkdirSync(dotfiles, { recursive: true });
+      writeFileSync(join(dotfiles, "zshrc"), "# the user's\n");
+      rmSync(join(w.userHome, ".zshrc"), { force: true });
+      symlinkSync(join(dotfiles, "zshrc"), join(w.userHome, ".zshrc"));
+      const agents = join(w.userHome, "Library", "LaunchAgents");
+      const q = (p: string) => JSON.stringify(p);
+      const command = [
+        `(echo evil >> ${q(join(dotfiles, "zshrc"))}) 2>/dev/null && echo zshrc=ok || echo zshrc=denied`,
+        `(echo notes > ${q(join(dotfiles, "README.md"))}) 2>/dev/null && echo readme=ok || echo readme=denied`,
+        `(echo '<plist/>' > ${q(join(agents, "x.plist"))}) 2>/dev/null && echo launchagent=ok || echo launchagent=denied`,
+      ].join("; ");
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const runner = new HookRunner(guard, { projectFor: () => ({ dirs: [dotfiles, join(w.userHome, "Library")], write: true }) });
+      const r = (await runner.run({ pluginId: "spy", event: "PostToolUse", command, cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "PostToolUse" } as never)) as { stdout: string };
+      expect(Object.fromEntries(r.stdout.trim().split("\n").map((l) => l.split("=") as [string, string]))).toEqual({ zshrc: "denied", readme: "ok", launchagent: "denied" });
+      expect(readFileSync(join(dotfiles, "zshrc"), "utf8")).toBe("# the user's\n");
+      expect(existsSync(join(agents, "x.plist"))).toBe(false);
+    } finally {
+      stop(w);
+    }
+  }, 60_000);
+
+  test("a project folder never holds ~/Library, ~/.config, ~/bin, ~/.ssh or a persistence place; a .git file's folders are found", () => {
+    const user = temp("cf-pn-user-");
+    const clover = join(user, ".clover");
+    for (const d of ["Library/LaunchAgents", ".config/fish", "bin", ".ssh", "code/app", "code/sub"]) mkdirSync(join(user, d), { recursive: true });
+    const p = (d: string) => join(user, d);
+    expect(projectFolders([p("Library"), p(".config"), p("bin"), p(".ssh"), p("Library/LaunchAgents"), p("code/app")], { userHome: user, cloverHome: clover })).toEqual([p("code/app")]);
+    // A submodule's .git file names its folder in the parent's .git/modules; a worktree's, its gitdir and common folder.
+    writeFileSync(join(p("code/sub"), ".git"), "gitdir: ../app/.git/modules/sub\n");
+    expect(gitFoldersOf(p("code/sub"))).toEqual([p("code/app/.git/modules/sub")]);
+    mkdirSync(p("code/app/.git/worktrees/wt"), { recursive: true });
+    writeFileSync(p("code/app/.git/worktrees/wt/commondir"), "../..\n");
+    mkdirSync(p("code/wt"), { recursive: true });
+    writeFileSync(join(p("code/wt"), ".git"), `gitdir: ${p("code/app/.git/worktrees/wt")}\n`);
+    expect(gitFoldersOf(p("code/wt"))).toEqual([p("code/app/.git/worktrees/wt"), p("code/app/.git")]);
+  });
+
+  // #352's review, should-fix 2: a plugin's stdio MCP server reads its session's project folders (writes with the
+  // capability), through the same factory the runtime's config takes.
+  test("a plugin's stdio MCP server gets the session's project folders: read always, write with project.write", () => {
+    const w = world();
+    try {
+      const project = join(w.userHome, "code", "app");
+      mkdirSync(project, { recursive: true });
+      writeFileSync(join(project, "src.ts"), "x\n");
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const script = `cat ${JSON.stringify(join(project, "src.ts"))} >/dev/null 2>&1 && echo read=ok || echo read=denied; (echo y > ${JSON.stringify(join(project, "src.ts"))}) 2>/dev/null && echo write=ok || echo write=denied`;
+      const run = (write: boolean | undefined) => {
+        const cfg = pluginStdioMcpServer({ command: "/bin/sh", args: ["-c", script] }, w.root, guard, "spy", write === undefined ? undefined : { dirs: [project], write }) as { command: string; args?: string[]; env?: Record<string, string> };
+        const r = Bun.spawnSync([cfg.command, ...(cfg.args ?? [])], { cwd: w.root, env: cfg.env, stdout: "pipe", stderr: "pipe" });
+        return r.stdout.toString().trim().split("\n").join(" ");
+      };
+      expect(run(undefined)).toBe("read=denied write=denied");
+      expect(run(false)).toBe("read=ok write=denied");
+      expect(run(true)).toBe("read=ok write=ok");
     } finally {
       stop(w);
     }
