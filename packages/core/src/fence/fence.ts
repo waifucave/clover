@@ -19,6 +19,7 @@ import {
 import { canonicalPath } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
 import { fenceLayout, type LaidOutKind } from "./layout";
+import { appInstallDirs } from "../platform/app-resources";
 
 export interface CloverFenceOptions {
   os?: Os;
@@ -28,6 +29,9 @@ export interface CloverFenceOptions {
   cloverHome: string;
   temp?: string;
   devFolders?: string[];
+  /** The app's install folders (the bundle or install folder: bundled plugins, the daemon, the app): write-denied as
+   *  `plugins`. Default: this daemon's own (`appInstallDirs`). */
+  appResources?: readonly string[];
   /** The bots whose memory is fenced (`bots/<bot>/memory`, deny `caller` each). */
   bots?: string[];
   /** The install folders of the coding agents the user has OK'd (`agent-installs`). */
@@ -58,6 +62,7 @@ export class CloverFence implements Fence {
   readonly #canonical: (path: string) => string;
   readonly #listeners = new Listeners<void>();
   readonly #loopbackPorts: () => readonly number[];
+  readonly #appResources: readonly string[];
   readonly #bots: string[];
   readonly #agentInstalls: string[];
   readonly #userData: string | undefined;
@@ -75,6 +80,7 @@ export class CloverFence implements Fence {
     this.#userData = opts.userData;
     this.#layout = opts.layout ?? {};
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
+    this.#appResources = [...(opts.appResources ?? appInstallDirs())];
   }
 
   fencedSet(): readonly FencedPath[] {
@@ -91,6 +97,8 @@ export class CloverFence implements Fence {
       out.push({ kind: "bot-memory", path: this.#canonical(`${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`), deny: "caller", bot });
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
+    // C-M3 item 5: the app's resources (bundled plugins run as trusted code): write-denied like installed plugins.
+    for (const p of this.#appResources) add("plugins", p);
     return out;
   }
 

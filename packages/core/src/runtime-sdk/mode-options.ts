@@ -1,5 +1,6 @@
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { appInstallDirs } from "../platform/app-resources";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -639,6 +640,8 @@ export function controlPlaneDenyRules(home: string): string[] {
     // …and every INSTALLED plugin: a session must not plant a SKILL.md, a hook or a manifest into one.
     // Plugins are installed by the daemon's own lifecycle verbs, never by a tool.
     fsRootAnchored([lit(join(home, "plugins")), "**"].join("/")),
+    // C-M3 item 5: the app's whole install, with its bundled plugins (run as trusted code), the daemon and the app.
+    ...appInstallDirs().map((dir) => fsRootAnchored([lit(dir), "**"].join("/"))),
     // Review I2: the daemon's own record of rules approved "in this project" — applied to a child
     // WITHOUT a trust check (it cannot come from a repository), so writing it would be a self-grant.
     fsRootAnchored([lit(approvedProjectRulesDir(home)), "**"].join("/")),
@@ -937,6 +940,9 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
     // swap (`update/`), and the install marker that decides whether the daemon updates itself. A planted binary or
     // `.old` + boot count would run unsandboxed as the daemon; a planted marker or rolled-back list stops its updates.
     join(home, "bin"), join(home, "update"), join(home, "install.json"),
+    // C-M3 item 5: the app's whole install (the bundled plugins, approved without a card, the daemon, the app's own
+    // code), outside the home, refused on any mention like `runtimes`, as started and resolved (platform/app-resources.ts).
+    ...appInstallDirs(),
     ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => join(home, f)),
     ...hostStorageWriteRoots(home, options),
   ];
