@@ -86,6 +86,8 @@ export const ArchivedSessionView = z.object({
   model: utf16(256).optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
+  /** How many records the session's log holds (its last seq), as the store counts them without reading the log; 0
+   *  for one the user never wrote in. */
   messages: z.number().int().nonnegative(),
 });
 export type ArchivedSessionView = z.infer<typeof ArchivedSessionView>;
@@ -374,11 +376,12 @@ export const SESSIONS_METHODS = {
     name: "archive.list", owner: "D", roles: ["app", "cli"],
     params: z.object({
       query: utf16(1000).optional(),
-      /** Sessions updated before this time, for the next page. */
-      before: Timestamp.optional(),
+      /** The last page's `cursor`, for the next page (opaque: it names the last session shown, by its `updatedAt` and
+       *  its id, so sessions that share an `updatedAt` are never skipped or shown twice). */
+      cursor: Cursor.optional(),
       limit: z.number().int().min(1).max(200).optional(),
     }),
-    result: z.object({ sessions: z.array(ArchivedSessionView).max(200), more: z.boolean() }),
+    result: z.object({ sessions: z.array(ArchivedSessionView).max(200), more: z.boolean(), cursor: Cursor.optional() }),
     doc: "The previous app's sessions, newest first, for the archive view (§14.1).",
   }),
   archiveHistory: defineMethod({

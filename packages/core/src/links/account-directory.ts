@@ -11,6 +11,7 @@ import type { FileDeviceRegistry } from "../devices/registry";
 import type { AccountClient } from "../identity/account";
 import { type BoxKey, sealToBoxKey } from "../identity/box-key";
 import { type Bytes, fromBase64, fromBase64Url, fromUtf8, utf8 } from "../identity/bytes";
+import { publicKeyFromBase64 } from "../identity/keys";
 import type { NatMapping } from "./dial-policy";
 import { type AddrPlaintext, HANDSHAKE_AUDIENCE, HANDSHAKE_PREFIX, type HandshakeClient, type HandshakeKind, type LeaseRecord } from "./handshake";
 import type { PeerDirectory } from "./transport";
@@ -75,7 +76,8 @@ export class AccountDirectory implements PeerDirectory {
   async target(device: string): Promise<DialTarget | undefined> {
     const d = this.#o.registry.get(device);
     if (!d || d.revokedAt !== undefined) return undefined;
-    const key = fromBase64(d.publicKey);
+    // A link key Clover dials is a strict Ed25519 point (identity/ed25519-strict.ts).
+    const key = publicKeyFromBase64(d.publicKey);
     if (!key) return undefined;
     // "Dial now", so the peer dials back at once (S1): both directions race, and the first through wins.
     void this.dialNow(device).catch(() => undefined);

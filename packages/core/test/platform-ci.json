@@ -9,21 +9,9 @@
       "owner": "H",
       "cause": "a failing rename of the scrubbed copy reports runtime-state.db corrupt on Linux instead of leaving the raw copy"
     },
-    "test/runtime-state/crash-matrix.test.ts": {
-      "owner": "A",
-      "cause": "repairRuntimeState doesn't restore the backup over a corrupt runtime-state.db (sidecars and all) on Linux"
-    },
     "test/e2e/mid-turn-fold-e2e.test.ts": {
       "owner": "D",
       "cause": "a steer to a running session folds twice, and TaskStop's cleared steer never closes the stopped turn on Linux"
-    },
-    "test/e2e/per-call-tool-results-e2e.test.ts": {
-      "owner": "A",
-      "cause": "a Write and a sleeping Bash in one round: the Bash's tool_result lands before the Write's on Linux"
-    },
-    "test/e2e/embedded-chat-dispatch-e2e.test.ts": {
-      "owner": "A",
-      "cause": "a CODE and a DISPATCH session's embedded Bash result lacks the command's output on Linux"
     }
   },
   "linuxSkips": {
@@ -38,6 +26,8 @@
     "test/cowork/guest-runtime.test.ts": "one test needs the candidate SDK's confined fixture, on every OS",
     "test/cowork/guided-reader-adapter.test.ts": "one opt-in drift guard against the SDK source, on every OS",
     "test/cowork/provider-broker.integration.test.ts": "an opt-in integration run (its env), skipped on every OS by default",
+    "test/e2e/embedded-chat-dispatch-e2e.test.ts": "its Bash cases (bashTest) need the embedded runtime's sandbox, which is macOS-only until the agent SDK's Linux backend lands (lane A, bubblewrap); they skip elsewhere with lane K's inProcessSandboxReady()",
+    "test/e2e/per-call-tool-results-e2e.test.ts": "its Bash cases (bashTest) need the embedded runtime's sandbox, which is macOS-only until the agent SDK's Linux backend lands (lane A, bubblewrap); they skip elsewhere with lane K's inProcessSandboxReady()",
     "test/fence/fence.test.ts": "one test needs Win32 path semantics (a `..` after a real NTFS junction); it runs on the Windows tree job",
     "test/fence/spawn.test.ts": "two tests need Windows hook shells (cmd and Git Bash); they run on the Windows tree job",
     "test/ipc/session-set-model-review.test.ts": "one live model-convergence case runs only with its env, on every OS",

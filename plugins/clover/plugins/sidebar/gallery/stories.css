@@ -5,3 +5,27 @@
   height: 100%;
   background: var(--clover-plugin-clover-sidebar-solid);
 }
+
+/* The brand mark story: its sizes on the sidebar's ground, then on the card's. */
+.story-marks {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.story-marks__row {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 32px;
+  padding: 0 24px;
+  background: var(--clover-plugin-clover-sidebar-solid);
+}
+
+.story-marks__row--card {
+  background: var(--clover-color-surface);
+}
+
+.story-marks__cell {
+  margin-left: 0;
+}

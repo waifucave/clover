@@ -7,8 +7,9 @@
 // to install the plugin's own translator with the app's `useT()` (lane G's ask, G-M3's `setTranslator`), so their
 // words come in the user's language with English beneath.
 import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { useApprovals, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
 import { IslandApp, IslandHostContext, type IslandHost, type SurfaceHostApi } from "@clover-child/island";
+import { islandCards } from "./cards";
 import { PillApp, PillHostContext, type PillHost } from "@clover-child/pill";
 import { VrmAvatar, setTranslator as setVrmTranslator } from "@clover-child/vrm";
 import { Live2dAvatarEntry, setTranslator as setLive2dTranslator } from "@clover-child/live2d";
@@ -18,9 +19,10 @@ import type { Rect } from "@waifucave/clover-plugin-sdk/ui/bridge";
  * `environment` is the surface host's (the OS, the display server and the display's own bounds and housing); until the
  * surface's window reports it, the island draws nothing (a surface is grown only by what it knows). `window` carries
  * what the island asks of the window through the core's surface broker: the spec's own fields are the request's, and
- * regions ride the same call. `cards` is E-M3's sealed path (`useApprovals()` is a stub there until then), so the
- * strip waits for a card without one. The tab entries (`island.tab`) are placed by the part that declares the spot;
- * the island's own Devices tab carries its devices' list and watch off the plugin API. */
+ * regions ride the same call. `cards` are the pending cards' metas (`useApprovals()`, fed by the daemon's
+ * `card_pending` on this layer's connection), mapped by `./cards` onto what the island draws. The tab entries
+ * (`island.tab`) are placed by the part that declares the spot; the island's own Devices tab carries its devices'
+ * list and watch off the plugin API. */
 
 function environNow(os: string | undefined): IslandHost["environment"] | undefined {
   if (os !== "macos" && os !== "windows" && os !== "linux") return undefined;
@@ -40,10 +42,11 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
     setWindow: (spec) => surface({ visible: spec.visible !== false, bounds: spec.bounds }),
     setInteractiveRegions: (regions) => surface({ regions }),
   }), [surface]);
+  const approvals = useApprovals();
   const host: IslandHost | undefined = environment === undefined ? undefined : {
     environment,
     window,
-    cards: [],
+    cards: islandCards(approvals.cards),
     t,
   };
   if (host === undefined) return null;
