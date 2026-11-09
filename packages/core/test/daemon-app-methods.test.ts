@@ -41,7 +41,7 @@ describe("the app's archive and plan methods, on a booted daemon", () => {
     const app = { role: "cli" as const, token: daemon.tokens.harness, clientName: "lane-d-test" };
     const call = <T>(method: string, params: unknown = {}) => cloverCall(daemon!.socketPath, app, method, params) as Promise<T>;
     const listed = await call<{ sessions: { id: string; mode: string; messages: number }[]; more: boolean }>("archive.list", {});
-    expect(listed.sessions).toEqual([expect.objectContaining({ id, mode: "chat", messages: 2 })]);
+    expect(listed.sessions).toEqual([expect.objectContaining({ id, mode: "chat", messages: 1 })]);
     const history = await call<{ events: { type: string }[] }>("archive.history", { id });
     expect(history.events.map((e) => e.type)).toEqual(["session_created", "user_message"]);
     const plans = await call<{ readings: unknown[] }>("usage.plans", {});
