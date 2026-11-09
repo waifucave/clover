@@ -3232,6 +3232,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     log: (line) => console.error(line),
   }).catch((err: unknown) => { console.error(`[pair] not started: ${(err as Error).message}`); return undefined; });
   const sessionProcesses = SessionProcesses.shared;
+  // The Clover `computer.acting` seam reads the live service through a getter, never a captured copy: after a live
+  // toggle the check reads the service as it is now (check 3). With no service, nothing is acting.
   // C-M2: the contract secret store (the Keychain on macOS, the encrypted file elsewhere), and other lanes' Clover
   // methods, filled in as their parts come up (H's devices methods once the links are). A test daemon (its own
   // `secrets`) keeps the store in memory, so no test touches the real Keychain.
@@ -3287,6 +3289,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     linkPid: () => daemonLinks?.links?.sidecarPid(),
     ...(pairSide ? { pair: pairSide.pair, appToken: pairSide.appToken } : {}),
     endpoint: dirs.socketPath,
+    computerUse: {
+      acting: () => Promise.resolve({ running: computerUse?.anyActing() ?? false, session: computerUse?.anyActing() === true ? "s_cu" : undefined }),
+    },
     log: (line) => console.error(line),
     acceptUpdateExit: () => acceptUpdateExit(updateGate),
   });
