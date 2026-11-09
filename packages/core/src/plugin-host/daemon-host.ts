@@ -102,9 +102,16 @@ export const UI_SEND_MAX_BYTES = 64 * 1024;
 export const UI_SEND_PER_SECOND = 50;
 
 /** Where a plugin's files are served from until lane E names it: the layer of its top-level plugin. */
-export function defaultAssetUrl(pluginId: string, path: string): string {
-  const safe = assetPath(path);
-  if (safe === undefined) throw new ContractError("invalid", `${JSON.stringify(path.slice(0, 200))} isn't a path inside ${pluginId}'s folder`);
+export function defaultAssetUrl(pluginId: string, encodedPath: string): string {
+  // Given encoded (`assetPath`'s form); anything that isn't exactly that form is refused.
+  let decoded: string | undefined;
+  try {
+    decoded = encodedPath.split("/").map((p) => decodeURIComponent(p)).join("/");
+  } catch {
+    decoded = undefined;
+  }
+  const safe = decoded === undefined ? undefined : assetPath(decoded);
+  if (safe === undefined || safe !== encodedPath) throw new ContractError("invalid", `${JSON.stringify(encodedPath.slice(0, 200))} isn't a path inside ${pluginId}'s folder`);
   const top = pluginId.split("/")[0]!;
   const rest = pluginId.includes("/") ? `${pluginId.slice(top.length + 1)}/` : "";
   return `clover-plugin://${top}/${rest}${safe}`;

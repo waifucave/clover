@@ -122,9 +122,11 @@ export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<Pl
       const folder = resolve(r.folder);
       if (!folder.startsWith(pluginsDir + sep) || !existsSync(folder)) throw new ContractError("refused", `${id}'s folder isn't in the plugins directory`);
       const children = registry.list().filter((c) => c.parent === r.id).map((c) => c.id);
+      // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
+      // id finds it (#332's second review).
+      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
-      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
       return { ok: true as const };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),

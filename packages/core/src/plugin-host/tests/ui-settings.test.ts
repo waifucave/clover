@@ -1,9 +1,19 @@
 // The user's UI choices: read, changed, checked, and told to the app.
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync as makeTemp, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { uiSettingsFile, uiSettingsMethods } from "../ui-settings";
+
+const temps: string[] = [];
+const mkdtempSync = (prefix: string): string => {
+  const d = makeTemp(prefix);
+  temps.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of temps) rmSync(d, { recursive: true, force: true });
+});
 
 const APP = { caller: { kind: "user", client: "app" } } as never;
 const LAYER = (pluginId: string) => ({ caller: { kind: "plugin", pluginId } }) as never;
