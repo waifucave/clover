@@ -56,6 +56,24 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
     expect(readFileSync(join(CLI_DIR, "src", "main.ts"), "utf8")).toContain('process.argv[2] === "__fd-receiver-probe"');
   });
 
+  // Bun names each extra entrypoint by its path relative to the entrypoints' COMMON ROOT. An embedded file outside
+  // src/ (the release build's bundled-plugins manifest, `.build/clover-bundled-plugins.manifest`) moved that root up to
+  // packages/cli, so `./embedded-worker.ts` and `./fd-receiver-worker.ts` stopped resolving in every release core
+  // (ModuleNotFound; the fd channel reported it as "syscall"). `--root src` pins it: build:daemon proves it on each
+  // host core it builds (`__worker-entry-probe`, every OS), and verify:fd-receiver on a plain compile.
+  test("the worker-entry probe loads the fd receiver's own compiled entry", async () => {
+    const { PROBED_WORKER_ENTRY } = await import("../src/worker-entry-probe");
+    expect(PROBED_WORKER_ENTRY).toBe(COMPILED_FD_RECEIVER_WORKER_ENTRY);
+    expect(readFileSync(join(CLI_DIR, "src", "main.ts"), "utf8")).toContain('process.argv[2] === "__worker-entry-probe"');
+  });
+
+  test("both compile scripts pin the compile's root to src/, so an embedded file elsewhere can't rename the Worker entries", () => {
+    for (const name of ["compile", "compile:core"]) {
+      const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/)).at(-1)!;
+      expect([name, compile[compile.indexOf("--root") + 1]]).toEqual([name, "src"]);
+    }
+  });
+
   // SECURITY (no-autoload): by default a `bun build --compile` binary reads the bunfig.toml (its
   // `preload` runs as the binary) and .env of the directory it is STARTED in. `clover` is a symlink to
   // `clover-core` that users run inside arbitrary repositories, so both are switched off at compile

@@ -239,7 +239,7 @@ jobs:
         working-directory: apps/desktop
         env:
           CLOVER_UI_TESTS: "1"
-        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui-smoke.test.ts
+        run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}bun test test/ui-smoke.test.ts test/sealed-ui.test.ts
 
       # The Clover Browser in a real Electron (lane L, plan §4 L M1 and M2): offscreen bot tabs, the viewport, the
       # person's selecting and copying through it, the screen-reader hybrid, and the streamed view. CI only, like the

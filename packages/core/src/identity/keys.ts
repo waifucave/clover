@@ -6,6 +6,7 @@ import { createPrivateKey, createPublicKey, generateKeyPairSync, sign as nodeSig
 import { ContractError } from "../contracts/common";
 import { Secret } from "../contracts/secret-store";
 import { type Bytes, fromBase64, own, toBase64 } from "./bytes";
+import { isStrictEd25519Point, isStrictEd25519Signature } from "./ed25519-strict";
 
 const PKCS8_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 const SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -65,9 +66,12 @@ export function ed25519FromSecret(secret: Secret): Ed25519Key {
   return new NodeEd25519Key(seed);
 }
 
-/** Whether `signature` is `publicKey`'s Ed25519 signature over `data`; false for any malformed input. */
+/** Whether `signature` is `publicKey`'s Ed25519 signature over `data`; false for any malformed input. Strict: the key
+ *  and the signature's R must be canonical points outside the small-order subgroup and S below the group order
+ *  (ed25519-strict.ts), which node:crypto's verify alone doesn't check. */
 export function verifyEd25519(publicKey: Uint8Array, data: Uint8Array, signature: Uint8Array): boolean {
   if (publicKey.byteLength !== 32 || signature.byteLength !== 64) return false;
+  if (!isStrictEd25519Point(publicKey) || !isStrictEd25519Signature(signature)) return false;
   try {
     const key = createPublicKey({ key: Buffer.concat([SPKI_PREFIX, Buffer.from(publicKey)]), format: "der", type: "spki" });
     return nodeVerify(null, data, key, signature);
@@ -76,10 +80,11 @@ export function verifyEd25519(publicKey: Uint8Array, data: Uint8Array, signature
   }
 }
 
-/** A raw public key from base64; null unless it is 32 bytes. */
+/** A raw Ed25519 public key from base64; null unless it is 32 bytes naming a canonical point outside the small-order
+ *  subgroup (ed25519-strict.ts). */
 export function publicKeyFromBase64(text: string): Bytes | null {
   const bytes = fromBase64(text);
-  return bytes && bytes.byteLength === 32 ? bytes : null;
+  return bytes && bytes.byteLength === 32 && isStrictEd25519Point(bytes) ? bytes : null;
 }
 
 /** An answer key's algorithm (B's #187 `AnswerKeyAlg`; absent means ed25519). */
@@ -90,7 +95,7 @@ export function answerKeyBytes(alg: AnswerKeyAlg, text: string): Bytes | null {
   const raw = fromBase64(text);
   if (!raw) return null;
   if (alg === "p256") return raw.length === 65 && raw[0] === 0x04 ? raw : null;
-  return raw.length === 32 ? raw : null;
+  return raw.length === 32 && isStrictEd25519Point(raw) ? raw : null;
 }
 
 /** Checks a signature with the key's own algorithm: Ed25519, or ECDSA P-256 over SHA-256 with a raw `r‖s` signature

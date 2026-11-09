@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { keychainService, resolveCloverProfile } from "../profile";
+import { isolatedTestBackend, underTest } from "./test-isolation";
 
 export interface SecretStore {
   get(name: string): Promise<string | null>;
@@ -62,7 +63,9 @@ export function setDefaultSecretsBackendForTests(backend: Pick<typeof Bun.secret
  *  Manager). Loaded only on macOS, so this module stays free of the FFI everywhere else. */
 export function defaultSecretsBackend(): Pick<typeof Bun.secrets, "get" | "set" | "delete"> {
   if (testBackend !== undefined) return testBackend;
-  if (process.platform !== "darwin") return Bun.secrets;
+  // Under a test (a test daemon too, by the variables it inherits): an isolated store only (test-isolation.ts). On
+  // macOS the pinned backend below already opens the test keychain file, or throws.
+  if (process.platform !== "darwin") return underTest() ? isolatedTestBackend(Bun.secrets) : Bun.secrets;
   const { pinnedSecretsBackend } = require("./login-keychain") as typeof import("./login-keychain");
   return pinnedSecretsBackend();
 }
