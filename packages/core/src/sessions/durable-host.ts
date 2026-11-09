@@ -546,6 +546,14 @@ export class DurableSessionHost implements SessionHost {
     return s ? this.#viewOf(s) : undefined;
   }
 
+  /** The record a user message with this `clientMessageId` became in this session, when this computer's host has it:
+   *  a resend of it would return that `seq` and record nothing. `pill.send` asks before staging a resend's pictures
+   *  again (they would only be left over). Undefined for a session or an id this host doesn't know. */
+  sentAs(id: string, clientMessageId: string): { seq: number } | undefined {
+    const seen = this.#sessions.get(id)?.clientIds.get(clientMessageId);
+    return seen === undefined ? undefined : { seq: seen.seq };
+  }
+
   /** The user's message. Also returns the record's `seq` (`session.send`'s result); a resend with a `clientMessageId`
    *  already seen returns the first one's disposition and seq, and records nothing. */
   async sendUser(id: string, input: Omit<UserInput, "from">): Promise<{ disposition: Disposition; seq: number }> {

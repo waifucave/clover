@@ -2,17 +2,22 @@
 // and the open, so a caller that reads or writes a file for a bot, an agent or a plugin (B's file tools, memory sync,
 // transcripts under `bots/`) opens it here instead:
 //   1. the fence judges the path as given;
-//   2. it is opened without following a link at its last component (O_NOFOLLOW on macOS and Linux), never truncated
-//      or created through a link: a write opens the file as it is, and creates it only exclusively (O_EXCL);
+//   2. it is opened without following a link at its last component (O_NOFOLLOW on macOS and Linux), never
+//      truncated, and never created through a link: a write opens the file as it is, and creates it atomically only
+//      when asked (`exclusive`: `O_CREAT|O_EXCL`, so a planted name fails with EEXIST instead of being reused);
 //   3. the opened file's real path is read back from the handle (macOS `proc_pidfdinfo`'s vnode path, Linux
 //      `/proc/self/fd`, Windows `GetFinalPathNameByHandleW` on a handle shown to be the same file) and judged again;
 //   4. only then is it truncated, if asked, and handed back. Refused at 2 or 3: closed, and a file it just created
 //      is removed.
 // Callers must use this (or `readChecked` / `writeChecked`) for every file access the fence judges; `fence.check`
 // alone is advice, not a lock.
-import { closeSync, constants, fstatSync, ftruncateSync, openSync, readFileSync, readlinkSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, ftruncateSync, openSync, readlinkSync, readSync, unlinkSync, writeSync } from "node:fs";
 import type { FenceOp, FenceVerdict } from "../contracts/fence";
 import { ffiLib, ffiPtr as ptr } from "../platform/ffi";
+
+/** The most a whole-file read takes (lane D's `READ_MAX_BYTES` for bot files): a bot can leave a huge or
+ *  ever-growing file where the core reads, and the daemon must never take it all into memory. */
+export const READ_MAX_BYTES = 1024 * 1024;
 
 export class FenceRefused extends Error {
   constructor(readonly verdict: Exclude<FenceVerdict, { allowed: true }>, readonly at: string) {
@@ -73,28 +78,41 @@ export function fdRealPath(fd: number, platform: NodeJS.Platform = process.platf
 export interface OpenChecked {
   /** Open for writing (else reading). */
   readonly write?: boolean;
-  /** Create the file when it isn't there (exclusively). */
+  /** Create the file when it isn't there (exclusively only with `exclusive`: without it, a file that appears
+   *  between the open and the create is opened as it is). */
   readonly create?: boolean;
+  /** Fail when the file is already there (`O_CREAT|O_EXCL`): for temp files nothing may reuse the name. Implies
+   *  `create`, at mode `0o600`. */
+  readonly exclusive?: boolean;
   /** Empty it once it's known to be the file that was judged. */
   readonly truncate?: boolean;
   readonly append?: boolean;
 }
 
 /** Opens `path` for `fence` (a `Fence` or a `forCaller` view) as above; the caller closes the descriptor. Throws
- *  `FenceRefused`, or the open's own error (ENOENT, ELOOP for a link at the last component). */
+ *  `FenceRefused`, or the open's own error (ENOENT, ELOOP for a link at the last component, EEXIST for `exclusive`
+ *  when the file is already there). */
 export function openChecked(fence: Judge, path: string, o: OpenChecked = {}): number {
   const op: FenceOp = o.write ? { op: "write", path } : { op: "read", path };
   const first = fence.check(op);
   if (!first.allowed) throw new FenceRefused(first, path);
   const nofollow = (constants as Record<string, number>).O_NOFOLLOW ?? 0;
-  const base = (o.write ? (o.append ? constants.O_WRONLY | constants.O_APPEND : constants.O_RDWR) : constants.O_RDONLY) | nofollow;
+  // Reads never block on a FIFO a runner left behind (`O_NONBLOCK`): the `fstat` below refuses it before
+  // anything is read. A write open never blocks on one (`O_RDWR` doesn't wait for the other end).
+  const nonblock = !o.write ? ((constants as Record<string, number>).O_NONBLOCK ?? 0) : 0;
+  const base = (o.write ? (o.append ? constants.O_WRONLY | constants.O_APPEND : constants.O_RDWR) : constants.O_RDONLY) | nofollow | nonblock;
   let fd: number;
   let created = false;
-  try { fd = openSync(path, base); }
-  catch (e) {
-    if (!(o.write && o.create && (e as NodeJS.ErrnoException).code === "ENOENT")) throw e;
-    fd = openSync(path, base | constants.O_CREAT | constants.O_EXCL, 0o644);
+  if (o.exclusive) {
+    fd = openSync(path, base | constants.O_CREAT | constants.O_EXCL, 0o600);
     created = true;
+  } else {
+    try { fd = openSync(path, base); }
+    catch (e) {
+      if (!(o.write && o.create && (e as NodeJS.ErrnoException).code === "ENOENT")) throw e;
+      fd = openSync(path, base | constants.O_CREAT | constants.O_EXCL, 0o644);
+      created = true;
+    }
   }
   const real = fdRealPath(fd, process.platform, path);
   const second: FenceVerdict = real === null
@@ -105,14 +123,39 @@ export function openChecked(fence: Judge, path: string, o: OpenChecked = {}): nu
     if (created && real !== null) { try { unlinkSync(real); } catch { /* gone */ } }
     throw new FenceRefused(second, real ?? path);
   }
+  // The opened file itself, after the open: a FIFO, socket or device a runner left (which `O_NOFOLLOW` alone
+  // doesn't refuse — only a link at the last component fails the open), and a file with a second name (whose
+  // other name could be swapped out from under the checks). Refused, like lane D's `readOwnFile`.
+  const st = fstatSync(fd);
+  if (!st.isFile() || st.nlink > 1) {
+    closeSync(fd);
+    if (created) { try { unlinkSync(real ?? path); } catch { /* gone */ } }
+    throw new FenceRefused({ allowed: false, reason: "clover-home", path: real ?? path }, real ?? path);
+  }
   if (o.write && o.truncate) ftruncateSync(fd, 0);
   return fd;
 }
 
-/** The whole file, read through `openChecked`. */
+/** The whole file, read through `openChecked`, up to `READ_MAX_BYTES` (a larger file is refused, like lane
+ *  D's whole reads: the daemon never takes an unbounded file into memory). */
 export function readChecked(fence: Judge, path: string): Buffer {
   const fd = openChecked(fence, path);
-  try { return readFileSync(fd); } finally { closeSync(fd); }
+  try { return readCapped(fd, path); } finally { closeSync(fd); }
+}
+
+/** Up to `READ_MAX_BYTES` from `fd`'s current offset; a larger file is refused rather than read past the cap
+ *  (a file growing under the read can't push past it either). */
+export function readCapped(fd: number, path: string): Buffer {
+  const size = fstatSync(fd).size;
+  if (size > READ_MAX_BYTES) throw new FenceRefused({ allowed: false, reason: "clover-home", path }, path);
+  const buf = Buffer.alloc(Math.min(size, READ_MAX_BYTES));
+  let n = 0;
+  while (n < buf.length) {
+    const got = readSync(fd, buf, n, buf.length - n, n);
+    if (got === 0) break;
+    n += got;
+  }
+  return buf.subarray(0, n);
 }
 
 /** The whole file, replaced through `openChecked` (created when it isn't there). */

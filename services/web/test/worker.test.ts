@@ -21,6 +21,8 @@ describe("the page's Worker", () => {
     expect(csp).toContain("script-src 'self'");
     expect(csp).toContain("connect-src 'self' https://handshake.waifucave.com wss://handshake.waifucave.com");
     expect(csp).toContain("frame-ancestors 'none'");
+    // The manifest only from the page's own origin (default-src 'none' would refuse it).
+    expect(csp).toContain("manifest-src 'self'");
     expect(csp).not.toContain("unsafe");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");

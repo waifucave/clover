@@ -63,7 +63,10 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
     test("macOS fences every item but the secrets file and key files, which the Keychain holds", () => {
       const kinds = new Set(fence("macos", [`${HOME}/dev/luna`]).fencedSet().map((i) => i.kind));
       const expected = FENCED_KINDS.filter((k) => k !== "secrets-file" && k !== "key-file");
-      expect([...kinds].sort()).toEqual([...expected].sort());
+      for (const k of expected) expect(kinds.has(k)).toBe(true);
+      // Nothing else but lane M's self-update files, pending until B names the kind (the fake names it; the real
+      // fence only with `enforceAhead`, off for this suite).
+      for (const k of kinds) expect([...expected, "self-update"].includes(k)).toBe(true);
     });
 
     test("Windows and Linux also hide the secrets file and key files from reads", () => {
@@ -398,7 +401,7 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       // The read-denied list includes the run folder; an implementation may hide more (lane C keeps `runtimes/`).
       expect(mac.denyRead).toContain(`${CLOVER}/run`);
       expect(mac.denyRead).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
-      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents/com.waifucave.clover.core.plist`]));
+      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents`]));
       // The installed plugins folder is write-denied, not read-denied (#197's check 2).
       expect(fence("macos").check({ op: "write", path: `${CLOVER}/plugins/tarot/clover.json` })).toEqual({ allowed: false, reason: "plugins", path: `${CLOVER}/plugins` });
       expect(fence("macos").forCaller({ kind: "user", client: "app" }).check({ op: "read", path: `${CLOVER}/plugins/tarot/clover.json` }).allowed).toBe(true);
