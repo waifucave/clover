@@ -9,11 +9,12 @@
 // takes proof (`LevelRaiseProof`); the others hold a copy of it for their tree calls' level (§9.1). Holds, the mark,
 // the action signal and the windows are kept by the computer whose screen they are about.
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
   type CloverWindow, type ComputerView, type HoldView, type Level, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
-import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../contracts/approval-broker";
+import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, type CardRecord, verifySignedAnswer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import {
@@ -76,6 +77,10 @@ export interface CoreComputerRegistryOptions {
   /** Asks another computer to change its own level, with the user's signed answer for a raise (J-M2, "levels per
    *  computer"; `peers.ts`). Without it, another computer's level can't be changed from here. */
   remoteLevel?: (name: string, level: Level, answer?: SignedCardAnswer) => Promise<void>;
+  /** The approval broker's own record of a card, by id (`broker.get`): a raise `via: "card"` counts only when the
+   *  record it hands over is that record, deep-equal, so an in-process caller can't hand a record it built itself (C's
+   *  call-binding review). Left out, the record handed over is judged as it is. */
+  cardRecord?: (id: string) => CardRecord | undefined;
 }
 
 export class CoreComputerRegistry implements ComputerRegistry {
@@ -92,6 +97,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
   readonly #render: CallCardRenderer;
   readonly #store: SelfStateStore;
   #remoteLevel: CoreComputerRegistryOptions["remoteLevel"];
+  readonly #cardRecord: CoreComputerRegistryOptions["cardRecord"];
   #holdSeq = 0;
 
   constructor(opts: CoreComputerRegistryOptions) {
@@ -101,6 +107,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
     this.#ledger = opts.ledger ?? new Ledger();
     this.#store = opts.store ?? MEMORY_SELF_STORE;
     this.#remoteLevel = opts.remoteLevel;
+    this.#cardRecord = opts.cardRecord;
     const saved = this.#store.load();
     const self: ComputerInput = {
       ...opts.self,
@@ -378,6 +385,10 @@ export class CoreComputerRegistry implements ComputerRegistry {
       if (!this.#devices) return "no device registry to check a signed answer";
       const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger, render: this.#render });
       return verdict === "ok" ? null : verdict;
+    }
+    if (this.#cardRecord) {
+      const real = this.#cardRecord(proof.record.card.id);
+      if (real === undefined || !isDeepStrictEqual(real, proof.record)) return "the card record isn't the approval broker's own";
     }
     const { card, outcome, optionId } = proof.record;
     if (outcome !== "approved" || card.options.find((o) => o.id === optionId)?.kind !== "approve") return "the card wasn't approved";

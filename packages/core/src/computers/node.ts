@@ -5,7 +5,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
+import type { AnswerDevices, AnswerLedger, CallCardRenderer, CardRecord } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeviceRegistry } from "../contracts/device-registry";
@@ -59,6 +59,9 @@ export interface ComputerNodeOptions {
   /** This computer's tree folder (`defaultTreeRoot()`), made and kept: `home/<this computer>` links to the home
    *  folder, `bots/` to the bots' folder. Left out, no folder is made (tests). */
   treeRoot?: string;
+  /** The approval broker's own record of a card, by id (`broker.get`): a level raise with a card counts only when it
+   *  hands over that very record (the registry's `cardRecord`). */
+  cardRecord?: (id: string) => CardRecord | undefined;
   /** The calling computer's side of R1: shows the user another computer's card and gives back their signed answer
    *  (lanes B and C's broker). Without it, a call another computer's level asks about is refused. */
   askUser?: AnswerAsker;
@@ -147,6 +150,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     self: { name: o.self.name, device: o.self.device, os, hasDisplay: o.self.hasDisplay ?? true, agents: o.self.agents ?? [] },
     store: o.store ?? new FileSelfStateStore(selfStatePath(o.cloverHome)),
     ...(o.answers ? { devices: o.answers.devices, ledger: o.answers.ledger, render: o.answers.render } : {}),
+    ...(o.cardRecord ? { cardRecord: o.cardRecord } : {}),
   });
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);
