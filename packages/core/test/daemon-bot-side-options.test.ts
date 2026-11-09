@@ -118,6 +118,10 @@ describe("the bot side's options on a booted daemon", () => {
     daemon = await boot(home, bots, net, hs);
     const side = daemon.cloverParts.bots()!;
     expect(side.routines).toBeDefined();
+    // The app's `routine.*` are served over the socket: the routine is listed.
+    const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "lane-d-test" };
+    const listed = await cloverCall(daemon.socketPath, cli, "routine.list", { bot: "luna" }) as { routines: { id: string; name: string }[] };
+    expect(listed.routines).toEqual([expect.objectContaining({ id: "r_ticktick", name: "Tick" })]);
     await waitFor("the routine's side thread", () => latest((m) => m.ctx.kind === "side-thread")?.running === true);
     const thread = latest((m) => m.ctx.kind === "side-thread")!;
     expect(thread.turns[0]?.input).toMatchObject({ from: "routine", routine: "r_ticktick", name: "Tick" });
