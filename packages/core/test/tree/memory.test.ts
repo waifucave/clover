@@ -79,9 +79,10 @@ describe("home/memory", () => {
       expect(await code(t.read("bots/alpha/memory/secret.md", { as }))).toBe("fenced");
       expect(await code(t.write("bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
       expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe("fenced");
-      expect((await t.list("bots/alpha", { as })).map((s) => s.path)).not.toContain("bots/alpha/memory");
-      expect(await t.glob("**/*", { as, cwd: "bots/alpha" })).not.toContain("bots/alpha/memory/secret.md");
-      expect((await t.grep("alpha", { as, path: "bots/alpha" })).map((m) => m.path)).not.toContain("bots/alpha/memory/secret.md");
+      // The Clover home is default-deny (#234): another bot's whole folder is out of reach, not just its memory.
+      expect(await code(t.list("bots/alpha", { as }))).toBe("fenced");
+      expect(await code(t.glob("**/*", { as, cwd: "bots/alpha" }))).toBe("fenced");
+      expect(await code(t.grep("alpha", { as, path: "bots/alpha" }))).toBe("fenced");
     }
     expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe("fenced");
     // The real path is no way around it for any model-driven caller (the user's own coding sessions included): only the
@@ -143,11 +144,11 @@ describe("home/memory", () => {
       expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
       expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/MEMORY.md`);
     }
-    // The check folds names on every OS (lane B's fold): a bot whose id folds equal to the folder's name gets through,
-    // and one that doesn't, however close, doesn't.
+    // Only a valid bot id reaches a memory folder (#197's check 5, kept by #234): `GHOST` isn't one, so it doesn't land
+    // on ghost's folder on a folding disk; and a valid id that doesn't fold equal, however close, doesn't either.
     const GHOST_UPPER = { kind: "session", sessionId: "s_GHOST", sessionKind: "bot", bot: "GHOST" } as const;
     const GHOSTS = { kind: "session", sessionId: "s_ghosts", sessionKind: "bot", bot: "ghosts" } as const;
-    expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOST_UPPER }))).toBe("ok");
+    expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOST_UPPER }))).toBe("fenced");
     expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOSTS }))).toBe("fenced");
     // ghost itself, through its own `home/memory`, and the user's own surfaces at the real path.
     expect(await t.read("home/memory/MEMORY.md", { as: GHOST })).toEqual(utf8("ghost's"));

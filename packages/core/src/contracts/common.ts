@@ -42,6 +42,12 @@ export const CONTRACT_ERROR_CODES = [
    *  a caller tries again rather than giving up. */
   "busy",
   "invalid",
+  /** A peer on an older protocol can't take the call as meant (a `noFollow` read to a tree 1.0 holder): refused here,
+   *  never sent. */
+  "unsupported",
+  /** A command's args don't fit the schema it declares (`command.run`, F-M3's review N4); the detail names the failing
+   *  path and keyword, never the value. */
+  "invalid_args",
   "closed",
   /** Handler code threw; the message is the handler's, never a secret. */
   "failed",

@@ -7,6 +7,7 @@
 //
 // DEV/TEST: the daemon spawns `bun <this file> __automation-worker`, and `import.meta.main` runs it. COMPILED:
 // `packages/cli/src/main.ts` routes `argv[2] === "__automation-worker"` here through the core barrel.
+import { guardScriptProcess } from "../../security/no-macros";
 import { refuseUnlessKeychainSandboxed } from "../../workflows/sandbox-guard";
 import { BRIDGE_MAX_LINE, type HostToWorker, type WorkerToHost } from "./bridge";
 import { createAutomationRuntime } from "./runtime";
@@ -30,6 +31,9 @@ export const AUTOMATION_WORKER_ARG = "__automation-worker";
 export function runAutomationWorker(): void {
   // Before any input is read: outside a sandbox that denies the Keychain, never run a script.
   refuseUnlessKeychainSandboxed("automation worker");
+  // No Bun macro in any thread, and no thread (security/no-macros.ts): installed while `Bun` is still here; scripts
+  // are read only once the Worker refusal is verified.
+  const guarded = guardScriptProcess("the automation worker");
   // The TypeScript stripper, captured BEFORE `Bun` is withheld below.
   const transpiler = scriptTranspiler((globalThis as { Bun?: ScriptBun }).Bun);
   // Defense in depth under the seatbelt (the workflow worker's list). `process` stays — this entry needs stdio
@@ -57,7 +61,7 @@ export function runAutomationWorker(): void {
   // ONE streaming decoder for the whole pipe: a character split across two chunks is joined, never two U+FFFDs. The
   // line limit counts characters, as the daemon's own guard does (`worker-host.ts`'s `reply`).
   const utf8 = new TextDecoder("utf-8");
-  process.stdin.on("data", (d: Buffer) => {
+  const onData = (d: Buffer): void => {
     let text = utf8.decode(d, { stream: true });
     if (skipping) {
       const nl = text.indexOf("\n");
@@ -83,11 +87,18 @@ export function runAutomationWorker(): void {
       buf = "";
       skipping = true;
     }
-  });
+  };
   // The daemon closing our stdin is the end of the session's runtime.
   process.stdin.on("end", () => process.exit(0));
-  process.stdin.resume();
-  post({ op: "ready" });
+  // Nothing is read, and the daemon hears no "ready", until the guard holds; if it can't, no script ever runs.
+  guarded.then(() => {
+    process.stdin.on("data", onData);
+    process.stdin.resume();
+    post({ op: "ready" });
+  }, (e: unknown) => {
+    process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`);
+    process.exit(70);
+  });
 }
 
 if (import.meta.main) runAutomationWorker();

@@ -26,6 +26,7 @@ import { MemoryNetwork } from "../src/links/memory-wire";
 import type { DeviceLinks } from "../src/links/node";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../src/secrets/clover-secret-store";
 import { mainSessionIdFor } from "../src/sessions/ids";
+import { SessionGrants, USER_BROWSER_PARTITION_GRANT } from "../src/sessions/grants";
 
 const clock = new SystemClock();
 let stops: Array<() => unknown> = [];
@@ -60,7 +61,7 @@ async function fakeBots(): Promise<DaemonBotsInput & { fakes: Drivers }> {
 const mainComputer = { watchSleep: false, monotonic: () => performance.now() };
 
 /** A second computer, from the same assembly the daemon runs. */
-async function peer(net: MemoryNetwork, hs: { url: string }, name: string): Promise<{ d: DaemonLinks; parts: DaemonParts; links: DeviceLinks }> {
+async function peer(net: MemoryNetwork, hs: { url: string }, name: string, bots?: DaemonBotsInput): Promise<{ d: DaemonLinks; parts: DaemonParts; links: DeviceLinks }> {
   const home = temp("clover-int-peer-");
   const store = new CloverSecretStore({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
   const handlers = {};
@@ -70,7 +71,7 @@ async function peer(net: MemoryNetwork, hs: { url: string }, name: string): Prom
     dispatch: async () => null,
   });
   stops.push(() => d.close());
-  const parts = await startDaemonParts({ cloverHome: home, userHome: temp("clover-int-user-"), clock, links: d.links, handlers, bots: await fakeBots() });
+  const parts = await startDaemonParts({ cloverHome: home, userHome: temp("clover-int-user-"), clock, links: d.links, handlers, bots: bots ?? await fakeBots() });
   stops.push(() => parts.close());
   return { d, parts, links: d.links! };
 }
@@ -258,4 +259,51 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(took).toBeLessThan(10_000);
     expect(existsSync(socket)).toBe(false);
   }, 30_000);
+});
+
+describe("the sessions' records across computers", () => {
+  test("the main computer's sessions are copied to the others as they run; a grant made there never grants on the copy", async () => {
+    const hs = startFakeHandshake();
+    stops.push(() => hs.stop());
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const bots = await fakeBots();
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: {
+        wire: (k) => net.endpoint(k.publicKey), handshake: new HandshakeClient({ baseUrl: hs.url, clock }), publicTime: null,
+        mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" },
+      },
+      parts: { userHome: temp("clover-int-user-"), bots },
+    });
+    await daemon.cloverParts.ready;
+    const links = daemon.cloverParts.links()!;
+    const side = daemon.cloverParts.bots()!;
+    // The laptop has Luna too, and opened her conversation before Studio became the main computer: once the lease is
+    // Studio's, the laptop's copy takes Studio's records (lane D's host, #279).
+    const laptop = await peer(net, hs, "Laptop");
+    await pair(links, laptop.links);
+    const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
+    expect(await cloverCall(daemon.socketPath, cli, "main.set", { device: links.key.id })).toEqual({ applied: true });
+    await waitFor("the laptop seeing Studio hold the lease", () => laptop.links.main!.lease.state().holder === links.key.id && side.bots.botsRunHere().length === 1);
+
+    // Luna's turn on Studio: its records reach the laptop as they're written.
+    const luna = mainSessionIdFor("luna");
+    const there = laptop.parts.bots!.host;
+    await side.host.sendUser(luna, { text: "hello", device: links.key.id, sentAt: Date.now(), clientMessageId: "m1" });
+    await waitFor("Luna's turn", () => bots.fakes.for(luna).running);
+    bots.fakes.for(luna).end();
+    await waitFor("the laptop's copy", () => there.head(luna) > 0 && there.head(luna) === side.host.head(luna), 15_000);
+    expect(there.get(luna)?.computer).toBe("Studio");
+
+    // The person's yes for Luna's session on Studio, recorded there: on the laptop's copy it's no grant.
+    side.host.recordCore(luna, { type: "session_grant", key: USER_BROWSER_PARTITION_GRANT, cardId: "card_studio" });
+    await waitFor("the grant's record on the laptop", () => there.head(luna) === side.host.head(luna));
+    const copied = there.history(luna).at(-1)!;
+    expect(copied).toMatchObject({ type: "driver", event: { type: "session_grant_copied", key: USER_BROWSER_PARTITION_GRANT, from: links.key.id } });
+    expect(JSON.stringify(copied)).not.toContain("card_studio");
+    const deny = { request: async () => ({ allowed: false }) as never };
+    expect(new SessionGrants({ host: side.host, approvals: deny }).has(luna, USER_BROWSER_PARTITION_GRANT)).toBe(true);
+    expect(new SessionGrants({ host: there, approvals: deny }).has(luna, USER_BROWSER_PARTITION_GRANT)).toBe(false);
+  }, 60_000);
 });

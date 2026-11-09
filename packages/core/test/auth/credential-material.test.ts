@@ -215,7 +215,8 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // 0.0.65 → 0.0.69 (A-M3's 0.0.66 and 0.0.67, K-M3's ACP package and stopTask): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.69 → 0.0.70 (A's F8: what a command leaves running is adopted): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.70 → 0.0.71 (F8's review: the notification frame): keychain-store.ts diff EMPTY; the mirror stands.
-    expect(pkg.version).toBe("0.0.71");
+    // 0.0.71 → 0.0.72 (#281's follow-up: the look-alike map): keychain-store.ts diff EMPTY; the mirror stands.
+    expect(pkg.version).toBe("0.0.72");
   });
 
 

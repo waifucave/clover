@@ -213,5 +213,34 @@ describe("ingest: a session's records copied from the computer running it", () =
     expect(ledgerOf(laptopHome, laptop).rows({ since: 0 }).rows).toHaveLength(0);
     expect(ledgerOf(tempHome(), studio).rows({ since: 0 }).rows).toHaveLength(1);
   });
-});
 
+  test("a grant held here and its copy from the runner are the same record: same key and place, whatever their from and card", async () => {
+    const clock = new FakeClock();
+    let laptopRuns = true;
+    const laptop = new DurableSessionHost({ home: tempHome(), clock, computer: "Laptop", runsHere: () => laptopRuns, mayStart: () => laptopRuns });
+    laptop.open({ id: "b_alpha", kind: "bot", bot: "alpha", computer: "Laptop" }, new FakeSessionDriver({ canFold: true }));
+    // The laptop ran the bot and recorded a grant with its card.
+    const granted = laptop.recordCore("b_alpha", { type: "session_grant", key: USER_BROWSER_PARTITION_GRANT, cardId: "card_1" });
+    const held = laptop.history("b_alpha");
+    laptopRuns = false;
+    // The runner's copy of that log (lane H's guard renamed the grant, said where it came from, and dropped the card),
+    // sent back with an overlap: the same records, so nothing conflicts and nothing is added.
+    const asCopied = (r: SessionRecord, event: Record<string, unknown>): SessionRecord => ({ ...r, event: { type: "session_grant_copied", ...event } } as SessionRecord);
+    const copy = held.map((r) => (r.seq === granted.seq ? asCopied(r, { key: USER_BROWSER_PARTITION_GRANT, from: "Laptop" }) : r));
+    const view = { ...laptop.get("b_alpha")!, computer: "Studio" };
+    laptop.ingest(view, copy, { from: "studio-device", late: false });
+    expect(laptop.head("b_alpha")).toBe(held.length);
+    expect(laptop.history("b_alpha")[granted.seq]).toEqual(granted);
+    // Another key, or another place, is another record: a fork.
+    const conflict = async (records: SessionRecord[]) => {
+      const err = await Promise.resolve().then(() => laptop.ingest(view, records, { from: "studio-device", late: false })).catch((e: unknown) => e);
+      expect(isContractError(err, "conflict")).toBe(true);
+      expect(laptop.head("b_alpha")).toBe(held.length);
+    };
+    await conflict(held.map((r) => (r.seq === granted.seq ? asCopied(r, { key: "another-grant", from: "Laptop" }) : r)));
+    await conflict(held.map((r) => (r.seq === granted.seq ? { ...asCopied(r, { key: USER_BROWSER_PARTITION_GRANT }), ts: r.ts + 1 } : r)));
+    await conflict(held.map((r) => (r.seq === granted.seq ? { ...asCopied(r, { key: USER_BROWSER_PARTITION_GRANT }), epoch: 7 } : r)));
+    // A grant is never the same as a record that isn't one.
+    await conflict(held.map((r) => (r.seq === granted.seq ? ({ ...r, event: { type: "turn_usage", key: USER_BROWSER_PARTITION_GRANT } } as SessionRecord) : r)));
+  });
+});

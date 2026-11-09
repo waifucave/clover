@@ -47,6 +47,8 @@ import { ContributedBackendCache, type ContributedBackend } from "./plugin-backe
 import { ADMISSIONS } from "./sandbox/admission";
 import type { PluginRegistry } from "../contracts/plugin-registry";
 import { CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
+import { codeAgentDoor, CodeAgentService } from "./code-agent/service";
+import type { CodeAgentDoor } from "../ipc/clover";
 import { StallWatchdog } from "./watchdog";
 import { AgentPeers, type AgentPeersOptions } from "./remote";
 import { inProcessAgentBackend, type InProcessBackendDeps } from "../runtime-sdk/turn-loop/subagent-backend";
@@ -68,6 +70,8 @@ export { buildAgentEnv, launchContained } from "./process/launch";
 export { AgentQuirksSchema, QuirksFileSchema, bundledAgentPluginId, contributedBackends, quirksWithCommand, readQuirksFile, type ContributedBackend, type FileQuirks, type QuirksFile } from "./plugin-backends";
 export { CLOVER_CODE_ID, CLOVER_CODE_QUIRKS, CLOVER_CODE_TOOLS, CloverCodeBackend, type CloverCodeDeps } from "./clover-code/backend";
 export { inProcessBridgeServer } from "./bridge/in-process";
+export { codeAgentDoor, CodeAgentService, type CodeAgentServiceOptions } from "./code-agent/service";
+export { codeAgentMain, runCodeAgentRelay, type CodeAgentRelayOptions } from "./code-agent/relay";
 export { AgentPeers, MAX_STREAM_LINE, MAX_STREAM_TURN, RemoteAgentDriver, peerLevel, type AgentPeersOptions } from "./remote";
 export { UserSelections } from "./acp/selections";
 export { agentMethods } from "./rpc";
@@ -78,6 +82,7 @@ export { placeInClaudeCode, matcherOf, shellQuote } from "./claude-code/placemen
 export { dropAllow, hookShimCommand, hookShimMain, runHook } from "./claude-code/hook-shim";
 export { AGENT_COMMAND_MAX_MS, StallWatchdog } from "./watchdog";
 export { ADMISSIONS, admissionFor, type SandboxAdmission, type SandboxSetup, type SandboxWriter } from "./sandbox/admission";
+export { WRITERS, codexWriter, claudeCodeWriter } from "./sandbox/writers";
 export { FileAgentOks, MemoryAgentOks, agentOksPath, type AgentOks, type AgentOkKey } from "./sandbox/oks";
 
 export interface AgentsOptions {
@@ -98,6 +103,8 @@ export interface AgentsOptions {
   pluginParts?: PluginPartsSource;
   /** A computer's level, for the read-only mode of an agent that acts without asking; read-only when unknown. */
   levelOf?: (computer: string) => Level | undefined;
+  /** The levels changed (the computer registry's `watch`): running agents follow straight away (`levelsChanged`). */
+  watchLevels?: (fn: () => void) => () => void;
   /** The pause switch (lane D's gate): paused, delegated agents are held. */
   pause?: AgentPauseGate;
   /** Clover's own coding agent (`clover-code`) on the embedded runtime: lane A's embedded-session seam
@@ -110,6 +117,9 @@ export interface AgentsOptions {
    *  default model. The pause and the folders it may never reach are the core's (`inProcessBackend`). Without it the
    *  backend isn't offered. */
   inProcess?: Omit<InProcessBackendDeps, "pauseGateFor" | "privateFoldersFor">;
+  /** The user's home folder, which `home/<Computer>/` names (the OS's by default): where an outside ACP client's folder
+   *  is placed in the tree (`clover-core code-agent`). */
+  userHome?: string;
   log?: (line: string) => void;
 }
 
@@ -147,7 +157,7 @@ export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor"
  *  them to `createCloverServer` as its `bridge`, and its `handlers` among the server's), the watchdog,
  *  the backends and the manager. `close` ends every agent's process (the sessions stay to be reattached), revokes
  *  every token. */
-export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; close(): Promise<void> } {
+export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; codeAgent: CodeAgentDoor; close(): Promise<void> } {
   const tokens = new BridgeTokens();
   // The bridge connects to the daemon's own endpoint, where lane C serves the `bridge` role.
   const socketPath = o.socketPath;
@@ -161,6 +171,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
     ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
     ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
     ...(o.levelOf ? { levelOf: o.levelOf } : {}),
+    ...(o.watchLevels ? { watchLevels: o.watchLevels } : {}),
     ...(o.pause ? { pause: o.pause } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
@@ -194,8 +205,18 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   const peers = o.peers
     ? new AgentPeers(manager, { ...o.peers, home: o.home, clock: o.clock, ...(o.pause ? { pause: o.pause } : {}), ...(o.log ? { log: o.log } : {}) })
     : undefined;
+  // `clover-core code-agent` (K-M3b): Clover's coding agent for an outside ACP client, on the daemon's endpoint
+  // (`CloverServerDeps.codeAgent`).
+  const codeAgents = new CodeAgentService({
+    home: o.home, computer: o.computer, host: o.host, tree: o.tree, fence: o.fence, clock: o.clock,
+    backend: () => backends().find((b): b is CloverCodeBackend => b instanceof CloverCodeBackend),
+    ...(o.userHome === undefined ? {} : { userHome: o.userHome }),
+    ...(o.levelOf ? { levelOf: o.levelOf } : {}),
+    ...(o.log ? { log: o.log } : {}),
+  });
+  const codeAgent: CodeAgentDoor = codeAgentDoor(codeAgents);
   return {
-    manager, clover, tokens, backends: () => backends(),
+    manager, clover, tokens, backends: () => backends(), codeAgent,
     close: async () => {
       peers?.close();
       await manager.close();

@@ -358,6 +358,8 @@ export class HandshakeClient {
       headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
       ...(method === "GET" ? {} : { body: bytes }),
       signal: AbortSignal.timeout(timeoutMs),
+      // Never followed: a 307 or 308 would send the body (a signed registration, a lease) to whatever origin it names.
+      redirect: "error",
     });
     const res = await this.#fetch(req);
     if (res.ok) return res;

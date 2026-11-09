@@ -4,7 +4,8 @@ import type { Caller, Os } from "@waifucave/clover-protocol";
 import { isAnyPluginId } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, patternItemAt, isInsideFolded, judge, READ_DENIED_KINDS, type CallerFence, type FenceContext,
+  agentConfigPaths, autoRunPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, isInsideFolded, judge,
+  pluginLoadDenies, READ_DENIED_KINDS, writesPluginLoadDeny, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
 
@@ -53,6 +54,8 @@ export interface FakeFenceOptions {
   bots?: string[];
   /** The app's userData folder (Electron's), which holds the browser's partitions; the OS's usual one by default. */
   userData?: string;
+  /** Other folders plugin code loads from (the app's bundled plugins), for `pluginLoadDenies`. */
+  pluginLoadFolders?: string[];
   /** Replaces the fake's layout for some items. */
   layout?: Partial<Record<FencedKind, string[]>>;
 }
@@ -62,6 +65,11 @@ function defaultUserData(os: Os, home: string): string {
   if (os === "macos") return `${home}/Library/Application Support/Clover`;
   if (os === "windows") return `${home}/AppData/Roaming/Clover`;
   return `${home}/.config/Clover`;
+}
+
+/** The shared lists in the fake's POSIX form (on Windows they're joined with backslashes). */
+function posixOf(paths: readonly string[]): string[] {
+  return paths.map((p) => p.replace(/\\/g, "/"));
 }
 
 /** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
@@ -80,6 +88,7 @@ export class FakeFence implements Fence {
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #agentInstalls: string[];
   readonly #bots: string[];
+  readonly #pluginLoadFolders: string[];
   #devFolders: string[];
   readonly #listeners = new Listeners<void>();
 
@@ -93,6 +102,14 @@ export class FakeFence implements Fence {
     this.#agentInstalls = (opts.agentInstalls ?? []).map(normalizePosix);
     this.#bots = [...(opts.bots ?? [])];
     this.#layout = opts.layout ?? {};
+    this.#pluginLoadFolders = (opts.pluginLoadFolders ?? []).map(normalizePosix);
+  }
+
+  /** `node_modules` above every folder plugin code loads from (`pluginLoadDenies`): the plugins folder, the
+   *  development folders and the others the fake was given. */
+  #pluginLoadDenies(): string[] {
+    const plugins = this.#layout.plugins ?? [`${this.#cloverHome}/${FAKE_FENCE_LAYOUT.plugins}`];
+    return pluginLoadDenies([...plugins, ...(this.#layout["dev-folders"] ?? this.#devFolders), ...this.#pluginLoadFolders]);
   }
 
   fencedSet(): readonly FencedPath[] {
@@ -105,8 +122,8 @@ export class FakeFence implements Fence {
       if (override) for (const p of override) add(kind, p);
       else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
       else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
-      else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
-      else if (kind === "agent-installs") for (const p of this.#agentInstalls) add(kind, p);
+      else if (kind === "login-start") for (const p of [...loginStartPaths(this.os, this.#home, this.#cloverHome), ...posixOf(autoRunPaths(this.os, this.#home))]) add(kind, p);
+      else if (kind === "agent-installs") for (const p of [...this.#agentInstalls, ...posixOf(agentConfigPaths(this.os, this.#home))]) add(kind, p);
       else if (kind === "bot-memory") for (const bot of this.#bots) out.push({ kind, path: `${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`, deny: "caller", bot });
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
@@ -114,6 +131,8 @@ export class FakeFence implements Fence {
   }
 
   check(op: FenceOp, ctx?: FenceContext): FenceVerdict {
+    const deny = ctx?.user ? undefined : writesPluginLoadDeny(op, this.#pluginLoadDenies(), this.os);
+    if (deny !== undefined) return { allowed: false, reason: "plugins", path: deny };
     return judge(this.fencedSet(), op, { os: this.os, cloverHome: this.#cloverHome, ...(ctx ? { caller: ctx } : {}) });
   }
 
@@ -149,16 +168,17 @@ export class FakeFence implements Fence {
     const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
       allowWrite: [this.#home, this.#temp],
-      // The whole bots folder is write-denied (agents and the rest of a bot's folder are read-only); the
-      // runner's own memory comes back below as `ownMemory`.
-      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`],
-      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns],
+      // The whole Clover home, for every runner (the home default-deny), and the bots folder and the pattern items by
+      // name (C's base); the runner's own folders come back below (`ownFoldersOf`, its own memory included).
+      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns, this.#cloverHome],
       closedDoors: [...CLOSED_DOORS[this.os]],
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES],
       network: "none",
-      ...(ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? { ownMemory: `${this.#cloverHome}/bots/${ctx.memoryOf.replace("/", "--")}/memory` } : {}),
+      ...ownFoldersOf(ctx, this.#cloverHome),
     };
   }
+
 
   forCaller(caller: Caller): CallerFence {
     const context = fenceContextFor(caller);

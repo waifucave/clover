@@ -518,10 +518,6 @@
                 }
               }
             ]
-          },
-          "okHash": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
           }
         },
         "required": [
@@ -914,6 +910,61 @@
                 "required": {
                   "type": "boolean"
                 },
+                "options": {
+                  "maxItems": 256,
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "value": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                          },
+                          "title": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en"
+                                ],
+                                "additionalProperties": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "value",
+                          "title"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "min": {
+                  "type": "number"
+                },
+                "max": {
+                  "type": "number"
+                },
                 "value": {},
                 "set": {
                   "type": "boolean"
@@ -1210,7 +1261,7 @@
       }
     },
     "plugin.install": {
-      "doc": "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, or the CLI's y.",
+      "doc": "Downloads or wraps a plugin into the plugins folder, where it is found: its OK is a sealed card, whoever installed it.",
       "owner": "B",
       "direction": "to-daemon",
       "roles": [
