@@ -61,11 +61,13 @@ export const FENCED_KINDS = [
    *  userData itself. */
   "browser-profiles",
   /** The login item that starts the daemon at login (lane C): macOS's LaunchAgents plist and its parked copy, Linux's
-   *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. */
+   *  systemd user unit; Windows keeps it in Task Scheduler, a closed door. And every place a file written now runs
+   *  later outside any sandbox (`autoRunPaths`: shell start files, login items, autostart, SSH's rc and keys). */
   "login-start",
   /** The install folders of the coding agents the user has OK'd to run (lane K, keyed to each program's real path and
    *  hash): the resolved program's folder, and npm's global package folder for its package. Write-denied to sessions
-   *  and agents, so none can swap in a new copy of itself or of another agent. They change as the user OKs agents. */
+   *  and agents, so none can swap in a new copy of itself or of another agent. They change as the user OKs agents. And
+   *  the coding agents' own sandbox settings (`agentConfigPaths`). */
   "agent-installs",
   /** Windows and Linux: the encrypted secrets file, hidden from reads too (§8.5, §9.1). */
   "secrets-file",
@@ -78,6 +80,9 @@ export type FencedKind = (typeof FENCED_KINDS)[number];
 /** The items whose reach is the caller's (`deny: "caller"`, `forCaller`). */
 export const CALLER_KINDS: readonly FencedKind[] = ["bot-memory"];
 export const READ_DENIED_KINDS: readonly FencedKind[] = ["run-folder", "browser-profiles", "secrets-file", "key-file"];
+/** The items a write to which runs later outside any sandbox: a bot's or an agent's write there is refused without a
+ *  card (the approval broker's rule 3), where any other fenced item gets one. */
+export const RUN_LATER_KINDS: readonly FencedKind[] = ["login-start", "agent-installs"];
 
 export interface FencedPath {
   kind: FencedKind;
@@ -552,4 +557,119 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
     }
   }
   return { allowed: true };
+}
+
+// -------------------------------------------------------------------------------------------------
+// Persistence and auto-run (the #301 review, the controller's ruling of November 8, and its review on #308): the places
+// where a file written now runs OUTSIDE any sandbox later (at the user's next shell, login, SSH session, editor, git
+// command, package install or Python start) or changes how a coding agent sandboxes itself or which servers it runs.
+// The fence's `login-start` and `agent-installs` items carry them (fence/layout.ts), so every runner's sandbox and file
+// tools refuse writes there; a code session the user drives asks instead (no "always"), through the protected-path card
+// (runtime-sdk/protected-paths.ts). One list, here; what only the user's own settings can say (where git's templates
+// and hooks are, a ZDOTDIR, PYTHONSTARTUP, a Documents folder OneDrive moved) comes in as `RunLaterExtras`
+// (fence/run-later.ts reads them).
+// -------------------------------------------------------------------------------------------------
+
+/** What the user's own settings add to the list (`fence/run-later.ts`), each an absolute path in `os`'s form. */
+export interface RunLaterExtras {
+  /** git's `init.templateDir` and `core.hooksPath` from the user's global config files. */
+  readonly gitDirs?: readonly string[];
+  /** `$ZDOTDIR` when it isn't the home, and `$PYTHONSTARTUP`. */
+  readonly envPaths?: readonly string[];
+  /** Windows: the Documents known folder, when OneDrive (or the user) moved it from `<home>\Documents`. */
+  readonly documents?: string;
+}
+
+/** A path under `home` in `os`'s own form. */
+function underHome(os: Os, home: string, parts: readonly string[]): string {
+  const sep = os === "windows" ? "\\" : "/";
+  return [home.replace(/[\\/]+$/, ""), ...parts].join(sep);
+}
+
+/** The shells' start and end files, on every OS (Git Bash and WSL-style shells read them on Windows too), and
+ *  readline's `.inputrc` (its macros type commands). */
+const SHELL_FILES = [
+  ".zshrc", ".zprofile", ".zshenv", ".zlogin", ".zlogout", ".bashrc", ".bash_profile", ".profile", ".bash_login",
+  ".bash_logout", ".cshrc", ".tcshrc", ".login", ".kshrc", ".inputrc",
+] as const;
+
+/** Folders and files under `.config` that a shell, an editor or a tool runs from, on every OS. */
+const CONFIG_RUN_LATER = [
+  ["fish"], ["zsh"], ["nushell"], ["nvim"], ["tmux"], ["git"], ["pip"],
+] as const;
+
+/** One entry of the list: a folder (everything inside it) or a single file. */
+export interface RunLaterEntry { readonly path: string; readonly file: boolean }
+
+/** The list with each entry's shape (a test fixture plants a file at a file entry, and inside a folder entry). */
+export function autoRunEntries(os: Os, home: string, extras: RunLaterExtras = {}): RunLaterEntry[] {
+  const out: RunLaterEntry[] = [];
+  const f = (...parts: string[]) => { out.push({ path: underHome(os, home, parts), file: true }); };
+  const d = (...parts: string[]) => { out.push({ path: underHome(os, home, parts), file: false }); };
+  // Shells, readline, editors, tmux.
+  for (const name of SHELL_FILES) f(name);
+  f(".vimrc"); d(".vim"); f(".emacs"); d(".emacs.d"); f(".tmux.conf");
+  for (const parts of CONFIG_RUN_LATER) d(".config", ...parts);
+  // SSH's files that run or admit something: `rc` runs at each login, `config` holds `ProxyCommand`/`LocalCommand`,
+  // `environment` is read by sshd, the keys admit whoever holds them. `known_hosts` stays writable (ssh writes it).
+  for (const name of ["rc", "config", "environment", "authorized_keys", "authorized_keys2"]) f(".ssh", name);
+  // git: hooks, fsmonitor, the pager and `!` aliases in the global config; the templates every `git init` copies.
+  f(".gitconfig"); d(".git-templates");
+  // The folders on the PATH a user's shell finds commands in first.
+  d(".local", "bin"); d("bin"); d(".cargo", "bin");
+  // Package managers' configs (scripts, registries, init scripts) and Python's: a `.pth` or `usercustomize.py` in the
+  // user site-packages runs at every Python start, so the whole user tree is held (`pip install --user` asks).
+  f(".npmrc"); f(".yarnrc"); f(".yarnrc.yml"); f(".bunfig.toml"); f(".cargo", "config.toml"); f(".cargo", "config");
+  d(".gradle", "init.d"); f(".gradle", "init.gradle"); d(".pip");
+  if (os === "macos") {
+    d("Library", "LaunchAgents"); d("Library", "LaunchDaemons");
+    d("Library", "Application Support", "com.apple.backgroundtaskmanagementagent");
+    d("Library", "Application Support", "com.apple.backgroundtaskmanagementd");
+    f("Library", "Preferences", "com.apple.loginwindow.plist");
+    d("Library", "Application Support", "iTerm2", "Scripts", "AutoLaunch");
+    d("Library", "Workflows", "Applications", "Folder Actions");
+    d("Library", "Python");
+  } else if (os === "linux") {
+    d(".config", "autostart"); d(".config", "systemd", "user"); d(".local", "share", "systemd", "user");
+    d(".config", "environment.d"); f(".pam_environment"); f(".xprofile"); f(".xinitrc"); f(".xsession"); f(".xsessionrc");
+    d(".config", "plasma-workspace", "env"); d(".config", "plasma-workspace", "shutdown");
+    d(".config", "i3"); d(".i3"); d(".config", "sway"); d(".config", "hypr"); d(".config", "openbox");
+    d(".local", "lib");
+  } else {
+    const docs = [underHome(os, home, ["Documents"])];
+    if (extras.documents !== undefined && extras.documents.toLowerCase() !== docs[0]!.toLowerCase()) docs.push(extras.documents);
+    d("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
+    for (const doc of docs) out.push({ path: `${doc}\\PowerShell`, file: false }, { path: `${doc}\\WindowsPowerShell`, file: false });
+    d("AppData", "Roaming", "Python"); d("AppData", "Roaming", "pip");
+  }
+  for (const p of extras.gitDirs ?? []) out.push({ path: p, file: false });
+  for (const p of extras.envPaths ?? []) out.push({ path: p, file: false });
+  const seen = new Set<string>();
+  return out.filter((e) => (seen.has(e.path) ? false : (seen.add(e.path), true)));
+}
+
+/** Where a file starts something later, outside any sandbox, under `home`. HKCU's `Run` and `RunOnce` keys aren't
+ *  paths: the Windows sandbox (#207) has to deny them, a gap until it lands (the Windows release blocker). */
+export function autoRunPaths(os: Os, home: string, extras: RunLaterExtras = {}): string[] {
+  return autoRunEntries(os, home, extras).map((e) => e.path);
+}
+
+/** The coding agents' own settings, which change how they sandbox themselves or which commands they run (MCP servers,
+ *  hooks): Claude Code's whole folder and its `.claude.json` (user-scope MCP servers), Codex's config, Gemini's
+ *  settings, Cursor's folder and OpenCode's. Lane K's writers deny these per backend; the fence holds them for every
+ *  runner. */
+export function agentConfigPaths(os: Os, home: string): string[] {
+  return agentConfigEntries(os, home).map((e) => e.path);
+}
+
+/** `agentConfigPaths` with each entry's shape. */
+export function agentConfigEntries(os: Os, home: string): RunLaterEntry[] {
+  const u = (...parts: string[]) => underHome(os, home, parts);
+  return [
+    { path: u(".claude"), file: false }, { path: u(".claude.json"), file: true },
+    { path: u(".codex", "config.toml"), file: true },
+    { path: u(".gemini", "settings.json"), file: true },
+    { path: u(".cursor"), file: false },
+    { path: u(".config", "opencode"), file: false },
+  ];
 }

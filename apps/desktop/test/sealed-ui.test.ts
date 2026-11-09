@@ -78,7 +78,7 @@ beforeAll(() => {
     expect(built.status, built.stderr).toBe(0);
   }
   fakeBin = join(mkdtempSync(join(tmpdir(), "ce1-bins-")), `clover-core${exe}`);
-  const compiled = spawnSync("bun", ["build", "--compile", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeBin], { encoding: "utf8" });
+  const compiled = spawnSync("bun", ["build", "--no-macros", "--compile", join(import.meta.dir, "fake-core", "fake-daemon.ts"), "--outfile", fakeBin], { encoding: "utf8" });
   expect(compiled.status, compiled.stderr).toBe(0);
 });
 
