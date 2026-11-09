@@ -32,6 +32,25 @@ export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandbox
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { AgentJob } from "./platform/win-job";
+export {
+  principalNameFromSid, SANDBOX_PRINCIPAL_PREFIX, CLOVER_WFP_SUBLAYER, SRT_WIN_TAG, SRT_WIN_COMMIT, SRT_WIN_PINS, SANDBOX_EXIT,
+  srtWinPath, srtWinArch, launcherDigest, launcherPinned, launcherProblem, setupArgs, removeArgs, statusArgs,
+  parseSrtStatus, setupBashRefusal, elevatedFromNetSession, NET_SESSION_PROBE, setupExitMessage,
+  winCallerRules, winLaunchPlan, principalResetPlan, sessionResetPlan, setupProfileSteps,
+  protectedCopyPath, isProtectedCopy, profileLaunchCheck, sandboxHomeEnv,
+  setDescriptionArgs, getDescriptionArgs, descriptionMatches, parseWhoamiSid,
+  warmUpArgs, profileQueryArgs, parseProfileImagePath as sandboxProfileImagePath, startupFolders,
+  mkdirArgs, removeDirArgs, claimDirArgs, icaclsDenyArgs, icaclsRemoveDenyArgs, isTemporaryProfile,
+  installerTargetSid, psEncodedArgs, knownFolderArgs,
+  sessionGrantArgs, sessionGrantInput, sessionRevokeArgs, sessionForgetArgs, sessionRestoreArgs,
+  installMarkerPath, formatInstallMarker, parseInstallMarker as parseSandboxInstallMarker, markerAllowsSetup, markerAllowsRemove,
+  poolLockPath, createWindowsLockStore, readLeasesDirSecurity, leasesDirAccessProblem,
+  sandboxLeasesDir, acquirePoolLease,
+  minimalChildEnv, userStatusArgs,
+  poolPrincipalName, poolSublayerGuid, sandboxPool, SANDBOX_POOL_SIZE,
+  type SrtUserStatus, type SrtWfpStatus, type SandboxStatus, type SandboxStep, type WinCallerRules, type SrtWinArch,
+  type PoolLockGuard, type LeaseStore, type LeasesDirSecurity,
+} from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
@@ -337,3 +356,7 @@ export {
 export { HOST_BUNDLE_FILES, loadPrebuiltHostBundles, prebuiltHostBundles, type HostBundleTexts } from "./plugin-host/bundles";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
 export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";
+// C-M2 part 2: the fenced process, for INT's daemon fence (bots' Bash and hook commands under the one CloverFence).
+export { CloverFence } from "./fence/fence";
+export { fencedSpawner, type FencedProcessOptions } from "./fence/fenced-process";
+export { hookSpawner, FENCED_SPAWN_NOT_YET, RUN_AS_USER, type DescendantEnd, type FencedRun, type FencedRunResult, type FencedSpawner } from "./fence/spawn";

@@ -397,7 +397,10 @@ export function pluginHostBunFlags(files: PluginRunFiles): string[] {
 
 /** Variables a plugin process never inherits: they change what Bun or Node loads, or they're what Clover's guard and
  *  host read, which only Clover sets (#322's review, B1). */
-const DROPPED_ENV = /^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+|CLOVER_PLUGIN_(HOST|ROOT|SHARED|WORKER))$/;
+const DROPPED_ENV_SOURCE = "^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+|CLOVER_PLUGIN_(HOST|ROOT|SHARED|WORKER))$";
+/** On Windows environment names are case-insensitive (`node_options` is NODE_OPTIONS), so there they match without case. */
+export const droppedEnv = (platform: NodeJS.Platform = process.platform): RegExp => new RegExp(DROPPED_ENV_SOURCE, platform === "win32" ? "i" : "");
+const DROPPED_ENV = droppedEnv();
 
 /** Names a plugin's manifest never sets in a process's environment (#322's review, B1): Clover's own (`CLOVER_*`), and
  *  what changes how Bun, Node or the dynamic loader loads code. `NODE_ENV` and `NODE_NO_WARNINGS` load nothing. The
@@ -480,11 +483,23 @@ export function refuseNodeModulesAbove(pluginRoot: string, shared: readonly stri
   }
 }
 
+/** `base` without the dropped names. On Windows, where a name's case doesn't matter, each name is written in capitals
+ *  first, so `Path` and `PATH` (or `node_options` and the guard's own names) can't both reach the process and leave which
+ *  one wins to the OS (#322's reviewer); the later one in `base` wins. */
+export function envWithoutDropped(base: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform): Record<string, string> {
+  const env: Record<string, string> = {};
+  const dropped = platform === process.platform ? DROPPED_ENV : droppedEnv(platform);
+  for (const [k, v] of Object.entries(base)) {
+    if (v === undefined || dropped.test(k)) continue;
+    env[platform === "win32" ? k.toUpperCase() : k] = v;
+  }
+  return env;
+}
+
 /** A plugin process's environment: `base` without what changes loading, Clover's flags in `BUN_OPTIONS`, and what the
  *  guard reads. `pluginRoot` is the plugin's top-level folder. */
 export function guardedPluginEnv(base: Readonly<Record<string, string | undefined>>, o: { pluginRoot: string; files: PluginRunFiles; shared?: readonly string[] }): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(base)) if (v !== undefined && !DROPPED_ENV.test(k)) env[k] = v;
+  const env = envWithoutDropped(base);
   env.BUN_OPTIONS = pluginBunFlags(o.files).join(" ");
   let root: string;
   try {
