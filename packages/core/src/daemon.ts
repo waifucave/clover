@@ -147,8 +147,7 @@ import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
-import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
-import { providerGrantKey } from "./bots/provider-consent";
+import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -3581,15 +3580,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         provider: botProviderFill({
           home: cloverHome, broker: hostCredentials, secrets, settings: () => settings,
           defaultModel: () => liveModel?.(),
-          approved: (ctx, provider) => {
-            const s = side();
-            if (s?.grants === undefined) return false;
-            try {
-              return s.grants.has(s.bots.mainSession(ctx.botId), providerGrantKey(provider));
-            } catch {
-              return false;
-            }
-          },
+          approved: botApprovalsFrom(side),
         }),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,

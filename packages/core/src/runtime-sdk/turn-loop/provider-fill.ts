@@ -11,7 +11,8 @@
 //   session's: only the bot's own provider, the user's default model's provider, and the providers the user approved
 //   for this bot (lane D's consent grants, `bots/provider-consent.ts`), each only when the settings permit it and a
 //   credential is stored. Every other key the user holds stays out of the bot's reach, whatever the bot later asks;
-// - `modelProviders`: the computer's model plugins, when they're installed (A-M2), as for a session.
+// - `modelProviders`: the computer's model plugins, when they're installed (A-M2), with only the code adapters of the
+//   providers the bot is allowed (the same three).
 // A `winter-test/*` model never reaches it (`fillProvider` skips it), and a provider with no stored credential still
 // gets a selection without one: the runtime then refuses with its own provider error.
 
@@ -25,6 +26,8 @@ import { splitTag } from "../model-tag";
 import { installedModelPlugins } from "../model-plugins";
 import type { ModelPlugins } from "../model-plugins/service";
 import { providerFor } from "../provider-selection";
+import { providerGrantKey } from "../../bots/provider-consent";
+import type { SessionGrants } from "../../sessions/grants";
 
 export interface BotProviderFillDeps {
   /** The Clover home (`providerFor`'s Keychain locator). */
@@ -59,11 +62,31 @@ export function botProviderFill(deps: BotProviderFillDeps): (model: string, opti
     const credentials = await credentialPresenceFrom(deps.secrets);
     const defaultModel = deps.defaultModel?.();
     const defaultProvider = defaultModel === undefined || defaultModel === "" ? undefined : providerFor(defaultModel, deps.home)?.providerId;
+    // Fixed for this runtime session: it's computed when the session opens, so a revoke (an approval taken back, a
+    // default changed) reaches the bot only when its session reopens; a future revoke that must bite at once has to
+    // reopen the session.
     const allowed = (id: string): boolean => id === selection.providerId || id === defaultProvider || (ctx !== undefined && deps.approved?.(ctx, id) === true);
     const slotProviders = new Set(Object.entries(credentials.byProvider).filter(([id, kind]) => kind !== undefined && permitted.has(id) && allowed(id)).map(([id]) => id));
     // No MCP sign-ins: a bot's MCP servers are the core's own and its plugins' tools, served in process.
     options.onCredentialResolve = deps.broker.resolverFor(sessionCredentialAllowlist(options, {}, slotProviders));
-    const modelProviders = (deps.modelPlugins ?? installedModelPlugins)()?.sessionOption({ caller: { kind: "core" }, ...(ctx === undefined ? {} : { session: ctx.sessionId }) });
+    // The model plugins' code adapters too: only those of the providers the bot is allowed.
+    const modelProviders = (deps.modelPlugins ?? installedModelPlugins)()?.sessionOption({ caller: { kind: "core" }, ...(ctx === undefined ? {} : { session: ctx.sessionId }), providers: allowed });
     if (modelProviders !== undefined) options.modelProviders = modelProviders;
+  };
+}
+
+/** `BotProviderFillDeps.approved` over the bots' side: the user's yes on the consent card for this provider, kept in
+ *  the bot's MAIN conversation (`SessionGrants`, `bots/provider-consent.ts`). A grant in any other session (another
+ *  bot's, a side thread's own) counts for nothing, a held no is no grant, and without the side or its grants nothing is
+ *  approved. */
+export function botApprovalsFrom(side: () => { grants?: Pick<SessionGrants, "has">; bots: { mainSession(botId: string): string } } | undefined): NonNullable<BotProviderFillDeps["approved"]> {
+  return (ctx, provider) => {
+    const s = side();
+    if (s?.grants === undefined) return false;
+    try {
+      return s.grants.has(s.bots.mainSession(ctx.botId), providerGrantKey(provider));
+    } catch {
+      return false;
+    }
   };
 }

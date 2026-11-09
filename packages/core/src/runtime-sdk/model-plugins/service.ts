@@ -165,12 +165,15 @@ export class ModelPlugins {
 
   /**
    * One session's `Options.modelProviders`: the current catalog file and the code adapters it may call, answered
-   * here through the plugin host as `caller` (the session, R7). Undefined before the first load.
+   * here through the plugin host as `caller` (the session, R7). Undefined before the first load. `providers`, when
+   * given, narrows the code adapters to the providers it allows (a bot's allowlist): any other code plugin's adapter
+   * is neither offered nor answered, so its provider isn't reachable through the plugin's own key.
    */
-  sessionOption(opts: { caller: Caller; session?: string }): ModelProvidersOption | undefined {
+  sessionOption(opts: { caller: Caller; session?: string; providers?: (provider: string) => boolean }): ModelProvidersOption | undefined {
     const snap = this.#snapshot;
     if (snap === undefined) return undefined;
-    const served = snap.served;
+    const allows = opts.providers;
+    const served = allows === undefined ? snap.served : new Map([...snap.served].filter(([, s]) => allows(s.provider)));
     const hostAdapters: HostServedAdapter[] = [...served.values()].map((s) => ({ id: s.adapterId, version: s.description.version, family: s.description.family, protocol: s.description.protocol, ...(s.description.countTokens ? { countTokens: true } : {}) }));
     const connectionFor = this.#o.connectionFor;
     const server = createHostModelAdapterServer((id) => {

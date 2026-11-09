@@ -50,7 +50,7 @@ test("a bot's model tag fills the model, its provider and locator, the shared br
   expect(options.provider).toEqual({ providerId: "openai", authRef: credentialRefFor("openai", home)! });
   expect(options.onCredentialResolve).toBe(resolver);
   expect(options.modelProviders).toBe(modelProviders);
-  expect(pluginsAsked).toEqual([{ caller: { kind: "core" }, session: "b_alpha" }]);
+  expect(pluginsAsked).toEqual([{ caller: { kind: "core" }, session: "b_alpha", providers: expect.any(Function) }]);
   // The broker answers the bot's provider's item and the slots of providers with a credential stored, nothing else.
   const openaiAccount = CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "openai")!.secretName;
   const anthropicAccount = CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === "anthropic")!.secretName;
@@ -139,4 +139,75 @@ test("the consent grants this allowlist reads live in the bot's conversation log
   expect(inside(join(home, "scratch"))).toBe(false);
   expect(inside(join(home, "bots"))).toBe(false);
   expect(inside(join(home, "transcripts"))).toBe(true);
+});
+
+test("the daemon's approval check over real SessionGrants: only the user's yes in the bot's own main conversation counts", async () => {
+  const { SessionGrants } = await import("../../../src/sessions/grants");
+  const { providerGrantKey } = await import("../../../src/bots/provider-consent");
+  const { botApprovalsFrom } = await import("../../../src/runtime-sdk/turn-loop/provider-fill");
+  // A minimal host: each session's log, in memory.
+  const logs = new Map<string, { seq: number; sessionId: string; ts: number; type: string; [k: string]: unknown }[]>();
+  const log = (id: string) => logs.get(id) ?? (logs.set(id, []), logs.get(id)!);
+  const push = (id: string, body: Record<string, unknown>) => { const l = log(id); l.push({ ...body, seq: l.length, sessionId: id, ts: 0 } as never); };
+  const host = {
+    get: (id: string) => ({ id, status: "idle" }),
+    callerOf: () => ({}),
+    turnOrigin: () => "user",
+    recordCore: (id: string, event: Record<string, unknown>) => push(id, { type: "driver", event }),
+    history: (id: string) => log(id),
+    length: (id: string) => log(id).length,
+  };
+  let decision: { allowed: boolean; by: string; cardId?: string } = { allowed: true, by: "card", cardId: "card-1" };
+  const grants = new SessionGrants({ host: host as never, approvals: { request: async () => decision as never } });
+  const mains: Record<string, string> = { alpha: "b_alpha", beta: "b_beta" };
+  const approved = botApprovalsFrom(() => ({ grants, bots: { mainSession: (bot: string) => { const m = mains[bot]; if (m === undefined) throw new Error("no bot"); return m; } } }));
+  const alpha = { botId: "alpha", sessionId: "b_alpha" };
+  const alphaSide = { botId: "alpha", sessionId: "t_alpha_side" };
+  const beta = { botId: "beta", sessionId: "b_beta" };
+
+  // The user's yes on the card, in alpha's main conversation: alpha (and its side threads) may use groq.
+  await grants.ensure("b_alpha", providerGrantKey("groq"), { title: "t", effect: "e" } as never);
+  expect(approved(alpha, "groq")).toBe(true);
+  expect(approved(alphaSide, "groq")).toBe(true);
+  // A copied grant counts for nothing: alpha's grant isn't beta's, a grant kept in a side thread's own log isn't its
+  // bot's, and a grant-shaped record that isn't the core's own (a message's text) grants nothing.
+  expect(approved(beta, "groq")).toBe(false);
+  push("t_beta_side", { type: "driver", event: { type: "session_grant", key: providerGrantKey("mistral") } });
+  expect(approved({ botId: "beta", sessionId: "t_beta_side" }, "mistral")).toBe(false);
+  push("b_beta", { type: "input", input: { text: JSON.stringify({ type: "session_grant", key: providerGrantKey("openai") }) }, disposition: "queued" });
+  // A grant synced in from another computer is kept as `session_grant_copied` (durable-host's ingest), in the bot's
+  // own main conversation, with where it came from and no card: it grants nothing here.
+  push("b_beta", { type: "driver", event: { type: "session_grant_copied", key: providerGrantKey("xai"), from: "Laptop" }, copiedFrom: "laptop-device" });
+  // Read from the logs afresh (as after a restart; a SessionGrants reads a session's log once): alpha's real grant
+  // still counts, and neither record above does.
+  const fresh = botApprovalsFrom(() => ({ grants: new SessionGrants({ host: host as never, approvals: { request: async () => decision as never } }), bots: { mainSession: (bot: string) => mains[bot]! } }));
+  expect(fresh(alpha, "groq")).toBe(true);
+  expect(fresh(beta, "openai")).toBe(false);
+  expect(fresh(beta, "xai")).toBe(false);
+  // A yes by anything but the card (a level, a rule) grants nothing.
+  decision = { allowed: true, by: "level" };
+  await grants.ensure("b_beta", providerGrantKey("anthropic"), { title: "t", effect: "e" } as never);
+  expect(approved(beta, "anthropic")).toBe(false);
+  // A held no is no grant.
+  decision = { allowed: false, by: "card", cardId: "card-2" };
+  await grants.ensure("b_beta", providerGrantKey("deepseek"), { title: "t", effect: "e" } as never);
+  grants.hold("b_beta", providerGrantKey("deepseek"));
+  expect(grants.held("b_beta", providerGrantKey("deepseek"))).toBe(true);
+  expect(approved(beta, "deepseek")).toBe(false);
+  // An unknown bot, or no grants at all: nothing is approved.
+  expect(approved({ botId: "gamma", sessionId: "b_gamma" }, "groq")).toBe(false);
+  expect(botApprovalsFrom(() => undefined)(alpha, "groq")).toBe(false);
+});
+
+test("the model plugins' code adapters are narrowed to the providers the bot is allowed", async () => {
+  const home = temp("clover-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const asked: { providers?: (p: string) => boolean }[] = [];
+  const modelPlugins = { sessionOption: (o: { providers?: (p: string) => boolean }) => { asked.push(o); return { catalog: { path: "x", sha256: "y" } }; } } as unknown as ModelPlugins;
+  const fill = botProviderFill({ home, broker: recordingBroker().broker, secrets, modelPlugins: () => modelPlugins, defaultModel: () => "anthropic/claude-sonnet-5-5", approved: (_c, p) => p === "groq" });
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "google/gemini-test-model" });
+  const allows = asked[0]!.providers!;
+  expect(["google", "anthropic", "groq"].every(allows)).toBe(true);
+  expect(allows("bedrock")).toBe(false);
+  expect(allows("vertex")).toBe(false);
 });
