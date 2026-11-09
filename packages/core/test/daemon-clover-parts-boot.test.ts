@@ -114,6 +114,9 @@ describe("the daemon's Clover parts, booted", () => {
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
     expect((await call<{ bots: { id: string }[] }>("bot.list")).bots.map((b) => b.id)).toEqual(["luna"]);
     expect(await call("update.status")).toMatchObject({ idle: true }); // lane M's handlers sit beside the lanes'
+    // Lane K's agent.* methods, read from the parts' agents at each call.
+    expect(daemon.cloverParts.agents()).toBeDefined();
+    expect(await call("agent.definitions")).toEqual({ definitions: [] });
 
     // A second computer pairs; the user makes this one the main computer from the terminal.
     const laptop = await peer(net, hs, "Laptop");

@@ -154,7 +154,7 @@ export function inProcessBackend(deps: Omit<InProcessBackendDeps, "pauseGateFor"
  *  them to `createCloverServer` as its `bridge`, and its `handlers` among the server's), the watchdog,
  *  the backends and the manager. `close` ends every agent's process (the sessions stay to be reattached), revokes
  *  every token. */
-export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; codeAgent: CodeAgentDoor; close(): Promise<void> } {
+export function createAgents(o: AgentsOptions): { manager: AgentManager; clover: BridgeCloverParts; tokens: BridgeTokens; backends: () => AgentBackend[]; codeAgent: CodeAgentDoor; computer: string; close(): Promise<void> } {
   const tokens = new BridgeTokens();
   // The bridge connects to the daemon's own endpoint, where lane C serves the `bridge` role.
   const socketPath = o.socketPath;
@@ -212,7 +212,7 @@ export function createAgents(o: AgentsOptions): { manager: AgentManager; clover:
   });
   const codeAgent: CodeAgentDoor = codeAgentDoor(codeAgents);
   return {
-    manager, clover, tokens, backends: () => backends(), codeAgent,
+    manager, clover, tokens, backends: () => backends(), codeAgent, computer: o.computer,
     close: async () => {
       peers?.close();
       await manager.close();

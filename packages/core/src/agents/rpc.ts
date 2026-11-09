@@ -5,10 +5,11 @@
 //
 // `session.setModel` for agents and coding sessions is lane D's method; D's handler calls `AgentManager.setModel`.
 import { randomUUID } from "node:crypto";
-import { AGENTS_METHODS, type AgentBackendView, type AgentDefView, type BackendMark, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
+import { AGENTS_METHODS, ERR, type AgentBackendView, type AgentDefView, type BackendMark, type Caller, type MethodSpec } from "@waifucave/clover-protocol";
 import type { z } from "zod";
 import type { AgentBackend } from "../contracts/agent-backend";
 import { ContractError } from "../contracts/common";
+import { MethodError, toMethodError } from "../rpc/handler";
 import type { AgentManager } from "./manager";
 
 export interface AgentMethodsOptions {
@@ -72,4 +73,28 @@ export function agentMethods(o: AgentMethodsOptions): Record<string, AgentMethod
       return { session: r.sessionId };
     },
   };
+}
+
+/** What `agentMethods` needs of the agents the daemon runs (`createAgents`'s). */
+export type RunningAgents = Pick<AgentMethodsOptions, "manager" | "backends" | "computer">;
+
+/** `agentMethods` over agents that start after the server and stop before it: each call reads them through the
+ *  getter, and is refused while none run. A thrown `ContractError` becomes its JSON-RPC code (`toMethodError`). */
+export function lateAgentMethods(agents: () => RunningAgents | undefined): Record<string, AgentMethod> {
+  const made = new WeakMap<RunningAgents, Record<string, AgentMethod>>();
+  const methodsOf = (a: RunningAgents): Record<string, AgentMethod> => {
+    let m = made.get(a);
+    if (!m) made.set(a, (m = agentMethods({ manager: a.manager, backends: a.backends, computer: a.computer })));
+    return m;
+  };
+  const names = [AGENTS_METHODS.agentBackends.name, AGENTS_METHODS.agentDefinitions.name, AGENTS_METHODS.agentStart.name];
+  return Object.fromEntries(names.map((name) => [name, async (params: unknown, ctx: { caller: Caller }) => {
+    const a = agents();
+    if (!a) throw new MethodError(ERR.RETRY, "Clover's agents aren't running on this computer yet: try again in a moment");
+    try {
+      return await methodsOf(a)[name]!(params, ctx);
+    } catch (err) {
+      throw toMethodError(err);
+    }
+  }]));
 }
