@@ -7,7 +7,7 @@
 //   Windows  not yet: the door says so and refuses
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, closeSync, existsSync, fchmodSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fchmodSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -64,7 +64,9 @@ class SessionConfigs {
   readonly #places = new Map<string, { home: string; cwd: string; writable: readonly string[] }>();
   /** A watched path that is a link: what it led to when last looked at (a dotfile manager's `~/.gitconfig`). */
   readonly #through = new Map<string, Map<string, string | null>>();
-  constructor(private readonly scan: (home: string, cwd: string, writable: readonly string[]) => string[] = sessionConfigFiles) {}
+  /** Sessions already told the repo walk stopped at its budget (once each). */
+  readonly #told = new Set<string>();
+  constructor(private readonly scan: (home: string, cwd: string, writable: readonly string[]) => { files: string[]; stopped: boolean } = sessionConfigFiles) {}
   /** After a run: what each watched file holds now is what the next look compares against. */
   settled(sessionId: string | undefined, paths: Iterable<string>): void {
     if (sessionId === undefined) return;
@@ -77,7 +79,7 @@ class SessionConfigs {
   watch(sessionId: string, home: string, cwd: string, writable: readonly string[]): void {
     const m = this.#by.get(sessionId) ?? new Map<string, string | null>();
     const t = this.#through.get(sessionId) ?? new Map<string, string | null>();
-    for (const p of this.scan(home, cwd, writable)) if (!m.has(p)) { m.set(p, readIfFile(p)); t.set(p, readThroughLink(p)); }
+    for (const p of this.scan(home, cwd, writable).files) if (!m.has(p)) { m.set(p, readIfFile(p)); t.set(p, readThroughLink(p)); }
     this.#by.set(sessionId, m);
     this.#through.set(sessionId, t);
     const was = this.#places.get(sessionId);
@@ -89,7 +91,12 @@ class SessionConfigs {
     // A watched session's places looked over again: a repo made since (a `git init` or a clone in a scratch folder)
     // is watched as newly appeared, so a risky key it carries is reverted now.
     const at = this.#places.get(sessionId);
-    if (at !== undefined) for (const p of this.scan(at.home, at.cwd, at.writable)) if (!m.has(p)) m.set(p, null);
+    let stopped = false;
+    if (at !== undefined) {
+      const found = this.scan(at.home, at.cwd, at.writable);
+      for (const p of found.files) if (!m.has(p)) m.set(p, null);
+      stopped = found.stopped;
+    }
     // A link planted at a watched config (`.git/config` → a file it wrote) is never written through: inside the
     // session's writable folders, where nothing but a runner made it, the link is removed when what it leads to sets
     // a risky key it didn't; elsewhere it is reported.
@@ -98,7 +105,8 @@ class SessionConfigs {
     for (const p of m.keys()) {
       const now = readThroughLink(p);
       if (now === null) { t.delete(p); continue; }
-      const changed = watchedGitChanges(t.get(p) ?? null, now);
+      const before = t.get(p) ?? null;
+      const changed = isTooBig(now) && now !== before ? [{ dotted: "a file too big to check" }] : watchedGitChanges(before, now);
       if (changed.length === 0) { t.set(p, now); continue; }
       const keys = changed.map((c) => c.dotted).join(", ");
       const mine = at !== undefined && at.writable.some((w) => p.startsWith(w.endsWith("/") ? w : `${w}/`));
@@ -110,8 +118,13 @@ class SessionConfigs {
     this.#through.set(sessionId, t);
     const reverted = revertPlantedGitKeys(m);
     const linked = links.length === 0 ? null : `clover: a git config was a link to risky git keys; ${links.join("; ")}\n`;
-    const note = reverted === null && linked === null ? null : `${reverted ?? ""}${linked ?? ""}`;
-    if (opts.end) { this.#by.delete(sessionId); this.#places.delete(sessionId); this.#through.delete(sessionId); }
+    // The walk's stop is said once a session: a repo past it isn't watched.
+    const budget = stopped && !this.#told.has(sessionId)
+      ? `clover: the repo watch stopped after ${WATCH_REPO_BUDGET} folders in this session's writable folders; a repo past them isn't checked for risky git keys\n`
+      : null;
+    if (budget !== null) this.#told.add(sessionId);
+    const note = reverted === null && linked === null && budget === null ? null : `${reverted ?? ""}${linked ?? ""}${budget ?? ""}`;
+    if (opts.end) { this.#by.delete(sessionId); this.#places.delete(sessionId); this.#through.delete(sessionId); this.#told.delete(sessionId); }
     else for (const p of m.keys()) m.set(p, readIfFile(p));
     return note;
   }
@@ -285,21 +298,47 @@ function withGitTemplate(r: FencedRun, template: string): FencedRun {
   return { ...r, env: { ...r.env, GIT_TEMPLATE_DIR: template } };
 }
 
-/** Reads a file's bytes without following a link, or null when it isn't a plain file. */
-/** What a watched path that is a link leads to, read through the link; null when it isn't a link or can't be read. */
-function readThroughLink(path: string): string | null {
+/** The most of a git config (or a `.git` file) read: past it the file is "too big" (#366's review). */
+export const CONFIG_READ_CAP = 1024 * 1024;
+const TOO_BIG = "\u0000clover:too-big:";
+/** A file past `CONFIG_READ_CAP`, as a stamp that changes when it does (never a config's text: it starts with NUL). */
+export const isTooBig = (text: string | null): boolean => text !== null && text.startsWith(TOO_BIG);
+
+/** A regular file's text, read without blocking: opened non-blocking (a FIFO never waits for a writer), the opened
+ *  file required to be a regular one (`fstat` on the descriptor, so nothing is swapped in between), and read up to
+ *  `CONFIG_READ_CAP` (`/dev/zero` never stalls it); past it, a too-big stamp. Without `follow`, a link is refused
+ *  (`O_NOFOLLOW`). Null when missing, not a regular file or unreadable. */
+function readCapped(path: string, follow: boolean): string | null {
+  let fd = -1;
   try {
-    if (!lstatSync(path).isSymbolicLink()) return null;
-    return readFileSync(path, "utf8");
-  } catch { return null; }
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | (follow ? 0 : fsConstants.O_NOFOLLOW));
+    const st = fstatSync(fd);
+    if (!st.isFile()) return null;
+    const stamp = `${TOO_BIG}${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
+    if (st.size > CONFIG_READ_CAP) return stamp;
+    const buf = Buffer.alloc(CONFIG_READ_CAP + 1);
+    let n = 0;
+    for (;;) {
+      const got = readSync(fd, buf, n, buf.length - n, null);
+      if (got === 0) break;
+      n += got;
+      if (n > CONFIG_READ_CAP) return stamp;
+    }
+    return buf.toString("utf8", 0, n);
+  } catch { return null; } finally {
+    if (fd !== -1) { try { closeSync(fd); } catch { /* best effort */ } }
+  }
 }
 
+/** What a watched path that is a link leads to, read through the link (`readCapped`); null when it isn't a link. */
+function readThroughLink(path: string): string | null {
+  try { if (!lstatSync(path).isSymbolicLink()) return null; } catch { return null; }
+  return readCapped(path, true);
+}
+
+/** A file's text without following a link (`readCapped`), or null when it isn't a regular file. */
 function readIfFile(path: string): string | null {
-  try {
-    const st = lstatSync(path);
-    if (!st.isFile() || st.isSymbolicLink()) return null;
-    return readFileSync(path, "utf8");
-  } catch { return null; }
+  return readCapped(path, false);
 }
 
 /** Snapshots file contents (null where missing) for the post-command checks, without following links. */
@@ -373,6 +412,13 @@ export function revertPlantedGitKeys(before: Map<string, string | null>): string
   for (const [p, prev] of before) {
     const cur = readIfFile(p);
     if (cur === prev) continue;
+    if (isTooBig(cur)) {
+      // Past the cap it can't be checked: its earlier state comes back (a file that appeared goes), or it is reported.
+      if (isTooBig(prev)) { notes.push(`${p}: kept a git config too big to check (over ${CONFIG_READ_CAP} bytes)`); continue; }
+      restorePreRun(p, prev);
+      notes.push(`${p}: a git config too big to check (over ${CONFIG_READ_CAP} bytes): ${prev === null ? "removed" : "restored as it was"}`);
+      continue;
+    }
     const changed = watchedGitChanges(prev, cur);
     if (changed.length === 0) continue; // an unwatched change (or unreadable now): leave it
     if (!chainIsClean(p)) {
@@ -504,7 +550,7 @@ export function repoConfigFiles(repoRoot: string): string[] {
   }
   // A linked worktree: `.git` names its gitdir, `<common>/worktrees/<name>`.
   try {
-    const line = readFileSync(join(repoRoot, ".git"), "utf8").split("\n")[0] ?? "";
+    const line = (readIfFile(join(repoRoot, ".git")) ?? "").split("\n")[0] ?? "";
     const m = /^gitdir:\s*(.+?)\s*$/.exec(line);
     if (m === null) return out;
     const g = m[1]!.startsWith("/") ? m[1]! : join(repoRoot, m[1]!);
@@ -515,40 +561,59 @@ export function repoConfigFiles(repoRoot: string): string[] {
   return out;
 }
 
-/** How far a watched session's writable folders are looked over for repos at each `recheck`: so many levels down,
- *  so many entries in all. A repo deeper than that, or past the budget, is the documented miss (the fence judges
+/** How many folders a watched session's writable folders are looked over for repos at each `recheck`, at any depth.
+ *  Past it the walk stops and says so (`stopped`); a repo it didn't reach is the documented miss (the fence judges
  *  every tool call, and a planted hook is the supervisor's and the belt's). */
-export const WATCH_REPO_DEPTH = 6;
 export const WATCH_REPO_BUDGET = 20_000;
 
-/** Every repo's git config files under `roots`: each folder holding `.git`, at any level to `WATCH_REPO_DEPTH`,
- *  level by level (a big tree spends the budget on its deeper levels last), never through a link, never into a
- *  `.git`. No folder name is skipped: a `node_modules` would be a place to hide a repo in. */
-export function reposUnder(roots: readonly string[], depth = WATCH_REPO_DEPTH, budget = WATCH_REPO_BUDGET): string[] {
+/** A bare repo's own folder: `config` and `HEAD` files and an `objects` folder (`git init --bare`, `clone --bare`). */
+function isBareRepo(dir: string): boolean {
+  try {
+    return lstatSync(join(dir, "config")).isFile() && lstatSync(join(dir, "HEAD")).isFile() && lstatSync(join(dir, "objects")).isDirectory();
+  } catch { return false; }
+}
+
+/** Every repo's git config files under `roots`: each folder holding `.git`, and each bare repo's own `config`, at any
+ *  depth, level by level (a big tree spends the budget on its deeper levels last), never through a link, never into
+ *  a `.git`; only folders count toward `budget`. No folder name is skipped: a `node_modules` would be a place to hide a
+ *  repo in. `stopped`: the budget ran out before the walk did. */
+export function reposUnder(roots: readonly string[], budget = WATCH_REPO_BUDGET): { files: string[]; stopped: boolean } {
   const out = new Set<string>();
   let left = budget;
-  let level = roots.map((r) => r);
-  for (let d = 0; d <= depth && level.length > 0 && left > 0; d++) {
-    const next: string[] = [];
+  let level = [...roots];
+  let stopped = false;
+  while (level.length > 0) {
+    // Every folder reached is looked at for a repo; only then are the next level's folders counted.
     for (const dir of level) {
       for (const c of repoConfigFiles(dir)) out.add(c);
+      if (isBareRepo(dir)) out.add(join(dir, "config"));
+    }
+    if (stopped) break;
+    const next: string[] = [];
+    for (const dir of level) {
       let names: string[];
       try { names = readdirSync(dir); } catch { continue; }
       for (const n of names) {
-        if (--left < 0) break;
         if (n === ".git") continue;
         const c = join(dir, n);
-        try { const st = lstatSync(c); if (st.isDirectory() && !st.isSymbolicLink()) next.push(c); } catch { /* gone */ }
+        let isDir = false;
+        try { const st = lstatSync(c); isDir = st.isDirectory() && !st.isSymbolicLink(); } catch { /* gone */ }
+        if (!isDir) continue;
+        if (left <= 0) { stopped = true; break; }
+        left--;
+        next.push(c);
       }
+      if (stopped) break;
     }
     level = next;
   }
-  return [...out];
+  return { files: [...out], stopped };
 }
 
 /** A watched session's git configs: its cwd's (`watchedConfigFiles`) and every repo's in its writable folders. */
-function sessionConfigFiles(home: string, cwd: string, writable: readonly string[]): string[] {
-  return [...new Set([...watchedConfigFiles(home, cwd), ...reposUnder(writable)])];
+function sessionConfigFiles(home: string, cwd: string, writable: readonly string[]): { files: string[]; stopped: boolean } {
+  const r = reposUnder(writable);
+  return { files: [...new Set([...watchedConfigFiles(home, cwd), ...r.files])], stopped: r.stopped };
 }
 
 /** The git configs a sandboxed command could plant risky keys in: the global ones, the session repo's, any

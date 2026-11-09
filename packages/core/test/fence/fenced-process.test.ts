@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
-import { fencedSpawner, includeTargets, reposUnder, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys, writeLocked } from "../../src/fence/fenced-process";
+import { CONFIG_READ_CAP, WATCH_REPO_BUDGET, fencedSpawner, includeTargets, reposUnder, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys, writeLocked } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote } from "../../src/fence/linux-bwrap";
 import { unixSocketFilter } from "../../src/fence/seccomp";
 import { macFenceProfile } from "../../src/fence/macos-profile";
@@ -289,20 +289,77 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  test("reposUnder: at any level to the depth, a node_modules included, never through a link, within the budget", () => {
+  test("reposUnder: at any depth, a node_modules and a bare repo included, never through a link; only folders count toward the budget, and it says when it stops", () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-repos-")));
     try {
       const at = (...p: string[]) => join(root, ...p);
-      for (const d of [at("a", ".git"), at("b", "c", "d", ".git"), at("node_modules", "x", ".git"), at("elsewhere", ".git"), at("a", "sub", ".git")]) mkdirSync(d, { recursive: true });
+      const deep = at("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "r");
+      for (const d of [at("a", ".git"), at("b", "c", "d", ".git"), at("node_modules", "x", ".git"), at("elsewhere", ".git"), at("a", "sub", ".git"), join(deep, ".git"), at("bare.git", "objects")]) mkdirSync(d, { recursive: true });
+      writeFileSync(at("bare.git", "config"), "[core]\n\tbare = true\n");
+      writeFileSync(at("bare.git", "HEAD"), "ref: refs/heads/main\n");
+      // Files don't count toward the budget.
+      for (let i = 0; i < 50; i++) writeFileSync(at(`f${i}.txt`), "x");
       symlinkSync(at("elsewhere"), at("link"));
-      const found = reposUnder([root]).filter((f) => f.endsWith("/config")).sort(); // each repo's config.worktree is there too
-      expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config"), at("node_modules", "x", ".git", "config")].sort());
+      const r = reposUnder([root]);
+      const found = r.files.filter((f) => f.endsWith("/config")).sort(); // each repo's config.worktree is there too
+      expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config"),
+        at("node_modules", "x", ".git", "config"), join(deep, ".git", "config"), at("bare.git", "config")].sort());
+      expect(r.stopped).toBe(false);
       expect(found).not.toContain(at("link", ".git", "config"));
-      expect(reposUnder([root], 2)).not.toContain(at("b", "c", "d", ".git", "config"));
-      expect(reposUnder([root], 2)).toContain(at("a", "sub", ".git", "config"));
-      expect(reposUnder([root], 6, 1).filter((f) => f.endsWith("/config")).length).toBeLessThan(found.length);
+      // A budget of the top level's folders alone: the walk stops there, and says so.
+      const top = readdirSync(root).filter((n) => statSync(join(root, n)).isDirectory() && n !== "link").length;
+      const cut = reposUnder([root], top);
+      expect(cut.stopped).toBe(true);
+      expect(cut.files).toContain(at("a", ".git", "config"));
+      expect(cut.files).not.toContain(join(deep, ".git", "config"));
+      expect(reposUnder([root], top + 100).stopped).toBe(false);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+
+  test("a watched config that is a FIFO, a link to one or to /dev/zero, or too big never stalls the recheck (#366's review)", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-fifo-")));
+    try {
+      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
+      const scratch = join(clover, "scratch", "sol");
+      for (const d of [scratch, temp]) mkdirSync(d, { recursive: true });
+      for (const r of ["fifo", "tofifo", "zero", "big", "bigl"]) expect(Bun.spawnSync(["git", "init", "-q", join(scratch, r)]).exitCode).toBe(0);
+      const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+      if (!spawner.available) return;
+      spawner.watch!("s-fifo", scratch, [join(clover, "scratch")]);
+      const cfg = (r: string) => join(scratch, r, ".git", "config");
+      // A FIFO in place of a config, a link to a FIFO, a link to /dev/zero.
+      rmSync(cfg("fifo")); expect(Bun.spawnSync(["mkfifo", cfg("fifo")]).exitCode).toBe(0);
+      expect(Bun.spawnSync(["mkfifo", join(scratch, "pipe")]).exitCode).toBe(0);
+      rmSync(cfg("tofifo")); symlinkSync(join(scratch, "pipe"), cfg("tofifo"));
+      rmSync(cfg("zero")); symlinkSync("/dev/zero", cfg("zero"));
+      // A config past the cap, and a link to one: its earlier state comes back; the link goes.
+      const before = readFileSync(cfg("big"), "utf8");
+      writeFileSync(cfg("big"), `${before}[core]\n\tfsmonitor = /tmp/x\n${"#".repeat(CONFIG_READ_CAP)}\n`);
+      writeFileSync(join(scratch, "big.cfg"), `[core]\n\tfsmonitor = /tmp/x\n${"#".repeat(CONFIG_READ_CAP)}\n`);
+      rmSync(cfg("bigl")); symlinkSync(join(scratch, "big.cfg"), cfg("bigl"));
+      const started = Date.now();
+      const note = spawner.recheck!("s-fifo", { end: true });
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(note).toMatch(/too big to check/);
+      expect(readFileSync(cfg("big"), "utf8")).toBe(before);
+      expect(existsSync(cfg("bigl"))).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 20_000);
+
+  test("the repo walk's stop is said once a session", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-budget-")));
+    try {
+      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
+      const scratch = join(clover, "scratch", "sol");
+      for (let i = 0; i < WATCH_REPO_BUDGET / 1000 + 1; i++) for (let k = 0; k < 1000; k++) mkdirSync(join(scratch, `d${i}`, `e${k}`), { recursive: true });
+      mkdirSync(temp, { recursive: true });
+      const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+      if (!spawner.available) return;
+      spawner.watch!("s-budget", scratch, [join(clover, "scratch")]);
+      expect(spawner.recheck!("s-budget")).toMatch(/repo watch stopped after/);
+      expect(spawner.recheck!("s-budget")).toBeNull();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
 });
 
 darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () => {
