@@ -378,8 +378,11 @@ describe("the Linux sandbox's mounts, as arguments", () => {
     expect(s).toContain("--bind /h/a/b /h/a/b");
     expect(s).toContain("--bind /h/a /h/a");
     expect(s).toContain("--ro-bind /h/a/b/c /h/a/b/c");
-    // A mount point can't be renamed (EBUSY): each is bound before the link's own folder takes its read-only shape.
-    expect(s.indexOf("--bind /h/a/b /h/a/b")).toBeLessThan(s.indexOf("--ro-bind /h/a/b/c /h/a/b/c"));
+    // Shallowest first (the review's live run): `~` read-only and `~/a` bound back, then the `~/a/b` holder, then the
+    // link's own folder read-only last. A later mount covers what an earlier one put below it.
+    const order = ["--ro-bind /h /h ", "--bind /h/a /h/a ", "--bind /h/a/b /h/a/b ", "--ro-bind /h/a/b/c /h/a/b/c "].map((x) => `${s} `.indexOf(x));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
   });
 
   test("the Clover home is a tmpfs view holding nothing without a caller; outside items read-only", () => {

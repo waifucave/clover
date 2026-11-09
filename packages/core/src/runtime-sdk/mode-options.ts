@@ -5,6 +5,8 @@ import { pluginLoadFoldersOf } from "./plugin-load-folders";
 import { agentConfigPaths, autoRunPaths, pluginLoadDenies } from "../contracts/fence";
 import { runLaterExtras } from "../fence/run-later";
 import { linksOnTheWay } from "../fence/canonical";
+import { makeHolderFolders } from "../fence/holder-folders";
+import { underTest } from "../auth/test-isolation";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -991,6 +993,19 @@ export function persistenceLinkHolds(userHome: string = homedir()): string[] {
   return [...out];
 }
 
+/** A session's sandbox, its missing holder folders made first (#392's review): the runtime's ancestor fence refuses
+ *  making a folder above a denied path, so in a fresh home a first `mkdir -p ~/.config/gh` would fail. The daemon
+ *  makes them as the user, outside the sandbox (`makeHolderFolders`: the folders between the home and each protected
+ *  folder, never the item's folder). Not under a test: its list is the real user's home. */
+function sessionSandbox(input: CloverOptionsInput): SandboxSettingsConfig {
+  if (!underTest()) {
+    const userHome = homedir();
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    try { makeHolderFolders(autoRunPaths(os, userHome, runLaterExtras(os, userHome)), [userHome], undefined, agentConfigPaths(os, userHome)); } catch { /* best effort: the deny stands either way */ }
+  }
+  return childSandboxConfigFor(input.home, input.cwd, input.extraDirs);
+}
+
 /** A path's real path, or its nearest existing ancestor's real path with the rest appended. */
 function realOrNearest(path: string): string {
   try {
@@ -1388,7 +1403,7 @@ export function buildCloverOptions(input: CloverOptionsInput): Options {
     // Spelled for the sandbox glob grammar (`childSandboxConfigFor`, C-1): the Clover runtime reads an entry
     // holding `[` as a glob since agent SDK round 11, so the literal list under a `[`-named home or project
     // would fence nothing.
-    sandbox: childSandboxConfigFor(input.home, input.cwd, input.extraDirs),
+    sandbox: sessionSandbox(input),
     // Agent SDK 0.0.16 defaults a spawn to BACKGROUND (claude's own default), which means a finished
     // child re-enters the model on a turn NOBODY PUSHED — a second `system/init`, an assistant
     // stream and its own `result`, with no `user` frame. The projector opens a turn only from

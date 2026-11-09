@@ -6,7 +6,7 @@
 // Bash can't write them).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
 import { buildMandatoryFloorProfile } from "@waifucave/clover-agent-sdk";
@@ -21,6 +21,7 @@ import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue
 import { persistenceLinkHolds, persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import { fenceContextFor } from "../../src/contracts/fence";
 import { fencedSpawner } from "../../src/fence/fenced-process";
+import { makeHolderFolders } from "../../src/fence/holder-folders";
 import { macFenceProfile } from "../../src/fence/macos-profile";
 import { callerPlaces } from "../../src/fence/per-caller";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
@@ -425,6 +426,38 @@ darwinDescribe("Seatbelt, live", () => {
     }
     expect(f.check({ op: "write", path: at("a", "b", "notes.md") }).allowed).toBe(true);
     expect(f.check({ op: "move", path: at("a", "x"), to: at("a", "y") }).allowed).toBe(true);
+  });
+
+  test("a fresh home: the missing holder folders are made before a run, so a first `mkdir -p ~/.config/gh` works, and they still can't be renamed (#392's review)", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-fresh-home-")));
+    mkdirSync(join(home, "project"));
+    const fence = new CloverFence({ os: "macos", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") });
+    mkdirSync(join(home, "tmp"));
+    expect(existsSync(join(home, ".config"))).toBe(false);
+    const run = (command: string) => fencedSpawner({ fence, processHolder: null }).run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } } });
+    const made = await run('mkdir -p "$HOME/.config/gh" && echo made');
+    expect(made.kind === "exited" && made.stdout).toBe("made\n");
+    expect(existsSync(join(home, ".config", "gh"))).toBe(true);
+    // Held where it is: renaming it away is refused.
+    const moved = await run('mv "$HOME/.config" "$HOME/.config.away" && echo moved');
+    expect(moved.kind === "exited" && moved.stdout).toBe("");
+    expect(existsSync(join(home, ".config.away"))).toBe(false);
+  });
+
+  test("makeHolderFolders: the folders between the root and each item, never the item, never an agent's own folder, never through a link", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-holders-")));
+    mkdirSync(join(home, "elsewhere"));
+    symlinkSync(join(home, "elsewhere"), join(home, "linked"));
+    const made = makeHolderFolders([join(home, ".config", "git"), join(home, "Library", "LaunchAgents", "x.plist"),
+      join(home, "linked", "deep", "x", "config"), join(home, ".clover", "a", "b"), join(home, "bots", "*", "memory")], [home], join(home, ".clover"),
+      [join(home, ".claude", "settings.json"), join(home, ".config", "opencode", "opencode.json")]);
+    expect(made.sort()).toEqual([join(home, ".config"), join(home, "Library"), join(home, "Library", "LaunchAgents")].sort());
+    expect(existsSync(join(home, ".config", "git"))).toBe(false); // the item itself
+    expect(existsSync(join(home, ".claude"))).toBe(false); // an agent's folder would look like an install
+    expect(existsSync(join(home, ".config", "opencode"))).toBe(false);
+    expect(existsSync(join(home, "elsewhere", "deep"))).toBe(false); // never through a link
+    expect(existsSync(join(home, ".clover", "a"))).toBe(false);
+    expect(statSync(join(home, ".config")).mode & 0o777).toBe(0o777 & ~process.umask());
   });
 
   test("a link loop on the way to ~/.gitconfig: the fence holds it under its own name, and a run isn't thrown out (#392's review)", async () => {
