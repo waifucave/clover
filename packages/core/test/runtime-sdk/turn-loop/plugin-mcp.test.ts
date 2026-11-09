@@ -401,6 +401,29 @@ test("known(): only a per-computer server of a plugin installed, enabled, runnin
   }
 });
 
+test("localServers: the per-computer servers of plugins enabled and OK'd here, running or not; never one not OK'd here", async () => {
+  const pc = { type: "host", perComputer: true };
+  const registry = fakeRegistry([
+    entry("acme", "blender", pc),
+    entry("synced", "maya", pc), // synced from another computer, not OK'd here
+    entry("off", "x", pc),
+    entry("tree/kid", "y", pc), // a child: its tree's OK covers it
+    entry("acme", "notes", { type: "host" }), // not per-computer
+  ], { acme: "/n", synced: "/n", off: "/n", tree: "/n", "tree/kid": "/n" }, {}, {
+    synced: { state: "found", okHash: undefined },
+    off: { enabled: false, state: "off" },
+    "tree/kid": { okHash: undefined, treeHash: "kid" },
+  });
+  // No tick list: nothing runs, and the declared ones are still offered.
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+  try {
+    await mcp.refresh();
+    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme" }, { server: "tree-kid-y", plugin: "tree/kid" }]);
+  } finally {
+    mcp.close();
+  }
+});
+
 test("two plugins that come to the same key are both refused, logged, never first wins", async () => {
   const registry = fakeRegistry([
     entry("acme", "x-y", { type: "host" }),
