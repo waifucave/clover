@@ -11,7 +11,9 @@
 // which the bundled plugins are generated from, serves exactly the same providers.
 import { guardApiRouter, type PluginHost } from "../../contracts/plugin-host";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
+import { ContractError } from "../../contracts/common";
 import type { SecretStore as ContractSecretStore } from "../../contracts/secret-store";
+import type { PluginSecrets } from "../../plugin-host/daemon-host";
 import type { SecretStore as DaemonSecretStore } from "../../auth/secret-store";
 import type { ProviderRefresher } from "../host-credentials";
 import { installModelPlugins } from "./index";
@@ -28,8 +30,9 @@ export interface StartModelPluginsOptions {
   secrets: DaemonSecretStore;
   /** Per slot account, its renewal (`daemon.ts`'s `credentialRefreshers`). */
   refreshers?: Readonly<Record<string, ProviderRefresher>>;
-  /** A plugin's own items (lane C's store), for the plugins that aren't bundled. */
-  pluginSecrets?: Pick<ContractSecretStore, "get">;
+  /** A plugin's own items (lane C's store, through the plugin host's `pluginSecrets`), for the plugins that aren't
+   *  bundled: by plugin and name only. */
+  pluginSecrets?: PluginSecrets;
   log?: (line: string) => void;
   /** The platform fetch under the keyed fetch (a test seam). */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
@@ -40,12 +43,22 @@ export interface StartedModelPlugins {
   stop(): void;
 }
 
+/** The plugin items `secretStoreCredentials` reads, through `PluginSecrets`: a plugin's own, by its id (the router's,
+ *  never the call's) and name; any other owner is refused. */
+function ownItemsStore(secrets: PluginSecrets): Pick<ContractSecretStore, "get"> {
+  return {
+    get: (ref) => ref.owner.kind === "plugin"
+      ? secrets.forPlugin(ref.owner.pluginId).get(ref.name)
+      : Promise.reject(new ContractError("refused", "a model plugin reads its own items only")),
+  };
+}
+
 export async function startModelPlugins(opts: StartModelPluginsOptions): Promise<StartedModelPlugins> {
   const credentials = keychainModelPluginCredentials({
     registry: opts.registry,
     secrets: opts.secrets,
     ...(opts.refreshers !== undefined ? { refreshers: opts.refreshers } : {}),
-    ...(opts.pluginSecrets !== undefined ? { fallback: secretStoreCredentials(opts.pluginSecrets) } : {}),
+    ...(opts.pluginSecrets !== undefined ? { fallback: secretStoreCredentials(ownItemsStore(opts.pluginSecrets)) } : {}),
     ...(opts.log !== undefined ? { log: opts.log } : {}),
   });
   await credentials.prime();
