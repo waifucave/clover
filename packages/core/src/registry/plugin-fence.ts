@@ -130,27 +130,42 @@ export function persistencePlaces(userHome: string, cloverHome: string, o: { fen
   return [...out];
 }
 
-/** `core.hooksPath` as a Git config file sets it, or undefined (the last one in a `[core]` section wins, as in Git). */
-function hooksPathIn(file: string): string | undefined {
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch {
-    return undefined;
-  }
-  let section = "";
-  let found: string | undefined;
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.replace(/(^|\s)[#;].*$/, "").trim();
-    const head = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"]*")?\s*\]$/.exec(line);
-    if (head !== null) {
-      section = head[1]!.toLowerCase();
-      continue;
+/** A Git config file read the way Git reads it, its `[include]` and `[includeIf …]` files expanded where they stand
+ *  (whatever an `includeIf`'s condition: holding more is the safe side; #336's `gitConfigWalk`, for a repository's own
+ *  config): every file reached, and the last `core.hooksPath` set, as written. A relative include is the including
+ *  file's folder's, `~/` the user's home. At most 10 deep, each file once. */
+export function gitConfigWalk(file: string, userHome: string): { files: string[]; hooksPath?: string } {
+  const files: string[] = [];
+  let hooksPath: string | undefined;
+  const visit = (f: string, depth: number) => {
+    if (depth > 10 || files.includes(f)) return;
+    files.push(f);
+    let text: string;
+    try {
+      text = readFileSync(f, "utf8");
+    } catch {
+      return; // not there (yet): still held, an include may name a file to come
     }
-    const kv = /^([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*)$/.exec(line);
-    if (section === "core" && kv !== null && kv[1]!.toLowerCase() === "hookspath") found = kv[2]!.replace(/^"(.*)"$/, "$1").trim();
-  }
-  return found === "" ? undefined : found;
+    let section = "";
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.replace(/(^|\s)[#;].*$/, "").trim();
+      const head = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"]*")?\s*\]$/.exec(line);
+      if (head !== null) {
+        section = head[1]!.toLowerCase();
+        continue;
+      }
+      const kv = /^([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*)$/.exec(line);
+      if (kv === null) continue;
+      const key = kv[1]!.toLowerCase();
+      const value = kv[2]!.replace(/^"(.*)"$/, "$1").trim();
+      if (section === "core" && key === "hookspath") hooksPath = value === "" ? undefined : value;
+      if ((section === "include" || section === "includeif") && key === "path" && value !== "") {
+        visit(value.startsWith("~/") ? join(userHome, value.slice(2)) : resolve(dirname(f), value), depth + 1);
+      }
+    }
+  };
+  visit(file, 0);
+  return { files, ...(hooksPath !== undefined ? { hooksPath } : {}) };
 }
 
 /** A project's Git folders when its `.git` is a file (a linked worktree, a submodule): the folder its `gitdir:` names,
@@ -198,8 +213,9 @@ function projectGitConfig(project: string): string | undefined {
  *  project's config or else the user's global config (read here, never written), resolved against the project
  *  (`~/` against the user's home). Husky's `.husky` and a `.githooks` setup are found this way. */
 export function gitHooksPaths(project: string, userHome: string): string[] {
-  const value = [projectGitConfig(project), join(userHome, ".gitconfig"), join(userHome, ".config", "git", "config")]
-    .map((f) => (f === undefined ? undefined : hooksPathIn(f))).find((v) => v !== undefined);
+  const own = projectGitConfig(project);
+  const value = [own, join(userHome, ".gitconfig"), join(userHome, ".config", "git", "config")]
+    .map((f) => (f === undefined ? undefined : gitConfigWalk(f, userHome).hooksPath)).find((v) => v !== undefined);
   if (value === undefined) return [];
   const path = value.startsWith("~/") ? join(userHome, value.slice(2)) : resolve(project, value);
   return [path];
@@ -407,11 +423,20 @@ function holdersWithin(denied: readonly string[], projects: readonly string[]): 
   return [...out];
 }
 
-/** A project folder's deny lines: `PROJECT_WHOLE_DENIES` whole, `PROJECT_DENIES`, Git's hooks folder and a `.git`
- *  file's folders written by no one, the folders holding any of them, and its credential files unread. */
+/** The files a project's own Git config includes (#352's second review): each one is that repository's config too, so
+ *  one inside the project could set `core.hooksPath`, `core.fsmonitor`, `core.sshCommand` or `core.pager`. */
+export function gitIncludedFiles(project: string, userHome: string): string[] {
+  const own = projectGitConfig(project);
+  return own === undefined ? [] : gitConfigWalk(own, userHome).files.slice(1);
+}
+
+/** A project folder's deny lines: `PROJECT_WHOLE_DENIES` whole, `PROJECT_DENIES`, Git's hooks folder, the files its
+ *  config includes and a `.git` file's folders written by no one, the folders holding any of them, and its credential
+ *  files unread. */
 function projectDenyLines(projects: readonly string[], userHome: string): string[] {
   const denied = projects.flatMap((p) => [
     ...PROJECT_WHOLE_DENIES.map((f) => join(p, f)), ...PROJECT_DENIES.map((f) => join(p, f)), ...gitHooksPaths(p, userHome), ...gitFoldersOf(p),
+    ...gitIncludedFiles(p, userHome),
   ]);
   const holders = holdersWithin(denied, projects);
   return [

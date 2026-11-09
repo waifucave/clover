@@ -15,7 +15,7 @@ import { startPluginHost } from "../../plugin-host/daemon-host";
 import { HookRunner } from "../../plugins/hook-runner";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
 import { openPluginRegistry } from "../open";
-import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, gitFoldersOf, gitHooksPaths, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
+import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, gitFoldersOf, gitHooksPaths, gitIncludedFiles, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
 import { ensurePluginRunFiles, guardedMcpServer } from "../plugin-run";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
@@ -365,6 +365,37 @@ darwinDescribe("the plugin-process fence", () => {
         .toEqual({ git: "refused", vscode: "refused", docker: "refused", dockerconfig: "denied", dockerother: "ok", rmvscode: "denied" });
       for (const d of [".git2", ".vscode2", ".docker2"]) expect(existsSync(join(project, d))).toBe(false);
       expect(existsSync(join(project, ".git", "hooks", "pre-commit"))).toBe(false);
+    } finally {
+      stop(w);
+    }
+  }, 60_000);
+
+  // #352's second review: a file inside the project that the repository's config includes is that config too.
+  test("project folders: a file the repository's config includes, under any name, is refused, and so is a hooksPath set through it", async () => {
+    const w = world();
+    try {
+      const project = join(w.userHome, "code", "app");
+      for (const d of [join(project, ".git"), join(project, "tools"), join(project, "scripts", "hooks")]) mkdirSync(d, { recursive: true });
+      writeFileSync(join(project, ".git", "config"), "[core]\n\tbare = false\n[include]\n\tpath = ../tools/repo.inc\n[includeIf \"gitdir:~/\"]\n\tpath = ../tools/maybe.cfg\n");
+      writeFileSync(join(project, "tools", "repo.inc"), "[core]\n\thooksPath = scripts/hooks\n");
+      expect(gitIncludedFiles(project, w.userHome)).toEqual([join(project, "tools", "repo.inc"), join(project, "tools", "maybe.cfg")]);
+      expect(gitHooksPaths(project, w.userHome)).toEqual([join(project, "scripts", "hooks")]);
+      const q = (p: string) => JSON.stringify(p);
+      const command = [
+        `cd ${q(project)}`,
+        "(printf '[core]\\n\\tfsmonitor = /tmp/x\\n' >> tools/repo.inc) 2>/dev/null && echo include=ok || echo include=denied",
+        "(echo x > tools/maybe.cfg) 2>/dev/null && echo includeif=ok || echo includeif=denied",
+        "(echo x > scripts/hooks/pre-commit) 2>/dev/null && echo hookspath=ok || echo hookspath=denied",
+        "(mv tools tools2) 2>/dev/null && echo renamed=ok || echo renamed=denied",
+        "(echo x > tools/notes.txt) 2>/dev/null && echo other=ok || echo other=denied",
+      ].join("; ");
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const runner = new HookRunner(guard, { projectFor: () => ({ dirs: [project], write: true }) });
+      const r = (await runner.run({ pluginId: "spy", event: "PostToolUse", command, cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "PostToolUse" } as never)) as { stdout: string };
+      expect(Object.fromEntries(r.stdout.trim().split("\n").map((l) => l.split("=") as [string, string])))
+        .toEqual({ include: "denied", includeif: "denied", hookspath: "denied", renamed: "denied", other: "ok" });
+      expect(readFileSync(join(project, "tools", "repo.inc"), "utf8")).toBe("[core]\n\thooksPath = scripts/hooks\n");
+      expect(existsSync(join(project, "tools", "maybe.cfg"))).toBe(false);
     } finally {
       stop(w);
     }
