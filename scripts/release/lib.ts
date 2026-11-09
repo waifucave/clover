@@ -343,6 +343,30 @@ export function codesignArgs(path: string, identity: string, identifier: string,
     ...(entitlements === undefined ? [] : ["--entitlements", entitlements]), path];
 }
 
+/**
+ * The owner's dev-signed alpha (`release/build.ts --sign-dev`): the same binaries signed with the owner's Apple
+ * Development identity (by its SHA-1, so two same-named certificates can't make codesign guess), with the hardened
+ * runtime and each binary's own identifier and entitlements, but no secure timestamp (nothing notarizes it) and an
+ * explicit designated requirement on Clover's team, `identifier "<id>" and anchor apple generic and certificate
+ * leaf[subject.OU] = "<team>"`. That is the requirement the Keychain items and plugin Bun's check hold the binary to,
+ * and a later Developer ID build of the same identifier satisfies it too (an Apple Development certificate's default
+ * requirement names the person's certificate instead, which a Developer ID build would not meet).
+ */
+export function codesignDevArgs(path: string, identityHash: string, identifier: string, teamId: string, entitlements?: string, keychain?: string): string[] {
+  if (!/^[0-9A-F]{40}$/i.test(identityHash)) throw new Error("a dev-signed build names its identity by its SHA-1 hash");
+  return ["codesign", "--force", "--sign", identityHash, "--options", "runtime", "--timestamp=none", "--identifier", identifier,
+    `-r=designated => ${teamRequirement(identifier, teamId)}`,
+    ...(entitlements === undefined ? [] : ["--entitlements", entitlements]),
+    // A keychain named for this build only (CLOVER_MAC_DEV_KEYCHAIN): the identity is looked up there, and the user's
+    // keychain search list is never changed for it.
+    ...(keychain === undefined ? [] : ["--keychain", keychain]), path];
+}
+
+/** A binary's requirement on Clover's team: its identifier, Apple's chain, the team's certificate. */
+export function teamRequirement(identifier: string, teamId: string): string {
+  return `identifier "${identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
+}
+
 /** A disk image is signed without the hardened runtime (it isn't code that runs). */
 export function codesignDmgArgs(path: string, identity: string): string[] {
   return ["codesign", "--force", "--sign", identity, "--timestamp", path];
@@ -403,13 +427,14 @@ export function authenticodeCommand(path: string): string[] {
     `$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; Write-Output ($s.Status.ToString() + '|' + $(if ($s.SignerCertificate) { $s.SignerCertificate.Subject } else { '' }))`];
 }
 
-/** What's wrong with one signed file for a release by `teamId` (notarization refuses each of these). */
-export function signatureProblems(name: string, sig: CodeSignature, teamId: string, identifier?: string): string[] {
+/** What's wrong with one signed file for a release by `teamId` (notarization refuses each of these). A dev-signed
+ *  alpha (`dev: true`) is held to the same, but for the secure timestamp: nothing notarizes it. */
+export function signatureProblems(name: string, sig: CodeSignature, teamId: string, identifier?: string, o: { dev?: boolean } = {}): string[] {
   const problems: string[] = [];
-  if (sig.adhoc || sig.teamId === undefined) problems.push(`${name} is not signed with a Developer ID`);
+  if (sig.adhoc || sig.teamId === undefined) problems.push(`${name} is not signed with ${o.dev === true ? `team ${teamId}'s identity` : "a Developer ID"}`);
   else if (sig.teamId !== teamId) problems.push(`${name} is signed by team ${sig.teamId}, not ${teamId}`);
   if (!sig.runtime) problems.push(`${name} has no hardened runtime`);
-  if (!sig.timestamped) problems.push(`${name} has no secure timestamp`);
+  if (!sig.timestamped && o.dev !== true) problems.push(`${name} has no secure timestamp`);
   if (identifier !== undefined && sig.identifier !== identifier) problems.push(`${name}'s identifier is ${sig.identifier ?? "(none)"}, not ${identifier}`);
   return problems;
 }

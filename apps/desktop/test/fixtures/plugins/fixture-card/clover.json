@@ -1,0 +1,12 @@
+{
+  "manifest": 1,
+  "id": "fixture-card",
+  "name": "Fixture card",
+  "description": "A third-party part with the approvals capability that places a card's sealed frames: its field and its two buttons, each an iframe from the app's own scheme.",
+  "engines": { "clover": "^1.0.0" },
+  "capabilities": ["approvals"],
+  "client": { "entry": "client/index.js" },
+  "contributes": {
+    "ui": [{ "spot": "bot.tab", "id": "card", "component": "CardEntry" }]
+  }
+}

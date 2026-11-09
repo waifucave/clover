@@ -31,5 +31,7 @@ export const S = {
   layoutDetail: "How the bot's tab is arranged.",
   layoutOwn: "The bot's own",
   layoutYours: "Your layout",
-  fields: { name: "name", instructions: "instructions", model: "model", effort: "effort", voice: "voice", avatar: "avatar", theme: "theme", layout: "layout" },
+  lan: "Local network",
+  lanDetail: (name: string) => `Lets ${name}'s browser tabs open pages on devices on your local network, such as your router or a printer.`,
+  fields: { name: "name", instructions: "instructions", model: "model", effort: "effort", voice: "voice", avatar: "avatar", theme: "theme", layout: "layout", lan: "local network setting" },
 };
