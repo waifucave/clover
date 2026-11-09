@@ -60,6 +60,9 @@ function holderFor(o: FencedProcessOptions): string | null {
 /** Each session's watched git config files as its last run left them (after that run's revert), for `recheck`. */
 class SessionConfigs {
   readonly #by = new Map<string, Map<string, string | null>>();
+  /** A watched session's places, looked over again at each `recheck` for repos made since. */
+  readonly #places = new Map<string, { home: string; cwd: string; writable: readonly string[] }>();
+  constructor(private readonly scan: (home: string, cwd: string, writable: readonly string[]) => string[] = sessionConfigFiles) {}
   /** After a run: what each watched file holds now is what the next look compares against. */
   settled(sessionId: string | undefined, paths: Iterable<string>): void {
     if (sessionId === undefined) return;
@@ -69,16 +72,22 @@ class SessionConfigs {
   }
   /** A session whose commands run elsewhere (a bot's Bash in the runtime's own sandbox): its repo's configs and the
    *  global ones are watched from now, each as it is now; a file already watched keeps its baseline. */
-  watch(sessionId: string, paths: Iterable<string>): void {
+  watch(sessionId: string, home: string, cwd: string, writable: readonly string[]): void {
     const m = this.#by.get(sessionId) ?? new Map<string, string | null>();
-    for (const p of paths) if (!m.has(p)) m.set(p, readIfFile(p));
+    for (const p of this.scan(home, cwd, writable)) if (!m.has(p)) m.set(p, readIfFile(p));
     this.#by.set(sessionId, m);
+    const was = this.#places.get(sessionId);
+    this.#places.set(sessionId, { home, cwd, writable: [...new Set([...(was?.writable ?? []), ...writable])] });
   }
   recheck(sessionId: string, opts: { end?: boolean } = {}): string | null {
     const m = this.#by.get(sessionId);
     if (m === undefined) return null;
+    // A watched session's places looked over again: a repo made since (a `git init` or a clone in a scratch folder)
+    // is watched as newly appeared, so a risky key it carries is reverted now.
+    const at = this.#places.get(sessionId);
+    if (at !== undefined) for (const p of this.scan(at.home, at.cwd, at.writable)) if (!m.has(p)) m.set(p, null);
     const note = revertPlantedGitKeys(m);
-    if (opts.end) this.#by.delete(sessionId);
+    if (opts.end) { this.#by.delete(sessionId); this.#places.delete(sessionId); }
     else for (const p of m.keys()) m.set(p, readIfFile(p));
     return note;
   }
@@ -94,7 +103,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       available: true,
       recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
-      watch: (sessionId, cwd) => configs.watch(sessionId, watchedConfigFiles(o.fence.home, cwd)),
+      watch: (sessionId, cwd, writable = []) => configs.watch(sessionId, o.fence.home, cwd, writable),
       run: async (r) => {
         const template = ensureGitTemplate(o.fence.cloverHome);
         if (typeof template !== "string") return template;
@@ -131,7 +140,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       get available() { return probe() === null; },
       recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
-      watch: (sessionId, cwd) => configs.watch(sessionId, watchedConfigFiles(o.fence.home, cwd)),
+      watch: (sessionId, cwd, writable = []) => configs.watch(sessionId, o.fence.home, cwd, writable),
       run: async (r) => {
         const why = probe();
         if (why !== null) return { kind: "refused", reason: `a fenced process can't be started here: ${why}` };
@@ -472,6 +481,41 @@ export function repoConfigFiles(repoRoot: string): string[] {
     if (common !== g) out.push(join(common, "config"));
   } catch { /* unreadable: nothing to watch */ }
   return out;
+}
+
+/** How far a watched session's writable folders are looked over for repos at each `recheck`: so many levels down,
+ *  so many entries in all. A repo deeper than that, or past the budget, is the documented miss (the fence judges
+ *  every tool call, and a planted hook is the supervisor's and the belt's). */
+export const WATCH_REPO_DEPTH = 6;
+export const WATCH_REPO_BUDGET = 20_000;
+
+/** Every repo's git config files under `roots`: each folder holding `.git`, at any level to `WATCH_REPO_DEPTH`,
+ *  never through a link, never into a `.git` or a `node_modules`. */
+export function reposUnder(roots: readonly string[], depth = WATCH_REPO_DEPTH, budget = WATCH_REPO_BUDGET): string[] {
+  const out = new Set<string>();
+  let left = budget;
+  let level = roots.map((r) => r);
+  for (let d = 0; d <= depth && level.length > 0 && left > 0; d++) {
+    const next: string[] = [];
+    for (const dir of level) {
+      for (const c of repoConfigFiles(dir)) out.add(c);
+      let names: string[];
+      try { names = readdirSync(dir); } catch { continue; }
+      for (const n of names) {
+        if (--left < 0) break;
+        if (n === ".git" || n === "node_modules") continue;
+        const c = join(dir, n);
+        try { const st = lstatSync(c); if (st.isDirectory() && !st.isSymbolicLink()) next.push(c); } catch { /* gone */ }
+      }
+    }
+    level = next;
+  }
+  return [...out];
+}
+
+/** A watched session's git configs: its cwd's (`watchedConfigFiles`) and every repo's in its writable folders. */
+function sessionConfigFiles(home: string, cwd: string, writable: readonly string[]): string[] {
+  return [...new Set([...watchedConfigFiles(home, cwd), ...reposUnder(writable)])];
 }
 
 /** The git configs a sandboxed command could plant risky keys in: the global ones, the session repo's, any

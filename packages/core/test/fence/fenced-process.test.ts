@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor, policyAllows } from "../../src/contracts/fence";
 import { CloverFence } from "../../src/fence/fence";
-import { fencedSpawner, includeTargets, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys, writeLocked } from "../../src/fence/fenced-process";
+import { fencedSpawner, includeTargets, reposUnder, mkdirNoLinks, ownRepoHooks, repoConfigFiles, revertPlantedGitKeys, writeLocked } from "../../src/fence/fenced-process";
 import { bwrapArgs, bwrapPlan, heldFolderNote } from "../../src/fence/linux-bwrap";
 import { unixSocketFilter } from "../../src/fence/seccomp";
 import { macFenceProfile } from "../../src/fence/macos-profile";
@@ -237,6 +237,63 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
     spawner.watch!("s-watch", project);
     expect(spawner.recheck!("s-watch", { end: true })).toMatch(/core\.hookspath|core\.hooksPath/i);
     expect(readFileSync(config, "utf8")).not.toContain("hooksPath");
+  });
+
+  test("watch: every repo in the session's writable folders, and one made mid-session, rechecked after each call", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-watch2-")));
+    try {
+      const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
+      const own = join(clover, "scratch", "luna"), other = join(clover, "scratch", "sol"), memory = join(clover, "bots", "sol", "memory");
+      for (const d of [own, other, memory, temp]) mkdirSync(d, { recursive: true });
+      for (const r of [join(own, "a"), join(other, "deep", "er", "b"), memory]) expect(Bun.spawnSync(["git", "init", "-q", r]).exitCode).toBe(0);
+      const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+      if (!spawner.available) return;
+      spawner.watch!("s-w2", own, [join(clover, "scratch"), join(clover, "bots")]);
+      const plant = (config: string) => writeFileSync(config, `${readFileSync(config, "utf8")}[core]\n\tfsmonitor = /tmp/x\n`);
+      // A Bash call plants a key in another bot's repo deep in its scratch folder: the recheck after that call reverts it.
+      const deep = join(other, "deep", "er", "b", ".git", "config");
+      plant(deep);
+      expect(spawner.recheck!("s-w2")).toMatch(/core\.fsmonitor/);
+      expect(readFileSync(deep, "utf8")).not.toContain("fsmonitor");
+      // The next call plants one in a memory folder's repo.
+      plant(join(memory, ".git", "config"));
+      expect(spawner.recheck!("s-w2")).toMatch(/core\.fsmonitor/);
+      expect(readFileSync(join(memory, ".git", "config"), "utf8")).not.toContain("fsmonitor");
+      // A call that plants nothing reports nothing.
+      expect(spawner.recheck!("s-w2")).toBeNull();
+      // A repo made mid-session (a `git init`, then a planted key, in one call) is found at the next recheck.
+      const fresh = join(other, "new-repo");
+      expect(Bun.spawnSync(["git", "init", "-q", fresh]).exitCode).toBe(0);
+      plant(join(fresh, ".git", "config"));
+      expect(spawner.recheck!("s-w2")).toMatch(/core\.fsmonitor/);
+      expect(readFileSync(join(fresh, ".git", "config"), "utf8")).not.toContain("fsmonitor");
+      expect(readFileSync(join(fresh, ".git", "config"), "utf8")).toContain("[core]");
+      // A scratch folder made mid-session (a new bot's) is looked over too.
+      const newbot = join(clover, "scratch", "newbot", "r");
+      expect(Bun.spawnSync(["git", "init", "-q", newbot]).exitCode).toBe(0);
+      plant(join(newbot, ".git", "config"));
+      expect(spawner.recheck!("s-w2", { end: true })).toMatch(/core\.fsmonitor/);
+      expect(readFileSync(join(newbot, ".git", "config"), "utf8")).not.toContain("fsmonitor");
+      // Ended: forgotten.
+      plant(join(newbot, ".git", "config"));
+      expect(spawner.recheck!("s-w2")).toBeNull();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test("reposUnder: at any level to the depth, never through a link or into node_modules, within the budget", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-repos-")));
+    try {
+      const at = (...p: string[]) => join(root, ...p);
+      for (const d of [at("a", ".git"), at("b", "c", "d", ".git"), at("node_modules", "x", ".git"), at("elsewhere", ".git"), at("a", "sub", ".git")]) mkdirSync(d, { recursive: true });
+      symlinkSync(at("elsewhere"), at("link"));
+      const found = reposUnder([root]).filter((f) => f.endsWith("/config")).sort(); // each repo's config.worktree is there too
+      expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config")].sort());
+      expect(found).not.toContain(at("node_modules", "x", ".git", "config"));
+      expect(found).not.toContain(at("link", ".git", "config"));
+      expect(reposUnder([root], 2)).not.toContain(at("b", "c", "d", ".git", "config"));
+      expect(reposUnder([root], 2)).toContain(at("a", "sub", ".git", "config"));
+      expect(reposUnder([root], 6, 1).filter((f) => f.endsWith("/config")).length).toBeLessThan(found.length);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
 
