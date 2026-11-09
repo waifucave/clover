@@ -4,8 +4,8 @@
 // and a spawner that can't start a fenced process here refuses each call.
 //
 // The run is the caller's (`who`): a bot's own session gets its bot's reach, a coding session its own, and another
-// computer's call (a peer) the fence's floor. The child's environment is built here, whole: a fixed PATH and the
-// user's home, nothing inherited from the daemon (no keys, no tokens).
+// computer's call (a peer) the fence's floor. The child's environment is built here, whole: a fixed PATH, the user's
+// home and the fence's temp folder (TMPDIR), nothing inherited from the daemon (no keys, no tokens).
 import type { Os } from "@waifucave/clover-protocol";
 import type { FencedRunResult, FencedSpawner } from "../fence/spawn";
 import type { ToolExecutor } from "../tree/service";
@@ -20,6 +20,9 @@ export interface FencedExecutorOptions {
   spawner: FencedSpawner;
   /** The user's home folder: `HOME` in the child's environment. */
   home: string;
+  /** The fence's temp folder (`CloverFence`'s `temp`, which every caller may write): `TMPDIR` in the child's
+   *  environment, so tools that make temp files don't fall back to a folder the sandbox refuses. */
+  temp?: string;
   os: Os;
 }
 
@@ -30,7 +33,7 @@ export function fencedPath(os: Os): string {
 
 /** The computer node's executor over `o.spawner`. */
 export function fencedExecutor(o: FencedExecutorOptions): ToolExecutor {
-  const env = { PATH: fencedPath(o.os), HOME: o.home, LANG: "en_US.UTF-8", TERM: "dumb" };
+  const env: Record<string, string> = { PATH: fencedPath(o.os), HOME: o.home, LANG: "en_US.UTF-8", TERM: "dumb", ...(o.temp === undefined ? {} : { TMPDIR: o.temp }) };
   return {
     async run(tool, input, ctx) {
       if (tool !== "Bash") return { output: { error: `${tool} doesn't run through this computer's executor; only Bash does` }, isError: true };
