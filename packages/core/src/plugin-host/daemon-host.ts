@@ -225,13 +225,14 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   };
   // The fence for one process (2f): its plugin tree's folder (for `clover`, the verified copy of the bundled plugins),
   // its data folder and its own temp folder, with what every host process reads.
-  const fencedLaunch = (l: HostProcessLaunch, key: string, top: string): HostProcessLaunch => {
+  const fencedLaunch = (l: HostProcessLaunch, key: string, top: string, dataOf: string): HostProcessLaunch => {
     if (o.fence === false || !pluginFenceAvailable()) return l;
     const tree = top === "clover" ? join(stagedBundledDir(o.home), "clover") : o.registry.get(top)?.folder;
     if (tree === undefined) return l;
     const tmp = join(o.home, "run", "plugin-tmp", key.replace(/[^a-z0-9-]/g, "_"));
     mkdirSync(tmp, { recursive: true, mode: 0o700 });
-    const data = pluginPath(join(o.home, "plugin-data"), top);
+    // Its data folder: the tree's, or for a process of one plugin's own, that plugin's alone.
+    const data = pluginPath(join(o.home, "plugin-data"), dataOf);
     mkdirSync(data, { recursive: true, mode: 0o700 });
     const proxy = proxyFor(top);
     const fence: PluginFenceInput = {
@@ -260,13 +261,15 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       // and data only. The bundled `clover` tree keeps its one process. The cost is a Bun process per installed plugin
       // with host code (about 30 to 50 MB each).
       const top = topPluginIdOf(pluginId);
-      const key = process === "clover" ? "clover" : `${process}:${top}`;
+      // A plugin that asks for a process of its own (`host.process: "own"`, a Node plugin, or a bundled one with native
+      // code, which the clover process doesn't load) gets one by its id; any other third-party tree, one by its top id.
+      const key = process === "clover" ? "clover" : process === "own" ? `own:${pluginId}` : `${process}:${top}`;
       if (launch instanceof Error) throw new ContractError("failed", `plugin processes can't start here: ${launch.message}`);
       const live = processes.get(key);
       if (live !== undefined && !live.peer.closed) return live.peer;
       // The clover process holds many plugins: none of them runs native code there (B3, its guard's flag).
       const forKey = process === "clover" ? { ...launch, env: { ...launch.env, CLOVER_PLUGIN_NO_NATIVES: "1" } } : launch;
-      const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top);
+      const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top, process === "own" ? pluginId : top);
       const started = spawnHostProcess({ ...fenced, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
       processes.set(key, started);
       started.peer.onClose(() => {

@@ -3,7 +3,7 @@
 // sends what the plugin writes to the console to its log, never to the process's stdout.
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { extname, join, sep } from "node:path";
+import { dirname, extname, join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ContractError } from "../contracts/common";
 import type { HostModule } from "../contracts/sdk-types";
@@ -77,11 +77,52 @@ function verifyTree(pluginId: string, entry: string, file: string, v: { root: st
   }
   if (!files.has(real)) refuse(entry, "is a bundled plugin's with no verified copy recorded");
   const prefix = v.root.endsWith(sep) ? v.root : v.root + sep;
-  const under = new RegExp(`^${prefix.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&")}`);
+  // Bun keeps a module's CommonJS interop only when it reads the file itself (measured: contents an onLoad returns are
+  // taken as ESM), so a CommonJS file (`.cjs`, `.cts`, or `.js` outside a `"type": "module"` package) is checked when
+  // it's resolved, just before Bun reads it, and every other module is served from the checked bytes. The CommonJS
+  // check leaves a same-user race between the check and Bun's read; the ESM one leaves none.
+  const typeModule = new Map<string, boolean>();
+  const isModuleDir = (dir: string): boolean => {
+    if (!(dir + sep).startsWith(prefix) && dir !== v.root) return false;
+    const known = typeModule.get(dir);
+    if (known !== undefined) return known;
+    const pkg = join(dir, "package.json");
+    let found: boolean;
+    if (files.has(pkg)) {
+      try {
+        found = JSON.parse(checked(pkg).toString("utf8")).type === "module";
+      } catch {
+        found = false;
+      }
+    } else found = dir === v.root || dirname(dir) === dir ? false : isModuleDir(dirname(dir));
+    typeModule.set(dir, found);
+    return found;
+  };
+  const esm = (path: string): boolean => {
+    const ext = extname(path).toLowerCase();
+    if (ext === ".cjs" || ext === ".cts" || ext === ".node") return false;
+    if (ext === ".js") return isModuleDir(dirname(path));
+    return LOADERS[ext] !== undefined;
+  };
+  const served = [...files.keys()].filter(esm);
+  const esc = (p: string) => p.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
+  const exact = served.length === 0 ? /^$^/ : new RegExp(`^(?:${served.map(esc).join("|")})$`);
   Bun.plugin({
     name: `clover-verified-${pluginId}`,
     setup(build) {
-      build.onLoad({ filter: under }, (args) => ({ contents: checked(args.path).toString("utf8"), loader: LOADERS[extname(args.path).toLowerCase()] ?? "text" }));
+      build.onLoad({ filter: exact }, (args) => ({ contents: checked(args.path).toString("utf8"), loader: LOADERS[extname(args.path).toLowerCase()] ?? "text" }));
+      build.onResolve({ filter: /.*/ }, (args) => {
+        if (args.path.startsWith("bun:") || args.path.startsWith("node:")) return undefined;
+        let resolved: string;
+        try {
+          resolved = realpathSync(Bun.resolveSync(args.path, args.importer ? dirname(args.importer) : v.root));
+        } catch {
+          return undefined;
+        }
+        // A file with no digest (planted after staging) is refused here, whatever its kind; a CommonJS one is checked.
+        if (resolved.startsWith(prefix) && (!files.has(resolved) || !esm(resolved))) checked(resolved);
+        return undefined;
+      });
     },
   });
   const check = (filename: string): void => {
