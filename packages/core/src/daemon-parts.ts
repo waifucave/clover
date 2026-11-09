@@ -322,10 +322,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         warn: (line) => log(`[bots] ${line}`),
       });
       side = s;
+      // #321's second line behind each run's git-key revert: at each turn's end, and with `end` at the session's. Pushed
+      // before the bot side's close, so it is removed after it (closers run in reverse): the sessions the stop cancels
+      // are seen ending, and any still open are rechecked as the watch goes.
+      closers.push(recheckAtTurnEnds(s.host, spawner, (line) => log(`[fence] ${line}`)));
       closers.push(() => s.close());
       closers.push(s.gate.watch(() => pauseChanged.emit()));
-      // #321's second line behind each run's git-key revert: at each turn's end, and with `end` at the session's.
-      closers.push(recheckAtTurnEnds(s.host, spawner, (line) => log(`[fence] ${line}`)));
       // The server's doors open once the agents are up, and close before the bot side (and the agents with it) stop.
       if (agents && a && a.doors) {
         const doors = a.doors;
@@ -393,31 +395,56 @@ function followMain(node: ComputerNode, main: MainComputer, links: DeviceLinks):
 }
 
 /** Calls the fenced process's `recheck` (#321) for each session of `host` when its turn ends (a running session going
- *  back to `idle` or `ready`), and with `end: true` once when it stops or fails, which forgets it. A report line goes to
- *  `log`. Returns its removal. */
-export function recheckAtTurnEnds(host: Pick<SessionHost, "watch">, spawner: Pick<FencedSpawner, "recheck">, log: (line: string) => void): () => void {
+ *  back to `idle` or `ready`), and with `end: true` once when it stops or fails. A session that starts again (the same
+ *  id, resumed) is watched again. A revert or a recheck that fails goes to `log` and to the session's own record, as a
+ *  core note. The removal rechecks, with `end`, every session still open: the daemon's stop removes it only after the
+ *  bot side has stopped its sessions (#365's review), so nothing a session's commands left behind goes unlooked-at. */
+export function recheckAtTurnEnds(host: Pick<SessionHost, "watch" | "deliver">, spawner: Pick<FencedSpawner, "recheck">, log: (line: string) => void): () => void {
   const running = new Set<string>();
+  const open = new Set<string>();
   const ended = new Set<string>();
+  const note = (id: string, text: string) => {
+    void host.deliver(id, { from: "note", label: "Fence", text, by: { kind: "core" } }).catch(() => undefined);
+  };
   const recheck = (id: string, end: boolean) => {
     try {
       const line = spawner.recheck?.(id, end ? { end: true } : {});
-      if (line) log(`${id}: ${line}`);
+      if (line) {
+        log(`${id}: ${line}`);
+        note(id, `Clover undid a git setting this session's commands changed: ${line}`);
+      }
     } catch (err) {
-      log(`${id}: the recheck failed: ${err instanceof Error ? err.message : String(err)}`);
+      const why = err instanceof Error ? err.message : String(err);
+      log(`${id}: the recheck failed: ${why}`);
+      note(id, `Clover couldn't look again at the git settings this session's commands may have changed: ${why}`);
     }
   };
-  return host.watch((view) => {
-    if (ended.has(view.id)) return;
+  const off = host.watch((view) => {
+    const id = view.id;
+    if (view.status === "starting" || view.status === "ready" || view.status === "prompting") {
+      ended.delete(id); // resumed: watched again
+      open.add(id);
+    }
+    if (ended.has(id)) return;
     if (view.status === "prompting" || view.status === "cancelling") {
-      running.add(view.id);
+      running.add(id);
     } else if (view.status === "idle" || view.status === "ready") {
-      if (running.delete(view.id)) recheck(view.id, false);
+      open.add(id);
+      if (running.delete(id)) recheck(id, false);
     } else if (view.status === "stopped" || view.status === "failed") {
-      running.delete(view.id);
-      ended.add(view.id);
-      recheck(view.id, true);
+      running.delete(id);
+      open.delete(id);
+      ended.add(id);
+      recheck(id, true);
     }
   });
+  return () => {
+    off();
+    for (const id of [...open]) recheck(id, true);
+    open.clear();
+    running.clear();
+    ended.clear();
+  };
 }
 
 /** The broker, bound late (the node needs it before it exists: it is made from the node's own registry). Its `request`
