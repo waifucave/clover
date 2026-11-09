@@ -265,7 +265,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     ...(areas !== undefined ? [areas.handlers] : []),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
     {
-      // A component runs one of its plugin's host handlers, as the user, for the session it shows.
+      // A component runs one of its plugin's host handlers for the session it shows. It acts as the plugin, never the
+      // user: a layer's caller is `{ kind: "plugin", pluginId }` (#333's ruling), and the handler gets that caller.
       // Its arguments are `HostApi.call`'s, in order: the handler's name, its args, and options (`timeoutMs`).
       "host.call": async (ctx, args) => {
         const [handler, callArgs, opts] = args as [unknown, unknown, { timeoutMs?: unknown } | undefined];

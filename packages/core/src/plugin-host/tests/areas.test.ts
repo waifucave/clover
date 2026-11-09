@@ -9,7 +9,7 @@ import { createApiRouter } from "../api/router";
 const USER: Caller = { kind: "user", client: "app" };
 const record = (id: string, granted: string[]) => ({ id, enabled: true, state: "running", granted, capabilities: granted }) as never;
 
-function world(o: { granted?: string[]; running?: boolean; length?: number; records?: unknown[]; transients?: { type: string }[] } = {}) {
+function world(o: { granted?: string[]; running?: boolean; length?: number; records?: unknown[]; transients?: { type: string }[]; noApp?: boolean } = {}) {
   const delivered: unknown[] = [];
   const treeCalls: unknown[] = [];
   const written: unknown[] = [];
@@ -48,8 +48,8 @@ function world(o: { granted?: string[]; running?: boolean; length?: number; reco
       },
     }) as never,
     links: () => undefined,
-    emitToApp: (e) => void emitted.push(e),
-  };
+    ...(o.noApp ? {} : { emitToApp: (e: unknown) => void emitted.push(e) }),
+  } as AreaServices;
   const granted = o.granted ?? ["conversation.read", "conversation.post", "bots.read", "computers.read", "files", "terminal"];
   const parts = areasParts(services);
   const router = createApiRouter({ registry: { get: (id: string) => (id === "tarot" || id === "other" ? record(id, granted) : undefined) }, handlers: [parts.handlers] });
@@ -108,6 +108,18 @@ describe("the API's areas", () => {
     expect((await failure(w.call("terminal.resize", ["t_1", 100, 30], { process: "ui", caller: USER })))?.code).toBe("not_found");
   });
 
+  // #333/#334's review: every terminal leaves the map when its shell exits, one with no app to show it too.
+  test("a terminal whose shell exits is dropped, with or without an app to show its output", async () => {
+    for (const noApp of [false, true]) {
+      const w = world({ noApp });
+      expect(await w.call("terminal.open", [{ computer: "Studio" }], { process: "ui" })).toEqual({ terminalId: "t_1" });
+      for (const fn of [...w.outputs]) fn({ terminalId: "t_1", data: "bye\r\n", exited: { code: 0 } });
+      expect(w.outputs.size).toBe(0);
+      expect((await failure(w.call("terminal.input", ["t_1", { data: "x" }], { process: "ui" })))?.code).toBe("not_found");
+      expect(w.emitted.length).toBe(noApp ? 0 : 1);
+    }
+  });
+
   // #334's review.
   test("a component's reads are the plugin's: no sealed card parts, no streaming but the reply's text, whatever caller it carries", async () => {
     const records = [{ type: "driver", seq: 0, sessionId: "s_1", ts: 1, event: { type: "approval_requested", requestId: "r", summary: "the sealed summary", options: [{ id: "a" }] } }];
@@ -118,6 +130,18 @@ describe("the API's areas", () => {
     const got: { type: string }[] = [];
     const stop = (await w.call("conversation.follow", ["s_1", (e: { type: string }) => got.push(e)], { process: "ui", caller: USER })) as () => void;
     expect(got.map((e) => e.type)).toEqual(["assistant_delta"]);
+    stop();
+  });
+
+  // #333/#334's review: a transient event that lands during the replay waits behind it, like a record.
+  test("follow: a transient event never overtakes the replay", async () => {
+    const records = [0, 1, 2].map((seq) => ({ type: "turn_started", seq, sessionId: "s_1", ts: seq }));
+    const w = world({ records, transients: [{ type: "assistant_delta" }] });
+    const got: string[] = [];
+    const stop = (await w.call("conversation.follow", ["s_1", (e: { type: string; seq: number }) => got.push(`${e.type}:${e.seq}`), { since: -1 }])) as () => void;
+    expect(got).toEqual([]);
+    for (let i = 0; i < 50 && got.length < 4; i++) await Bun.sleep(5);
+    expect(got).toEqual(["turn_started:0", "turn_started:1", "turn_started:2", "assistant_delta:2"]);
     stop();
   });
 

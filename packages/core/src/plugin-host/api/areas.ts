@@ -195,7 +195,8 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       return { events, hasMore };
     },
     // `since` (an integer, -1 for everything) replays after the watch opens, a page at a time with a yield between
-    // pages, at most the latest REPLAY_MAX events; what lands meanwhile waits for the replay, then follows in order.
+    // pages, at most the latest REPLAY_MAX events; what lands meanwhile, records and transient events alike, waits for
+    // the replay and then follows in the order it came (#333/#334's review: a transient never overtakes the replay).
     "conversation.follow": (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const listener = listenerArg<WireEvent>(args, 1);
@@ -209,7 +210,8 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         let closed = false;
         let replaying = typeof since === "number";
         let last = -Infinity;
-        const queued: WireEvent[] = [];
+        // What landed during the replay, in order: a record (sent once, by seq) or a transient event (sent as it is).
+        const queued: { event: WireEvent; transient: boolean }[] = [];
         const send = (event: WireEvent) => {
           if (closed || event.seq <= last) return;
           last = event.seq;
@@ -218,11 +220,14 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
         const offRecords = host.subscribe(id, (record) => {
           const event = projectRecord(record, opts);
           if (!event) return;
-          if (replaying) queued.push(event);
+          if (replaying) queued.push({ event, transient: false });
           else send(event);
         });
         const offTransient = host.onTransient(id, (event) => {
-          if (!closed && transientFor(me, event.type)) listener({ ...event, seq: Math.max(0, host.length(id) - 1), sessionId: id, ts: now() } as WireEvent);
+          if (closed || !transientFor(me, event.type)) return;
+          const e = { ...event, seq: Math.max(0, host.length(id) - 1), sessionId: id, ts: now() } as WireEvent;
+          if (replaying) queued.push({ event: e, transient: true });
+          else listener(e);
         });
         if (typeof since === "number") {
           const end = host.length(id) - 1;
@@ -236,7 +241,11 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
               return;
             }
             replaying = false;
-            for (const event of queued.splice(0)) send(event);
+            for (const q of queued.splice(0)) {
+              if (closed) break;
+              if (q.transient) listener(q.event);
+              else send(q.event);
+            }
           };
           setImmediate(page);
         }
@@ -363,17 +372,17 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       }, ctx.caller);
       const layer = ctx.process === "ui";
       const entry: { pluginId: string; layer: boolean; stop?: Unsubscribe } = { pluginId: ctx.pluginId, layer };
-      if (layer && s.emitToApp !== undefined) {
-        const emit = s.emitToApp;
-        entry.stop = n.terminals.onOutput((o) => {
-          if (o.terminalId !== terminalId) return;
-          emit({ type: "terminal_output", pluginId: ctx.pluginId, terminalId, data: o.data, ...(o.exited !== undefined ? { exited: o.exited } : {}) });
-          if (o.exited !== undefined) {
-            entry.stop?.();
-            terminals.delete(terminalId);
-          }
-        });
-      }
+      // A layer's output reaches the app as `terminal_output`; every terminal, a host half's too, is dropped from the
+      // map when its shell exits (#333/#334's review).
+      const emit = layer ? s.emitToApp : undefined;
+      entry.stop = n.terminals.onOutput((o) => {
+        if (o.terminalId !== terminalId) return;
+        emit?.({ type: "terminal_output", pluginId: ctx.pluginId, terminalId, data: o.data, ...(o.exited !== undefined ? { exited: o.exited } : {}) });
+        if (o.exited !== undefined) {
+          entry.stop?.();
+          terminals.delete(terminalId);
+        }
+      });
       terminals.set(terminalId, entry);
       return { terminalId };
     },
