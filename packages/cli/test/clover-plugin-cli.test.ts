@@ -3,7 +3,7 @@
 // `logs` and `list` read through the daemon; the Claude-plugin manager's old verbs say where they went. The command
 // line itself runs as a process for `new`, `validate`, a moved verb, and `dev` with no Clover running.
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registry } from "@waifucave/clover-core";
@@ -42,7 +42,10 @@ describe("clover plugin new", () => {
       expect(v.plugin?.capabilities).toEqual([]);
       expect(v.plugin?.helperPermissions).toEqual([]);
       expect(v.plugin?.networkHosts).toEqual(template === "model" ? ["api.example.com"] : []);
-      if (template === "tool") expect(v.plugin?.toolNames).toEqual(["mcp__my-tool__hello"]);
+      if (template === "tool") {
+        expect(v.plugin?.toolNames).toEqual(["mcp__my-tool__hello"]);
+        expect(Object.keys(JSON.parse(readFileSync(join(folder, "clover.json"), "utf8")).contributes.mcpServers)).toEqual(["tools"]);
+      }
       // Its code parses.
       for (const f of filesIn(folder).filter((f) => /\.(ts|tsx)$/.test(f))) {
         expect(() => new Bun.Transpiler({ loader: f.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(readFileSync(join(folder, f), "utf8"))).not.toThrow();
@@ -58,7 +61,9 @@ describe("clover plugin new", () => {
     const transport: { start(): Promise<void>; send(m: Record<string, unknown>): Promise<void>; close(): Promise<void>; onmessage?: (m: Record<string, unknown>) => void } = {
       start: async () => {}, close: async () => {}, send: async (m) => void sent.push(m),
     };
-    await mod.mcp.greeter!(transport);
+    // The server is `tools`, never the id: the served key `<id>-tools` stays within 64 for the longest id (40).
+    expect(Object.keys(mod.mcp)).toEqual(["tools"]);
+    await mod.mcp.tools!(transport);
     transport.onmessage!({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
     transport.onmessage!({ jsonrpc: "2.0", id: 2, method: "tools/list" });
     transport.onmessage!({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "hello", arguments: { name: "Ada" } } });
@@ -86,6 +91,72 @@ describe("clover plugin new", () => {
     expect(JSON.parse(readFileSync(join(cwd, "empty", "clover.json"), "utf8"))).toMatchObject({ id: "empty", name: "Ada" });
     expect(runPluginNew(["theme"], cwd).code).toBe(0);
     expect(readdirSync(join(cwd, "my-theme"))).toContain("theme.json");
+  });
+
+  test("refuses the ids Clover ships, ids out of the protocol's rule, and makes the longest id's tool server fit", async () => {
+    const cwd = temp("clover-pnew-");
+    for (const id of ["clover", "alpha"]) {
+      expect(runPluginNew(["bot", id], cwd)).toMatchObject({ code: 2, output: expect.stringContaining("one of the plugins Clover ships") });
+      expect(existsSync(join(cwd, id))).toBe(false);
+    }
+    for (const id of ["1abc", "a", "a--b", "a".repeat(41), "Caps", "a_b", "a.b"]) {
+      expect({ id, code: runPluginNew(["bot", id], cwd).code }).toEqual({ id, code: 2 });
+      expect(existsSync(join(cwd, id))).toBe(false);
+    }
+    // A case variant of a reserved id isn't an id at all; `x/..` names the folder `x` is in, here a taken one.
+    expect(runPluginNew(["bot", "Clover"], cwd).code).toBe(2);
+    mkdirSync(join(cwd, "parent", "x"), { recursive: true });
+    expect(runPluginNew(["bot", "parent/x/.."], cwd)).toMatchObject({ code: 1, output: expect.stringContaining("isn't an empty folder") });
+    const longest = `t${"o".repeat(39)}`;
+    expect(runPluginNew(["tool", longest], cwd).code).toBe(0);
+    const v = await registry.validatePluginFolder(join(cwd, longest), { os: "macos" });
+    expect({ ok: v.ok, issues: v.issues }).toEqual({ ok: true, issues: [] });
+    expect(`${longest}-tools`.length).toBeLessThanOrEqual(64);
+  });
+
+  test("--name loses control, format and line-separator characters, and can't be empty, too long or reserved", async () => {
+    const cwd = temp("clover-pnew-");
+    expect(runPluginNew(["tool", "named", "--name", "Ada\n// injected\u2028x\u0007\u200b  Lovelace\t"], cwd).code).toBe(0);
+    const manifest = JSON.parse(readFileSync(join(cwd, "named", "clover.json"), "utf8")) as { name: string };
+    expect(manifest.name).toBe("Ada// injectedx Lovelace");
+    // The name is in a line comment in the host code: it stays one line, and the code still parses and validates.
+    const host = readFileSync(join(cwd, "named", "host", "index.ts"), "utf8");
+    expect(host.split("\n")[0]).toBe("// Ada// injectedx Lovelace's host half: one MCP server, `tools`, served on the in-process transport Clover hands it. It speaks");
+    const v = await registry.validatePluginFolder(join(cwd, "named"), { os: "macos" });
+    expect({ ok: v.ok, issues: v.issues }).toEqual({ ok: true, issues: [] });
+    for (const bad of ["\u0001\u0002", "x".repeat(81), "Clover", "Needs you"]) {
+      expect(runPluginNew(["bot", "refused", "--name", bad], cwd).code).toBe(2);
+      expect(existsSync(join(cwd, "refused"))).toBe(false);
+    }
+    expect(runPluginNew(["bot", "refused", "--name", "  "], cwd).code).toBe(2);
+  });
+
+  test("a write that fails part-way leaves nothing behind: the folder it made, or only its own entries in an empty one", () => {
+    const cwd = temp("clover-pnew-");
+    const failThird = () => {
+      let n = 0;
+      return (file: string, text: string) => {
+        if (++n === 3) throw new Error("disk full");
+        writeFileSync(file, text, { flag: "wx" });
+      };
+    };
+    // A folder (and a parent) this run made: both go.
+    const run = runPluginNew(["ui", "deep/made"], cwd, failThird());
+    expect(run).toMatchObject({ code: 1, output: expect.stringContaining("disk full; nothing was left behind") });
+    expect(existsSync(join(cwd, "deep"))).toBe(false);
+    // An empty folder that was there: it stays, empty.
+    mkdirSync(join(cwd, "there"));
+    expect(runPluginNew(["ui", "there"], cwd, failThird()).code).toBe(1);
+    expect(readdirSync(join(cwd, "there"))).toEqual([]);
+    // A file that appears beside this run's before its write (wx refuses) isn't this run's, and stays.
+    mkdirSync(join(cwd, "raced"));
+    let n = 0;
+    const raced = (file: string, text: string) => {
+      if (++n === 3) writeFileSync(file, "theirs");
+      writeFileSync(file, text, { flag: "wx" });
+    };
+    expect(runPluginNew(["ui", "raced"], cwd, raced).code).toBe(1);
+    expect(filesIn(join(cwd, "raced")).map((f) => readFileSync(join(cwd, "raced", f), "utf8"))).toEqual(["theirs"]);
   });
 });
 

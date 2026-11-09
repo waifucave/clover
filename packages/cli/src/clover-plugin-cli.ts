@@ -11,9 +11,9 @@
 //   clover plugin validate [<folder>] [--json] [--upgrade]   (plugin-validate-cli.ts)
 //
 // The Claude-plugin manager Winter's `clover plugin` was (WS-21: install, marketplace, …) is `clover plugin claude …`.
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { PLUGIN_TEMPLATES, TEMPLATE_ID_RE, templateFiles } from "@waifucave/clover-plugin-sdk/templates";
+import { PLUGIN_TEMPLATES, templateFiles, templateIdProblem } from "@waifucave/clover-plugin-sdk/templates";
 
 /** One request to the daemon's Clover server, as the CLI. Rejects with the JSON-RPC error (`code`, `message`). */
 export type CloverPluginCall = (method: string, params: unknown) => Promise<unknown>;
@@ -173,7 +173,11 @@ export async function runPluginLogs(args: readonly string[], call: CloverPluginC
 
 // ---- new ----
 
-export function runPluginNew(args: readonly string[], cwd = process.cwd()): CliRun {
+/** `new`'s file writer; a test passes one that fails part-way. */
+export type NewFileWriter = (file: string, text: string) => void;
+const writeNew: NewFileWriter = (file, text) => writeFileSync(file, text, { flag: "wx" });
+
+export function runPluginNew(args: readonly string[], cwd = process.cwd(), write: NewFileWriter = writeNew): CliRun {
   const usage = `usage: clover plugin new <${Object.keys(PLUGIN_TEMPLATES).join("|")}> [<folder>] [--name <name>]`;
   const positionals: string[] = [];
   let name: string | undefined;
@@ -193,15 +197,35 @@ export function runPluginNew(args: readonly string[], cwd = process.cwd()): CliR
   if (!(template in PLUGIN_TEMPLATES)) return fail(`no template "${template}": ${Object.keys(PLUGIN_TEMPLATES).join(", ")}`, 2);
   const folder = resolve(cwd, folderArg ?? `my-${template}`);
   const id = basename(folder);
-  if (!TEMPLATE_ID_RE.test(id) || id.length > 64) return fail(`a plugin's folder is named by its id: lowercase letters, digits and hyphens ("${id}" isn't one)`, 2);
+  const idProblem = templateIdProblem(id);
+  if (idProblem) return fail(`a plugin's folder is named by its id: ${idProblem}`, 2);
   // Never over anything: a folder that exists must be empty.
   if (existsSync(folder) && (!statSync(folder).isDirectory() || readdirSync(folder).length > 0)) return fail(`${folder} already exists and isn't an empty folder`);
-  const made = templateFiles(template, { id, name: name?.trim() || titleOf(id) });
+  const made = templateFiles(template, { id, name: name ?? titleOf(id) });
   if ("error" in made) return fail(made.error, 2);
-  for (const [rel, text] of Object.entries(made.files)) {
-    const file = join(folder, ...rel.split("/"));
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, text, { flag: "wx" });
+  // All or nothing: a write that fails part-way takes back what this run made, the folder too when this run made it
+  // (and any parent it made), and only this run's entries when the folder was there and empty.
+  let firstMade: string | undefined;
+  const madeEntries = new Set<string>();
+  try {
+    firstMade = mkdirSync(folder, { recursive: true });
+    for (const [rel, text] of Object.entries(made.files)) {
+      const file = join(folder, ...rel.split("/"));
+      const dirMade = mkdirSync(dirname(file), { recursive: true });
+      if (dirMade !== undefined) madeEntries.add(dirMade);
+      write(file, text);
+      madeEntries.add(file);
+    }
+  } catch (err) {
+    let cleaned = true;
+    try {
+      if (firstMade !== undefined) rmSync(firstMade, { recursive: true, force: true });
+      else for (const entry of madeEntries) rmSync(entry, { recursive: true, force: true });
+    } catch {
+      cleaned = false;
+    }
+    const why = err instanceof Error ? err.message : String(err);
+    return fail(`couldn't make ${folder}: ${why}; ${cleaned ? "nothing was left behind" : "some of what it made is still there"}`);
   }
   return {
     code: 0,
