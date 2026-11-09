@@ -2,10 +2,11 @@
 // calls `hookSpawner(os)` for a hook's `command` (Claude Code's hook protocol: JSON on stdin, JSON on stdout, exit code
 // 2 to deny); bots' Bash goes through the fenced door when it runs under the fence on the three OSes (C-M2).
 //
-// A hook's command is plugin code, so it is treated as the plugin host is (the controller's ruling; spec §5.2,
-// revision 13): fenced on macOS, and run as the user on Windows and Linux, where code the user installs is trusted.
-// Until the fenced process lands on macOS that door says it is closed (`available: false`) and refuses every run with
-// the reason, so a caller skips the hook and reports it rather than running it outside the fence.
+// A hook's command is plugin code. It runs fenced on macOS and on Linux (the controller's ruling of November 9, which
+// replaced "as the user on Linux"): bubblewrap there when the computer has it, and where it doesn't, the fenced door
+// refuses every run with the reason, never running the hook unfenced. Windows runs it as the user until the Windows
+// sandbox lane. A door that is closed (`available: false`) refuses every run with the reason, so a caller skips the
+// hook and reports it (or, where the hook could deny, denies) rather than running it outside the fence.
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
@@ -63,10 +64,10 @@ export const RUN_AS_USER: FencedSpawner = {
   run: (r) => runAsUser(r),
 };
 
-/** The door for a hook's command on `os`: the fenced one on macOS (`fenced`, closed until it lands), the user's
- *  elsewhere. */
+/** The door for a hook's command on `os`: the fenced one on macOS and Linux (`fenced`, which refuses with its reason
+ *  where it can't start a fenced process: no bwrap, say), the user's on Windows. */
 export function hookSpawner(os: Os, fenced: FencedSpawner = FENCED_SPAWN_NOT_YET): FencedSpawner {
-  return os === "macos" ? fenced : RUN_AS_USER;
+  return os === "windows" ? RUN_AS_USER : fenced;
 }
 
 /** Windows: Git Bash from its two standard installs (for all users, then for this user), for hooks written for

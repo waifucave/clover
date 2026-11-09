@@ -77,6 +77,9 @@ export interface BotSideOptions {
   pillTargets?: Pick<PluginHost, "invoke">;
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
   onSessionEnded?: (id: string) => void;
+  /** At the close, after the bots and the agents stopped (their turns cancelled) and before the host lets go of the
+   *  sessions: what must still be written to a session's record (INT, the fence's end-pass recheck notes). */
+  beforeRelease?: () => void | Promise<void>;
   /** Lane M's update gate (`RunningDaemon.updateGate`, #198): its turns are a busy source, and none starts while an
    *  update closes it (update-gate.ts). */
   updateGate?: UpdateGateLike;
@@ -266,6 +269,13 @@ export function createBotSide(o: BotSideOptions): BotSide {
         }
       }
       compaction.close();
+      if (o.beforeRelease !== undefined) {
+        try {
+          await o.beforeRelease();
+        } catch (err) {
+          o.warn?.(`before the sessions' release: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       await host.close();
       gate.close();
     },

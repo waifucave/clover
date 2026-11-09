@@ -90,16 +90,17 @@ describe("recheckAtTurnEnds", () => {
     expect(s.calls).toEqual([["a", true], ["a", false], ["a", true]]);
   });
 
-  test("#365's blocker: the removal rechecks, with end, every session still open (the daemon's stop removes it after the bot side's close)", () => {
+  test("#365's blocker: the end pass rechecks, with end, every session still open; the close then only stops watching", async () => {
     const host = fakeHost();
     const s = recording();
-    const off = recheckAtTurnEnds(host as never, s, () => {});
+    const watch = recheckAtTurnEnds(host as never, s, () => {});
     host.emit("a", "prompting"); // still running at the stop
     host.emit("b", "idle"); // open, idle
     host.emit("c", "prompting");
     host.emit("c", "stopped"); // ended already
-    off();
+    await watch.endPass();
     expect(s.calls).toEqual([["c", true], ["a", true], ["b", true]]);
+    watch.close();
     host.emit("a", "idle"); // removed: nothing more
     expect(s.calls).toHaveLength(3);
   });
@@ -138,9 +139,9 @@ test("the daemon's parts: one spawner over the fence, its hook door, and its rec
   });
   stops.push(() => parts.close());
   expect(parts.spawner).toBe(spawner);
-  // Fenced on macOS; the user's own elsewhere (hooks are plugin code the user installed).
-  if (hostOs() === "macos") expect(parts.hookSpawner).toBe(spawner);
-  else expect(parts.hookSpawner).not.toBe(spawner);
+  // Fenced on macOS and Linux (bwrap there, or a refusal with the reason where it's missing); the user's own on Windows.
+  if (hostOs() === "windows") expect(parts.hookSpawner).not.toBe(spawner);
+  else expect(parts.hookSpawner).toBe(spawner);
 
   const side = parts.bots!;
   const id = mainSessionIdFor("luna");
@@ -201,11 +202,16 @@ darwinTest("#365's blocker, for real: a git key a session's command left behind 
     who: { caller: { kind: "session", sessionId: id, sessionKind: "bot", bot: "luna" } },
   });
   expect(ran.kind).toBe("exited");
-  // Something the command left running plants a key after the run's own revert pass.
+  // The turn ends (its recheck finds nothing yet); the session stays open, idle.
+  fakes.for(id).end();
+  await waitFor("the turn's end", () => side.host.get(id)?.status === "idle");
+  // Something the command left running plants a key after the run's own revert pass and the turn's recheck.
   const config = join(project, ".git", "config");
   writeFileSync(config, `${readFileSync(config, "utf8")}[core]\n\thooksPath = ${join(userHome, "evil-hooks")}\n`);
   await parts.close();
   closed = true;
+  // Reverted by the stop's end pass (inside the bot side's close, before the sessions' release), whose note is on the
+  // session's record: the note this test proves is the end pass's, not a turn end's.
   expect(readFileSync(config, "utf8")).not.toContain("evil-hooks");
   expect(side.host.history(id).some((r) => r.type === "input" && (r.input as { from?: string; text?: string }).from === "note" && /undid a git setting/.test((r.input as { text: string }).text))).toBe(true);
 }, 60_000);

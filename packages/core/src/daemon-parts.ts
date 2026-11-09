@@ -110,7 +110,8 @@ export interface DaemonParts {
   /** Lane C's fenced process (#321) over this computer's one fence. Its `recheck` runs at each of the bot side's turn
    *  ends and session ends (`recheckAtTurnEnds`). */
   spawner?: FencedSpawner;
-  /** The door for a hook's command (`hookSpawner(os, spawner)`): fenced on macOS, the user's elsewhere. Lane A's turn
+  /** The door for a hook's command (`hookSpawner(os, spawner)`): fenced on macOS and Linux (refusing with the reason
+   *  where Linux has no bwrap), the user's on Windows. Lane A's turn
    *  loop runs `command` hooks through it (`PluginHooksOptions.commandSpawner`, bound late in daemon.ts). */
   hookSpawner?: FencedSpawner;
   /** Who runs the bots (the lease's holder, or the main), as lane D reads it. */
@@ -307,7 +308,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       } else if (a) {
         log("[agents] not started: they need this computer's node (its links), and the bot side");
       }
+      // The fence's recheck over the bot side's host (below), bound late: its end pass runs inside the side's close.
+      let fenceRecheck: ReturnType<typeof recheckAtTurnEnds> | undefined;
       const s = createBotSide({
+        // #321's recheck with `end` for every session still open, after the stop cancelled the turns and before the
+        // host lets go of the sessions, so its notes are recorded.
+        beforeRelease: () => fenceRecheck?.endPass(),
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
         drivers: b.drivers({ side: () => side, node, main: runner, broker, fence }),
         defaultModel: b.defaultModel,
@@ -322,10 +328,11 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         warn: (line) => log(`[bots] ${line}`),
       });
       side = s;
-      // #321's second line behind each run's git-key revert: at each turn's end, and with `end` at the session's. Pushed
-      // before the bot side's close, so it is removed after it (closers run in reverse): the sessions the stop cancels
-      // are seen ending, and any still open are rechecked as the watch goes.
-      closers.push(recheckAtTurnEnds(s.host, spawner, (line) => log(`[fence] ${line}`)));
+      fenceRecheck = recheckAtTurnEnds(s.host, spawner, (line) => log(`[fence] ${line}`));
+      // #321's second line behind each run's git-key revert: at each turn's end, and with `end` at the session's. Its end
+      // pass runs inside the bot side's close (`beforeRelease`), and its watch goes after that close (pushed before it;
+      // closers run in reverse), so the sessions the stop cancels are seen ending.
+      closers.push(() => fenceRecheck?.close());
       closers.push(() => s.close());
       closers.push(s.gate.watch(() => pauseChanged.emit()));
       // The server's doors open once the agents are up, and close before the bot side (and the agents with it) stop.
@@ -394,17 +401,24 @@ function followMain(node: ComputerNode, main: MainComputer, links: DeviceLinks):
   };
 }
 
+/** The most stopped sessions the recheck remembers as ended (a resumed one leaves the set; the oldest go first). */
+const RECHECK_ENDED_MAX = 4096;
+
 /** Calls the fenced process's `recheck` (#321) for each session of `host` when its turn ends (a running session going
  *  back to `idle` or `ready`), and with `end: true` once when it stops or fails. A session that starts again (the same
  *  id, resumed) is watched again. A revert or a recheck that fails goes to `log` and to the session's own record, as a
- *  core note. The removal rechecks, with `end`, every session still open: the daemon's stop removes it only after the
- *  bot side has stopped its sessions (#365's review), so nothing a session's commands left behind goes unlooked-at. */
-export function recheckAtTurnEnds(host: Pick<SessionHost, "watch" | "deliver">, spawner: Pick<FencedSpawner, "recheck">, log: (line: string) => void): () => void {
+ *  core note. `endPass` rechecks, with `end`, every session still open: the daemon runs it in the bot side's close after
+ *  the turns were cancelled and before the host lets go of the sessions (`BotSideOptions.beforeRelease`), so its notes
+ *  are recorded (#365's review). `close` only stops watching, after the bot side's close. */
+export function recheckAtTurnEnds(host: Pick<SessionHost, "watch" | "deliver">, spawner: Pick<FencedSpawner, "recheck">, log: (line: string) => void): { endPass(): Promise<void>; close(): void } {
   const running = new Set<string>();
   const open = new Set<string>();
   const ended = new Set<string>();
+  const pending: Array<Promise<unknown>> = [];
   const note = (id: string, text: string) => {
-    void host.deliver(id, { from: "note", label: "Fence", text, by: { kind: "core" } }).catch(() => undefined);
+    pending.push(host.deliver(id, { from: "note", label: "Fence", text, by: { kind: "core" } }).catch((err: unknown) => {
+      log(`${id}: the note wasn't recorded: ${err instanceof Error ? err.message : String(err)}`);
+    }));
   };
   const recheck = (id: string, end: boolean) => {
     try {
@@ -435,15 +449,24 @@ export function recheckAtTurnEnds(host: Pick<SessionHost, "watch" | "deliver">, 
       running.delete(id);
       open.delete(id);
       ended.add(id);
+      if (ended.size > RECHECK_ENDED_MAX) ended.delete(ended.values().next().value!);
       recheck(id, true);
     }
   });
-  return () => {
-    off();
-    for (const id of [...open]) recheck(id, true);
-    open.clear();
-    running.clear();
-    ended.clear();
+  return {
+    async endPass() {
+      for (const id of [...open]) recheck(id, true);
+      open.clear();
+      running.clear();
+      await Promise.all(pending.splice(0));
+    },
+    close() {
+      off();
+      for (const id of [...open]) recheck(id, true); // only what the end pass didn't see (no bot side, say)
+      open.clear();
+      running.clear();
+      ended.clear();
+    },
   };
 }
 
