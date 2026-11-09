@@ -3541,6 +3541,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // After any change to this computer's ticks (lane J's node: install, Mirror, untick), the servers it runs here start
     // or stop at once.
     onTicksChanged: () => void mcp.refresh(),
+    // What this computer lists of its per-computer servers, for lane J's node to serve to the others.
+    listing: () => mcp.listing(),
     fields: (server: string) => mcp.fields(server),
     call: mcp.call,
     scratch: (session: string) => {

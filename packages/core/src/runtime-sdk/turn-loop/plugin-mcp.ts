@@ -174,6 +174,19 @@ export interface PluginMcpOptions {
    *  `computer` field follows its next refresh and the router checks the live list meanwhile. Its process starts here
    *  only when this computer is on the list: the host calls `refresh()` when the ticks change. */
   computers?(server: string): readonly string[];
+  /** Per-computer servers another computer runs and lists (lane J's node, `mcpRemoteServers`), ready for the prompt:
+   *  placement fields, scope applied, `load` set. They fill only names this computer doesn't list itself. */
+  remoteServers?(kind: "bot" | "side-thread" | "agent" | "coding"): readonly BotMcpServer[];
+}
+
+/** One per-computer server as this computer lists it, for lane J's node to serve to the others (`mcp.list`): the raw
+ *  tools (the node adds the placement fields), their loading, its instructions and scope. */
+export interface PluginMcpListing {
+  server: string;
+  plugin: string;
+  tools: (McpToolDef & { load: "preload" | "on-demand" })[];
+  instructions?: string;
+  scope?: "bots" | "agents" | "both";
 }
 
 interface Listed {
@@ -386,6 +399,35 @@ export class PluginMcp {
         load: loads[t.name] ?? loads["*"] ?? "on-demand",
       }));
       out.push({ server, plugin: l.plugin, tools, ...(l.instructions === undefined ? {} : { instructions: l.instructions }), ...(p.kind === "local" ? { computers: p.computers } : {}), reachable: true });
+    }
+    // Servers other computers run fill the names this one doesn't list. This computer's own listing wins, a server it
+    // lists but scopes out for this kind included; a reserved name, or one this computer's registry gives to another
+    // plugin, is never taken from a remote listing.
+    const declared = new Map(this.#keys().served.map(({ key, c }) => [key, c.pluginId] as const));
+    for (const r of this.#o.remoteServers?.(kind) ?? []) {
+      if (this.#listed.has(r.server) || out.some((s) => s.server === r.server)) continue;
+      if (RESERVED_NAMES.includes(r.server)) continue;
+      const owner = declared.get(r.server);
+      if (owner !== undefined && owner !== r.plugin) continue;
+      out.push(r);
+    }
+    return out;
+  }
+
+  /** The per-computer servers listed here, for lane J's node to serve to the other computers (`mcp.list`; the node
+   *  keeps only what's ticked here). */
+  listing(): PluginMcpListing[] {
+    const out: PluginMcpListing[] = [];
+    for (const [server, l] of this.#listed) {
+      if (l.entry.perComputer !== true) continue;
+      const scope = l.entry.scope ?? (this.#o.registry.get(l.plugin)?.manifest as { scope?: HostServerEntry["scope"] } | undefined)?.scope;
+      const loads = l.entry.tools ?? {};
+      out.push({
+        server, plugin: l.plugin,
+        tools: l.tools.map((t) => ({ ...t, load: loads[t.name] ?? loads["*"] ?? "on-demand" })),
+        ...(l.instructions === undefined ? {} : { instructions: l.instructions }),
+        ...(scope === undefined ? {} : { scope }),
+      });
     }
     return out;
   }

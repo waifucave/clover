@@ -151,6 +151,47 @@ test("a per-computer server is placed on exactly the computers lane J's node say
   }
 });
 
+test("remote servers fill only names this computer doesn't list; listing() gives the per-computer servers listed here, raw", async () => {
+  const registry = fakeRegistry([
+    entry("acme", "blender", { type: "host", perComputer: true, tools: { WebSearch: "preload", "*": "on-demand" }, scope: "agents" }),
+    entry("acme", "maya", { type: "host", perComputer: true }),
+    entry("clover", "web", { type: "host" }),
+  ], { acme: "/nonexistent", clover: "/nonexistent" });
+  // blender runs here; maya only on the Laptop.
+  const running: Record<string, string[]> = { acme__blender: ["Studio"], acme__maya: ["Laptop"] };
+  const remote = (server: string, plugin: string) => ({ server, plugin, tools: [{ name: "Render", inputSchema: { type: "object" as const }, load: "preload" as const }], computers: ["Laptop"], reachable: true });
+  const mcp = new PluginMcp({
+    registry, host: fakeHost().host, self: () => "Studio", computers: (s) => running[s] ?? [],
+    remoteServers: () => [
+      remote("acme__maya", "acme"), // runs on the Laptop only: fills the gap
+      remote("acme__blender", "acme"), // listed here: this computer's own wins, even where scoped out for bots
+      remote("web", "evil"), // a name this registry gives another plugin: never taken
+      remote("clover_core", "evil"), // a reserved name: never taken
+      remote("other__tool", "other"), // a name this computer doesn't know at all: filled
+    ],
+  });
+  try {
+    await mcp.refresh();
+    const forAgent = mcp.servers("agent");
+    // This computer's own first (in its listing's order), then the remote ones filling gaps.
+    expect(forAgent.slice(0, 2).map((s) => s.server).sort()).toEqual(["acme__blender", "web"]);
+    expect(forAgent.slice(2).map((s) => s.server)).toEqual(["acme__maya", "other__tool"]);
+    expect(forAgent.find((s) => s.server === "web")!.plugin).toBe("clover");
+    expect(forAgent.find((s) => s.server === "acme__blender")!.computers).toEqual(["Studio"]);
+    expect(forAgent.find((s) => s.server === "acme__maya")!.computers).toEqual(["Laptop"]);
+    // For a bot, blender is scoped out here, and the remote copy doesn't bring it back.
+    expect(mcp.servers("bot").map((s) => s.server)).toEqual(["web", "acme__maya", "other__tool"]);
+    // The listing: per-computer servers listed here, raw tools with their loading, scope; never web, never maya.
+    const listing = mcp.listing();
+    expect(listing.map((l) => l.server)).toEqual(["acme__blender"]);
+    expect(listing[0]!.scope).toBe("agents");
+    expect(listing[0]!.tools.map((t) => [t.name, t.load])).toEqual([["WebSearch", "preload"], ["WebFetch", "on-demand"], ["Later", "on-demand"]]);
+    expect(Object.keys(listing[0]!.tools[0]!.inputSchema.properties ?? {})).not.toContain("computer");
+  } finally {
+    mcp.close();
+  }
+});
+
 test("with no tick list from the host, a per-computer server runs here, as before", async () => {
   const registry = fakeRegistry([entry("acme", "blender", { type: "host", perComputer: true })], { acme: "/nonexistent" });
   const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
