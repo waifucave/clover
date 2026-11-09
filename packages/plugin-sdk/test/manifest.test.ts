@@ -270,6 +270,15 @@ describe("servers, tools and interpolation", () => {
     expect(has(s({ type: "stdio", command: "x", perComputer: true }), "server_fields")).toBe(true);
   });
 
+  test("a server's env never sets Clover's names, or what changes how Bun, Node or the loader loads code (#322's review)", () => {
+    const s = (env: Record<string, string>) => validateManifest({ ...code, contributes: { mcpServers: { x: { type: "stdio", command: "bun", env } } } });
+    for (const name of ["CLOVER_PLUGIN_HOST", "CLOVER_PLUGIN_ROOT", "CLOVER_PLUGIN_SHARED", "CLOVER_PLUGIN_WORKER", "BUN_OPTIONS", "NODE_OPTIONS", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]) {
+      const r = s({ TOKEN: "t", [name]: "1" });
+      expect([has(r, "reserved_env"), r.issues.find((i) => i.code === "reserved_env")?.message.includes(name)]).toEqual([true, true]);
+    }
+    expect(has(s({ NODE_ENV: "production", NODE_NO_WARNINGS: "1", TOKEN: "t" }), "reserved_env")).toBe(false);
+  });
+
   test("tool names are mcp__<namespace>__<Tool>, unique, never with __ (§6.7)", () => {
     const r = validateManifest({ ...code, contributes: { mcpServers: {
       a: { type: "stdio", command: "a", tools: { Render: "preload", "*": "on-demand" } },

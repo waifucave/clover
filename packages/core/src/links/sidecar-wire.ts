@@ -20,6 +20,7 @@
 // else; `spawnSidecar` is the plain spawn to wrap), and `binary` is the signed one lane M ships beside the core.
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import { type Bytes, concat, fromBase64, fromUtf8, own, toHex, utf8 } from "../identity/bytes";
+import { publicKeyFromBase64 } from "../identity/keys";
 import type { DeviceKey } from "../identity/device-key";
 import type { NatMapping } from "./dial-policy";
 import { FrameReader, MAX_FRAME } from "./frames";
@@ -653,7 +654,11 @@ export function allowListsOf(registry: AllowSource): { keys: Bytes[]; revoked: B
   const key = (d: { publicKey: string }) => fromBase64(d.publicKey);
   const ok = (k: Bytes | null): k is Bytes => k !== null && k.length === 32;
   const devices = registry.all().filter((d) => d.id !== self);
-  return { keys: devices.filter((d) => d.revokedAt === undefined).map(key).filter(ok), revoked: devices.filter((d) => d.revokedAt !== undefined).map(key).filter(ok) };
+  // Only a strict Ed25519 key is let in (identity/ed25519-strict.ts); a revoked one stays shut out whatever its form.
+  return {
+    keys: devices.filter((d) => d.revokedAt === undefined).map((d) => publicKeyFromBase64(d.publicKey)).filter(ok),
+    revoked: devices.filter((d) => d.revokedAt !== undefined).map(key).filter(ok),
+  };
 }
 
 function send(proc: SidecarProcess, m: Record<string, unknown>): void {
