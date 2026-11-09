@@ -145,6 +145,7 @@ import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
+import type { ApiHandlers } from "./plugin-host/api/router";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
 import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
@@ -3570,10 +3571,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // created once they're up running on them (a test daemon handed `modelPluginHost` started its own at boot). Not
     // awaited: the links don't wait on plugin processes. One that finishes after a stop closes itself; a failure leaves
     // the compiled catalog, logged.
-    // Only when the registry carries a model plugin: with none (a test daemon's own store, a home with them all off)
-    // the sessions keep the SDK's compiled catalog and its credential routing, never an empty set.
-    if (opts.modelPluginHost === undefined && modelPlugins === undefined && host.registry.entries("models").length > 0) {
-      void startModelPlugins({ registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers, log: (line) => console.error(line) }).then(
+    // With no model plugin in the registry (a test daemon's own store, a home with them all off) nothing is overridden:
+    // the sessions keep the SDK's own catalog and routing, and move onto the plugins live as the registry gains one
+    // (`ModelPlugins.active`), with no restart.
+    if (opts.modelPluginHost === undefined && modelPlugins === undefined) {
+      // B's `addApiHandlers` (2f) carries the model plugins' keyed fetch behind B's gate; a host without it serves no
+      // code adapter, and code providers stay on the compiled path.
+      const addApiHandlers = (host as { addApiHandlers?: (h: ApiHandlers) => () => void }).addApiHandlers;
+      void startModelPlugins({
+        registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers,
+        ...(addApiHandlers !== undefined ? { addApiHandlers: (h: ApiHandlers) => addApiHandlers.call(host, h) } : {}),
+        log: (line) => console.error(line),
+      }).then(
         (started) => {
           if (partsStopping || pluginHost !== host) started.stop();
           else modelPlugins = started;

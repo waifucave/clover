@@ -13,6 +13,12 @@
 //   the web and runs where the session does (remote), its tools taking J's optional `saveTo`. The router runs a call
 //   here through `call`, and files it returns are saved by the router.
 // * **Scope:** a server's own `scope`, else its plugin's, says whether bots get it (`both` by default).
+// * **Names:** a bundled plugin's server (registry source `bundled`, top plugin `clover`) keeps its plain name, so
+//   `mcp__web__WebSearch` is the web plugin's. Any other plugin's server is served under the key
+//   `<plugin id, anything but letters, digits, `_` and `-` as `_`>__<server>`, so it can't take another's tools. A
+//   non-bundled server named like a reserved name (`clover`, `clover_core`) or like any bundled plugin's server is
+//   refused and logged. Two servers that come to the same key are refused and logged (never first wins): both of them,
+//   unless exactly one is bundled, which keeps the key.
 // * Only `host` servers are served here; a plugin's `stdio` and `http` servers are the MCP host's (lanes B and D).
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
@@ -21,6 +27,7 @@ import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { McpChannel, PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
 import { placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
+import { isBundledClover } from "../model-plugins/load";
 import type { BotMcpServer, BotMcpTool, McpRunner } from "./servers";
 
 /** The MCP protocol version the core asks for (the host's servers speak it: the web plugin's `PROTOCOL_VERSIONS`). */
@@ -33,6 +40,12 @@ const CALL_TIMEOUT_MS = 10 * 60_000;
 const CLOSED_POLL_MS = 1_000;
 /** The most an MCP block's instructions may hold (spec §6.1, "about 4 KB"). */
 const INSTRUCTIONS_MAX_CHARS = 4_096;
+/** The most a tool call's result may hold, as JSON text; past it the content is cut and a marker added. */
+export const RESULT_MAX_CHARS = 1_048_576;
+/** Server names only the core owns, which no non-bundled plugin may serve under. */
+const RESERVED_NAMES: readonly string[] = ["clover", "clover_core"];
+/** The note a cut result ends with. */
+const TRUNCATED_NOTE = "[result truncated: it was over 1 MiB]";
 
 interface HostServerEntry {
   type: "host" | "stdio" | "http";
@@ -51,19 +64,25 @@ class ChannelClient {
   #opening: Promise<McpChannel> | undefined;
   #off: Unsubscribe | undefined;
   #next = 1;
+  #closed = false;
   readonly #pending = new Map<number, { resolve(v: unknown): void; reject(e: unknown): void }>();
 
-  constructor(private readonly open: () => Promise<McpChannel>) {}
+  constructor(private readonly open: () => Promise<McpChannel>, private readonly handshakeMs: number = LIST_TIMEOUT_MS) {}
 
   async #ready(): Promise<McpChannel> {
     if (this.#channel !== undefined && !this.#channel.closed) return this.#channel;
+    if (this.#closed) throw new ContractError("closed", "the plugin's MCP channel was closed");
     this.#drop(new ContractError("closed", "the plugin's MCP channel closed"));
     this.#opening ??= (async () => {
       const channel = await this.open();
+      if (this.#closed) {
+        if (!channel.closed) channel.close();
+        throw new ContractError("closed", "the plugin's MCP channel was closed");
+      }
       this.#off = channel.onMessage((m) => this.#answer(m));
       this.#channel = channel;
       try {
-        await this.#send(channel, "initialize", { protocolVersion: PLUGIN_MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "clover", version: "1" } }, undefined, undefined, LIST_TIMEOUT_MS);
+        await this.#send(channel, "initialize", { protocolVersion: PLUGIN_MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: "clover", version: "1" } }, undefined, undefined, this.handshakeMs);
         channel.send({ jsonrpc: "2.0", method: "notifications/initialized" });
       } catch (err) {
         this.#drop(err);
@@ -137,6 +156,7 @@ class ChannelClient {
   }
 
   close(): void {
+    this.#closed = true;
     this.#drop(new ContractError("closed", "the plugin's MCP channel was closed"));
   }
 }
@@ -147,10 +167,14 @@ export interface PluginMcpOptions {
   /** This computer's name: where a `perComputer` server runs. */
   self(): string;
   log?(line: string): void;
+  /** How long one server's listing may take, its `open()` included (default 30 s). */
+  listTimeoutMs?: number;
 }
 
 interface Listed {
   plugin: string;
+  /** The server's own name, as its plugin knows it (`server` in `openMcp`); the served key may differ. */
+  name: string;
   entry: HostServerEntry;
   tools: McpToolDef[];
   instructions?: string;
@@ -159,10 +183,11 @@ interface Listed {
 /** The plugins' `host` MCP servers for bots: listed, placed and called through the plugin host. */
 export class PluginMcp {
   readonly #o: PluginMcpOptions;
-  readonly #clients = new Map<string, ChannelClient>();
+  readonly #clients = new Map<string, { plugin: string; name: string; client: ChannelClient }>();
   #listed = new Map<string, Listed>();
   #refreshing: Promise<void> | undefined;
   #again = false;
+  #closed = false;
   readonly #off: Unsubscribe;
 
   constructor(o: PluginMcpOptions) {
@@ -172,14 +197,17 @@ export class PluginMcp {
     });
   }
 
-  #client(plugin: string, server: string): ChannelClient {
-    const key = `${plugin}\u0000${server}`;
+  #client(key: string, plugin: string, name: string): ChannelClient {
     let c = this.#clients.get(key);
+    if (c !== undefined && (c.plugin !== plugin || c.name !== name)) {
+      c.client.close();
+      c = undefined;
+    }
     if (c === undefined) {
-      c = new ChannelClient(() => this.#o.host.openMcp(plugin, server));
+      c = { plugin, name, client: new ChannelClient(() => this.#o.host.openMcp(plugin, name), this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS) };
       this.#clients.set(key, c);
     }
-    return c;
+    return c.client;
   }
 
   #hostEntries(): Contribution[] {
@@ -207,8 +235,75 @@ export class PluginMcp {
     }
   }
 
-  /** Lists every active `host` server's tools; servers that went away are forgotten and their channels closed. */
+  /** The key each active `host` server is served under, and the ones refused (with why). */
+  #keys(): { served: { key: string; c: Contribution }[]; refused: { c: Contribution; why: string }[] } {
+    const bundled = (c: Contribution): boolean => {
+      const record = this.#o.registry.get(c.pluginId);
+      return record !== undefined && isBundledClover(record);
+    };
+    const bundledNames = new Set<string>();
+    for (const c of this.#o.registry.entries("mcpServers")) if (bundled(c)) bundledNames.add(this.#nameOf(c));
+    const refused: { c: Contribution; why: string }[] = [];
+    const groups = new Map<string, { c: Contribution; bundled: boolean }[]>();
+    for (const c of this.#hostEntries()) {
+      const name = this.#nameOf(c);
+      const isBundled = bundled(c);
+      let key = name;
+      if (!isBundled) {
+        if (RESERVED_NAMES.includes(name) || bundledNames.has(name)) {
+          refused.push({ c, why: `the name ${name} is reserved` });
+          continue;
+        }
+        key = `${c.pluginId}__${name}`.replace(/[^A-Za-z0-9_-]/g, "_");
+      }
+      const group = groups.get(key) ?? [];
+      group.push({ c, bundled: isBundled });
+      groups.set(key, group);
+    }
+    const served: { key: string; c: Contribution }[] = [];
+    for (const [key, group] of groups) {
+      const winners = group.filter((g) => g.bundled);
+      if (group.length === 1 || winners.length === 1) {
+        const winner = group.length === 1 ? group[0]! : winners[0]!;
+        served.push({ key, c: winner.c });
+        for (const g of group) if (g !== winner) refused.push({ c: g.c, why: `the key ${key} is taken by a bundled server` });
+      } else {
+        for (const g of group) refused.push({ c: g.c, why: `the key ${key} is also used by another server` });
+      }
+    }
+    return { served, refused };
+  }
+
+  async #list(key: string, c: Contribution): Promise<Listed> {
+    const name = this.#nameOf(c);
+    const timeoutMs = this.#o.listTimeoutMs ?? LIST_TIMEOUT_MS;
+    const client = this.#client(key, c.pluginId, name);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        client.close();
+        this.#clients.delete(key);
+        reject(new ContractError("timeout", `the plugin's MCP server didn't answer in ${Math.round(timeoutMs / 1000)} s`));
+      }, timeoutMs);
+    });
+    try {
+      const r = await Promise.race([client.request("tools/list", {}, { timeoutMs }), timeout]);
+      const tools = (isObject(r) && Array.isArray(r.tools) ? r.tools : []).filter((t): t is Record<string, unknown> => isObject(t) && typeof t.name === "string").map((t) => ({
+        name: t.name as string,
+        ...(typeof t.description === "string" ? { description: t.description } : {}),
+        inputSchema: (isObject(t.inputSchema) ? { ...t.inputSchema, type: "object" } : { type: "object" }) as McpToolDef["inputSchema"],
+      }));
+      const instructions = this.#instructions(c);
+      return { plugin: c.pluginId, name, entry: c.value as HostServerEntry, tools, ...(instructions === undefined ? {} : { instructions }) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Lists every active `host` server's tools, all at once, each within its own time; servers that went away, were
+   *  refused or didn't answer are not served, and their channels closed. */
   refresh(): Promise<void> {
+    if (this.#closed) return Promise.resolve();
     if (this.#refreshing !== undefined) {
       this.#again = true;
       return this.#refreshing;
@@ -217,26 +312,21 @@ export class PluginMcp {
       do {
         this.#again = false;
         const next = new Map<string, Listed>();
-        for (const c of this.#hostEntries()) {
-          const name = this.#nameOf(c);
-          if (next.has(name)) continue;
+        const { served, refused } = this.#keys();
+        for (const { c, why } of refused) this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: refused, ${why}`);
+        const results = await Promise.all(served.map(async ({ key, c }) => {
           try {
-            const r = await this.#client(c.pluginId, name).request("tools/list", {}, { timeoutMs: LIST_TIMEOUT_MS });
-            const tools = (isObject(r) && Array.isArray(r.tools) ? r.tools : []).filter((t): t is Record<string, unknown> => isObject(t) && typeof t.name === "string").map((t) => ({
-              name: t.name as string,
-              ...(typeof t.description === "string" ? { description: t.description } : {}),
-              inputSchema: (isObject(t.inputSchema) ? { ...t.inputSchema, type: "object" } : { type: "object" }) as McpToolDef["inputSchema"],
-            }));
-            const instructions = this.#instructions(c);
-            next.set(name, { plugin: c.pluginId, entry: c.value as HostServerEntry, tools, ...(instructions === undefined ? {} : { instructions }) });
+            return { key, listed: await this.#list(key, c) };
           } catch (err) {
-            this.#o.log?.(`plugin MCP ${c.pluginId}/${name}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}`);
+            this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: its tools couldn't be listed: ${err instanceof Error ? err.message : String(err)}`);
+            return undefined;
           }
-        }
-        for (const [key, client] of this.#clients) {
-          const [plugin, server] = key.split("\u0000") as [string, string];
-          if (next.get(server)?.plugin !== plugin) {
-            client.close();
+        }));
+        if (this.#closed) break;
+        for (const r of results) if (r !== undefined) next.set(r.key, r.listed);
+        for (const [key, c] of this.#clients) {
+          if (!next.has(key)) {
+            c.client.close();
             this.#clients.delete(key);
           }
         }
@@ -282,17 +372,48 @@ export class PluginMcp {
   readonly call: McpCaller = async ({ server, tool, input, as, signal }) => {
     const l = this.#listed.get(server);
     if (l === undefined) throw new ContractError("not_installed", `no MCP server ${server}`);
-    const r = await this.#client(l.plugin, server).request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
+    if (!l.tools.some((t) => t.name === tool)) throw new ContractError("not_found", `the MCP server ${server} has no tool ${tool}`);
+    const r = await this.#client(server, l.plugin, l.name).request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
     if (!isObject(r)) return { content: [{ type: "text", text: "" }], isError: true };
-    return { ...(r as McpResult), content: Array.isArray(r.content) ? r.content as McpResult["content"] : [] };
+    return capResult({ ...(r as McpResult), content: Array.isArray(r.content) ? r.content as McpResult["content"] : [] });
   };
 
   close(): void {
+    this.#closed = true;
     this.#off();
-    for (const c of this.#clients.values()) c.close();
+    for (const c of this.#clients.values()) c.client.close();
     this.#clients.clear();
     this.#listed.clear();
   }
+}
+
+/** A result held to `RESULT_MAX_CHARS` of JSON: items past the cap are dropped, a text item is cut where it crosses it,
+ *  and a note says so. */
+function capResult(r: McpResult): McpResult {
+  if (JSON.stringify(r.content).length <= RESULT_MAX_CHARS) return r;
+  const content: McpResult["content"] = [];
+  let left = RESULT_MAX_CHARS - TRUNCATED_NOTE.length - 64;
+  for (const item of r.content) {
+    const size = JSON.stringify(item).length;
+    if (size <= left) {
+      content.push(item);
+      left -= size;
+      continue;
+    }
+    const text = (item as { text?: unknown }).text;
+    if (typeof text === "string") {
+      let keep = Math.min(text.length, left);
+      let cut = { ...item, text: text.slice(0, keep) } as McpResult["content"][number];
+      while (keep > 0 && JSON.stringify(cut).length > left) {
+        keep = Math.floor(keep / 2);
+        cut = { ...item, text: text.slice(0, keep) } as McpResult["content"][number];
+      }
+      content.push(cut);
+    }
+    break;
+  }
+  content.push({ type: "text", text: TRUNCATED_NOTE });
+  return { ...r, content };
 }
 
 /** Runs the plugins' host servers on this computer when there is no computer node (no links): lane J's `McpRunner`

@@ -7,7 +7,8 @@
 // Fakes only where each part's own lane uses them: H's in-memory network and local handshake, D's plugin registry and
 // session drivers. The second computer is built from the same assembly the daemon uses (`startDaemonLinks`,
 // `startDaemonParts`), since one process runs one daemon.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as hooksModule from "../src/runtime-sdk/turn-loop/hooks";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,7 @@ import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
 import { FakePluginHost } from "../src/contracts/fakes/plugin-host";
 import type { DaemonPluginHost } from "../src/plugin-host/daemon-host";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
+import { installedModelPlugins } from "../src/runtime-sdk/model-plugins/index";
 import { startDaemonParts, type DaemonBotsInput, type DaemonParts } from "../src/daemon-parts";
 import { startDaemonLinks, type DaemonLinks } from "../src/ipc/device-links";
 import { cloverCall } from "../src/ipc/clover-client";
@@ -248,16 +250,22 @@ describe("the daemon's Clover parts at the edges", () => {
     const home = temp("clover-int-home-");
     const order: string[] = [];
     let opened = 0;
+    const added: string[][] = [];
+    let removed = 0;
+    const hooksSpy = spyOn(hooksModule, "pluginHooks");
+    let fakeHost: unknown;
     daemon = await startDaemon({
       home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
       links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
       parts: { userHome: temp("clover-int-user-") },
       pluginHost: async (registry) => {
         const host = new FakePluginHost({ clock });
+        fakeHost = host;
         const openMcp = host.openMcp.bind(host);
         host.openMcp = (pluginId, server) => { opened += 1; return openMcp(pluginId, server); };
         return {
           host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          addApiHandlers: (h: Record<string, unknown>) => { added.push(Object.keys(h).sort()); return () => { removed += 1; }; },
           close: async () => { order.push("host"); },
         } as unknown as DaemonPluginHost;
       },
@@ -268,9 +276,60 @@ describe("the daemon's Clover parts at the edges", () => {
     // No host server is installed (from source, none bundled): nothing placed, no channel opened.
     await expect(node!.mcp!.run("web", "WebSearch", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
     expect(opened).toBe(0);
+    // The model plugins start on the daemon's own host (not awaited by the parts): installed, and their two calls added
+    // to B's router as handlers, never a router of their own.
+    // The bots' plugin hooks run on the same host and registry.
+    await waitFor("the bots' plugin hooks wired", () => hooksSpy.mock.calls.length > 0);
+    expect((hooksSpy.mock.calls[0]![0] as { host: unknown }).host).toBe(fakeHost);
+    hooksSpy.mockRestore();
+    await waitFor("the model plugins installed", () => installedModelPlugins() !== undefined);
+    expect(added).toEqual([["net.fetch", "secrets.get"]]);
     await daemon.stop();
     daemon = undefined;
     expect(order).toEqual(["host"]);
+    // The stop takes them away: uninstalled, and their handlers removed.
+    expect(installedModelPlugins()).toBeUndefined();
+    expect(removed).toBe(1);
+  }, 30_000);
+
+  test("the model plugins' start guard and a stop while they are still starting", async () => {
+    const net = new MemoryNetwork();
+    const fakeHost = (calls: { added: number; removed: number }) => async (registry: unknown) => ({
+      host: new FakePluginHost({ clock }), registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+      addApiHandlers: () => { calls.added += 1; return () => { calls.removed += 1; }; },
+      close: async () => {},
+    }) as unknown as DaemonPluginHost;
+    // A test daemon handed `modelPluginHost` started its own at boot: the plugin host doesn't start a second set.
+    const guarded = { added: 0, removed: 0 };
+    const home = temp("clover-int-home-");
+    const own = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      modelPluginHost: { registry: own, host: new FakePluginHost({ clock }) },
+      pluginHost: fakeHost(guarded),
+    });
+    await daemon.cloverParts.ready;
+    await Bun.sleep(200);
+    expect(guarded.added).toBe(0);
+    await daemon.stop();
+    daemon = undefined;
+    // Stopped while the plugin host's model plugins are still starting: the late start stops itself.
+    const racing = { added: 0, removed: 0 };
+    const home2 = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home: home2, secrets: new FileSecretStore(join(home2, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: fakeHost(racing),
+    });
+    void daemon.cloverParts.ready;
+    await daemon.stop();
+    daemon = undefined;
+    await Bun.sleep(500);
+    expect(installedModelPlugins()).toBeUndefined();
+    expect(racing.removed).toBe(racing.added);
   }, 30_000);
 
   test("a start that never finishes: the stop waits about 5 s, closes what started, and leaves no socket", async () => {
