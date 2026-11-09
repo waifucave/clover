@@ -216,6 +216,28 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
     }
     expect(ok(await run(`echo x > '${join(home, "project", "fine.txt")}'`))).toBe(true);
   });
+
+  test("watch: a session whose commands run elsewhere gets the same second line at its turn's end", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-watch-")));
+    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), project = join(home, "project");
+    for (const d of [clover, project, temp]) mkdirSync(d, { recursive: true });
+    expect(Bun.spawnSync(["git", "init", "-q", project]).exitCode).toBe(0);
+    const spawner = fencedSpawner({ fence: new CloverFence({ os: process.platform === "darwin" ? "macos" : "linux", home, cloverHome: clover, temp }) });
+    if (!spawner.available) return; // no fenced process on this computer: no spawner to watch with
+    const config = join(project, ".git", "config");
+    const before = readFileSync(config, "utf8");
+    spawner.watch!("s-watch", project);
+    // A bot's Bash (in the runtime's sandbox, not through run) plants a key, and an ordinary one.
+    writeFileSync(config, `${before}[core]\n\tfsmonitor = /tmp/x\n[user]\n\tname = me\n`);
+    expect(spawner.recheck!("s-watch")).toMatch(/core\.fsmonitor/);
+    expect(readFileSync(config, "utf8")).not.toContain("fsmonitor");
+    expect(readFileSync(config, "utf8")).toContain("name = me");
+    // Watching again later keeps the baseline: a key planted meanwhile isn't adopted.
+    writeFileSync(config, `${readFileSync(config, "utf8")}[core]\n\thooksPath = /tmp/h\n`);
+    spawner.watch!("s-watch", project);
+    expect(spawner.recheck!("s-watch", { end: true })).toMatch(/core\.hookspath|core\.hooksPath/i);
+    expect(readFileSync(config, "utf8")).not.toContain("hooksPath");
+  });
 });
 
 darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () => {

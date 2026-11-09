@@ -67,6 +67,13 @@ class SessionConfigs {
     for (const p of paths) m.set(p, readIfFile(p));
     this.#by.set(sessionId, m);
   }
+  /** A session whose commands run elsewhere (a bot's Bash in the runtime's own sandbox): its repo's configs and the
+   *  global ones are watched from now, each as it is now; a file already watched keeps its baseline. */
+  watch(sessionId: string, paths: Iterable<string>): void {
+    const m = this.#by.get(sessionId) ?? new Map<string, string | null>();
+    for (const p of paths) if (!m.has(p)) m.set(p, readIfFile(p));
+    this.#by.set(sessionId, m);
+  }
   recheck(sessionId: string, opts: { end?: boolean } = {}): string | null {
     const m = this.#by.get(sessionId);
     if (m === undefined) return null;
@@ -87,6 +94,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       available: true,
       recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
+      watch: (sessionId, cwd) => configs.watch(sessionId, watchedConfigFiles(o.fence.home, cwd)),
       run: async (r) => {
         const template = ensureGitTemplate(o.fence.cloverHome);
         if (typeof template !== "string") return template;
@@ -123,6 +131,7 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
     return {
       get available() { return probe() === null; },
       recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
+      watch: (sessionId, cwd) => configs.watch(sessionId, watchedConfigFiles(o.fence.home, cwd)),
       run: async (r) => {
         const why = probe();
         if (why !== null) return { kind: "refused", reason: `a fenced process can't be started here: ${why}` };

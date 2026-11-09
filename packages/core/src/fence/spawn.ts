@@ -45,6 +45,10 @@ export interface FencedSpawner {
    *  the watched git config files the session's runs touched are looked at again, and a risky key set since its last
    *  run ended is reverted the same way. `end` forgets the session. The report line, or null. */
   recheck?(sessionId: string, opts?: { end?: boolean }): string | null;
+  /** For a session whose commands don't come through `run` (a bot's Bash in the runtime's own sandbox): watch the
+   *  git configs its `cwd`'s repo and the user's global config hold, from now, so `recheck` has something to look at.
+   *  A file already watched keeps its baseline. */
+  watch?(sessionId: string, cwd: string): void;
 }
 
 /** The door until the fenced process lands for this OS (C-M2's Bash under the fence). */
