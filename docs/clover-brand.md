@@ -44,4 +44,4 @@ The script does the following:
 
 `scripts/brand-icons.test.ts` checks the committed files against `outputs.json`, on every OS. It fails when an output was edited by hand, or when a source changed and the script wasn't rerun.
 
-The Winter-era `docs/brand.md` and the other files in `assets/brand/` belong to the predecessor app. They are not Clover's.
+The older `docs/brand.md` and the other files directly in `assets/brand/` belong to the predecessor app. They are not Clover's.
