@@ -6,7 +6,7 @@
 //   host window (`host-window.ts`), moved into the app's window to be shown, so a screen reader reads it.
 // Either kind lives in its owner's partition, sandboxed, with no Node and no preload, its dialogs answered at once
 // (`disableDialogs`: a dialog would otherwise bring an offscreen tab's window on screen on macOS, S7 §7.6).
-import { BrowserWindow, WebContentsView, screen, type BaseWindow, type ContextMenuParams, type NativeImage, type Rectangle, type WebContents, type WebPreferences } from "electron";
+import { BrowserWindow, WebContentsView, type BaseWindow, type ContextMenuParams, type NativeImage, type Rectangle, type WebContents, type WebPreferences } from "electron";
 import { TabDebugger } from "./cdp";
 import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabEvent, type Screenshot, type ScreenshotFormat, type TabOwner, type TabPlace, type TabView, type Viewport } from "./contract";
 import { FrameStore } from "./frames";
@@ -296,15 +296,27 @@ export class OffscreenTab extends BrowserTab {
     const { width, height } = image.getSize();
     const { width: w, height: h } = this.viewport;
     if (width === w && height === h) return image;
-    let factor = 1;
-    try {
-      factor = screen.getDisplayMatching(this.window.getBounds()).scaleFactor;
-    } catch {
-      // No display to ask: scale 1.
+    // The scale is read off the picture itself (the display's own scale may be forced by a flag and not reported):
+    // the same shape as the viewport, at a whole 1.x to 4x, within a pixel or two of rounding, is the same picture.
+    const r = width / w;
+    if (r > 1 && r <= 4 && Math.abs(height - h * r) <= Math.max(2, h * r * 0.01)) {
+      this.pinPageSize();
+      return image.resize({ width: w, height: h, quality: "best" });
     }
-    // The window may be a pixel or two over (rounded by the system): within 1 % of the scaled size is the same picture.
-    if (factor !== 1 && Math.abs(width - w * factor) <= w * factor * 0.01 && Math.abs(height - h * factor) <= h * factor * 0.01) return image.resize({ width: w, height: h, quality: "best" });
     return undefined;
+  }
+
+  private pinned: string | undefined;
+  /** At a display scale the system rounds the window to a pixel or two over (Windows at 150 %: 1282x801 for 1280x800),
+   *  and the page would lay out at that: the page's own size is pinned to the viewport's through DevTools. */
+  private pinPageSize(): void {
+    const { width, height } = this.viewport;
+    const key = `${width}x${height}`;
+    if (this.pinned === key || this.contents.isDestroyed()) return;
+    this.pinned = key;
+    void this.debugger.internal("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 0, mobile: false }).catch(() => {
+      this.pinned = undefined;
+    });
   }
 
   protected destroy(): void {
