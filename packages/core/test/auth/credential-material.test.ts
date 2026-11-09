@@ -218,7 +218,8 @@ describe("child-parser contract (clover-sdk coerceMaterial)", () => {
     // 0.0.71 → 0.0.72 (#281's follow-up: the look-alike map): keychain-store.ts diff EMPTY; the mirror stands.
     // 0.0.72 → 0.0.75 (the Linux sandbox, tighten-only settings files, the compiled adapter fallback): keychain-store.ts
     // diff EMPTY; the mirror stands.
-    expect(pkg.version).toBe("0.0.75");
+    // 0.0.75 → 0.0.76 (the floor's `**` globs, Grep's path-before-size order): keychain-store.ts diff EMPTY; the mirror stands.
+    expect(pkg.version).toBe("0.0.76");
   });
 
 

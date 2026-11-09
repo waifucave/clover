@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@waifucave/clover-web": "0.0.75"
+    "@waifucave/clover-web": "0.0.76"
   },
   "devDependencies": {
     "@types/bun": "1.4.4",
