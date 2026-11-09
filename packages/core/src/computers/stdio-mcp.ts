@@ -25,10 +25,14 @@
 //   its own key.
 // * **Signals** go to its group only while its leader runs (a group id is reused only once the group is gone), and once
 //   more right after its exit, for what it left in the group.
-// * **A daemon that died** leaves its servers running (they are detached): each start is recorded under
-//   `run/stdio-mcp/` (pid and start time), and the next daemon reaps them before it starts any
-//   (`reapStdioMcpLeftovers`), killing a group only when its leader's start time is the recorded one.
+// * **A daemon that died** leaves its servers running (they are detached). Each start puts a random mark in the
+//   server's environment (`CLOVER_STDIO_RUN`), which every process it starts inherits, and records it under
+//   `run/stdio-mcp/`. The next daemon, holding its lock, reaps before it starts any (`reapStdioMcpLeftovers`): it kills,
+//   one by one, only the processes whose environment carries a recorded mark (the leader also its recorded program
+//   and start time). A process whose environment can't be read (a platform binary hides it; Windows doesn't show
+//   another process's) is left alone, as is the daemon itself, its parent and its group.
 import { execFile, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseInterpolation } from "@waifucave/clover-plugin-sdk";
@@ -62,6 +66,8 @@ export const STDIO_MCP_LINE_MAX = 8 * 1024 * 1024;
 export const STDIO_MCP_STDIN_MAX = 8 * 1024 * 1024;
 /** Messages a server may send in a second. */
 export const STDIO_MCP_MESSAGES_PER_SECOND = 10_000;
+/** The variable each start's mark is in (`reapStdioMcpLeftovers`). */
+export const STDIO_RUN_ENV = "CLOVER_STDIO_RUN";
 const STOP_GRACE_MS = 3_000;
 const STDERR_LINES = 50;
 const STDERR_LINE_MAX = 1_000;
@@ -262,6 +268,10 @@ export class StdioMcpLauncher {
       if (v !== undefined) env[k] = v;
     }
     Object.assign(env, spec.config.env ?? {});
+    // This start's mark: what it and every process it starts carry, so the next daemon knows them after a crash
+    // (`reapStdioMcpLeftovers`). Only the launcher's records hold it; Clover's own name, which no manifest may set.
+    const nonce = randomBytes(16).toString("hex");
+    env[STDIO_RUN_ENV] = nonce;
     try {
       mkdirSync(spec.cwd, { recursive: true, mode: 0o700 });
     } catch {
@@ -314,7 +324,10 @@ export class StdioMcpLauncher {
     if (record !== undefined) {
       try {
         mkdirSync(this.#o.records!, { recursive: true, mode: 0o700 });
-        writeFileSync(record, JSON.stringify({ pid: child.pid, startedAt: Date.now(), pluginId, server }), { mode: 0o600 });
+        // The program that runs (inside the fence's `sandbox-exec -p <profile>`, the one after it), for the leader's check.
+        const args = spec.config.args ?? [];
+        const exe = spec.config.command === "/usr/bin/sandbox-exec" && args[0] === "-p" && args[2] !== undefined ? args[2] : spec.config.command;
+        writeFileSync(record, JSON.stringify({ pid: child.pid, startedAt: Date.now(), nonce, exe, pluginId, server }), { mode: 0o600 });
       } catch (err) {
         this.#o.log?.(`stdio MCP ${pluginId}/${server}: its start couldn't be recorded (${err instanceof Error ? err.message : String(err)}); a daemon crash would leave it running`);
       }
@@ -525,80 +538,138 @@ export function stdioMcpRecordsDir(cloverHome: string): string {
 const START_SLACK_MS = 3_000;
 
 const run = (cmd: string, args: string[]): Promise<string> => new Promise((resolve) => {
-  execFile(cmd, args, { maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout) => resolve(err ? "" : stdout));
+  // `C`: `ps` writes its start times in English, as `lstart` parses them.
+  execFile(cmd, args, { maxBuffer: 64 * 1024 * 1024, windowsHide: true, env: { ...process.env, LC_ALL: "C", LANG: "C" } }, (err, stdout) => resolve(err ? "" : stdout));
 });
 
-/** Every process: its pid, its group, and when it started. */
-async function processes(): Promise<{ pid: number; pgid: number; started: number }[]> {
-  const out = await run("ps", ["-A", "-o", "pid=,pgid=,lstart="]);
-  const rows: { pid: number; pgid: number; started: number }[] = [];
-  for (const line of out.split("\n")) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
-    if (!m) continue;
-    const started = Date.parse(m[3]!);
-    if (Number.isFinite(started)) rows.push({ pid: Number(m[1]), pgid: Number(m[2]), started });
-  }
-  return rows;
+/** One process as the reaper sees it: its group, its start time (undefined when it can't be read), its command line,
+ *  and its environment's entries (undefined when it can't be read). */
+export interface SeenProcess {
+  pid: number;
+  pgid: number;
+  started?: number;
+  command: string;
+  env?: readonly string[];
 }
 
-/** The daemon starts: stops what a daemon before it left running (it died without stopping its servers), and clears
- *  the records. A record's group is killed only when it is still that server's: its leader runs, leads its own group,
- *  and started when the record says; or its leader is gone and the processes left in its group all started after the
- *  record (a group id is reused only once its group is empty, and then by a new leader). Anything else is left alone. */
-export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: string) => void }): Promise<{ reaped: number[] }> {
+/** A record of a start (`run/stdio-mcp/<pid>.json`). */
+export interface StdioRunRecord {
+  pid: number;
+  startedAt: number;
+  nonce: string;
+  exe: string;
+}
+
+/** Which processes a daemon that died left running, by its records: a process is one only when its environment
+ *  carries a record's mark (exactly `CLOVER_STDIO_RUN=<nonce>`) and its start time is known and not before the record's;
+ *  the record's own pid also runs its recorded program and started at the recorded time. Never this daemon, its
+ *  parent or a process in its group. */
+export function reapTargets(records: readonly StdioRunRecord[], seen: readonly SeenProcess[], self: { pid: number; ppid: number; pgid?: number }): number[] {
+  const out = new Set<number>();
+  for (const r of records) {
+    const mark = `${STDIO_RUN_ENV}=${r.nonce}`;
+    for (const p of seen) {
+      if (p.pid <= 1 || p.pid === self.pid || p.pid === self.ppid || (self.pgid !== undefined && p.pgid === self.pgid)) continue;
+      if (p.env === undefined || !p.env.includes(mark)) continue;
+      if (p.started === undefined || p.started < r.startedAt - START_SLACK_MS) continue;
+      if (p.pid === r.pid && (Math.abs(p.started - r.startedAt) > START_SLACK_MS || !p.command.includes(r.exe))) continue;
+      out.add(p.pid);
+    }
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/** `ps`'s start time (`lstart`), or undefined when it doesn't parse. */
+function lstart(text: string): number | undefined {
+  const t = Date.parse(text.trim());
+  return Number.isFinite(t) ? t : undefined;
+}
+
+/** Every process this user can see, with its environment where the OS shows it: macOS `ps -wwE` (the environment after
+ *  the command; a process that hides it shows none, so it isn't matched), Linux `/proc/<pid>/environ`. */
+async function seenProcesses(): Promise<SeenProcess[]> {
+  const LSTART = String.raw`[A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}`;
+  const out: SeenProcess[] = [];
+  if (process.platform === "darwin") {
+    const text = await run("ps", ["-A", "-wwE", "-o", "pid=,pgid=,lstart=,command="]);
+    const re = new RegExp(String.raw`^\s*(\d+)\s+(\d+)\s+(${LSTART})\s+(.*)$`);
+    for (const line of text.split("\n")) {
+      const m = re.exec(line);
+      if (!m) continue;
+      const rest = m[4]!;
+      const started = lstart(m[3]!);
+      // The environment, as `ps -E` appends it: the words of the shape NAME=value. Only an exact word counts.
+      out.push({ pid: Number(m[1]), pgid: Number(m[2]), ...(started === undefined ? {} : { started }), command: rest, env: rest.split(/\s+/).filter((w) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) });
+    }
+    return out;
+  }
+  const text = await run("ps", ["-A", "-o", "pid=,pgid=,lstart="]);
+  const re = new RegExp(String.raw`^\s*(\d+)\s+(\d+)\s+(${LSTART})\s*$`);
+  for (const line of text.split("\n")) {
+    const m = re.exec(line);
+    if (!m) continue;
+    const pid = Number(m[1]);
+    let env: string[] | undefined;
+    let command = "";
+    try {
+      env = readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").filter((e) => e !== "");
+      command = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").join(" ");
+    } catch {
+      env = undefined;
+    }
+    const started = lstart(m[3]!);
+    out.push({ pid, pgid: Number(m[2]), ...(started === undefined ? {} : { started }), command, ...(env === undefined ? {} : { env }) });
+  }
+  return out;
+}
+
+/** The daemon starts, holding its lock and before any plugin server starts: stops what a daemon before it left running
+ *  (it died without stopping its servers), by `reapTargets`, each process signalled on its own (never a group), and
+ *  clears the records. Windows shows no other process's environment, so there nothing is killed: the records are
+ *  cleared and what they name is logged. */
+export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: string) => void; seen?: () => Promise<SeenProcess[]> }): Promise<{ reaped: number[] }> {
   let names: string[];
   try {
-    names = readdirSync(o.dir).filter((n) => /^\d+\.json$/.test(n));
+    names = readdirSync(o.dir).filter((n) => n.endsWith(".json"));
   } catch {
     return { reaped: [] };
   }
-  const reaped: number[] = [];
-  const records: { pid: number; startedAt: number; label: string; file: string }[] = [];
+  const records: StdioRunRecord[] = [];
+  const labels = new Map<number, string>();
   for (const n of names) {
     const file = join(o.dir, n);
     try {
-      const r = JSON.parse(readFileSync(file, "utf8")) as { pid?: unknown; startedAt?: unknown; pluginId?: unknown; server?: unknown };
-      if (typeof r.pid === "number" && Number.isInteger(r.pid) && r.pid > 1 && typeof r.startedAt === "number" && `${r.pid}.json` === n) {
-        records.push({ pid: r.pid, startedAt: r.startedAt, label: `${String(r.pluginId)}/${String(r.server)}`, file });
-        continue;
+      const r = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+      if (typeof r.pid === "number" && Number.isInteger(r.pid) && r.pid > 1 && `${r.pid}.json` === n && typeof r.startedAt === "number"
+        && typeof r.nonce === "string" && /^[0-9a-f]{32}$/.test(r.nonce) && typeof r.exe === "string" && r.exe !== "") {
+        records.push({ pid: r.pid, startedAt: r.startedAt, nonce: r.nonce, exe: r.exe });
+        labels.set(r.pid, `${String(r.pluginId)}/${String(r.server)}`);
       }
     } catch {
-      // Unreadable: dropped below.
+      // Unreadable: nothing is known of it.
     }
     rmSync(file, { force: true });
   }
-  if (records.length === 0) return { reaped };
-  if (process.platform === "win32") {
-    for (const r of records) {
-      const created = (await run("powershell", ["-NoProfile", "-NonInteractive", "-Command", `$p = Get-CimInstance Win32_Process -Filter 'ProcessId=${r.pid}'; if ($p) { $p.CreationDate.ToUniversalTime().ToString('o') }`])).trim();
-      const started = Date.parse(created);
-      if (Number.isFinite(started) && Math.abs(started - r.startedAt) <= START_SLACK_MS) {
-        await run("taskkill", ["/pid", String(r.pid), "/T", "/F"]);
-        reaped.push(r.pid);
-        o.log?.(`stdio MCP: stopped ${r.label} (pid ${r.pid}), left running by a daemon before`);
-      }
-      rmSync(r.file, { force: true });
-    }
-    return { reaped };
+  if (records.length === 0) return { reaped: [] };
+  if (process.platform === "win32" && o.seen === undefined) {
+    for (const r of records) o.log?.(`stdio MCP: ${labels.get(r.pid)} (pid ${r.pid}) may still run from a daemon before; Windows doesn't show its mark, so it was left alone`);
+    return { reaped: [] };
   }
-  const all = await processes();
-  for (const r of records) {
-    const leader = all.find((p) => p.pid === r.pid);
-    const members = all.filter((p) => p.pgid === r.pid);
-    const ours = leader !== undefined
-      ? leader.pgid === r.pid && Math.abs(leader.started - r.startedAt) <= START_SLACK_MS
-      : members.length > 0 && members.every((p) => p.started >= r.startedAt - START_SLACK_MS);
-    if (ours) {
-      try {
-        process.kill(-r.pid, "SIGKILL");
-        reaped.push(r.pid);
-        o.log?.(`stdio MCP: stopped ${r.label} (group ${r.pid}), left running by a daemon before`);
-      } catch {
-        // Gone meanwhile.
-      }
+  const seen = await (o.seen ?? seenProcesses)();
+  const self = { pid: process.pid, ppid: process.ppid, ...((): { pgid?: number } => {
+    const me = seen.find((p) => p.pid === process.pid);
+    return me === undefined ? {} : { pgid: me.pgid };
+  })() };
+  const reaped: number[] = [];
+  for (const pid of reapTargets(records, seen, self)) {
+    try {
+      process.kill(pid, "SIGKILL");
+      reaped.push(pid);
+    } catch {
+      // Gone meanwhile.
     }
-    rmSync(r.file, { force: true });
   }
+  if (reaped.length > 0) o.log?.(`stdio MCP: stopped ${reaped.length} process(es) a daemon before left running (${[...new Set(records.map((r) => labels.get(r.pid)))].join(", ")})`);
   return { reaped };
 }
 

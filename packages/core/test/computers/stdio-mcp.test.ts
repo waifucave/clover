@@ -8,7 +8,8 @@ import { join } from "node:path";
 import type { McpChannel } from "../../src/contracts/plugin-host";
 import { ensurePluginRunFiles } from "../../src/registry/plugin-run";
 import { PluginSecretFiles, secretFilesFolder } from "../../src/registry/secret-files";
-import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioStderrLog, type StdioServerSpec } from "../../src/computers/stdio-mcp";
+import { pluginStdioPrepare, reapStdioMcpLeftovers, reapTargets, StdioMcpLauncher, stdioStderrLog, type SeenProcess, type StdioServerSpec } from "../../src/computers/stdio-mcp";
+import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 
 const temps: string[] = [];
@@ -321,28 +322,101 @@ describe("bounds and signals", () => {
   });
 });
 
+describe("reapTargets", () => {
+  const nonce = "a".repeat(32);
+  const mark = `CLOVER_STDIO_RUN=${nonce}`;
+  const rec = { pid: 500, startedAt: 1_000_000, nonce, exe: "/opt/bun" };
+  const p = (pid: number, o: Partial<SeenProcess> = {}): SeenProcess => ({ pid, pgid: 500, started: 1_000_500, command: "/opt/bun server.js", env: [mark], ...o });
+  test("only a process carrying the exact mark, started after the record; the leader also its program and start time", () => {
+    const seen = [
+      p(500),
+      p(501, { command: "child" }),
+      p(502, { env: [`CLOVER_STDIO_RUN=${nonce}x`] }),
+      p(503, { env: undefined }),
+      p(504, { started: undefined }),
+      p(505, { started: 1_000_000 - 10_000 }),
+      p(506, { env: ["OTHER=1"] }),
+    ];
+    expect(reapTargets([rec], seen, { pid: 1, ppid: 1 })).toEqual([500, 501]);
+    // A leader running another program, or started at another time, is spared; its marked descendants aren't.
+    expect(reapTargets([rec], [p(500, { command: "/usr/bin/other" }), p(501)], { pid: 1, ppid: 1 })).toEqual([501]);
+    expect(reapTargets([rec], [p(500, { started: 1_000_000 + 60_000 }), p(501)], { pid: 1, ppid: 1 })).toEqual([501]);
+  });
+
+  test("never this daemon, its parent or its group, even carrying the mark", () => {
+    const seen = [p(700, { pgid: 700 }), p(701, { pgid: 9 }), p(702, { pgid: 9 }), p(703, { pgid: 9 }), p(704, { pgid: 9 })];
+    expect(reapTargets([rec], seen, { pid: 701, ppid: 702, pgid: 700 })).toEqual([703, 704]);
+  });
+});
+
 describe("a daemon that died", () => {
-  test("the next daemon reaps what it left running, and never a process that isn't that server", async () => {
-    if (process.platform === "win32") return;
+  const posix = process.platform !== "win32";
+
+  test("the next daemon kills what it left running by their mark, each on its own", async () => {
+    if (!posix) return;
     const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
     const { launcher } = rig({ records });
     const ch = await launcher.openMcp("acme/tools", "echo");
     await request(ch, 1, "initialize");
     const grandchild = Number(((await request(ch, 2, "tools/call", { name: "Spawn", arguments: {} })).result as { content: { text: string }[] }).content[0]!.text);
     const pid = launcher.running()[0]!.pid!;
-    // An unrelated process, recorded with a start time that isn't its own (a reused pid): left alone.
-    const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
-    writeFileSync(join(records, `${other.pid}.json`), JSON.stringify({ pid: other.pid, startedAt: Date.now() - 3_600_000, pluginId: "x", server: "y" }));
-    writeFileSync(join(records, "garbage.json"), "{");
-    writeFileSync(join(records, "123.json"), "not json");
     // The daemon died: nothing stopped its server. The next one reaps.
-    const reaped = await reapStdioMcpLeftovers({ dir: records });
-    expect(reaped.reaped).toEqual([pid]);
+    const { reaped } = await reapStdioMcpLeftovers({ dir: records });
+    expect(reaped).toEqual([pid, grandchild].sort((a, b) => a - b));
     await until(() => !alive(pid) && !alive(grandchild));
-    expect(alive(other.pid!)).toBe(true);
-    expect(readdirSync(records).filter((n) => n.endsWith(".json") && n !== "garbage.json")).toEqual([]);
-    process.kill(-other.pid!, "SIGKILL");
+    expect(readdirSync(records)).toEqual([]);
     await launcher.close();
+  });
+
+  test("an orphan carrying the mark is killed though its leader is gone; a stranger in a reused-pid group is spared", async () => {
+    if (!posix) return;
+    const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
+    mkdirSync(records, { recursive: true });
+    // A leader that starts a child and exits: the child keeps its environment.
+    const leaderScript = `const c = require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", detached: false }); console.log(c.pid); process.exit(0);`;
+    const start = (env: Record<string, string>) => new Promise<{ leader: number; child: number }>((resolve) => {
+      const l = spawn(process.execPath, ["-e", leaderScript], { detached: true, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, ...env } });
+      let out = "";
+      l.stdout!.on("data", (d) => { out += d; });
+      l.on("exit", () => resolve({ leader: l.pid!, child: Number(out.trim()) }));
+    });
+    const nonce = randomBytes(16).toString("hex");
+    const ours = await start({ CLOVER_STDIO_RUN: nonce });
+    writeFileSync(join(records, `${ours.leader}.json`), JSON.stringify({ pid: ours.leader, startedAt: Date.now() - 2_000, nonce, exe: process.execPath, pluginId: "acme/tools", server: "echo" }));
+    // The stranger: its group's leader is gone too, its child carries no mark; the record names that leader's pid.
+    const stranger = await start({});
+    writeFileSync(join(records, `${stranger.leader}.json`), JSON.stringify({ pid: stranger.leader, startedAt: Date.now() - 2_000, nonce: randomBytes(16).toString("hex"), exe: process.execPath, pluginId: "x", server: "y" }));
+    expect(alive(ours.child) && alive(stranger.child)).toBe(true);
+    const { reaped } = await reapStdioMcpLeftovers({ dir: records });
+    expect(reaped).toEqual([ours.child]);
+    await until(() => !alive(ours.child));
+    expect(alive(stranger.child)).toBe(true);
+    process.kill(stranger.child, "SIGKILL");
+  });
+
+  test("the daemon's own pid, its parent and its group are never signalled", async () => {
+    const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
+    mkdirSync(records, { recursive: true });
+    const nonce = randomBytes(16).toString("hex");
+    writeFileSync(join(records, `${process.pid}.json`), JSON.stringify({ pid: process.pid, startedAt: Date.now() - 1_000, nonce, exe: process.execPath }));
+    const mark = [`CLOVER_STDIO_RUN=${nonce}`];
+    const signalled: number[] = [];
+    const real = process.kill;
+    process.kill = ((pid: number) => { signalled.push(pid); return true; }) as typeof process.kill;
+    try {
+      const { reaped } = await reapStdioMcpLeftovers({
+        dir: records,
+        seen: async () => [
+          { pid: process.pid, pgid: 4242, started: Date.now(), command: process.execPath, env: mark },
+          { pid: process.ppid, pgid: 4242, started: Date.now(), command: "parent", env: mark },
+          { pid: 999_991, pgid: 4242, started: Date.now(), command: "same group", env: mark },
+        ],
+      });
+      expect(reaped).toEqual([]);
+      expect(signalled).toEqual([]);
+    } finally {
+      process.kill = real;
+    }
   });
 });
 
