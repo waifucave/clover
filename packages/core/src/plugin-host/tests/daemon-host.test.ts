@@ -17,7 +17,7 @@ import { hostedRecordOf, pluginLogWriter, startPluginHost } from "../daemon-host
 const USER: Caller = { kind: "user", client: "app" };
 
 describe("startPluginHost", () => {
-  test("a plugin's handler runs in the host process, its API calls reach the gate, its console is its log, and switching it off drops it", async () => {
+  test("a plugin's handler runs in the host process, its API calls are served, its console is its log, and switching it off drops it", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-daemon-host-"));
     const folder = join(home, "plugins", "tarot");
     mkdirSync(join(folder, "host"), { recursive: true });
@@ -26,9 +26,9 @@ describe("startPluginHost", () => {
     writeFileSync(join(folder, "host", "index.js"), [
       "export const remember = async (args, ctx) => {",
       "  console.log(\"remembering \" + args.card);",
-      "  return { last: args.card, computer: ctx.computer };",
+      "  await ctx.api.storage.synced.set(\"last\", args.card);",
+      "  return { last: await ctx.api.storage.synced.get(\"last\"), computer: ctx.computer };",
       "};",
-      "export const store = async (args, ctx) => ctx.api.storage.synced.set(\"last\", args.card);",
       "export const forbidden = async (args, ctx) => ctx.api.secrets.get(\"key\");",
       "",
     ].join("\n"));
@@ -47,9 +47,7 @@ describe("startPluginHost", () => {
       expect(hostedRecordOf(opened.registry, home, "tarot")).toMatchObject({ id: "tarot", folder, root: folder, entry: "host/index.js" });
 
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "remember", args: { card: "The Fool" }, caller: USER })).toEqual({ last: "The Fool", computer: "Studio" });
-        // No area is served yet (B-M2's API PR adds them): a call the gate lets through answers "not served".
-      const notServed = (await ph.host.invoke({ pluginId: "tarot", handler: "store", args: { card: "x" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
-      expect(notServed.message).toContain("storage.synced.set is not served on this computer");
+      expect(JSON.parse(readFileSync(join(home, "settings", "plugin-stores", "tarot.json"), "utf8"))).toEqual({ last: "The Fool" });
       // A call the plugin may not make here (`secrets.get` outside a process of its own) is refused by the router.
       const refused = (await ph.host.invoke({ pluginId: "tarot", handler: "forbidden", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(refused).toBeInstanceOf(ContractError);
