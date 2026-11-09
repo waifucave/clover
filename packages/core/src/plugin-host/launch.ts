@@ -71,7 +71,7 @@ export function spawnHostProcess(o: HostProcessLaunch & { graceMs?: number }): {
   for (const s of [child.stdout, child.stderr]) {
     void (async () => {
       for await (const line of linesOf(s as unknown as AsyncIterable<Uint8Array>)) o.onOutput?.(line.slice(0, 4000));
-    })();
+    })().catch(() => {}); // a pipe that fails to read ends its output, as its EOF does
   }
   const pid = child.pid;
   const signal = (sig: "SIGTERM" | "SIGKILL"): boolean => {
