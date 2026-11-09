@@ -68,6 +68,8 @@ mac:
       arch: arm64
   category: public.app-category.productivity
   artifactName: Clover-${version}-mac.${ext}
+  # The app icon, white on green on Apple's icon grid (lane G; drawn by scripts/brand-icons.ts, docs/clover-brand.md).
+  icon: build/icon.icns
   # Unsigned unless the release signs it: `scripts/release/build.ts --sign` names the Developer ID identity and turns
   # notarization on (with notarytool's stored profile, APPLE_KEYCHAIN_PROFILE). The hardened runtime is on for both.
   identity: null
@@ -92,10 +94,14 @@ win:
   target:
     - target: nsis
       arch: x64
+  # The app and installer icon, 16 to 256 px (lane G; scripts/brand-icons.ts).
+  icon: build/icon.ico
 linux:
   target:
     - target: dir
   category: Utility
+  # The PNG set, 16 to 512 px, named <n>x<n>.png, for the deb, the rpm and the AppImage (lane G; scripts/brand-icons.ts).
+  icon: build/icons
   # The app's own executable, /opt/Clover/clover; `clover` on the PATH is the daemon's command line
   # (packaging/linux/after-install.sh), as on macOS.
   executableName: clover

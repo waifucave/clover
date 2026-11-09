@@ -29,9 +29,11 @@ async function setup(withTargets = true) {
   const b = await boot({ home, clock, plugins: (await pluginFromFolder(ALPHA_FOLDER, { bundled: true })).inputs });
   const sessions = sessionsMethods({ home, computer: "Studio", bots: b.bots, host: b.host, clock, localDevice: "studio0000000000000" });
   const invoked: InvokeRequest[] = [];
+  const staged: string[] = [];
   const methods = pillMethods({
     bots: b.bots,
-    sessions,
+    sessions: { ...sessions, "session.stageImage": async (params, ctx) => (staged.push((params as { id: string }).id), sessions["session.stageImage"]!(params, ctx)) },
+    sentAs: (id, clientMessageId) => b.host.sentAs(id, clientMessageId),
     ...(withTargets ? { targets: { registry: { entries: (point: string) => (point === "ui" ? [LIGHTS, OFF] : []) }, host: { invoke: async <R,>(r: InvokeRequest): Promise<R> => (invoked.push(r), undefined as R) } } } : {}),
   });
   const call = async <S extends MethodSpec>(spec: S, params: unknown, caller: Caller = theUser): Promise<z.output<S["result"]>> =>
@@ -41,7 +43,7 @@ async function setup(withTargets = true) {
     expect(err).toBeInstanceOf(MethodError);
     return err as MethodError;
   };
-  return { b, call, fails, invoked };
+  return { b, call, fails, invoked, staged };
 }
 
 describe("pill.send", () => {
@@ -85,6 +87,24 @@ describe("pill.send", () => {
     expect(input.images![0]!.path).toMatch(/\/images\/image_\d+\.png$/);
     expect(withImageMarks("see [Image #1] and", 2)).toBe("see [Image #1] and [Image #2]");
     expect(withImageMarks("", 1)).toBe("[Image #1]");
+    await b.shutdown();
+  });
+
+  test("a resend with pictures is the first message: nothing staged again, the same seq, one turn", async () => {
+    const { b, call, staged } = await setup();
+    const words = { to: { bot: "alpha" }, text: "what's this?", images: [{ mediaType: "image/png", data: PNG }, { mediaType: "image/png", data: PNG }], clientMessageId: "c-11" };
+    expect(b.host.sentAs("b_alpha", "c-11")).toBeUndefined();
+    const first = await call(M.pillSend, words);
+    expect(staged).toEqual(["b_alpha", "b_alpha"]);
+    expect(b.host.sentAs("b_alpha", "c-11")).toEqual({ seq: first.seq! });
+    expect(await call(M.pillSend, words)).toEqual(first);
+    expect(staged).toHaveLength(2);
+    // A new message stages its own; an id the host doesn't know answers nothing.
+    await call(M.pillSend, { ...words, clientMessageId: "c-12" });
+    expect(staged).toHaveLength(4);
+    expect(b.host.sentAs("b_nobody", "c-11")).toBeUndefined();
+    await flush();
+    expect(b.drivers.for("b_alpha").turns.filter((t) => (t.input as { text?: string }).text === "what's this? [Image #1] [Image #2]").length).toBeGreaterThanOrEqual(1);
     await b.shutdown();
   });
 

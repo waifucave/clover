@@ -25,6 +25,14 @@ describe("electron-builder.yml", () => {
     expect(config.publish).toEqual({ provider: "github", owner: "waifucave", repo: "clover" });
   });
 
+  test("each package wears Clover's icon (lane G's, scripts/brand-icons.ts): the .icns, the .ico and Linux's PNG set", () => {
+    expect(config.mac.icon).toBe("build/icon.icns");
+    expect(config.win.icon).toBe("build/icon.ico");
+    expect(config.linux.icon).toBe("build/icons");
+    // In buildResources, which electron-builder never packs into the app's files.
+    expect(config.directories.buildResources).toBe("build");
+  });
+
   test("packages only the build output, which has no runtime dependencies", () => {
     expect(config.files).toEqual(["out/main/**", "out/renderer/**", "package.json"]);
     expect(pkg.main).toBe("out/main/index.js");
