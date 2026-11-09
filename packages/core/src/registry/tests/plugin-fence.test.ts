@@ -251,7 +251,9 @@ darwinDescribe("the plugin-process fence", () => {
       const fromHook = JSON.parse(String((hook as { stdout: string }).stdout).trim().split("\n").at(-1)!);
       expect(fromHook).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "ok" });
       const mcp = guardedMcpServer<{ command: string; args?: string[]; env?: Record<string, string> }>({ command: "bun", args: ["probe.mjs"] }, w.root, guard, "spy");
-      expect(mcp.command).toBe("/usr/bin/sandbox-exec");
+      // Through the spawn trampoline on the plugin Bun, then sandbox-exec.
+      expect(mcp.args).toContain("/usr/bin/sandbox-exec");
+      expect(mcp.args?.some((a) => a.endsWith("/spawn.mjs"))).toBe(true);
       const r = Bun.spawnSync([mcp.command, ...(mcp.args ?? [])], { cwd: w.root, env: mcp.env, stdout: "pipe", stderr: "pipe" });
       const fromMcp = JSON.parse(r.stdout.toString().trim().split("\n").at(-1)!);
       expect(fromMcp).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "ok" });
@@ -462,6 +464,48 @@ darwinDescribe("the plugin-process fence", () => {
     expect(projectFolders([user, dirname(user), "/", clover, join(clover, "plugins"), "relative/path", join(user, "code", "app"), join(user, "code", "app")], { userHome: user, cloverHome: clover }))
       .toEqual([join(user, "code", "app")]);
   });
+
+  // The controller's TCC ruling after #345: every fenced process is its own TCC-responsible process, so it never
+  // inherits a privacy permission (Screen Recording, Accessibility…) of whatever started it.
+  test("a host, a hook and an MCP server are each their own TCC-responsible process; unfenced, a process is its launcher's", async () => {
+    const w = world();
+    try {
+      const probe = `const { dlopen } = require("bun:ffi"); const { symbols } = dlopen("/usr/lib/libSystem.B.dylib", { responsibility_get_pid_responsible_for_pid: { args: ["i32"], returns: "i32" } }); const r = symbols.responsibility_get_pid_responsible_for_pid(process.pid); console.log(r === process.pid ? "self" : "other:" + r);`;
+      writeFileSync(join(w.root, "resp.cjs"), `${probe}\n`);
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      // A hook.
+      const hook = (await new HookRunner(guard).run({ pluginId: "spy", event: "SessionStart", command: "bun resp.cjs", cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "SessionStart" } as never)) as { stdout: string };
+      expect(hook.stdout.trim()).toBe("self");
+      // An MCP server, as the runtime starts it.
+      const mcp = guardedMcpServer<{ command: string; args?: string[]; env?: Record<string, string> }>({ command: "bun", args: ["resp.cjs"] }, w.root, guard, "spy");
+      const r = Bun.spawnSync([mcp.command, ...(mcp.args ?? [])], { cwd: w.root, env: mcp.env, stdout: "pipe", stderr: "pipe" });
+      expect(r.stdout.toString().trim()).toBe("self");
+      // A plugin-host process (a third-party plugin's own, where bun:ffi is there).
+      writeFileSync(join(w.root, "clover.json"), JSON.stringify({ manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }));
+      writeFileSync(join(w.root, "package.json"), JSON.stringify({ type: "module" }));
+      mkdirSync(join(w.root, "host"));
+      writeFileSync(join(w.root, "host", "index.js"), `export const resp = async () => { const { dlopen } = await import("bun:" + "ffi"); const { symbols } = dlopen("/usr/lib/libSystem.B.dylib", { responsibility_get_pid_responsible_for_pid: { args: ["i32"], returns: "i32" } }); const r = symbols.responsibility_get_pid_responsible_for_pid(process.pid); return r === process.pid ? "self" : "other:" + r; };\n`);
+      const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+      const secrets = new MemorySecretStore();
+      const opened = await openPluginRegistry({ cloverHome: w.home, os: "macos", broker, secrets, settleMs: 50 });
+      const ph = await startPluginHost({ home: w.home, computer: "Studio", registry: opened.registry, secrets, userHome: w.userHome });
+      try {
+        const { card } = await opened.registry.installed("spy", "app");
+        const shown = broker.cards().find((c) => c.id === card)!;
+        await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+        await approved(opened.registry, "spy");
+        expect(await ph.host.invoke({ pluginId: "spy", handler: "resp", args: null, caller: USER })).toBe("self");
+      } finally {
+        await ph.close();
+        opened.close();
+      }
+      // Control: unfenced, a process is its launcher's.
+      const plain = Bun.spawnSync([process.execPath, "resp.cjs"], { cwd: w.root, env: { ...process.env, BUN_OPTIONS: "" }, stdout: "pipe" });
+      expect(plain.stdout.toString().trim()).toStartWith("other:");
+    } finally {
+      stop(w);
+    }
+  }, 90_000);
 
   test("the clover process, which holds many plugins, runs no plugin's native code: bun:ffi is disarmed and no addon loads; a third-party plugin's own process keeps both (B3)", async () => {
     const home = temp("cf-natives-");

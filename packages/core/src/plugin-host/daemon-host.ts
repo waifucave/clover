@@ -16,7 +16,7 @@
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
-import { fencedCommand, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
+import { fencedCommand, fencedSpawn, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
 import { dirname, join, sep } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
@@ -236,7 +236,12 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false,
       ...(key === "clover" ? { noNativeCode: true } : {}),
     };
-    return { ...l, cmd: fencedCommand(l.cmd, fence), env: { ...l.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp } };
+    const env = { ...l.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp };
+    // Through the spawn trampoline, keeping its link (descriptor 3): its own TCC-responsible process (the controller's
+    // ruling after #345). A launch that names no run files (a test's) is fenced without it.
+    if (l.files === undefined) return { ...l, cmd: fencedCommand(l.cmd, fence), env };
+    const spawned = fencedSpawn({ cmd: l.cmd, env, fence, files: l.files, fds: [0, 1, 2, 3] });
+    return { ...l, cmd: spawned.cmd, env: spawned.env, ...(spawned.cwd !== undefined ? { cwd: spawned.cwd } : {}) };
   };
   let closed = false;
 

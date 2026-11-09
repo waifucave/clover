@@ -491,3 +491,74 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
     },
   };
 }
+
+/** The spawn trampoline's file in the run folder (`ensurePluginRunFiles` writes it). */
+export const SPAWN_TRAMPOLINE_FILE = "spawn.mjs";
+
+/** Clover's spawn trampoline (the controller's TCC ruling after #345). The daemon starts it on the plugin Bun with a
+ *  clean environment; it becomes the fenced command in place (`posix_spawn` with `POSIX_SPAWN_SETEXEC`) with its
+ *  responsibility disclaimed, so the plugin process is its own TCC-responsible process: it never inherits a privacy
+ *  permission (Screen Recording, Accessibility, the microphone…) the daemon or the app holds. Same pid, same process
+ *  group, the descriptors it's told to keep (`CLOVER_SPAWN_FDS`, every other one closed), the environment and working
+ *  folder it's handed (`CLOVER_SPAWN_ENV`, `CLOVER_SPAWN_CWD`). It loads nothing but `bun:ffi`. */
+export const SPAWN_TRAMPOLINE_SOURCE = String.raw`// Clover's spawn trampoline (registry/plugin-fence.ts). Generated; do not edit.
+import { dlopen, ptr } from "bun:ffi";
+const fail = (what, code) => { process.stderr.write("clover spawn: " + what + "\n"); process.exit(code); };
+const argv = process.argv.slice(2);
+if (argv.length === 0) fail("nothing to start", 126);
+let env;
+try { env = JSON.parse(process.env.CLOVER_SPAWN_ENV ?? "{}"); } catch { fail("its environment doesn't parse", 126); }
+const fds = (process.env.CLOVER_SPAWN_FDS ?? "0,1,2").split(",").map(Number).filter((n) => Number.isInteger(n) && n >= 0);
+const cwd = process.env.CLOVER_SPAWN_CWD;
+const { symbols: c } = dlopen("/usr/lib/libSystem.B.dylib", {
+  posix_spawnattr_init: { args: ["ptr"], returns: "i32" },
+  posix_spawnattr_setflags: { args: ["ptr", "i16"], returns: "i32" },
+  responsibility_spawnattrs_setdisclaim: { args: ["ptr", "i32"], returns: "i32" },
+  posix_spawn_file_actions_init: { args: ["ptr"], returns: "i32" },
+  posix_spawn_file_actions_addinherit_np: { args: ["ptr", "i32"], returns: "i32" },
+  posix_spawn_file_actions_addchdir_np: { args: ["ptr", "ptr"], returns: "i32" },
+  posix_spawn: { args: ["ptr", "ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
+});
+const keep = [];
+const cstr = (s) => { const b = Buffer.from(s + "\0", "utf8"); keep.push(b); return ptr(b); };
+const list = (xs) => { const a = new BigUint64Array(xs.length + 1); xs.forEach((s, i) => { a[i] = BigInt(cstr(s)); }); keep.push(a); return ptr(a); };
+const POSIX_SPAWN_SETEXEC = 0x40, POSIX_SPAWN_CLOEXEC_DEFAULT = 0x4000;
+const attr = new BigUint64Array(1), actions = new BigUint64Array(1);
+const ok = (r, what) => { if (r !== 0) fail(what + " (" + r + ")", 126); };
+ok(c.posix_spawnattr_init(ptr(attr)), "posix_spawnattr_init");
+ok(c.posix_spawnattr_setflags(ptr(attr), POSIX_SPAWN_SETEXEC | POSIX_SPAWN_CLOEXEC_DEFAULT), "posix_spawnattr_setflags");
+ok(c.responsibility_spawnattrs_setdisclaim(ptr(attr), 1), "responsibility_spawnattrs_setdisclaim");
+ok(c.posix_spawn_file_actions_init(ptr(actions)), "posix_spawn_file_actions_init");
+for (const fd of fds) ok(c.posix_spawn_file_actions_addinherit_np(ptr(actions), fd), "keeping descriptor " + fd);
+if (cwd) ok(c.posix_spawn_file_actions_addchdir_np(ptr(actions), cstr(cwd)), "its working folder");
+const pid = new Int32Array(1);
+const r = c.posix_spawn(ptr(pid), cstr(argv[0]), ptr(actions), ptr(attr), list(argv), list(Object.entries(env).filter(([, v]) => typeof v === "string").map(([k, v]) => k + "=" + v)));
+fail(argv[0] + " didn't start (" + r + ")", 127);
+`;
+
+/** A fenced process as it's spawned (macOS): through the spawn trampoline on the plugin Bun, so it's its own
+ *  TCC-responsible process, then `sandbox-exec` with its profile. `fds` are the descriptors it keeps (a host process's
+ *  link is 3). Elsewhere, or unfenced: the command as it is, in `cwd`. */
+export function fencedSpawn(o: {
+  cmd: readonly string[];
+  env: Readonly<Record<string, string | undefined>>;
+  fence: PluginFenceInput | undefined;
+  files: Pick<PluginRunFiles, "guard" | "bin" | "bunfig">;
+  cwd?: string;
+  fds?: readonly number[];
+}, platform: NodeJS.Platform = process.platform): { cmd: string[]; env: Record<string, string>; cwd?: string } {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(o.env)) if (v !== undefined) env[k] = v;
+  const cmd = fencedCommand(o.cmd, o.fence, platform);
+  if (o.fence === undefined || !pluginFenceAvailable(platform)) return { cmd, env, ...(o.cwd !== undefined ? { cwd: o.cwd } : {}) };
+  const runFolder = dirname(o.files.guard);
+  return {
+    // Clover's own config and no .env, whatever folder it starts in: nothing of the plugin's or the project's loads here.
+    cmd: [realOrResolved(join(o.files.bin, "bun")), `--config=${o.files.bunfig}`, "--no-env-file", "--no-macros", join(runFolder, SPAWN_TRAMPOLINE_FILE), ...cmd],
+    env: {
+      CLOVER_SPAWN_ENV: JSON.stringify(env), CLOVER_SPAWN_FDS: (o.fds ?? [0, 1, 2]).join(","), ...(o.cwd !== undefined ? { CLOVER_SPAWN_CWD: o.cwd } : {}),
+      PATH: "/usr/bin:/bin", ...(env.TMPDIR !== undefined ? { TMPDIR: env.TMPDIR } : {}),
+    },
+    cwd: runFolder,
+  };
+}
