@@ -14,60 +14,42 @@
 //   plugin-oks             plugins-state/oks/; installed-plugins plugins-state/installed.json;
 //                          adult-confirmation plugins-state/adult.json (B's registry records)
 //   plugin-data            plugin-data/
+//   plugins                plugins/ (a bot's plugin comes in only through `plugin.install`'s OK card)
+//   transcripts            sessions/ (sessions' records) and transcripts/ (every session's event log)
+//   usage                  usage/ (the usage ledger)
+//   sessions-runtime       sessions-runtime/ (the bot driver's state per session)
 //   run-folder             run/ (read-denied)
-//   secrets-file, key-file secrets.enc, secrets.key, on Windows and Linux only (read-denied); macOS's Keychain
-//                          holds them
+//   secrets-file, key-file secrets.enc, secrets.key and (headless Linux's systemd-creds-sealed key)
+//                          secrets.key.cred, on Windows and Linux only (read-denied); macOS's Keychain holds them
 //   dev-folders            wherever the user keeps them
 //
-// Waiting on kinds in B's contract (asked of B-M1; `agent-installs` asked after K-M2's review; `plugins` by the
-// controller's ruling on B's registry review; `sessions-runtime` from A-M3's review), so not yet in
-// `fencedSet()`: `pendingFenced` below.
-import { readdirSync } from "node:fs";
-import { join, posix, win32 } from "node:path";
+// The login-start places (under the user's home), the browser profiles (under userData), the OK'd agent installs and
+// the bot-memory items (per bot) are laid out in fence.ts, which holds the home, userData and options. The login-start
+// list names every folder and file a planted write could run later, outside the sandbox (spec item 1116, the
+// controller's ruling): Clover's own login item first, then the shells and their logout scripts, SSH and git config,
+// the folders that come ahead on PATH, and the desktop's autostart, systemd and session-script folders.
+// Kinds the fence enforces ahead of B's contract naming them live in `pendingFenced` below.
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { isAbsolute, join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import { agentConfigPaths, autoRunPaths, type FencedKind, type RunLaterExtras } from "../contracts/fence";
+import { agentConfigEntries, autoRunEntries, type FencedKind, type RunLaterEntry, type RunLaterExtras } from "../contracts/fence";
+import { linkedRouterSupportsRunHome } from "../runtime-sdk/run-home-support";
+import { parseGitConfigWatched } from "./git-config";
 import { runLaterExtras } from "./run-later";
 
-export type LaidOutKind = Exclude<FencedKind, "dev-folders">;
+export type LaidOutKind = Exclude<FencedKind, "dev-folders" | "bot-memory" | "login-start" | "browser-profiles" | "agent-installs">;
 
 /** Windows joins with backslashes, except under a home written POSIX-style (`/Users/me/.clover`, as B's conformance
  *  suite writes every OS's paths), so the items come back in the form the home was given. */
 const pathFor = (os: Os, home?: string) => (os === "windows" && !(home?.startsWith("/") && !home.includes("\\")) ? win32 : posix);
 
-/** The app's userData folder on each OS, under the user's home (main's `defaultUserData`). */
-export function defaultUserData(os: Os, home: string): string {
-  if (os === "macos") return pathFor(os, home).join(home, "Library", "Application Support", "Clover");
-  if (os === "windows") return pathFor(os, home).join(home, "AppData", "Roaming", "Clover");
-  return pathFor(os, home).join(home, ".config", "Clover");
-}
-
-/** The user's own additions to the persistence list (git's dirs, ZDOTDIR, PYTHONSTARTUP, a moved Documents), read
- *  only for this computer's OS: a layout for another OS has none. */
-function extrasHere(os: Os, home: string): RunLaterExtras {
-  const here: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
-  return os === here ? runLaterExtras(os, home) : {};
-}
-
-/** The login items that start the daemon at login (main's `loginStartPaths`): macOS's LaunchAgents
- *  plist, Linux's systemd user unit; Windows keeps its start in Task Scheduler, a closed door. */
-export function loginStartPaths(os: Os, home: string | undefined, cloverHome: string): string[] {
-  if (home === undefined) return [];
-  const p = pathFor(os, home);
-  const u = (...parts: string[]) => p.join(home, ...parts);
-  if (os === "macos") return [u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), pathFor(os, cloverHome).join(cloverHome, "login")];
-  if (os === "linux") return [u(".config", "systemd", "user", "clover-core.service")];
-  return [];
-}
-
-/** Each kind's paths under `cloverHome` on `os`. `home` locates the login items and the default
- *  userData; `userData` overrides it; `agentInstalls` are the OK'd agents' folders. */
-export function fenceLayout(cloverHome: string, os: Os, o?: {
-  home?: string; userData?: string; agentInstalls?: readonly string[];
-}): Record<LaidOutKind, string[]> {
+/** Each kind's paths under `cloverHome` on `os`. `login-start`, `browser-profiles`, `agent-installs`
+ *  and `bot-memory` are not here: they need the home, userData, options and bot list, so
+ *  `CloverFence.fencedSet` lays them out. */
+export function fenceLayout(cloverHome: string, os: Os): Record<LaidOutKind, string[]> {
   const p = pathFor(os, cloverHome);
   const h = (...parts: string[]) => p.join(cloverHome, ...parts);
-  const offMac = (path: string) => (os === "macos" ? [] : [path]);
-  const userData = o?.userData ?? (o?.home !== undefined ? defaultUserData(os, o.home) : undefined);
+  const offMac = (...paths: string[]) => (os === "macos" ? [] : paths);
   return {
     settings: [h("settings.json"), h("settings"), h("sdk", "settings.json")],
     levels: [h("levels")],
@@ -81,61 +63,255 @@ export function fenceLayout(cloverHome: string, os: Os, o?: {
     "installed-plugins": [h("plugins-state", "installed.json")],
     "adult-confirmation": [h("plugins-state", "adult.json")],
     "plugin-data": [h("plugin-data")],
+    plugins: [h("plugins")],
+    transcripts: [h("sessions"), h("transcripts")],
+    usage: [h("usage")],
+    "sessions-runtime": [h("sessions-runtime")],
     "run-folder": [h("run")],
     "secrets-file": offMac(h("secrets.enc")),
-    "key-file": offMac(h("secrets.key")),
-    plugins: [h("plugins")],
-    "sessions-runtime": [h("sessions-runtime")],
-    // No static path: enforced by pattern, per bot (`bots/<x>/memory`), in `fencedSet`.
-    "bot-memory": [],
-    transcripts: [h("sessions")],
-    usage: [h("usage")],
-    "browser-profiles": userData === undefined ? [] : [p.join(userData, "Partitions")],
-    // Clover's own login item, and every place a file runs from later outside any sandbox (the #301 review's ruling).
-    "login-start": [...new Set([...loginStartPaths(os, o?.home, cloverHome), ...(o?.home === undefined ? [] : autoRunPaths(os, o.home, extrasHere(os, o.home)))])],
-    // The OK'd agents' installs, and the coding agents' own sandbox settings.
-    "agent-installs": [...(o?.agentInstalls ?? []), ...(o?.home === undefined ? [] : agentConfigPaths(os, o.home))],
+    "key-file": offMac(h("secrets.key"), h("secrets.key.cred")),
   };
 }
 
-/** The items of the fenced set whose kinds B's contract doesn't have yet (spec §9.1; D-M2, L-M1, S2), by the kind
- *  asked for. `userData` is the app's own folder (E's), where the Clover Browser keeps its partitions. */
+/** The items of the fenced set whose kinds B's contract doesn't have yet (spec §9.1), by the kind asked for. */
 export function pendingFenced(o: {
-  home: string; cloverHome: string; os: Os; userData?: string;
-  /** The install folders of the coding agents the user has OK'd to run unsandboxed (lane K, keyed to each program's
-   *  real path and hash): the resolved program's folder, and npm's global package folder for its package. Write-denied
-   *  to sessions and agents, so none can swap in a new copy of itself or of another agent. */
-  agentInstalls?: readonly string[];
+  home: string; cloverHome: string; os: Os;
 }): Record<string, string[]> {
-  // `plugins`: the installed plugins folder (spec §2), write-denied to sessions, agents and plugin code, reads
-  // allowed. A bot's plugin comes in only through `plugin.install`'s OK card, and is made in a dev folder, which the
-  // fence follows by its real path (`followDevFolders`).
-  // `sessions-runtime`: the bot driver's state per session (A-M3), which a turn resumes from.
+  // `session-transcripts`: the runtime's transcript store (`storeProjectsDir`: `<home>/projects`, and
+  // `<home>/sdk/projects` on a build whose router applies run homes). A bot's prompt carries its `MEMORY.md`, so its
+  // transcript holds the memory: read- and write-denied to every tool runner, bots' own sessions included. The home
+  // default-deny covers the store too; this names it for its refusal.
+  // Windows: the per-user Git for Windows, whose bash runs hooks: a fenced caller can't plant one there.
   const p = pathFor(o.os, o.cloverHome);
   const u = (...parts: string[]) => p.join(o.home, ...parts);
-  const loginStart: Record<Os, string[]> = {
-    macos: [u("Library", "LaunchAgents"), u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
-      u(".zshrc"), u(".zprofile"), u(".zshenv"), u(".zlogin"), u(".bashrc"), u(".bash_profile"), u(".profile")],
-    linux: [u(".config", "systemd", "user"), u(".config", "autostart"), u(".bashrc"), u(".bash_profile"), u(".profile"),
-      u(".zshrc"), u(".zprofile"), u(".zshenv"), u(".config", "environment.d")],
-    windows: [u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"),
-      u("Documents", "PowerShell"), u("Documents", "WindowsPowerShell"), u(".bashrc"), u(".bash_profile"), u(".profile"), u(".minttyrc")],
-  };
   return {
-    transcripts: [p.join(o.cloverHome, "transcripts")], // `transcriptsDir(home)`, joined in this OS's form
-    usage: [p.join(o.cloverHome, "usage")],
-    "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
-    "login-start": [...new Set([...loginStart[o.os], ...autoRunPaths(o.os, o.home, extrasHere(o.os, o.home))])],
-    "agent-installs": [...(o.agentInstalls ?? []), ...agentConfigPaths(o.os, o.home)],
-    plugins: [p.join(o.cloverHome, "plugins")],
+    // The store's two spellings: `<home>/sdk/projects` is the store on a run-home build, and on a migrated home
+    // `<home>/projects` is its compatibility link; on router 0.0.11 `<home>/projects` is the store itself.
+    "session-transcripts": [p.join(o.cloverHome, "projects"), ...(linkedRouterSupportsRunHome() ? [p.join(o.cloverHome, "sdk", "projects")] : [])],
     // Windows: the per-user Git for Windows, whose bash runs hooks (#205's S4): a fenced caller can't plant one there.
     "hook-shell": o.os === "windows" ? [u("AppData", "Local", "Programs", "Git")] : [],
-    "sessions-runtime": [p.join(o.cloverHome, "sessions-runtime")],
+    // Lane M's self-update files: lane M's `<home>` is the Clover home, not the user's. Writing any of them
+    // would let a runner swap in an unsandboxed daemon (#198 review B1). Never owned by any caller, read-only.
+    // `selfUpdateDirs`/`selfUpdateFiles` name the folders and files; `~/bin` stays in login-start as before.
+    "self-update": [...selfUpdateDirs(o.cloverHome, o.os), ...selfUpdateFiles(o.cloverHome, o.os)],
   };
+}
+
+/** The login-start places (B's contract `login-start`): every folder and file a planted write could run later,
+ *  outside the sandbox (spec item 1116, the controller's ruling) — Clover's own login item first, then the shells
+ *  and their logout scripts, SSH and git config, the folders that come ahead on PATH, editors, package managers,
+ *  and the desktop's autostart, systemd, application and session-script folders. The gnupg entries are only its
+ *  config files (gpg writes its trustdb and random seed in normal use), and `.git/config` stays writable (git
+ *  writes it in normal use; setting risky keys through it is the reviewer's call) — only `.git/hooks` is fenced,
+ *  as a pattern (any repo under the home), enforced by the fence, the macOS regex and the Linux cwd-repo bind.
+ *  macOS also fences the loginwindow plist and `~/Library/Scripts`. */
+export function loginStartPaths(home: string, cloverHome: string, os: Os): string[] {
+  // The fence's own list, and the shared persistence list (`autoRunEntries`, #308): an entry inside a folder already
+  // listed is that folder's.
+  const own = ownLoginStartPaths(home, cloverHome, os);
+  const mine = new Set(own);
+  return [...own, ...withoutNested(autoRunEntries(os, home, extrasHere(os, home)).map((e) => e.path).filter((x) => !mine.has(x)), os, loginStartFolderSet(home, cloverHome, os))];
+}
+
+/** The user's own additions to the persistence list (git's dirs, ZDOTDIR, PYTHONSTARTUP, a moved Documents), read
+ *  only for this computer's OS: a layout for another OS has none. */
+function extrasHere(os: Os, home: string): RunLaterExtras {
+  const here: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+  return os === here ? runLaterExtras(os, home) : {};
+}
+
+/** The login-start entries that are folders: the fence's own (everything but its listed files) and the shared list's. */
+function loginStartFolderSet(home: string, cloverHome: string, os: Os): Set<string> {
+  const files = new Set([...loginStartSafeFilesOwn(home, os), ...loginStartUnsafeFilesOwn(home, os),
+    pathFor(os, home).join(home, "Library", "LaunchAgents", "com.waifucave.clover.core.plist"), pathFor(os, cloverHome).join(cloverHome, "login")]);
+  const out = new Set(ownLoginStartPaths(home, cloverHome, os).filter((x) => !files.has(x)));
+  for (const e of autoRunEntries(os, home, extrasHere(os, home))) if (!e.file) out.add(e.path);
+  return out;
+}
+
+/** `paths` without duplicates and without any inside one of `folders` (other than itself). */
+function withoutNested(paths: readonly string[], os: Os, folders: ReadonlySet<string>): string[] {
+  const sep = os === "windows" ? "\\" : "/";
+  const out: string[] = [];
+  for (const x of new Set(paths)) {
+    if ([...folders].some((f) => f !== x && x.startsWith(`${f}${sep}`))) continue;
+    out.push(x);
+  }
+  return out;
+}
+
+/** The shared list's single files that aren't the fence's own safe files (never created empty: the Linux supervisor
+ *  refuses a plant, macOS's static deny refuses a write). */
+function sharedUnsafeFiles(home: string, os: Os): string[] {
+  const own = new Set([...loginStartSafeFilesOwn(home, os), ...loginStartUnsafeFilesOwn(home, os)]);
+  const folders = loginStartFolderSet(home, "/nonexistent-clover-home", os);
+  return withoutNested(autoRunEntries(os, home, extrasHere(os, home)).filter((e: RunLaterEntry) => e.file && !own.has(e.path)).map((e) => e.path), os, folders);
+}
+
+/** The coding agents' settings (#308's `agentConfigEntries`) as the Linux sandbox meets them: folders made empty and
+ *  bound read-only at setup, files supervised (never created), so a missing one never holds the home. */
+export function agentConfigDirs(home: string, os: Os): string[] {
+  return agentConfigEntries(os, home).filter((e) => !e.file).map((e) => e.path);
+}
+export function agentConfigFiles(home: string, os: Os): string[] {
+  return agentConfigEntries(os, home).filter((e) => e.file).map((e) => e.path);
+}
+
+function ownLoginStartPaths(home: string, cloverHome: string, os: Os): string[] {
+  const p = pathFor(os, home);
+  const u = (...parts: string[]) => p.join(home, ...parts);
+  const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
+    ".bash_logout", ".zlogout", ".logout"];
+  // Places a planted file runs later, outside the sandbox (spec item 1116, the controller's ruling): shells and
+  // their logout scripts, SSH and git config, the folders that come ahead on PATH, editors and package managers.
+  // The gnupg entries are only its config files: gpg writes its trustdb and random seed in normal use.
+  const shells = [...shell.map((f) => u(f)), u(".config", "fish")];
+  const pathAhead = [u(".local", "bin"), u("bin")];
+  const sshGit = [u(".ssh"), u(".gitconfig"), u(".config", "git")];
+  const editors = [u(".vimrc"), u(".vim"), u(".config", "nvim"), u(".emacs"), u(".emacs.d")];
+  const packageManagers = [u(".bunfig.toml"), u(".bun", "bin"), u(".npmrc"), u(".cargo", "bin"),
+    u(".cargo", "config.toml"), u(".cargo", "config"), u(".config", "pip"), u(".pip")];
+  if (os === "macos") {
+    return [
+      u("Library", "LaunchAgents", "com.waifucave.clover.core.plist"), p.join(cloverHome, "login"),
+      u("Library", "LaunchAgents"), u("Library", "LaunchDaemons"), u("Library", "StartupItems"),
+      u("Library", "Application Support", "com.apple.backgroundtaskmanagementagent"),
+      u("Library", "Preferences", "com.apple.loginwindow.plist"), u("Library", "Scripts"),
+      ...shells, ...pathAhead, ...sshGit, ...editors, ...packageManagers,
+      u("Library", "Python"),
+      u(".bash_aliases"), u(".oh-my-zsh", "custom"),
+      u(".gnupg", "gpg.conf"), u(".gnupg", "gpg-agent.conf"), u(".gnupg", "dirmngr.conf"),
+      u(".config", "environment.d"),
+    ];
+  }
+  if (os === "linux") {
+    return [
+      u(".config", "systemd"), u(".local", "share", "systemd", "user"),
+      u(".config", "autostart"), u(".local", "share", "applications"), u(".config", "mimeapps.list"),
+      u(".config", "environment.d"), u(".pam_environment"), u(".xprofile"), u(".xsessionrc"), u(".xinitrc"),
+      u(".config", "autostart-scripts"), u(".config", "plasma-workspace", "env"), u(".config", "plasma-workspace", "shutdown"),
+      ...shells, ...pathAhead, ...sshGit, ...editors, ...packageManagers,
+      u("Library", "Python"),
+      u(".bash_aliases"), u(".oh-my-zsh", "custom"),
+      u(".gnupg", "gpg.conf"), u(".gnupg", "gpg-agent.conf"), u(".gnupg", "dirmngr.conf"),
+    ];
+  }
+  return [
+    u("AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup"),
+    u("Documents", "PowerShell"), u("Documents", "WindowsPowerShell"),
+    u(".bashrc"), u(".bash_profile"), u(".profile"), u(".minttyrc"),
+  ];
+}
+
+/** The fenced login-start FOLDERS, made empty and read-only at sandbox setup (ruling 1). Derived, not listed:
+ *  every login-start path that is neither a safe nor an unsafe file and not one of Clover's own files. */
+export function loginStartDirs(home: string, cloverHome: string, os: Os): string[] {
+  if (os === "windows") return [];
+  const all = new Set(loginStartPaths(home, cloverHome, os));
+  for (const f of [...loginStartSafeFiles(home, os), ...loginStartUnsafeFiles(home, os)]) all.delete(f);
+  // Clover's own files are created and owned by the core.
+  const p = pathFor(os, home);
+  all.delete(p.join(home, "Library", "LaunchAgents", "com.waifucave.clover.core.plist"));
+  all.delete(pathFor(os, cloverHome).join(cloverHome, "login"));
+  return [...all];
+}
+
+/** The fenced login-start FILES that are safe to create empty (0600) at sandbox setup: sourcing an empty shell
+ *  file, logout script or X session script is a no-op, and an empty config means the program's defaults (npm, git,
+ *  bun, cargo, gnupg, pip's ini style, mimeapps). `.gitconfig` and the shells belong here; their hooks and the
+ *  folders around them stay fenced. */
+export function loginStartSafeFiles(home: string, os: Os): string[] {
+  return loginStartSafeFilesOwn(home, os);
+}
+
+function loginStartSafeFilesOwn(home: string, os: Os): string[] {
+  const u = (...parts: string[]) => pathFor(os, home).join(home, ...parts);
+  const shells = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".profile", ".bash_aliases", ".zlogout", ".logout"];
+  const configs = [".npmrc", ".gitconfig", ".bunfig.toml", ".cargo/config.toml", ".cargo/config",
+    ".gnupg/gpg.conf", ".gnupg/gpg-agent.conf", ".gnupg/dirmngr.conf"];
+  if (os === "macos") return [...shells, ...configs].map((f) => u(f));
+  if (os === "linux") return [...shells, ".pam_environment", ".xprofile", ".xsessionrc", ...configs, ".config/mimeapps.list"].map((f) => u(f));
+  return [];
+}
+
+/** The fenced login-start FILES that are never created empty: an empty one still changes behavior — `.bash_profile`
+ *  and `.bash_login` shadow the user's `.profile`, an empty `.xinitrc` replaces the default X startup, an empty
+ *  `.vimrc`/`.emacs` replaces the editor's defaults, and an empty loginwindow plist is not a plist the login
+ *  window wrote. The Linux supervisor refuses them (spec item 1116); macOS refuses them by static deny. */
+export function loginStartUnsafeFiles(home: string, os: Os): string[] {
+  return os === "windows" ? [] : [...loginStartUnsafeFilesOwn(home, os), ...sharedUnsafeFiles(home, os)];
+}
+
+function loginStartUnsafeFilesOwn(home: string, os: Os): string[] {
+  const u = (...parts: string[]) => pathFor(os, home).join(home, ...parts);
+  if (os === "macos") return [".bash_profile", ".bash_login", ".vimrc", ".emacs", "Library/Preferences/com.apple.loginwindow.plist"].map((f) => u(...f.split("/")));
+  if (os === "linux") return [".bash_profile", ".bash_login", ".xinitrc", ".vimrc", ".emacs"].map((f) => u(...f.split("/")));
+  return [];
+}
+
+/** Lane M's self-update folders under the Clover home (`update/`, holding `boot.json`, `rolled-back.json` and
+ *  whatever the updater stages): never owned by any caller, read-only. The Clover home's default-deny already
+ *  covers them, so they never hold anything; inside the default-deny view nothing is created for them. */
+export function selfUpdateDirs(cloverHome: string, os: Os): string[] {
+  if (os === "windows") return [];
+  return [pathFor(os, cloverHome).join(cloverHome, "update")];
+}
+
+/** Lane M's self-update files under the Clover home: the `bin/` daemon binary, its `.new`/`.old` swap copies,
+ *  and the install record. Never owned by any caller, read-only. None is ever created by the sandbox (an install
+ *  record is the installer's to write); the Linux supervisor refuses plants, with the post-command belt behind
+ *  it. */
+export function selfUpdateFiles(cloverHome: string, os: Os): string[] {
+  if (os === "windows") return [];
+  const p = pathFor(os, cloverHome);
+  return [
+    p.join(cloverHome, "bin", "clover-core"),
+    p.join(cloverHome, "bin", "clover-core.new"),
+    p.join(cloverHome, "bin", "clover-core.old"),
+    p.join(cloverHome, "bin", ".new"),
+    p.join(cloverHome, "bin", ".old"),
+    p.join(cloverHome, "install.json"),
+  ];
 }
 
 /** The folder names under `<home>/bots/` on this computer, read each time a command's policy is built. */
 export function botFolders(cloverHome: string): string[] {
   try { return readdirSync(join(cloverHome, "bots"), { withFileTypes: true }).filter((d) => d.isDirectory() || d.isSymbolicLink()).map((d) => d.name); }
   catch { return []; }
+}
+
+/** Clover's empty git template for the sandboxed Bash (`GIT_TEMPLATE_DIR`): read-only to the runner, created by the
+ *  core when a sandboxed command starts, outside every runner-writable place (directly under the Clover home, which
+ *  the home default-deny keeps from runners). `git init` and `git clone` install no hooks from it. A user's own
+ *  `init.templateDir` in their git config is overridden by the env var inside the sandbox only. */
+export function gitTemplateDir(cloverHome: string): string {
+  const p = cloverHome.startsWith("/") && !cloverHome.includes("\\") ? posix : win32;
+  return p.join(cloverHome, "git-template");
+}
+
+/** The user's configured global `core.hooksPath` folders (spec item 1116, ruling 5): read from the global git
+ *  configs without following links. A hook planted in one runs later, outside the sandbox, so each is fenced
+ *  with the login-start set. Relative values resolve against the home; `~` expands. `/dev/null` (hooks off)
+ *  and empty values are skipped. */
+export function globalHooksPathDirs(home: string): string[] {
+  const readNoFollow = (p: string): string | null => {
+    try {
+      const st = lstatSync(p);
+      if (!st.isFile() || st.isSymbolicLink()) return null;
+      return readFileSync(p, "utf8");
+    } catch { return null; }
+  };
+  const out = new Set<string>();
+  for (const cfg of [join(home, ".gitconfig"), join(home, ".config", "git", "config")]) {
+    const text = readNoFollow(cfg);
+    if (text === null) continue;
+    for (const k of parseGitConfigWatched(text)) {
+      if (k.dotted.toLowerCase() !== "core.hookspath") continue;
+      const v = k.value.trim();
+      if (v === "" || v === "/dev/null") continue;
+      const expanded = v.startsWith("~/") ? join(home, v.slice(2)) : v;
+      out.add(isAbsolute(expanded) ? expanded : join(home, expanded));
+    }
+  }
+  return [...out];
 }

@@ -8,7 +8,7 @@ const win = process.platform === "win32";
 const base = (command: string, extra: Partial<FencedRun> = {}): FencedRun => ({
   command, cwd: realpathSync(mkdtempSync(join(tmpdir(), "clover-spawn-"))), timeoutMs: 10_000,
   env: win ? { SystemRoot: process.env.SystemRoot ?? "C:\\Windows", PATH: process.env.PATH ?? "" } : { PATH: "/usr/bin:/bin" },
-  who: { sessionId: "s1", pluginId: "p", hook: "h" }, ...extra,
+  who: { caller: { kind: "plugin", pluginId: "p" }, hook: "h" }, ...extra,
 });
 
 describe("the hook door per OS (the controller's ruling: as the plugin host)", () => {
