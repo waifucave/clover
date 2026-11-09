@@ -1,9 +1,14 @@
-// The plugin host's core side (lane B, B-M2; spec §5.2, §5.4): the plugin API's router (the capability gate), the caller
-// binding and the pipe's API channel. The areas the router serves come in B-M2's API PR.
+// The plugin host's core side (lane B, B-M2; spec §5.2, §5.4): the plugin API's router and its areas, the caller
+// binding and the pipe's API channel. The processes themselves (the two plugin-host processes on clover-plugin-bun,
+// their workers, crashes, heartbeat and logs) come with #234's plugin Bun.
 import { guardApiRouter, type ApiRouter, type InstallRecord } from "../contracts/plugin-host";
 import { createApiRouter, type ApiHandlers, type ApiRouterOptions } from "./api/router";
 
+export * from "./api/confirm";
+export * from "./api/points";
 export * from "./api/router";
+export * from "./api/settings";
+export * from "./api/storage";
 export * from "./api-channel";
 export * from "./invocations";
 

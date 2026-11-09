@@ -35,6 +35,7 @@ import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
 import { appShortcut, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
+import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
@@ -51,6 +52,7 @@ const headless = args.headless;
 const home = daemonHome(process.env);
 const here = dirname(fileURLToPath(import.meta.url));
 const dirs = { core: join(here, "..", "renderer", "core"), layer: join(here, "..", "renderer", "layer") };
+const devIcon = devAppIcon({ profile: identity.profile, packaged: app.isPackaged, platform: process.platform });
 const os: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
 
 // Before anything else: no Dock icon until a window is shown, and none at all in a headless run.
@@ -148,6 +150,8 @@ async function ready(): Promise<void> {
   if (process.platform === "darwin") {
     app.setActivationPolicy("accessory");
     if (headless) app.dock?.hide();
+    // Clover Dev, unpackaged, would otherwise wear Electron's icon in the Dock (docs/clover-brand.md).
+    else if (devIcon.dock !== undefined) app.dock?.setIcon(join(here, "icons", devIcon.dock));
   }
   powerMonitor.on("shutdown", () => {
     shuttingDown = true;
@@ -274,7 +278,7 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
-    tray = new AppTray(join(here, "tray.png"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
   // A start by the user opens the window; a start by the daemon or at login doesn't. A headless run opens it hidden.
@@ -1034,6 +1038,8 @@ function browserHost(): BrowserHost {
  *  placed in it. (The guards come from `web-contents-created`.) */
 function watchWindow(win: BrowserWindow): void {
   const id = win.id;
+  // Clover Dev wears its own icon on Windows and Linux (docs/clover-brand.md); macOS's is the Dock's, set at ready.
+  if (devIcon.window !== undefined) win.setIcon(join(here, "icons", devIcon.window));
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);
