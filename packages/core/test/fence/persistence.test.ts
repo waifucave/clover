@@ -17,7 +17,7 @@ import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { agentConfigPaths, autoRunEntries, autoRunPaths } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
-import { expandWindowsEnv, gitConfiguredDirs, parseRegValue, runLaterExtrasFrom } from "../../src/fence/run-later";
+import { expandWindowsEnv, gitConfiguredDirs, parseRegValue, runLaterExtras, runLaterExtrasFrom } from "../../src/fence/run-later";
 import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
@@ -240,6 +240,28 @@ describe("git's included config files, on this computer's real fence", () => {
       expect(persistencePaths(home)).toContain(p);
     }
     expect(fence.check({ op: "write", path: join(home, "w", "notes.md") })).toEqual({ allowed: true });
+  });
+});
+
+describe("git's includes are read again when the config changes, without a restart", () => {
+  test("an include the user adds later is held from the next look; unchanged, nothing is read again", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-late-")));
+    const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    const local = join(home, ".gitconfig.local");
+    expect(fence.check({ op: "write", path: local })).toEqual({ allowed: true });
+    const first = runLaterExtras(os, home);
+    expect(runLaterExtras(os, home)).toBe(first); // nothing changed: the same answer, nothing read again
+    // The user adds an include: the same fence holds it at its next look.
+    writeFileSync(join(home, ".gitconfig"), "[include]\n\tpath = ~/.gitconfig.local\n");
+    expect(fence.check({ op: "write", path: local })).toMatchObject({ allowed: false, reason: "login-start" });
+    expect(persistencePaths(home)).toContain(local);
+    // A file an include names appears, and itself includes another: followed too.
+    writeFileSync(local, "[include]\n\tpath = ~/deeper.inc\n");
+    expect(fence.check({ op: "write", path: join(home, "deeper.inc") })).toMatchObject({ allowed: false, reason: "login-start" });
+    // And taken out again: free again.
+    writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = me\n");
+    expect(fence.check({ op: "write", path: local })).toEqual({ allowed: true });
   });
 });
 

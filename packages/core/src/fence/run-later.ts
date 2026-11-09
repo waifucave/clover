@@ -2,7 +2,8 @@
 // templates and hooks are (`init.templateDir`, `core.hooksPath` in the global config), the files the global config
 // includes (each one is global config too: `core.hooksPath`, `core.fsmonitor`), `$ZDOTDIR` and
 // `$PYTHONSTARTUP`, and on Windows the Documents known folder, which OneDrive moves (and with it the PowerShell
-// profiles). Read once per home and kept for the process: a change shows at the daemon's next start.
+// profiles). Kept per home, and git's files are checked again at each call (`runLaterExtras`): a change to them
+// shows at the next run's start.
 import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
@@ -127,32 +128,61 @@ export function parseRegValue(output: string, name: string): string | undefined 
   return undefined;
 }
 
-const cache = new Map<string, RunLaterExtras>();
+/** What a file was when it was read, by `lstat` alone: gone, not a regular file, or its inode, size and time. */
+function stampOf(path: string): string {
+  try {
+    const st = lstatSync(path);
+    return st.isFile() ? `f:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "x";
+  } catch {
+    return "-";
+  }
+}
 
-/** This computer's extras for `home` (this process's environment, the real files and registry), kept per home. */
+interface CachedExtras {
+  extras: RunLaterExtras;
+  /** Every file the git walk tried to read, and what it was then. */
+  stamps: Map<string, string>;
+}
+
+const cache = new Map<string, CachedExtras>();
+/** The Windows Documents folder, read once per process (a registry query): only a sign-in moves it. */
+const documentsCache = new Map<string, string | undefined>();
+
+/** This computer's extras for `home` (this process's environment, the real files and registry), kept per home and
+ *  checked at every call: each git config file the walk read (or tried to: an include that isn't there yet) is
+ *  `lstat`ed again, and if any changed, appeared or went, the list is read again. The fence asks at each run's start,
+ *  so an include the user adds later is held from the next run, without a restart. */
 export function runLaterExtras(os: Os, home: string): RunLaterExtras {
   const key = `${os}\0${home}`;
   const hit = cache.get(key);
-  if (hit) return hit;
+  if (hit && [...hit.stamps].every(([path, stamp]) => stampOf(path) === stamp)) return hit.extras;
+  const stamps = new Map<string, string>();
   const extras = runLaterExtrasFrom(os, home, {
     env: process.env,
     // Never through a link (the fence's own rule for the global git config: a planted link must not choose what is
     // fenced): a regular file, or nothing.
-    read: (f) => { try { return lstatSync(f).isFile() ? readFileSync(f, "utf8") : undefined; } catch { return undefined; } },
+    read: (f) => {
+      stamps.set(f, stampOf(f));
+      try { return lstatSync(f).isFile() ? readFileSync(f, "utf8") : undefined; } catch { return undefined; }
+    },
     documentsValue: () => {
       if (process.platform !== "win32") return undefined;
+      if (documentsCache.has(home)) return documentsCache.get(home);
+      let value: string | undefined;
       try {
         const r = spawnSync(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe"),
           ["query", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders", "/v", "Personal"],
           { encoding: "utf8", windowsHide: true, timeout: 5000 });
-        return r.status === 0 ? parseRegValue(r.stdout, "Personal") : undefined;
-      } catch { return undefined; }
+        value = r.status === 0 ? parseRegValue(r.stdout, "Personal") : undefined;
+      } catch { value = undefined; }
+      documentsCache.set(home, value);
+      return value;
     },
   });
-  cache.set(key, extras);
+  cache.set(key, { extras, stamps });
   return extras;
 }
 
 /** Test seam: forget what was read. */
-export function __resetRunLaterExtrasForTests(): void { cache.clear(); }
+export function __resetRunLaterExtrasForTests(): void { cache.clear(); documentsCache.clear(); }
 
