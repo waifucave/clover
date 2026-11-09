@@ -221,7 +221,12 @@ export const Caller = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("core") }),
   /** Another computer over the link (§8.2), for one of its sessions: never the user, always fenced, and its writes
    *  judged at the stricter of this computer's level and the call's (review N2). */
-  z.object({ kind: z.literal("peer"), device: DeviceId, sessionId: SessionId.optional(), bot: BotId.optional() }),
+  z.object({
+    kind: z.literal("peer"), device: DeviceId, sessionId: SessionId.optional(), bot: BotId.optional(),
+    /** Whose call it is on the calling computer (`peer.call`'s `as.kind`). A `noSessions` method runs for a peer only
+     *  when this is `user`; a peer caller without it never reads one. */
+    asKind: z.enum(["user", "session", "plugin", "core", "peer"]).optional(),
+  }),
 ]);
 export type Caller = z.infer<typeof Caller>;
 

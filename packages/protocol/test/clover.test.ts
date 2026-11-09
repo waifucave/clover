@@ -267,8 +267,11 @@ describe("the allow lists", () => {
     const reach = new Set<string>();
     for (const role of PEER_CALL_ROLES) {
       for (const name of allowedMethods(role)) {
-        const verdict = peerCallVerdict(name, role);
+        const verdict = peerCallVerdict(name, role, { kind: "user" });
         const m = CLOVER_METHODS.get(name)!;
+        // What only the user may read (`noSessions`) runs for the calling computer's user alone.
+        if (m.noSessions) for (const kind of ["session", "plugin", "core", "peer"]) expect(peerCallVerdict(name, role, { kind })).toBe("refused");
+        if (m.noSessions) expect(peerCallVerdict(name, role)).toBe("refused");
         if (name.startsWith("peer.")) expect(verdict).toBe("refused");
         else expect(verdict).toBe(m.userOnly || m.change !== undefined ? "needs-answer" : "allowed");
         if (verdict !== "refused") reach.add(name);

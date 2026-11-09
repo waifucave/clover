@@ -128,7 +128,7 @@ describe("peer.call", () => {
   test("an allowed method runs as the peer device, never as the user", async () => {
     const { laptop, deps, ran } = await setup();
     expect(await peerCall(deps, { method: "device.list", params: {}, as: { kind: "user", client: "app" }, role: "remote" }, laptop.id)).toEqual({ result: "done" });
-    expect(ran[0]!.caller).toEqual({ kind: "peer", device: laptop.id });
+    expect(ran[0]!.caller).toEqual({ kind: "peer", device: laptop.id, asKind: "user" });
   });
 
   test("a change runs only with the app's signed answer bound to this call, once", async () => {

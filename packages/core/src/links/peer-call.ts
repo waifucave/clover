@@ -51,7 +51,7 @@ export async function peerCall(deps: PeerCallDeps, raw: unknown, from: string): 
   const fence = fenceOf(raw);
   if (fence && deps.isStale?.(fence.epoch, fence.scope)) throw new ContractError("not_main", "the call comes from a main computer that has since lost the lease", { fence });
   const verdict = peerCallVerdict(p.method, p.role, p.as);
-  if (verdict === "refused") throw new ContractError("refused", `${p.method} can't be called from another computer as ${p.role}${p.as.kind === "session" ? " for a session" : ""}`);
+  if (verdict === "refused") throw new ContractError("refused", `${p.method} can't be called from another computer as ${p.role}${p.as.kind === "user" ? "" : ` for its ${p.as.kind}`}`);
   if (verdict === "needs-answer") {
     if (!p.answer) throw new ContractError("refused", `${p.method} needs the user's signed answer`);
     const check = deps.verify ?? verifySignedAnswer;
@@ -61,7 +61,7 @@ export async function peerCall(deps: PeerCallDeps, raw: unknown, from: string): 
     if (v !== "ok") throw new ContractError("refused", `the signed answer doesn't hold (${v})`);
   }
   const caller: Extract<Caller, { kind: "peer" }> = {
-    kind: "peer", device: from,
+    kind: "peer", device: from, asKind: p.as.kind,
     ...(p.as.kind === "session" ? { sessionId: p.as.sessionId, ...(p.as.bot ? { bot: p.as.bot } : {}) } : {}),
   };
   return { result: await deps.dispatch(p.method, p.params, caller, p.role) };
