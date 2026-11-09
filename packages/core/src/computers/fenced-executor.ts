@@ -5,8 +5,11 @@
 //
 // The run is the caller's (`who`): a bot's own session gets its bot's reach, a coding session its own, and another
 // computer's call (a peer) the fence's floor. The child's environment is built here, whole: a fixed PATH, the user's
-// home and the fence's temp folder (TMPDIR), nothing inherited from the daemon (no keys, no tokens).
-import type { Os } from "@waifucave/clover-protocol";
+// home and a temp folder (TMPDIR: a bot's own scratch folder for its own runs, the fence's temp folder for the rest),
+// nothing inherited from the daemon (no keys, no tokens).
+import { lstatSync, mkdirSync } from "node:fs";
+import type { Caller, Os } from "@waifucave/clover-protocol";
+import { fenceContextFor, ownFoldersOf } from "../contracts/fence";
 import type { FencedRunResult, FencedSpawner } from "../fence/spawn";
 import type { ToolExecutor } from "../tree/service";
 
@@ -21,8 +24,12 @@ export interface FencedExecutorOptions {
   /** The user's home folder: `HOME` in the child's environment. */
   home: string;
   /** The fence's temp folder (`CloverFence`'s `temp`, which every caller may write): `TMPDIR` in the child's
-   *  environment, so tools that make temp files don't fall back to a folder the sandbox refuses. */
+   *  environment, so tools that make temp files don't fall back to a folder the sandbox refuses. A bot's own run gets
+   *  its own scratch folder instead (with `cloverHome`; the owner's ruling). */
   temp?: string;
+  /** The Clover home, for a bot's own scratch folder (`<home>/scratch/<bot>`, `ownFoldersOf`): a bot's session or
+   *  side thread runs with it as `TMPDIR`. */
+  cloverHome?: string;
   os: Os;
 }
 
@@ -33,7 +40,18 @@ export function fencedPath(os: Os): string {
 
 /** The computer node's executor over `o.spawner`. */
 export function fencedExecutor(o: FencedExecutorOptions): ToolExecutor {
-  const env: Record<string, string> = { PATH: fencedPath(o.os), HOME: o.home, LANG: "en_US.UTF-8", TERM: "dumb", ...(o.temp === undefined ? {} : { TMPDIR: o.temp }) };
+  const base: Record<string, string> = { PATH: fencedPath(o.os), HOME: o.home, LANG: "en_US.UTF-8", TERM: "dumb" };
+  /** The caller's TMPDIR: a bot's own scratch folder (made when missing, never through a link), else the fence's. */
+  const tempFor = (as: Caller): string | undefined => {
+    const scratch = o.cloverHome === undefined ? undefined : ownFoldersOf(fenceContextFor(as), o.cloverHome).ownScratch;
+    if (scratch !== undefined) {
+      try {
+        mkdirSync(scratch, { recursive: true, mode: 0o700 });
+        if (lstatSync(scratch).isDirectory()) return scratch;
+      } catch { /* fall back to the fence's own temp folder */ }
+    }
+    return o.temp;
+  };
   return {
     async run(tool, input, ctx) {
       if (tool !== "Bash") return { output: { error: `${tool} doesn't run through this computer's executor; only Bash does` }, isError: true };
@@ -44,6 +62,8 @@ export function fencedExecutor(o: FencedExecutorOptions): ToolExecutor {
       if (ctx.signal.aborted) return { output: { stdout: "", stderr: "", code: null, aborted: true }, isError: true };
       let r: FencedRunResult;
       try {
+        const tmp = tempFor(ctx.as);
+        const env = { ...base, ...(tmp === undefined ? {} : { TMPDIR: tmp }) };
         r = await o.spawner.run({ command: i.command, cwd: ctx.cwd, env, timeoutMs, signal: ctx.signal, who: { caller: ctx.as } });
       } catch (e) {
         // A spawner that throws ran nothing we can vouch for: refused, with the reason.

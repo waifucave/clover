@@ -98,7 +98,8 @@ export class ComputerPeers {
     registry.setRemoteLevel((name, level, answer) => {
       const c = registry.get(name);
       if (!c) return Promise.reject(new ContractError("not_found", `no computer ${name}`));
-      return withAnswer(answer ? undefined : opts.ask, async (a) => {
+      // A level is the user's to change (the app's computer.setLevel), so the card is the user's own.
+      return withAnswer(answer ? undefined : opts.ask, { as: { kind: "user", client: "app" }, origin: "user" }, async (a) => {
         try {
           const link = await transport.connect(c.device);
           await link.request("computer.setLevel", { level, ...fenceParam(opts.fence), ...((a ?? answer) ? { answer: a ?? answer } : {}) });

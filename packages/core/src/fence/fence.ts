@@ -342,6 +342,12 @@ export class CloverFence implements Fence {
     return pluginLoadDenies([...plugins, ...(this.#layout["dev-folders"] ?? this.#devFolders), ...this.#pluginLoadFolders]);
   }
 
+  /** The temp folder every runner may write (`allowWrite`), canonical: a fenced command's `TMPDIR` (lane J's
+   *  executor, #364's review). A cross-lane addition (lane J, the controller's ruling), read only. */
+  get temp(): string {
+    return this.#temp;
+  }
+
   policy(ctx?: FenceContext): SandboxPolicy {
     // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
     // The `caller` items (`bot-memory`) stay out of the deny lists: the pattern, and the `own…` allows, rule them.
