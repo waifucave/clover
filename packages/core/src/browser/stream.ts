@@ -157,7 +157,8 @@ export function encodeStreamAck(timestamp: number): Uint8Array {
 }
 
 /** The sender's reader for acks, which may arrive cut anywhere: the timestamps acknowledged, in order. A frame that
- *  isn't an ack, or has a payload, is skipped by its own length (a newer receiver may say more). */
+ *  isn't an ack, or has a payload of up to `STREAM_MAX_ACK_PAYLOAD` (a newer receiver may say more), is skipped by its
+ *  own length; a longer one is a bad frame. It holds one header at most and copies nothing per chunk. */
 export class StreamAckReader {
   private head = new Uint8Array(STREAM_HEADER_BYTES);
   private have = 0;

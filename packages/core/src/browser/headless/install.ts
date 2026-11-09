@@ -334,7 +334,12 @@ export async function stageForLaunch(installed: Installed, opts: { dir: string; 
     }
   };
   if (existsSync(copy) && (await verified(copy))) return { bin: binaryIn(copy, installed.platform), dir: copy, release: () => undefined };
-  rmSync(copy, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  try {
+    rmSync(copy, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (e) {
+    // On Windows a file of the damaged copy is held while another browser still runs from it.
+    throw new InstallError("unpack", `the damaged copy of the headless browser could not be removed (a browser may still be running from it): ${e instanceof Error ? e.message : String(e)}`);
+  }
   const fresh = join(runRoot, `${process.pid}-${randomBytes(12).toString("hex")}`);
   const drop = (): void => {
     try {

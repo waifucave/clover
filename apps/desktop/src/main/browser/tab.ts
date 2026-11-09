@@ -309,6 +309,8 @@ export class OffscreenTab extends BrowserTab {
     }
     // The scale is read off the picture itself (the display's own scale may be forced by a flag and not reported):
     // the same shape as the viewport, at a whole 1.x to 5x (Windows scales to 500 %), within a pixel or two of rounding, is the same picture.
+    // The cap on a viewport's pixels does not bound this source picture: at 5x it is 25 times the viewport's pixels,
+    // and Chromium's own texture limits are what stop it (a window past them never draws, and is refused here).
     const r = width / w;
     if (r > 1 && r <= 5 && Math.abs(height - h * r) <= Math.max(2, h * r * 0.01)) {
       this.pinPageSize();
