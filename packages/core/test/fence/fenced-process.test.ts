@@ -342,6 +342,25 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
 });
 
 describe("the Linux sandbox's mounts, as arguments", () => {
+  test("a link on the way to a fenced item is held: its folder read-only, its other entries bound back, the link not (#392's review)", () => {
+    const dirs = new Set(["/h", "/h/dotfiles", "/h/dotfiles/sub", "/h/p", "/h/.clover", "/t"]);
+    const files = new Set(["/h/dotfiles/notes.md"]);
+    const links = new Set(["/h/dotfiles/gitconfig"]);
+    const fs = {
+      kind: (p: string) => (dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : links.has(p) ? "other" as const : null),
+      list: (d: string) => [...dirs, ...files, ...links].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
+    };
+    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/dotfiles2/real", "/h/.clover"], denyRead: ["/h/.clover"], holdLinks: ["/h/dotfiles/gitconfig"],
+      closedDoors: [], blockedAddresses: [], network: "none" as const };
+    const plan = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, policy });
+    const s = plan.args.join(" ");
+    expect(s).toContain("--ro-bind /h/dotfiles /h/dotfiles");
+    expect(s).toContain("--bind /h/dotfiles/notes.md /h/dotfiles/notes.md");
+    expect(s).toContain("--bind /h/dotfiles/sub /h/dotfiles/sub");
+    expect(s).not.toContain("--bind /h/dotfiles/gitconfig");
+    expect(plan.held).toContainEqual({ folder: "/h/dotfiles", because: "/h/dotfiles/gitconfig" });
+  });
+
   test("the Clover home is a tmpfs view holding nothing without a caller; outside items read-only", () => {
     const dirs = new Set(["/h", "/h/.clover", "/h/.clover/settings", "/h/.clover/run", "/h/dev", "/h/dev/luna", "/t", "/run/user/1000"]);
     const files = new Set(["/h/.clover/settings.json", "/h/.clover/notes.txt"]);

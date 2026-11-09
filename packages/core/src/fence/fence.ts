@@ -22,7 +22,7 @@ import {
   type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
   type SandboxPolicy,
 } from "../contracts/fence";
-import { canonicalPath } from "./canonical";
+import { canonicalPath, linksOnTheWay, TooManyLinks } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
 import { botFolders, fenceLayout, globalHooksPathDirs, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
 
@@ -56,6 +56,9 @@ export interface CloverFenceOptions {
   loopbackPorts?: () => readonly number[];
   /** How a path is resolved on this disk; the conformance suite's paths are fictional, so it passes its own. */
   canonical?: (path: string) => string;
+  /** The links on the way to a path (`linksOnTheWay`); a test that passes its own `canonical` gets none unless it
+   *  passes these too (its paths aren't on this disk). */
+  linksOf?: (path: string) => string[];
   /** Enforce `ENFORCED_AHEAD` (default true). Off for B's contract suite until its next version names those kinds. */
   enforceAhead?: boolean;
 }
@@ -82,6 +85,7 @@ export class CloverFence implements Fence {
   readonly #sessionData: string | undefined;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #canonical: (path: string) => string;
+  readonly #linksOf: (path: string) => string[];
   readonly #listeners = new Listeners<void>();
   readonly #loopbackPorts: () => readonly number[];
   readonly #agentInstalls: string[];
@@ -92,6 +96,7 @@ export class CloverFence implements Fence {
   constructor(opts: CloverFenceOptions) {
     this.os = opts.os ?? osOf();
     this.#canonical = opts.canonical ?? ((p) => canonicalPath(p));
+    this.#linksOf = opts.linksOf ?? (opts.canonical !== undefined ? () => [] : (p) => linksOnTheWay(p));
     this.#home = this.#canonical(opts.home);
     this.#cloverHome = this.#canonical(opts.cloverHome);
     this.#temp = this.#canonical(opts.temp ?? (this.os === "windows" ? win32.join(opts.home, "AppData", "Local", "Temp") : "/tmp"));
@@ -108,10 +113,21 @@ export class CloverFence implements Fence {
 
   readonly #enforceAhead: boolean;
 
+  /** An item's path as the fence holds it, and the links on the way to it inside the user's home. A path with a link
+   *  loop on the way (`TooManyLinks`) is held under its own name, never thrown out of every run (#392's review). */
+  #held(path: string): { path: string; links?: string[] } {
+    let canonical: string;
+    try { canonical = this.#canonical(path); } catch (e) { if (e instanceof TooManyLinks) return { path }; throw e; }
+    if (this.os === "windows") return { path: canonical };
+    let links: string[];
+    try { links = this.#linksOf(path).filter((l) => inside(l, this.#home, this.os) && l !== this.#home); } catch { return { path: canonical, links: [path] }; }
+    return links.length === 0 ? { path: canonical } : { path: canonical, links };
+  }
+
   fencedSet(): readonly FencedPath[] {
     const out: FencedPath[] = [];
     const add = (kind: FencedKind, path: string) =>
-      out.push({ kind, path: this.#canonical(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : kind === "bot-memory" ? "caller" : "write" });
+      out.push({ kind, ...this.#held(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : kind === "bot-memory" ? "caller" : "write" });
     for (const [kind, paths] of Object.entries(fenceLayout(this.#cloverHome, this.os)) as [LaidOutKind, string[]][]) {
       for (const p of this.#layout[kind] ?? paths) add(kind, p);
     }
@@ -126,7 +142,7 @@ export class CloverFence implements Fence {
     const aheadDeny: Record<string, "write" | "read-write"> = { "hook-shell": "write", "session-transcripts": "write", "self-update": "write" };
     for (const kind of this.#enforceAhead ? ENFORCED_AHEAD : []) {
       for (const path of (this.#layout as Record<string, string[] | undefined>)[kind] ?? pending[kind] ?? []) {
-        out.push({ kind: kind as FencedKind, path: this.#canonical(path), deny: aheadDeny[kind]! });
+        out.push({ kind: kind as FencedKind, ...this.#held(path), deny: aheadDeny[kind]! });
       }
     }
     // The kinds that need more than the Clover home: the login places (under the user's home), the browser's
@@ -355,6 +371,7 @@ export class CloverFence implements Fence {
       // `ownFoldersOf`), and every `node_modules` above a folder plugin code loads from.
       denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path), ...patterns, this.#cloverHome],
+      ...(() => { const h = [...new Set(set.flatMap((i) => i.links ?? []))]; return h.length > 0 ? { holdLinks: h } : {}; })(),
       closedDoors: [...CLOSED_DOORS[this.os]],
       // The cloud metadata address first, then the browser filter's ports on both loopbacks (`host:port`).
       blockedAddresses: [...CLOUD_METADATA_ADDRESSES, ...this.#loopbackPorts().flatMap((port) => [`127.0.0.1:${port}`, `[::1]:${port}`])],

@@ -119,6 +119,10 @@ export function macFenceProfile(input: MacProfileInput): string {
   const specificDenyWrite = policy.denyWrite.filter((d) => d !== input.cloverHome);
   const specificDenyRead = policy.denyRead.filter((d) => d !== input.cloverHome);
   if (specificDenyWrite.length > 0) lines.push(`(deny file-write* ${specificDenyWrite.map((d) => `(subpath ${q(d)})`).join(" ")})`);
+  // The links on the way to a fenced item, each under its own name (never resolved): not removed, replaced or made
+  // (#392's review). After the naming folders' allows, which would otherwise take a new name there back. A write
+  // through one lands at its target, which its item's own deny judges.
+  for (const l of policy.holdLinks ?? []) lines.push(`(deny file-write* (literal ${q(l)}))`);
   if (specificDenyRead.length > 0) lines.push(`(deny file-read* ${specificDenyRead.map((d) => `(subpath ${q(d)})`).join(" ")})`);
   if (doors.length > 0) lines.push(`(deny process-exec ${doors.map((d) => `(literal ${q(d)})`).join(" ")})`);
   // 5. The caller's rules (B's contract, `policyAllows`'s order): the home deny above refuses everything under

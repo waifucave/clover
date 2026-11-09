@@ -95,6 +95,15 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
       naming.add(p);
     }
   }
+  // The links on the way to a fenced item (#392's review): a link can't be a mount point, so its folder takes the
+  // naming folders' shape (read-only, its present folders and files bound back writable, the link not among them),
+  // and the link can't be removed, replaced or made there.
+  for (const l of policy.holdLinks ?? []) {
+    const p = dirname(l);
+    if (inside(p, cloverHome) || fs.kind(p) !== "dir" || !writable.some((w) => inside(p, w))) continue;
+    if (!naming.has(p)) held.push({ folder: p, because: l });
+    naming.add(p);
+  }
   // Folders between a writable root and an outside fenced item: mount points, so it can't be renamed out.
   const holders = new Set<string>();
   for (const d of fenced) {

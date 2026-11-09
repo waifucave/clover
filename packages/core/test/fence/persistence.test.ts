@@ -6,7 +6,7 @@
 // Bash can't write them).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
 import { buildMandatoryFloorProfile } from "@waifucave/clover-agent-sdk";
@@ -18,7 +18,11 @@ import { agentConfigPaths, autoRunEntries, autoRunPaths } from "../../src/contra
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
 import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue, readGitConfigFile, runLaterExtras, runLaterExtrasFrom, stampOf } from "../../src/fence/run-later";
-import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
+import { persistenceLinkHolds, persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
+import { fenceContextFor } from "../../src/contracts/fence";
+import { fencedSpawner } from "../../src/fence/fenced-process";
+import { macFenceProfile } from "../../src/fence/macos-profile";
+import { callerPlaces } from "../../src/fence/per-caller";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
@@ -339,6 +343,60 @@ darwinDescribe("Seatbelt, live", () => {
     expect(write(join(home, "w", "work.inc"), "[core]\n\tfsmonitor = /tmp/m\n")).toBe(false);
     expect(readFileSync(join(home, "w", "work.inc"), "utf8")).toBe("[user]\n\tname = me\n");
     expect(write(join(home, "w", "notes.md"), "x")).toBe(true);
+  });
+
+  test("a link on the way to a git config, a chain's middle hop or a folder link, can't be swapped: in the fence's Seatbelt and in the runtime's (#392's review)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-chain-")));
+    const at = (...p: string[]) => join(home, ...p);
+    for (const d of [at("dotfiles"), at("dotfiles2"), at("dotfiles", "gitdir"), at(".config"), at("project")]) mkdirSync(d, { recursive: true });
+    writeFileSync(at("dotfiles2", "real"), "[user]\n\tname = me\n");
+    symlinkSync(at("dotfiles2", "real"), at("dotfiles", "gitconfig"));
+    symlinkSync(at("dotfiles", "gitconfig"), at(".gitconfig")); // ~/.gitconfig → dotfiles/gitconfig → dotfiles2/real
+    writeFileSync(at("dotfiles", "gitdir", "config"), "[user]\n\tname = me\n");
+    symlinkSync(at("dotfiles", "gitdir"), at(".config", "git")); // stow-style: ~/.config/git → dotfiles/gitdir
+    writeFileSync(at("project", "evil"), "[core]\n\tfsmonitor = /tmp/m\n");
+    const swaps = [
+      ['rm "$1" && ln -s "$2" "$1"', at("dotfiles", "gitconfig"), at("project", "evil")],
+      ['rm "$1" && ln -s "$2" "$1"', at(".config", "git"), at("project")],
+      ['mv "$1" "$1.away"', at("dotfiles", "gitconfig"), ""],
+    ] as const;
+    const intact = () => {
+      expect(readlinkSync(at("dotfiles", "gitconfig"))).toBe(at("dotfiles2", "real"));
+      expect(readlinkSync(at(".config", "git"))).toBe(at("dotfiles", "gitdir"));
+    };
+    const run = (profile: string, [script, a, b]: readonly [string, string, string]) =>
+      spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", a, b], { encoding: "utf8" }).status === 0;
+    // The fence's own profile, for a coding session.
+    const fence = new CloverFence({ os: "macos", home, cloverHome: at(".clover"), temp: at("tmp") });
+    const ctx = fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" });
+    const policy = fence.policy(ctx);
+    expect(policy.holdLinks).toEqual(expect.arrayContaining([at(".gitconfig"), at("dotfiles", "gitconfig"), at(".config", "git")]));
+    const fenceProfile = macFenceProfile({ policy, cloverHome: at(".clover"), home, perUserTemp: null, caller: callerPlaces(at(".clover"), "macos", ctx) });
+    for (const s of swaps) expect([s[1], run(fenceProfile, s)]).toEqual([s[1], false]);
+    intact();
+    expect(run(fenceProfile, ['printf x > "$1"', at("dotfiles", "notes.md"), ""])).toBe(true);
+    // The runtime's: it resolves every plain deny before judging it (modelled here with realpath), and takes each
+    // link hold as a glob whose folder alone it resolves.
+    const resolved = [...new Set(persistencePaths(home, "darwin").map((p) => { try { return realpathSync(p); } catch { return p; } }))];
+    const holds = persistenceLinkHolds(home);
+    expect(holds).toEqual(expect.arrayContaining([`${at("dotfiles", "gitconfi")}?`, `${at(".config", "gi")}?`, `${at(".gitconfi")}?`]));
+    const sdkProfile = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: resolved, denyWriteGlobs: holds });
+    for (const s of swaps) expect([s[1], run(sdkProfile, s)]).toEqual([s[1], false]);
+    intact();
+    // Without the holds, the resolved denies alone let the middle hop go (the hole the review found).
+    const bare = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: resolved });
+    expect(run(bare, ['ln -sf "$2" "$1.probe" && rm "$1.probe"', at("dotfiles", "gitconfig"), at("project", "evil")])).toBe(true);
+  });
+
+  test("a link loop on the way to ~/.gitconfig: the fence holds it under its own name, and a run isn't thrown out (#392's review)", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-loop-")));
+    symlinkSync(join(home, ".gitconfig"), join(home, ".gitconfig")); // a loop
+    const fence = new CloverFence({ os: "macos", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") });
+    const policy = fence.policy(fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" }));
+    expect(policy.denyWrite).toContain(join(home, ".gitconfig"));
+    mkdirSync(join(home, "project"), { recursive: true });
+    const r = await fencedSpawner({ fence, processHolder: null }).run({ command: "echo ok", cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } } });
+    expect(r.kind === "exited" && r.stdout).toBe("ok\n");
   });
 
   test("a linked ~/.gitconfig (dotfiles): its hooks folder and its linked include can't be written (#392's review)", () => {

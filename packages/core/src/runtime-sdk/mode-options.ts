@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { pluginLoadFoldersOf } from "./plugin-load-folders";
 import { agentConfigPaths, autoRunPaths, pluginLoadDenies } from "../contracts/fence";
 import { runLaterExtras } from "../fence/run-later";
+import { linksOnTheWay } from "../fence/canonical";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -967,6 +968,29 @@ export function persistencePaths(userHome: string = homedir(), platform: NodeJS.
   return [...new Set(listed.flatMap((p) => { const r = realOrNearest(p); return r === p ? [p] : [p, r]; }))];
 }
 
+/** The links on the way to each `persistencePaths` entry inside the user's home (a stow-style `~/.config/git`, each
+ *  hop of a `~/.gitconfig` chain), held under their own names for a sandboxed Bash (#392's review). The runtime
+ *  resolves a plain deny before it judges it, which would turn a link's deny into its target's; a glob's fixed folder
+ *  alone is resolved, so each link is written as a glob of its resolved folder and its own name, its last character a
+ *  `?` (a sibling of the same length is held too: fails closed). A link loop on the way is skipped here: the entry's
+ *  own deny stands, and the fence holds it under its own name. */
+export function persistenceLinkHolds(userHome: string = homedir()): string[] {
+  if (process.platform === "win32") return [];
+  const real = realOrNearest(userHome);
+  const home = real.endsWith("/") ? real : `${real}/`;
+  const out = new Set<string>();
+  for (const p of persistencePaths(userHome)) {
+    let links: string[];
+    try { links = linksOnTheWay(p); } catch { continue; }
+    for (const l of links) {
+      if (!l.startsWith(home)) continue; // outside the home (a /nix/store link): nothing to hold
+      const name = basename(l);
+      out.add(join(dirname(l), `${name.slice(0, -1)}?`));
+    }
+  }
+  return [...out];
+}
+
 /** A path's real path, or its nearest existing ancestor's real path with the rest appended. */
 function realOrNearest(path: string): string {
   try {
@@ -990,7 +1014,7 @@ export function protectedHomeDenyWrite(home: string, userHome?: string): string[
   }
   // The #301 review's ruling: shell start files, login items, SSH's rc and keys, and the coding agents' sandbox
   // settings: a sandboxed Bash never writes them; a write tool gets the protected card (`persistencePaths`).
-  out.push(...persistencePaths(userHome));
+  out.push(...persistencePaths(userHome), ...persistenceLinkHolds(userHome));
   return out;
 }
 
