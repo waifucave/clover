@@ -162,10 +162,13 @@ describe("home/memory", () => {
     writeFileSync(join(dir, "MEMORY.md"), "ghost's");
     const GHOST = { kind: "session", sessionId: "s_ghost", sessionKind: "bot", bot: "ghost" } as const;
     const real = "home/Studio/.clover/bots/ghost/memory";
-    for (const as of [ALPHA, LUNA, CODING, AGENT, PLUGIN] as Caller[]) {
+    // A write lands in a file of its own (a bot may write another bot's memory, as the fence says), so ghost's
+    // MEMORY.md stays as it was.
+    const callers = [ALPHA, LUNA, CODING, AGENT, PLUGIN] as Caller[];
+    for (const [i, as] of callers.entries()) {
       const reads = readVerdict(studio, as, join(dir, "MEMORY.md"));
       expect(await code(t.read(`${real}/MEMORY.md`, { as }))).toBe(reads);
-      expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(dir, "MEMORY.md"), "write"));
+      expect(await code(t.write(`${real}/from-${i}.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(dir, `from-${i}.md`), "write"));
       expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
       if (reads === "fenced") expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/MEMORY.md`);
     }
@@ -175,11 +178,11 @@ describe("home/memory", () => {
     const GHOSTS = { kind: "session", sessionId: "s_ghosts", sessionKind: "bot", bot: "ghosts" } as const;
     expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOST_UPPER }))).toBe(readVerdict(studio, GHOST_UPPER, join(dir, "MEMORY.md")));
     expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOSTS }))).toBe(readVerdict(studio, GHOSTS, join(dir, "MEMORY.md")));
-    for (const as of [GHOST_UPPER, GHOSTS]) expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(dir, "MEMORY.md"), "write"));
+    for (const as of [GHOST_UPPER, GHOSTS]) expect(await code(t.write(`${real}/${as.sessionId}.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(dir, `${as.sessionId}.md`), "write"));
     // ghost itself, through its own `home/memory`, and the user's own surfaces at the real path.
     expect(await t.read("home/memory/MEMORY.md", { as: GHOST })).toEqual(utf8("ghost's"));
     expect(await t.read(`${real}/MEMORY.md`, { as: USER })).toEqual(utf8("ghost's"));
-    if (verdict(studio, LUNA, join(dir, "MEMORY.md"), "write") === "fenced") expect(readFileSync(join(dir, "MEMORY.md"), "utf8")).toBe("ghost's");
+    expect(readFileSync(join(dir, "MEMORY.md"), "utf8")).toBe("ghost's");
   });
 
   test("no computer can be called memory", () => {
