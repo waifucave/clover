@@ -2,7 +2,7 @@
 // spawner as its caller, with an environment built whole here; a spawner that can't start a fenced process refuses,
 // and nothing ever runs unsandboxed. On the macOS job the real fenced process (Seatbelt) runs it.
 import { afterEach, describe, expect, test } from "bun:test";
-import { lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -77,6 +77,15 @@ describe("fencedExecutor over a spawner", () => {
     symlinkSync(temp("lane-j-exec-elsewhere-"), join(clover, "scratch", "alpha"));
     await exec.run("Bash", { command: "true" }, ctx({ as: { kind: "session", sessionId: "s_a", sessionKind: "bot", bot: "alpha" } }));
     expect(s.runs[3]!.env.TMPDIR).toBe("/private/tmp");
+    // A link in a parent (`scratch/` itself) is refused too: nothing is made through it.
+    const other = join(temp("lane-j-exec-parent-"), ".clover");
+    mkdirSync(other, { recursive: true });
+    const elsewhere = temp("lane-j-exec-target-");
+    symlinkSync(elsewhere, join(other, "scratch"));
+    const viaLink = fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", cloverHome: other, os: "macos" });
+    await viaLink.run("Bash", { command: "true" }, ctx());
+    expect(s.runs[4]!.env.TMPDIR).toBe("/private/tmp");
+    expect(existsSync(join(elsewhere, "luna"))).toBe(false);
   });
 
   test("another computer's call runs as that peer; a timeout asked for is capped", async () => {
