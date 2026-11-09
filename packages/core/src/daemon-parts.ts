@@ -62,9 +62,10 @@ export interface DaemonPartsInput {
   /** The daemon's safety reviewer (`BashReviewer`, on the internal-jobs model): the computer node judges another
    *  computer's calls with it at "ask for risky actions", and fails closed without it (lane J's `nodeParts`). */
   reviewer?: SafetyReviewer;
-  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
-   *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
-  approvals?: Pick<ApprovalBroker, "request">;
+  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines) and its own record of a card a
+   *  level raise hands over (`get`, the registry's `cardRecord`). The daemon's own broker is bound here once it
+   *  exists; without either, such a paste is refused with a reason, never dropped silently, and no card raises a level. */
+  approvals?: Pick<ApprovalBroker, "request" | "get">;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   log?(line: string): void;
@@ -115,7 +116,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
-      // such a paste is refused with a reason), and its safety reviewer for another computer's calls at "ask for risky
+      // such a paste is refused with a reason), the broker's own record of a card a level raise hands over
+      // (`cardRecord: (id) => approvals?.get(id)`; no broker, no card raises), and its safety reviewer for another computer's calls at "ask for risky
       // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
       // not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({

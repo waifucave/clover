@@ -32,7 +32,7 @@ import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
 import { CoreComputerRegistry, type SelfStateStore } from "./registry";
-import { FileSelfStateStore, selfStatePath } from "./store";
+import { FileAnswerLedger, FileSelfStateStore, selfStatePath, usedCardsPath } from "./store";
 
 export interface ComputerNodeOptions {
   clock: Pick<Clock, "now">;
@@ -150,7 +150,10 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     self: { name: o.self.name, device: o.self.device, os, hasDisplay: o.self.hasDisplay ?? true, agents: o.self.agents ?? [] },
     store: o.store ?? new FileSelfStateStore(selfStatePath(o.cloverHome)),
     ...(o.answers ? { devices: o.answers.devices, ledger: o.answers.ledger, render: o.answers.render } : {}),
+    // A card raises a level only through the broker's own record (`cardRecord`; without it, none does), once: the
+    // ids used are kept on disk under the home, so a restart doesn't make a card new again.
     ...(o.cardRecord ? { cardRecord: o.cardRecord } : {}),
+    cardLedger: new FileAnswerLedger(usedCardsPath(o.cloverHome), o.clock),
   });
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);

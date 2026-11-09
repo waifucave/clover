@@ -9,7 +9,6 @@
 // takes proof (`LevelRaiseProof`); the others hold a copy of it for their tree calls' level (§9.1). Holds, the mark,
 // the action signal and the windows are kept by the computer whose screen they are about.
 import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import {
   COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
   type CloverWindow, type ComputerView, type HoldView, type Level, type SignedCardAnswer,
@@ -18,7 +17,7 @@ import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, type Card
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
+  cardRaiseProblem, holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
 } from "../contracts/computer-registry";
 import { MEMORY_FOLDER } from "../tree/holder";
 
@@ -53,7 +52,8 @@ export interface SelfStateStore {
 /** A store that keeps nothing (tests, and a computer before its home is set up). */
 export const MEMORY_SELF_STORE: SelfStateStore = { load: () => ({}), save: () => {} };
 
-/** Each computer's record of the card ids it took as proof: in memory until lane C's ledger lands on disk. */
+/** Each computer's record of the card ids it took as proof, in memory (tests); the node keeps the card raises' on disk
+ *  (`FileAnswerLedger`). */
 class Ledger implements AnswerLedger {
   readonly #used = new Set<string>();
   claim(cardId: string): boolean {
@@ -77,10 +77,13 @@ export interface CoreComputerRegistryOptions {
   /** Asks another computer to change its own level, with the user's signed answer for a raise (J-M2, "levels per
    *  computer"; `peers.ts`). Without it, another computer's level can't be changed from here. */
   remoteLevel?: (name: string, level: Level, answer?: SignedCardAnswer) => Promise<void>;
-  /** The approval broker's own record of a card, by id (`broker.get`): a raise `via: "card"` counts only when the
-   *  record it hands over is that record, deep-equal, so an in-process caller can't hand a record it built itself (C's
-   *  call-binding review). Left out, the record handed over is judged as it is. */
+  /** The approval broker's own record of a card, by id (`broker.get`): a raise `via: "card"` is judged on that record
+   *  alone (`cardRaiseProblem`), so an in-process caller can't hand over a record it built itself. Left out, no card
+   *  raises a level. */
   cardRecord?: (id: string) => CardRecord | undefined;
+  /** The card ids a raise `via: "card"` used: single use, across restarts when on disk (the node's
+   *  `FileAnswerLedger`). Left out, in memory. */
+  cardLedger?: AnswerLedger;
 }
 
 export class CoreComputerRegistry implements ComputerRegistry {
@@ -98,6 +101,9 @@ export class CoreComputerRegistry implements ComputerRegistry {
   readonly #store: SelfStateStore;
   #remoteLevel: CoreComputerRegistryOptions["remoteLevel"];
   readonly #cardRecord: CoreComputerRegistryOptions["cardRecord"];
+  readonly #cardLedger: AnswerLedger;
+  /** When this registry started: no card answered before it counts. */
+  readonly #since: number;
   #holdSeq = 0;
 
   constructor(opts: CoreComputerRegistryOptions) {
@@ -108,6 +114,8 @@ export class CoreComputerRegistry implements ComputerRegistry {
     this.#store = opts.store ?? MEMORY_SELF_STORE;
     this.#remoteLevel = opts.remoteLevel;
     this.#cardRecord = opts.cardRecord;
+    this.#cardLedger = opts.cardLedger ?? new Ledger();
+    this.#since = opts.clock.now();
     const saved = this.#store.load();
     const self: ComputerInput = {
       ...opts.self,
@@ -386,15 +394,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
       const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger, render: this.#render });
       return verdict === "ok" ? null : verdict;
     }
-    if (this.#cardRecord) {
-      const real = this.#cardRecord(proof.record.card.id);
-      if (real === undefined || !isDeepStrictEqual(real, proof.record)) return "the card record isn't the approval broker's own";
-    }
-    const { card, outcome, optionId } = proof.record;
-    if (outcome !== "approved" || card.options.find((o) => o.id === optionId)?.kind !== "approve") return "the card wasn't approved";
-    const b = card.binds;
-    if (card.change !== "computer-level" || !b || b.computer !== name || b.method !== method || b.params !== sha256(callBindingInput(method, params))) return "the card is for another change";
-    return this.#ledger.claim(card.id) ? null : "the card was used already";
+    return cardRaiseProblem(proof.record, { name, level, cardRecord: this.#cardRecord, now: this.#clock.now(), since: this.#since, sha256, ledger: this.#cardLedger });
   }
 
   #emitHolds(computer: string): void {
