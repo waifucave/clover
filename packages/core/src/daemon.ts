@@ -3554,6 +3554,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The bots come from the plugin registry (`startPlugins`).
     return {
       registry: registry,
+      // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
+      ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
