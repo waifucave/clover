@@ -14,7 +14,7 @@ import { botApprovalCheck } from "../../src/approvals/bot-check";
 import { CloverApprovalBroker } from "../../src/approvals/broker";
 import type { BotSessionContext } from "../../src/bots/service";
 import type { ApprovalRequest } from "../../src/contracts/approval-broker";
-import { agentConfigPaths, autoRunPaths } from "../../src/contracts/fence";
+import { agentConfigPaths, autoRunEntries, autoRunPaths } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
 import { expandWindowsEnv, gitConfiguredDirs, parseRegValue, runLaterExtrasFrom } from "../../src/fence/run-later";
@@ -39,7 +39,7 @@ const SAMPLES = {
       "Library/Python/3.12/lib/python/site-packages/x.pth", ".npmrc", ".yarnrc.yml", ".bunfig.toml", ".cargo/config.toml", ".gradle/init.d/x.gradle",
       ".config/pip/pip.conf", ".pip/pip.conf", ".vimrc", ".config/nvim/init.lua", ".emacs.d/init.el", ".tmux.conf", ".inputrc", ".config/zsh/.zshrc",
     ],
-    agent: [".codex/config.toml", ".claude/settings.json", ".claude/agents/x.md", ".claude.json", ".gemini/settings.json", ".cursor/mcp.json", ".config/opencode/opencode.json"],
+    agent: [".codex/config.toml", ".claude/settings.json", ".claude/agents/x.md", ".claude.json", ".gemini/settings.json", ".gemini/extensions/x/gemini-extension.json", ".cursor/mcp.json", ".config/opencode/opencode.json"],
   },
   linux: {
     home: "/home/me",
@@ -66,7 +66,7 @@ describe("the shared list", () => {
     expect(autoRunPaths("macos", "/Users/me")).toEqual(expect.arrayContaining(["/Users/me/Library/LaunchAgents", "/Users/me/.zshrc", "/Users/me/.ssh/authorized_keys", "/Users/me/.config/fish"]));
     expect(autoRunPaths("linux", "/home/me")).toEqual(expect.arrayContaining(["/home/me/.config/systemd/user", "/home/me/.local/share/systemd/user", "/home/me/.pam_environment", "/home/me/.xprofile", "/home/me/.bash_login"]));
     expect(autoRunPaths("windows", "C:\\Users\\me")).toEqual(expect.arrayContaining(["C:\\Users\\me\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup", "C:\\Users\\me\\Documents\\PowerShell", "C:\\Users\\me\\Documents\\WindowsPowerShell"]));
-    expect(agentConfigPaths("linux", "/home/me")).toEqual(["/home/me/.claude", "/home/me/.claude.json", "/home/me/.codex/config.toml", "/home/me/.gemini/settings.json", "/home/me/.cursor", "/home/me/.config/opencode"]);
+    expect(agentConfigPaths("linux", "/home/me")).toEqual(["/home/me/.claude", "/home/me/.claude.json", "/home/me/.codex/config.toml", "/home/me/.gemini", "/home/me/.cursor", "/home/me/.config/opencode"]);
     // No duplicates, and nothing that ssh, git or a shell writes as it runs.
     for (const os of ["macos", "linux", "windows"] as const) {
       const list = autoRunPaths(os, os === "windows" ? "C:\\Users\\me" : "/home/me");
@@ -82,7 +82,25 @@ describe("the shared list", () => {
     ].join("\n"), "linux", "/home/me")).toEqual(["/home/me/.githooks", "/opt/tmpl"]);
     const files: Record<string, string> = { "/home/me/.config/git/config": "[init]\n\ttemplatedir = ~/tmpl\n" };
     const extras = runLaterExtrasFrom("linux", "/home/me", { env: { ZDOTDIR: "/home/me/.zdot", PYTHONSTARTUP: "/home/me/.py.py" }, read: (f) => files[f] });
-    expect(extras).toEqual({ gitDirs: ["/home/me/tmpl"], envPaths: ["/home/me/.zdot", "/home/me/.py.py"] });
+    expect(extras).toEqual({ gitDirs: ["/home/me/tmpl"], envPaths: ["/home/me/.zdot"], envFiles: ["/home/me/.py.py"] });
+    expect(autoRunEntries("linux", "/home/me", extras).filter((e) => e.path === "/home/me/.py.py" || e.path === "/home/me/.zdot"))
+      .toEqual([{ path: "/home/me/.zdot", file: false }, { path: "/home/me/.py.py", file: true }]);
+    // git's includes are followed, conditional ones too, relative to the including file, each file once (#308's check 2).
+    const inc: Record<string, string> = {
+      "/home/me/.gitconfig": "[include]\n\tpath = ~/.config/git/extra\n[includeIf \"gitdir:~/w/\"]\n\tpath = work.inc\n",
+      "/home/me/.config/git/extra": "[core]\n\thooksPath = /opt/hooks\n[include]\n\tpath = /home/me/.gitconfig\n",
+      "/home/me/work.inc": "[init]\n\ttemplateDir = ~/wtmpl\n",
+    };
+    const followed = runLaterExtrasFrom("linux", "/home/me", { env: {}, read: (f) => inc[f] });
+    expect(followed.gitDirs).toEqual(["/opt/hooks", "/home/me/wtmpl"]);
+    // Each included file is global config itself, so it's held as a file: a write there could set core.hooksPath or
+    // core.fsmonitor. One that isn't there yet (`~/.gitconfig.local`) is held too; the roots aren't listed again.
+    const local: Record<string, string> = { ...inc, "/home/me/.gitconfig": `${inc["/home/me/.gitconfig"]}[include]\n\tpath = ~/.gitconfig.local\n` };
+    const withLocal = runLaterExtrasFrom("linux", "/home/me", { env: {}, read: (f) => local[f] });
+    expect(withLocal.gitFiles).toEqual(["/home/me/.config/git/extra", "/home/me/work.inc", "/home/me/.gitconfig.local"]);
+    expect(autoRunEntries("linux", "/home/me", withLocal).filter((e) => withLocal.gitFiles!.includes(e.path)))
+      .toEqual(withLocal.gitFiles!.map((path) => ({ path, file: true })));
+    expect(runLaterExtrasFrom("linux", "/home/me", { env: {}, read: () => undefined }).gitFiles).toBeUndefined();
     expect(autoRunPaths("linux", "/home/me", extras)).toEqual(expect.arrayContaining(["/home/me/tmpl", "/home/me/.zdot", "/home/me/.py.py"]));
     // Windows: OneDrive moved Documents, and the PowerShell profiles with it.
     const reg = "\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders\r\n    Personal    REG_EXPAND_SZ    %USERPROFILE%\\OneDrive\\Documents\r\n";
@@ -209,6 +227,22 @@ describe("a code session the user drives: asks, never silently writes", () => {
   });
 });
 
+describe("git's included config files, on this computer's real fence", () => {
+  test("~/.gitconfig.local and an includeIf's work.inc can't be written; the rest of the home can", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-")));
+    mkdirSync(join(home, "w"));
+    writeFileSync(join(home, ".gitconfig"), `[include]\n\tpath = ~/.gitconfig.local\n[includeIf "gitdir:~/w/"]\n\tpath = w/work.inc\n`);
+    writeFileSync(join(home, "w", "work.inc"), "[user]\n\tname = me\n");
+    const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    for (const p of [join(home, ".gitconfig.local"), join(home, "w", "work.inc")]) {
+      expect([p, fence.check({ op: "write", path: p })]).toMatchObject([p, { allowed: false, reason: "login-start" }]);
+      expect(persistencePaths(home)).toContain(p);
+    }
+    expect(fence.check({ op: "write", path: join(home, "w", "notes.md") })).toEqual({ allowed: true });
+  });
+});
+
 // macOS: the list rendered by the agent SDK's Seatbelt profile builder, run for real under sandbox-exec in a temp home.
 darwinDescribe("Seatbelt, live", () => {
   test("a sample of each group can't be written; next to them can", () => {
@@ -224,5 +258,19 @@ darwinDescribe("Seatbelt, live", () => {
     for (const rel of [...SAMPLES.macos.auto, ...SAMPLES.macos.agent, ".zshrc"]) expect([rel, write(rel)]).toEqual([rel, false]);
     expect(readFileSync(join(home, ".zshrc"), "utf8")).toBe("# mine\n");
     for (const rel of [".zshrc.bak", "Documents/notes.md", ".config/other/x", ".codex/sessions/x.jsonl", ".ssh/known_hosts", ".local/share/x", ".claudex/x"]) expect([rel, write(rel)]).toEqual([rel, true]);
+  });
+
+  test("git's included config files: one that's there and one that isn't yet, both refused", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-inc-")));
+    mkdirSync(join(home, "w"));
+    writeFileSync(join(home, ".gitconfig"), `[include]\n\tpath = ~/.gitconfig.local\n[includeIf "gitdir:~/w/"]\n\tpath = w/work.inc\n`);
+    writeFileSync(join(home, "w", "work.inc"), "[user]\n\tname = me\n");
+    const profile = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: persistencePaths(home, "darwin") });
+    const write = (p: string, text: string) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", 'printf "$2" >> "$1"', "sh", p, text], { encoding: "utf8" }).status === 0;
+    expect(write(join(home, ".gitconfig.local"), "[core]\n\thooksPath = /tmp/h\n")).toBe(false);
+    expect(existsSync(join(home, ".gitconfig.local"))).toBe(false);
+    expect(write(join(home, "w", "work.inc"), "[core]\n\tfsmonitor = /tmp/m\n")).toBe(false);
+    expect(readFileSync(join(home, "w", "work.inc"), "utf8")).toBe("[user]\n\tname = me\n");
+    expect(write(join(home, "w", "notes.md"), "x")).toBe(true);
   });
 });

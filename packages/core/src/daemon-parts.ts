@@ -56,6 +56,8 @@ export interface DaemonBotsInput {
   drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
+  pillTargets?: BotSideOptions["pillTargets"];
 }
 
 export interface DaemonPartsInput {
@@ -293,6 +295,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
