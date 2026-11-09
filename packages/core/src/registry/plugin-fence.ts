@@ -46,6 +46,9 @@ export const LAUNCH_SERVICES_DENIES = {
   ],
 } as const;
 
+/** The resolver's services: a plugin resolves no name itself; its proxy does (2g). */
+export const DNS_SERVICES: readonly string[] = ["com.apple.mDNSResponder", "com.apple.mDNSResponderHelper", "com.apple.dnssd.service"];
+
 /** The security daemon's services: the Keychain's way in, for `security` and the Security framework alike. */
 export const KEYCHAIN_SERVICES: readonly string[] = ["com.apple.SecurityServer", "com.apple.securityd", "com.apple.securityd.xpc", "com.apple.security.agent", "com.apple.security.authhost"];
 
@@ -78,6 +81,9 @@ export interface PluginFenceInput {
   fork?: boolean;
   /** No native code from what it reads or writes (`file-map-executable` denied there): the clover process (B3). */
   noNativeCode?: boolean;
+  /** Its way to the network (2g): its proxy's loopback port, the only address it may reach (`net-proxy.ts`), or
+   *  `none`. Default `none`. Name resolution is the proxy's: no DNS of its own (UDP 53 and mDNS denied). */
+  network?: { proxyPort: number } | "none";
   /** Unix sockets under the homes it may connect to (a supervised host's daemon socket); every other one there is
    *  denied. A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
   sockets?: readonly string[];
@@ -132,8 +138,11 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     // Never, whatever was allowed above: the Keychain's files and every way in to launchd.
     `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains")])})`,
     `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
-    // The daemon's socket and every other Unix socket under the homes (connect isn't a file read).
-    `(deny network-outbound ${paths([user, i.cloverHome]).map((r) => `(remote unix-socket (path-regex #"^${regexLiteral(r)}/"))`).join(" ")})`,
+    // No network but its proxy (2g): every outbound address and socket denied (the daemon's among them: connect isn't
+    // a file read), the proxy's loopback port allowed back, and no DNS of its own.
+    "(deny network-outbound)",
+    ...(i.network !== undefined && i.network !== "none" ? [`(allow network-outbound (remote ip "localhost:${Math.trunc(i.network.proxyPort)}"))`] : []),
+    `(deny mach-lookup ${DNS_SERVICES.map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
     ...((i.sockets ?? []).length > 0 ? [`(allow network-outbound ${paths(i.sockets!).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`] : []),
   ];
   if (i.exec === "plugin") {
@@ -173,7 +182,7 @@ export function fenceFolders(cloverHome: string, pluginId: string | undefined, n
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' folders (`tools`); any
  *  program, fenced the same. Returns the temp folder for its TMPDIR. */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string }): { fence: PluginFenceInput; tmp: string } {
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; proxyPort?: number }): { fence: PluginFenceInput; tmp: string } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
   return {
     tmp,
@@ -181,6 +190,7 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
       cloverHome: o.files.cloverHome, userHome: o.userHome ?? homedir(),
       read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun"))],
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
+      network: o.proxyPort !== undefined ? { proxyPort: o.proxyPort } : "none",
     },
   };
 }
