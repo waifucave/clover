@@ -50,17 +50,16 @@ function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean; liste
 const b64 = (s: string) => Buffer.from(s).toString("base64");
 
 describe("the voices point", () => {
-  test("the provider check gets the real origin: speaking, the speaking session's (or the caller's); listening, the user's", async () => {
+  test("the provider check gets the real origin: speaking, only the speaking session (never a caller's word); listening, the user's", async () => {
     const asked: unknown[] = [];
     const { voices } = setup({ mayUse: async (bot, at) => (asked.push([bot, at]), at.origin === "user" ? { ok: true } : { ok: false, reason: "held" }) });
     await expect(voices.speak({ bot: "alpha", session: "t_side", text: "hi" })).rejects.toThrow("held");
-    await expect(voices.speak({ bot: "alpha", session: "b_alpha", text: "hi", origin: "routine" })).rejects.toThrow("held");
-    expect((await voices.speak({ bot: "alpha", session: "b_alpha", text: "hi", origin: "user" })).bytes).toBe(2);
+    // A caller that claims the user's origin is not believed: only the session goes to the check.
+    await expect(voices.speak({ bot: "alpha", session: "b_alpha", text: "hi", origin: "user" } as never)).rejects.toThrow("held");
     expect(await voices.listen({ bot: "alpha", utterance: "u9", seq: 0, audio: b64("hey"), format: "pcm16-16k", final: true })).toEqual({ text: "hey" });
     expect(asked).toEqual([
       ["alpha", { session: "t_side" }],
-      ["alpha", { session: "b_alpha", origin: "routine" }],
-      ["alpha", { session: "b_alpha", origin: "user" }],
+      ["alpha", { session: "b_alpha" }],
       ["alpha", { origin: "user" }],
     ]);
   });

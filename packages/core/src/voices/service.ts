@@ -43,10 +43,14 @@ export interface VoiceServiceOptions {
   listenIdleMs?: number;
   /** Whether the bot may use its voice's provider now (lane D's provider check: a voice its plugin chose, on the
    *  user's stored voice key, asks the user once). A no refuses the call, with its reason. `at`: the session that
-   *  speaks and what started its turn (speaking), or the user's own origin (the user talking, `listen`). */
-  mayUse?(bot: string, at: { session?: string; origin?: TurnOrigin }): Promise<{ ok: true } | { ok: false; reason: string }>;
+   *  speaks (speaking: the check reads that session's own turn origin, never one a caller passes), or the user's own
+   *  origin (the user talking, `listen`). */
+  mayUse?(bot: string, at: VoiceUse): Promise<{ ok: true } | { ok: false; reason: string }>;
   warn?: (message: string) => void;
 }
+
+/** Who is using a bot's voice: a session speaking (its own turn's origin decides), or the user talking to it. */
+export type VoiceUse = { session: string; origin?: undefined } | { origin: "user"; session?: undefined };
 
 interface Entry {
   pluginId: string;
@@ -128,17 +132,17 @@ export class VoiceService {
     return v;
   }
 
-  async #mayUse(bot: string, at: { session?: string; origin?: TurnOrigin }): Promise<void> {
+  async #mayUse(bot: string, at: VoiceUse): Promise<void> {
     const verdict = await this.#o.mayUse?.(bot, at);
     if (verdict !== undefined && !verdict.ok) throw new ContractError("refused", verdict.reason);
   }
 
   /** Speaks a bot's text on the app here, piece by piece. Resolves once the last piece was sent. */
-  async speak(o: { bot: string; session: string; text: string; format?: VoicePlay["format"]; signal?: AbortSignal; origin?: TurnOrigin }): Promise<{ utterance: string; bytes: number }> {
+  async speak(o: { bot: string; session: string; text: string; format?: VoicePlay["format"]; signal?: AbortSignal }): Promise<{ utterance: string; bytes: number }> {
     const voice = this.#voice(o.bot);
-    // The speaking session's own turn decides (its origin, unless the caller says): a routine's speech never counts as
-    // the user talking.
-    await this.#mayUse(o.bot, { session: o.session, ...(o.origin === undefined ? {} : { origin: o.origin }) });
+    // The speaking session's own turn decides: the check reads its origin from the session, and nothing a caller says
+    // can make a routine's speech count as the user talking.
+    await this.#mayUse(o.bot, { session: o.session });
     const entry = this.#entry(voice.provider);
     if (!entry.speak) throw new ContractError("refused", `the voice plugin "${voice.provider}" doesn't speak`);
     const format = o.format ?? "pcm16-24k";

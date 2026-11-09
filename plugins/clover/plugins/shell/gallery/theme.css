@@ -153,7 +153,7 @@
   --clover-plugin-clover-diff-removed-soft: #C2364F17; /* A removed line's tint (request: color.diff.removed.soft). */
   --clover-plugin-clover-branch: #6F52C4; /* A session's branch badge. */
   --clover-plugin-clover-unread: #8A8A8A; /* The unread dot: a neutral grey, apart from running's accent. */
-  --clover-plugin-clover-mark: #C2387A; /* Clover's mark: the one place the brand pink shows (lane G's pink). */
+  --clover-plugin-clover-mark: #3D7655; /* Clover's mark: green on light (docs/clover-brand.md), white on dark. */
 
   /* The gallery page itself, and the desktop behind the window. */
   --gallery-page: #ececee;
@@ -225,7 +225,7 @@
   --clover-plugin-clover-diff-removed-soft: #DA6F8024;
   --clover-plugin-clover-branch: #B19EDE;
   --clover-plugin-clover-unread: #848484;
-  --clover-plugin-clover-mark: #FF7AB6;
+  --clover-plugin-clover-mark: #FFFFFF;
 
   --gallery-page: #0f0f10;
   --gallery-ink: #f1f1f2;
