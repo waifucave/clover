@@ -18,8 +18,8 @@ export const HOST_PROCESS_ENTRY = fileURLToPath(new URL("./process-main.ts", imp
  *  the host's own guard (`files.hostGuard`), which only these arguments name, so its own thread runs Clover's bundle
  *  unpinned while every worker it starts gets the plugin guard, pinned to its own plugin's folder (`cloverPluginRoot`),
  *  and the worker bundle beside the guard. No environment variable makes a process a host (#322's review, B1). */
-export async function hostProcessLaunch(o: { runDir: string; computer: string; base: Readonly<Record<string, string | undefined>>; shared?: readonly string[]; cloverHome?: string; onOutput?: (line: string) => void }): Promise<HostProcessLaunch> {
-  const files = ensurePluginRunFiles(o.runDir, o.cloverHome !== undefined ? { cloverHome: o.cloverHome } : {});
+export async function hostProcessLaunch(o: { runDir: string; computer: string; base: Readonly<Record<string, string | undefined>>; shared?: readonly string[]; cloverHome: string; onOutput?: (line: string) => void }): Promise<HostProcessLaunch> {
+  const files = ensurePluginRunFiles(o.runDir, { cloverHome: o.cloverHome });
   const bundles = await writeHostBundles(dirname(files.guard));
   const env = guardedPluginEnv(o.base, { pluginRoot: dirname(files.guard), files, shared: o.shared ?? cloverSharedRoots() });
   delete env.CLOVER_PLUGIN_ROOT;

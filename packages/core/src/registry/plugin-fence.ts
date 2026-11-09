@@ -15,19 +15,34 @@
 //   so a plugin can't have launchd start something outside the fence;
 // * for a host process, any program but its Bun and its plugin's own files (`exec: "plugin"`).
 //
+// * any write but to its own data folder, its own temp folder (`<home>/run/plugin-tmp/<key>`, its TMPDIR) and
+//   `/dev/null`, `/dev/tty` and `/dev/fd` (#345's review, the blocker: writes are denied by default, so the app's
+//   install, `/Applications`, `/opt/homebrew`, `/Users/Shared`, `/Volumes` and the shared temp folders are out of
+//   reach);
+// * the per-user temp and cache folders (`DARWIN_USER_TEMP_DIR`, `DARWIN_USER_CACHE_DIR`), whose other programs'
+//   files it has no business reading (S2);
+// * every Unix socket but the ones it's named (a supervised host's daemon socket) and the system's DNS resolver
+//   (`mDNSResponder`): no ssh-agent, no other program's socket (S1);
+// * in the `clover` process, which holds many plugins, any native code but Bun's and the system's (B3; since #345's
+//   review, `file-map-executable` is denied everywhere else, not only in what it reads and writes).
+//
 // What it can: read its plugin's tree (and, for the `clover` process, the verified copy of the bundled plugins), read
-// Clover's run files and shared packages that the guard loads, read and write its own data folder and its own temp
-// folder (`<home>/run/plugin-tmp/<key>`, its TMPDIR), the network, and everything outside the user's and Clover's homes
-// that the system leaves readable.
+// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, the
+// network, and read everything else outside the homes and those folders that the system leaves readable.
 //
 // Hooks and MCP servers (`tools: true`): a server started with `npx`, `uvx` or `bunx` needs its package manager's
-// caches and installs, so those folders are readable and their caches writable, and any program may run (fenced the
-// same way). Measured: denying exec outside the plugin's folder breaks every server started through a package runner.
+// installs, so those folders are readable, and any program may run (fenced the same way; measured: denying exec
+// outside the plugin's folder breaks every server started through a package runner). Their caches are their own
+// (S4): `toolFence`'s env points npm, pnpm, Bun, uv, pip, Yarn, Deno, Go and `XDG_CACHE_HOME` at a folder in their temp
+// folder, and npm's user config at a file there, so no shared cache is written, and none of the user's is read but
+// the package managers' installs. The credential files a package manager keeps (`CREDENTIAL_FILES`) are denied last,
+// whatever else allows them.
 //
 // Linux and Windows: not fenced yet (Linux under bubblewrap comes next; Windows waits, the owner's priority).
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { PluginRunFiles } from "./plugin-run";
 
 /** What the agent runtime's `sandbox.denyLaunchServices` denies (`@waifucave/clover-agent-runtime`'s
@@ -49,13 +64,40 @@ export const LAUNCH_SERVICES_DENIES = {
 /** The security daemon's services: the Keychain's way in, for `security` and the Security framework alike. */
 export const KEYCHAIN_SERVICES: readonly string[] = ["com.apple.SecurityServer", "com.apple.securityd", "com.apple.securityd.xpc", "com.apple.security.agent", "com.apple.security.authhost"];
 
-/** The user's folders a hook or MCP server may read (package managers' installs and caches), and of them the caches it
- *  may write. Relative to the user's home. */
+/** The user's folders a hook or MCP server may read: the package managers' installs (and npm's and Bun's own caches,
+ *  read-only, which `npx` and `bunx` reuse). Relative to the user's home. None is written (#345's review, S4). */
 export const TOOL_READ_DIRS: readonly string[] = [
-  ".npm", ".npmrc", ".nvm", ".volta", ".asdf", ".pyenv", ".rbenv", ".cargo", ".rustup", ".bun", ".deno", ".local/bin", ".local/share/uv",
-  ".local/share/pnpm", ".cache", "Library/Caches", "Library/pnpm", ".config/uv", ".gitconfig",
+  ".npm", ".nvm", ".volta", ".asdf", ".pyenv", ".rbenv", ".cargo", ".rustup", ".bun", ".deno", ".local/bin", ".local/share/uv",
+  ".local/share/pnpm", "Library/pnpm", ".config/uv", ".gitconfig",
 ];
-export const TOOL_WRITE_DIRS: readonly string[] = [".npm", ".cache", "Library/Caches", ".local/share/uv", ".bun/install/cache", ".local/share/pnpm", "Library/pnpm"];
+
+/** The credential files package managers and other tools keep in the user's home, denied to every fenced process
+ *  whatever else allows them (S4). Relative to the user's home. */
+export const CREDENTIAL_FILES: readonly string[] = [
+  ".npmrc", ".yarnrc", ".yarnrc.yml", ".cargo/credentials", ".cargo/credentials.toml", ".netrc", ".docker/config.json", ".aws",
+  ".config/gh", ".config/hub", ".git-credentials", ".config/git/credentials", ".pypirc", ".pip/pip.conf", ".config/pip/pip.conf",
+  ".gem/credentials", ".ssh", ".gnupg", ".kube", ".config/gcloud", ".azure", ".terraform.d/credentials.tfrc.json",
+  ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
+];
+
+/** The system's DNS resolver socket: the one Unix socket every fenced process may reach (name lookups go through it). */
+export const DNS_SOCKETS: readonly string[] = ["/private/var/run/mDNSResponder", "/var/run/mDNSResponder"];
+
+/** The per-user temp and cache folders (`getconf DARWIN_USER_TEMP_DIR`, `DARWIN_USER_CACHE_DIR`): denied (S2). */
+let userTempFolders: string[] | undefined;
+export function darwinUserFolders(): string[] {
+  if (userTempFolders !== undefined) return userTempFolders;
+  const out: string[] = [];
+  if (process.platform === "darwin") {
+    for (const name of ["DARWIN_USER_TEMP_DIR", "DARWIN_USER_CACHE_DIR"]) {
+      const r = spawnSync("/usr/bin/getconf", [name], { encoding: "utf8" });
+      const v = (r.stdout ?? "").trim();
+      if (r.status === 0 && v.startsWith("/")) out.push(v.replace(/\/$/, ""));
+    }
+  }
+  userTempFolders = out;
+  return out;
+}
 
 export interface PluginFenceInput {
   /** The Clover home: denied whole, but what `read` and `write` name. */
@@ -71,15 +113,16 @@ export interface PluginFenceInput {
   exec: "plugin" | "any";
   /** The programs an `exec: "plugin"` process may run besides its plugin's files. */
   execs?: readonly string[];
-  /** A hook or MCP server: the package managers' folders (`TOOL_READ_DIRS`, `TOOL_WRITE_DIRS`). */
+  /** A hook or MCP server: the package managers' installs (`TOOL_READ_DIRS`), read-only. */
   tools?: boolean;
   /** False: it starts no process at all (a host process: its plugins' workers are threads, and it may run only its Bun),
    *  so nothing it starts can leave its process group (`setsid`), which Seatbelt has no rule for (#322's review, B1). */
   fork?: boolean;
-  /** No native code from what it reads or writes (`file-map-executable` denied there): the clover process (B3). */
+  /** No native code but its Bun's (`execs`) and the system's (`file-map-executable` denied everywhere else): the
+   *  clover process (B3, and #345's review). */
   noNativeCode?: boolean;
-  /** Unix sockets under the homes it may connect to (a supervised host's daemon socket); every other one there is
-   *  denied. A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
+  /** The Unix sockets it may connect to (a supervised host's daemon socket) besides the DNS resolver; every other one
+   *  is denied (S1). A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
   sockets?: readonly string[];
 }
 
@@ -92,7 +135,12 @@ export function realOrResolved(p: string): string {
   try {
     return realpathSync(p);
   } catch {
-    return resolve(p);
+    // Not there yet (a socket the daemon makes later): its folder's real path, and its name.
+    try {
+      return join(realpathSync(dirname(p)), basename(p));
+    } catch {
+      return resolve(p);
+    }
   }
 }
 const paths = (ps: readonly string[]): string[] => [...new Set(ps.flatMap((p) => {
@@ -114,27 +162,37 @@ function ancestorsWithin(ps: readonly string[], roots: readonly string[]): strin
   return [...out];
 }
 
-/** The Seatbelt profile for one fenced process. Later rules win over earlier ones (measured): the homes are denied
- *  first, then what the process is given is allowed back, then what no process gets is denied last. */
+/** The Seatbelt profile for one fenced process. Later rules win over earlier ones (measured): writes are denied
+ *  everywhere and the homes and the per-user temp folders denied whole first, then what the process is given is
+ *  allowed back, then what no process gets is denied last. */
 export function pluginFenceProfile(i: PluginFenceInput): string {
   const user = i.userHome;
   const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : [])];
-  const write = [...i.write, ...(i.tools ? TOOL_WRITE_DIRS.map((d) => join(user, d)) : [])];
+  const write = [...i.write];
+  const closed = [user, i.cloverHome, ...darwinUserFolders()];
   const lines = [
     "(version 1)",
     "(allow default)",
-    `(deny file-read* file-write* ${subpaths([user, i.cloverHome])})`,
+    // No write but what it's given (#345's review, the blocker), and the devices every program writes to.
+    "(deny file-write*)",
+    `(allow file-write* ${DEVICE_WRITES})`,
+    `(deny file-read* ${subpaths(closed)})`,
     // The folders above what it's given, by metadata only (a stat, never a listing or a file's contents): a path is
     // resolved component by component, so a real path through a denied folder fails without it (measured).
-    ...ancestorsWithin([...read, ...write], [user, i.cloverHome]).map((a) => `(allow file-read-metadata (literal "${sbpl(a)}"))`),
+    ...ancestorsWithin([...read, ...write, ...(i.sockets ?? [])], closed).map((a) => `(allow file-read-metadata (literal "${sbpl(a)}"))`),
+    // The sockets it's named, by metadata too: a client checks one is there before it connects. A path longer than a
+    // socket address holds (104 bytes) is reached through its folder, which Bun opens (measured: EINVAL without it), so
+    // that folder's names are readable too, for such a path only (a test's temp home; `<home>/run/core.sock` is short).
+    ...((i.sockets ?? []).length > 0 ? [`(allow file-read-metadata ${paths(i.sockets!).map((p) => `(literal "${sbpl(p)}")`).join(" ")})`] : []),
+    ...longSocketFolders(i.sockets ?? []).map((d) => `(allow file-read-data (literal "${sbpl(d)}"))`),
     `(allow file-read* ${subpaths(read)})`,
     `(allow file-read* file-write* ${subpaths(write)})`,
-    // Never, whatever was allowed above: the Keychain's files and every way in to launchd.
-    `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains")])})`,
+    // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
+    `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
     `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
-    // The daemon's socket and every other Unix socket under the homes (connect isn't a file read).
-    `(deny network-outbound ${paths([user, i.cloverHome]).map((r) => `(remote unix-socket (path-regex #"^${regexLiteral(r)}/"))`).join(" ")})`,
-    ...((i.sockets ?? []).length > 0 ? [`(allow network-outbound ${paths(i.sockets!).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`] : []),
+    // No Unix socket but the DNS resolver and the ones it's named (connect isn't a file read; S1).
+    "(deny network-outbound (remote unix-socket))",
+    `(allow network-outbound ${paths([...DNS_SOCKETS, ...(i.sockets ?? [])]).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`,
   ];
   if (i.exec === "plugin") {
     const own = i.read[0];
@@ -142,10 +200,24 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     lines.push(`(allow process-exec ${[...paths(i.execs ?? []).map((p) => `(literal "${sbpl(p)}")`), ...(own !== undefined ? [subpaths([own])] : [])].join(" ")})`);
   }
   if (i.fork === false) lines.push("(deny process-fork)");
-  if (i.noNativeCode) lines.push(`(deny file-map-executable ${subpaths([...i.read.slice(0, 1), ...i.write])})`);
+  if (i.noNativeCode) {
+    lines.push("(deny file-map-executable)");
+    lines.push(`(allow file-map-executable ${[...SYSTEM_CODE.map((p) => `(subpath "${p}")`), ...paths(i.execs ?? []).map((p) => `(literal "${sbpl(p)}")`)].join(" ")})`);
+  }
   lines.push(`(deny process-exec ${LAUNCH_SERVICES_DENIES.exec.map((p) => `(literal "${sbpl(p)}")`).join(" ")})`);
   return `${lines.join("\n")}\n`;
 }
+
+/** The folders of the sockets whose path is too long for a socket address (`sun_path`, 104 bytes on macOS). */
+function longSocketFolders(sockets: readonly string[]): string[] {
+  return [...new Set(sockets.filter((p) => Buffer.byteLength(p) >= 104 || Buffer.byteLength(realOrResolved(p)) >= 104).flatMap((p) => paths([dirname(p)])))];
+}
+
+/** The devices a fenced process may write to: the null device, its terminal and its own descriptors (`/dev/stdout`
+ *  and `/dev/stderr` are links into `/dev/fd`). */
+const DEVICE_WRITES = '(literal "/dev/null") (literal "/dev/tty") (subpath "/dev/fd")';
+/** Where the system's own native code lives (the dyld shared cache is under `/System/Volumes/Preboot/Cryptexes`). */
+const SYSTEM_CODE: readonly string[] = ["/System", "/usr/lib"];
 
 /** Whether this computer fences plugin processes: macOS with `sandbox-exec`. */
 export function pluginFenceAvailable(platform: NodeJS.Platform = process.platform): boolean {
@@ -170,13 +242,30 @@ export function fenceFolders(cloverHome: string, pluginId: string | undefined, n
   return { data, tmp };
 }
 
+/** The env a hook or MCP server runs with besides its TMPDIR: every package manager's cache in a folder of its own
+ *  temp folder, and npm's user config a file there (`~/.npmrc` is a credential file, denied; S4). */
+export function toolCacheEnv(tmp: string): Record<string, string> {
+  const cache = join(tmp, "cache");
+  mkdirSync(cache, { recursive: true, mode: 0o700 });
+  const c = (name: string) => join(cache, name);
+  return {
+    TMPDIR: tmp, TMP: tmp, TEMP: tmp,
+    XDG_CACHE_HOME: c("xdg"),
+    npm_config_cache: c("npm"), npm_config_userconfig: c("npmrc"), npm_config_store_dir: c("pnpm-store"), npm_config_update_notifier: "false",
+    BUN_INSTALL_CACHE_DIR: c("bun"),
+    UV_CACHE_DIR: c("uv"), UV_TOOL_DIR: c("uv-tools"), PIP_CACHE_DIR: c("pip"),
+    YARN_CACHE_FOLDER: c("yarn"), DENO_DIR: c("deno"), GOCACHE: c("go-build"), GOMODCACHE: c("go-mod"),
+  };
+}
+
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
- *  packages and its Bun to read; its data and temp folders to write; the package managers' folders (`tools`); any
- *  program, fenced the same. Returns the temp folder for its TMPDIR. */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string }): { fence: PluginFenceInput; tmp: string } {
+ *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
+ *  any program, fenced the same. Returns its temp folder and the env it runs with (`toolCacheEnv`). */
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
   return {
     tmp,
+    env: toolCacheEnv(tmp),
     fence: {
       cloverHome: o.files.cloverHome, userHome: o.userHome ?? homedir(),
       read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun"))],
