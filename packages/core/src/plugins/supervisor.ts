@@ -2,7 +2,8 @@ import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
+import { ensurePluginRunFiles, isBunCommand, pluginBunLaunch, pluginRunFileChecks, type PluginRunGuard } from "../registry/plugin-run";
+import { checkRunFiles } from "../plugin-host/run-file";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -783,6 +784,9 @@ export class PluginSupervisor {
       );
       const cmd = this.deps.bun === undefined ? launch.cmd : [this.deps.bun, ...launch.cmd.slice(1)];
       const env = launch.env;
+      // The bunfig and the guard it preloads are the ones Clover wrote, checked last thing before the start (a plugin
+      // can write the run folder; #312's review, S1).
+      checkRunFiles(pluginRunFileChecks(this.pluginRun.files), `plugin ${config.id}`);
       proc = this.spawnFn(cmd, { cwd, env });
     } catch (err) {
       rt.pid = undefined;

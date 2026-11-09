@@ -5,7 +5,8 @@
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { writeHostBundles } from "./bundles";
-import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags } from "../registry/plugin-run";
+import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags, pluginRunFileChecks } from "../registry/plugin-run";
+import { checkRunFiles, runCheckArgs, type RunFileCheck } from "./run-file";
 import { fdLink, linesOf, streamPeer, type RpcPeer } from "./link";
 
 export { writeHostBundles } from "./bundles";
@@ -28,13 +29,26 @@ export async function hostProcessLaunch(o: { runDir: string; computer: string; b
   delete env.BUN_OPTIONS;
   env.CLOVER_PLUGIN_WORKER = bundles.worker;
   env.CLOVER_COMPUTER = o.computer;
-  return { cmd: [pluginBun(files.cloverHome), ...pluginHostBunFlags(files), bundles.host], env, ...(o.onOutput ? { onOutput: o.onOutput } : {}) };
+  // What each start runs from, by the SHA-256 of the text Clover wrote (#312's review, S1): the host process's own
+  // files, checked by `spawnHostProcess` immediately before it starts it, and each worker's, which the host checks
+  // before every Worker (in its arguments, never its environment).
+  const workerChecks: RunFileCheck[] = [{ path: bundles.worker, sha256: bundles.sha256.worker }, ...pluginRunFileChecks(files)];
+  const checks: RunFileCheck[] = [{ path: bundles.host, sha256: bundles.sha256.host }, ...pluginRunFileChecks(files, { host: true })];
+  return {
+    cmd: [pluginBun(files.cloverHome), ...pluginHostBunFlags(files), bundles.host, ...runCheckArgs(workerChecks)],
+    env,
+    checks,
+    ...(o.onOutput ? { onOutput: o.onOutput } : {}),
+  };
 }
 
 export interface HostProcessLaunch {
-  /** The command: the plugin Bun and its flags, then `HOST_PROCESS_ENTRY`. */
+  /** The command: the plugin Bun and its flags, then the host bundle, then the worker's checks (`--clover-check=`). */
   cmd: readonly string[];
   env: Record<string, string>;
+  /** The files this start runs from (the host bundle, the host guard, the guard, the bunfig) and their SHA-256s:
+   *  `spawnHostProcess` refuses to start when any differs. */
+  checks?: readonly RunFileCheck[];
   onOutput?: (line: string) => void;
 }
 
@@ -47,6 +61,8 @@ export const HOST_KILL_GRACE_MS = 2_000;
  *  (a new session, `setsid`) has left the group, and isn't reached. On Windows the process alone is ended. */
 export function spawnHostProcess(o: HostProcessLaunch & { graceMs?: number }): { peer: RpcPeer; pid: number | undefined; kill(): void } {
   const group = process.platform !== "win32";
+  // Last thing before the start: the files it runs from hold what Clover wrote (a plugin can write the run folder).
+  checkRunFiles(o.checks ?? [], "the plugin host");
   // Through Bun.spawn: a node:child_process spawn with a descriptor past 2 is refused in Bun code (lane C's S7 finding,
   // `test/platform/child-process-stdio.test.ts`). `detached` makes the child its group's leader.
   const child = Bun.spawn([...o.cmd], { env: o.env, stdio: ["ignore", "pipe", "pipe", "pipe"], windowsHide: true, ...(group ? { detached: true } : {}) });

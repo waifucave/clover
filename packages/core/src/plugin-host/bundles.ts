@@ -7,12 +7,17 @@
 // bun --no-macros` (the same options as `buildHostBundles`, and every dist step's `__CLOVER_DIST__` define) into
 // `.build/<HOST_BUNDLE_FILES>`, and passes both files to the compile, which embeds them (Bun.embeddedFiles, named
 // `clover-plugin-host-<bun's hash>.bundle`). They're read from their Blobs once (`loadPrebuiltHostBundles`). The core's
-// own signature (macOS) or the signed feed it came from covers them, as it covers the bundled-plugins manifest, so
-// there is no hash to check and no folder outside the run folder to trust.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// own signature (macOS) or the signed feed it came from covers the embedded text, as it covers the bundled-plugins
+// manifest. It doesn't cover the copies on disk: what runs is <run folder>/plugin-host.js and plugin-worker.js, which a
+// plugin (it has node:fs, as the user) could rewrite. So they're written whole, never through a link, and their SHA-256
+// is checked against the embedded (or built) text immediately before the host starts, and before each worker
+// (run-file.ts; #312's review, S1). What's left is that run-file.ts limit: a same-user process swapping a file in the
+// moment between the check and the exec, or the Worker's own read.
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isCompiledBinary } from "../build-kind";
+import { sha256Hex, writeRunFile } from "./run-file";
 
 /** What each bundle is built from. */
 export const HOST_BUNDLE_ENTRIES = {
@@ -82,9 +87,10 @@ export function prebuiltHostBundles(): HostBundleTexts | undefined {
 
 
 /** Writes both bundles into `dir` (the run folder beside the load guard), prebuilt when the core carries them, built
- *  from source otherwise. A compiled core without them refuses (its sources aren't there to build from). Each file is
- *  rewritten only when its text changes. */
-export async function writeHostBundles(dir: string, o: { compiled?: boolean; prebuilt?: () => Promise<HostBundleTexts | undefined> } = {}): Promise<{ host: string; worker: string }> {
+ *  from source otherwise, and returns their paths and the SHA-256 of the text each must hold. A compiled core without
+ *  them refuses (its sources aren't there to build from). Each is written whole (`writeRunFile`): a fresh file renamed
+ *  into place, never through a link, and only when its text changed. */
+export async function writeHostBundles(dir: string, o: { compiled?: boolean; prebuilt?: () => Promise<HostBundleTexts | undefined> } = {}): Promise<{ host: string; worker: string; sha256: { host: string; worker: string } }> {
   const prebuilt = await (o.prebuilt ?? loadPrebuiltHostBundles)();
   if (prebuilt === undefined && (o.compiled ?? isCompiledBinary())) {
     throw new Error(`this core was built without the plugin host's bundles (${HOST_BUNDLE_FILES.host}, ${HOST_BUNDLE_FILES.worker}), so it can't start plugins: rebuild it with compile:core`);
@@ -92,14 +98,6 @@ export async function writeHostBundles(dir: string, o: { compiled?: boolean; pre
   const texts = prebuilt ?? await buildHostBundles();
   const out = { host: join(dir, "plugin-host.js"), worker: join(dir, "plugin-worker.js") };
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  for (const which of ["host", "worker"] as const) {
-    let current: string | undefined;
-    try {
-      current = readFileSync(out[which], "utf8");
-    } catch {
-      current = undefined;
-    }
-    if (current !== texts[which]) writeFileSync(out[which], texts[which], { mode: 0o600 });
-  }
-  return out;
+  for (const which of ["host", "worker"] as const) writeRunFile(out[which], texts[which]);
+  return { ...out, sha256: { host: sha256Hex(texts.host), worker: sha256Hex(texts.worker) } };
 }

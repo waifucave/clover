@@ -8,8 +8,9 @@
 // scratch folder the caller names (an absolute path to an empty folder): it touches no home, no Keychain, no daemon.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { ensurePluginRunFiles, pluginBun, pluginBunLaunch } from "../../core/src/registry/plugin-run";
+import { PLUGIN_BUN_IDENTIFIER } from "../../core/src/bundled-identities";
 
 export interface PluginRunProbeResult {
   ok: boolean;
@@ -79,6 +80,14 @@ export interface PluginHostProbeResult {
   prebuilt?: boolean;
   /** `pluginHost.ping`'s answer. */
   ping?: { ok?: boolean; bun?: string; workers?: number };
+  /** The host started with the host guard preloaded (`--preload=<run folder>/host-guard.mjs`, beside plugin-host.js). */
+  hostGuard?: boolean;
+  /** POSIX: the host leads its own process group (pgid = pid). */
+  ownGroup?: boolean;
+  /** macOS: the plugin Bun's signing identifier (a plugin Bun's, dist or dev, never the core's). */
+  pluginBunIdentifier?: string;
+  /** The plugin Bun's own `--version`, which the host's `pluginHost.ping` must report. */
+  pluginBunVersion?: string;
   error?: string;
 }
 
@@ -111,9 +120,17 @@ export async function runPluginHostProbe(scratch: string | undefined): Promise<P
     return { ok: false, core, error: (e as Error).message };
   }
   const bun = realpathSync(launch.cmd[0]!);
-  const hostFile = launch.cmd[launch.cmd.length - 1]!;
+  // The host bundle is the argument after the flags; the worker's checks (`--clover-check=`) follow it.
+  const hostFile = launch.cmd.find((a) => !a.startsWith("-") && basename(a) === "plugin-host.js") ?? "";
   const workerFile = launch.env.CLOVER_PLUGIN_WORKER ?? "";
   const prebuilt = readFileSync(hostFile, "utf8") === embedded.host && readFileSync(workerFile, "utf8") === embedded.worker;
+  const preload = launch.cmd.find((a) => a.startsWith("--preload="))?.slice("--preload=".length);
+  const hostGuard = preload !== undefined && basename(preload) === "host-guard.mjs" && dirname(preload) === dirname(hostFile) && existsSync(preload);
+  const pluginBunVersion = spawnSync(bun, ["--version"], { encoding: "utf8", env: { PATH: "/usr/bin:/bin" } }).stdout?.trim();
+  const pluginBunIdentifier = process.platform === "darwin"
+    ? /^Identifier=(.+)$/m.exec(`${spawnSync("codesign", ["-dv", bun], { encoding: "utf8" }).stderr ?? ""}`)?.[1]?.trim()
+    : undefined;
+  const identifierOk = process.platform !== "darwin" || Object.values(PLUGIN_BUN_IDENTIFIER).includes(pluginBunIdentifier as never);
   const child = spawnHostProcess(launch);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -121,8 +138,10 @@ export async function runPluginHostProbe(scratch: string | undefined): Promise<P
       child.peer.request("pluginHost.ping", {}) as Promise<PluginHostProbeResult["ping"]>,
       new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("no answer to pluginHost.ping in 20 s")), 20_000); }),
     ]);
-    const ok = ping?.ok === true && typeof ping.bun === "string" && ping.workers === 0 && prebuilt && bun !== core;
-    return { ok, core, pluginBun: bun, prebuilt, ...(ping === undefined ? {} : { ping }) };
+    const pgid = process.platform === "win32" || child.pid === undefined ? undefined : spawnSync("ps", ["-o", "pgid=", "-p", String(child.pid)], { encoding: "utf8" }).stdout.trim();
+    const ownGroup = process.platform === "win32" ? true : pgid === String(child.pid);
+    const ok = ping?.ok === true && ping.bun === pluginBunVersion && ping.workers === 0 && prebuilt && bun !== core && hostGuard && ownGroup && identifierOk;
+    return { ok, core, pluginBun: bun, prebuilt, hostGuard, ownGroup, pluginBunVersion, ...(pluginBunIdentifier === undefined ? {} : { pluginBunIdentifier }), ...(ping === undefined ? {} : { ping }) };
   } catch (e) {
     return { ok: false, core, pluginBun: bun, prebuilt, error: `${(e as Error).message}${output.length > 0 ? `: ${output.slice(-5).join(" | ").slice(0, 600)}` : ""}` };
   } finally {
