@@ -77,8 +77,11 @@ mac:
   entitlementsInherit: ../../packaging/macos/entitlements.mac.plist
   # The daemon, the link sidecar, plugin Bun and the process holder are signed by the release build itself, each with
   # its own identifier and entitlements (scripts/release/lib.ts, RESOURCE_BINARIES), before the app is sealed over them.
+  # The bundled plugins' native code is signed by the release build too, before their tree is measured into the core's
+  # manifest: signing here would change bytes the manifest already names.
   signIgnore:
     - Contents/Resources/daemon/
+    - Contents/Resources/plugins/
   # A menu-bar app (spec §3.1: the pair is always on, with no window until the user opens one): no Dock icon.
   extendInfo:
     LSUIElement: true

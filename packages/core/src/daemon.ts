@@ -474,7 +474,12 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** The daemon integration: this computer's node and bot side, started over the links once they're up. `node: false`
    *  and `bots: false` start none; a `bots` object replaces the daemon's own registry and drivers (a test's fakes);
    *  `userHome` is the folder `home/<this computer>` names (the user's home folder by default). */
-  parts?: { node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string };
+  parts?: {
+    node?: DaemonPartsInput["node"]; bots?: DaemonPartsInput["bots"]; userHome?: string;
+    /** TEST SEAMS: the computer node's safety reviewer (default: the daemon's own `BashReviewer`) and an approval
+     *  broker for its cards (lane J's `nodeParts`). */
+    reviewer?: DaemonPartsInput["reviewer"]; approvals?: DaemonPartsInput["approvals"];
+  };
   /** TEST ONLY: the contract secret store (a test's store that starts locked). Default: the OS store, or an in-memory
    *  one when `secrets` is given. */
   contractSecrets?: ContractSecretStore;
@@ -3282,9 +3287,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
+  const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
-    tokens: new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) }),
+    tokens: cloverTokens,
     processes: sessionProcesses,
     serverVersion: CORE_VERSION,
     get deviceId() { return liveDeviceId; },
@@ -3567,6 +3573,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // The bots come from the plugin registry (`startPlugins`).
     return {
       registry: registry,
+      // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
+      ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
@@ -3642,6 +3650,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       dispatch: (method, params, caller, role) => cloverServer!.dispatch(method, params, { caller, role }),
       // The lease renews just before an update's restart (H-M3's `beforeRestart`, on lane M's gate).
       updateGate,
+      // A paired phone's or browser's Clover connection over its link (C-M3 item 3).
+      clients: { server: cloverServer, tokens: cloverTokens },
       log: (line) => console.error(line),
       ...(opts.links ?? {}),
     });
@@ -3662,6 +3672,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         cloverHome, userHome: p.userHome ?? homedir(), clock: partsClock, links, handlers: cloverLaneHandlers,
         node: p.node === false ? false : { ...(treeRoot ? { treeRoot } : {}), ...(p.node ?? {}) },
         bots,
+        // The computer node judges another computer's calls at "ask for risky actions" with the daemon's safety
+        // reviewer (lane J's `nodeParts`; it fails closed without one).
+        ...((p.reviewer ?? bashReviewer) !== undefined ? { reviewer: (p.reviewer ?? bashReviewer)! } : {}),
+        ...(p.approvals ? { approvals: p.approvals } : {}),
         // The bots' running turns keep an update's restart waiting.
         updateGate,
         log: (line) => console.error(line),
