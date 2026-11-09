@@ -5,7 +5,9 @@
 //
 // * What reaches a terminal is the user's: the UI runtime passes a write only from a real key press or paste in the
 //   terminal's own component (lane E). A paste goes whole, wrapped in bracketed-paste markers when the program asked
-//   for them (`ESC[?2004h`), and a paste of more than one line waits for the user's OK first; a deny drops it.
+//   for them (`ESC[?2004h`), and a paste of more than one line waits for the user's OK first (a `confirm` card through
+//   the approval broker: `tree/paste-card.ts`). It is never dropped silently: a no, or a computer that can't ask yet,
+//   refuses the write with the reason, which the panel shows.
 // * Another computer can't prove a write is the user's (review N2), so opening a terminal for a peer is judged like a
 //   command, at the stricter of the holder's level and the call's: below `automatic` it takes the user's signed answer
 //   bound to that open (`terminal.open` with its folder). A dropped link closes the peer's terminals, as ssh does.
@@ -63,6 +65,10 @@ const HERE: Owner = { device: null };
 /** This computer's own app reaches every terminal opened here; a peer only those it opened, for the same session. */
 const owns = (t: Open, o: Owner) => (o.device === null && t.device === null) || (t.device === o.device && t.session === o.session);
 
+/** Why a paste of several lines wasn't pasted, for the terminal panel to show (never dropped silently). */
+export const PASTE_CANT_ASK = "Nothing was pasted: a paste of several lines needs your OK, and this computer can't ask for it yet. Paste one line at a time.";
+export const PASTE_NOT_CONFIRMED = "Nothing was pasted: the paste of several lines wasn't confirmed.";
+
 /** This computer's terminals. */
 export class LocalTerminals {
   readonly #open = new Map<string, Open>();
@@ -70,8 +76,8 @@ export class LocalTerminals {
   readonly #confirmPaste: ((text: string, terminalId: string) => Promise<boolean>) | undefined;
   #seq = 0;
 
-  /** `confirmPaste` shows the user a card for a paste of more than one line (lanes B and C); without it, such a
-   *  paste is dropped. */
+  /** `confirmPaste` shows the user a card for a paste of more than one line (`confirmPasteVia`, through the broker);
+   *  without it, such a paste is refused with a reason that says so. */
   constructor(opts: { launch?: ShellLauncher; confirmPaste?: (text: string, terminalId: string) => Promise<boolean> } = {}) {
     this.#launch = opts.launch ?? userShell;
     this.#confirmPaste = opts.confirmPaste;
@@ -135,8 +141,8 @@ export class LocalTerminals {
       return;
     }
     if (/[\r\n]/.test(data.replace(/[\r\n]+$/, ""))) {
-      const ok = this.#confirmPaste ? await this.#confirmPaste(data, id) : false;
-      if (!ok) return; // a deny drops the paste
+      if (!this.#confirmPaste) throw new ContractError("refused", PASTE_CANT_ASK);
+      if (!(await this.#confirmPaste(data, id))) throw new ContractError("refused", PASTE_NOT_CONFIRMED);
     }
     t.write(t.bracketed ? `\u001b[200~${data}\u001b[201~` : data);
   }

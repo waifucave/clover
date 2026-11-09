@@ -7,7 +7,7 @@ import {
   type TreeTransferParams, DEFAULT_LEVEL, TREE_TRANSFER, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, callBindingInput, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  ALWAYS_CARD_KINDS, CALL_CARD_METHODS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
+  ALWAYS_CARD_KINDS, CALL_CARD_METHODS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
   type AnswerLedger, type CallCardRenderer, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../approval-broker";
@@ -148,7 +148,8 @@ export class FakeApprovalBroker implements ApprovalBroker {
     // read-only is absolute: only reads run, and no fenced-path card, saved rule or reviewer changes that (S1).
     const level = req.level ?? strictestLevel(req.computers.map((c) => this.#levels(c))) ?? DEFAULT_LEVEL;
     if (level === "read-only") return levelDecision(level, req.effect) === "allow" ? { allowed: true, by: "level", level } : { allowed: false, by: "level", level };
-    // Rule 3.
+    // Rule 3: a write where a file runs later is refused; any other fenced path is a card.
+    if (writesRunLater(req, this.#fence)) return { allowed: false, by: "fence" };
     if (req.paths?.length && this.#fence) {
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }

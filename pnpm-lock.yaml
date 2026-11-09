@@ -16,15 +16,24 @@ importers:
 
   .:
     devDependencies:
+      '@electron/asar':
+        specifier: 3.4.1
+        version: 3.4.1
       '@resvg/resvg-js':
         specifier: ^2.6.2
         version: 2.6.2
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4
+      openpgp:
+        specifier: 6.3.2
+        version: 6.3.2
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
+      wrangler:
+        specifier: 4.153.0
+        version: 4.153.0(@cloudflare/workers-types@5.20261023.1)(@types/node@25.9.3)
 
   apps/desktop:
     devDependencies:
@@ -3580,6 +3589,15 @@ packages:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
 
+  openpgp@6.3.2:
+    resolution: {integrity: sha512-wcZTzHz41LV8Y48zH/JlD1JT8YdNmpWOuMAjQ/podvvCwsjBEU37K3znJh4UQcj3hksE5z9TzvhbUbwzsGvlLQ==}
+    engines: {node: '>= 18.0.0', typescript: '>= 5.0.0'}
+    peerDependencies:
+      '@openpgp/web-stream-tools': ~0.3.0
+    peerDependenciesMeta:
+      '@openpgp/web-stream-tools':
+        optional: true
+
   p-cancelable@2.1.1:
     resolution: {integrity: sha512-BZOr3nRQHOntUjTrH8+Lh54smKHoHyur8We1V8DSMVrl5A2malOOwuJRnKRDjSnkoeBh4at6BwEnb5I7Jl31wg==}
     engines: {node: '>=8'}
@@ -6734,6 +6752,8 @@ snapshots:
   onetime@5.1.2:
     dependencies:
       mimic-fn: 2.1.0
+
+  openpgp@6.3.2: {}
 
   p-cancelable@2.1.1: {}
 
