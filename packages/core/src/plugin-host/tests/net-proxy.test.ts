@@ -15,6 +15,11 @@ import { ensurePluginRunFiles } from "../../registry/plugin-run";
 import { startPluginHost } from "../daemon-host";
 import { hostAllowed, hostRules, startPluginProxy } from "../net-proxy";
 
+/** Waits for the install card's answer to land, rather than a fixed sleep. */
+async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
+  for (let i = 0; i < 500 && registry.get(id)?.state === "found"; i++) await Bun.sleep(10);
+}
+
 const USER: Caller = { kind: "user", client: "app" };
 const temps: string[] = [];
 const temp = (prefix: string) => {
@@ -116,7 +121,7 @@ describe("net.fetch's gate", () => {
       const { card } = await opened.registry.installed("spy", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "spy");
       const get = (url: string) => ph.host.invoke({ pluginId: "spy", handler: "get", args: { url }, caller: USER });
       expect(await get("https://api.example.com/v1")).toBe("fetched https://api.example.com/v1");
       expect(await get("http://api.example.com/")).toBe("fetched http://api.example.com/");
@@ -165,7 +170,7 @@ out.direct = await new Promise((resolve) => {
       const { card } = await opened.registry.installed("spy", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "spy");
       const expected = { proxied: "hello from the listed host", unlisted: 403, direct: expect.not.stringMatching(/^connected$/) };
       const got = await ph.host.invoke({ pluginId: "spy", handler: "probe", args: null, caller: USER });
       expect(got).toMatchObject(expected);

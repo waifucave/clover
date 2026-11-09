@@ -203,9 +203,10 @@ darwinDescribe("the plugin-process fence", () => {
     for (const f of CREDENTIAL_FILES) expect(p.split("\n")[last]).toContain(`(subpath "${join("/Users/u", f)}")`);
     expect(p).toContain(`(global-name "com.apple.SecurityServer")`);
     expect(p).toContain(`(deny process-exec (literal "/bin/launchctl")`);
-    // Sockets: none but the DNS resolver and the ones it's named (S1).
-    expect(at("(deny network-outbound (remote unix-socket))")).toBeGreaterThan(0);
-    expect(p).toContain(`(remote unix-socket (path-literal "/private/var/run/mDNSResponder"))`);
+    // Network: nothing outbound, the DNS resolver's socket and services included, but its proxy and named sockets (2g).
+    expect(at("(deny network-outbound)")).toBeGreaterThan(0);
+    expect(p).not.toContain("mDNSResponder\"))");
+    expect(p).toContain(`(global-name "com.apple.dnssd.service")`);
     // Native code in the clover process: Bun's and the system's only, everywhere.
     expect(p).toContain("(deny file-map-executable)\n");
     expect(p).toContain(`(allow file-map-executable (subpath "/System") (subpath "/usr/lib") (literal "/b/bun"))`);

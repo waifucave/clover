@@ -22,14 +22,14 @@
 // * the per-user folders (`/var/folders/<…>/`: the temp `T`, the cache `C` and the per-user `0` folders), whose
 //   other programs' files it has no business reading (S2, and #345's second review);
 // * the clipboard and the window server (their services), and any signal but to itself and its children;
-// * every Unix socket but the ones it's named (a supervised host's daemon socket) and the system's DNS resolver
-//   (`mDNSResponder`): no ssh-agent, no other program's socket (S1);
+// * the network and every Unix socket but its own proxy's loopback port and the sockets it's named (a supervised
+//   host's daemon socket): no ssh-agent, no other program's socket, and no DNS of its own (S1; 2g);
 // * in the `clover` process, which holds many plugins, any native code but Bun's and the system's (B3; since #345's
 //   review, `file-map-executable` is denied everywhere else, not only in what it reads and writes).
 //
 // What it can: read its plugin's tree (and, for the `clover` process, the verified copy of the bundled plugins), read
-// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, the
-// network, and read everything else outside the homes and those folders that the system leaves readable.
+// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, reach
+// the hosts it's granted through its proxy, and read everything else outside the homes and those folders that the system leaves readable.
 //
 // Hooks and MCP servers (`tools: true`): a server started with `npx`, `uvx` or `bunx` needs its package manager's
 // installs, so those folders are readable, and any program may run (fenced the same way; measured: denying exec
