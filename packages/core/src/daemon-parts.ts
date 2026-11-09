@@ -392,19 +392,43 @@ export function lateBroker(current: () => CloverApprovalBroker | undefined): Pic
   };
 }
 
+/** How long a request waits for the parts' broker before its caller is told to try again. */
+export const LATE_BROKER_WAIT_MS = 45_000;
+
 /** The daemon's broker for what starts before it (the plugin registry's OK cards, the app's development-folder card):
  *  a request waits until the parts have started and then asks on the broker, or is refused when they started without
  *  one (no links, or the node didn't start). `get` and `watch` see the broker once it's there. */
-export function lateApprovalBroker(ready: Promise<CloverApprovalBroker | undefined>): Pick<ApprovalBroker, "request" | "get" | "watch"> {
+export function lateApprovalBroker(ready: Promise<CloverApprovalBroker | undefined>, opts: { waitMs?: number } = {}): Pick<ApprovalBroker, "request" | "get" | "watch"> {
   let current: CloverApprovalBroker | undefined;
-  void ready.then((b) => { current = b; }, () => undefined);
+  let settled = false;
+  void ready.then((b) => { current = b; settled = true; }, () => { settled = true; });
+  const waitMs = opts.waitMs ?? LATE_BROKER_WAIT_MS;
+  // The wait is bounded and follows the caller's signal (#397's review): the parts can take long, or never end on a
+  // hung wire, and an RPC mustn't stay open meanwhile. The caller is told to try again.
+  const brokerSoon = (signal: AbortSignal | undefined): Promise<CloverApprovalBroker | undefined> => {
+    if (current !== undefined || settled) return Promise.resolve(current);
+    return new Promise((resolve, reject) => {
+      const done = (f: () => void) => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", aborted);
+        f();
+      };
+      const timer = setTimeout(() => done(() => reject(new ContractError("busy", "approvals aren't running on this computer yet; try again in a moment"))), waitMs);
+      timer.unref?.();
+      const aborted = () => done(() => reject(signal?.reason ?? new ContractError("cancelled", "the request was cancelled")));
+      if (signal?.aborted) return aborted();
+      signal?.addEventListener("abort", aborted, { once: true });
+      ready.then((b) => done(() => resolve(b)), () => done(() => resolve(undefined)));
+    });
+  };
   return {
     request: async (r, o) => {
-      const b = current ?? (await ready.catch(() => undefined));
+      const b = await brokerSoon(o?.signal);
       if (!b) throw new ContractError("refused", "the approval cards aren't up on this computer");
       return b.request(r, o);
     },
     get: (id) => current?.get(id),
+    // A watcher attaches to the broker once it's there; before, it hears nothing (there are no cards to hear).
     watch: (fn) => {
       let off: (() => void) | undefined;
       let stopped = false;
