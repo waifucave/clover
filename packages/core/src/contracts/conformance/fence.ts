@@ -63,7 +63,10 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
     test("macOS fences every item but the secrets file and key files, which the Keychain holds", () => {
       const kinds = new Set(fence("macos", [`${HOME}/dev/luna`]).fencedSet().map((i) => i.kind));
       const expected = FENCED_KINDS.filter((k) => k !== "secrets-file" && k !== "key-file");
-      expect([...kinds].sort()).toEqual([...expected].sort());
+      for (const k of expected) expect(kinds.has(k)).toBe(true);
+      // Nothing else but lane M's self-update files, pending until B names the kind (the fake names it; the real
+      // fence only with `enforceAhead`, off for this suite).
+      for (const k of kinds) expect([...expected, "self-update"].includes(k)).toBe(true);
     });
 
     test("Windows and Linux also hide the secrets file and key files from reads", () => {
@@ -398,7 +401,7 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       // The read-denied list includes the run folder; an implementation may hide more (lane C keeps `runtimes/`).
       expect(mac.denyRead).toContain(`${CLOVER}/run`);
       expect(mac.denyRead).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
-      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents/com.waifucave.clover.core.plist`]));
+      expect(mac.denyWrite).toEqual(expect.arrayContaining([`${CLOVER}/sessions`, `${CLOVER}/usage`, `${HOME}/Library/LaunchAgents`]));
       // The installed plugins folder is write-denied, not read-denied (#197's check 2).
       expect(fence("macos").check({ op: "write", path: `${CLOVER}/plugins/tarot/clover.json` })).toEqual({ allowed: false, reason: "plugins", path: `${CLOVER}/plugins` });
       expect(fence("macos").forCaller({ kind: "user", client: "app" }).check({ op: "read", path: `${CLOVER}/plugins/tarot/clover.json` }).allowed).toBe(true);
@@ -415,17 +418,18 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       expect(fence("windows").policy().closedDoors).toContain("schtasks");
     });
 
-    test("the browser's partitions are fenced under the app's sessionData, not userData (lane E's follow-up)", () => {
+    test("the browser's partitions are fenced under the app's sessionData as well as userData (lane E's follow-up)", () => {
       // The app sets sessionData apart from userData; Electron's own default (and the fence's fallback) is userData.
       const session = `${HOME}/Library/Application Support/Clover/session`;
       const f = make({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders: [], sessionData: session });
       const paths = f.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path);
-      expect(paths).toEqual([`${session}/Partitions`]);
+      expect(paths).toContain(`${session}/Partitions`);
+      expect(paths).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
       expect(f.check({ op: "read", path: `${session}/Partitions/persist:user` })).toEqual({ allowed: false, reason: "browser-profiles", path: `${session}/Partitions` });
       expect(f.check({ op: "write", path: `${session}/Partitions/persist:user` }).allowed).toBe(false);
-      // Without a sessionData the fence falls back to userData, as Electron itself does.
+      // Without a sessionData the userData one is still fenced, as Electron's own default.
       const d = make({ os: "macos", home: HOME, cloverHome: CLOVER, temp: "/tmp", devFolders: [] });
-      expect(d.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toEqual([`${HOME}/Library/Application Support/Clover/Partitions`]);
+      expect(d.fencedSet().filter((i) => i.kind === "browser-profiles").map((i) => i.path)).toContain(`${HOME}/Library/Application Support/Clover/Partitions`);
     });
 
     test("a fenced name in another case, not on disk yet, is refused on every OS (J-M1's review, B1)", () => {

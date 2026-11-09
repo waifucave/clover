@@ -138,7 +138,11 @@ export interface SandboxPolicy {
    *     `memory-x` is not inside `memory`), a glob's `*` one whole name;
    *  2. unlinking or renaming an `own…` folder itself, or any folder that holds one, is denied;
    *  3. inside `ownMemory`, `ownOutputs`, `ownScratch`, `ownRoutines` and `ownPluginData`, reading and writing pass; `ownBot` and the `own…` folders
-   *     themselves, reading;
+   *     themselves, reading. An `own…` folder is carved out of the denies that hold it (the Clover home, `bots`,
+   *     the memory pattern): those are read as "everything there but the runner's own folders", never as a deny an
+   *     allow re-opens. A deny strictly inside an `own…` folder still denies there: a DENY always wins over an
+   *     ALLOW, whatever the order or how specific each is (the controller's ruling), so no allow ever re-opens
+   *     `sessions/`, the secrets or `run/`;
    *  4. otherwise `denyWrite` and `denyRead` deny, the Clover home included.
    *  Linux's Landlock can't put an allow inside a deny, so lane C's Linux sandbox needs its own way to meet this order
    *  (for example: leave the Clover home out of its grants and grant the `own…` folders alone). */
@@ -281,9 +285,12 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
   const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
   // 2. An `own…` folder itself, and every folder that holds one, is never unlinked or renamed.
   if ((op === "unlink" || op === "rename") && rw.some((own) => under(own, realPath))) return false;
-  // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading.
-  if (rw.some((own) => under(realPath, own, true))) return true;
-  if (op === "read" && ro.some((own) => under(realPath, own))) return true;
+  // 3. Inside the read-and-write folders, anything; inside `ownBot` and on the folders themselves, reading. Each is
+  // carved out of the denies that hold it; a deny strictly inside one still wins (deny over allow, always).
+  const deniesHere = op === "read" ? policy.denyRead : policy.denyWrite;
+  const innerDeny = (own: string) => deniesHere.some((d) => under(d, own, true) && under(realPath, d));
+  if (rw.some((own) => under(realPath, own, true) && !innerDeny(own))) return true;
+  if (op === "read" && ro.some((own) => under(realPath, own) && !innerDeny(own))) return true;
   // 4. The denies, the Clover home included.
   if (op === "read") return !policy.denyRead.some((d) => under(realPath, d));
   if (policy.denyWrite.some((d) => under(realPath, d))) return false;
@@ -320,18 +327,6 @@ export function patternItemAt(path: string, cloverHome: string, os?: Os):
   return same(sub, "memory") ? { kind: "bot-memory", folder: x, root: `${base}/bots/${x}/memory`, inside: true } : undefined;
 }
 
-/** `bots/<x>/…` below the folder itself (agents, notes, anything but the `memory/` the pattern judges): the
- *  folder's root, or undefined elsewhere (and never inside `memory/` itself — the pattern owns that). */
-export function botsFolderChildAt(path: string, cloverHome: string, os?: Os): string | undefined {
-  const home = segmentsOf(cloverHome);
-  const segs = segmentsOf(path);
-  if (segs.length < home.length + 3 || !home.every((h, i) => foldName(h, os) === foldName(segs[i]!, os))) return undefined;
-  const [area, x, sub] = segs.slice(home.length);
-  if (foldName(area!, os) !== foldName("bots", os) || x === undefined) return undefined;
-  if (sub !== undefined && foldName(sub, os) === foldName("memory", os)) return undefined;
-  return `/${home.join("/")}/bots/${segs[home.length + 1]}`;
-}
-
 /** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal. */
 export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os): boolean {
   if (ctx?.user) return true;
@@ -345,8 +340,8 @@ export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: Fence
   return item.bot !== undefined && reachesMemoryFolder(item.bot.replace("/", "--"), ctx, os);
 }
 
-/** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). */
-const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
+/** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). Exported for the OS sandboxes, which enforce the same rule when granting `own…` folders. */
+export const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
 
 /** Whether a tool or runner may reach a path inside the Clover home (the home default-deny): only the per-caller
  *  allows, by pattern. A path outside the home is the other rules' to judge. */
@@ -490,6 +485,33 @@ export function windowsAlias(path: string): string | undefined {
   return names.find((n, i) => (n.includes(":") && !(i === 0 && /^[A-Za-z]:$/.test(n))) || /~\d/.test(n));
 }
 
+/** The hooks folder of the repo a plant targets (`<repo>/.git/hooks`, bare repos `<name>.git/hooks`), when the
+ *  path sits at or under it and the repo under `home` — any repo there. Compared folded, so another case can't
+ *  dodge it. `login-start`: a hook runs later, outside the sandbox (spec item 1116). */
+export function gitHooksRoot(path: string, home: string, os?: Os): string | null {
+  const parts = path.split(/[\\/]/).filter((s) => s !== "");
+  const hp = home.split(/[\\/]/).filter((s) => s !== "");
+  if (parts.length <= hp.length) return null;
+  const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
+  const endsGit = (s: string) => foldName(s.length >= 4 ? s.slice(-4) : s, os) === foldName(".git", os);
+  if (!hp.every((h, i) => same(h, parts[i]!))) return null; // not under the home
+  for (let i = hp.length; i + 1 < parts.length; i++) {
+    if (endsGit(parts[i]!) && same(parts[i + 1]!, "hooks")) {
+      const sep = path.includes("\\") ? "\\" : "/";
+      return (/^[\\/]/.test(path) ? sep : "") + parts.slice(0, i + 2).join(sep);
+    }
+  }
+  return null;
+}
+
+/** The `python*` folder names inside a `lib` folder (a user site lives in each one's `site-packages`), from the
+ *  folder names on the disk; `[]` where the disk has none or can't be read (the fake's fictional paths). */
+export function pythonSiteDirNames(listLib: () => string[]): string[] {
+  try {
+    return listLib().filter((n) => n.toLowerCase().startsWith("python"));
+  } catch { return []; }
+}
+
 export interface JudgeOptions {
   /** The computer's OS, for its folding rules (`foldName`). */
   os?: Os;
@@ -517,16 +539,8 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
         if (!reachesMemoryFolder(pattern.folder, o.caller, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
         if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
       }
-    } else if (pattern?.kind === "sessions-runtime") {
-      const own = pattern.name !== undefined && o.caller?.sessionId !== undefined
-        && foldName(pattern.name.replace(/\.[^.]*$/, ""), o.os) === foldName(o.caller.sessionId, o.os);
-      if (writes || !(o.caller?.user || own)) return { allowed: false, reason: "sessions-runtime", path: pattern.root };
-    } else if (writes && o.caller?.user !== true && o.cloverHome !== undefined) {
-      // Inside `bots/<x>/` but outside the `memory/` the pattern judges above (the agents folder and anything
-      // else a bot keeps there): readable by every caller, writable only by the user and the core. Only
-      // `memory/` is its own bot's to write.
-      const at = botsFolderChildAt(path, o.cloverHome, o.os);
-      if (at !== undefined) return { allowed: false, reason: "bot-memory", path: at };
+    } else if (pattern?.kind === "sessions-runtime" && (writes || !o.caller?.user)) {
+      return { allowed: false, reason: "sessions-runtime", path: pattern.root };
     }
     for (const item of set) {
       if (item.deny === "caller") continue; // judged by its pattern above

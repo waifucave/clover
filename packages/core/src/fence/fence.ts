@@ -7,19 +7,27 @@
 // another name for the same file: a write, delete or move of a file with more than one link is judged as the
 // fenced file it shares an inode with (J-M1's review), and refused outright when the fenced set holds too many
 // files to tell (fail closed).
+//
+// The verdict itself is B's shared `judge`, so the real fence and the fake agree, caller by caller: the Clover home
+// is default-deny for every tool runner, with only the caller's own `outputs/<session>`, `scratch/<bot>`,
+// `routines/<bot>`, `bots/<x>` (read) and `memory` (read and write), and a plugin's own `plugin-data/<id>` letting
+// it back in. The sandbox profiles (macOS, Linux) apply the same order through `policy`.
 import { lstatSync, readdirSync, type BigIntStats } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Caller, Os } from "@waifucave/clover-protocol";
-import { isAnyPluginId } from "@waifucave/clover-protocol";
 import { Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, judge, READ_DENIED_KINDS, fenceContextFor, ownFoldersOf, patternItemAt, pluginLoadDenies, windowsAlias,
-  writesPluginLoadDeny,
-  type CallerFence, type Fence, type FenceContext, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
+  agentConfigPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, fenceContextFor, gitHooksRoot, judge, ownFoldersOf, patternItemAt, pluginLoadDenies, pythonSiteDirNames,
+  READ_DENIED_KINDS, writesPluginLoadDeny,
+  type CallerFence, type Fence, type FenceContext, type FencedKind, type FencedPath, type FenceOp, type FenceVerdict,
+  type SandboxPolicy,
 } from "../contracts/fence";
 import { canonicalPath } from "./canonical";
 import { foldPath, nonAsciiAlias } from "./fold";
-import { fenceLayout, type LaidOutKind } from "./layout";
+import { botFolders, fenceLayout, globalHooksPathDirs, loginStartPaths, pendingFenced, type LaidOutKind } from "./layout";
+
+/** Pending kinds this fence enforces before B's contract has them. */
+export const ENFORCED_AHEAD = ["hook-shell", "session-transcripts", "self-update"] as const;
 
 export interface CloverFenceOptions {
   os?: Os;
@@ -29,13 +37,14 @@ export interface CloverFenceOptions {
   cloverHome: string;
   temp?: string;
   devFolders?: string[];
-  /** The bots whose memory is fenced (`bots/<bot>/memory`, deny `caller` each). */
+  /** The bots there are, by id (`pack/luna` for a child's), for their memory items (pattern rules the rest). */
   bots?: string[];
-  /** The install folders of the coding agents the user has OK'd (`agent-installs`). */
-  agentInstalls?: string[];
-  /** The app's userData folder (E's); per-OS default under `home` when absent. */
+  /** The install folders of the coding agents the user has OK'd to run unsandboxed (lane K). */
+  agentInstalls?: readonly string[];
+  /** The app's userData folder (E's), which holds the Clover Browser's partitions; the OS's usual one by default. */
   userData?: string;
-  /** The app's sessionData folder (the browser's partitions live under it); userData when absent. */
+  /** A headless run's session data folder (lane E passes `app.getPath("sessionData")` here; TODO(lane E): wire it).
+   *  Its `Partitions` folder is fenced like the app's. */
   sessionData?: string;
   /** Other folders plugin code loads from (the app's bundled plugins), for `pluginLoadDenies` (B's #234). */
   pluginLoadFolders?: string[];
@@ -47,26 +56,36 @@ export interface CloverFenceOptions {
   loopbackPorts?: () => readonly number[];
   /** How a path is resolved on this disk; the conformance suite's paths are fictional, so it passes its own. */
   canonical?: (path: string) => string;
+  /** Enforce `ENFORCED_AHEAD` (default true). Off for B's contract suite until its next version names those kinds. */
+  enforceAhead?: boolean;
 }
 
-/** How many entries of the fenced set a hard-link check walks before it refuses instead. */
+/** How many entries of the fenced set a hard-link walk refuses instead of scanning. */
 export const HARD_LINK_SCAN_LIMIT = 20_000;
 
 const osOf = (): Os => (process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux");
+
+/** The app's userData folder on each OS, under the user's home. */
+function defaultUserData(os: Os, home: string): string {
+  const p = os === "windows" && !home.startsWith("/") ? win32 : posix;
+  if (os === "macos") return p.join(home, "Library", "Application Support", "Clover");
+  if (os === "windows") return p.join(home, "AppData", "Roaming", "Clover");
+  return p.join(home, ".config", "Clover");
+}
 
 export class CloverFence implements Fence {
   readonly os: Os;
   readonly #home: string;
   readonly #cloverHome: string;
   readonly #temp: string;
+  readonly #userData: string;
+  readonly #sessionData: string | undefined;
   readonly #layout: Partial<Record<FencedKind, string[]>>;
   readonly #canonical: (path: string) => string;
   readonly #listeners = new Listeners<void>();
   readonly #loopbackPorts: () => readonly number[];
-  readonly #bots: string[];
   readonly #agentInstalls: string[];
-  readonly #userData: string | undefined;
-  readonly #sessionData: string | undefined;
+  readonly #bots: string[];
   #devFolders: string[];
   readonly #pluginLoadFolders: string[];
 
@@ -76,43 +95,86 @@ export class CloverFence implements Fence {
     this.#home = this.#canonical(opts.home);
     this.#cloverHome = this.#canonical(opts.cloverHome);
     this.#temp = this.#canonical(opts.temp ?? (this.os === "windows" ? win32.join(opts.home, "AppData", "Local", "Temp") : "/tmp"));
+    this.#userData = this.#canonical(opts.userData ?? defaultUserData(this.os, opts.home));
+    this.#sessionData = opts.sessionData === undefined ? undefined : this.#canonical(opts.sessionData);
     this.#devFolders = (opts.devFolders ?? []).map((p) => this.#canonical(p));
+    this.#agentInstalls = [...(opts.agentInstalls ?? [])].map((p) => this.#canonical(p));
     this.#pluginLoadFolders = (opts.pluginLoadFolders ?? []).map((p) => this.#canonical(p));
     this.#bots = [...(opts.bots ?? [])];
-    this.#agentInstalls = [...(opts.agentInstalls ?? [])];
-    this.#userData = opts.userData;
-    this.#sessionData = opts.sessionData;
     this.#layout = opts.layout ?? {};
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
+    this.#enforceAhead = opts.enforceAhead ?? true;
   }
+
+  readonly #enforceAhead: boolean;
 
   fencedSet(): readonly FencedPath[] {
     const out: FencedPath[] = [];
     const add = (kind: FencedKind, path: string) =>
-      out.push({ kind, path: this.#canonical(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : "write" });
-    for (const [kind, paths] of Object.entries(fenceLayout(this.#cloverHome, this.os, {
-      home: this.#home, userData: this.#userData, sessionData: this.#sessionData, agentInstalls: this.#agentInstalls,
-    })) as [LaidOutKind, string[]][]) {
+      out.push({ kind, path: this.#canonical(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : kind === "bot-memory" ? "caller" : "write" });
+    for (const [kind, paths] of Object.entries(fenceLayout(this.#cloverHome, this.os)) as [LaidOutKind, string[]][]) {
       for (const p of this.#layout[kind] ?? paths) add(kind, p);
     }
-    // Bots' memory is per-bot and caller-gated (`deny: "caller"`, judged by pattern in `judge`).
-    for (const bot of this.#bots) {
-      out.push({ kind: "bot-memory", path: this.#canonical(`${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`), deny: "caller", bot });
-    }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);
+    // Enforced ahead of B's contract naming them: the per-user Git whose bash runs Windows hooks (write-denied),
+    // the runtime's transcript store (write-denied: runners never write a transcript; the home default-deny
+    // already keeps their reads out, while the core and the user's own surfaces still reach it), and lane M's
+    // self-update files (write-denied, never owned). Ahead of the login-start places on purpose: the self-update
+    // files sit under login-start's `bin/` folder, and the more specific kind names the attack (a runner swapping
+    // the daemon), not the generic plant.
+    const pending = pendingFenced({ home: this.#home, cloverHome: this.#cloverHome, os: this.os });
+    const aheadDeny: Record<string, "write" | "read-write"> = { "hook-shell": "write", "session-transcripts": "write", "self-update": "write" };
+    for (const kind of this.#enforceAhead ? ENFORCED_AHEAD : []) {
+      for (const path of (this.#layout as Record<string, string[] | undefined>)[kind] ?? pending[kind] ?? []) {
+        out.push({ kind: kind as FencedKind, path: this.#canonical(path), deny: aheadDeny[kind]! });
+      }
+    }
+    // The kinds that need more than the Clover home: the login places (under the user's home), the browser's
+    // partitions (always both shipped and dev profiles from the OS app-data folder, so neither app build can read
+    // the other's sign-ins, plus an explicitly passed userData and a headless sessionData when given), and the
+    // OK'd agent installs.
+    for (const p of this.#layout["login-start"] ?? loginStartPaths(this.#home, this.#cloverHome, this.os)) add("login-start", p);
+    // Python's user site folders (one `site-packages` per `python*` folder read on this disk).
+    if (this.#layout["login-start"] === undefined) {
+      const jp = this.os === "windows" && !this.#home.startsWith("/") ? win32 : posix;
+      const lib = jp.join(this.#home, ".local", "lib");
+      const names = pythonSiteDirNames(() => readdirSync(lib, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name));
+      for (const n of names) add("login-start", jp.join(lib, n, "site-packages"));
+      // The user's configured global hooks folder, if any (ruling 5): a planted hook there runs later too.
+      for (const p of globalHooksPathDirs(this.#home)) add("login-start", p);
+    }
+    const appData = this.os === "macos"
+      ? joinHome(this.#home, this.os, "Library", "Application Support")
+      : this.os === "windows"
+        ? joinHome(this.#home, this.os, "AppData", "Roaming")
+        : joinHome(this.#home, this.os, ".config");
+    const browserProfiles = this.#layout["browser-profiles"] ?? [
+      joinHome(appData, this.os, "Clover", "Partitions"),
+      joinHome(appData, this.os, "Clover Dev", "Partitions"),
+      joinHome(this.#userData, this.os, "Partitions"),
+      ...(this.#sessionData === undefined ? [] : [joinHome(this.#sessionData, this.os, "Partitions")]),
+    ];
+    for (const p of [...new Set(browserProfiles)]) add("browser-profiles", p);
+    for (const p of this.#layout["agent-installs"] ?? [...this.#agentInstalls, ...agentConfigPaths(this.os, this.#home)]) add("agent-installs", p);
+    // Each bot's memory, `<home>/bots/<bot>/memory/` (deny `caller`: `judge` binds it by pattern to the bot whose id
+    // folds equal). The known bots by id, plus the folders on the disk, so an unlisted leftover is still named.
+    const seg = (bot: string) => bot.replace(/\//g, "--");
+    const known = new Map<string, string>();
+    for (const bot of this.#bots) known.set(seg(bot), bot);
+    try { for (const folder of botFolders(this.#cloverHome)) if (!known.has(folder)) known.set(folder, folder); }
+    catch { /* the disk is unreadable: the pattern still rules */ }
+    const p = this.os === "windows" && !this.#cloverHome.startsWith("/") ? win32 : posix;
+    for (const [folder, bot] of known) {
+      out.push({ kind: "bot-memory", path: this.#canonical(p.join(this.#cloverHome, "bots", folder, "memory")), deny: "caller", ...(this.#bots.includes(bot) ? { bot } : {}) });
+    }
     return out;
   }
 
-  /** The set and an operation's paths, folded, for B's shared `judge`; each folded item maps back to its own. */
-  #folded(): { set: FencedPath[]; back: Map<string, FencedPath> } {
-    const back = new Map<string, FencedPath>();
-    const set = this.fencedSet().map((item) => {
-      const f = { ...item, path: this.#fold(item.path) };
-      back.set(f.path, item);
-      return f;
-    });
-    return { set, back };
-  }
+  /** The Clover home, canonical: a command's sandbox names where Clover names things from it. */
+  get cloverHome(): string { return this.#cloverHome; }
+
+  /** The user's home folder: commands may write in it (§9.1), less the fenced set. */
+  get home(): string { return this.#home; }
 
   #fold(path: string): string {
     // `judge` and `isInside` are POSIX: a Windows path is compared as `c:/users/...`, which they take as relative.
@@ -154,19 +216,16 @@ export class CloverFence implements Fence {
     for (const raw of op.op === "move" ? [op.path, op.to] : [op.path]) {
       const forms = this.#forms(raw);
       if (forms === null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
-      // A stream suffix or 8.3 short name is refused wherever it is. This runs on the device
-      // form (so `\??\C:\…` still names the drive path it names, #205's check 2) but before
-      // folding (which would resolve the alias to the name it names).
-      if (this.os === "windows") {
-        for (const form of forms) {
-          if (windowsAlias(form) !== undefined) return { allowed: false, reason: "alias", path: raw };
-        }
-      }
       all.push(...forms);
     }
-    // The folded item first, so a name that folds onto one (`ſettings`) is refused as that item; then a hard link to
-    // one (for a read, to a read-denied one: #205's B2); then a name that isn't ASCII where Clover names things,
-    // whatever it folds to (B's contract, #179's F1).
+    // A hook planted in any repo under the user's home runs later, outside the sandbox (spec item 1116): refused
+    // as `login-start`, ahead of the kinds, whatever the caller.
+    if (write) {
+      for (const p of all) {
+        const hooks = gitHooksRoot(p, this.#home, this.os);
+        if (hooks !== null) return { allowed: false, reason: "login-start", path: hooks };
+      }
+    }
     // B's #234 (check 4, H1): a `node_modules` above a folder plugin code loads from is no one's to write but the user's.
     if (write && ctx?.user !== true) {
       const denies = this.#pluginLoadDenies();
@@ -175,17 +234,29 @@ export class CloverFence implements Fence {
         if (deny !== undefined) return { allowed: false, reason: "plugins", path: deny };
       }
     }
-    const { set, back } = this.#folded();
-    const judgeOpts = { os: this.os, cloverHome: this.#cloverHome, ...(ctx === undefined ? {} : { caller: ctx }) };
+    // B's shared `judge`: the fenced kinds, then the home default-deny, folded on every OS. Each folded item maps
+    // back to its own; the pattern roots (`bots/<x>/memory`, `sessions-runtime`) come back in the home's own form.
+    const set = this.fencedSet();
     for (const p of all) {
-      const v = judge(set, { op: write ? "write" : "read", path: this.#fold(p) }, judgeOpts);
-      if (!v.allowed) return { allowed: false, reason: v.reason, path: back.get(v.path)?.path ?? v.path };
+      const v = judge(set, { op: write ? "write" : "read", path: p }, { os: this.os, cloverHome: this.#cloverHome, ...(ctx ? { caller: ctx } : {}) });
+      if (v.allowed) continue;
+      // A pattern verdict's root comes back in the home's own form (backslashes on Windows, unless the home is
+      // POSIX-style, as the conformance suite writes every OS's paths).
+      if (v.reason === "bot-memory" || v.reason === "sessions-runtime") {
+        const at = patternItemAt(p, this.#cloverHome, this.os);
+        if (at?.kind === "bot-memory") {
+          const root = at.inside ? joinHome(this.#cloverHome, this.os, "bots", at.folder, "memory") : joinHome(this.#cloverHome, this.os, "bots", at.folder);
+          return { allowed: false, reason: v.reason, path: root };
+        }
+        if (at?.kind === "sessions-runtime") return { allowed: false, reason: v.reason, path: joinHome(this.#cloverHome, this.os, "sessions-runtime") };
+      }
+      return v;
     }
     for (const p of all) {
       const linked = this.#hardLinked(p, !write);
       if (linked) return { allowed: false, reason: linked.kind, path: linked.path };
     }
-    const fenced = this.fencedSet().map((i) => i.path);
+    const fenced = set.map((i) => i.path);
     for (const p of all) {
       if (nonAsciiAlias(p, fenced, this.#cloverHome, this.os) !== null) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     }
@@ -217,16 +288,19 @@ export class CloverFence implements Fence {
   }
 
   touches(paths: readonly string[]): FencedPath | null {
-    const { set, back } = this.#folded();
     for (const raw of paths) for (const form of this.#forms(raw) ?? [this.#cloverHome]) {
-      const pattern = patternItemAt(form, this.#cloverHome, this.os);
-      if (pattern?.kind === "bot-memory") {
-        return { kind: "bot-memory", path: pattern.root, deny: "caller", ...(pattern.folder ? { bot: pattern.folder.replace("--", "/") } : {}) };
+      // The pattern items first, by where the path is, whatever list of bots or sessions is known.
+      const at = patternItemAt(form, this.#cloverHome, this.os);
+      if (at?.kind === "bot-memory") {
+        const root = at.inside ? joinHome(this.#cloverHome, this.os, "bots", at.folder, "memory") : joinHome(this.#cloverHome, this.os, "bots", at.folder);
+        return { kind: "bot-memory", path: root, deny: "caller" };
       }
-      if (pattern?.kind === "sessions-runtime") return { kind: "sessions-runtime", path: pattern.root, deny: "read-write" };
-      const p = this.#fold(form);
-      for (const item of set) {
-        if (inside(p, item.path) || inside(item.path, p)) return back.get(item.path) ?? null;
+      if (at?.kind === "sessions-runtime") return { kind: "sessions-runtime", path: joinHome(this.#cloverHome, this.os, "sessions-runtime"), deny: "read-write" };
+      const hooks = gitHooksRoot(form, this.#home, this.os);
+      if (hooks !== null) return { kind: "login-start", path: hooks, deny: "write" };
+      for (const item of this.fencedSet()) {
+        if (item.deny === "caller") continue; // judged by its pattern above
+        if (inside(form, item.path, this.os) || inside(item.path, form, this.os)) return item;
       }
     }
     return null;
@@ -248,14 +322,15 @@ export class CloverFence implements Fence {
   #agentRoot(form: string): FenceVerdict {
     const r = this.#fold(form);
     const home = this.#fold(this.#cloverHome);
-    if (inside(home, r) || inside(r, home)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
+    if (inside(home, r, this.os) || inside(r, home, this.os)) return { allowed: false, reason: "clover-home", path: this.#cloverHome };
     for (const dev of this.#layout["dev-folders"] ?? this.#devFolders) {
       const d = this.#fold(this.#canonical(dev));
-      if (inside(d, r) || inside(r, d)) return { allowed: false, reason: "dev-folders", path: this.#canonical(dev) };
+      if (inside(d, r, this.os) || inside(r, d, this.os)) return { allowed: false, reason: "dev-folders", path: this.#canonical(dev) };
     }
     for (const item of this.fencedSet()) {
+      if (item.kind === "dev-folders") continue;
       const f = this.#fold(item.path);
-      if (inside(f, r) || inside(r, f)) return { allowed: false, reason: item.kind, path: item.path };
+      if (inside(f, r, this.os) || inside(r, f, this.os)) return { allowed: false, reason: item.kind, path: item.path };
     }
     return { allowed: true };
   }
@@ -268,6 +343,8 @@ export class CloverFence implements Fence {
   }
 
   policy(ctx?: FenceContext): SandboxPolicy {
+    // The whole Clover home, for every runner (the home default-deny); its `own…` folders are the ways back in.
+    // The `caller` items (`bot-memory`) stay out of the deny lists: the pattern, and the `own…` allows, rule them.
     const set = this.fencedSet().filter((i) => i.deny !== "caller");
     const patterns = [`${this.#cloverHome}/bots/*/memory`, `${this.#cloverHome}/sessions-runtime`];
     return {
@@ -288,17 +365,18 @@ export class CloverFence implements Fence {
     };
   }
 
-  /** The fence as one caller meets it: the caller's reach for `caller` items, everything else as for any caller. */
+  /** The fence as one caller meets it (B's `Fence.forCaller`): the caller's context, then the same rules. */
   forCaller(caller: Caller): CallerFence {
     const context = fenceContextFor(caller);
+    const base = this;
     return {
-      os: this.os,
+      os: base.os,
       context,
-      fencedSet: () => this.fencedSet(),
-      touches: (paths) => this.touches(paths),
-      checkAgentRoot: (root) => this.checkAgentRoot(root),
-      check: (op) => this.check(op, context),
-      policy: () => this.policy(context),
+      fencedSet: () => base.fencedSet(),
+      touches: (paths: readonly string[]) => base.touches(paths),
+      checkAgentRoot: (root: string) => base.checkAgentRoot(root),
+      check: (op: FenceOp) => base.check(op, context),
+      policy: () => base.policy(context),
     };
   }
 
@@ -336,9 +414,15 @@ export class CloverFence implements Fence {
   }
 }
 
-/** `isInside` over folded, `/`-separated paths (a Windows drive path has no leading `/`). */
-function inside(path: string, root: string): boolean {
-  const p = posix.normalize(path), r = posix.normalize(root);
+/** Join under the Clover home in the home's own form (backslashes on Windows, unless the home is POSIX-style). */
+function joinHome(cloverHome: string, os: Os, ...parts: string[]): string {
+  const p = os === "windows" && !cloverHome.startsWith("/") ? win32 : posix;
+  return p.join(cloverHome, ...parts);
+}
+
+/** `isInside` over folded, `/`-separated paths (a Windows drive path has no leading `/`; `..` stays to `judge`). */
+function inside(path: string, root: string, os: Os): boolean {
+  const p = foldPath(path, os), r = foldPath(root, os);
   return p === r || p.startsWith(r.endsWith("/") ? r : `${r}/`);
 }
 
@@ -381,8 +465,21 @@ function thisComputersNames(): Set<string> {
 export function isRefusedShare(p: string, names: () => Set<string> = thisComputersNames): boolean {
   const m = /^[\\/]{2}([^\\/]+)[\\/]+([^\\/]+)/.exec(p);
   if (!m) return false;
-  const server = m[1]!.toLowerCase(), share = m[2]!;
+  const server = unmapIpv4(m[1]!.toLowerCase().replace(/^\[|\]$/g, "")), share = m[2]!;
   if (share.endsWith("$")) return true;
   if (/^127\./.test(server) || server.endsWith(".ipv6-literal.net") || server === "localhost" || server.startsWith("localhost.")) return true;
   return names().has(server);
+}
+
+/** An IPv4-mapped IPv6 address (`::ffff:192.168.1.5`, `::ffff:c0a8:105`, `0:0:0:0:0:ffff:…`) as the IPv4 address it
+ *  maps, so a mapped form of one of this computer's addresses is known by the same name (#205's check 4 note). */
+export function unmapIpv4(server: string): string {
+  const m = /^(?:0{0,4}:){1,6}ffff:(.+)$/.exec(server);
+  if (!m) return server;
+  const tail = m[1]!;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(tail)) return tail;
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail);
+  if (!hex) return server;
+  const a = parseInt(hex[1]!, 16), b = parseInt(hex[2]!, 16);
+  return [a >> 8, a & 255, b >> 8, b & 255].join(".");
 }

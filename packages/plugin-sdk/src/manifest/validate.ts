@@ -27,8 +27,9 @@ import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
 
-/** Environment names a plugin's server never sets (the core refuses them too, `refuseReservedPluginEnv`). */
-export const RESERVED_ENV = /^(CLOVER_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/;
+/** Environment names a plugin's server never sets (the core refuses them too, `refuseReservedPluginEnv`). Matched
+ *  without case: Windows' environment names are case-insensitive, and a manifest runs on every OS. */
+export const RESERVED_ENV = /^(CLOVER_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/i;
 
 export type PluginClassName = "data" | "web" | "code";
 
