@@ -82,7 +82,7 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   // src/ (the release build's bundled-plugins manifest, `.build/clover-bundled-plugins.manifest`) moved that root up to
   // packages/cli, so `./embedded-worker.ts` and `./fd-receiver-worker.ts` stopped resolving in every release core
   // (ModuleNotFound; the fd channel reported it as "syscall"). `--root src` pins it: build:daemon proves it on each
-  // host core it builds (`__fd-receiver-probe`), and verify:fd-receiver on a plain compile.
+  // host core it builds (`__worker-entry-probe`, every OS), and verify:fd-receiver on a plain compile.
   test("both compile scripts pin the compile's root to src/, so an embedded file elsewhere can't rename the Worker entries", () => {
     for (const name of ["compile", "compile:core"]) {
       const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/)).at(-1)!;

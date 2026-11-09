@@ -1909,6 +1909,13 @@ if (import.meta.main) {
       process.exit(1);
     }
   }
+  // Lane M: a compiled Worker entry resolves in this binary, on every OS (scripts/build-daemon.ts runs it).
+  if (process.argv[2] === "__worker-entry-probe") {
+    const { runWorkerEntryProbe } = await import("./worker-entry-probe");
+    const result = await runWorkerEntryProbe();
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.exit(result.ok ? 0 : 1);
+  }
   if (process.argv[2] === "__fd-receiver-probe") {
     const { runChannelReceiverProbe } = await import("./fd-receiver-probe");
     const result = await runChannelReceiverProbe();
