@@ -19,7 +19,7 @@ import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { fencedCommand, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
-import { startPluginProxy, type PluginProxy } from "./net-proxy";
+import { hostAllowed, hostRules, startPluginProxy, type PluginProxy } from "./net-proxy";
 import { dirname, join, sep } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
@@ -291,7 +291,9 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     const r = o.registry.get(id);
     return r === undefined ? undefined : installRecordOf(r);
   };
-  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers }), recordOf));
+  // `net.fetch` reaches the hosts the plugin's OK granted, read the way its process's proxy reads them (2g).
+  const allowNetwork = (capabilities: readonly string[], target: string, port?: number) => port !== undefined && hostAllowed(hostRules(capabilities), target, port);
+  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers, allowNetwork }), recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its
   // calls failing, and starts fresh on its next use; one running from a tree that has since changed reloads.

@@ -96,6 +96,44 @@ describe("the network list", () => {
   });
 });
 
+describe("net.fetch's gate", () => {
+  test("a served net.fetch reaches only the hosts the plugin's OK granted, on the URL's port or its scheme's", async () => {
+    const home = temp("cf-netgate-");
+    const root = join(home, "plugins", "spy");
+    mkdirSync(join(root, "host"), { recursive: true });
+    writeFileSync(join(root, "clover.json"), JSON.stringify({
+      manifest: 1, id: "spy", name: "Spy", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` },
+      host: { entry: "host/index.js" }, capabilities: ["network:api.example.com", "network:*.cdn.example.com", "network:files.example.com:8443"],
+    }));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(join(root, "host", "index.js"), "export const get = async (args, ctx) => { try { return await ctx.api.net.fetch(args.url); } catch (e) { return `refused: ${e.message}`; } };\n");
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "linux", broker, secrets, settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, fence: false });
+    const off = ph.addApiHandlers({ "net.fetch": (_ctx, args) => `fetched ${String(args[0])}` });
+    try {
+      const { card } = await opened.registry.installed("spy", "app");
+      const shown = broker.cards().find((c) => c.id === card)!;
+      await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+      await Bun.sleep(5);
+      const get = (url: string) => ph.host.invoke({ pluginId: "spy", handler: "get", args: { url }, caller: USER });
+      expect(await get("https://api.example.com/v1")).toBe("fetched https://api.example.com/v1");
+      expect(await get("http://api.example.com/")).toBe("fetched http://api.example.com/");
+      expect(await get("https://img.cdn.example.com/a.png")).toBe("fetched https://img.cdn.example.com/a.png");
+      expect(await get("https://files.example.com:8443/x")).toBe("fetched https://files.example.com:8443/x");
+      for (const url of ["https://other.example.com/", "https://api.example.com:8443/", "https://cdn.example.com/", "https://files.example.com/", "https://93.184.216.34/", "file:///etc/passwd", "not a url"]) {
+        expect(String(await get(url))).toStartWith("refused:");
+      }
+      expect(String(await get("https://other.example.com/"))).toContain("network:other.example.com");
+    } finally {
+      off();
+      await ph.close();
+      opened.close();
+    }
+  }, 60_000);
+});
+
 describe.skipIf(process.platform !== "darwin")("a fenced plugin's network", () => {
   test("its process reaches its listed host only through its proxy: a direct socket is refused, an unlisted host is refused at the proxy; its hooks too", async () => {
     const listed = upstream("hello from the listed host");
