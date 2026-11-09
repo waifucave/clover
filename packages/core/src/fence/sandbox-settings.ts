@@ -23,16 +23,32 @@
 // reads and writes, so one made mid-run is denied too; a write-deny on a name inside each kept folder, so the
 // runtime's ancestor fence denies creating, removing or renaming the kept folder itself (its entry, not its insides:
 // #356's review); and no `.git/hooks` (nor `<name>.git/hooks`) anywhere under a write root, as the macOS profile has.
-import { readdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
 import { BOT_READ_DENIED, segmentMatches, type SandboxPolicy } from "../contracts/fence";
+import { gitTemplateDir } from "./layout";
 
 export interface SandboxSettingsOptions {
   /** A folder's entry names, or [] when it isn't a folder (tests pass a fake). */
   list?: (dir: string) => readonly string[];
   /** Windows-form paths (backslashes). */
   windows?: boolean;
+  /** Whether a path is plain: no link, and its real path is itself (tests pass a fake). The runtime real-paths every
+   *  write root, so a root that is a link, or sits under one, would open its target. */
+  plain?: (path: string) => boolean;
+}
+
+const realPlain = (path: string): boolean => {
+  try { return !lstatSync(path).isSymbolicLink() && realpathSync(path) === path; } catch { return false; }
+};
+
+/** The environment a bot's Bash runs with beside these settings: `GIT_TEMPLATE_DIR` at Clover's empty template, so
+ *  `git init` and `git clone` in a scratch folder work with every `.git/hooks` write-denied (they copy no hooks). */
+export function sandboxEnvOf(cloverHome: string): Record<string, string> {
+  const template = gitTemplateDir(cloverHome);
+  try { mkdirSync(template, { recursive: true, mode: 0o700 }); } catch { /* git then finds no template: it copies nothing either */ }
+  return { GIT_TEMPLATE_DIR: template };
 }
 
 /** The name written-denied inside each kept folder: the runtime's ancestor fence then holds the folder's own entry. */
@@ -46,6 +62,7 @@ const realList = (dir: string): readonly string[] => {
 export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: SandboxSettingsOptions = {}): SandboxSettingsConfig {
   const p = o.windows ? win32 : posix;
   const list = o.list ?? realList;
+  const plain = o.plain ?? realPlain;
   const fold = (s: string) => (o.windows ? s.toLowerCase() : s);
   const same = (a: string, b: string) => fold(a) === fold(b);
   const inside = (a: string, root: string) => same(a, root) || fold(a).startsWith(fold(root.endsWith(p.sep) ? root : `${root}${p.sep}`));
@@ -57,8 +74,9 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory].filter((x): x is string => x !== undefined);
   const writeKeep = [...ownRw];
   if (open !== undefined) {
-    for (const x of list(open.scratch)) writeKeep.push(p.join(open.scratch, x));
-    for (const x of list(open.bots)) writeKeep.push(p.join(open.bots, x, "memory"));
+    // Each one plain: a link (an old one, or one a run made) would be real-pathed to its target by the runtime.
+    for (const x of list(open.scratch)) { const k = p.join(open.scratch, x); if (plain(k)) writeKeep.push(k); }
+    for (const x of list(open.bots)) { const k = p.join(open.bots, x, "memory"); if (plain(k)) writeKeep.push(k); }
   }
   const readKeep = open !== undefined ? [home] : [...ownRw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
 
@@ -103,16 +121,21 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   };
 
   // Writes: the allow list with the home taken out of every root that holds it; the kept folders by name.
+  // A root written out entry by entry (the user's home): only plain entries, never a link or one whose real path is
+  // elsewhere (the runtime real-paths each root: a link to `/` would open the disk, one to the Clover home the home),
+  // and each held like a kept folder, so a run can't swap it for a link that the next run's root would follow.
   const allowWrite: string[] = [];
+  const listedRoots: string[] = [];
   for (const a of policy.allowWrite) {
-    if (inside(home, a)) allowWrite.push(...except(a, [home], null).filter((e) => !inside(e, home)));
-    else if (!inside(a, home) || writeKeep.some((k) => inside(a, k))) allowWrite.push(a);
+    if (inside(home, a)) {
+      for (const e of except(a, [home], null)) if (!inside(e, home) && plain(e)) { allowWrite.push(e); listedRoots.push(e); }
+    } else if (!inside(a, home) || writeKeep.some((k) => inside(a, k))) allowWrite.push(a);
   }
   allowWrite.push(...writeKeep);
   const hookRoots = [...policy.allowWrite, ...writeKeep.filter((k) => !policy.allowWrite.some((a) => inside(k, a)))];
   // The runtime renders a glob deny recursively (the folder and all under it).
   const hooks = [...new Set(hookRoots)].map((r) => `${r}${p.sep}**${p.sep}*.git${p.sep}hooks`);
-  const pins = writeKeep.filter((k) => !same(k, home)).map((k) => p.join(k, KEPT_FOLDER_PIN));
+  const pins = [...writeKeep.filter((k) => !same(k, home)), ...listedRoots].map((k) => p.join(k, KEPT_FOLDER_PIN));
 
   return {
     enabled: true,
