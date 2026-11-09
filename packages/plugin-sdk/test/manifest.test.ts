@@ -277,6 +277,8 @@ describe("servers, tools and interpolation", () => {
       expect([has(r, "reserved_env"), r.issues.find((i) => i.code === "reserved_env")?.message.includes(name)]).toEqual([true, true]);
     }
     expect(has(s({ NODE_ENV: "production", NODE_NO_WARNINGS: "1", TOKEN: "t" }), "reserved_env")).toBe(false);
+    // Without case: Windows' environment names are case-insensitive.
+    expect([has(s({ clover_plugin_host: "1" }), "reserved_env"), has(s({ Node_Options: "x" }), "reserved_env"), has(s({ node_env: "x" }), "reserved_env")]).toEqual([true, true, false]);
   });
 
   test("tool names are mcp__<namespace>__<Tool>, unique, never with __ (§6.7)", () => {
