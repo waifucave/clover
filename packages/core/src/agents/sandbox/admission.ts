@@ -4,11 +4,13 @@
 // `sandboxed: true`; every other agent starts only after the user's OK, which says it could read Clover's logins
 // and approve its own cards (oks.ts), and Settings marks it.
 //
-// A protected backend also needs a writer: the fenced set denied in its own format (writers.ts). A row here and its
-// writer land together, with the S8-style gates that admit them (`spikes/s8-secrets/agent-floor-gates.py`).
-import type { Os } from "@waifucave/clover-protocol";
+// A protected backend also needs a writer: the fenced set denied in its own format (writers.ts). Codex's and Claude
+// Code's writers are ready; their rows stay `unverified` until the live gates in `live-gates.ts` pass, and a row turns
+// `protected` only with that evidence, for the versions the gates ran on.
+import type { Level, Os } from "@waifucave/clover-protocol";
 import type { SandboxPolicy } from "../../contracts/fence";
 import type { Obj } from "@waifucave/clover-agent-sdk/acp";
+import type { ModeFloorFor } from "../acp/session";
 import { versionSatisfies } from "../version";
 
 export type SandboxAdmission =
@@ -27,9 +29,29 @@ export interface SandboxSetup {
   /** Merged into `session/new`'s `_meta` (the Claude adapter's `_meta.claudeCode.options`). */
   meta?: Obj;
   files?: { name: string; content: string }[];
+  /** Modes the session may not be in, by level, held at its start and at every turn (Claude Code's against the user's
+   *  `permissions.defaultMode`). */
+  modeFloor?: ModeFloorFor;
 }
 
-export type SandboxWriter = (policy: SandboxPolicy, ctx: { root: string; dir: string }) => SandboxSetup;
+/** What a writer knows of the session besides its policy. */
+export interface SandboxContext {
+  /** The session's root folder (its real path). */
+  root: string;
+  /** The session's own setup folder. */
+  dir: string;
+  /** The user's home folder, where the vendors keep their own config (`~/.codex`, `~/.claude`). */
+  home: string;
+  /** The agent's environment, for a vendor home moved elsewhere (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`). */
+  env?: Readonly<Record<string, string | undefined>>;
+  /** The session's level; absent counts as the strictest. */
+  level?: Level;
+}
+
+export type SandboxWriter = (policy: SandboxPolicy, ctx: SandboxContext) => SandboxSetup;
+
+/** A backend whose writer (writers.ts) is ready, its sandbox not yet shown to hold the fence through its adapter. */
+const WRITER_READY = "writer ready; awaiting live gates (its adapter, shell descendants, file tools, retries and exclusions)";
 
 /** S8 §8.3, November 5, for the backends lane K runs today. */
 export const ADMISSIONS: Readonly<Record<string, Partial<Record<Os, SandboxAdmission>>>> = {
@@ -37,6 +59,16 @@ export const ADMISSIONS: Readonly<Record<string, Partial<Record<Os, SandboxAdmis
     macos: { status: "unsupported", reason: "S8: its sandbox let outside-root reads and writes through, and wrote a hidden file on the host" },
     linux: { status: "unsupported", reason: "S8: its unsupported-backend preflight fails closed" },
     windows: { status: "unsupported", reason: "S8: its helper isolates the network only, not files" },
+  },
+  codex: {
+    macos: { status: "unverified", reason: WRITER_READY },
+    linux: { status: "unverified", reason: WRITER_READY },
+    windows: { status: "unverified", reason: WRITER_READY },
+  },
+  "claude-code": {
+    macos: { status: "unverified", reason: WRITER_READY },
+    linux: { status: "unverified", reason: WRITER_READY },
+    windows: { status: "unsupported", reason: "Claude Code's sandbox runs on macOS and Linux only" },
   },
   antigravity: {
     macos: { status: "unverified", reason: "it has a terminal sandbox flag, but no sandbox-only entry point to test it without a model" },

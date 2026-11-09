@@ -90,7 +90,10 @@ export function lex(text: string): { code: string; bare: string } {
     if (c === "/" && text[i + 1] === "*") { const s = i; const e = text.indexOf("*/", i + 2); i = e < 0 ? text.length : e + 2; blank(s, i, true); continue; }
     if (c === '"' || c === "'") { string(c); prev = "x"; continue; }
     if (c === "`") { i++; template(); continue; }
-    if (c === "/" && (regexBefore.has(prev) || /\b(?:return|typeof|in|of|case|do|else|void)$/.test(text.slice(Math.max(0, i - 8), i).trimEnd()))) {
+    // A postfix `++`/`--` ends an expression: a `/` after it divides.
+    if ((c === "+" || c === "-") && text[i + 1] === c) { i += 2; prev = "x"; continue; }
+    // After a keyword a `/` starts a regex, unless the keyword is a property name (`x.of / 2`).
+    if (c === "/" && (regexBefore.has(prev) || /(?:^|[^.\w$])\s*(?:return|typeof|in|of|case|do|else|void)$/.test(text.slice(Math.max(0, i - 12), i).trimEnd()))) {
       const start = ++i;
       let inClass = false;
       while (i < text.length && text[i] !== "\n" && (inClass || text[i] !== "/")) {
@@ -184,11 +187,53 @@ describe("the pins' lexer", () => {
   });
 });
 
+/**
+ * `Bun` itself bound to another name (`const B = Bun`, `x = Bun`, `return Bun`, `=> Bun`), through which `B.build(…)`
+ * would pass unseen, and a cast reached through (`(Bun as X).build`, `.Transpiler`). Passing `Bun` to a call
+ * (`spyOn(Bun, "spawn")`) or casting it for another member is not an alias the pins care about.
+ */
+function bunAliases(file: string, bare: string): string[] {
+  const out: string[] = [];
+  for (const m of bare.matchAll(/(?:(?<![=!<>])=(?![=>])|=>|\breturn\b)\s*Bun\b(?!\s*(?:\?\.|\.|\[))/g)) out.push(`${file}: Bun bound to another name (${m[0].trim().slice(0, 30)})`);
+  for (const m of bare.matchAll(/\(\s*Bun\s+as\b[^()]*\)\s*(?:\?\.|\.)\s*(build|Transpiler)\b/g)) out.push(`${file}: Bun.${m[1]} reached through a cast`);
+  return out;
+}
+
 /** One file's Bun.build problems, and how many calls it has. */
+/**
+ * Names `Bun` is taken under from globalThis (`const t = globalThis.Bun`, `(globalThis as X).Bun`,
+ * `globalThis["Bun"]`, `const { Bun: B } = globalThis`): the pins follow them to their `.build` and `.Transpiler`
+ * uses, so the computer-use worker's handover (`(globalThis as …).Bun`) passes while an unswitched call through one
+ * doesn't.
+ */
+function globalBunAliases(code: string, bare: string): string[] {
+  const out = new Set<string>();
+  for (const m of bare.matchAll(/\b(?:const|let|var)\s+([\w$]+)\s*(?::[^=;\n]+)?=\s*([^;\n]*)/g)) {
+    const rhs = code.slice(m.index! + m[0].length - m[2]!.length, m.index! + m[0].length).trim();
+    if (/^\(?\s*globalThis\b(?:\s+as\s+[^)]*\))?\s*(?:\??\.\s*Bun|\??\.?\s*\[\s*(["'`])Bun\1\s*\])\s*;?$/.test(rhs)) out.add(m[1]!);
+  }
+  for (const m of bare.matchAll(/\{([^{}]*)\}\s*=\s*\(?\s*globalThis\b/g)) {
+    for (const d of m[1]!.split(",")) {
+      const named = /^\s*Bun\s*:\s*([\w$]+)\s*$/.exec(d);
+      if (named) out.add(named[1]!);
+    }
+  }
+  return [...out];
+}
+
+/** Where `<receiver>.build` / `?.build` is reached: `Bun`, an alias taken from globalThis, or `globalThis["Bun"]`. */
+function buildReceivers(code: string, bare: string): RegExp {
+  const names = ["Bun", ...globalBunAliases(code, bare).filter((n) => n !== "Bun")].map((n) => n.replace(/\$/g, "\\$"));
+  return new RegExp(`(?:\\b(?:${names.join("|")})|\\[\\s*(["'\`])\\s*\\1\\s*\\])\\s*\\??\\.\\s*build\\b`, "g");
+}
+
 function buildProblems(file: string, code: string, bare: string): { calls: number; problems: string[] } {
   const problems: string[] = [];
   let calls = 0;
-  for (const m of bare.matchAll(/\bBun\s*\.\s*build\b/g)) {
+  for (const m of bare.matchAll(buildReceivers(code, bare))) {
+    // A bracket receiver counts only when it is globalThis["Bun"] (strings are blanked in `bare`; `code` has them).
+    if (m[0].startsWith("[") && !/^\[\s*(["'`])Bun\1/.test(code.slice(m.index!)) ) continue;
+    if (m[0].startsWith("[") && !/globalThis\b[^;\n]{0,40}$/.test(code.slice(Math.max(0, m.index! - 40), m.index!))) continue;
     const rest = bare.slice(m.index! + m[0].length);
     const after = rest.trimStart();
     if (/typeof\s*$/.test(bare.slice(Math.max(0, m.index! - 8), m.index!))) continue;
@@ -198,7 +243,8 @@ function buildProblems(file: string, code: string, bare: string): { calls: numbe
     if (list === undefined) problems.push(`${file}: Bun.build(…) is passed no object literal`);
     else if (!LAST_MACROS_OFF.test(list.at(-1) ?? "")) problems.push(`${file}: Bun.build(…)'s last entry isn't \`...{ macros: false }\``);
   }
-  for (const m of bare.matchAll(/\bBun\s*\[\s*(["'`])[^"'`]*\1\s*\]/g)) if (/build/.test(code.slice(m.index!, m.index! + m[0].length))) problems.push(`${file}: Bun["build"]`);
+  for (const m of bare.matchAll(/\bBun\s*(?:\?\.)?\s*\[\s*(["'`])[^"'`]*\1\s*\]/g)) if (/build/.test(code.slice(m.index!, m.index! + m[0].length))) problems.push(`${file}: Bun["build"]`);
+  problems.push(...bunAliases(file, bare));
   if (/\{[^{}]*\bbuild\b[^{}]*\}\s*=\s*Bun\b/.test(bare)) problems.push(`${file}: build destructured from Bun`);
   return { calls, problems };
 }
@@ -207,12 +253,16 @@ function buildProblems(file: string, code: string, bare: string): { calls: numbe
 function transpilerProblems(file: string, code: string, bare: string): { calls: number; problems: string[] } {
   const problems: string[] = [];
   let calls = 0;
-  for (const m of bare.matchAll(/\bnew\s+(?:[\w$]+\s*\??\.\s*)*Transpiler\s*\(/g)) {
+  // Every construction, whatever the receiver (`new Bun.Transpiler`, an alias, `new (globalThis as X)["Bun"].Transpiler`).
+  for (const m of bare.matchAll(/\bTranspiler\s*\(/g)) {
+    const before = bare.slice(Math.max(0, m.index! - 120), m.index!);
+    const stmt = before.slice(Math.max(before.lastIndexOf(";"), before.lastIndexOf("\n")) + 1);
+    if (!/\bnew\b/.test(stmt)) continue;
     calls++;
     const list = entries(firstArg(argsAt(bare, m.index! + m[0].length - 1)));
     if (list === undefined || !LAST_MACRO_OFF.test(list.at(-1) ?? "")) problems.push(`${file}: new Transpiler(…)'s last entry isn't \`...{ macro: false }\``);
   }
-  for (const m of bare.matchAll(/\bBun\s*\[\s*(["'`])[^"'`]*\1\s*\]/g)) if (/Transpiler/.test(code.slice(m.index!, m.index! + m[0].length))) problems.push(`${file}: Bun["Transpiler"]`);
+  for (const m of bare.matchAll(/\bBun\s*(?:\?\.)?\s*\[\s*(["'`])[^"'`]*\1\s*\]/g)) if (/Transpiler/.test(code.slice(m.index!, m.index! + m[0].length))) problems.push(`${file}: Bun["Transpiler"]`);
   if (/\{[^{}]*\bTranspiler\b[^{}]*\}\s*=\s*Bun\b/.test(bare)) problems.push(`${file}: Transpiler destructured from Bun`);
   return { calls, problems };
 }
@@ -248,15 +298,36 @@ describe("the pins catch what they pin", () => {
     expect(check("await Bun.build(config);")).toEqual(["f: Bun.build(…) is passed no object literal"]);
     expect(check("const b = Bun.build; await b({});")).toEqual(["f: Bun.build used as a value (call it directly)"]);
     expect(check('await Bun["build"]({});')).toEqual(['f: Bun["build"]']);
-    expect(check("const { build } = Bun;")).toEqual(["f: build destructured from Bun"]);
+    expect(check("const { build } = Bun;")).toEqual(["f: Bun bound to another name (= Bun)", "f: build destructured from Bun"]);
     expect(check("type C = Parameters<typeof Bun.build>[0];")).toEqual([]);
     expect(check('new Bun.Transpiler({ loader: "ts" });')).toEqual(["f: new Transpiler(…)'s last entry isn't `...{ macro: false }`"]);
     expect(check('new Bun.Transpiler({ loader: "ts", ...({ macro: false } as object) });')).toEqual([]);
     expect(check('new Bun.Transpiler({ loader: "ts", ...{ macros: false } });')).toEqual(["f: new Transpiler(…)'s last entry isn't `...{ macro: false }`"]);
-    expect(check("const { Transpiler } = Bun;")).toEqual(["f: Transpiler destructured from Bun"]);
+    expect(check("const { Transpiler } = Bun;")).toEqual(["f: Bun bound to another name (= Bun)", "f: Transpiler destructured from Bun"]);
     expect(check('spawnSync("bun", ["build", "x.ts", "--outfile", "y"]);')).toEqual(['f: ("bun", ["build", "x.ts", "--outfile", "y"]']);
     expect(check('spawnSync(process.execPath, ["build", "--no-macros", "x.ts"]);')).toEqual([]);
     expect(check('run("swift", ["build", "--package-path", "p"]);')).toEqual([]);
+    // The reviewer's: a division after a postfix ++ / --, or after a keyword-named property, is not a regex.
+    expect(check("i++ / 2; Bun.build({ a: 1 }); // /")).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    expect(check("i-- / 2; Bun.build({ a: 1 }); // /")).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    expect(check("x.of / 2; Bun.build({ a: 1 }); /")).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    // Optional chaining, and Bun itself aliased.
+    expect(check("Bun?.build({ a: 1 });")).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    expect(check('Bun?.["build"]({});')).toEqual(['f: Bun["build"]']);
+    expect(check("const B = Bun; B.build({ a: 1 });")).toEqual(["f: Bun bound to another name (= Bun)"]);
+    expect(check("const get = () => Bun;")).toEqual(["f: Bun bound to another name (=> Bun)"]);
+    expect(check("(Bun as any).build({});")).toEqual(["f: Bun.build reached through a cast"]);
+    expect(check('spyOn(Bun, "spawn"); (Bun as { secrets: unknown }).secrets = x; if (a === Bun) {}')).toEqual([]);
+    expect(check("const t: typeof Bun = globalThis.Bun; const o: { Bun?: X } = {};")).toEqual([]);
+    // Aliases taken from globalThis are followed to their uses, not refused: the worker's handover passes.
+    expect(check("const t = globalThis.Bun; t.build({ a: 1 });")).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    expect(check("const t = globalThis.Bun; t.build({ a: 1, ...{ macros: false } });")).toEqual([]);
+    expect(check("const { Bun: B } = globalThis; B?.build({ a: 1 });")).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    expect(check('const g = (globalThis as any)["Bun"]; g.build({});')).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    expect(check('(globalThis as any)["Bun"].build({});')).toEqual(["f: Bun.build(…)'s last entry isn't `...{ macros: false }`"]);
+    expect(check("const b = (globalThis as { Bun?: X }).Bun; new b.Transpiler({ loader: \"ts\" });")).toEqual(["f: new Transpiler(…)'s last entry isn't `...{ macro: false }`"]);
+    expect(check('new ((globalThis as any)["Bun"]).Transpiler({ loader: "ts" });')).toEqual(["f: new Transpiler(…)'s last entry isn't `...{ macro: false }`"]);
+    expect(check("const other = something.Bun; other.build({});")).toEqual([]);
   });
 });
 

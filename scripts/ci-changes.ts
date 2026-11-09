@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 
 export type CiArea =
   | "workspaces" | "daemon" | "app" | "packages" | "installers" | "gallery" | "typecheck" | "lockfiles"
-  | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link";
+  | "extension" | "core" | "cli" | "scripts" | "scriptsmac" | "codegen" | "swift" | "verify" | "tree" | "link" | "linuxrepo";
 
 /** A path pattern: `dir/` is a prefix, a `*` matches within one segment, `**` across segments, else an exact path. */
 type Pattern = string;
@@ -72,6 +72,8 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // what they import (the devices and identity the handshake and pairing use, the contracts, the clock, the protocol)
   link: ["native/link/", "packages/core/src/links/", "packages/core/src/devices/", "packages/core/src/identity/",
     "packages/core/src/contracts/", "packages/core/src/clock/", "packages/protocol/"],
+  // the Linux repositories' signatures, checked with gpgv and sqv
+  linuxrepo: ["scripts/release/linux-repo.ts", "scripts/release/linux-repo-verify.ts"],
 };
 
 /** The CI_GLOBAL changes that still run the Swift kits: CI's own definition, not the toolchain or the lockfiles. */

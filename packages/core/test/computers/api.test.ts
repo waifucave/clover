@@ -11,7 +11,7 @@ import {
 import type { CallCardRenderer } from "../../src/contracts/approval-broker";
 import { isContractError } from "../../src/contracts/common";
 import { MemoryAnswerLedger } from "../../src/contracts/fakes/approval-broker";
-import { FakeDeviceRegistry, makeFakeDevice, toBase64 } from "../../src/contracts/fakes/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice, makeFakePhone, toBase64 } from "../../src/contracts/fakes/device-registry";
 import { computersApiRoutes, filesApiRoutes, filesWatch } from "../../src/computers/api";
 import { toolCallBinding } from "../../src/tree/service";
 import { Cluster, until } from "../tree/cluster-support";
@@ -66,6 +66,13 @@ describe("files.* for plugins: the Files panel's data", () => {
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts"], ctx)).toBe("export const a = 1;\n");
     expect(await files["files.readText"]!(["home/Laptop1/proj/src/a.ts", { offset: 7, length: 5 }], ctx)).toBe("const");
     expect(isContractError(await rejection(files["files.readText"]!(["home/Laptop1/.clover/run/x"], ctx)), "fenced")).toBe(true);
+    // noFollow reaches the tree, which honours it (lane J's #225; the planted-link case is below), and a value other
+    // than true or false is refused, never read as false (#234's check 2).
+    for (const v of ["yes", 1, null]) {
+      for (const name of ["files.stat", "files.readText", "files.readBytes"] as const) {
+        expect([name, v, isContractError(await rejection(files[name]!(["home/Laptop1/proj/src/a.ts", { noFollow: v }], ctx)), "invalid")]).toEqual([name, v, true]);
+      }
+    }
     const events: unknown[] = [];
     const stop = await filesWatch(studio.node.tree, ctx, "home/Laptop1/proj", (e) => events.push(e));
     await Bun.sleep(100);
@@ -128,8 +135,8 @@ describe("a peer's command at a level that asks", () => {
     const clock = { now: () => Date.now() };
     const sha256 = (t: string) => createHash("sha256").update(t).digest("hex");
     const { registry: devices } = await FakeDeviceRegistry.create({ clock, name: "Laptop1" });
-    const phone = await makeFakeDevice();
-    await devices.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey }, { via: "terminal" });
+    const phone = await makeFakePhone();
+    await devices.add({ id: phone.id, name: "Phone", kind: "phone", runsCore: false, publicKey: phone.publicKey, answerKey: phone.answerKey }, { via: "terminal" });
     const options: CardOption[] = [{ id: "approve", kind: "approve", label: "Run" }, { id: "deny", kind: "deny", label: "Don't" }];
     const binds = (computer: string, method: string, params: unknown) => ({ computer, method, params: sha256(callBindingInput(method, params)) });
     const render: CallCardRenderer = (call) => (call.method === "tool.run" ? { kind: "tool", fields: { title: { type: "text", text: `Run on ${call.computer}` } }, options, binds: binds(call.computer, call.method, call.params) } : undefined);

@@ -8,7 +8,8 @@
 // `app`) on a channel the core minted for that card (`card.frame`), or from a paired device's own app, signed with
 // its answer key over the card's id and hash, the option, the time and the children checked. The answer key is apart
 // from the device's link key (review N1): a phone's own key, or a desktop app's key the OS keeps from plugin code where
-// it can (`ANSWER_KEY_HOLDERS`; the owner accepted that on Linux, and on Windows without a TPM, it can't).
+// it can (`ANSWER_KEY_HOLDERS`; the owner accepted that on Linux, and on Windows without a TPM, it can't). A phone
+// answers with its own answer key too, never its link key: no fallback.
 // Servers, cloud computers and browsers never sign: the web companion answers no card. A signed answer counts
 // whichever computer relays it (review N4); a sealed frame's only from the app on its own channel. The receiver
 // rebuilds its own card for a bound call and refuses a signed card that says anything else. Every device shows a

@@ -89,7 +89,8 @@ export function filesApiRoutes(tree: CoreTree): Record<string, ApiRoute> {
     ...(typeof o.length === "number" ? { length: o.length } : {}),
   });
   // `noFollow` (F-M3's review): no link anywhere on the way is followed, for a component that shows a file.
-  const noFollow = (o: Record<string, unknown>) => (o.noFollow === true ? { noFollow: true } : {});
+  // Passed on as given: the tree refuses a value other than true or false, never reads it as false (#234's check 2).
+  const noFollow = (o: Record<string, unknown>) => (o.noFollow !== undefined ? { noFollow: o.noFollow as boolean } : {});
   return {
     "files.stat": async ([path, o], ctx) => tree.stat(s(path, "path"), { ...as(ctx), ...noFollow(opt(o)) }),
     "files.readText": async ([path, o], ctx) => {

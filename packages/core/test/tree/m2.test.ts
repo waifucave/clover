@@ -9,7 +9,7 @@ import { isContractError } from "../../src/contracts/common";
 import { computersApiRoutes } from "../../src/computers/api";
 import { placementFields, type McpResult, type McpServerPlacement } from "../../src/computers/mcp";
 import type { PeerReviewer } from "../../src/tree/judge";
-import { OUTPUT_BYTES_PER_SECOND, outputPacer, type TerminalOutput } from "../../src/tree/terminals";
+import { OUTPUT_BYTES_PER_SECOND, outputPacer, PASTE_NOT_CONFIRMED, type TerminalOutput } from "../../src/tree/terminals";
 import { answersFor, makePhone, type Phone } from "./answer-support";
 import { Cluster, until, type ClusterOptions } from "./cluster-support";
 
@@ -357,7 +357,9 @@ describe("the terminal panel (R4)", () => {
     studio.node.terminals.onOutput((o) => { seen += o.data; });
     const t = await studio.node.terminals.open({ computer: "Studio", cols: 80, rows: 24 });
     await until(() => seen.includes("\u001b[?2004h"), 3000, "the program to ask for bracketed paste");
-    await studio.node.terminals.write(t.terminalId, "one\ntwo\n", { paste: true });
+    // A no is never silent: the write is refused with the reason.
+    const refused = await studio.node.terminals.write(t.terminalId, "one\ntwo\n", { paste: true }).catch((e: Error) => e);
+    expect((refused as Error).message).toBe(PASTE_NOT_CONFIRMED);
     expect(asked).toEqual(["one\ntwo\n"]);
     await Bun.sleep(100);
     expect(seen.includes("one")).toBe(false);

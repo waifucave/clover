@@ -1,5 +1,9 @@
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { pluginLoadFoldersOf } from "./plugin-load-folders";
+import { agentConfigPaths, autoRunPaths, pluginLoadDenies } from "../contracts/fence";
+import { runLaterExtras } from "../fence/run-later";
 import type {
   AgentDefinition, CanUseTool, CredentialRef, EffortLevel, McpServerConfig, Options, PermissionMode, ProviderConnectionConfig,
   SandboxSettingsConfig, SdkPluginConfig, SpawnClaudeCodeProcess, WebFetchConfig, WebToolsConfig,
@@ -926,6 +930,8 @@ export function projectScopeAllowRulesFor(cwd: string, deps: {
 export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptions): string[] {
   return [
     join(home, "run"), join(home, "runtimes"), homeCacheDir(home), join(home, "plugins"), approvedProjectRulesDir(home),
+    // The dev profile's plugin Bun and its recorded digest (#234's check 6, L2), and a server's core and plugin Bun.
+    join(home, "bin"),
     trustRecordFile(home), join(home, "agents"),
     join(sdkHomeFor(home), "settings.json"), join(sdkHomeFor(home), ".clover.json"),
     join(sdkHomeFor(home), "agents"), join(sdkHomeFor(home), "plugins"),
@@ -939,7 +945,32 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
     join(home, "bin"), join(home, "update"), join(home, "install.json"),
     ...[...CONTROL_PLANE_FILENAMES].sort().map((f) => join(home, f)),
     ...hostStorageWriteRoots(home, options),
+    // #234's check 4, H1: `node_modules` above every folder plugin code loads from (`~/node_modules` among them), by
+    // real path: a bare import a plugin doesn't ship walks those, and a file there without an extension skips Clover's
+    // load guard.
+    // The development folders and the bundled plugins too (#234's check 5, K3), read live: a folder added now is in the
+    // next call's list, for the write tools, the escape floor and every runner started after it.
+    ...pluginLoadDenies([join(home, "plugins"), join(sdkHomeFor(home), "plugins"), ...pluginLoadFoldersOf(home)].map(realOrNearest)),
   ];
+}
+
+/** The places under the user's home where a write runs later outside any sandbox (`autoRunPaths`), and the coding
+ *  agents' sandbox settings (`agentConfigPaths`), for this OS: protected in a code session the user drives (a card,
+ *  never an "always"; a typed deny in chat) and write-denied to its sandboxed Bash (`protectedHomeDenyWrite`). Bots and
+ *  agents meet them as the fence's `login-start` and `agent-installs` items, refused outright. */
+export function persistencePaths(userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string[] {
+  const os = platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
+  return [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
+}
+
+/** A path's real path, or its nearest existing ancestor's real path with the rest appended. */
+function realOrNearest(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realOrNearest(parent), basename(path));
+  }
 }
 
 /**
@@ -947,12 +978,15 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
  * runtime home and, when it differs (router 0.0.11), the store home the build actually loads them from.
  * The sandbox's `denyWrite` only: a write TOOL gets the card (`protected-paths.ts`), never a hard deny.
  */
-export function protectedHomeDenyWrite(home: string): string[] {
+export function protectedHomeDenyWrite(home: string, userHome?: string): string[] {
   const out: string[] = [];
   for (const base of new Set([sdkHomeFor(home), storeHomeFor(home)])) {
     for (const kind of PROTECTED_ITEM_DIRS) out.push(join(base, kind));
     out.push(join(base, "CLOVER.md"));
   }
+  // The #301 review's ruling: shell start files, login items, SSH's rc and keys, and the coding agents' sandbox
+  // settings: a sandboxed Bash never writes them; a write tool gets the protected card (`persistencePaths`).
+  out.push(...persistencePaths(userHome));
   return out;
 }
 

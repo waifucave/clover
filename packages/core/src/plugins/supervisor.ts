@@ -1,7 +1,8 @@
 import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -133,6 +134,8 @@ function defaultProcessStartedAt(pid: number): string | null {
 /** The daemon-computed spawn config for one consented, spawn-eligible platform plugin
  *  (agent/plugins.ts#pluginSpawnEligible). `id` is the plugin's spec (WS-24 — see this file's header).
  *  `dir` is the plugin's directory (default cwd); `entry.cwd`, when set, is resolved relative to `dir`. */
+export { isBunCommand };
+
 export interface EligiblePlugin {
   id: string;
   dir: string;
@@ -203,6 +206,11 @@ export interface PluginSupervisorDeps {
   /** Testability seam for PID-reuse identity verification — see `defaultProcessStartedAt` above.
    *  Real `ps` semantics by default; tests inject a fake so they never shell out. */
   processStartedAt?: (pid: number) => string | null;
+  /** Clover's run files for plugin processes (#234, F2): every plugin process runs with Clover's bunfig, no `.env`, and
+   *  the load guard held to its plugin's folder. Default: written into `<runDir>/plugin-run` on first spawn. */
+  pluginRun?: PluginRunGuard;
+  /** Testability seam: the plugin Bun (`pluginBun`). */
+  bun?: string;
 }
 
 /** On-disk shape of `<runDir>/plugins/<id>.pid` since the PID-reuse hardening fix: identity-
@@ -308,6 +316,8 @@ export class PluginSupervisor {
   private readonly circuitWindowMs: number;
   private readonly invokeTimeoutMs: number;
   private readonly killGraceMs: number;
+
+  private pluginRun: PluginRunGuard | undefined;
 
   constructor(private readonly deps: PluginSupervisorDeps) {
     this.spawnFn = deps.spawn ?? defaultSpawn;
@@ -759,16 +769,20 @@ export class PluginSupervisor {
 
     let proc: SupervisedProcess;
     try {
+      // A plugin host runs under Bun only, where Clover's load guard holds it to its folder (#234's check 3); a program
+      // that isn't Bun is one a manifest declares (a stdio server, a helper), never a host.
+      if (!isBunCommand(config.entry.command)) throw new Error(`a plugin host runs under Bun only, not ${basename(config.entry.command)}`);
       const token = this.deps.mintToken(config.id);
-      const cmd = [config.entry.command, ...(config.entry.args ?? [])];
       const cwd = config.entry.cwd ? join(config.dir, config.entry.cwd) : config.dir;
-      const env: Record<string, string> = {
-        ...(process.env as Record<string, string>),
-        CLOVER_PLUGIN_TOKEN: token,
-        CLOVER_SOCKET: this.deps.socketPath,
-        CLOVER_PLUGIN_ID: config.id,
-        CLOVER_PLUGIN_DIR: config.dir,
-      };
+      this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir) };
+      // The plugin Bun, never the one the manifest's command names (#234's check 5, K1): it chooses Bun and the args.
+      const launch = pluginBunLaunch(
+        config.entry.args ?? [],
+        { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: config.dir },
+        { pluginRoot: config.dir, ...this.pluginRun },
+      );
+      const cmd = this.deps.bun === undefined ? launch.cmd : [this.deps.bun, ...launch.cmd.slice(1)];
+      const env = launch.env;
       proc = this.spawnFn(cmd, { cwd, env });
     } catch (err) {
       rt.pid = undefined;
