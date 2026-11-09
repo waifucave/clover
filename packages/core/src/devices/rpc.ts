@@ -25,6 +25,7 @@ import type { AccountClient } from "../identity/account";
 import type { PairingService, PairingState } from "../links/pairing";
 import { type RevokeOptions, revokeDevice } from "./account-devices";
 import type { FileDeviceRegistry } from "./registry";
+import { type AnswerKeyRotationRefusal, rotateOwnAnswerKey } from "../approvals/answer-key-rotation";
 
 /** A JSON-RPC failure with the code a client branches on (lane D's shape). Its message never holds a secret. */
 export class MethodError extends Error {
@@ -121,7 +122,23 @@ export interface DevicesMethodsDeps {
   openCard: CardOpener;
   /** What revocation's fan-out needs beyond the registry. */
   revoke: Omit<RevokeOptions, "registry">;
+  /** Replacing this desktop's answer key (`device.answerKey.set` with a hand-over): lane C's broker, which shows its
+   *  change card, and this computer's name. Read at each call: the broker comes up after the links, and until it does
+   *  (or without it) a replacement is told to try again. */
+  answerKeyRotation?: () => { broker: Pick<ApprovalBroker, "request" | "get" | "watch">; computer: string } | undefined;
 }
+
+/** Why a replacement of this desktop's answer key wasn't taken, for the app. */
+const ROTATION_REFUSED: Record<AnswerKeyRotationRefusal, string> = {
+  "no-current-key": "this desktop has no answer key to replace",
+  "same-key": "that's the key this desktop already has",
+  "not-current": "the hand-over isn't from the key this desktop has now",
+  stale: "the hand-over is too old or too far ahead: sign it again",
+  "bad-signature": "the hand-over or the new key's signature doesn't check out",
+  "not-approved": "the change wasn't approved",
+  "own-key-answered": "the key being replaced can't approve its own replacement",
+  refused: "the device registry refused the new key",
+};
 
 export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodHandler> {
   const M = DEVICES_METHODS;
@@ -262,22 +279,50 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
 
     // This desktop's app-held answer key (item 91), registered on every connection: the registry takes it only with the
     // app's own signature (`setOwnAnswerKey`), so the first key and the same key again apply at once. Another key in
-    // place of a held one is a sensitive change (the protocol's sealed card), but no card subject names it yet and a
-    // card's yes couldn't hand over the current key's trust (peers take a new key only from the current key's own
-    // signature, `answerKeyRotateStatement`): refused, never applied, until H's registry and C's subjects have it.
+    // place of a held one is a sensitive change: it takes the current key's hand-over (`rotation`, checked before any
+    // card shows) and the user's yes on a sealed change card bound to exactly that hand-over, answered by anything but
+    // the key it replaces (lane C's `rotateOwnAnswerKey`). The call answers `{ applied: false, card }` once the card
+    // shows; the key changes when the card is approved.
     [M.deviceAnswerKeySet.name]: handler(M.deviceAnswerKeySet, async (p, ctx): Promise<ChangeResult> => {
       requireUser(ctx, "set this desktop's answer key");
       if (ctx.caller.kind === "user" && ctx.caller.client !== "app") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only this desktop's app holds its answer key");
-      const held = registry.self().answerKey?.publicKey;
-      if (held !== undefined && held !== p.publicKey) {
-        throw new MethodError(ERR.INVALID_REQUEST, "this desktop already has an answer key: replacing it takes the current key's hand-over, which this version can't take yet");
-      }
       const signature = fromBase64(p.signature);
       if (signature === null) throw new MethodError(ERR.INVALID_PARAMS, "device.answerKey.set: the signature isn't base64");
+      const held = registry.self().answerKey?.publicKey;
+      if (held !== undefined && held !== p.publicKey) {
+        if (!p.rotation) throw new MethodError(ERR.INVALID_REQUEST, "this desktop already has an answer key: replacing it takes the current key's hand-over");
+        const rotationSignature = fromBase64(p.rotation.signature);
+        if (rotationSignature === null) throw new MethodError(ERR.INVALID_PARAMS, "device.answerKey.set: the hand-over's signature isn't base64");
+        const r = deps.answerKeyRotation?.();
+        if (!r) throw new MethodError(ERR.RETRY, "replacing the answer key takes the approvals, which aren't running on this computer yet: try again in a moment");
+        return rotate(r, {
+          publicKey: p.publicKey, held: p.held, ...(p.alg ? { alg: p.alg } : {}), registration: signature,
+          rotation: { from: p.rotation.from, at: p.rotation.at, signature: rotationSignature }, origin: "user",
+        });
+      }
       await registry.setOwnAnswerKey(p.publicKey, p.held, signature, undefined, p.alg ?? "ed25519");
       return { applied: true };
     }),
   };
+
+  /** Runs the replacement: answers with its card once the card shows, or with the refusal its checks gave before one. */
+  function rotate(r: NonNullable<ReturnType<NonNullable<DevicesMethodsDeps["answerKeyRotation"]>>>, ask: Parameters<typeof rotateOwnAnswerKey>[1]): Promise<ChangeResult> {
+    return new Promise<ChangeResult>((resolve, reject) => {
+      let shown = false;
+      rotateOwnAnswerKey({
+        broker: r.broker, devices: registry, computer: r.computer, now: () => deps.clock.now(),
+        onCard: (card) => {
+          shown = true;
+          resolve({ applied: false, card });
+        },
+      }, ask).then((out) => {
+        // Once the card shows, its outcome reaches the app through the card and the device record, not this call.
+        if (shown) return;
+        if (out.ok) resolve({ applied: true });
+        else reject(new MethodError(ERR.INVALID_REQUEST, ROTATION_REFUSED[out.why], { code: out.why }));
+      }, (err: unknown) => { if (!shown) reject(err); });
+    });
+  }
 }
 
 /** The link's own request asking this computer to become the main one: it shows its own card first. */
