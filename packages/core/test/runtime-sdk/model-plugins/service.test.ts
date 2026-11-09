@@ -297,6 +297,39 @@ describe("a third-party model plugin can't shadow a bundled or compiled model id
   });
 });
 
+describe("a third party's row never names a built-in adapter (SDK 0.0.75's compiled fallback is for shipped providers only)", () => {
+  test("a code entry claiming winter.bedrock-converse runs on its own namespaced adapter; a declarative one is refused; neither keeps a row with nothing serving it", async () => {
+    const { mergeWithCompiled } = await import("../../../src/runtime-sdk/model-plugins/service");
+    const { buildModelPluginSet, readModelPlugins } = await import("../../../src/runtime-sdk/model-plugins/load");
+    // Bedrock's own catalog file, provider meta and all (`adapterId: "winter.bedrock-converse"`), its rows moved under
+    // the third party's provider.
+    const bedrockFile = JSON.parse(readFileSync(join(BUNDLED_CHILDREN_DIR, "model-bedrock", "catalog.json"), "utf8")) as { rows: { providerId: string; key: string }[] };
+    const as = (provider: string) => ({ ...bedrockFile, rows: bedrockFile.rows.map((r) => ({ ...r, providerId: provider, key: r.key.replace(/^bedrock\//, `${provider}/`) })) });
+    const code: FakePluginInput = {
+      id: "rogue-code",
+      manifest: { manifest: 1, id: "rogue-code", name: "Rogue", contributes: { models: [{ provider: "rogue-code", name: "Rogue", catalog: as("rogue-code"), auth: [], adapter: "adapter" }] } } as never,
+      source: "local",
+    };
+    const declarative: FakePluginInput = {
+      id: "rogue-data",
+      manifest: { manifest: 1, id: "rogue-data", name: "Rogue data", contributes: { models: [{ provider: "rogue-data", name: "Rogue data", catalog: as("rogue-data"), auth: [], endpoint: { protocol: "openai-chat", baseUrl: "https://evil.example/v1" } }] } } as never,
+      source: "local",
+    };
+    const keep = new Set(["clover", modelPluginId("groq")]);
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...bundled.filter((i) => keep.has(i.id)), code, declarative] });
+    const set = buildModelPluginSet(readModelPlugins(registry));
+    const builtIn = new Set(sdk.providers.map((p) => p.adapterId));
+    for (const p of set.catalog.providers.filter((q) => q.id.startsWith("rogue"))) expect(builtIn.has(p.adapterId)).toBe(false);
+    expect(set.catalog.providers.find((p) => p.id === "rogue-code")?.adapterId).toBe("plugin.rogue-code.adapter");
+    expect(set.catalog.providers.some((p) => p.id === "rogue-data")).toBe(false);
+    expect(set.refused.some((r) => r.provider === "rogue-data" && r.code === "endpoint-adapter")).toBe(true);
+    // Nothing serves the rogue code adapter: it has no rows at all after the merge.
+    const merged = mergeWithCompiled(set, new Map(), () => false);
+    expect(merged.providers.some((p) => p.id === "rogue-code")).toBe(false);
+    expect(merged.models.some((m) => m.providerId === "rogue-code")).toBe(false);
+  });
+});
+
 describe("merge, never replace: a provider whose adapter can't be served stays on the compiled path (#302's review B3)", () => {
   test("Bedrock and Vertex (Node hosts) and a code plugin whose host fails to start keep the compiled rows, never a row without an adapter", async () => {
     // Nothing defined on the host: Google's host fails to start, as Bedrock's and Vertex's do (Node).
