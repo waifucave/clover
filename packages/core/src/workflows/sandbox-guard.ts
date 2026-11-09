@@ -19,7 +19,14 @@
 // deny-default profile and read as "sandboxed" — which is why the gates also run a worker under a
 // profile that ALLOWS `com.apple.SecurityServer` and require the refusal: only a correctly passed name
 // can be allowed.
-import { dlopen, FFIType } from "bun:ffi";
+//
+// On Linux the worker is confined by the agent SDK's launcher (`linuxConfineMain`: Landlock, a seccomp filter and
+// no_new_privs, then the exec), and the secret service it must be denied is reached over D-Bus, a Unix socket. So the
+// worker checks that it is confined at all (`/proc/self/status` says `NoNewPrivs: 1` and `Seccomp: 2`, a filter) and
+// that it can't make a Unix socket (`socket(AF_UNIX, SOCK_STREAM, 0)` fails with EPERM or EACCES). It never assumes:
+// anything it can't read, or any other answer, is not confined.
+import { dlopen, FFIType, read } from "bun:ffi";
+import { readFileSync } from "node:fs";
 
 /** The worker's exit code when it refuses (`EX_NOPERM`). */
 export const WORKER_NOT_SANDBOXED_EXIT_CODE = 77;
@@ -68,9 +75,76 @@ function loadSandboxCheck(): SandboxCheck {
 
 export type KeychainSandboxState = { ok: true } | { ok: false; reason: string };
 
-/** Is THIS process sandboxed with the Keychain's mach services denied? Never throws. */
+/** What the Linux check reads: the process's status file, and the answer to one `socket(AF_UNIX, SOCK_STREAM, 0)`. */
+export interface LinuxConfinementProbe {
+  /** `/proc/self/status`; undefined when it can't be read. */
+  status(): string | undefined;
+  /** The new descriptor (closed by the probe), or -1 and the call's errno. */
+  unixSocket(): { fd: number; errno: number };
+}
+
+const AF_UNIX = 1;
+const SOCK_STREAM = 1;
+const EPERM = 1;
+const EACCES = 13;
+
+function loadLinuxProbe(): LinuxConfinementProbe {
+  const lib = dlopen("libc.so.6", {
+    socket: { args: [FFIType.i32, FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+    close: { args: [FFIType.i32], returns: FFIType.i32 },
+    __errno_location: { args: [], returns: FFIType.ptr },
+  });
+  return {
+    status() {
+      try {
+        return readFileSync("/proc/self/status", "utf8");
+      } catch {
+        return undefined;
+      }
+    },
+    unixSocket() {
+      const fd = lib.symbols.socket(AF_UNIX, SOCK_STREAM, 0);
+      if (fd >= 0) {
+        lib.symbols.close(fd);
+        return { fd, errno: 0 };
+      }
+      const at = lib.symbols.__errno_location();
+      return { fd, errno: at === null ? -1 : read.i32(at, 0) };
+    },
+  };
+}
+
+/** Is THIS process confined on Linux the way the SDK's launcher confines a worker, a Unix socket denied? Never throws. */
+export function linuxConfinementState(probe?: LinuxConfinementProbe): KeychainSandboxState {
+  let p: LinuxConfinementProbe;
+  try {
+    p = probe ?? loadLinuxProbe();
+  } catch (err) {
+    return { ok: false, reason: `the confinement could not be inspected (${err instanceof Error ? err.message : "error"})` };
+  }
+  try {
+    const status = p.status();
+    if (status === undefined) return { ok: false, reason: "the process's status (/proc/self/status) could not be read" };
+    const field = (name: string) => new RegExp(`^${name}:[ \t]*(\\S+)[ \t]*$`, "m").exec(status)?.[1];
+    const noNewPrivs = field("NoNewPrivs");
+    const seccomp = field("Seccomp");
+    if (noNewPrivs === undefined || seccomp === undefined) return { ok: false, reason: "the process's status names no NoNewPrivs or Seccomp" };
+    if (noNewPrivs !== "1") return { ok: false, reason: `this process is not confined (NoNewPrivs: ${noNewPrivs})` };
+    if (seccomp !== "2") return { ok: false, reason: `this process is not confined (Seccomp: ${seccomp}, not a filter)` };
+    const sock = p.unixSocket();
+    if (sock.fd >= 0) return { ok: false, reason: "the confinement allows a Unix socket (the secret service is reached over one)" };
+    if (sock.errno !== EPERM && sock.errno !== EACCES) return { ok: false, reason: `a Unix socket failed for another reason (errno ${sock.errno}), so the confinement gave no clear answer` };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `the confinement could not be inspected (${err instanceof Error ? err.message : "error"})` };
+  }
+}
+
+/** Is THIS process sandboxed with the Keychain's mach services denied (macOS), or confined with a Unix socket denied
+ *  (Linux)? Never throws. */
 export function keychainSandboxState(check?: SandboxCheck): KeychainSandboxState {
-  if (process.platform !== "darwin") return { ok: false, reason: "workflow workers run only under the macOS sandbox" };
+  if (process.platform === "linux") return linuxConfinementState();
+  if (process.platform !== "darwin") return { ok: false, reason: "workflow workers run only under the macOS sandbox or the Linux confinement" };
   let sandboxCheck: SandboxCheck;
   try {
     sandboxCheck = check ?? loadSandboxCheck();
