@@ -587,8 +587,13 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
 export interface RunLaterExtras {
   /** git's `init.templateDir` and `core.hooksPath` from the user's global config files. */
   readonly gitDirs?: readonly string[];
-  /** `$ZDOTDIR` when it isn't the home, and `$PYTHONSTARTUP`. */
+  /** The files git's global config includes (`include.path`, `includeIf … path`), however deep, whether or not they
+   *  exist yet: each is read as the global config, so a write there sets `core.hooksPath` or `core.fsmonitor`. */
+  readonly gitFiles?: readonly string[];
+  /** `$ZDOTDIR` when it isn't the home (a folder). */
   readonly envPaths?: readonly string[];
+  /** `$PYTHONSTARTUP` (a file). */
+  readonly envFiles?: readonly string[];
   /** Windows: the Documents known folder, when OneDrive (or the user) moved it from `<home>\Documents`. */
   readonly documents?: string;
 }
@@ -656,7 +661,9 @@ export function autoRunEntries(os: Os, home: string, extras: RunLaterExtras = {}
     d("AppData", "Roaming", "Python"); d("AppData", "Roaming", "pip");
   }
   for (const p of extras.gitDirs ?? []) out.push({ path: p, file: false });
+  for (const p of extras.gitFiles ?? []) out.push({ path: p, file: true });
   for (const p of extras.envPaths ?? []) out.push({ path: p, file: false });
+  for (const p of extras.envFiles ?? []) out.push({ path: p, file: true });
   const seen = new Set<string>();
   return out.filter((e) => (seen.has(e.path) ? false : (seen.add(e.path), true)));
 }
@@ -669,7 +676,7 @@ export function autoRunPaths(os: Os, home: string, extras: RunLaterExtras = {}):
 
 /** The coding agents' own settings, which change how they sandbox themselves or which commands they run (MCP servers,
  *  hooks): Claude Code's whole folder and its `.claude.json` (user-scope MCP servers), Codex's config, Gemini's
- *  settings, Cursor's folder and OpenCode's. Lane K's writers deny these per backend; the fence holds them for every
+ *  folder, Cursor's folder and OpenCode's. Lane K's writers deny these per backend; the fence holds them for every
  *  runner. */
 export function agentConfigPaths(os: Os, home: string): string[] {
   return agentConfigEntries(os, home).map((e) => e.path);
@@ -681,7 +688,7 @@ export function agentConfigEntries(os: Os, home: string): RunLaterEntry[] {
   return [
     { path: u(".claude"), file: false }, { path: u(".claude.json"), file: true },
     { path: u(".codex", "config.toml"), file: true },
-    { path: u(".gemini", "settings.json"), file: true },
+    { path: u(".gemini"), file: false },
     { path: u(".cursor"), file: false },
     { path: u(".config", "opencode"), file: false },
   ];
