@@ -391,3 +391,28 @@ export function lateBroker(current: () => CloverApprovalBroker | undefined): Pic
     get: (id) => current()?.get(id),
   };
 }
+
+/** The daemon's broker for what starts before it (the plugin registry's OK cards, the app's development-folder card):
+ *  a request waits until the parts have started and then asks on the broker, or is refused when they started without
+ *  one (no links, or the node didn't start). `get` and `watch` see the broker once it's there. */
+export function lateApprovalBroker(ready: Promise<CloverApprovalBroker | undefined>): Pick<ApprovalBroker, "request" | "get" | "watch"> {
+  let current: CloverApprovalBroker | undefined;
+  void ready.then((b) => { current = b; }, () => undefined);
+  return {
+    request: async (r, o) => {
+      const b = current ?? (await ready.catch(() => undefined));
+      if (!b) throw new ContractError("refused", "the approval cards aren't up on this computer");
+      return b.request(r, o);
+    },
+    get: (id) => current?.get(id),
+    watch: (fn) => {
+      let off: (() => void) | undefined;
+      let stopped = false;
+      void ready.then((b) => { if (b && !stopped) off = b.watch(fn); }, () => undefined);
+      return () => {
+        stopped = true;
+        off?.();
+      };
+    },
+  };
+}
