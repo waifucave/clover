@@ -2,7 +2,7 @@ import { noteSpawned } from "../auth/clover-caller";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
+import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
 import { fencedCommand, pluginFenceAvailable, toolFence } from "../registry/plugin-fence";
 /**
  * HookRunner — pure process mechanics for ONE plugin hook invocation (Phase 4f design §Protocol,
@@ -130,7 +130,7 @@ export class HookRunner {
       // Under the fence (2f): its plugin's tree, its data and temp folders, the package managers' folders.
       const guard = this.guardFor();
       const fenced = guard.fence !== false && pluginFenceAvailable()
-        ? toolFence({ files: guard.files, ...(guard.shared ? { shared: guard.shared } : {}), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}` })
+        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}` })
         : undefined;
       proc = Bun.spawn(fencedCommand(["sh", "-c", spec.command], fenced?.fence), {
         cwd: spec.cwd,

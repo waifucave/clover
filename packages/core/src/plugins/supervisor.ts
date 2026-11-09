@@ -2,7 +2,7 @@ import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
+import { cloverSharedRoots, ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
 import { fencedCommand, pluginFenceAvailable, toolFence } from "../registry/plugin-fence";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
@@ -789,7 +789,7 @@ export class PluginSupervisor {
       let cmd = bunCmd;
       const env = launch.env;
       if (guard.fence !== false && pluginFenceAvailable()) {
-        const { fence, tmp } = toolFence({ files: guard.files, ...(guard.shared ? { shared: guard.shared } : {}), pluginRoot: config.dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}` });
+        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: config.dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}` });
         cmd = fencedCommand(bunCmd, { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, sockets: [this.deps.socketPath] });
         env.TMPDIR = tmp;
       }

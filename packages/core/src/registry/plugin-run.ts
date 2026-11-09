@@ -434,7 +434,7 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
   // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
   if (guard.fence !== false && pluginFenceAvailable()) {
-    const { fence, tmp } = toolFence({ files: guard.files, ...(guard.shared ? { shared: guard.shared } : {}), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}` });
+    const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}` });
     env.TMPDIR = tmp;
     const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
     return { ...entry, command: cmd!, args, env };
