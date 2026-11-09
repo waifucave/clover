@@ -139,24 +139,31 @@ describe("the macOS profile, as text", () => {
 
 darwinDescribe("macOS: everything a command starts ends with its run, before the git keys are looked at (#321's review)", () => {
   // The process holder, built here from the agent runtime's own source (lane M ships it beside the core).
-  const holder = (() => {
+  // Built on first use, inside a test: a describe body runs on every OS (only its tests are skipped), and Linux
+  // has no /usr/bin/clang to spawn.
+  let built: { path: string | undefined } | undefined;
+  const holderBin = (): string | undefined => {
+    if (built) return built.path;
+    built = { path: undefined };
     let src: string;
     try { src = join(dirname(Bun.resolveSync("@waifucave/clover-agent-runtime/package.json", import.meta.dir)), "native", "process-holder.c"); } catch { return undefined; }
     if (!existsSync(src)) return undefined;
     const out = join(realpathSync(mkdtempSync(join(tmpdir(), "clover-holder-bin-"))), "clover-process-holder");
-    return Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0 ? out : undefined;
-  })();
+    try { if (Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0) built.path = out; } catch { /* no compiler */ }
+    return built.path;
+  };
   const sleeping = (tag: string) => Bun.spawnSync(["/usr/bin/pgrep", "-f", `sleep 2\\.${tag}`]).exitCode === 0;
 
   for (const mode of ["the recorded tree (no holder)", "the process holder"] as const) {
     test(`a \`set -m\` job that sets core.hooksPath after the run: ended, and the key never lands (${mode})`, async () => {
+      const holder = mode === "the process holder" ? holderBin() : null;
       if (mode === "the process holder") expect(holder).toBeDefined();
       const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-setm-")));
       const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp"), project = join(home, "project");
       for (const d of [clover, project, temp]) mkdirSync(d, { recursive: true });
       expect(Bun.spawnSync(["git", "init", "-q", project]).exitCode).toBe(0);
       const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp });
-      const spawner = fencedSpawner({ fence, processHolder: mode === "the process holder" ? holder! : null });
+      const spawner = fencedSpawner({ fence, processHolder: holder ?? null });
       const tag = `${Date.now() % 100000}${Math.floor(Math.random() * 10)}`;
       const started = Date.now();
       const r = await spawner.run({
@@ -571,6 +578,19 @@ describe("the session's own repo", () => {
     expect(s).toContain("--ro-bind /h/p/.git/hooks /h/p/.git/hooks");
     // Clover's empty git template is bound back read-only, even without a caller.
     expect(s).toContain("--ro-bind /h/.clover/git-template /h/.clover/git-template");
+  });
+
+  test("a missing ~/node_modules (B's #234 plugin-load deny) never holds the home: the real fence's policy, supervised as the spawner does", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-fp-nm-")));
+    const home = join(root, "home"), clover = join(home, ".clover"), temp = join(root, "tmp");
+    for (const d of [clover, join(home, "project"), temp]) mkdirSync(d, { recursive: true });
+    const policy = new CloverFence({ os: "linux", home, cloverHome: clover, temp }).policy();
+    const loadDenies = policy.denyWrite.filter((d) => d.endsWith("/node_modules") && !d.startsWith(`${clover}/`));
+    expect(loadDenies).toContain(join(home, "node_modules"));
+    const base = { policy, cloverHome: clover, cwd: join(home, "project"), uid: 1 };
+    // Without supervising it the home is held (the CI failure the review round met); supervised, it isn't.
+    expect(bwrapPlan(base).held.map((h) => h.folder)).toContain(home);
+    expect(bwrapPlan({ ...base, supervised: loadDenies }).held.map((h) => h.because)).not.toContain(join(home, "node_modules"));
   });
 
   test("supervised files are never held for: the supervisor refuses them instead", () => {
