@@ -170,8 +170,9 @@ export interface PluginMcpOptions {
   /** How long one server's listing may take, its `open()` included (default 30 s). */
   listTimeoutMs?: number;
   /** The computers that run a `perComputer` server (lane J's node: each computer ticks its own, `mcpComputers`), none
-   *  when none ticks it; this computer alone when the option is left out. Read at each placement, so the prompt's `computer` field follows its next refresh
-   *  and the router checks the live list meanwhile. */
+   *  when none ticks it; this computer alone when the option is left out. Read at each placement, so the prompt's
+   *  `computer` field follows its next refresh and the router checks the live list meanwhile. Its process starts here
+   *  only when this computer is on the list: the host calls `refresh()` when the ticks change. */
   computers?(server: string): readonly string[];
 }
 
@@ -318,7 +319,9 @@ export class PluginMcp {
         const next = new Map<string, Listed>();
         const { served, refused } = this.#keys();
         for (const { c, why } of refused) this.#o.log?.(`plugin MCP ${c.pluginId}/${this.#nameOf(c)}: refused, ${why}`);
-        const results = await Promise.all(served.map(async ({ key, c }) => {
+        // A per-computer server's process starts only on a computer that ticks it: one this computer doesn't is
+        // neither listed (a listing starts it) nor called here, and a channel left open to it is closed below.
+        const results = await Promise.all(served.filter(({ key, c }) => this.#runsHere(key, c)).map(async ({ key, c }) => {
           try {
             return { key, listed: await this.#list(key, c) };
           } catch (err) {
@@ -348,9 +351,17 @@ export class PluginMcp {
     return { name: server, kind: "local", computers: [...(this.#o.computers?.(server) ?? [this.#o.self()])] };
   }
 
-  /** The `perComputer` servers listed here, with their plugin: what lane J's node ticks per computer (`localServers`). */
+  /** The `perComputer` servers the plugins declare, with their plugin, whether this computer ticks them or not: what
+   *  lane J's node ticks per computer (`localServers`). Read from the registry, so naming one starts nothing. */
   localServers(): { server: string; plugin: string }[] {
-    return [...this.#listed].filter(([, l]) => l.entry.perComputer === true).map(([server, l]) => ({ server, plugin: l.plugin }));
+    return this.#keys().served.filter(({ c }) => (c.value as HostServerEntry).perComputer === true).map(({ key, c }) => ({ server: key, plugin: c.pluginId }));
+  }
+
+  /** Whether `key`'s process may start on this computer: any server but a per-computer one, and a per-computer one only
+   *  where it's ticked (lane J's `computers`; with no such list, this computer alone runs them). */
+  #runsHere(key: string, c: Contribution): boolean {
+    if ((c.value as HostServerEntry).perComputer !== true || this.#o.computers === undefined) return true;
+    return this.#o.computers(key).includes(this.#o.self());
   }
 
   fields(server: string): McpFields {
@@ -383,6 +394,12 @@ export class PluginMcp {
   readonly call: McpCaller = async ({ server, tool, input, as, signal }) => {
     const l = this.#listed.get(server);
     if (l === undefined) throw new ContractError("not_installed", `no MCP server ${server}`);
+    // Its tick may have gone since the listing: then nothing starts it here, and its channel closes.
+    if (l.entry.perComputer === true && this.#o.computers !== undefined && !this.#o.computers(server).includes(this.#o.self())) {
+      this.#clients.get(server)?.client.close();
+      this.#clients.delete(server);
+      throw new ContractError("not_installed", `the MCP server ${server} isn't ticked on this computer`);
+    }
     if (!l.tools.some((t) => t.name === tool)) throw new ContractError("not_found", `the MCP server ${server} has no tool ${tool}`);
     const r = await this.#client(server, l.plugin, l.name).request("tools/call", { name: tool, arguments: input }, { as, ...(signal === undefined ? {} : { signal }), timeoutMs: CALL_TIMEOUT_MS });
     if (!isObject(r)) return { content: [{ type: "text", text: "" }], isError: true };

@@ -105,28 +105,58 @@ test("a host server's tools are listed with their loading and instructions, plac
   }
 });
 
-test("a per-computer server is placed on exactly the computers lane J's node says run it (this one alone without the option); localServers lists them with their plugin", async () => {
+test("a per-computer server is placed on exactly the computers lane J's node says run it, and its process starts only where it's ticked", async () => {
   const registry = fakeRegistry([
     entry("acme", "blender", { type: "host", perComputer: true, tools: { "*": "preload" } }),
+    entry("acme", "maya", { type: "host", perComputer: true, tools: { "*": "preload" } }),
     entry("clover", "web", { type: "host" }),
   ], { acme: "/nonexistent", clover: "/nonexistent" });
-  const running: Record<string, string[]> = { acme__blender: ["Studio", "Laptop"] };
-  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", computers: (server) => running[server] ?? [] });
+  // blender is ticked here and on the Laptop; maya only on the Laptop.
+  const running: Record<string, string[]> = { acme__blender: ["Studio", "Laptop"], acme__maya: ["Laptop"] };
+  const fake = fakeHost();
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", computers: (server) => running[server] ?? [] });
   try {
     await mcp.refresh();
-    expect(mcp.localServers()).toEqual([{ server: "acme__blender", plugin: "acme" }]);
+    // Both are declared (J's node ticks them per computer), whatever this computer ticks, and naming them starts nothing.
+    expect(mcp.localServers()).toEqual([{ server: "acme__blender", plugin: "acme" }, { server: "acme__maya", plugin: "acme" }]);
+    // maya's process never started here: no channel was opened to it, and it isn't listed or called here.
+    expect(fake.opened.map((o) => o.server).sort()).toEqual(["blender", "web"]);
+    expect(mcp.placement("acme__maya")).toBeUndefined();
+    await expect(mcp.call({ server: "acme__maya", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(fake.opened.map((o) => o.server).sort()).toEqual(["blender", "web"]);
+    // blender runs here and on the Laptop: the model gets the `computer` field.
     expect(mcp.placement("acme__blender")).toEqual({ name: "acme__blender", kind: "local", computers: ["Studio", "Laptop"] });
-    // Two computers run it: the model gets the `computer` field.
     expect(mcp.fields("acme__blender").computer).toBeDefined();
-    // The list is read at each placement: one computer now, no field.
+    // Its tick here goes: a call before the next refresh is refused and its channel closed; the refresh drops it.
     running.acme__blender = ["Laptop"];
     expect(mcp.placement("acme__blender")!.computers).toEqual(["Laptop"]);
     expect(mcp.fields("acme__blender").computer).toBeUndefined();
-    // Ticked nowhere: it runs nowhere.
+    await expect(mcp.call({ server: "acme__blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(fake.opened.find((o) => o.server === "blender")!.channel.closed).toBe(true);
+    await mcp.refresh();
+    expect(mcp.placement("acme__blender")).toBeUndefined();
+    expect(fake.opened.filter((o) => o.server === "blender")).toHaveLength(1);
+    // Ticked nowhere: it runs nowhere. A remote server is untouched by any of it.
     running.acme__blender = [];
-    expect(mcp.placement("acme__blender")!.computers).toEqual([]);
-    // A remote server is untouched by the list.
+    await mcp.refresh();
+    expect(mcp.placement("acme__blender")).toBeUndefined();
     expect(mcp.placement("web")).toEqual({ name: "web", kind: "remote", computers: [] });
+    // Ticked here again: it starts and is listed.
+    running.acme__maya = ["Laptop", "Studio"];
+    await mcp.refresh();
+    expect(mcp.placement("acme__maya")).toEqual({ name: "acme__maya", kind: "local", computers: ["Laptop", "Studio"] });
+    expect(fake.opened.filter((o) => o.server === "maya")).toHaveLength(1);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("with no tick list from the host, a per-computer server runs here, as before", async () => {
+  const registry = fakeRegistry([entry("acme", "blender", { type: "host", perComputer: true })], { acme: "/nonexistent" });
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+  try {
+    await mcp.refresh();
+    expect(mcp.placement("acme__blender")).toEqual({ name: "acme__blender", kind: "local", computers: ["Studio"] });
   } finally {
     mcp.close();
   }
