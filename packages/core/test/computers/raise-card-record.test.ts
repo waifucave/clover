@@ -121,6 +121,24 @@ describe("the used cards on disk", () => {
     expect(Object.keys((JSON.parse(readFileSync(path, "utf8")) as { used: Record<string, number> }).used)).toEqual(["card_b"]);
   });
 
+  test("a ledger file that can't be read refuses every claim until the ids it held are too old, then starts afresh", () => {
+    const clock = new FakeClock();
+    const path = usedCardsPath(temp("lane-j-used-cards-"));
+    expect(new FileAnswerLedger(path, clock).claim("card_old")).toBe(true);
+    writeFileSync(path, "{ not json");
+    const corrupt = new FileAnswerLedger(path, clock);
+    expect(corrupt.claim("card_new")).toBe(false);
+    expect(corrupt.claim("card_old")).toBe(false);
+    clock.correct(clock.now() + 2 * CARD_PROOF_MAX_AGE_MS);
+    expect(corrupt.claim("card_new")).toBe(false);
+    clock.correct(clock.now() + 1);
+    expect(corrupt.claim("card_new")).toBe(true);
+    expect(Object.keys((JSON.parse(readFileSync(path, "utf8")) as { used: object }).used)).toEqual(["card_new"]);
+    // A record of the wrong shape counts as unreadable too.
+    writeFileSync(path, JSON.stringify({ used: ["card_x"] }));
+    expect(new FileAnswerLedger(path, clock).claim("card_y")).toBe(false);
+  });
+
   test("a claim that can't be written is refused", () => {
     const dir = temp("lane-j-used-cards-");
     // The ledger's folder is a file: nothing can be written under it.

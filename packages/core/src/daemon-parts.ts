@@ -29,6 +29,7 @@ import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import type { ApprovalBroker } from "./contracts/approval-broker";
+import { CloverFence } from "./fence/fence";
 import type { FencedSpawner } from "./fence/spawn";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
@@ -132,7 +133,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
         ...(input.approvals ? { approvals: input.approvals } : {}),
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
-        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome } } : {}),
+        // TMPDIR: a bot's own scratch folder, else the fence's temp folder (the one every runner may write; once INT's
+        // one CloverFence lands here, `fence.temp`).
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome, temp: new CloverFence({ home: input.userHome, cloverHome: input.cloverHome }).temp } } : {}),
         answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });
