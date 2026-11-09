@@ -96,6 +96,16 @@ describe("fencedExecutor over a spawner", () => {
     expect(JSON.stringify(r.output)).toContain("refused");
   });
 
+  test("the fence's temp folder (CloverFence.temp, lane J's cross-lane getter) is the canonical one it lets every runner write", () => {
+    const root = temp("lane-j-exec-temp-");
+    const home = join(root, "home");
+    mkdirSync(join(home, ".clover"), { recursive: true });
+    mkdirSync(join(root, "tmp"), { recursive: true });
+    const fence = new CloverFence({ os: hostOs(), home, cloverHome: join(home, ".clover"), temp: join(root, "tmp") });
+    expect(fence.temp).toBe(realpathSync(join(root, "tmp")));
+    expect(fence.policy().allowWrite).toContain(fence.temp);
+  });
+
   test("nodeParts gives the node this executor only with a spawner", () => {
     expect(nodeParts({ computer: () => "Studio" }).executor).toBeUndefined();
     expect(nodeParts({ computer: () => "Studio", bash: { spawner: fake(() => ({ kind: "refused", reason: "x" })), home: "/h" } }).executor).toBeDefined();
