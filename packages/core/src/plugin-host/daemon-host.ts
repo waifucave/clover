@@ -14,6 +14,7 @@
 //   reads `{ owner: { kind: "plugin", pluginId: id }, name }` (where plugin settings put their `secret` fields) and
 //   nothing else, so no reference to the core's, the user's or another plugin's items passes through (#322's review, S3).
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
+import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { dirname, join } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
@@ -26,7 +27,7 @@ import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry"
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { confirmApi } from "./api/confirm";
 import { pointsApi } from "./api/points";
-import { createApiRouter, type ApiHandlers } from "./api/router";
+import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
 import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
 import { fileSyncedStores, storageApi, SyncedStores } from "./api/storage";
 import { assetPath, pluginDataFolder, pluginPath } from "./paths";
@@ -46,6 +47,11 @@ export interface DaemonPluginHost {
   readonly pluginSecrets: PluginSecrets;
   /** The user's side of plugin settings (`plugin.settings.get`/`set`). */
   readonly settings: PluginSettings;
+  /** Serves more of the API after start (a core area that starts later, like the model plugins' keyed `net.fetch` and
+   *  `secrets.get`). The router's gate (the call exists there, the plugin is on and running, its OK granted the call's
+   *  capability) runs before any of them. A path another handler already serves is refused, never silently replaced.
+   *  The result takes them away again. */
+  addApiHandlers(handlers: ApiHandlers): () => void;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -270,6 +276,20 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     registry: o.registry,
     pluginSecrets: pluginSecretsOf(o.secrets),
     settings,
+    addApiHandlers(added) {
+      const paths = Object.keys(added) as ApiCallPath[];
+      for (const p of paths) {
+        if (!Object.hasOwn(API_CALLS, p)) throw new ContractError("invalid", `${p} isn't a call of the plugin API`);
+        if (typeof added[p] !== "function") throw new ContractError("invalid", `${p}'s handler isn't a function`);
+        if (handlerOf(handlers, p) !== undefined) throw new ContractError("invalid", `${p} is already served`);
+      }
+      const entry: ApiHandlers = Object.freeze({ ...added });
+      handlers.push(entry);
+      return () => {
+        const i = handlers.indexOf(entry);
+        if (i >= 0) handlers.splice(i, 1);
+      };
+    },
     async close() {
       if (closed) return;
       closed = true;
