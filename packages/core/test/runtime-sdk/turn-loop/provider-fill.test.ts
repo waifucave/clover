@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Options } from "@waifucave/clover-agent-sdk";
 import { FileSecretStore } from "../../../src/auth/secret-store";
-import { writeOpenAiApiKey } from "../../../src/auth/credential-material";
+import { writeCredentialMaterial, writeOpenAiApiKey } from "../../../src/auth/credential-material";
 import type { BotSessionContext } from "../../../src/bots/service";
 import type { Settings } from "../../../src/settings";
 import type { HostCredentialBroker, SessionCredentialAllowlist } from "../../../src/runtime-sdk/host-credentials";
@@ -88,4 +88,38 @@ test("a test model and the unstated sentinel get nothing", async () => {
   await fill("unstated/unstated", unstated, ctx);
   expect(unstated).toEqual({ model: "unstated/unstated" });
   expect(allowlists).toHaveLength(0);
+});
+
+test("a bot's allowlist is its own provider, the user's default's and the ones approved for it: never every key the user holds", async () => {
+  const home = temp("clover-a3-fill-home-");
+  const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  const slot = (provider: string) => CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === provider)!.secretName;
+  // The user keeps keys for four providers.
+  for (const p of ["openai", "anthropic", "groq", "mistral"]) await writeCredentialMaterial(secrets, slot(p), { kind: "api-key", key: `key-${p}-not-real` });
+  const asked: [string, string][] = [];
+  const approved = new Set(["groq"]);
+  const { broker, allowlists } = recordingBroker();
+  const fill = botProviderFill({
+    home, broker, secrets, modelPlugins: () => undefined,
+    defaultModel: () => "anthropic/claude-sonnet-5-5",
+    approved: (c, provider) => { asked.push([c.botId, provider]); return approved.has(provider); },
+  });
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "openai/gpt-test-model" });
+  const accounts = allowlists[0]!.accounts;
+  expect(accounts.has(slot("openai"))).toBe(true); // the bot's own
+  expect(accounts.has(slot("anthropic"))).toBe(true); // the user's default
+  expect(accounts.has(slot("groq"))).toBe(true); // approved for this bot
+  expect(accounts.has(slot("mistral"))).toBe(false); // held, never approved
+  expect(asked.every(([bot]) => bot === "alpha")).toBe(true);
+
+  // An approval taken back, and no default: only the bot's own provider is left.
+  approved.clear();
+  const narrow = botProviderFill({ home, broker, secrets, modelPlugins: () => undefined, approved: (_c, p) => approved.has(p) });
+  await fillProvider({ provider: (m, o) => narrow(m, o, ctx) }, { model: "openai/gpt-test-model" });
+  const left = [...allowlists[1]!.accounts].filter((a) => CLOVER_CREDENTIAL_INVENTORY.some((s) => s.secretName === a));
+  expect(left).toEqual([slot("openai")]);
+
+  // Without a session context (an in-process agent's fill), approvals can't be read: none count.
+  await narrow("openai/gpt-test-model", { model: "openai/gpt-test-model" });
+  expect([...allowlists[2]!.accounts].filter((a) => a === slot("groq") || a === slot("mistral"))).toEqual([]);
 });
