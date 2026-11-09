@@ -83,6 +83,12 @@ describe("compile:core carries the embedded Worker entry (WS-23)", () => {
   // packages/cli, so `./embedded-worker.ts` and `./fd-receiver-worker.ts` stopped resolving in every release core
   // (ModuleNotFound; the fd channel reported it as "syscall"). `--root src` pins it: build:daemon proves it on each
   // host core it builds (`__worker-entry-probe`, every OS), and verify:fd-receiver on a plain compile.
+  test("the worker-entry probe loads the fd receiver's own compiled entry", async () => {
+    const { PROBED_WORKER_ENTRY } = await import("../src/worker-entry-probe");
+    expect(PROBED_WORKER_ENTRY).toBe(COMPILED_FD_RECEIVER_WORKER_ENTRY);
+    expect(readFileSync(join(CLI_DIR, "src", "main.ts"), "utf8")).toContain('process.argv[2] === "__worker-entry-probe"');
+  });
+
   test("both compile scripts pin the compile's root to src/, so an embedded file elsewhere can't rename the Worker entries", () => {
     for (const name of ["compile", "compile:core"]) {
       const compile = manifest.scripts[name]!.split("&&").map((s) => s.trim().split(/\s+/)).at(-1)!;
