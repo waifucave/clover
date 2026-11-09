@@ -587,3 +587,13 @@ export function fencedSpawn(o: {
     cwd: runFolder,
   };
 }
+
+/** The environment a spawn hands its command: through the spawn trampoline, the one it carries (`CLOVER_SPAWN_ENV`);
+ *  otherwise `env` itself. */
+export function commandEnvOf(env: Readonly<Record<string, string | undefined>> | undefined): Record<string, string> {
+  const carried = env?.CLOVER_SPAWN_ENV;
+  if (carried !== undefined) return JSON.parse(carried) as Record<string, string>;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env ?? {})) if (v !== undefined) out[k] = v;
+  return out;
+}
