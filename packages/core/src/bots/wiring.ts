@@ -13,9 +13,12 @@ import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeliveredInput } from "../contracts/session-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
+import type { PluginHost } from "../contracts/plugin-host";
+import { pillMethods } from "../pill/rpc";
 import { CacheTimedCompaction, type CompactionPolicy } from "../sessions/compaction";
 import { DurableSessionHost, type DurableSessionHostOptions } from "../sessions/durable-host";
 import { SessionGrants } from "../sessions/grants";
+import { botQuestions, type BotQuestions } from "./questions";
 import { BotGate } from "./gate";
 import { soleComputer, type MainComputer } from "./main-computer";
 import { sessionsMethods, type MethodHandler, type SessionsMethodsDeps } from "./rpc";
@@ -69,6 +72,9 @@ export interface BotSideOptions {
     /** The plugin registry's `triggers` entries: which plugin may fire which trigger type (`RoutineEngine.fire`). */
     triggers?: Pick<PluginRegistry, "entries">;
   };
+  /** The plugin host that runs `pill.target` entries' handlers (lane G's `pill.send`); absent, a send to an entry is
+   *  refused as not installed, and sends to bots and sessions still work. */
+  pillTargets?: Pick<PluginHost, "invoke">;
   /** A session ended (stopped or failed): lane J's `TerminalRouter.closeSession` closes its shells. */
   onSessionEnded?: (id: string) => void;
   /** Lane M's update gate (`RunningDaemon.updateGate`, #198): its turns are a busy source, and none starts while an
@@ -105,6 +111,9 @@ export interface BotSide {
    *  The daemon hands this same instance to the browser (`personsBrowserGrants(side.grants)`), so a grant the user
    *  gave is the one every reader sees. */
   grants?: SessionGrants;
+  /** The bots' `AskUserQuestion`s (questions.ts): the daemon wraps each session's `canUseTool` with
+   *  `questions.canUseTool`, and `session.answer` resolves them. */
+  questions: BotQuestions;
   /** `SendMessage` and `ListAgents` for one bot's session (or an agent's, through the bridge), with K's agent rows. */
   tools(sessionId: string): CoreToolDef[];
   /** Lane D's sessions methods, with K's `setAgentModel`. */
@@ -177,6 +186,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     registry: o.routines.ingress.registry, host: o.routines.ingress.host, engine: routines, clock: o.clock, ...(o.warn === undefined ? {} : { warn: o.warn }),
   });
   const grants = o.approvals?.request === undefined ? undefined : new SessionGrants({ host, approvals: { request: o.approvals.request.bind(o.approvals) } });
+  const questions = botQuestions({ host, ...(o.warn === undefined ? {} : { warn: o.warn }) });
   const voices = o.voices === undefined ? undefined : new VoiceService({
     ...o.voices,
     voiceOf: (bot) => (bots.has(bot) ? bots.effective(bot).voice : undefined),
@@ -186,6 +196,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
   const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
   const offBusy = updates?.register({ name: "bot-turns", count: () => host.list().filter((v) => host.turnOrigin(v.id) !== undefined).length });
+  // So do the bots' questions still waiting for an answer: a restart would drop them.
+  const offQuestions = updates?.register({ name: "bot-questions", count: () => questions.broker.pendingCount() });
   const routineTool = routines === undefined || o.routines === undefined ? undefined : {
     home: o.home, computer: o.computer, routines,
     computers: o.routines.computers ?? (() => [{ name: o.computer, level: computerLevel() }]),
@@ -209,21 +221,29 @@ export function createBotSide(o: BotSideOptions): BotSide {
     ...(ingress === undefined ? {} : { ingress }),
     ...(voices === undefined ? {} : { voices }),
     ...(grants === undefined ? {} : { grants }),
+    questions,
     tools: (sessionId) => {
       const defs = botToolDefs({ host, bots, limiter, ...(hooks === undefined ? {} : { agents: hooks.agents }) }, sessionId);
       const bot = host.callerOf(sessionId).bot;
       if (routineTool !== undefined && bot !== undefined && host.get(sessionId)?.kind !== "agent") defs.push(routineToolDef(routineTool, { bot }));
       return defs;
     },
-    methods: (deps) => ({
-      ...sessionsMethods({
+    methods: (deps) => {
+      const sessions = sessionsMethods({
         home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
         ...(updates === undefined ? {} : { updateGate: updates }),
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
-      }),
+        questions,
+      });
+      return {
+      ...sessions,
+      // Lane G's `pill.send`: the Dispatch pill's words go through the same session.send as the composer's, and to a
+      // `pill.target` entry's handler through the plugin host, when there is one.
+      ...pillMethods({ bots, sessions, sentAs: (id, clientMessageId) => host.sentAs(id, clientMessageId), ...(o.pillTargets === undefined ? {} : { targets: { registry: o.registry, host: o.pillTargets } }) }),
       ...(routines === undefined ? {} : routineMethods({ routines })),
       ...(voices === undefined ? {} : voicesMethods({ voices })),
-    }),
+      };
+    },
     start: async () => {
       await bots.start();
       await routines?.start();
@@ -231,6 +251,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     },
     close: async () => {
       offBusy?.();
+      offQuestions?.();
       offReopen?.();
       ingress?.stop();
       routines?.stop();

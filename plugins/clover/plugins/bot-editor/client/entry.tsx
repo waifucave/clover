@@ -104,13 +104,14 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
   return (
     <BotEditor
       bot={{ id: bot.id, name: plain(bot.name), ...(bot.portrait ? { portraitUrl: bot.portrait } : {}) }}
-      own={bot.userLayer.filter((f): f is BotField => f !== "lan") /* the LAN switch isn't an editor field yet (lane D) */}
+      own={bot.userLayer}
       model={{ value: bot.model, ...(bot.effort ? { effort: bot.effort } : {}), models }}
       {...(bot.voice ? { voice: bot.voice } : {})}
       avatars={avatars}
       {...(picked && bot.userLayer.includes("avatar") ? { avatar: picked } : {})}
       themes={themes}
       {...(bot.theme ? { theme: bot.theme } : {})}
+      lan={bot.lan === true}
       {...(waiting ? { waiting: waiting.field } : {})}
       onChange={change}
       onBack={() => props.navigate?.({ route: "bot", params: { bot: bot.id } })}

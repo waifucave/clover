@@ -569,8 +569,14 @@ export interface Walked {
   nested: string[];
 }
 
-/** One tree, without following links: what to read, what's accepted, the names, and links to absolute paths. */
-export function walkTree(root: string): Walked {
+/** The one absolute link a disk image may hold: the drag-to-install `Applications` → `/Applications` at its root, as
+ *  electron-builder's dmg carries it. Nothing is behind it to read (it is never followed); anywhere else, or to any
+ *  other target, an absolute link is still a problem. */
+export const DMG_ROOT_LINKS: Readonly<Record<string, string>> = Object.freeze({ Applications: "/Applications" });
+
+/** One tree, without following links: what to read, what's accepted, the names, and links to absolute paths (but
+ *  those `rootLinks` names, at the root, to exactly their target). */
+export function walkTree(root: string, rootLinks: Readonly<Record<string, string>> = {}): Walked {
   const w: Walked = { read: [], accepted: [], names: [], problems: [], nested: [] };
   const visit = (p: string): void => {
     const rel = relative(root, p).split("\\").join("/");
@@ -579,7 +585,7 @@ export function walkTree(root: string): Walked {
     if (st.isSymbolicLink()) {
       const target = readlinkSync(p);
       w.names.push(target);
-      if (isAbsolute(target)) w.problems.push(`${rel} links to an absolute path (${target})`);
+      if (isAbsolute(target) && !(Object.hasOwn(rootLinks, rel) && rootLinks[rel] === target)) w.problems.push(`${rel} links to an absolute path (${target})`);
       return;
     }
     if (st.isDirectory()) { for (const n of readdirSync(p).sort()) visit(join(p, n)); return; }
@@ -613,6 +619,8 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
   const accepted: string[] = [];
   let read = 0;
   let n = 0;
+  /** The roots that are mounted disk images (their `DMG_ROOT_LINKS` are allowed). */
+  const dmgRoots = new Set<string>();
   const runGuard = (files: string[]): boolean => {
     for (let i = 0; i < files.length; i += 500) {
       // The guard's own output goes straight to the terminal (or nowhere): never into a message this process keeps.
@@ -662,6 +670,7 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
       switch (how) {
         case "dmg":
           if (!sh(["hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", into, file])) return false;
+          dmgRoots.add(into);
           cleanup.push(() => { sh(["hdiutil", "detach", into, "-force"]); });
           return true;
         case "zip": case "rpm": case "tar": case "ar": return sh(["bsdtar", "-xf", file, "-C", into]);
@@ -712,7 +721,7 @@ export function nameScan(assets: readonly string[], apps: readonly string[], opt
   };
   /** Reads one root (and what opens inside it) with the guard; returns how many files it read. */
   const scanRoot = (label: string, root: string, depth: number, cleanup: Array<() => void>): number => {
-    const w = walkTree(root);
+    const w = walkTree(root, dmgRoots.has(root) ? DMG_ROOT_LINKS : {});
     problems.push(...w.problems.map((p) => `${label}: ${p}`));
     accepted.push(...w.accepted);
     const names = join(work, `${n++}-names.txt`);

@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import type { SecretKeySource } from "@waifucave/clover-protocol";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners } from "../contracts/common";
+import { defaultSecretsBackend } from "../auth/secret-store";
 import {
   SECRET_NAME_RE, Secret, secretOwnerKey, secretRefKey,
   type SecretChange, type SecretMeta, type SecretOwner, type SecretRef, type SecretStore, type SecretStoreStatus, type SecretValue,
@@ -27,12 +28,16 @@ export interface Vault {
   delete(name: string): Promise<boolean>;
 }
 
-/** `Bun.secrets` under one service. */
+/** The OS store under one service, through the one production backend (`defaultSecretsBackend`): on macOS the login
+ *  keychain by path, elsewhere `Bun.secrets`; under a test, only an isolated store (the test keychain file, the
+ *  private Secret Service, a throwaway service, or this process's memory: auth/test-isolation.ts). Never `Bun.secrets`
+ *  directly, which on macOS searches the user's keychain list and creates in the login keychain. */
 export function bunVault(service: string): Vault {
+  const backend = () => defaultSecretsBackend();
   return {
-    get: async (name) => (await Bun.secrets.get({ service, name })) ?? null,
-    set: async (name, value) => { await Bun.secrets.set({ service, name, value }); },
-    delete: async (name) => Bun.secrets.delete({ service, name }),
+    get: async (name) => (await backend().get({ service, name })) ?? null,
+    set: async (name, value) => { await backend().set({ service, name, value }); },
+    delete: async (name) => backend().delete({ service, name }),
   };
 }
 

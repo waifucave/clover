@@ -4,12 +4,12 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { PLUGIN_BUN_IDENTIFIER } from "../../bundled-identities";
 import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
-import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags } from "../plugin-run";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags, pluginHostBunFlags, droppedEnv, envWithoutDropped } from "../plugin-run";
 
 function world() {
   const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
@@ -304,7 +304,9 @@ describe("a plugin process loads only its own tree", () => {
   test("a plugin's Bun stdio MCP server runs guarded, whatever environment the runtime merges under it", () => {
     const root = w.plugin("mcp", { "bunfig.toml": "preload = [\"$OUTSIDE/evil.ts\"]\n", ".env": "X=1\n", "server.ts": "console.log(\"server ran\");\n" });
     const guard = { files: w.files, shared: [] };
-    const cfg = pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t", NODE_OPTIONS: "--require x" } }, root, guard);
+    // A manifest's env that sets what loads code is refused outright (#322's review, B1).
+    expect(() => pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t", NODE_OPTIONS: "--require x" } }, root, guard)).toThrow("sets NODE_OPTIONS in its environment, which only Clover sets");
+    const cfg = pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { TOKEN: "t" } }, root, guard);
     if (cfg.type !== "stdio") throw new Error("stdio expected");
     expect(cfg.command).toBe(pluginBun());
     expect([cfg.env?.BUN_OPTIONS, cfg.env?.CLOVER_PLUGIN_ROOT, cfg.env?.TOKEN, cfg.env?.NODE_OPTIONS, cfg.env?.NODE_PATH]).toEqual([pluginBunFlags(w.files).join(" "), realpathSync(root), "t", "", ""]);
@@ -409,4 +411,73 @@ describe("a plugin process loads only its own tree", () => {
     const spaced = ensurePluginRunFiles(join(w.base, "run dir"));
     expect(/\s/.test(spaced.guard)).toBe(false);
   });
+});
+
+// #322's review, B1: host mode was an environment variable, which a plugin's MCP server could set in its manifest's env.
+// Now nothing a plugin's env says changes what its process is: Clover's names are refused in a manifest's env and
+// dropped from every base, and the host's guard is a file of its own that only the daemon's launch names.
+describe("a plugin's environment never turns off its guard", () => {
+  const w = world();
+  const CLOVER_NAMES = ["CLOVER_PLUGIN_HOST", "CLOVER_PLUGIN_ROOT", "CLOVER_PLUGIN_SHARED", "CLOVER_PLUGIN_WORKER"] as const;
+  const attack = (outside: string): Record<string, string> => ({
+    CLOVER_PLUGIN_HOST: "1", CLOVER_PLUGIN_ROOT: "/", CLOVER_PLUGIN_SHARED: JSON.stringify(["/", outside]), CLOVER_PLUGIN_WORKER: join(outside, "evil.ts"),
+  });
+
+  test("a manifest's MCP server env naming each of Clover's variables, or Bun's, Node's or the loader's, is refused by name", () => {
+    const root = w.plugin("mcp-env", { "server.ts": "console.log(\"server ran\");\n" });
+    const guard = { files: w.files, shared: [] };
+    for (const name of [...CLOVER_NAMES, "CLOVER_ANYTHING", "BUN_INSTALL", "NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]) {
+      expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { [name]: "1" } }, root, guard)).toThrow(`sets ${name} in its environment, which only Clover sets`);
+      expect(() => guardedMcpServer({ command: "sh", args: ["-c", "bun server.ts"], env: { OK: "1", [name]: "1" } }, root, guard)).toThrow(name);
+    }
+    // Without case too: Windows' names are case-insensitive, and a manifest runs everywhere.
+    expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { clover_plugin_host: "1" } }, root, guard)).toThrow("clover_plugin_host");
+    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x", Clover_Plugin_Host: "1", Home: "h" }, "win32")).toEqual({ PATH: "b", HOME: "h" });
+    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x" }, "darwin")).toEqual({ Path: "a", PATH: "b", node_options: "x" });
+    expect([droppedEnv("win32").test("node_options"), droppedEnv("win32").test("Clover_Plugin_Root"), droppedEnv("darwin").test("node_options"), droppedEnv("darwin").test("NODE_OPTIONS")]).toEqual([true, true, false, true]);
+    // What loads nothing stays the plugin's.
+    const ok = guardedMcpServer({ command: "bun", args: ["server.ts"], env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1", MY_TOKEN: "t" } }, root, guard);
+    expect([ok.env?.NODE_ENV, ok.env?.NODE_NO_WARNINGS, ok.env?.MY_TOKEN]).toEqual(["production", "1", "t"]);
+  });
+
+  test("the reviewer's case: an MCP server with CLOVER_PLUGIN_HOST=1 importing a file outside its folder is refused, and still guarded if its env got through", () => {
+    const outside = join(w.base, "outside");
+    const root = w.plugin("mcp-host", { "server.ts": "import \"$OUTSIDE/evil.ts\";\nconsole.log(\"server ran\");\n" });
+    const guard = { files: w.files, shared: [] };
+    expect(() => pluginStdioMcpServer({ command: "bun", args: ["server.ts"], env: { CLOVER_PLUGIN_HOST: "1" } }, root, guard)).toThrow("CLOVER_PLUGIN_HOST");
+    // Through every other door (a hook's or a supervised host's base, the daemon's own environment): dropped, then set by
+    // Clover alone.
+    const env = guardedPluginEnv({ ...process.env, NODE_ENV: undefined, ...attack(outside) }, { pluginRoot: root, files: w.files, shared: [] });
+    expect([env.CLOVER_PLUGIN_HOST, env.CLOVER_PLUGIN_WORKER, env.CLOVER_PLUGIN_ROOT, env.CLOVER_PLUGIN_SHARED]).toEqual([undefined, undefined, realpathSync(root), "[]"]);
+    expect(w.run(root, "server.ts", true)).toMatchObject({ ran: false });
+    // And were CLOVER_PLUGIN_HOST to reach a plugin process anyway, it's no host: the guard holds it to its folder.
+    rmSync(join(w.base, "mark"), { force: true });
+    const forced = Bun.spawnSync([process.execPath, "server.ts"], { cwd: root, env: { ...env, CLOVER_PLUGIN_HOST: "1" }, stdout: "pipe", stderr: "pipe" });
+    expect([existsSync(join(w.base, "mark")), forced.stdout.toString().includes("server ran"), forced.stderr.toString()]).toEqual([false, false, expect.stringContaining("outside the plugin's own folder")]);
+  }, 30_000);
+
+  test("the host's guard named in a plugin process's own arguments: the process doesn't run, in either order", () => {
+    const root = w.plugin("args-host", { "server.ts": "import \"$OUTSIDE/evil.ts\";\nconsole.log(\"server ran\");\n" });
+    const env = guardedPluginEnv({ ...process.env, NODE_ENV: undefined }, { pluginRoot: root, files: w.files, shared: [] });
+    // Even with the entry the host's guard asks for (a file standing in for the host bundle, beside it), a plugin process
+    // whose own arguments name the host's guard runs two guards, and the second refuses.
+    const hostEntry = join(dirname(w.files.hostGuard), "plugin-host.js");
+    writeFileSync(hostEntry, `import ${JSON.stringify(join(w.base, "outside", "evil.ts"))};\nconsole.log("server ran");\n`);
+    try {
+      for (const args of [[`--preload=${w.files.hostGuard}`, hostEntry], ["--preload", w.files.hostGuard, hostEntry]]) {
+        rmSync(join(w.base, "mark"), { force: true });
+        const r = Bun.spawnSync([process.execPath, ...args], { cwd: root, env, stdout: "pipe", stderr: "pipe" });
+        expect([existsSync(join(w.base, "mark")), r.stdout.toString().includes("server ran"), r.stderr.toString()]).toEqual([false, false, expect.stringContaining("a thread runs one load guard")]);
+      }
+    } finally {
+      rmSync(hostEntry, { force: true });
+    }
+    // The host's guard alone (no plugin flags), over an entry that isn't the host bundle beside it: refused.
+    rmSync(join(w.base, "mark"), { force: true });
+    const alone = Bun.spawnSync([process.execPath, ...pluginHostBunFlags(w.files), "server.ts"], { cwd: root, env: { ...env, BUN_OPTIONS: "" }, stdout: "pipe", stderr: "pipe" });
+    expect([existsSync(join(w.base, "mark")), alone.stderr.toString()]).toEqual([false, expect.stringContaining("runs only the plugin host")]);
+    // Its guard file is the host's: the plugin guard, with the plugin flags, for each worker it starts.
+    const text = readFileSync(w.files.hostGuard, "utf8");
+    expect([text.includes(JSON.stringify(w.files.guard)), text.includes(JSON.stringify(pluginBunFlags(w.files).join(" ")))]).toEqual([true, true]);
+  }, 30_000);
 });

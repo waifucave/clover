@@ -57,7 +57,8 @@ export function layerCsp(hosts: readonly string[] = []): string {
     `connect-src 'self'${net ? ` ${net}` : ""}`,
     "worker-src 'self' blob:",
     // A part from another layer is a frame from that layer's origin; the core checks every frame's token and parent.
-    `frame-src ${LAYER_SCHEME}:`,
+    // The sealed frames settle their card's fields and buttons (§5.5); a card is never on a web page.
+    `frame-src ${LAYER_SCHEME}: ${SEALED_SCHEME}:`,
     `frame-ancestors ${CORE_SCHEME}: ${LAYER_SCHEME}:`,
     "form-action 'none'",
     "object-src 'none'",
@@ -71,11 +72,31 @@ const LAYER_LABEL = /^[a-z0-9][a-z0-9-]*$/;
 /** `Connection-Allowlist` for a layer document or script: its own origin and its declared hosts. A document also names
  *  each installed layer's origin (`layers`), from which it may load frames: Chromium 156 holds a frame's navigation to
  *  its parent's list (`ERR_NETWORK_ACCESS_REVOKED` otherwise), and each such frame is checked by its token, its parent
- *  and CSP. Never a `*` host: the list also gates the document's DNS lookups, by host alone. */
+ *  and CSP. The sealed frames' own origin rides along always (E-M3): a part's sealed iframes navigate there, gated by
+ *  their single-use tokens. Never a `*` host: the list also gates the document's DNS lookups, by host alone. */
 export function connectionAllowlist(hosts: readonly string[] = [], layers: readonly string[] | undefined = undefined): string {
   const frames = (layers ?? []).filter((l) => LAYER_LABEL.test(l)).map((l) => JSON.stringify(`${LAYER_SCHEME}://${l}/*`));
-  return `(${[...hosts.map((h) => JSON.stringify(`${h}/*`)), ...frames, "response-origin"].join(" ")})`;
+  return `(${[...hosts.map((h) => JSON.stringify(`${h}/*`)), ...frames, JSON.stringify(`${SEALED_SCHEME}://card/*`), "response-origin"].join(" ")})`;
 }
+
+/** The sealed frames' own headers: the pages come from the app's own scheme, and their scripts and styles are
+ *  inline-on with no network at all (§5.5: style tokens go in, nothing comes out), and the parents that may hold them
+ *  are the core's own origins, never a web page. */
+export function sealHeaders(): Readonly<Record<string, string>> {
+  return { ...commonHeaders(), "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": sealCsp() };
+}
+
+const sealCsp = (): string => [
+  "default-src 'none'",
+  "script-src 'unsafe-inline'",
+  "style-src 'unsafe-inline'",
+  "img-src 'self' data:",
+  "connect-src 'none'",
+  `frame-ancestors ${CORE_SCHEME}: ${LAYER_SCHEME}:`,
+  "form-action 'none'",
+  "object-src 'none'",
+  "base-uri 'none'",
+].join("; ");
 
 export const CORE_CSP = [
   "default-src 'none'",
