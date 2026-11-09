@@ -277,3 +277,31 @@
     transition: none;
   }
 }
+
+/* The LAN switch: the accent when on. The knob is the track's own content, so nothing leaves the flow. */
+.cl-bot-editor__switch {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border: none;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-hairline-raised);
+  cursor: pointer;
+}
+
+.cl-bot-editor__switch[aria-checked="true"] {
+  justify-content: flex-end;
+  background: var(--clover-color-accent-fill);
+}
+
+.cl-bot-editor__knob {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--clover-radius-round);
+  background: var(--clover-color-accent-contrast);
+}

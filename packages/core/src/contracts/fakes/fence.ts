@@ -3,7 +3,7 @@
 import type { Caller, Os } from "@waifucave/clover-protocol";
 import { Listeners, normalizePosix, type Unsubscribe } from "../common";
 import {
-  CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, gitHooksRoot, ownFoldersOf, patternItemAt, isInsideFolded, judge, pluginLoadDenies, READ_DENIED_KINDS,
+  agentConfigPaths, autoRunPaths, CLOSED_DOORS, CLOUD_METADATA_ADDRESSES, CALLER_KINDS, fenceContextFor, gitHooksRoot, ownFoldersOf, patternItemAt, isInsideFolded, judge, pluginLoadDenies, READ_DENIED_KINDS,
   writesPluginLoadDeny, type CallerFence, type FenceContext,
   type Fence, type FenceOp, type FencedKind, type FencedPath, type FenceVerdict, type SandboxPolicy,
 } from "../fence";
@@ -65,6 +65,18 @@ function defaultUserData(os: Os, home: string): string {
   if (os === "macos") return `${home}/Library/Application Support/Clover`;
   if (os === "windows") return `${home}/AppData/Roaming/Clover`;
   return `${home}/.config/Clover`;
+}
+
+/** The fake's own login-start places and the shared list as one: each once, and none inside another (a folder's
+ *  subtree is its), as the real layout folds them. */
+function loginStartUnion(paths: readonly string[]): string[] {
+  const unique = [...new Set(paths.map(normalizePosix))];
+  return unique.filter((p) => !unique.some((o) => o !== p && p.startsWith(`${o}/`)));
+}
+
+/** The shared lists in the fake's POSIX form (on Windows they're joined with backslashes). */
+function posixOf(paths: readonly string[]): string[] {
+  return paths.map((p) => p.replace(/\\/g, "/"));
 }
 
 /** The login item's files (lane C's `loginUnitPath`, `parkedPlistPath`); none on Windows. */
@@ -179,8 +191,8 @@ export class FakeFence implements Fence {
       else if (rel !== null) add(kind, `${this.#cloverHome}/${rel}`);
       else if (kind === "key-file") for (const n of ["secrets.key", "secrets.key.cred"]) add(kind, `${this.#cloverHome}/${n}`);
       else if (kind === "browser-profiles") add(kind, `${this.#userData}/Partitions`);
-      else if (kind === "login-start") for (const p of loginStartPaths(this.os, this.#home, this.#cloverHome)) add(kind, p);
-      else if (kind === "agent-installs") for (const p of this.#agentInstalls) add(kind, p);
+      else if (kind === "login-start") for (const p of loginStartUnion([...loginStartPaths(this.os, this.#home, this.#cloverHome), ...posixOf(autoRunPaths(this.os, this.#home))])) add(kind, p);
+      else if (kind === "agent-installs") for (const p of [...this.#agentInstalls, ...posixOf(agentConfigPaths(this.os, this.#home))]) add(kind, p);
       else if (kind === "bot-memory") for (const bot of this.#bots) out.push({ kind, path: `${this.#cloverHome}/bots/${bot.replace("/", "--")}/memory`, deny: "caller", bot });
     }
     for (const p of this.#layout["dev-folders"] ?? this.#devFolders) add("dev-folders", p);

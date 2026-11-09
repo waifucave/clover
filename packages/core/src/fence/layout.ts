@@ -32,9 +32,10 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import type { FencedKind } from "../contracts/fence";
+import { agentConfigEntries, autoRunEntries, type FencedKind, type RunLaterEntry, type RunLaterExtras } from "../contracts/fence";
 import { linkedRouterSupportsRunHome } from "../runtime-sdk/run-home-support";
 import { parseGitConfigWatched } from "./git-config";
+import { runLaterExtras } from "./run-later";
 
 export type LaidOutKind = Exclude<FencedKind, "dev-folders" | "bot-memory" | "login-start" | "browser-profiles" | "agent-installs">;
 
@@ -105,6 +106,58 @@ export function pendingFenced(o: {
  *  as a pattern (any repo under the home), enforced by the fence, the macOS regex and the Linux cwd-repo bind.
  *  macOS also fences the loginwindow plist and `~/Library/Scripts`. */
 export function loginStartPaths(home: string, cloverHome: string, os: Os): string[] {
+  // The fence's own list, and the shared persistence list (`autoRunEntries`, #308): an entry inside a folder already
+  // listed is that folder's.
+  const own = ownLoginStartPaths(home, cloverHome, os);
+  const mine = new Set(own);
+  return [...own, ...withoutNested(autoRunEntries(os, home, extrasHere(os, home)).map((e) => e.path).filter((x) => !mine.has(x)), os, loginStartFolderSet(home, cloverHome, os))];
+}
+
+/** The user's own additions to the persistence list (git's dirs, ZDOTDIR, PYTHONSTARTUP, a moved Documents), read
+ *  only for this computer's OS: a layout for another OS has none. */
+function extrasHere(os: Os, home: string): RunLaterExtras {
+  const here: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+  return os === here ? runLaterExtras(os, home) : {};
+}
+
+/** The login-start entries that are folders: the fence's own (everything but its listed files) and the shared list's. */
+function loginStartFolderSet(home: string, cloverHome: string, os: Os): Set<string> {
+  const files = new Set([...loginStartSafeFilesOwn(home, os), ...loginStartUnsafeFilesOwn(home, os),
+    pathFor(os, home).join(home, "Library", "LaunchAgents", "com.waifucave.clover.core.plist"), pathFor(os, cloverHome).join(cloverHome, "login")]);
+  const out = new Set(ownLoginStartPaths(home, cloverHome, os).filter((x) => !files.has(x)));
+  for (const e of autoRunEntries(os, home, extrasHere(os, home))) if (!e.file) out.add(e.path);
+  return out;
+}
+
+/** `paths` without duplicates and without any inside one of `folders` (other than itself). */
+function withoutNested(paths: readonly string[], os: Os, folders: ReadonlySet<string>): string[] {
+  const sep = os === "windows" ? "\\" : "/";
+  const out: string[] = [];
+  for (const x of new Set(paths)) {
+    if ([...folders].some((f) => f !== x && x.startsWith(`${f}${sep}`))) continue;
+    out.push(x);
+  }
+  return out;
+}
+
+/** The shared list's single files that aren't the fence's own safe files (never created empty: the Linux supervisor
+ *  refuses a plant, macOS's static deny refuses a write). */
+function sharedUnsafeFiles(home: string, os: Os): string[] {
+  const own = new Set([...loginStartSafeFilesOwn(home, os), ...loginStartUnsafeFilesOwn(home, os)]);
+  const folders = loginStartFolderSet(home, "/nonexistent-clover-home", os);
+  return withoutNested(autoRunEntries(os, home, extrasHere(os, home)).filter((e: RunLaterEntry) => e.file && !own.has(e.path)).map((e) => e.path), os, folders);
+}
+
+/** The coding agents' settings (#308's `agentConfigEntries`) as the Linux sandbox meets them: folders made empty and
+ *  bound read-only at setup, files supervised (never created), so a missing one never holds the home. */
+export function agentConfigDirs(home: string, os: Os): string[] {
+  return agentConfigEntries(os, home).filter((e) => !e.file).map((e) => e.path);
+}
+export function agentConfigFiles(home: string, os: Os): string[] {
+  return agentConfigEntries(os, home).filter((e) => e.file).map((e) => e.path);
+}
+
+function ownLoginStartPaths(home: string, cloverHome: string, os: Os): string[] {
   const p = pathFor(os, home);
   const u = (...parts: string[]) => p.join(home, ...parts);
   const shell = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".bash_profile", ".profile", ".bash_login",
@@ -168,6 +221,10 @@ export function loginStartDirs(home: string, cloverHome: string, os: Os): string
  *  bun, cargo, gnupg, pip's ini style, mimeapps). `.gitconfig` and the shells belong here; their hooks and the
  *  folders around them stay fenced. */
 export function loginStartSafeFiles(home: string, os: Os): string[] {
+  return loginStartSafeFilesOwn(home, os);
+}
+
+function loginStartSafeFilesOwn(home: string, os: Os): string[] {
   const u = (...parts: string[]) => pathFor(os, home).join(home, ...parts);
   const shells = [".zshrc", ".zprofile", ".zshenv", ".zlogin", ".bashrc", ".profile", ".bash_aliases", ".zlogout", ".logout"];
   const configs = [".npmrc", ".gitconfig", ".bunfig.toml", ".cargo/config.toml", ".cargo/config",
@@ -182,6 +239,10 @@ export function loginStartSafeFiles(home: string, os: Os): string[] {
  *  `.vimrc`/`.emacs` replaces the editor's defaults, and an empty loginwindow plist is not a plist the login
  *  window wrote. The Linux supervisor refuses them (spec item 1116); macOS refuses them by static deny. */
 export function loginStartUnsafeFiles(home: string, os: Os): string[] {
+  return os === "windows" ? [] : [...loginStartUnsafeFilesOwn(home, os), ...sharedUnsafeFiles(home, os)];
+}
+
+function loginStartUnsafeFilesOwn(home: string, os: Os): string[] {
   const u = (...parts: string[]) => pathFor(os, home).join(home, ...parts);
   if (os === "macos") return [".bash_profile", ".bash_login", ".vimrc", ".emacs", "Library/Preferences/com.apple.loginwindow.plist"].map((f) => u(...f.split("/")));
   if (os === "linux") return [".bash_profile", ".bash_login", ".xinitrc", ".vimrc", ".emacs"].map((f) => u(...f.split("/")));

@@ -17,7 +17,7 @@ import type { CloverFence } from "./fence";
 import { bwrapPlan, heldFolderNote } from "./linux-bwrap";
 import { unixSocketFilter } from "./seccomp";
 import { PROCESS_HOLDER_FILE } from "../build-kind";
-import { gitTemplateDir, globalHooksPathDirs, loginStartDirs, loginStartSafeFiles, loginStartUnsafeFiles, selfUpdateFiles } from "./layout";
+import { agentConfigDirs, agentConfigFiles, gitTemplateDir, globalHooksPathDirs, loginStartDirs, loginStartSafeFiles, loginStartUnsafeFiles, selfUpdateFiles } from "./layout";
 import { supervisorArch } from "./linux-supervisor";
 import { parseGitConfigWatched, revertWatchedGitChanges, watchedGitChanges } from "./git-config";
 import { macFenceProfile } from "./macos-profile";
@@ -178,9 +178,12 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
           // first): one that isn't there is supervised, never made and never held, so a missing `~/node_modules`
           // doesn't hold the home and ordinary new top-level names stay writable (the controller's ruling).
           const loadDenies = o.fence.policy(ctx).denyWrite.filter((d) => basename(d) === "node_modules" && d !== o.fence.cloverHome && !d.startsWith(`${o.fence.cloverHome}/`));
-          const supervisedFiles = [...loginStartUnsafeFiles(o.fence.home, "linux"), ...selfUpdateFiles(o.fence.cloverHome, "linux"), ...loadDenies];
+          // The coding agents' settings (#308): folders made empty like the login-start ones, files supervised, so a
+          // missing `~/.claude.json` never holds the home either.
+          const supervisedFiles = [...loginStartUnsafeFiles(o.fence.home, "linux"), ...selfUpdateFiles(o.fence.cloverHome, "linux"), ...loadDenies,
+            ...agentConfigFiles(o.fence.home, "linux")];
           try {
-            for (const d of [...loginDirs, ...browserProfiles, ...hooksDirs]) mkdirNoLinks(d);
+            for (const d of [...loginDirs, ...browserProfiles, ...hooksDirs, ...agentConfigDirs(o.fence.home, "linux")]) mkdirNoLinks(d);
             for (const f of loginSafe) ensureEmptyFile(f);
           } catch (e) {
             return { kind: "refused", reason: `a fenced process can't be started here: a login-start place can't be made (${e instanceof Error ? e.message : String(e)})` };
