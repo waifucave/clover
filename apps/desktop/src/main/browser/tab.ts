@@ -8,7 +8,7 @@
 // (`disableDialogs`: a dialog would otherwise bring an offscreen tab's window on screen on macOS, S7 §7.6).
 import { BrowserWindow, WebContentsView, type BaseWindow, type ContextMenuParams, type NativeImage, type Rectangle, type WebContents, type WebPreferences } from "electron";
 import { TabDebugger } from "./cdp";
-import { AGENT_VIEWPORT, isBrowserUrlAllowed, partitionFor, type AppTabEvent, type Screenshot, type ScreenshotFormat, type TabOwner, type TabPlace, type TabView, type Viewport } from "./contract";
+import { AGENT_VIEWPORT, MAX_VIEWPORT_PIXELS, isBrowserUrlAllowed, partitionFor, type AppTabEvent, type Screenshot, type ScreenshotFormat, type TabOwner, type TabPlace, type TabView, type Viewport } from "./contract";
 import { FrameStore } from "./frames";
 import { guardPage, hardenSession } from "./session";
 
@@ -83,11 +83,13 @@ export abstract class BrowserTab {
     }
     c.on("render-process-gone", (_e, details) => {
       if (details.reason === "clean-exit") return;
+      this.forgetPin();
       this.closedBy = "crash";
       this.close();
     });
     c.on("context-menu", (_e, params) => { if (this.place === "shown") this.env.contextMenu(this, params); });
     c.on("cursor-changed", (_e, type) => { if (this.place === "shown") this.env.cursor(this, type); });
+    this.debugger.onDetach = () => this.forgetPin();
     this.debugger.attach();
     // File choosers never open a native dialog on their own: while shown, the person picks through the app's dialog.
     void this.debugger.internal("Page.enable").then(() => this.debugger.internal("Page.setInterceptFileChooserDialog", { enabled: true })).catch(() => undefined);
@@ -128,6 +130,9 @@ export abstract class BrowserTab {
   async cdp(method: string, params?: Record<string, unknown>): Promise<unknown> {
     return this.debugger.call(method, params);
   }
+
+  /** The debugger let go or the renderer is gone: what was set through DevTools is gone too. */
+  protected forgetPin(): void {}
 
   abstract setPlace(place: TabPlace, viewport: Viewport, target?: { window: BaseWindow; bounds: Rectangle }): void;
   protected abstract picture(): Promise<{ image: NativeImage; contentAgeMs: number } | undefined>;
@@ -214,10 +219,12 @@ export class OffscreenTab extends BrowserTab {
   }
 
   setPlace(place: TabPlace, viewport: Viewport): void {
+    if (viewport.width * viewport.height > MAX_VIEWPORT_PIXELS || !(viewport.width > 0) || !(viewport.height > 0)) throw new Error(`a viewport is at most ${MAX_VIEWPORT_PIXELS} pixels, 7680x4320`);
     this.place = place;
     this.viewport = { ...viewport };
     const [w, h] = this.window.getContentSize();
     if (w !== viewport.width || h !== viewport.height) {
+      this.unpinPageSize();
       sizeContent(this.window, viewport.width, viewport.height);
       this.frames.clear();
       this.drawn = false;
@@ -295,28 +302,45 @@ export class OffscreenTab extends BrowserTab {
     if (image.isEmpty()) return undefined;
     const { width, height } = image.getSize();
     const { width: w, height: h } = this.viewport;
-    if (width === w && height === h) return image;
+    if (width === w && height === h) {
+      // As asked: nothing needs pinning, and a pin left from another size would only be in the way.
+      if (this.pinned !== undefined && this.pinned !== `${w}x${h}`) this.unpinPageSize();
+      return image;
+    }
     // The scale is read off the picture itself (the display's own scale may be forced by a flag and not reported):
-    // the same shape as the viewport, at a whole 1.x to 4x, within a pixel or two of rounding, is the same picture.
+    // the same shape as the viewport, at a whole 1.x to 5x (Windows scales to 500 %), within a pixel or two of rounding, is the same picture.
     const r = width / w;
-    if (r > 1 && r <= 4 && Math.abs(height - h * r) <= Math.max(2, h * r * 0.01)) {
+    if (r > 1 && r <= 5 && Math.abs(height - h * r) <= Math.max(2, h * r * 0.01)) {
       this.pinPageSize();
       return image.resize({ width: w, height: h, quality: "best" });
     }
     return undefined;
   }
 
+  /** The size the page is pinned to now (`"WxH"`), or undefined when it is not. */
   private pinned: string | undefined;
   /** At a display scale the system rounds the window to a pixel or two over (Windows at 150 %: 1282x801 for 1280x800),
-   *  and the page would lay out at that: the page's own size is pinned to the viewport's through DevTools. */
+   *  and the page would lay out at that: the page's own size is pinned to the viewport's through DevTools. Set again
+   *  whenever the viewport changes, cleared when the picture fits as it is, and forgotten when the debugger detaches or
+   *  the renderer is gone (a new page has none). */
   private pinPageSize(): void {
     const { width, height } = this.viewport;
     const key = `${width}x${height}`;
     if (this.pinned === key || this.contents.isDestroyed()) return;
     this.pinned = key;
     void this.debugger.internal("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 0, mobile: false }).catch(() => {
-      this.pinned = undefined;
+      if (this.pinned === key) this.pinned = undefined;
     });
+  }
+
+  private unpinPageSize(): void {
+    if (this.pinned === undefined) return;
+    this.pinned = undefined;
+    if (!this.contents.isDestroyed()) void this.debugger.internal("Emulation.clearDeviceMetricsOverride").catch(() => undefined);
+  }
+
+  protected override forgetPin(): void {
+    this.pinned = undefined;
   }
 
   protected destroy(): void {

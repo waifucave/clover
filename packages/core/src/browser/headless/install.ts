@@ -310,10 +310,12 @@ export interface StagedLaunch {
   release(): void;
 }
 
-/** A private copy of an install, checked against the pinned digest, to launch from. The copy is made under
- *  `<dir>/run/<pid>-<random>/` (0700, a name nothing can predict), cloned where the file system supports it, tightened
- *  as the install is, and its whole tree is hashed again before it is returned; one that doesn't match is removed and
- *  refused. Copies whose process is gone (a crash) are removed first. */
+/** A private copy of an install, checked against the pinned digest, to launch from. Copying ~200 MB on every profile's
+ *  start (ext4, NTFS: no clone) is the cost, so the copy is kept: one per shell version, `<dir>/run/shared-<digest>/`
+ *  (0700 parent, tightened as the install is), and its whole tree is hashed again at each start (a copy that no longer
+ *  matches, tampered with or damaged, is removed and made again). A new copy is made beside it under a name nothing can
+ *  predict and renamed into place, so a start never sees one half made. Copies of other versions, and the per-process
+ *  copies of an older Clover whose process is gone, are removed first. `release` leaves the shared copy where it is. */
 export async function stageForLaunch(installed: Installed, opts: { dir: string; pin?: HeadlessPin }): Promise<StagedLaunch> {
   const pin = opts.pin ?? HEADLESS_PIN;
   const p = pin.platforms[installed.platform];
@@ -321,35 +323,55 @@ export async function stageForLaunch(installed: Installed, opts: { dir: string; 
   const runRoot = join(opts.dir, "run");
   mkdirSync(runRoot, { recursive: true, mode: 0o700 });
   if (process.platform !== "win32") chmodSync(runRoot, 0o700);
-  removeStaleRuns(runRoot);
-  const copy = join(runRoot, `${process.pid}-${randomBytes(12).toString("hex")}`);
-  const release = (): void => {
+  const shared = `shared-${p.tree.replace(/[^0-9a-z]/gi, "").slice(0, 24)}`;
+  removeStaleRuns(runRoot, shared);
+  const copy = join(runRoot, shared);
+  const verified = async (dir: string): Promise<boolean> => {
     try {
-      rmSync(copy, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      return existsSync(binaryIn(dir, installed.platform)) && (await treeDigestOfDir(dir, installed.platform)) === p.tree;
+    } catch {
+      return false;
+    }
+  };
+  if (existsSync(copy) && (await verified(copy))) return { bin: binaryIn(copy, installed.platform), dir: copy, release: () => undefined };
+  rmSync(copy, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  const fresh = join(runRoot, `${process.pid}-${randomBytes(12).toString("hex")}`);
+  const drop = (): void => {
+    try {
+      rmSync(fresh, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     } catch {
       // A browser still exiting holds its files on Windows; the next start removes it as stale.
     }
   };
   try {
     // The copy's name is new and unguessable, and its parent is 0700: nothing else can have made it first.
-    cpSync(installed.dir, copy, { recursive: true, mode: fsConstants.COPYFILE_FICLONE, verbatimSymlinks: true });
-    tightenTree(copy, installed.platform);
-    if ((await treeDigestOfDir(copy, installed.platform)) !== p.tree) throw new InstallError("tree", "the browser's private copy doesn't match the pinned tree");
+    cpSync(installed.dir, fresh, { recursive: true, mode: fsConstants.COPYFILE_FICLONE, verbatimSymlinks: true });
+    tightenTree(fresh, installed.platform);
+    if ((await treeDigestOfDir(fresh, installed.platform)) !== p.tree) throw new InstallError("tree", "the browser's private copy doesn't match the pinned tree");
+    if (!existsSync(binaryIn(fresh, installed.platform))) throw new InstallError("unpack", `no browser at ${binaryIn(fresh, installed.platform)} in its private copy`);
+    try {
+      renameSync(fresh, copy);
+    } catch (e) {
+      // Another start made it first: use that one if it holds, ours otherwise.
+      if (existsSync(copy) && (await verified(copy))) drop();
+      else throw e;
+    }
   } catch (e) {
-    release();
+    drop();
     if (e instanceof InstallError) throw e;
     throw new InstallError("unpack", `copying the headless browser failed: ${e instanceof Error ? e.message : String(e)}`);
   }
-  const bin = binaryIn(copy, installed.platform);
-  if (!existsSync(bin)) {
-    release();
-    throw new InstallError("unpack", `no browser at ${bin} in its private copy`);
-  }
-  return { bin, dir: copy, release };
+  const dir = existsSync(copy) ? copy : fresh;
+  return { bin: binaryIn(dir, installed.platform), dir, release: () => undefined };
 }
 
-function removeStaleRuns(runRoot: string): void {
+function removeStaleRuns(runRoot: string, keep: string): void {
   for (const name of readdirSync(runRoot)) {
+    if (name === keep) continue;
+    if (name.startsWith("shared-")) {
+      rmSync(join(runRoot, name), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      continue;
+    }
     const pid = Number(/^(\d+)-/.exec(name)?.[1]);
     let alive = true;
     if (Number.isInteger(pid) && pid > 0) {
