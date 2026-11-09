@@ -11,7 +11,7 @@
 //   the others the tree hash leaves out) aren't copied.
 // * The id is the manifest's `id`, else the source folder's name, and the folder is named by it. An id that's already
 //   installed here is refused (removing it first is the user's own act), and so is one from Clover's bundled plugins.
-import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSync, openSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants, cpSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { MANIFEST_FILE } from "@waifucave/clover-plugin-sdk";
@@ -29,7 +29,8 @@ export const INSTALL_MAX_BYTES = 512 * 1024 * 1024;
 export function readSourceFile(from: string, rel: string, budget: number): Buffer {
   let fd: number;
   try {
-    fd = openSync(from, constants.O_RDONLY | constants.O_NOFOLLOW);
+    // Non-blocking, so a file swapped for a FIFO can't hold the daemon in open(); fstat then refuses it.
+    fd = openSync(from, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (e) {
     throw new ContractError("invalid", `${rel} can't be read: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}`);
   }
@@ -86,9 +87,14 @@ export function installStagingDir(cloverHome: string): string {
   return join(cloverHome, "run", "plugin-install");
 }
 
-/** The staging folders a run before left (a crash mid-install): removed when the daemon starts. */
-export function sweepInstallStages(stagingDir: string): void {
+/** The staging folders a run before left (a crash mid-install): removed when the daemon starts, and with them a copy
+ *  an EXDEV install left beside the plugins folder (`.<id>.installing-<hex>`). */
+export function sweepInstallStages(stagingDir: string, pluginsDir?: string): void {
   rmSync(stagingDir, { recursive: true, force: true });
+  if (pluginsDir === undefined || !existsSync(pluginsDir)) return;
+  for (const name of readdirSync(pluginsDir)) {
+    if (/^\.[a-z0-9-]+\.installing-[0-9a-f]+$/.test(name)) rmSync(join(pluginsDir, name), { recursive: true, force: true });
+  }
 }
 
 /** Copies the plugin folder at `source` into `pluginsDir`, validated, and gives back its id and folder. Throws

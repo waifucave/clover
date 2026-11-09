@@ -36,6 +36,11 @@ describe("installing from a folder", () => {
     expect(codeOf(() => readSourceFile(join(d, "link"), "link", 100))).toBe("invalid");
     expect(codeOf(() => readSourceFile(join(d, "dir"), "dir", 100))).toBe("invalid");
     expect(codeOf(() => readSourceFile(join(d, "a.txt"), "a.txt", 4))).toBe("invalid");
+    // A FIFO where a file was: refused at once, never waited on.
+    Bun.spawnSync(["/usr/bin/mkfifo", join(d, "fifo")]);
+    const t0 = Date.now();
+    expect(codeOf(() => readSourceFile(join(d, "fifo"), "fifo", 100))).toBe("invalid");
+    expect(Date.now() - t0).toBeLessThan(1_000);
   });
 
   test("the walk stops at the first file past a cap, before reading the rest", () => {
@@ -74,8 +79,12 @@ describe("installing from a folder", () => {
     const d = temp("clover-inst-");
     const stages = join(d, "run", "plugin-install");
     mkdirSync(join(stages, "abc", "tarot"), { recursive: true });
-    sweepInstallStages(stages);
+    const leftPlugins = join(d, "plugins-left");
+    mkdirSync(join(leftPlugins, ".tarot.installing-abc123", "x"), { recursive: true });
+    mkdirSync(join(leftPlugins, "luna"), { recursive: true });
+    sweepInstallStages(stages, leftPlugins);
     expect(existsSync(stages)).toBe(false);
+    expect(readdirSync(leftPlugins)).toEqual(["luna"]);
     const src = join(temp("clover-inst-src-"), "tarot");
     mkdirSync(src);
     writeFileSync(join(src, "clover.json"), JSON.stringify({ manifest: 1, id: "tarot", name: "Tarot", version: "1.0.0" }));
