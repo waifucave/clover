@@ -2,7 +2,7 @@
 // still sees its tools, from a computer that does, and its call goes there. This computer's own listing wins; a
 // listing is kept only for what that computer's hello names, and within bounds.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -15,6 +15,11 @@ import { answersFor, makePhone } from "../tree/answer-support";
 import { Cluster, until } from "../tree/cluster-support";
 
 const temp = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
+/** A Clover home whose ticks record exists already (an earlier run's). */
+const ranBefore = (home: string) => {
+  mkdirSync(join(home, "levels"), { recursive: true });
+  writeFileSync(mcpTicksPath(home), JSON.stringify({ plugins: {}, servers: {} }));
+};
 const BOT: Caller = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" };
 const tool = (name: string, extra: Record<string, unknown> = {}) => ({ name, inputSchema: { type: "object", properties: { scene: { type: "string" } } }, ...extra });
 
@@ -181,7 +186,8 @@ describe("a local server another computer runs", () => {
   test("Laptop1's bots see Studio's server from Studio's listing, and the call runs on Studio; Laptop1's own listing wins once it runs it; an untick takes it off", async () => {
     const phone = await makePhone();
     const homes = { Studio: temp("lane-j-listing-studio-"), Laptop1: temp("lane-j-listing-laptop-") };
-    for (const h of Object.values(homes)) new FileMcpTicks(mcpTicksPath(h));
+    // Each computer ran before (its record is there): no migration.
+    for (const h of Object.values(homes)) ranBefore(h);
     const ticks = { Studio: new FileMcpTicks(mcpTicksPath(homes.Studio)), Laptop1: new FileMcpTicks(mcpTicksPath(homes.Laptop1)) };
     ticks.Studio.installed("acme/blender");
     ticks.Studio.installed("acme/coder");
@@ -254,7 +260,8 @@ describe("a local server another computer runs", () => {
   test("on two computers: the computer field lists both and the router reads it", async () => {
     const phone = await makePhone();
     const homes = { Studio: temp("lane-j-listing-s-"), Laptop1: temp("lane-j-listing-l-"), Mini: temp("lane-j-listing-m-") };
-    for (const h of Object.values(homes)) new FileMcpTicks(mcpTicksPath(h));
+    // Each computer ran before (its record is there): no migration.
+    for (const h of Object.values(homes)) ranBefore(h);
     const ticks = Object.fromEntries(Object.entries(homes).map(([k, h]) => [k, new FileMcpTicks(mcpTicksPath(h))])) as Record<string, FileMcpTicks>;
     ticks.Studio!.installed("acme/blender");
     ticks.Mini!.installed("acme/blender");

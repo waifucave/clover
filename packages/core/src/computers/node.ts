@@ -192,14 +192,15 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   // J-M2: the local MCP servers ticked here, and which computers run each (spec §9.1).
   const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome), () => {}, (line) => o.log?.(`computers: ${line}`));
   const localServers = () => o.mcp?.localServers?.() ?? [];
-  // The one-time migration's snapshot: the first listing this run sees (`adopt` does nothing after it, or in a run
-  // that didn't create the record).
+  // The one-time migration's snapshot: the first listing with any servers while there's no record yet (`adopt` does
+  // nothing after it). What it ticks goes to the other computers and the host (which starts them) at once, after the
+  // call that saw the listing.
   let adopted = false;
   const tickedHere = (): string[] => {
     const list = localServers();
     if (!adopted && list.length > 0) {
       adopted = true;
-      ticks.adopt?.(list);
+      if (ticks.adopt?.(list) === true) queueMicrotask(() => changed());
     }
     return list.filter((s) => ticks.ticked(s.server, s.plugin)).map((s) => s.server);
   };
