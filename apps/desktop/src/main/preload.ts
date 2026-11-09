@@ -20,8 +20,7 @@ if (isRoot || isLayer) {
         console.error(err);
       }
     }
-  });
-  const bridge: LayerBridge = {
+  });  const bridge: LayerBridge = {
     token,
     describe: () => ipcRenderer.invoke("clover:describe", { token }),
     resolve: (mount, spot, key, hints) => ipcRenderer.invoke("clover:resolve", { mount, spot, key, hints }),
@@ -46,6 +45,7 @@ if (isRoot || isLayer) {
     terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("clover:terminal-input", { mount, terminalId, input }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
+    sealedFrame: (mount, cardId, element) => ipcRenderer.invoke("clover:sealed-frame", { mount, cardId, element }),
     onMessage: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -60,4 +60,12 @@ if (isRoot || isLayer) {
       call: (name: string, params?: unknown) => ipcRenderer.invoke("clover:root-call", { name, params }),
     });
   }
+} else if (where === "clover-sealed:") {
+  // A sealed frame's page: the token is its own (a single-use channel the store minted), and its answer goes back
+  // through the main process's own path — signed there with the answer key, never a plugin's connection's.
+  const token = new URLSearchParams(location.search).get("token") ?? "";
+  contextBridge.exposeInMainWorld("cloverSealed", {
+    answer: (option: string, children?: readonly string[]) => ipcRenderer.invoke("clover:sealed-answer", { token, option, children }),
+    visible: (visible: boolean) => void ipcRenderer.send("clover:sealed-visible", { token, visible }),
+  });
 }

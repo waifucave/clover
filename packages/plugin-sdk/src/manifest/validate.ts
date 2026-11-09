@@ -26,6 +26,10 @@ import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
 
+/** Environment names a plugin's server never sets (the core refuses them too, `refuseReservedPluginEnv`). Matched
+ *  without case: Windows' environment names are case-insensitive, and a manifest runs on every OS. */
+export const RESERVED_ENV = /^(CLOVER_|BUN_|LD_|DYLD_|NODE_(?!(ENV|NO_WARNINGS)$))/i;
+
 export type PluginClassName = "data" | "web" | "code";
 
 export interface DeclaredPoint {
@@ -740,6 +744,13 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
       if (type === "host" && !ctx.hasHost) {
         f.error("entry", "handler_needs_host", at, "a `host` server is served by the plugin's own code, and the plugin has no `host`");
         return false;
+      }
+      if (isObject(e.env)) {
+        const reserved = Object.keys(e.env).filter((k) => RESERVED_ENV.test(k)).sort();
+        if (reserved.length > 0) {
+          f.error("entry", "reserved_env", [...at, "env", reserved[0]!], `a server's \`env\` never sets ${reserved.join(", ")}: Clover sets its own \`CLOVER_*\` names, and what changes how Bun, Node or the loader loads code (\`BUN_*\`, \`NODE_*\` but \`NODE_ENV\` and \`NODE_NO_WARNINGS\`, \`LD_*\`, \`DYLD_*\`) isn't a plugin's`);
+          return false;
+        }
       }
       if (isObject(e.tools)) {
         for (const tool of Object.keys(e.tools)) {

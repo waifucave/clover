@@ -59,6 +59,8 @@ export interface DaemonBotsInput {
   voicePlay?: NonNullable<BotSideOptions["voices"]>["play"];
   /** The relay plugin's mailbox (#277): where a message goes when the computer running its bot can't be reached. */
   relayMailbox?: BotRelayMailbox;
+  /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
+  pillTargets?: BotSideOptions["pillTargets"];
 }
 
 /** Lane B's plugin host, as the bot side's voices, webhooks and triggers use it (#277). */
@@ -78,7 +80,8 @@ export interface DaemonPartsInput {
   /** The user's home folder: `home/<this computer>/` in the tree. */
   userHome: string;
   clock: Clock;
-  /** This device's links; null when it runs without them (no sidecar): no computer node then, and the bot side runs as
+  /** This device's links (local-only when there's no sidecar: no other device on them); null only when a test starts
+   *  none (`links: false`): no computer node then, and the bot side runs as
    *  the only computer. */
   links: DeviceLinks | null;
   /** The Clover server's lane handlers: the bot side's methods join them. */
@@ -178,6 +181,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         drivers: b.drivers({ side: () => side, node, main: runner }),
         defaultModel: b.defaultModel,
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
