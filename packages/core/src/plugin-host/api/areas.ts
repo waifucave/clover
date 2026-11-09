@@ -53,8 +53,9 @@ export const WATCHES_PER_PLUGIN = 32;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
 export const TERMINAL_INPUT_MAX = 64 * 1024;
-/** Output held while a terminal opens, before its id is known (any terminal's; ours is kept, the rest let go). */
-const EARLY_OUTPUT_MAX = 256;
+/** Output held while a terminal opens, before its id is known, in characters (any terminal's; ours is kept, the rest
+ *  let go). Past it only exits are held, without their data. */
+export const EARLY_OUTPUT_BYTES = 1_000_000;
 
 /** A size in columns or rows, as the peer schema takes it: an integer from 2 to 1000. */
 const termSize = (v: unknown, fallback: number): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(1000, Math.max(2, Math.round(v))) : fallback);
@@ -229,45 +230,61 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
           if (replaying) queued.push({ event, transient: false });
           else send(event);
         });
-        const offTransient = host.onTransient(id, (event) => {
-          if (closed || !transientFor(me, event.type)) return;
-          const e = { ...event, seq: Math.max(0, host.length(id) - 1), sessionId: id, ts: now() } as WireEvent;
-          if (replaying) queued.push({ event: e, transient: true });
-          else listener(e);
-        });
-        if (typeof since === "number") {
-          const end = host.length(id) - 1;
-          let after = Math.max(since, end - REPLAY_MAX);
-          const page = () => {
-            if (closed) return;
-            if (after < end) {
-              // A read that throws ends the follow, rather than leaving it replaying with its queue growing (#358's
-              // review).
-              let events: WireEvent[];
-              try {
-                events = projectRecords(host.history(id, { afterSeq: after, limit: Math.min(REPLAY_PAGE, end - after) }), opts);
-              } catch {
-                stopWatch();
+        // What's set up after the first subscription comes off again if any of it throws (#367's review).
+        let offTransient: Unsubscribe | undefined;
+        try {
+          offTransient = host.onTransient(id, (event) => {
+            if (closed || !transientFor(me, event.type)) return;
+            const e = { ...event, seq: Math.max(0, host.length(id) - 1), sessionId: id, ts: now() } as WireEvent;
+            if (replaying) queued.push({ event: e, transient: true });
+            else listener(e);
+          });
+          if (typeof since === "number") {
+            const end = host.length(id) - 1;
+            let after = Math.max(since, end - REPLAY_MAX);
+            const page = () => {
+              if (closed) return;
+              if (after < end) {
+                // A read that throws ends the follow, rather than leaving it replaying with its queue growing (#358's
+                // review).
+                let events: WireEvent[];
+                try {
+                  events = projectRecords(host.history(id, { afterSeq: after, limit: Math.min(REPLAY_PAGE, end - after) }), opts);
+                } catch {
+                  // The plugin hears that its follow ended (`follow_ended`, the last event's seq), then nothing more.
+                  const ended = { type: "follow_ended", sessionId: id, seq: last === -Infinity ? -1 : last, ts: now(), reason: "the session's history couldn't be read" } as WireEvent;
+                  stopWatch();
+                  try {
+                    listener(ended);
+                  } catch {
+                    // the plugin's listener; its error is its own
+                  }
+                  return;
+                }
+                for (const event of events) send(event);
+                after += REPLAY_PAGE;
+                setImmediate(page);
                 return;
               }
-              for (const event of events) send(event);
-              after += REPLAY_PAGE;
-              setImmediate(page);
-              return;
-            }
-            replaying = false;
-            for (const q of queued.splice(0)) {
-              if (closed) break;
-              if (q.transient) listener(q.event);
-              else send(q.event);
-            }
-          };
-          setImmediate(page);
+              replaying = false;
+              for (const q of queued.splice(0)) {
+                if (closed) break;
+                if (q.transient) listener(q.event);
+                else send(q.event);
+              }
+            };
+            setImmediate(page);
+          }
+        } catch (err) {
+          closed = true;
+          offRecords();
+          offTransient?.();
+          throw err;
         }
         return () => {
           closed = true;
           offRecords();
-          offTransient();
+          offTransient?.();
         };
       });
       return unsubscribe;
@@ -388,6 +405,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       const emit = layer ? s.emitToApp : undefined;
       let terminalId: string | undefined;
       let early: TerminalOutput[] | undefined = [];
+      let earlyBytes = 0;
       const handle = (o: TerminalOutput) => {
         emit?.({ type: "terminal_output", pluginId: ctx.pluginId, terminalId: o.terminalId, data: o.data, ...(o.exited !== undefined ? { exited: o.exited } : {}) });
         if (o.exited !== undefined) {
@@ -397,8 +415,14 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       };
       entry.stop = n.terminals.onOutput((o) => {
         if (terminalId === undefined) {
-          // An exit is always held (one per shell); output only up to a bound.
-          if (early !== undefined && (o.exited !== undefined || early.length < EARLY_OUTPUT_MAX)) early.push(o);
+          // Output is held up to a byte budget (#367's review: a chunk can be a megabyte, and this sees every terminal
+          // on the node); past it, output is dropped and an exit is kept without its data (one per shell). So when
+          // other terminals flood the window, this terminal's own first output can be lost; its exit never is.
+          if (early === undefined) return;
+          if (earlyBytes + o.data.length <= EARLY_OUTPUT_BYTES) {
+            earlyBytes += o.data.length;
+            early.push(o);
+          } else if (o.exited !== undefined) early.push({ terminalId: o.terminalId, data: "", exited: o.exited });
           return;
         }
         if (o.terminalId === terminalId) handle(o);
