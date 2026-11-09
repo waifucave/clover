@@ -26,11 +26,11 @@ import { canonicalizeForWrite, resolveLeafSymlinks, sdkHomeFor } from "../agent/
 import type { Mode as SessionMode } from "../agent/tools/registry";
 import { RESUME_STAGING_PREFIX } from "./host";
 import { WRITE_CLASS_TOOL_NAMES, homeFenceTarget, writeTargetPathsIn } from "./control-plane";
-import { fsRootAnchored } from "./mode-options";
+import { fsRootAnchored, persistencePaths } from "./mode-options";
 import { PROTECTED_ITEM_DIRS } from "./host";
 import { projectWalk } from "./project-walk";
 
-export { projectWalk };
+export { projectWalk, persistencePaths };
 
 /** The instructions file the sdk tier protects (the router's `brand.instructionsFile`). A project's own
  *  `<root>/CLOVER.md` is deliberately NOT protected — claude treats `CLAUDE.md` as ordinary. */
@@ -53,6 +53,9 @@ export function protectedPathsFor(home: string, trustedProjectRoot: string | nul
   const sdk = sdkHomeFor(home);
   const out: string[] = PROTECTED_ITEM_DIRS.map((kind) => `${fsRootAnchored(join(sdk, kind))}/**`);
   out.push(fsRootAnchored(join(sdk, SDK_INSTRUCTIONS_FILE)));
+  // The #301 review's ruling: where a file runs outside any sandbox at the next shell, login or SSH session, and the
+  // coding agents' own sandbox settings. Each is held as a subtree (a file's subtree is the file).
+  for (const p of persistencePaths(walk?.userHome ?? homedir())) out.push(`${fsRootAnchored(p)}/**`);
   if (trustedProjectRoot !== null) {
     const dirs = walk === undefined ? [trustedProjectRoot] : projectWalk(walk.cwd, trustedProjectRoot, walk.userHome ?? homedir());
     for (const dir of dirs) {
@@ -120,7 +123,7 @@ export function protectedWriteDecision(
 }
 
 export function protectedWriteDeniedMessage(toolName: string, path: string, mode: string): string {
-  return `${toolName} was not run — ${path} is a protected path (skills, commands, rules, output styles and CLOVER.md are loaded into every future session), and a write to one needs the user's approval, which a ${mode} session never asks for.`;
+  return `${toolName} was not run — ${path} is a protected path (skills, commands, rules, output styles and CLOVER.md are loaded into every future session; shell start files, login items and coding agents' settings run or apply outside the sandbox later), and a write to one needs the user's approval, which a ${mode} session never asks for.`;
 }
 
 /** Every spelling of a directory this module compares against: literal and realpath, lowercased. */

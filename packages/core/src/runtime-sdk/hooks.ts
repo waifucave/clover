@@ -69,6 +69,7 @@ import { attachFileDiff } from "./diff-attach";
 import { REVIEWER_ESCALATION_REASON, noteReviewerCleared } from "./bridge-common";
 import { ESCAPE_FENCED_FILENAMES, PROJECT_FENCED_SEGMENTS, homeFenceFor, homeFencedDirs, homeFencedFiles, isHomeWriteOnly } from "./home-fence";
 import { controlPlaneDenialMessage, controlPlaneTargetForCall, homeFenceTarget, hostStorageReadTarget } from "./control-plane";
+import { persistencePaths } from "./mode-options";
 import { protectedPathsFor, protectedReadDenial, protectedWriteDecision, storeWriteDenial } from "./protected-paths";
 import { baseName, COMMAND_PREFIXES, inPlaceFiles, nestedCommandStrings, quotedOperatorsAsText, shellSegments, shellWords } from "./shell-words";
 export { shellSegments } from "./shell-words";
@@ -1136,6 +1137,22 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
       }
     }
   }
+  // The #301 review's ruling: where a file runs later outside any sandbox (shell start files, login items, SSH's rc,
+  // keys and config, autostart, git's config, the PATH's user folders, package managers' configs) and the coding
+  // agents' settings (`persistencePaths`), write-shaped, each as a whole path (`~/.zshrc.bak` is another file). A write
+  // tool gets the protected card for these; an unsandboxed command gets none, so an approval it carries (or an "always"
+  // for its prefix) never writes them.
+  // BEST EFFORT, like the rest of this floor: it sees only the literal spellings (absolute, `~`, `$HOME`, `${HOME}`)
+  // in a write-shaped position. A command that writes one without naming it (`git config --global`, `npm config set`,
+  // `pip install --user`, a script, a path built at run time) isn't caught here; the sandboxed Bash's `denyWrite`
+  // holds those, and an unsandboxed command is the user's own approved escape.
+  for (const needle of persistenceNeedles()) {
+    for (let at = c.indexOf(needle); at >= 0; at = c.indexOf(needle, at + 1)) {
+      if (at <= writeStart) continue;
+      const next = c.charAt(at + needle.length);
+      if (next === "" || next === "/" || /[\s;&|()<>*?]/.test(next)) return "a place a file runs from later outside any sandbox (shell start files, login items, SSH's files, coding agents' settings)";
+    }
+  }
   // …and the runtimes' transcript store, `sdk/projects`, write-shaped and OUTSIDE each project's
   // `memory/` (the model's MEMDIR, which it maintains itself).
   // Review M2: and under its compat-link spelling `<home>/projects` (a link into `sdk/projects` on a
@@ -1156,6 +1173,17 @@ function escapeFloorHitIn(command: string, home: string | undefined, cwd?: strin
     }
   }
   return undefined;
+}
+
+/** `persistencePaths()` as the floor reads a command: lowercased, absolute and under `~`, `$HOME` and `${HOME}`. */
+function persistenceNeedles(): string[] {
+  const user = homedir().replace(/\/+$/, "");
+  const out = new Set<string>();
+  for (const p of persistencePaths(user)) {
+    out.add(p.toLowerCase());
+    if (user.length > 0 && p.startsWith(`${user}/`)) for (const t of ["~", "$home", "${home}"]) out.add(`${t}${p.slice(user.length)}`.toLowerCase());
+  }
+  return [...out];
 }
 
 /** WS-21 (spec §7.1): project files the escape floor refuses in a write-shaped position, matched on the
@@ -1206,7 +1234,7 @@ function pathFenceHook(deps: SessionHooksDeps): HookCallback {
     const decision = protectedWriteDecision(toolName, toolInput, { mode: deps.mode ?? "code", protected: protectedPathsFor(home, root, { cwd }), cwd });
     if (decision === null) return allow();
     return decision.decision === "ask"
-      ? ask(`${toolName} writes a protected path (skills, commands, rules, output styles and CLOVER.md load into every future session) — the user decides.`)
+      ? ask(`${toolName} writes a protected path (skills, commands, rules, output styles and CLOVER.md load into every future session; shell start files, login items, git, package-manager and coding agents' settings run outside the sandbox later) — the user decides.`)
       : deny(decision.reason);
   };
 }
