@@ -2,7 +2,7 @@
 // spawner as its caller, with an environment built whole here; a spawner that can't start a fenced process refuses,
 // and nothing ever runs unsandboxed. On the macOS job the real fenced process (Seatbelt) runs it.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, symlinkSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -60,6 +60,23 @@ describe("fencedExecutor over a spawner", () => {
     const s = fake(() => ({ kind: "exited", code: 0, stdout: "", stderr: "", shell: "sh" }));
     await fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", os: "macos" }).run("Bash", { command: "true" }, ctx());
     expect(s.runs[0]!.env).toEqual({ PATH: fencedPath("macos"), HOME: "/Users/me", LANG: "en_US.UTF-8", TERM: "dumb", TMPDIR: "/private/tmp" });
+  });
+
+  test("a bot's own run gets its own scratch folder as TMPDIR (made when missing); a link there, or another caller, gets the fence's", async () => {
+    const clover = join(temp("lane-j-exec-scratch-"), ".clover");
+    const s = fake(() => ({ kind: "exited", code: 0, stdout: "", stderr: "", shell: "sh" }));
+    const exec = fencedExecutor({ spawner: s, home: "/Users/me", temp: "/private/tmp", cloverHome: clover, os: "macos" });
+    await exec.run("Bash", { command: "true" }, ctx());
+    expect(s.runs[0]!.env.TMPDIR).toBe(`${clover}/scratch/luna`);
+    expect(lstatSync(join(clover, "scratch", "luna")).isDirectory()).toBe(true);
+    await exec.run("Bash", { command: "true" }, ctx({ as: { kind: "session", sessionId: "s_code", sessionKind: "coding" } }));
+    expect(s.runs[1]!.env.TMPDIR).toBe("/private/tmp");
+    await exec.run("Bash", { command: "true" }, ctx({ as: PEER }));
+    expect(s.runs[2]!.env.TMPDIR).toBe("/private/tmp");
+    // A link where a bot's scratch folder should be: never followed, the fence's temp folder instead.
+    symlinkSync(temp("lane-j-exec-elsewhere-"), join(clover, "scratch", "alpha"));
+    await exec.run("Bash", { command: "true" }, ctx({ as: { kind: "session", sessionId: "s_a", sessionKind: "bot", bot: "alpha" } }));
+    expect(s.runs[3]!.env.TMPDIR).toBe("/private/tmp");
   });
 
   test("another computer's call runs as that peer; a timeout asked for is capped", async () => {
@@ -122,7 +139,7 @@ darwinDescribe("on this Mac's real fenced process (Seatbelt)", () => {
     for (const d of [join(clover, "settings"), project, join(root, "tmp")]) mkdirSync(d, { recursive: true });
     writeFileSync(join(clover, "settings.json"), "orig");
     const spawner = fencedSpawner({ fence: new CloverFence({ os: hostOs(), home, cloverHome: clover, temp: join(root, "tmp") }) });
-    const exec = fencedExecutor({ spawner, home, temp: join(root, "tmp"), os: hostOs() });
+    const exec = fencedExecutor({ spawner, home, temp: join(root, "tmp"), cloverHome: clover, os: hostOs() });
     const coding: Caller = { kind: "session", sessionId: "s_code", sessionKind: "coding" };
     process.env.LANE_J_DAEMON_ONLY = "never-in-a-child";
     try {
@@ -137,6 +154,10 @@ darwinDescribe("on this Mac's real fenced process (Seatbelt)", () => {
     const tmp = await exec.run("Bash", { command: 'f=$(mktemp "$TMPDIR/lane-j.XXXXXX") && echo made > "$f" && cat "$f"' }, ctx({ as: coding, cwd: project }));
     expect(tmp.isError).toBe(false);
     expect((tmp.output as { stdout: string }).stdout).toBe("made\n");
+    // A bot's own run makes its temp files in its own scratch folder, which the sandbox lets it write.
+    const botTmp = await exec.run("Bash", { command: 'f=$(mktemp "$TMPDIR/lane-j.XXXXXX") && echo "$f"' }, ctx({ as: LUNA, cwd: project }));
+    expect(botTmp.isError).toBe(false);
+    expect((botTmp.output as { stdout: string }).stdout.startsWith(join(clover, "scratch", "luna"))).toBe(true);
     const fenced = await exec.run("Bash", { command: `echo planted > ${JSON.stringify(join(clover, "settings.json"))}` }, ctx({ as: coding, cwd: project }));
     expect(fenced.isError).toBe(true);
     expect(readFileSync(join(clover, "settings.json"), "utf8")).toBe("orig");

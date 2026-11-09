@@ -132,7 +132,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
         ...(input.approvals ? { approvals: input.approvals } : {}),
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
-        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome } } : {}),
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome } } : {}),
         answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),
       });

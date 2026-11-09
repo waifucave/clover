@@ -130,7 +130,7 @@ export function nodeParts(o: {
   approvals?: Pick<ApprovalBroker, "request" | "get">;
   reviewer?: SafetyReviewer;
   /** Lane C's fenced process on this computer (`fencedSpawner({ fence })`) and the user's home: the node's Bash. */
-  bash?: { spawner: FencedSpawner; home: string; temp?: string; os?: Os };
+  bash?: { spawner: FencedSpawner; home: string; temp?: string; cloverHome?: string; os?: Os };
   /** This computer's paired devices and its Clover home: the node takes another computer's signed answers. */
   answers?: { devices: AnswerDevices; cloverHome: string; clock: Pick<Clock, "now"> };
   log?: (line: string) => void;
@@ -140,7 +140,7 @@ export function nodeParts(o: {
   return {
     ...(approvals && typeof approvals.get === "function" ? { askUser: brokerAsker({ broker: approvals, ...(o.log ? { log: o.log } : {}) }) } : {}),
     ...(o.answers ? { answers: { devices: o.answers.devices, ledger: new FileAnswerLedger(usedAnswersPath(o.answers.cloverHome), o.answers.clock), render: callCardRenderer(sha256) } } : {}),
-    ...(o.bash ? { executor: fencedExecutor({ spawner: o.bash.spawner, home: o.bash.home, ...(o.bash.temp === undefined ? {} : { temp: o.bash.temp }), os: o.bash.os ?? hostOs() }) } : {}),
+    ...(o.bash ? { executor: fencedExecutor({ spawner: o.bash.spawner, home: o.bash.home, ...(o.bash.temp === undefined ? {} : { temp: o.bash.temp }), ...(o.bash.cloverHome === undefined ? {} : { cloverHome: o.bash.cloverHome }), os: o.bash.os ?? hostOs() }) } : {}),
     terminals: approvals ? { confirmPaste: confirmPasteVia(approvals, o.computer) } : {},
     reviewer: peerReviewer(o.reviewer, o.log),
     // A broker (or a late-bound proxy for one) without `get` finds no card: a clean "no such card", not a TypeError.
