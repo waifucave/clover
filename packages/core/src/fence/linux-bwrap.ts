@@ -150,6 +150,21 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
       const k = fs.kind(p);
       if (k === "dir" || k === "file") a.push("--bind", p, p);
     }
+    // A deny always wins over an allow (the controller's ruling): a fenced item strictly inside a bound own folder is
+    // masked again after the binds, read-only, or hidden when it is read-denied.
+    const own = [...ro, ...rw].filter((p): p is string => typeof p === "string");
+    const strictlyIn = (d: string) => own.some((o) => d !== o && inside(d, o));
+    const hidden = new Set(policy.denyRead.filter(strictlyIn));
+    for (const d of [...new Set([...policy.denyWrite.filter(strictlyIn), ...hidden])].sort((x, y) => x.length - y.length)) {
+      const k = fs.kind(d);
+      if (k === null) continue;
+      if (hidden.has(d)) {
+        if (k === "dir") a.push("--tmpfs", d, "--remount-ro", d);
+        else a.push("--ro-bind", "/dev/null", d);
+      } else {
+        a.push("--ro-bind", d, d);
+      }
+    }
     // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it. Bound after
     // the tmpfs, which would otherwise hide it.
     const template = gitTemplateDir(cloverHome);

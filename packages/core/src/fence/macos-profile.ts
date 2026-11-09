@@ -134,6 +134,14 @@ export function macFenceProfile(input: MacProfileInput): string {
       lines.push(`(deny file-write* (literal ${q(p)}))`);
     }
     if (c.ownBot !== null) lines.push(`(allow file-read* (regex #"^${rx(c.ownBot)}(/|$)"))`);
+    // A deny always wins over an allow (the controller's ruling): any deny strictly inside one of the caller's own
+    // folders comes again after its allows, so no allow re-opens it. The denies that hold an own folder (the home,
+    // `bots`) aren't repeated: the own folder is carved out of those.
+    const own = [c.ownOutputs, c.ownScratch, c.ownRoutines, c.ownPluginData, c.ownMemory, c.ownBot].filter((p): p is string => p !== null);
+    const innerW = policy.denyWrite.filter((d) => own.some((o) => d !== o && inside(d, o)));
+    const innerR = policy.denyRead.filter((d) => own.some((o) => d !== o && inside(d, o)));
+    if (innerW.length > 0) lines.push(`(deny file-write* ${innerW.map((d) => `(subpath ${q(d)})`).join(" ")})`);
+    if (innerR.length > 0) lines.push(`(deny file-read* ${innerR.map((d) => `(subpath ${q(d)})`).join(" ")})`);
   }
   // A hook planted in any repo under the home runs later, outside the sandbox (spec item 1116): refused everywhere
   // under it, after the caller's own allows (a runner's own folders may hold a repo too). Bare repos (`*.git`)
