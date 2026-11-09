@@ -196,7 +196,6 @@ export class OffscreenTab extends BrowserTab {
     // Windows fits a new window to the screen's work area: the page's size is set after it is made (S7 §7.1).
     sizeContent(window, AGENT_VIEWPORT.width, AGENT_VIEWPORT.height);
     const tab = new OffscreenTab(id, owner, window, env);
-    tab.emulateViewSize();
     tab.contents.setFrameRate(BOT_FPS);
     tab.contents.on("paint", (_e, dirty, image) => {
       const fitted = tab.fit(image);
@@ -220,7 +219,6 @@ export class OffscreenTab extends BrowserTab {
     const [w, h] = this.window.getContentSize();
     if (w !== viewport.width || h !== viewport.height) {
       sizeContent(this.window, viewport.width, viewport.height);
-      this.emulateViewSize();
       this.frames.clear();
       this.drawn = false;
     }
@@ -288,21 +286,6 @@ export class OffscreenTab extends BrowserTab {
     const frame = await next;
     if (!this.contents.isDestroyed()) this.applyRate(); // resting again (unless a stream started meanwhile)
     return frame !== undefined ? { image: frame.image, contentAgeMs: Date.now() - frame.at } : undefined;
-  }
-
-  /** On a display at another scale the system rounds the window to a pixel or two more than asked (Windows at 150 %:
-   *  1282x801 for 1280x800), and the page would lay out at that. The page's own view size is fixed to the viewport's,
-   *  so the agent's page is exactly 1280x800 whatever the display (lane L-M3, §3). */
-  private emulateViewSize(): void {
-    let factor = 1;
-    try {
-      factor = screen.getDisplayMatching(this.window.getBounds()).scaleFactor;
-    } catch {
-      return;
-    }
-    if (factor === 1 || this.contents.isDestroyed()) return;
-    const { width, height } = this.viewport;
-    this.contents.enableDeviceEmulation({ screenPosition: "desktop", screenSize: { width, height }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 0, viewSize: { width, height }, scale: 1 });
   }
 
   /** The image of the tab at its current size, or undefined if it is of another one (a frame from before a resize). On a
@@ -388,12 +371,14 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 /** Sets a window's content size and corrects what the system rounds it to (Windows at a scale that isn't a whole number
- *  hands back a pixel or two more), so the page's own size is exactly the viewport's. */
+ *  hands back a pixel or two more), so the page's own size is exactly the viewport's. What is measured is the content
+ *  view's own bounds, which is the page's, not `getContentSize`, which rounds the same way the window did. */
 function sizeContent(window: BrowserWindow, width: number, height: number): void {
   window.setContentSize(width, height);
-  for (let i = 0; i < 3; i++) {
-    const [w = width, h = height] = window.getContentSize();
-    if (w === width && h === height) return;
-    window.setContentSize(width - (w - width), height - (h - height));
+  for (let i = 0; i < 4; i++) {
+    const { width: w, height: h } = window.contentView.getBounds();
+    if ((w === width && h === height) || w <= 0 || h <= 0) return;
+    const [cw = width, ch = height] = window.getContentSize();
+    window.setContentSize(cw - (w - width), ch - (h - height));
   }
 }

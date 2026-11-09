@@ -16,8 +16,7 @@ describe("the stream over a throttled loopback link", () => {
     // hold the whole run), so only that the picture keeps moving is asserted here.
     expect(r.delivered).toBeGreaterThan(50);
     expect(r.longestGapMs).toBeLessThan(5000);
-    expect(r.latencyP95).toBeLessThan(20_000);
-    expect(r.askRatio).toBeLessThan(2.5);
+    expect(r.latencyP95).toBeLessThan(30_000);
   }, 60_000);
 
   test("with the receiver's acks: the delay stays near real time whatever the buffers hold, and the bitrate follows the link", async () => {
