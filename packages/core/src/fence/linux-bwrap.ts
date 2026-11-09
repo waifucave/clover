@@ -134,17 +134,29 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
   // Without a caller every own folder is absent: the view holds nothing.
   if (fs.kind(cloverHome) === "dir") {
     const c = input.caller;
-    // A bot's open access (the owner's ruling of November 9): the home itself, read-only, in place of the empty view;
-    // its own folders and every bot's scratch folder bound read-write over it, and what it still can't read masked
-    // below.
+    // A bot's open access (the owner's ruling of November 9): the view holds the home's entries read-only, but every
+    // one the policy read-denies by name, which never appears in it, there or not when the run starts (a secrets file
+    // made mid-run stays out: #355's review); its own folders and every bot's scratch and memory bound read-write over
+    // it, and what a glob denies masked below.
     const open = c?.botAccess ?? null;
-    a.push(...(open !== null ? ["--ro-bind", cloverHome, cloverHome] : ["--tmpfs", cloverHome]));
+    a.push("--tmpfs", cloverHome);
+    const listed = (dir: string) => (fs.kind(dir) === "dir" ? fs.list(dir).sort() : []);
+    const named = open === null ? [] : policy.denyRead.filter((d) => d !== cloverHome && inside(d, cloverHome) && !d.includes("*"));
+    const view = (dir: string): void => {
+      for (const name of listed(dir)) {
+        const e = `${dir}/${name}`;
+        if (named.includes(e)) continue;
+        if (named.some((d) => d !== e && inside(d, e))) { a.push("--dir", e); view(e); continue; }
+        const k = fs.kind(e);
+        if (k === "dir" || k === "file") a.push("--ro-bind", e, e);
+      }
+    };
+    if (open !== null) view(cloverHome);
     // Shallow first: the top folders exist so a runner can list its own view, and each folder on the way to a
     // bind is made, so no bind needs its destination to exist.
     const ro: [string | null | undefined] = [c?.ownBot];
     // Every bot's scratch folder and every bot's memory there when the run starts, read-write (the owner's ruling and
     // its amendment).
-    const listed = (dir: string) => (fs.kind(dir) === "dir" ? fs.list(dir).sort() : []);
     const scratchAll = open !== null ? listed(open.scratch).map((x) => `${open.scratch}/${x}`) : [];
     const memoryAll = open !== null ? listed(open.bots).map((x) => `${open.bots}/${x}/memory`) : [];
     const rw = [...new Set([c?.ownOutputs, c?.ownScratch, c?.ownRoutines, c?.ownPluginData, c?.ownMemory, ...scratchAll, ...memoryAll])];
@@ -163,7 +175,8 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     // masked again after the binds, read-only, or hidden when it is read-denied.
     const own = [...ro, ...rw].filter((p): p is string => typeof p === "string");
     const strictlyIn = (list: readonly string[]) => (d: string) => list.some((o) => d !== o && inside(d, o));
-    const hidden = new Set(policy.denyRead.filter(strictlyIn(open !== null ? [...own, cloverHome] : own)));
+    // (A bot's named read denies never entered its view; what sits in a read-write folder is masked here.)
+    const hidden = new Set(policy.denyRead.filter((d) => !d.includes("*")).filter(strictlyIn(own)));
     for (const d of [...new Set([...policy.denyWrite.filter(strictlyIn(own)), ...hidden])].sort((x, y) => x.length - y.length)) {
       const k = fs.kind(d);
       if (k === null) continue;
@@ -174,11 +187,33 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
         a.push("--ro-bind", d, d);
       }
     }
+    // What a glob read-denies for a bot (the runtimes' provider-state sidecars, `projects/*/*.provider-state.jsonl`),
+    // as it is when the run starts: each match masked. One made mid-run in a bound folder is the known gap the fence's
+    // own check still covers.
+    if (open !== null) {
+      for (const g of policy.denyRead.filter((d) => d.includes("*") && inside(d, cloverHome))) {
+        let at = [cloverHome];
+        for (const seg of g.slice(cloverHome.length + 1).split("/")) {
+          const next: string[] = [];
+          for (const dir of at) {
+            if (!seg.includes("*")) { next.push(`${dir}/${seg}`); continue; }
+            const suffix = seg === "*" ? "" : seg.slice(1);
+            for (const n of listed(dir)) if (n.endsWith(suffix)) next.push(`${dir}/${n}`);
+          }
+          at = next;
+        }
+        for (const m of at) {
+          const k = fs.kind(m);
+          if (k === "dir") a.push("--tmpfs", m, "--remount-ro", m);
+          else if (k !== null) a.push("--ro-bind", "/dev/null", m);
+        }
+      }
+    }
     // Clover's empty git template, read-only: `git init` and `git clone` install no hooks from it. Bound after
     // the tmpfs, which would otherwise hide it.
     const template = gitTemplateDir(cloverHome);
     if (fs.kind(template) === "dir") a.push("--ro-bind", template, template);
-    if (open === null) a.push("--remount-ro", cloverHome);
+    a.push("--remount-ro", cloverHome);
   }
   // The closed doors: the user's session bus and systemd (systemd-run --user), and the system bus.
   if (policy.closedDoors.length > 0) {
