@@ -8,7 +8,10 @@
 // tables build the same card. Each binds exactly its call (`binds`: the computer that runs it, the method, and SHA-256
 // over the call's canonical JSON; for `tree.transfer` both computers). Names and paths lose characters that hide or
 // reorder text (`plainOf`); a command, a file's text or a call's input shows each one as a visible escape (`shownCode`).
-// What is too long for a sealed field isn't cut: the card says how long it is and that it isn't shown.
+// A command also shows every character that isn't ASCII as an escape (a Cyrillic `а` can't pass for a Latin `a`), and
+// a long run of spaces or of blank lines as a marker saying how long it is, so nothing hides off to the side or below
+// (#368's review). What is too long for a sealed field isn't cut: the card says how long it is and that it isn't
+// shown; a long path goes whole into code, and a long name shows its beginning and its end with its length.
 import {
   TREE_TRANSFER, callBindingInput, canonicalJson,
   type CallBinding, type CardContent, type CardOption, type Level, type SealedValue, type TreeTransferParams,
@@ -35,23 +38,38 @@ const ALLOW: CardOption[] = [{ id: "approve", kind: "approve", label: "Allow" },
 const text = (t: string): SealedValue => ({ type: "text", text: t });
 const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
 
-/** Paths as a list, or as code when one is longer than a list item holds. */
-function pathsField(paths: readonly string[]): SealedValue {
-  const shown = paths.map(plainOf);
+/** Paths as a list, or whole as code when one is longer than a list item holds (never cut). */
+function pathsField(paths: readonly (string | undefined)[]): SealedValue {
+  const shown = paths.map((p) => (p === undefined ? "(no path)" : plainOf(p) === "" ? "(no path)" : plainOf(p)));
   return shown.every((p) => p.length <= LINE_MAX) ? { type: "list", items: shown } : { type: "code", code: shown.join("\n") };
 }
 
-/** Code, or a note saying how long it is when it is too long to show whole. */
-function codeOr(code: string, what: string): { command?: SealedValue; detail?: SealedValue } {
-  const shown = shownCode(code);
+/** A run of spaces or tabs this long or longer shows as a marker with its length. */
+const WHITESPACE_RUN = 8;
+/** This many blank lines in a row or more show as a marker with their count. */
+const BLANK_LINES = 3;
+
+/** A command as its card shows it: hiding characters escaped (`shownCode`), every other character that isn't ASCII
+ *  escaped too (no homoglyph passes for an ASCII letter), and long runs of spaces or blank lines as markers. */
+export function shownCommand(command: string): string {
+  let out = shownCode(command).replace(/[^\x00-\x7F]/gu, (c) => `\\u{${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}}`);
+  out = out.replace(new RegExp(`[ \\t]{${WHITESPACE_RUN},}`, "g"), (run) => ` [${run.length} spaces] `);
+  out = out.replace(new RegExp(`\\n(?:[ \\t]*\\n){${BLANK_LINES},}`, "g"), (run) => `\n[${run.split("\n").length - 2} blank lines]\n`);
+  return out;
+}
+
+/** Code, or a note saying how long it is when it is too long to show whole. A command (`asCommand`) is shown by
+ *  `shownCommand`. */
+function codeOr(code: string, what: string, asCommand = false): { command?: SealedValue; detail?: SealedValue } {
+  const shown = asCommand ? shownCommand(code) : shownCode(code);
   if (shown.length <= CALL_CARD_CODE_MAX) return { command: { type: "code", code: shown } };
   return { detail: { type: "rows", rows: [{ label: what, value: `${code.length} characters, too long to show on this card` }] } };
 }
 
-/** A name as a card shows it: plain, at most one line's length. */
+/** A name as a card shows it: plain; one longer than a line shows its beginning and its end, with its length. */
 function named(s: string | undefined, fallback: string): string {
   const p = s === undefined ? "" : plainOf(s);
-  return p.length === 0 ? fallback : p.length <= LINE_MAX ? p : `${p.slice(0, 200)}… (${p.length} characters)`;
+  return p.length === 0 ? fallback : p.length <= LINE_MAX ? p : `${p.slice(0, 200)} … ${p.slice(-200)} (${p.length} characters)`;
 }
 
 function bindingOf(computer: string, method: string, params: unknown, sha256: (text: string) => string): CallBinding {
@@ -74,24 +92,24 @@ function fieldsFor(computer: string, method: string, params: unknown): { kind: C
       const body = data.encoding === "utf8" && typeof data.text === "string"
         ? codeOr(data.text, "Content")
         : { detail: { type: "rows" as const, rows: [{ label: "Content", value: `binary, ${typeof data.base64 === "string" ? Math.floor((data.base64.length * 3) / 4) : 0} bytes` }] } };
-      return { kind: "tool", fields: { title: text("Write a file from another computer"), what: text("Write this file?"), computer: on, paths: pathsField([named(str(p.path), "(no path)")]), ...body } };
+      return { kind: "tool", fields: { title: text("Write a file from another computer"), what: text("Write this file?"), computer: on, paths: pathsField([str(p.path)]), ...body } };
     }
     case "tree.remove":
       return { kind: "tool", fields: {
         title: text("Delete from another computer"), what: text(p.recursive === true ? "Delete this, and everything in it?" : "Delete this?"),
-        computer: on, paths: pathsField([named(str(p.path), "(no path)")]),
+        computer: on, paths: pathsField([str(p.path)]),
       } };
     case "tree.move":
       return { kind: "tool", fields: {
         title: text("Move from another computer"), what: text("Move this?"), computer: on,
-        paths: pathsField([named(str(p.from), "(no path)"), named(str(p.to), "(no path)")]),
+        paths: pathsField([str(p.from), str(p.to)]),
       } };
     case "tree.mkdir":
-      return { kind: "tool", fields: { title: text("Make a folder from another computer"), what: text("Make this folder?"), computer: on, paths: pathsField([named(str(p.path), "(no path)")]) } };
+      return { kind: "tool", fields: { title: text("Make a folder from another computer"), what: text("Make this folder?"), computer: on, paths: pathsField([str(p.path)]) } };
     case "tree.symlink":
       return { kind: "tool", fields: {
         title: text("Make a link from another computer"), what: text("Make this link?"), computer: on,
-        paths: pathsField([named(str(p.path), "(no path)")]), ...codeOr(str(p.target) ?? "", "Points to"),
+        paths: pathsField([str(p.path)]), ...codeOr(str(p.target) ?? "", "Points to", true),
       } };
     case TREE_TRANSFER: {
       const move = p.operation === "move";
@@ -99,13 +117,13 @@ function fieldsFor(computer: string, method: string, params: unknown): { kind: C
         title: text(move ? "Move between computers" : "Copy between computers"),
         what: text(move ? "Move these files from one computer to the other?" : "Copy these files from one computer to the other?"),
         computer: text(`${named(str(p.source), "?")} → ${named(str(p.destination), "?")}`),
-        paths: pathsField([named(str(p.from), "(no path)"), named(str(p.to), "(no path)")]),
+        paths: pathsField([str(p.from), str(p.to)]),
       } };
     }
     case "terminal.open":
       return { kind: "tool", fields: {
         title: text("Open a terminal from another computer"), what: text("Open a terminal here? Whatever is typed in it runs as you."),
-        computer: on, paths: pathsField([named(str(p.cwd), "(the home folder)")]),
+        computer: on, paths: pathsField([str(p.cwd) ?? "(the home folder)"]),
       } };
     case "mcp.mirror":
       return { kind: "tool", fields: {
@@ -126,7 +144,7 @@ function fieldsFor(computer: string, method: string, params: unknown): { kind: C
       if (p.tool === "Bash" && typeof input.command === "string") {
         return { kind: "tool", fields: {
           title: text("Run a command from another computer"), what: text("Run this command?"), computer: on,
-          ...codeOr(input.command, "Command"), ...(typeof input.cwd === "string" ? { paths: pathsField([named(input.cwd, "(no folder)")]) } : {}),
+          ...codeOr(input.command, "Command", true), ...(typeof input.cwd === "string" ? { paths: pathsField([input.cwd]) } : {}),
         } };
       }
       return { kind: "tool", fields: {

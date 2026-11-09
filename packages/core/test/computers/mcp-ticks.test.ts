@@ -3,7 +3,7 @@
 // elsewhere isn't ticked; Mirror ticks one server on another computer after that computer's card; the user unticks
 // one here. The hello names what's ticked, and the `computer` field's list follows.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -17,11 +17,17 @@ const BOT: Caller = { kind: "session", sessionId: "s_alpha", sessionKind: "bot",
 const code = async (p: Promise<unknown>) => ((await p.then(() => undefined, (e: unknown) => e)) as { code?: string } | undefined)?.code ?? "ok";
 
 describe("FileMcpTicks", () => {
-  test("the run that creates the file ticks what it finds (the one-time migration); later runs tick only what they're told", () => {
+  test("the run that creates the file ticks its first listing (the one-time migration's snapshot); nothing after it", () => {
     const path = mcpTicksPath(temp("lane-j-ticks-"));
     const first = new FileMcpTicks(path);
+    expect(first.ticked("blender", "acme/blender")).toBe(false);
+    first.adopt([{ server: "blender", plugin: "acme/blender" }]);
     expect(first.ticked("blender", "acme/blender")).toBe(true);
+    // A plugin synced in later in the same run isn't adopted.
+    first.adopt([{ server: "late", plugin: "acme/late" }]);
+    expect(first.ticked("late", "acme/late")).toBe(false);
     const later = new FileMcpTicks(path);
+    later.adopt([{ server: "figma-local", plugin: "acme/figma" }]);
     expect(later.ticked("blender", "acme/blender")).toBe(true);
     // A synced plugin's server arriving after the migration isn't ticked here.
     expect(later.ticked("figma-local", "acme/figma")).toBe(false);
@@ -50,6 +56,19 @@ describe("FileMcpTicks", () => {
   });
 });
 
+describe("a levels/ folder that can't be written", () => {
+  test("the node's ticks don't throw at start: nothing is adopted, nothing is ticked, and a tick says it couldn't save", () => {
+    const home = temp("lane-j-ticks-ro-");
+    writeFileSync(join(home, "levels"), "a file, not a folder");
+    const lines: string[] = [];
+    const t = new FileMcpTicks(mcpTicksPath(home), () => {}, (l) => lines.push(l));
+    expect(lines.some((l) => l.includes("can't be written"))).toBe(true);
+    t.adopt([{ server: "blender", plugin: "acme/blender" }]);
+    expect(t.ticked("blender", "acme/blender")).toBe(false);
+    expect(() => t.set("blender", true)).toThrow();
+  });
+});
+
 describe("a local server across two computers", () => {
   let cluster: Cluster | undefined;
   afterEach(() => cluster?.close());
@@ -62,6 +81,7 @@ describe("a local server across two computers", () => {
     const ticks = { Studio: new FileMcpTicks(mcpTicksPath(homes.Studio)), Laptop1: new FileMcpTicks(mcpTicksPath(homes.Laptop1)) };
     ticks.Studio.installed("acme/blender");
     const calls: string[] = [];
+    const refreshed: string[] = [];
     const place: McpServerPlacement = { name: "blender", kind: "local", computers: [] };
     cluster = new Cluster();
     const opts = {
@@ -74,6 +94,7 @@ describe("a local server across two computers", () => {
         scratch: () => `home/${name}`,
         localServers: () => [{ server: "blender", plugin: "acme/blender" }],
         ticks: ticks[name as "Studio" | "Laptop1"],
+        onTicksChanged: () => { refreshed.push(name); },
       }),
     };
     const studio = await cluster.add("Studio", opts);
@@ -92,8 +113,11 @@ describe("a local server across two computers", () => {
     const r = await studio.node.mcp!.run("blender", "Render", { computer: "Laptop1" }, { ...ctx, callId: "c2" });
     expect(r.computer).toBe("Laptop1");
     expect(calls).toEqual(["Laptop1 blender.Render"]);
-    // The user unticks it on Laptop1: it comes off the list everywhere.
+    // Mirror's tick told Laptop1's host to start it.
+    expect(refreshed).toEqual(["Laptop1"]);
+    // The user unticks it on Laptop1: it comes off the list everywhere, and Laptop1's host is told to close it.
     laptop.node.mcpTicks.set("blender", false);
+    expect(refreshed).toEqual(["Laptop1", "Laptop1"]);
     await until(() => studio.node.mcpComputers("blender").join() === "Studio", 5000, "Studio to hear Laptop1 dropped blender");
     expect(await code(studio.node.mcp!.run("blender", "Render", { computer: "Laptop1" }, { ...ctx, callId: "c3" }))).toBe("invalid");
     // Mirror to a computer where the plugin hasn't synced: refused there, nothing ticked.

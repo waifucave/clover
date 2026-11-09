@@ -58,33 +58,50 @@ export function usedAnswersPath(cloverHome: string): string {
 /** The most card ids kept; past it (after pruning) a claim is refused, never a used id forgotten. */
 const USED_CARDS_MAX = 4096;
 
-/** The card ids a level raise `via: "card"` has used (#342 review, item 3), on disk so a card counts once across a
- *  restart too. An id is kept twice the card's age bound (`CARD_PROOF_MAX_AGE_MS`) from its use: after that the age
- *  bound refuses the card anyway. Fails closed: when the file can't be written, the claim is refused. A file that
- *  can't be read starts the record empty; the registry's start-time bound (no card answered before it started counts)
- *  still refuses every card from before the restart. */
+/** The card ids a level raise `via: "card"`, or another computer's signed answer, has used (#342 review, item 3), on
+ *  disk so a card counts once across a restart too. An id is kept twice the age bound (`CARD_PROOF_MAX_AGE_MS`, which
+ *  a signed answer's freshness shares) from its use: after that the bound refuses the card anyway. Fails closed: when
+ *  the file can't be written, the claim is refused; and when it is there but can't be read (corrupt, #368's review),
+ *  every claim is refused until twice the bound has passed since this start, so no id it held can count again, and
+ *  only then is it written afresh. A missing file is an empty record. */
 export class FileAnswerLedger implements AnswerLedger {
   readonly #path: string;
   readonly #clock: Pick<Clock, "now">;
   readonly #used = new Map<string, number>();
+  /** When a file that couldn't be read was found: claims are refused until the ids it held are too old to count. */
+  #brokenSince: number | undefined;
 
   constructor(path: string, clock: Pick<Clock, "now">) {
     this.#path = path;
     this.#clock = clock;
-    let raw: unknown;
+    let text: string;
     try {
-      raw = JSON.parse(readFileSync(path, "utf8"));
-    } catch {
+      text = readFileSync(path, "utf8");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") this.#brokenSince = clock.now();
       return;
     }
-    const used = typeof raw === "object" && raw !== null ? (raw as { used?: unknown }).used : undefined;
-    if (typeof used !== "object" || used === null) return;
+    let used: unknown;
+    try {
+      const raw = JSON.parse(text) as unknown;
+      used = typeof raw === "object" && raw !== null ? (raw as { used?: unknown }).used : undefined;
+    } catch {
+      used = undefined;
+    }
+    if (typeof used !== "object" || used === null || Array.isArray(used)) {
+      this.#brokenSince = clock.now();
+      return;
+    }
     for (const [id, at] of Object.entries(used)) if (typeof at === "number" && Number.isFinite(at)) this.#used.set(id, at);
   }
 
   claim(cardId: string): boolean {
-    if (this.#used.has(cardId)) return false;
     const now = this.#clock.now();
+    if (this.#brokenSince !== undefined) {
+      if (now - this.#brokenSince <= 2 * CARD_PROOF_MAX_AGE_MS) return false;
+      this.#brokenSince = undefined;
+    }
+    if (this.#used.has(cardId)) return false;
     for (const [id, at] of this.#used) if (now - at > 2 * CARD_PROOF_MAX_AGE_MS) this.#used.delete(id);
     if (this.#used.size >= USED_CARDS_MAX) return false;
     this.#used.set(cardId, now);

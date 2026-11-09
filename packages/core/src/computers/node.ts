@@ -83,6 +83,9 @@ export interface ComputerNodeOptions {
     localServers?: () => readonly { server: string; plugin: string }[];
     /** This computer's ticks (default: `levels/mcp-servers.json` under the Clover home). */
     ticks?: McpTicks;
+    /** Told after this computer's ticks change: the host starts a newly ticked server and closes an unticked one
+     *  (lane A's `PluginMcp.refresh`). */
+    onTicksChanged?: () => void;
   };
   /** Lane H's sync for the bots' memories (`home/memory/`, kept on every computer that runs the core): told of each
    *  change here once it is on disk, so it reaches the other computers now, or when they are back. */
@@ -174,9 +177,19 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
   const fence = o.lease ? leaseFence(o.lease) : undefined;
   if (!o.lease) o.log?.("computers: no lease yet (no group): acts between computers carry no fencing token, and none is judged");
   // J-M2: the local MCP servers ticked here, and which computers run each (spec §9.1).
-  const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome));
+  const ticks: McpTicks = o.mcp?.ticks ?? new FileMcpTicks(mcpTicksPath(o.cloverHome), () => {}, (line) => o.log?.(`computers: ${line}`));
   const localServers = () => o.mcp?.localServers?.() ?? [];
-  const tickedHere = (): string[] => localServers().filter((s) => ticks.ticked(s.server, s.plugin)).map((s) => s.server);
+  // The one-time migration's snapshot: the first listing this run sees (`adopt` does nothing after it, or in a run
+  // that didn't create the record).
+  let adopted = false;
+  const tickedHere = (): string[] => {
+    const list = localServers();
+    if (!adopted && list.length > 0) {
+      adopted = true;
+      ticks.adopt?.(list);
+    }
+    return list.filter((s) => ticks.ticked(s.server, s.plugin)).map((s) => s.server);
+  };
   const peers = new ComputerPeers({
     ...(fence ? { fence } : {}),
     mcpServers: tickedHere,
@@ -185,9 +198,17 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     ...(o.answers ? { render: o.answers.render } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
   });
   // Each tick change goes to the other computers at once, in the hello.
+  const changed = () => {
+    peers.announce();
+    try {
+      o.mcp?.onTicksChanged?.();
+    } catch (e) {
+      o.log?.(`computers: the MCP host didn't take the tick change: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   const mcpTicks: Pick<McpTicks, "installed" | "set"> = {
-    installed: (plugin) => { ticks.installed(plugin); peers.announce(); },
-    set: (server, on) => { ticks.set(server, on); peers.announce(); },
+    installed: (plugin) => { ticks.installed(plugin); changed(); },
+    set: (server, on) => { ticks.set(server, on); changed(); },
   };
   const mcpComputers = (server: string): string[] => {
     const self = registry.self().name;
