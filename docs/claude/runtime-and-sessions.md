@@ -16,7 +16,7 @@
 - `create.ts`'s `spawnHookFor(mode)` is the ONE topology site; chat/dispatch get `createEmbeddedSessionHost` (owned by `daemon.ts`, drained in `stop()` before the stores close; `pid` is `null`; tests use `daemon.embedded.live()`).
 - Worker entry `packages/cli/src/embedded-worker.ts` is a SECOND `compile:core` entrypoint, reached in the compiled binary by the plain string `"./embedded-worker.ts"` (a `new URL(…)` hangs there); it imports only `.build/embedded-worker.bundle.js`, bundled ALONE from `src/embedded-worker.source.ts`, never with `src/main.ts` (`packages/cli/test/compile-core.test.ts`).
 - **Version lock**: runtime, wrapper and `REQUIRED_WINTER_AGENT_SDK` (`runtime-sdk/versions.ts`; exact pins) must agree — `embeddedVersionCheck` at boot and every spawn; a mismatch refuses `embedded_runtime_unavailable`, never a fallback to the binary.
-- An embedded Workflow tool spawns `winter-core __runtime-workflow-worker --bridge`, never the daemon's `__workflow-worker`.
+- An embedded Workflow tool spawns `winter-core __runtime-workflow-worker --bridge`, never the daemon's `__workflow-worker`. Its sandbox (the macOS seatbelt; on Linux the SDK's confinement, which the worker's macOS-only guard still refuses) is the only boundary for the model's workflow; the no-macros guard inside it is defence in depth.
 
 ## Shutdown and replaced drivers
 

@@ -17,7 +17,7 @@ import {
   DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  ALWAYS_CARD_KINDS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel,
+  ALWAYS_CARD_KINDS, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
   type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../contracts/approval-broker";
@@ -213,6 +213,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     if (level === "read-only" && levelDecision(level, req.effect) !== "allow") return { allowed: false, by: "level", level };
     if (this.#unresolved(req)) return undefined; // paths no one resolved: a card every time, whatever rule or level
     if (level === "read-only") return { allowed: true, by: "level", level };
+    if (writesRunLater(req, this.#fence)) return { allowed: false, by: "fence" }; // rule 3: no bot or agent writes there
     if (req.paths?.length && this.#fence) { // rule 3
       for (const computer of req.computers) if (this.#fence(computer)?.touches(req.paths)) return undefined;
     }

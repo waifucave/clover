@@ -49,6 +49,124 @@ describe("PluginFolders", () => {
     expect(w.core.get("tarot")?.state).toBe("found");
   });
 
+  test("a tsconfig paths entry, and every other loader config, is code wherever it sits (#234's review, F2)", async () => {
+    const w = world();
+    const tarot = join(w.pluginsDir, "tarot");
+    const host = { host: { entry: "host/index.ts" } };
+    w.write(tarot, {
+      "clover.json": manifest("tarot", host), "host/index.ts": "import { x } from \"lib\";\nexport const main = () => x;\n",
+      "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { lib: ["./host/lib.ts"] } } }), "host/lib.ts": "export const x = 1;\n", "README.md": "Tarot",
+    });
+    await w.folders.scan();
+    expect(await w.core.approve("tarot", w.core.get("tarot")!.treeHash!)).toBe("approved");
+    // Data still applies at once.
+    w.write(tarot, { "README.md": "Tarot cards" });
+    await w.folders.refresh(tarot);
+    expect(w.core.get("tarot")?.state).toBe("running");
+    // `paths` now sends `lib` to another file. A JSON edit, yet it waits for a new OK.
+    w.write(tarot, { "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { lib: ["./host/other.ts"] } } }), "host/other.ts": "export const x = 2;\n" });
+    await w.folders.refresh(tarot);
+    expect(w.core.get("tarot")?.state).toBe("found");
+    expect(await w.core.approve("tarot", w.core.get("tarot")!.treeHash!)).toBe("approved");
+    // The reviewer's case, `lib` sent to a file outside the tree: the plugin is invalid, so nothing of it runs.
+    w.write(tarot, { "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { lib: ["../../outside/evil.ts"] } } }) });
+    await w.folders.refresh(tarot);
+    expect(w.core.get("tarot")?.state).toBe("invalid");
+    w.write(tarot, { "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { lib: ["./host/lib.ts"] } } }) });
+    await w.folders.refresh(tarot);
+    expect(w.core.get("tarot")?.state).toBe("found");
+    expect(await w.core.approve("tarot", w.core.get("tarot")!.treeHash!)).toBe("approved");
+    // The same for the others, at the root or in a folder.
+    for (const path of ["host/tsconfig.json", "package.json", "host/package.json", "bunfig.toml", ".npmrc", ".env", "host/.env.local", "jsconfig.json", "tsconfig.base.json"]) {
+      w.write(tarot, { [path]: `${path} ${Math.random()}` });
+      await w.folders.refresh(tarot);
+      expect([path, w.core.get("tarot")?.state]).toEqual([path, "found"]);
+      expect(await w.core.approve("tarot", w.core.get("tarot")!.treeHash!)).toBe("approved");
+    }
+  });
+
+  test("a file reached through tsconfig extends is code; extends or paths outside the plugin makes it invalid (F2)", async () => {
+    const w = world();
+    const tarot = join(w.pluginsDir, "tarot");
+    const host = { host: { entry: "host/index.ts" } };
+    w.write(tarot, {
+      "clover.json": manifest("tarot", host), "host/index.ts": "export const main = () => 1;\n",
+      "tsconfig.json": JSON.stringify({ extends: "./config/base" }), "config/base.json": JSON.stringify({ extends: "./strict.json", compilerOptions: { strict: true } }),
+      "config/strict.json": JSON.stringify({ compilerOptions: { noImplicitAny: true } }), "README.md": "Tarot",
+    });
+    await w.folders.scan();
+    expect(await w.core.approve("tarot", w.core.get("tarot")!.treeHash!)).toBe("approved");
+    // `base.json` and the file it extends in turn are reached through `extends`: a change to either waits for a new OK.
+    for (const [path, text] of [["config/base.json", JSON.stringify({ extends: "./strict.json", compilerOptions: { paths: { lib: ["./x.ts"] } } })], ["config/strict.json", "{}"]] as const) {
+      w.write(tarot, { [path]: text });
+      await w.folders.refresh(tarot);
+      expect([path, w.core.get("tarot")?.state]).toEqual([path, "found"]);
+      expect(await w.core.approve("tarot", w.core.get("tarot")!.treeHash!)).toBe("approved");
+    }
+    w.write(tarot, { "README.md": "Tarot cards" });
+    await w.folders.refresh(tarot);
+    expect(w.core.get("tarot")?.state).toBe("running");
+    // Reaching outside the plugin, by `extends`, `paths`, `baseUrl` or a package map: invalid, with the reason.
+    for (const [file, text] of [
+      ["tsconfig.json", JSON.stringify({ extends: "../../outside/base.json" })],
+      ["tsconfig.json", JSON.stringify({ extends: "@tsconfig/node22/tsconfig.json" })],
+      ["host/tsconfig.json", JSON.stringify({ compilerOptions: { paths: { lib: ["../../../elsewhere/lib.ts"] } } })],
+      ["tsconfig.json", JSON.stringify({ compilerOptions: { baseUrl: "/", paths: { lib: ["x.ts"] } } })],
+      ["package.json", JSON.stringify({ imports: { "#lib": "../../outside/lib.js" } })],
+    ] as const) {
+      const one = join(w.pluginsDir, "one");
+      rmSync(one, { recursive: true, force: true });
+      w.write(one, { "clover.json": manifest("one", host), "host/index.ts": "export const main = () => 1;\n", [file]: text });
+      await w.folders.refresh(one);
+      expect([file, text, w.core.get("one")?.state]).toEqual([file, text, "invalid"]);
+      expect(w.core.get("one")?.reason ?? "").toContain("outside the plugin");
+    }
+    // A bundled plugin ships with the app and needs no OK: Clover's own trees extend the repository's shared tsconfig.
+    const own = join(w.bundledDir, "own");
+    w.write(own, { "clover.json": manifest("own", host), "host/index.ts": "export const main = () => 1;\n", "tsconfig.json": JSON.stringify({ extends: "../../../tsconfig.base.json" }) });
+    await w.folders.scan();
+    expect(w.core.get("own")?.source).toBe("bundled");
+    expect(w.core.get("own")?.state).not.toBe("invalid");
+  });
+
+  test("the plugin's OK lists what each agent backend gets from the user's environment and sets in its own (lane K's #233)", async () => {
+    const w = world();
+    const codex = join(w.pluginsDir, "codex");
+    w.write(codex, {
+      "clover.json": manifest("codex", { contributes: { agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "codex-acp", args: [], quirks: "quirks.json" }, { id: "plain", name: "Plain", protocol: "acp", command: "plain-acp", args: [] }] } }),
+      "quirks.json": JSON.stringify({ quirks: { placement: "local", launch: { envAllow: ["CODEX_PATH", "CODEX_HOME"], envSet: { NO_BROWSER: "1" } } } }),
+    });
+    await w.folders.scan();
+    const lines = w.folders.okText("codex", "macos").lines;
+    expect(lines).toEqual(expect.arrayContaining(["Its agent backend Codex gets from your environment: CODEX_PATH, CODEX_HOME.", "Its agent backend Codex sets in its environment: NO_BROWSER."]));
+    expect(lines.filter((l) => l.includes("Plain"))).toEqual([]);
+  });
+
+  test("an agent backend's quirks.json is code: a change to it alone waits for a new OK (lane K's #233 layout)", async () => {
+    const w = world();
+    const codex = join(w.pluginsDir, "codex");
+    const backend = { contributes: { agentBackends: [{ id: "codex", name: "Codex", protocol: "acp", command: "codex-acp", args: [], quirks: "quirks.json" }] } };
+    const quirks = (env: Record<string, string>) => JSON.stringify({ quirks: { placement: "local", launch: { envSet: env } } });
+    w.write(codex, { "clover.json": manifest("codex", backend), "quirks.json": quirks({ NO_BROWSER: "1" }), "README.md": "Codex" });
+    await w.folders.scan();
+    expect(await w.core.approve("codex", w.core.get("codex")!.treeHash!)).toBe("approved");
+    expect(w.core.get("codex")?.state).toBe("running");
+    // Only quirks.json changes (the env the agent gets): no new code by extension, yet it waits for a new OK.
+    w.write(codex, { "quirks.json": quirks({ NO_BROWSER: "1", CODEX_PATH: "/tmp/evil" }) });
+    await w.folders.refresh(codex);
+    expect(w.core.get("codex")).toMatchObject({ state: "found", reason: "waiting for your OK" });
+    expect(await w.core.approve("codex", w.core.get("codex")!.treeHash!)).toBe("approved");
+    expect(w.core.get("codex")?.state).toBe("running");
+    // Every other file of an agent plugin too, its README and a file no field names, which quirks.json's env can still
+    // point at (NODE_OPTIONS=--require <file>): each waits for a new OK.
+    for (const [path, text] of [["README.md", "Codex, through codex-acp"], ["lib/preload.txt", "require('child_process')"]] as const) {
+      w.write(codex, { [path]: text });
+      await w.folders.refresh(codex);
+      expect([path, w.core.get("codex")?.state]).toEqual([path, "found"]);
+      expect(await w.core.approve("codex", w.core.get("codex")!.treeHash!)).toBe("approved");
+    }
+  });
+
   test("the OK survives a restart, and a change made while the core was down is judged against it", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
@@ -93,6 +211,17 @@ describe("PluginFolders", () => {
     expect(w.core.list().map((r) => [r.id, r.state, r.source])).toEqual([
       ["alpha", "running", "bundled"], ["alpha/broken", "invalid", "bundled"], ["alpha/tab", "running", "bundled"],
     ]);
+  });
+
+  test("a development folder gets the static checks too: a dependency it doesn't ship, or a reach outside, makes it invalid (#234's check 5, K3)", async () => {
+    const w = world();
+    const dev = join(w.home, "dev", "luna");
+    w.write(dev, { "clover.json": manifest("luna", { description: "dev" }), "client/index.tsx": "import x from \"not-shipped\";\nexport {};\n" });
+    await w.folders.addDevFolder(dev, "cli");
+    expect([w.core.get("luna")?.state, w.core.get("luna")?.reason ?? ""]).toEqual(["invalid", expect.stringContaining("not-shipped")]);
+    w.write(dev, { "client/index.tsx": "export {};\n", "tsconfig.json": JSON.stringify({ extends: "../../outside/base.json" }) });
+    await w.folders.refresh(realpathSync(dev));
+    expect(w.core.get("luna")?.reason ?? "").toContain("outside the plugin");
   });
 
   test("a development folder loads without asking, replaces the installed plugin with its id, and turns off after 24 hours", async () => {

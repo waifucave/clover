@@ -1603,7 +1603,7 @@
       }
     },
     "tree.stat": {
-      "doc": "A path's type, size and time; null when it doesn't exist.",
+      "doc": "A path's type, size and time; null when it doesn't exist. `noFollow`: no link on the way is followed.",
       "owner": "J",
       "direction": "to-daemon",
       "roles": [
@@ -2062,6 +2062,9 @@
             "minLength": 1,
             "maxLength": 4096,
             "pattern": "^(home|bots)(\\/|$)"
+          },
+          "noFollow": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2128,7 +2131,7 @@
       }
     },
     "tree.read": {
-      "doc": "Reads a file on the computer that holds it.",
+      "doc": "Reads a file on the computer that holds it. `noFollow`: only a plain file reached without a link is read.",
       "owner": "J",
       "direction": "to-daemon",
       "roles": [
@@ -2604,6 +2607,9 @@
               "utf8",
               "base64"
             ]
+          },
+          "noFollow": {
+            "type": "boolean"
           }
         },
         "required": [

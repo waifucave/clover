@@ -110,7 +110,7 @@ import { projectScopeTrusted, projectScopeRootFor, type RunHomeSessionFacts } fr
 import { readCloverTasks } from "./tasks-reader";
 import { keychainService } from "../profile";
 import type { McpOAuthStore } from "@waifucave/clover-agent-runtime/mcp-auth";
-import { createHostCredentialBroker, sessionCredentialAllowlist, type ProviderRefresher } from "./host-credentials";
+import { createHostCredentialBroker, sessionCredentialAllowlist, type HostCredentialBroker, type ProviderRefresher } from "./host-credentials";
 import { SESSION_REPLACED } from "./session-replaced";
 import { COWORK_SESSION_UNSUPPORTED_CODE, isUnrunnableStoredMode, runnableModeOf, unrunnableModeMessage, type DrivableSessionMode } from "../sessions/session-mode";
 import { type HostCodeAuthority } from "./host-code-broker";
@@ -498,6 +498,11 @@ export interface CloverLegDeps {
    */
   credentialRefreshers?: Readonly<Record<string, ProviderRefresher>>;
   /**
+   * The daemon's one credential broker, shared with the bots' sessions (`turn-loop/provider-fill.ts`), so a renewal is
+   * one grant whoever asks. Absent: the table builds its own from `secrets`, `mcpOAuthStore` and `credentialRefreshers`.
+   */
+  hostCredentials?: HostCredentialBroker;
+  /**
    * WS-25 (review r1 (i)): the http/sse MCP servers the enabled plugins ship (`external-mcp.ts`'s
    * `pluginMcpServersFor`), read live per incarnation. A run-home child loads plugins natively, so their
    * servers join the MCP sign-in allowlist and the session's server list (never `options.mcpServers`).
@@ -741,7 +746,7 @@ export function createCloverSessionDrivers(deps: CloverLegDeps): CloverSessionDr
   const sdkVersion = CLOVER_PEER_VERSIONS.winterAgentSdk;
   // WS-25 §7: ONE broker for the whole table — its generation registry and its refresh single-flights are
   // per item, not per session, so two sessions asking for the same Console bearer share one `ant` run.
-  const hostCredentials = createHostCredentialBroker({
+  const hostCredentials = deps.hostCredentials ?? createHostCredentialBroker({
     secrets: deps.secrets,
     keychainService: keychainService(undefined, deps.home),
     ...(deps.mcpOAuthStore === undefined ? {} : { mcpOAuthStore: deps.mcpOAuthStore }),
