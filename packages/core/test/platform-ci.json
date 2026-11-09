@@ -8,10 +8,6 @@
     "test/cowork/peer-inbox-sqlite.test.ts": {
       "owner": "H",
       "cause": "a failing rename of the scrubbed copy reports runtime-state.db corrupt on Linux instead of leaving the raw copy"
-    },
-    "test/e2e/mid-turn-fold-e2e.test.ts": {
-      "owner": "D",
-      "cause": "a steer to a running session folds twice, and TaskStop's cleared steer never closes the stopped turn on Linux"
     }
   },
   "linuxSkips": {

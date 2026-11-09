@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LINUX_CONFINE_ARGV_FLAG } from "@waifucave/clover-agent-runtime";
-import { linuxConfinementState, type LinuxConfinementProbe } from "./sandbox-guard";
+import { linuxConfinementState, PROBED_SOCKET_TYPES, type LinuxConfinementProbe } from "./sandbox-guard";
 
 const onLinux = process.platform === "linux";
 const temps: string[] = [];
@@ -15,7 +15,8 @@ afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, f
 
 const status = (noNewPrivs: string | null, seccomp: string | null) =>
   ["Name:\tbun", ...(noNewPrivs === null ? [] : [`NoNewPrivs:\t${noNewPrivs}`]), ...(seccomp === null ? [] : [`Seccomp:\t${seccomp}`]), "Seccomp_filters:\t1", ""].join("\n");
-const probe = (s: string | undefined, sock: { fd: number; errno: number }): LinuxConfinementProbe => ({ status: () => s, unixSocket: () => sock });
+const probe = (s: string | undefined, sock: { fd: number; errno: number } | ((type: number) => { fd: number; errno: number }), fds: readonly string[] | null = ["/dev/null", "pipe:[1]", "anon_inode:[eventpoll]"]): LinuxConfinementProbe =>
+  ({ status: () => s, unixSocket: typeof sock === "function" ? sock : () => sock, descriptors: () => fds ?? undefined });
 const DENIED = { fd: -1, errno: 1 };
 
 describe("linuxConfinementState with a given probe", () => {
@@ -30,15 +31,29 @@ describe("linuxConfinementState with a given probe", () => {
     expect(linuxConfinementState(probe(status("1", "1"), DENIED))).toMatchObject({ ok: false });
     expect(linuxConfinementState(probe(status(null, "2"), DENIED))).toEqual({ ok: false, reason: "the process's status names no NoNewPrivs or Seccomp" });
     expect(linuxConfinementState(probe(status("1", null), DENIED))).toMatchObject({ ok: false });
-    expect(linuxConfinementState(probe(status("1", "2"), { fd: 5, errno: 0 }))).toEqual({ ok: false, reason: "the confinement allows a Unix socket (the secret service is reached over one)" });
+    expect(linuxConfinementState(probe(status("1", "2"), { fd: 5, errno: 0 }))).toEqual({ ok: false, reason: "the confinement allows a Unix socket (type 1; the secret service is reached over one)" });
     expect(linuxConfinementState(probe(undefined, DENIED))).toEqual({ ok: false, reason: "the process's status (/proc/self/status) could not be read" });
+  });
+
+  test("every kind of Unix socket is asked for: one allowed type is enough to refuse", () => {
+    for (const allowed of PROBED_SOCKET_TYPES) {
+      const r = linuxConfinementState(probe(status("1", "2"), (type) => (type === allowed ? { fd: 7, errno: 0 } : DENIED)));
+      expect(r).toEqual({ ok: false, reason: `the confinement allows a Unix socket (type ${allowed}; the secret service is reached over one)` });
+    }
+    // A stream, its flags, a datagram and a seqpacket socket.
+    expect(PROBED_SOCKET_TYPES).toEqual([1, 1 | 0o2000000 | 0o4000, 2, 2 | 0o2000000, 5]);
+  });
+
+  test("a socket it holds already refuses, and descriptors it can't read do too", () => {
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["/dev/null", "socket:[4242]"]))).toEqual({ ok: false, reason: "this process holds a socket it was handed" });
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, null))).toEqual({ ok: false, reason: "the process's descriptors (/proc/self/fd) could not be read" });
   });
 
   test("ambiguous answers fail closed: another errno, a probe that throws", () => {
     // EMFILE (24): out of descriptors says nothing about the confinement.
     expect(linuxConfinementState(probe(status("1", "2"), { fd: -1, errno: 24 }))).toMatchObject({ ok: false });
     expect(linuxConfinementState(probe(status("1", "2"), { fd: -1, errno: -1 }))).toMatchObject({ ok: false });
-    const throwing: LinuxConfinementProbe = { status: () => status("1", "2"), unixSocket: () => { throw new Error("no libc"); } };
+    const throwing: LinuxConfinementProbe = { status: () => status("1", "2"), unixSocket: () => { throw new Error("no libc"); }, descriptors: () => [] };
     expect(linuxConfinementState(throwing)).toEqual({ ok: false, reason: "the confinement could not be inspected (no libc)" });
   });
 });
@@ -48,7 +63,15 @@ function runProbe(confined: boolean): { code: number; out: string; err: string }
   const dir = mkdtempSync(join(tmpdir(), "clover-linux-guard-"));
   temps.push(dir);
   const probeFile = join(dir, "probe.ts");
-  writeFileSync(probeFile, `import { keychainSandboxState } from ${JSON.stringify(join(import.meta.dir, "sandbox-guard.ts"))};\nprocess.stdout.write(JSON.stringify(keychainSandboxState()));\n`);
+  // The state, and (pinning that the launcher's filter refuses the call whatever the domain) an AF_INET socket's answer.
+  writeFileSync(probeFile, [
+    `import { keychainSandboxState } from ${JSON.stringify(join(import.meta.dir, "sandbox-guard.ts"))};`,
+    `import { dlopen, FFIType } from "bun:ffi";`,
+    `const state = keychainSandboxState();`,
+    `const lib = dlopen("libc.so.6", { socket: { args: [FFIType.i32, FFIType.i32, FFIType.i32], returns: FFIType.i32 }, close: { args: [FFIType.i32], returns: FFIType.i32 } });`,
+    `const inet = lib.symbols.socket(2, 1, 0); if (inet >= 0) lib.symbols.close(inet);`,
+    `process.stdout.write(JSON.stringify({ state, inet }));`,
+  ].join("\n"));
   const env = { PATH: process.env.PATH ?? "/usr/bin:/bin", HOME: dir, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
   let cmd = [process.execPath, probeFile];
   if (confined) {
@@ -68,12 +91,15 @@ describe("keychainSandboxState on Linux, for real", () => {
     expect(linuxConfinementState()).toMatchObject({ ok: false });
     const r = runProbe(false);
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.out)).toMatchObject({ ok: false });
+    expect(JSON.parse(r.out).state).toMatchObject({ ok: false });
   });
 
   test.if(onLinux)("a probe the SDK's launcher confined is ok", () => {
     const r = runProbe(true);
     expect({ code: r.code, err: r.err }).toMatchObject({ code: 0 });
-    expect(JSON.parse(r.out)).toEqual({ ok: true });
+    const got = JSON.parse(r.out) as { state: unknown; inet: number };
+    expect(got.state).toEqual({ ok: true });
+    // The launcher's filter refuses the socket call itself, whatever the domain: an AF_INET socket fails too.
+    expect(got.inet).toBe(-1);
   }, 30_000);
 });

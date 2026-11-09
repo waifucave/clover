@@ -23,10 +23,11 @@
 // On Linux the worker is confined by the agent SDK's launcher (`linuxConfineMain`: Landlock, a seccomp filter and
 // no_new_privs, then the exec), and the secret service it must be denied is reached over D-Bus, a Unix socket. So the
 // worker checks that it is confined at all (`/proc/self/status` says `NoNewPrivs: 1` and `Seccomp: 2`, a filter) and
-// that it can't make a Unix socket (`socket(AF_UNIX, SOCK_STREAM, 0)` fails with EPERM or EACCES). It never assumes:
-// anything it can't read, or any other answer, is not confined.
+// that it can't make a Unix socket of any kind (`socket(AF_UNIX, type, 0)` fails with EPERM or EACCES for a stream, a
+// datagram and a seqpacket socket, with and without the flags), nor holds one it was handed. It never assumes: anything
+// it can't read, or any other answer, is not confined.
 import { dlopen, FFIType, read } from "bun:ffi";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 
 /** The worker's exit code when it refuses (`EX_NOPERM`). */
 export const WORKER_NOT_SANDBOXED_EXIT_CODE = 77;
@@ -75,16 +76,25 @@ function loadSandboxCheck(): SandboxCheck {
 
 export type KeychainSandboxState = { ok: true } | { ok: false; reason: string };
 
-/** What the Linux check reads: the process's status file, and the answer to one `socket(AF_UNIX, SOCK_STREAM, 0)`. */
+/** What the Linux check reads: the process's status file, the answer to `socket(AF_UNIX, type, 0)` for each kind of
+ *  Unix socket, and what the process's open descriptors are. */
 export interface LinuxConfinementProbe {
   /** `/proc/self/status`; undefined when it can't be read. */
   status(): string | undefined;
   /** The new descriptor (closed by the probe), or -1 and the call's errno. */
-  unixSocket(): { fd: number; errno: number };
+  unixSocket(type: number): { fd: number; errno: number };
+  /** Where each of the process's open descriptors points (`/proc/self/fd/<n>`), or undefined when they can't be read. */
+  descriptors(): readonly string[] | undefined;
 }
 
 const AF_UNIX = 1;
 const SOCK_STREAM = 1;
+const SOCK_DGRAM = 2;
+const SOCK_SEQPACKET = 5;
+const SOCK_NONBLOCK = 0o4000;
+const SOCK_CLOEXEC = 0o2000000;
+/** Every kind of Unix socket the check asks for: a filter that matched on the type, or on its flags, would let one by. */
+export const PROBED_SOCKET_TYPES: readonly number[] = [SOCK_STREAM, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, SOCK_DGRAM, SOCK_DGRAM | SOCK_CLOEXEC, SOCK_SEQPACKET];
 const EPERM = 1;
 const EACCES = 13;
 
@@ -102,8 +112,8 @@ function loadLinuxProbe(): LinuxConfinementProbe {
         return undefined;
       }
     },
-    unixSocket() {
-      const fd = lib.symbols.socket(AF_UNIX, SOCK_STREAM, 0);
+    unixSocket(type) {
+      const fd = lib.symbols.socket(AF_UNIX, type, 0);
       if (fd >= 0) {
         lib.symbols.close(fd);
         return { fd, errno: 0 };
@@ -111,10 +121,20 @@ function loadLinuxProbe(): LinuxConfinementProbe {
       const at = lib.symbols.__errno_location();
       return { fd, errno: at === null ? -1 : read.i32(at, 0) };
     },
+    descriptors() {
+      try {
+        return readdirSync("/proc/self/fd").map((n) => {
+          try { return readlinkSync(`/proc/self/fd/${n}`); } catch { return ""; } // closed meanwhile (the listing's own)
+        });
+      } catch {
+        return undefined;
+      }
+    },
   };
 }
 
-/** Is THIS process confined on Linux the way the SDK's launcher confines a worker, a Unix socket denied? Never throws. */
+/** Is THIS process confined on Linux the way the SDK's launcher confines a worker, every Unix socket denied and none
+ *  held? Never throws. */
 export function linuxConfinementState(probe?: LinuxConfinementProbe): KeychainSandboxState {
   let p: LinuxConfinementProbe;
   try {
@@ -131,9 +151,15 @@ export function linuxConfinementState(probe?: LinuxConfinementProbe): KeychainSa
     if (noNewPrivs === undefined || seccomp === undefined) return { ok: false, reason: "the process's status names no NoNewPrivs or Seccomp" };
     if (noNewPrivs !== "1") return { ok: false, reason: `this process is not confined (NoNewPrivs: ${noNewPrivs})` };
     if (seccomp !== "2") return { ok: false, reason: `this process is not confined (Seccomp: ${seccomp}, not a filter)` };
-    const sock = p.unixSocket();
-    if (sock.fd >= 0) return { ok: false, reason: "the confinement allows a Unix socket (the secret service is reached over one)" };
-    if (sock.errno !== EPERM && sock.errno !== EACCES) return { ok: false, reason: `a Unix socket failed for another reason (errno ${sock.errno}), so the confinement gave no clear answer` };
+    for (const type of PROBED_SOCKET_TYPES) {
+      const sock = p.unixSocket(type);
+      if (sock.fd >= 0) return { ok: false, reason: `the confinement allows a Unix socket (type ${type}; the secret service is reached over one)` };
+      if (sock.errno !== EPERM && sock.errno !== EACCES) return { ok: false, reason: `a Unix socket (type ${type}) failed for another reason (errno ${sock.errno}), so the confinement gave no clear answer` };
+    }
+    // A socket handed down already connected (to the session bus, say) needs no new one.
+    const fds = p.descriptors();
+    if (fds === undefined) return { ok: false, reason: "the process's descriptors (/proc/self/fd) could not be read" };
+    if (fds.some((t) => t.startsWith("socket:"))) return { ok: false, reason: "this process holds a socket it was handed" };
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: `the confinement could not be inspected (${err instanceof Error ? err.message : "error"})` };
