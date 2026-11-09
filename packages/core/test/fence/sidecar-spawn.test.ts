@@ -13,6 +13,7 @@ import { FileDeviceRegistry } from "../../src/devices/registry";
 import { DeviceKey } from "../../src/identity/device-key";
 import { MemorySecretStore } from "../../src/contracts/fakes/secret-store";
 import { SystemClock } from "../../src/clock/system-clock";
+import { darwinDescribe, onDarwin } from "../helpers/darwin-only";
 
 const BIN = process.env.CLOVER_LINK_BIN ?? join(import.meta.dir, "../../../../native/link/target/release/clover-link");
 const built = existsSync(BIN);
@@ -73,7 +74,7 @@ describe("the sidecar's fence: profile and arguments", () => {
   });
 });
 
-describe.skipIf(process.platform !== "darwin")("the sidecar's Seatbelt profile, live", () => {
+darwinDescribe("the sidecar's Seatbelt profile, live", () => {
   test("a hidden folder can't be read or listed, nothing can be written, the system's files can be read", () => {
     const hidden = realpathSync(mkdtempSync(join(tmpdir(), "clover-c-hidden-")));
     writeFileSync(join(hidden, "secret.txt"), "x");
@@ -165,7 +166,7 @@ describe.skipIf(process.platform !== "win32")("the Windows sidecar, reduced, liv
   }, 30_000);
 });
 
-const canFence = process.platform === "darwin" || (process.platform === "linux" && ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"].some((p) => existsSync(p)));
+const canFence = onDarwin || (process.platform === "linux" && ["/usr/bin/bwrap", "/bin/bwrap", "/usr/local/bin/bwrap"].some((p) => existsSync(p)));
 
 describe.skipIf(!built || !canFence)("two real sidecars, fenced, on loopback", () => {
   test("they start under the device's key and link: a request and a stream", async () => {
