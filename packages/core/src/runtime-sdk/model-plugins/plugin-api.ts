@@ -17,6 +17,7 @@
 //   record), and only for a secret its own `auth` entries name.
 import { hostProcessFor, type ApiRouter } from "../../contracts/plugin-host";
 import { ContractError } from "../../contracts/common";
+import { pinnedFetch } from "../../plugin-host/net-proxy";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { secretTokenSource, type SecretStore } from "../../contracts/secret-store";
 import { clampKeyedIdleTimeoutMs, createKeyedFetch, type KeyedFetch, type KeyedFetchInit, type KeyedFetchOptions, type KeyedTokenSource, type KeyPlacement } from "@waifucave/clover-provider-runtime";
@@ -27,7 +28,7 @@ export interface ModelPluginApiOptions {
   tokens(pluginId: string, authName: string): KeyedTokenSource;
   /** A plugin's own secret's value, for a process of its own. */
   secret(pluginId: string, name: string): Promise<string | undefined>;
-  /** The platform fetch (a test seam). */
+  /** The platform fetch (a test seam). Default: `pinnedFetch`, the plugin proxy's address rules. */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
   /** The keyed fetch's idle limit (a test seam), held to the keyed fetch's own bounds (`clampKeyedIdleTimeoutMs`). */
   idleTimeoutMs?: number;
@@ -85,7 +86,8 @@ export function modelPluginApiRouter(opts: ModelPluginApiOptions): ApiRouter {
     if (held !== undefined && held.key === key) return held.fetch;
     const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
     for (const [name, a] of authEntriesOf(record)) auth[name] = { source: opts.tokens(record.id, name), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
-    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
+    // The platform fetch under the plugin proxy's address rules: no private address, no second lookup (#371's review).
+    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, fetch: opts.fetch ?? pinnedFetch(), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
     fetches.set(record.id, { key, fetch });
     return fetch;
   };

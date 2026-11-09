@@ -967,11 +967,39 @@ function urlFields(m: Manifest): string[] {
   return out;
 }
 
+/** The `network:` grants that name this computer or the local network (`localhost`, `*.local`, a loopback, private or
+ *  link-local address), which the OK warns about (#371's review). */
+export function localNetworkHosts(capabilities: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const cap of capabilities) {
+    const c = parseCapability(cap);
+    if (c?.kind !== "network") continue;
+    const h = c.host.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+    const v4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(h);
+    const a = v4 ? Number(v4[1]) : -1;
+    const b = v4 ? Number(v4[2]) : -1;
+    const local =
+      h === "localhost" || h.endsWith(".localhost") || h === "local" || h.endsWith(".local") ||
+      a === 127 || a === 10 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) ||
+      h === "::1" || h === "::" || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h) || h.startsWith("::ffff:");
+    if (local) out.push(c.port !== undefined ? `${c.host}:${c.port}` : c.host);
+  }
+  return out;
+}
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 export function describeOk(
   report: ManifestReport,
-  opts: { os?: "macos" | "windows" | "linux"; source?: "index" | "other"; /** The tree's flag (`TreeReport.restylesCards`). */ restylesCards?: boolean } = {},
+  opts: {
+    os?: "macos" | "windows" | "linux";
+    source?: "index" | "other";
+    /** The tree's flag (`TreeReport.restylesCards`). */
+    restylesCards?: boolean;
+    /** The plugin's host code runs fenced to its network proxy on this computer (macOS with its sandbox on, B-M2's
+     *  2g): only then does the OK say host code is held to the list. */
+    hostNetworkHeld?: boolean;
+  } = {},
 ): string[] {
   const lines: string[] = [];
   const what = report.class === "code" ? "runs code on your computers" : report.class === "web" ? "shows web pages" : "is data only: files, no code";
@@ -984,12 +1012,15 @@ export function describeOk(
     if (text) lines.push(`It ${text}.`);
   }
   if (opts.restylesCards && !report.capabilities.includes("approvals")) lines.push(`It ${capabilityOkText("approvals")}.`);
-  // Host code is held to the list where the fence holds it to its proxy (macOS, B-M2's 2g); elsewhere it isn't.
-  const hostHeld = opts.os === "macos";
+  // Host code is held to the list only where the fence holds it to its proxy (#371's review: the sandbox there and on,
+  // not merely macOS).
+  const hostHeld = opts.hostNetworkHeld === true;
   if (report.networkHosts.length > 0) {
     const host = report.class !== "code" ? "" : hostHeld ? "; so does its host code" : "; its host code can reach any host";
     lines.push(`Its components reach only ${report.networkHosts.join(", ")}${host}.`);
   } else if (report.class === "code") lines.push(hostHeld ? "Its code reaches no host." : "Its components reach no host; its host code can reach any host.");
+  const local = localNetworkHosts(report.capabilities);
+  if (local.length > 0) lines.push(`It can reach services on this computer or your local network: ${local.join(", ")}.`);
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);

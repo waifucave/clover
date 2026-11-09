@@ -13,7 +13,7 @@ import { openPluginRegistry } from "../../registry/open";
 import { HookRunner } from "../../plugins/hook-runner";
 import { ensurePluginRunFiles } from "../../registry/plugin-run";
 import { startPluginHost } from "../daemon-host";
-import { hostAllowed, hostRules, startPluginProxy } from "../net-proxy";
+import { hostAllowed, hostRules, pinnedFetch, startPluginProxy, type PluginProxy } from "../net-proxy";
 
 /** Waits for the install card's answer to land, rather than a fixed sleep. */
 async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
@@ -32,6 +32,19 @@ afterAll(() => {
   for (const s of servers) s.stop(true);
   for (const d of temps) rmSync(d, { recursive: true, force: true });
 });
+
+/** The `Proxy-Authorization` line (with its CRLF) for a proxy's token, from the URL its processes get. */
+const authOf = (proxy: PluginProxy) => {
+  const u = new URL(proxy.env.HTTPS_PROXY!);
+  return `Proxy-Authorization: Basic ${Buffer.from(`${u.username}:${u.password}`).toString("base64")}\r\n`;
+};
+/** Sends `text` to a proxy on a raw socket and gives back what came back by the time it closes (or `ms` pass). */
+const raw = (port: number, text: string | undefined, ms = 5_000) =>
+  new Promise<string>((resolve) => {
+    let buf = "";
+    const t = setTimeout(() => resolve(`${buf}[still open]`), ms);
+    void Bun.connect({ hostname: "127.0.0.1", port, socket: { open: (s) => void (text !== undefined && s.write(text)), data: (_s, d) => void (buf += d.toString()), close: () => (clearTimeout(t), resolve(buf)) } });
+  });
 
 /** A local stand-in for a host on the internet. */
 function upstream(text: string): number {
@@ -70,10 +83,10 @@ describe("the network list", () => {
     const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => [`network:api.test:${listed}`], connect: testConnect, resolve: testResolve, log: (l) => lines.push(l) });
     try {
       // Plain HTTP in absolute form, as fetch sends it to an HTTP proxy.
-      expect(await (await fetch(`http://api.test:${listed}/`, { proxy: `http://127.0.0.1:${proxy.port}` })).text()).toBe("listed");
+      expect(await (await fetch(`http://api.test:${listed}/`, { proxy: proxy.env.HTTPS_PROXY! })).text()).toBe("listed");
       // Unlisted host, unlisted port, and the listed host's raw address: 403 at the proxy.
       for (const url of [`http://other.test:${other}/`, `http://api.test:${other}/`, `http://api.test:${listed}/`.replace("api.test", "other.test")]) {
-        expect((await fetch(url, { proxy: `http://127.0.0.1:${proxy.port}` })).status).toBe(403);
+        expect((await fetch(url, { proxy: proxy.env.HTTPS_PROXY! })).status).toBe(403);
       }
       // A CONNECT tunnel to the listed host.
       const tunnel = await new Promise<string>((resolve) => {
@@ -81,7 +94,7 @@ describe("the network list", () => {
         void Bun.connect({
           hostname: "127.0.0.1", port: proxy.port,
           socket: {
-            open: (s) => void s.write(`CONNECT api.test:${listed} HTTP/1.1\r\nHost: api.test\r\n\r\n`),
+            open: (s) => void s.write(`CONNECT api.test:${listed} HTTP/1.1\r\nHost: api.test\r\n${authOf(proxy)}\r\n`),
             data: (s, d) => {
               buf += d.toString();
               if (buf.includes("200 Connection Established\r\n\r\n") && !buf.includes("GET-SENT")) {
@@ -98,11 +111,131 @@ describe("the network list", () => {
       // A raw address, even the listed host's, is refused unless the list names it.
       const raw = await new Promise<string>((resolve) => {
         let buf = "";
-        void Bun.connect({ hostname: "127.0.0.1", port: proxy.port, socket: { open: (s) => void s.write(`CONNECT 127.0.0.1:${listed} HTTP/1.1\r\n\r\n`), data: (_s, d) => void (buf += d.toString()), close: () => resolve(buf) } });
+        void Bun.connect({ hostname: "127.0.0.1", port: proxy.port, socket: { open: (s) => void s.write(`CONNECT 127.0.0.1:${listed} HTTP/1.1\r\n${authOf(proxy)}\r\n`), data: (_s, d) => void (buf += d.toString()), close: () => resolve(buf) } });
       });
       expect(raw).toStartWith("HTTP/1.1 403");
       expect(tunnel).toContain("listed");
       expect(lines.some((l) => l.includes(`other.test:${other}`))).toBe(true);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  // #371's review, 3: a proxy's token. A plugin granted localhost can't use another plugin's proxy by its port.
+  test("a proxy takes only requests that carry its own token: none, a wrong one or another proxy's is 407", async () => {
+    const listed = upstream("listed");
+    const lines: string[] = [];
+    const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => [`network:api.test:${listed}`], connect: testConnect, resolve: testResolve, log: (l) => lines.push(l) });
+    const other = startPluginProxy({ pluginId: "other", capabilities: () => [`network:api.test:${listed}`], connect: testConnect, resolve: testResolve });
+    try {
+      const token = new URL(proxy.env.HTTPS_PROXY!).password;
+      expect(token).toMatch(/^[0-9a-f]{48}$/);
+      expect(new URL(other.env.HTTPS_PROXY!).password).not.toBe(token);
+      const bare = `http://127.0.0.1:${proxy.port}`;
+      const wrong = `http://clover:${"0".repeat(48)}@127.0.0.1:${proxy.port}`;
+      const borrowed = `http://clover:${new URL(other.env.HTTPS_PROXY!).password}@127.0.0.1:${proxy.port}`;
+      for (const via of [bare, wrong, borrowed]) expect([via, (await fetch(`http://api.test:${listed}/`, { proxy: via })).status]).toEqual([via, 407]);
+      expect(await raw(proxy.port, `CONNECT api.test:${listed} HTTP/1.1\r\n\r\n`)).toStartWith("HTTP/1.1 407");
+      expect(lines.filter((l) => l.includes("without this proxy's token")).length).toBe(4);
+      // The token is never logged.
+      expect(lines.some((l) => l.includes(token))).toBe(false);
+      expect(await (await fetch(`http://api.test:${listed}/`, { proxy: proxy.env.HTTPS_PROXY! })).text()).toBe("listed");
+    } finally {
+      proxy.close();
+      other.close();
+    }
+  });
+
+  // #371's review, 2: limits.
+  test("limits: a slow head, a slow resolve, an idle tunnel and too many connections are each closed", async () => {
+    const listed = upstream("listed");
+    const lines: string[] = [];
+    const slow = (host: string) => (host === "slow.test" ? new Promise<string[]>(() => {}) : testResolve(host));
+    const proxy = startPluginProxy({
+      pluginId: "spy", capabilities: () => [`network:api.test:${listed}`, `network:slow.test:${listed}`], connect: testConnect, resolve: slow, log: (l) => lines.push(l),
+      limits: { maxPerProxy: 3, headMs: 100, connectMs: 150, idleMs: 200 },
+    });
+    try {
+      // A head that never comes: 408.
+      expect(await raw(proxy.port, undefined)).toStartWith("HTTP/1.1 408");
+      // A resolve that never answers: 504.
+      expect(await raw(proxy.port, `CONNECT slow.test:${listed} HTTP/1.1\r\n${authOf(proxy)}\r\n`)).toStartWith("HTTP/1.1 504");
+      // An idle tunnel: closed after the idle time.
+      const t0 = Date.now();
+      const idle = await raw(proxy.port, `CONNECT api.test:${listed} HTTP/1.1\r\n${authOf(proxy)}\r\n`);
+      expect(idle).toStartWith("HTTP/1.1 200 Connection Established");
+      expect(idle).not.toContain("[still open]");
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
+      expect(lines.some((l) => l.includes("idle"))).toBe(true);
+      // Three connections at once (heads unsent) fill this proxy; a fourth is 503.
+      const held = [0, 1, 2].map(() => raw(proxy.port, undefined, 2_000));
+      await Bun.sleep(30);
+      expect(await raw(proxy.port, undefined)).toStartWith("HTTP/1.1 503");
+      await Promise.all(held);
+    } finally {
+      proxy.close();
+    }
+  });
+
+  // #371's review, 1: an upstream is never left open for a client that's gone.
+  test("a client that leaves while its host resolves or connects leaves no upstream connection open", async () => {
+    let upstreamOpen = 0;
+    let upstreamSeen = 0;
+    const counted = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { open: () => void (upstreamOpen++, upstreamSeen++), close: () => void upstreamOpen--, data: () => {} } });
+    servers.push(counted);
+    const port = counted.port;
+    let release: () => void = () => {};
+    const resolve = () => new Promise<string[]>((r) => (release = () => r([PUBLIC_STAND_IN])));
+    let connected: () => void = () => {};
+    const slowConnect = ((o: Parameters<typeof Bun.connect>[0]) => new Promise((r) => (connected = () => r(testConnect(o))))) as unknown as typeof Bun.connect;
+    for (const phase of ["resolve", "connect"] as const) {
+      const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => [`network:api.test:${port}`], connect: phase === "connect" ? slowConnect : testConnect, resolve: phase === "resolve" ? resolve : testResolve });
+      try {
+        const client = await Bun.connect({ hostname: "127.0.0.1", port: proxy.port, socket: { data: () => {} } });
+        client.write(`CONNECT api.test:${port} HTTP/1.1\r\n${authOf(proxy)}\r\n`);
+        await Bun.sleep(30);
+        client.end();
+        await Bun.sleep(30);
+        if (phase === "resolve") release();
+        else connected();
+        for (let i = 0; i < 50 && upstreamOpen > 0; i++) await Bun.sleep(10);
+        await Bun.sleep(30);
+        expect([phase, upstreamOpen]).toEqual([phase, 0]);
+      } finally {
+        proxy.close();
+      }
+    }
+    // Gone before the resolve answered: never connected at all; gone while it connected: connected, then closed.
+    expect(upstreamSeen).toBe(1);
+  });
+
+  // #371's review, 2: what's held for a slow side is bounded; the sender is paused instead.
+  test("a tunnel carries a large body intact through a small buffer (backpressure, not an unbounded hold)", async () => {
+    let received = 0;
+    const sink = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data: (_s, d) => void (received += d.length) } });
+    servers.push(sink);
+    const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => [`network:api.test:${sink.port}`], connect: testConnect, resolve: testResolve, limits: { bufferBytes: 64 * 1024 } });
+    try {
+      const total = 8 * 1024 * 1024;
+      let established = false;
+      const client = await Bun.connect({ hostname: "127.0.0.1", port: proxy.port, socket: { data: (_s, d) => void (established ||= d.toString().includes("200 Connection Established")) } });
+      client.write(`CONNECT api.test:${sink.port} HTTP/1.1\r\n${authOf(proxy)}\r\n`);
+      for (let i = 0; i < 100 && !established; i++) await Bun.sleep(10);
+      expect(established).toBe(true);
+      const chunk = Buffer.alloc(256 * 1024, 7);
+      let sent = 0;
+      while (sent < total) {
+        let rest: Buffer = chunk;
+        while (rest.length > 0) {
+          const n = client.write(rest);
+          sent += n;
+          rest = rest.subarray(n);
+          if (rest.length > 0) await Bun.sleep(2);
+        }
+      }
+      for (let i = 0; i < 500 && received < total; i++) await Bun.sleep(10);
+      expect(received).toBe(total);
+      client.end();
     } finally {
       proxy.close();
     }
@@ -117,7 +250,7 @@ describe("the network list", () => {
     const caps = [`network:rebind.test:${listed}`, `network:api.test:${listed}`, `network:printer.local:${listed}`];
     const proxy = startPluginProxy({ pluginId: "spy", capabilities: () => caps, connect, resolve: testResolve, log: (l) => lines.push(l) });
     try {
-      const via = { proxy: `http://127.0.0.1:${proxy.port}` };
+      const via = { proxy: proxy.env.HTTPS_PROXY! };
       expect((await fetch(`http://rebind.test:${listed}/`, via)).status).toBe(403);
       expect(lines.some((l) => l.includes("rebind.test, which resolves to 127.0.0.1, a private address"))).toBe(true);
       expect(await (await fetch(`http://api.test:${listed}/`, via)).text()).toBe("listed");
@@ -212,4 +345,25 @@ out.direct = await new Promise((resolve) => {
       opened.close();
     }
   }, 60_000);
+});
+
+// #371's review, 6: the core's keyed net.fetch sends through the same address rules.
+describe("the keyed fetch's platform fetch", () => {
+  test("a name is resolved once, refused when private (unless it says it's local), and reached by the address checked", async () => {
+    const sent: { url: string; init: RequestInit & { tls?: { serverName?: string }; proxy?: unknown } }[] = [];
+    const platform = async (url: string, init: RequestInit) => (sent.push({ url, init: init as never }), new Response("ok"));
+    const f = pinnedFetch({ resolve: testResolve, fetch: platform });
+    await f("https://api.test/v1?q=1", { method: "POST", headers: { "x-api-key": "k" } });
+    expect(sent[0]!.url).toBe(`https://${PUBLIC_STAND_IN}/v1?q=1`);
+    expect(new Headers(sent[0]!.init.headers).get("host")).toBe("api.test");
+    expect(new Headers(sent[0]!.init.headers).get("x-api-key")).toBe("k");
+    expect(sent[0]!.init.tls?.serverName).toBe("api.test");
+    expect(sent[0]!.init.proxy).toBe(false);
+    expect(sent[0]!.init.method).toBe("POST");
+    await expect(f("https://rebind.test/", {})).rejects.toThrow("rebind.test resolves to 127.0.0.1, a private address");
+    expect(sent.length).toBe(1);
+    await f("http://printer.local:631/", {});
+    expect(sent[1]!.url).toBe("http://127.0.0.1:631/");
+    expect(sent[1]!.init.tls).toBeUndefined();
+  });
 });
