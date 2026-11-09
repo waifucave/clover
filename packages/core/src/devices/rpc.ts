@@ -307,10 +307,13 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
         if (rotationSignature === null) throw new MethodError(ERR.INVALID_PARAMS, "device.answerKey.set: the hand-over's signature isn't base64");
         const r = deps.answerKeyRotation?.();
         if (!r) throw new MethodError(ERR.RETRY, "replacing the answer key takes the approvals, which aren't running on this computer yet: try again in a moment");
+        // Each hand-over counts once while it could be taken: keyed on what it says (from, to, at) and on its signature's
+        // bytes, never on a base64 spelling.
         const now = deps.clock.now();
-        for (const [sig, at] of usedHandOvers) if (Math.abs(now - at) > ANSWER_KEY_ROTATE_MAX_SKEW_MS) usedHandOvers.delete(sig);
-        if (usedHandOvers.has(p.rotation.signature)) throw new MethodError(ERR.INVALID_REQUEST, "this hand-over was already used: sign a new one", { code: "used" });
-        usedHandOvers.set(p.rotation.signature, p.rotation.at);
+        for (const [k, at] of usedHandOvers) if (Math.abs(now - at) > ANSWER_KEY_ROTATE_MAX_SKEW_MS) usedHandOvers.delete(k);
+        const keys = [`h:${p.rotation.from}|${p.publicKey}|${p.rotation.at}`, `s:${Buffer.from(rotationSignature).toString("hex")}`];
+        if (keys.some((k) => usedHandOvers.has(k))) throw new MethodError(ERR.INVALID_REQUEST, "this hand-over was already used: sign a new one", { code: "used" });
+        for (const k of keys) usedHandOvers.set(k, p.rotation.at);
         return rotate(r, {
           publicKey: p.publicKey, held: p.held, ...(p.alg ? { alg: p.alg } : {}), registration: signature,
           rotation: { from: p.rotation.from, at: p.rotation.at, signature: rotationSignature }, origin: "user",
@@ -323,11 +326,10 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
 
   /** Runs the replacement: answers with its card once the card shows, or with the refusal its checks gave before one. */
   function rotate(r: NonNullable<ReturnType<NonNullable<DevicesMethodsDeps["answerKeyRotation"]>>>, ask: Parameters<typeof rotateOwnAnswerKey>[1]): Promise<ChangeResult> {
-    // The card before, if one waits, is withdrawn: one replacement at a time. This one's card is cancelled after
+    // One replacement at a time: once this one's checks pass and its card shows, the card before (if one waits) is
+    // withdrawn; a request that fails its checks withdraws nothing. This one's card is cancelled after
     // `ANSWER_KEY_ROTATION_CARD_MS`, so an orphaned card (an app that went away) never applies a key later.
-    rotating?.abort();
     const ctl = new AbortController();
-    rotating = ctl;
     const timer = deps.clock.setTimeout(() => ctl.abort(), ANSWER_KEY_ROTATION_CARD_MS);
     const done = () => {
       deps.clock.clearTimeout(timer);
@@ -339,6 +341,9 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
         broker: r.broker, devices: registry, computer: r.computer, now: () => deps.clock.now(), signal: ctl.signal,
         onCard: (card) => {
           shown = true;
+          const before = rotating;
+          rotating = ctl;
+          before?.abort();
           resolve({ applied: false, card });
         },
       }, ask).then((out) => {

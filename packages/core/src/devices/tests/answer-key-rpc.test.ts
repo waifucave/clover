@@ -141,7 +141,17 @@ describe("device.answerKey.set", () => {
       rotation: { from: toBase64(first.publicKey), at, signature: toBase64(first.sign(answerKeyRotateStatement(registry.self().id, toBase64(first.publicKey), publicKey, at))) },
     };
     expect(await code(m["device.answerKey.set"]!(params, { caller: app }) as Promise<unknown>)).toBe(ERR.INVALID_REQUEST);
-    // b's card still waits: the replay withdrew nothing.
+    // Nor in another base64 spelling of the same signature (the unused low bits of its last character).
+    const sig = params.rotation.signature;
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const last = sig.length - 3;
+    const respelled = sig.slice(0, last) + alphabet[alphabet.indexOf(sig[last]!) ^ 1]! + sig.slice(last + 1);
+    expect(respelled).not.toBe(sig);
+    expect(Buffer.from(respelled, "base64")).toEqual(Buffer.from(sig, "base64"));
+    expect(await code(m["device.answerKey.set"]!({ ...params, rotation: { ...params.rotation, signature: respelled } }, { caller: app }) as Promise<unknown>)).toBe(ERR.INVALID_REQUEST);
+    // A hand-over that fails its checks (signed by a stranger) withdraws nothing either.
+    expect(await code(replace(first, generateEd25519(), { handOver: generateEd25519() }))).toBe(ERR.INVALID_REQUEST);
+    // b's card still waits.
     expect(broker.cards().map((c) => c.id)).toEqual([b.card]);
     void answer;
   });

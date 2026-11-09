@@ -27,7 +27,8 @@
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { answerKeyHolderFor, type AnswerKeyHolder } from "@waifucave/clover-protocol";
+import { answerKeyHolderFor, ERR, type AnswerKeyHolder } from "@waifucave/clover-protocol";
+import { CLIENT_ERR } from "./protocol/client";
 
 /** Where the key's private half is kept: the current key, and a replacement staged while its card waits. */
 export interface KeyVault {
@@ -35,13 +36,21 @@ export interface KeyVault {
   load(): Uint8Array | undefined;
   save(secret: Uint8Array): void;
   clear(): void;
-  /** The staged replacement and the card it waits on, when one is staged. */
-  loadStaged(): { secret: Uint8Array; card?: string } | undefined;
+  /** The staged replacement, when one is staged: when it was staged, and the card it waits on once the core said. */
+  loadStaged(): StagedKey | undefined;
   /** Stores a replacement before it is asked for; throws when it can't, and the rotation doesn't start. */
-  saveStaged(secret: Uint8Array, card?: string): void;
+  saveStaged(staged: StagedKey): void;
   clearStaged(): void;
   /** The staged key becomes the current one, in one step (a rename over it). */
   promoteStaged(): void;
+}
+
+/** A replacement kept while its card waits. */
+export interface StagedKey {
+  secret: Uint8Array;
+  /** When it was staged (ms): its card can't outlive `ROTATION_CARD_MS` after that. */
+  at: number;
+  card?: string;
 }
 
 /** What safeStorage offers (Electron's), so the vault is testable without it. */
@@ -87,15 +96,15 @@ export function safeStorageVault(file: string, storage: SafeStorageLike, platfor
       const text = read(staged);
       if (text === undefined) return undefined;
       try {
-        const v = JSON.parse(text) as { secret?: unknown; card?: unknown };
-        if (typeof v.secret !== "string") return undefined;
-        return { secret: new Uint8Array(Buffer.from(v.secret, "base64")), ...(typeof v.card === "string" ? { card: v.card } : {}) };
+        const v = JSON.parse(text) as { secret?: unknown; at?: unknown; card?: unknown };
+        if (typeof v.secret !== "string" || typeof v.at !== "number") return undefined;
+        return { secret: new Uint8Array(Buffer.from(v.secret, "base64")), at: v.at, ...(typeof v.card === "string" ? { card: v.card } : {}) };
       } catch {
         return undefined;
       }
     },
-    saveStaged(secret, card) {
-      write(staged, JSON.stringify({ secret: Buffer.from(secret).toString("base64"), ...(card === undefined ? {} : { card }) }));
+    saveStaged(st) {
+      write(staged, JSON.stringify({ secret: Buffer.from(st.secret).toString("base64"), at: st.at, ...(st.card === undefined ? {} : { card: st.card }) }));
     },
     clearStaged() {
       rmSync(staged, { force: true });
@@ -113,14 +122,14 @@ export function safeStorageVault(file: string, storage: SafeStorageLike, platfor
 /** A vault in memory: a headless run's and the tests'. */
 export function memoryVault(held: AnswerKeyHolder = "none"): KeyVault {
   let secret: Uint8Array | undefined;
-  let staged: { secret: Uint8Array; card?: string } | undefined;
+  let staged: StagedKey | undefined;
   return {
     held,
     load: () => secret,
     save: (s) => void (secret = new Uint8Array(s)),
     clear: () => void (secret = undefined),
     loadStaged: () => staged,
-    saveStaged: (s, card) => void (staged = { secret: new Uint8Array(s), ...(card === undefined ? {} : { card }) }),
+    saveStaged: (st) => void (staged = { ...st, secret: new Uint8Array(st.secret) }),
     clearStaged: () => void (staged = undefined),
     promoteStaged: () => {
       if (!staged) throw new Error("no staged key");
@@ -154,8 +163,11 @@ export interface AnswerKeyClient {
 
 export class AnswerKey {
   private key: KeyObject | undefined;
+  private readonly now: () => number;
 
-  constructor(private readonly vault: KeyVault, private readonly log: (line: string) => void = () => {}) {}
+  constructor(private readonly vault: KeyVault, private readonly log: (line: string) => void = () => {}, opts: { now?: () => number } = {}) {
+    this.now = opts.now ?? Date.now;
+  }
 
   /** The key, made and kept the first time. */
   private private(): KeyObject {
@@ -176,11 +188,11 @@ export class AnswerKey {
   }
 
   /** The staged replacement, if one is kept and reads. */
-  private staged(): { key: KeyObject; card?: string } | undefined {
+  private staged(): (StagedKey & { key: KeyObject }) | undefined {
     const v = this.vault.loadStaged();
     if (!v) return undefined;
     try {
-      return { key: createPrivateKey({ key: Buffer.from(v.secret), format: "der", type: "pkcs8" }), ...(v.card === undefined ? {} : { card: v.card }) };
+      return { ...v, key: createPrivateKey({ key: Buffer.from(v.secret), format: "der", type: "pkcs8" }) };
     } catch {
       this.vault.clearStaged();
       return undefined;
@@ -192,7 +204,7 @@ export class AnswerKey {
     return rawPublic(this.private());
   }
 
-  /** The card a staged replacement waits on, if one does. */
+  /** The card a staged replacement waits on, if the core said which. */
   get pendingCard(): string | undefined {
     return this.vault.loadStaged()?.card;
   }
@@ -206,18 +218,19 @@ export class AnswerKey {
   }
 
   /** Starts replacing the key: a new one, stored in the staged slot first (a rotation whose key can't be stored doesn't
-   *  start), then registered under its own signature with the current key's hand-over. The core withdraws any card an
-   *  earlier replacement still waits on. The current key stays until the core holds the new one. */
-  async rotate(client: AnswerKeyClient, deviceId: string, now: number = Date.now()): Promise<RotationStart> {
-    // A staged key the core already holds (an earlier card's yes) becomes the key first: the new hand-over is from it.
-    const before = this.staged();
-    if (before) await this.adoptIfHeld(client, deviceId, before.key);
+   *  start), then registered under its own signature with the current key's hand-over. A replacement already staged
+   *  and not known to be over is never overwritten: it is resolved first, and while it still waits a new one is
+   *  refused. The current key stays until the core holds the new one. */
+  async rotate(client: AnswerKeyClient, deviceId: string, now: number = this.now()): Promise<RotationStart> {
+    if (this.vault.loadStaged() && (await this.resolveStaged(client, deviceId)) === "waiting") {
+      return { refused: "a replacement already waits on its card" };
+    }
     const current = this.private();
     const from = rawPublic(current);
     const { privateKey: next } = generateKeyPairSync("ed25519");
-    const secret = new Uint8Array(next.export({ format: "der", type: "pkcs8" }));
+    const staged: StagedKey = { secret: new Uint8Array(next.export({ format: "der", type: "pkcs8" })), at: this.now() };
     try {
-      this.vault.saveStaged(secret);
+      this.vault.saveStaged(staged);
     } catch (err) {
       const why = `the new key couldn't be stored (${err instanceof Error ? err.message.slice(0, 120) : "refused"})`;
       this.log(`answer key: not replaced: ${why}`);
@@ -229,51 +242,58 @@ export class AnswerKey {
       signature: b64(sign(null, Buffer.from(answerKeyStatement(deviceId, to, this.held)), next)),
       rotation: { from, at: now, signature: b64(sign(null, Buffer.from(answerKeyRotateStatement(deviceId, from, to, now)), current)) },
     };
+    let r: { applied?: boolean; card?: string };
     try {
-      const r = await client.request<{ applied: boolean; card?: string }>("device.answerKey.set", params, 15_000);
-      if (r.applied) {
-        this.promote();
-        return { applied: true };
-      }
-      if (typeof r.card !== "string") throw new Error("the core didn't say which card");
-      // The staged key now names its card, so a start after a crash knows what it waits on.
-      try {
-        this.vault.saveStaged(secret, r.card);
-      } catch {
-        // The key itself is stored; only the card's id isn't, and the next connection still adopts it if it's held.
-      }
-      this.log("answer key: replacing it waits on its card");
-      return { card: r.card };
+      r = await client.request<{ applied?: boolean; card?: string }>("device.answerKey.set", params, 15_000);
     } catch (err) {
-      this.vault.clearStaged();
       const why = err instanceof Error ? err.message.slice(0, 200) : "refused";
-      this.log(`answer key: not replaced (${why})`);
+      if (isRefusal(err)) {
+        // The core answered no: nothing was asked of the user, so nothing can approve this key.
+        this.vault.clearStaged();
+        this.log(`answer key: not replaced (${why})`);
+        return { refused: why };
+      }
+      // A lost reply (a timeout, the connection closed): the core may already show the card. The key stays staged, and
+      // the next connection adopts it if the core holds it, or drops it once no card can approve it.
+      this.log(`answer key: the replacement's answer was lost (${why}); its key stays staged`);
       return { refused: why };
     }
+    if (r?.applied === true) {
+      this.promote();
+      return { applied: true };
+    }
+    if (typeof r?.card !== "string") {
+      this.log("answer key: the core didn't say which card; the new key stays staged");
+      return { refused: "the core didn't say which card" };
+    }
+    // The staged key now names its card, so a start after a crash knows what it waits on.
+    try {
+      this.vault.saveStaged({ ...staged, card: r.card });
+    } catch {
+      // The key itself is stored; without the card's id it is resolved by its age.
+    }
+    this.log("answer key: replacing it waits on its card");
+    return { card: r.card };
   }
 
   /** A card resolved. On the staged replacement's yes, the app promotes the staged key once the core holds it; on its
-   *  no, expiry, withdrawal or cancellation the staged key is discarded. True when the key changed. */
+   *  no, expiry, withdrawal or cancellation the staged key is discarded (after one last look). True when the key
+   *  changed. */
   async resolved(client: AnswerKeyClient, deviceId: string, cardId: string, outcome: string): Promise<boolean> {
     const st = this.staged();
     if (!st || st.card !== cardId) return false;
     if (outcome !== "approved") {
+      if (await this.adoptIfHeld(client, deviceId, st.key)) return true;
       this.vault.clearStaged();
       this.log(`answer key: kept (the replacement was ${outcome})`);
       return false;
     }
-    for (let i = 0; i < ADOPT_TRIES; i++) {
-      if (await this.adoptIfHeld(client, deviceId, st.key)) return true;
-      await new Promise((r) => setTimeout(r, ADOPT_GAP_MS));
-    }
-    // Kept staged: the next connection adopts it if the core holds it by then.
-    this.log("answer key: the core doesn't hold the new key yet; it stays staged");
-    return false;
+    return this.adoptWithRetries(client, deviceId, st.key);
   }
 
   /** Registers the key with the core, for this device, on every connection; the core takes it only from a desktop,
    *  with this signature. A staged replacement the core already holds (a yes the app missed, or one before a crash) is
-   *  promoted first; one whose card is over is discarded. */
+   *  promoted first; one no card can approve any more is dropped. */
   async register(client: AnswerKeyClient, deviceId: string): Promise<boolean> {
     const st = this.staged();
     if (st && (await this.adoptIfHeld(client, deviceId, st.key))) return true;
@@ -287,19 +307,48 @@ export class AnswerKey {
       this.log(`answer key: not registered (${err instanceof Error ? err.message.slice(0, 200) : "refused"})`);
       return false;
     }
-    // The core holds the current key: a staged one waits on its card, or its card is over.
-    if (st?.card !== undefined) {
-      const card: { outcome?: string } | Error = await client.request<{ outcome?: string }>("card.get", { id: st.card }, 10_000)
-        .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
-      if (card instanceof Error) {
-        // The core doesn't know the card (it restarted): nothing can approve it now.
-        if (/no card|not found/i.test(card.message)) this.vault.clearStaged();
+    if (st) await this.resolveStaged(client, deviceId);
+    return true;
+  }
+
+  /** What became of a staged replacement: `adopted` (the core holds it, now the key), `dropped` (no card can approve
+   *  it any more), or `waiting`. It is dropped only on a known end — its card denied, expired, withdrawn, cancelled
+   *  or unknown to the core, or older than any card can live — and only after one last look finds the core doesn't
+   *  hold it: a yes can land at any moment before. An approved card is waited on, never dropped. */
+  private async resolveStaged(client: AnswerKeyClient, deviceId: string): Promise<"adopted" | "dropped" | "waiting"> {
+    const st = this.staged();
+    if (!st) return "dropped";
+    if (await this.adoptIfHeld(client, deviceId, st.key)) return "adopted";
+    let over = this.now() - st.at > ROTATION_CARD_MS + ROTATION_MARGIN_MS;
+    if (!over && st.card !== undefined) {
+      const card = await client.request<{ outcome?: string }>("card.get", { id: st.card }, 10_000)
+        .then((c) => ({ outcome: c?.outcome }), (err: unknown) => ({ error: err }));
+      if ("error" in card) {
+        // The core doesn't know the card (it restarted): nothing can approve it now. Any other failure tells nothing.
+        over = isRefusal(card.error) && (card.error as { code?: number }).code === ERR.NOT_FOUND;
+      } else if (card.outcome === "approved") {
+        return (await this.adoptWithRetries(client, deviceId, st.key)) ? "adopted" : "waiting";
       } else if (card.outcome !== undefined) {
-        this.vault.clearStaged();
-        this.log(`answer key: kept (the replacement was ${card.outcome})`);
+        over = true;
       }
     }
-    return true;
+    if (!over) return "waiting";
+    // One last look: a yes may have landed since the first.
+    if (await this.adoptIfHeld(client, deviceId, st.key)) return "adopted";
+    this.vault.clearStaged();
+    this.log("answer key: kept (the replacement's card is over)");
+    return "dropped";
+  }
+
+  /** The core applies an approved key just after its card resolves: look a few times. */
+  private async adoptWithRetries(client: AnswerKeyClient, deviceId: string, key: KeyObject): Promise<boolean> {
+    for (let i = 0; i < ADOPT_TRIES; i++) {
+      if (await this.adoptIfHeld(client, deviceId, key)) return true;
+      await new Promise((r) => setTimeout(r, ADOPT_GAP_MS));
+    }
+    // Kept staged: the next connection adopts it if the core holds it by then.
+    this.log("answer key: the core doesn't hold the new key yet; it stays staged");
+    return false;
   }
 
   /** Whether the core holds `key`: registering it again applies at once only then. If it does, it becomes the key. */
@@ -330,6 +379,18 @@ export class AnswerKey {
       this.log("answer key: the new key stays staged in this computer's store until the next start");
     }
   }
+}
+
+/** The core cancels a replacement's card this long after it shows (`ANSWER_KEY_ROTATION_CARD_MS`), and a minute's
+ *  margin: a staged key older than both can't be approved any more. */
+const ROTATION_CARD_MS = 10 * 60 * 1000;
+const ROTATION_MARGIN_MS = 60 * 1000;
+
+/** A definitive answer from the core: a JSON-RPC error it sent. A timeout, a closed connection or an internal error
+ *  tells nothing about whether it acted. */
+function isRefusal(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === "number" && code !== CLIENT_ERR.CLOSED && code !== CLIENT_ERR.TIMEOUT && code !== ERR.INTERNAL;
 }
 
 function rawPublic(key: KeyObject): string {
