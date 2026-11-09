@@ -389,7 +389,10 @@ export function pluginHostBunFlags(files: PluginRunFiles): string[] {
 
 /** Variables a plugin process never inherits: they change what Bun or Node loads, or they're what Clover's guard and
  *  host read, which only Clover sets (#322's review, B1). */
-const DROPPED_ENV = /^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+|CLOVER_PLUGIN_(HOST|ROOT|SHARED|WORKER))$/;
+const DROPPED_ENV_SOURCE = "^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+|CLOVER_PLUGIN_(HOST|ROOT|SHARED|WORKER))$";
+/** On Windows environment names are case-insensitive (`node_options` is NODE_OPTIONS), so there they match without case. */
+export const droppedEnv = (platform: NodeJS.Platform = process.platform): RegExp => new RegExp(DROPPED_ENV_SOURCE, platform === "win32" ? "i" : "");
+const DROPPED_ENV = droppedEnv();
 
 /** Names a plugin's manifest never sets in a process's environment (#322's review, B1): Clover's own (`CLOVER_*`), and
  *  what changes how Bun, Node or the dynamic loader loads code. `NODE_ENV` and `NODE_NO_WARNINGS` load nothing. The
