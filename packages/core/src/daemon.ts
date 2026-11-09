@@ -61,7 +61,7 @@ import type { DeviceLinks } from "./links/node";
 import type { ComputerNode } from "./computers/node";
 import type { BotSide } from "./bots/wiring";
 import { openPluginRegistry, type OpenedRegistry } from "./registry/open";
-import { botDriverFactory, botFileFence, botHomeSandbox } from "./runtime-sdk/turn-loop/driver";
+import { botDriverFactory, botFileFence } from "./runtime-sdk/turn-loop/driver";
 import { CloverFence } from "./fence/fence";
 import { botCoreTools } from "./runtime-sdk/turn-loop/wiring";
 import { defaultTreeRoot } from "./tree/root";
@@ -3587,7 +3587,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const daemonBots = async (registry: OpenedRegistry["registry"]): Promise<DaemonBotsInput> => {
     // The bots come from the plugin registry (`startPlugins`).
-    // Lane C's fence, for the bots' own Read, Glob and Grep: the Clover home's default-deny, as their Bash meets it.
+    // Lane C's fence, for the bots' own file tools (`botFileFence`). Their Bash sandbox comes from the same fence through
+    // lane C's `sandboxSettingsOf` (#356).
     const botsFence = new CloverFence({ os: hostOs(), home: homedir(), cloverHome });
     return {
       registry: registry,
@@ -3606,8 +3607,6 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
         provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
-        // The Clover home is read-denied to a bot's Bash but for the session's own folders (the owner's November 6 ruling).
-        sandbox: botHomeSandbox(cloverHome),
         fileFence: botFileFence(botsFence, cloverHome, hostOs()),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,

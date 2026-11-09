@@ -1,15 +1,13 @@
-// The Clover home for a bot's own file tools (the owner's ruling of November 9, amended; lane C's fence). Owner: lane A.
-// The bot's Bash meets it in its sandbox (`botHomeSandbox`); its Read, Glob, Grep and writes meet it here, through the
-// same fence the other runners' real-path checks use (`Fence.forCaller(…).check`): a bot reads the whole home but the
-// escalation list (the fence's read-denied items, and `botReadDenied`: lane C's list and the config copies that carry keys),
-// and writes any bot's scratch and memory and its own routines and outputs. Every path is judged as it really is (a
-// link from a bot's folder is judged where it points, and a pattern's `..` like a path's). What a search walks into is
-// filtered by the runtime against the same escalation list in the sandbox's `denyRead`.
+// The Clover home for a bot's own file tools (lane C's fence). Owner: lane A. A bot's Read, Glob, Grep and writes are
+// judged here by the same fence the other runners' real-path checks use (`Fence.forCaller(…).check`), and a read of a
+// file that carries keys is refused on top (`botReadDenied`). Every path is judged as it really is: a link from a bot's
+// folder is judged where it points, and a pattern's `..` like a path's. The bot's Bash meets the same fence through its
+// sandbox (lane C's `sandboxSettingsOf`).
 import { isAbsolute, join, resolve } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { FenceOp, FenceVerdict } from "../../contracts/fence";
 import { homeReach, realPathOf } from "../../agents/memory";
-import { BOT_READ_DENIED, CONFIG_COPY_FILES } from "./home-deny";
+import { CONFIG_COPY_FILES } from "./home-deny";
 import { RESUME_STAGING_PREFIX } from "../host/vendor-paths";
 
 /** The file tools this check judges: what each does, and whether it searches. */
@@ -17,7 +15,6 @@ const FILE_TOOLS: Readonly<Record<string, { op: "read" | "write"; search: boolea
   Read: { op: "read", search: false },
   Glob: { op: "read", search: true },
   Grep: { op: "read", search: true },
-  // Writes stay the session's own (the owner's ruling of November 9: a bot reads other bots' memory, never writes it).
   Write: { op: "write", search: false },
   Edit: { op: "write", search: false },
   MultiEdit: { op: "write", search: false },
@@ -36,13 +33,16 @@ function globRoot(pattern: string, base: string): string {
   return isAbsolute(pattern) ? at || "/" : resolve(base, at);
 }
 
-/** Whether a path, as written or as it really is, is on the bots' escalation list as their Bash meets it
- *  (`botDenyRead`): in `BOT_READ_DENIED`, or a config copy that carries keys (a `.clover.json`, `.claude.json` or
- *  `.credentials.json` in the home or a staging root, or a staging root's `backups/`). */
+/** The files in the home that hold keys, whatever the fence says of them: the secret store's files, the core's run
+ *  folder and the credential index. */
+const KEY_PATHS = ["secrets.enc", "secrets.key", "secrets.key.cred", "run", "credentials"] as const;
+
+/** Whether a path, as written or as it really is, carries keys: one of `KEY_PATHS`, or a config copy (a `.clover.json`,
+ *  `.claude.json` or `.credentials.json` in the home or a staging root, or a staging root's `backups/`). */
 export function botReadDenied(home: string, path: string, cwd: string): boolean {
   for (const p of new Set([isAbsolute(path) ? resolve(path) : resolve(cwd, path), realPathOf(path, cwd)])) {
     const segs = p.split(/[\\/]/);
-    if (BOT_READ_DENIED.some((rel) => homeReach(join(home, rel), p, cwd) === "inside")) return true;
+    if (KEY_PATHS.some((rel) => homeReach(join(home, rel), p, cwd) === "inside")) return true;
     if (segs.some((s) => (CONFIG_COPY_FILES as readonly string[]).includes(s)) && homeReach(home, p, cwd) === "inside") return true;
     if (segs.some((s) => s.startsWith(RESUME_STAGING_PREFIX)) && segs.some((s) => (CONFIG_COPY_FILES as readonly string[]).includes(s) || s === "backups")) return true;
   }

@@ -1,7 +1,6 @@
-// The Clover home is default-deny for a tool runner's Bash: the runner reads the folders it is given and nothing else.
-// Owner: lane A. Bots (the owner's rulings of November 6 and 9: their own scratch and routines, every bot's folder and
-// the bots' conversations) and coding sessions (their store, run folder, outputs and working directories) each build
-// their list from `homeDenyRead`.
+// The Clover home is default-deny for a coding session's Bash: it reads the folders it is given and nothing else.
+// Owner: lane A. A coding session's list (its store, run folder, outputs and working directories) is built here by
+// `homeDenyRead`; a bot's comes from lane C's fence (`sandboxSettingsOf`).
 //
 // A sandbox can't say "deny this folder but allow that one inside it": Seatbelt and the SDK's bubblewrap backend apply
 // a read denial after the allows, and the SDK's `allowRead` isn't enforced on either. So every folder on the way to a
@@ -21,9 +20,6 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { fenceLayout } from "../../fence/layout";
 import { escapeSandboxGlobPath } from "../host/run-home/settings";
-
-/** What a bot may never read in the Clover home (the fence's list, `contracts/fence.ts`). */
-export { BOT_READ_DENIED } from "../../contracts/fence";
 
 /** The generated config copies of a run folder or a staging root (the MCP fold with stdio servers' `env`, the
  *  official child's credentials): never readable by a runner's Bash. */

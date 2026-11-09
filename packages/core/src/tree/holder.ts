@@ -991,8 +991,7 @@ export class LocalHolder implements Holder {
     if (names.length === 0) return !change;
     if (names.length === 1) return !change || owns(names[0]!);
     if (names[1] !== foldName(MEMORY_FOLDER, this.os)) return true;
-    // The owner's ruling of November 9 (amended): every bot's sessions read and write every bot's memory.
-    return mine !== undefined;
+    return owns(names[0]!);
   }
 
   /** Lane B's second wall (`nonAsciiAlias`): a name that isn't ASCII where Clover names things under its home (its top

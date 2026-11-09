@@ -320,11 +320,8 @@ export function patternItemAt(path: string, cloverHome: string, os?: Os):
 }
 
 /** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal. */
-export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os, writes = true): boolean {
+export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os): boolean {
   if (ctx?.user) return true;
-  // The owner's ruling of November 9 (amended): a bot's sessions read and write every bot's memory.
-  void writes;
-  if (ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf)) return true;
   return ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) && foldName(ctx.memoryOf.replace("/", "--"), os) === foldName(folder, os);
 }
 
@@ -334,12 +331,6 @@ export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: Fence
   if (ctx?.user) return true;
   return item.bot !== undefined && reachesMemoryFolder(item.bot.replace("/", "--"), ctx, os);
 }
-
-/** What a bot may never read in the Clover home, relative to it (the owner's ruling of November 9: bots read the rest):
- *  the run folder (the app token, the core's socket, the plugins' run files and guards), the secret store's files, the
- *  credential index, the runtimes, the store's MCP list, the run folders, plugin data and the bot driver's state. It
- *  mirrors lane C's list of the same name (on lane C's branch lane/c-bots-read), which replaces it when that lands. */
-export const BOT_READ_DENIED = ["run", "secrets.enc", "secrets.key", "secrets.key.cred", "credentials", "runtimes", "sdk/.clover.json", "cache/runs", "plugin-data", "sessions-runtime"] as const;
 
 /** A name that can name one folder: no `.` or `..`, no separator (for a session id or a bot id as a folder). Exported for the OS sandboxes, which enforce the same rule when granting `own…` folders. */
 export const folderName = (s: string | undefined) => s !== undefined && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(s) && !/^\.+$/.test(s);
@@ -352,23 +343,13 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
   const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
   if (segs.length < home.length || !home.every((h, i) => same(h, segs[i]!))) return true; // not in the home
   const [area, x, sub, ...deeper] = segs.slice(home.length);
-  const bot = ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? ctx.memoryOf.replace("/", "--") : undefined;
-  // The owner's ruling of November 9 (amended): a bot's sessions read the whole Clover home but `BOT_READ_DENIED` (the
-  // fenced set's read-denied items are judged apart too), and write any bot's scratch and memory.
-  if (bot !== undefined && !writes) {
-    const rel = segs.slice(home.length);
-    return !BOT_READ_DENIED.some((d) => { const ds = d.split("/"); return ds.length <= rel.length && ds.every((n, i) => same(n, rel[i]!)); });
-  }
   if (area === undefined || x === undefined) return false; // the home itself, or a top folder in it
   const inside = sub !== undefined; // strictly inside `<area>/<x>`
   // 1. A session's own outputs.
   if (same(area, "outputs") && folderName(ctx?.sessionId) && same(x, ctx!.sessionId!)) return inside || !writes;
   // A plugin's own data folder, for its own code alone.
   if (same(area, "plugin-data")) return ownsPluginData(x, ctx, os) && (inside || !writes);
-  if (bot !== undefined) {
-    if (same(area, "scratch")) return inside;
-    if (same(area, "bots") && sub !== undefined && same(sub, "memory")) return deeper.length > 0;
-  }
+  const bot = ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? ctx.memoryOf.replace("/", "--") : undefined;
   if (bot === undefined || !same(x, bot)) return false;
   // 2. A bot's own scratch and its routines, for its main conversation and side threads.
   if (same(area, "scratch") || same(area, "routines")) return inside || !writes;
@@ -547,7 +528,7 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
       // `bots/` and `bots/<x>` hold memory: never deleted, moved or written over. Inside `bots/<x>/memory`, only its bot.
       if (!pattern.inside && writes) return { allowed: false, reason: "bot-memory", path: pattern.root };
       if (pattern.inside) {
-        if (!reachesMemoryFolder(pattern.folder, o.caller, o.os, writes)) return { allowed: false, reason: "bot-memory", path: pattern.root };
+        if (!reachesMemoryFolder(pattern.folder, o.caller, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
         if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
       }
     } else if (pattern?.kind === "sessions-runtime" && (writes || !o.caller?.user)) {

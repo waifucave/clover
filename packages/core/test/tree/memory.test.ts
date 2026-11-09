@@ -61,7 +61,7 @@ describe("home/memory", () => {
     expect(changed.every((c) => c.startsWith("Studio alpha "))).toBe(true);
   });
 
-  test("only the bots reach it (the owner's ruling of November 9, amended): not coding sessions, agents, plugins or another computer, by any path", async () => {
+  test("nobody else reaches it: not other bots, coding sessions, agents, plugins or another computer, by any path", async () => {
     const { studio, laptop } = await two();
     const t = studio.node.tree;
     await t.write("home/memory/secret.md", utf8("alpha's"), { as: ALPHA });
@@ -74,13 +74,8 @@ describe("home/memory", () => {
       expect(await code(t.read("home/memory/secret.md", { as }))).toBe("not_found");
       expect(await code(t.write("home/memory/x.md", utf8("x"), { as }))).toBe("not_found");
     }
-    // Another bot reads and writes alpha's memory by alpha's folder, and reads the rest of that folder.
-    expect(await t.read("bots/alpha/memory/secret.md", { as: LUNA })).toEqual(utf8("alpha's"));
-    await t.write("bots/alpha/memory/note.md", utf8("from luna"), { as: LUNA });
-    expect(readFileSync(join(studio.cloverHome, "bots", "alpha", "memory", "note.md"), "utf8")).toBe("from luna");
-    expect(await t.list("bots/alpha", { as: LUNA })).toBeDefined();
-    // Not by alpha's folder, or the home folder's own path to it, for anyone but the bots.
-    for (const as of [CODING, AGENT]) {
+    // Nor by alpha's folder, or the home folder's own path to it, for anyone but alpha.
+    for (const as of [LUNA, CODING, AGENT]) {
       expect(await code(t.read("bots/alpha/memory/secret.md", { as }))).toBe("fenced");
       expect(await code(t.write("bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
       expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe("fenced");
@@ -92,7 +87,7 @@ describe("home/memory", () => {
     expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe("fenced");
     // The real path is no way around it for any model-driven caller (the user's own coding sessions included): only the
     // user's own surfaces and the core reach it there.
-    for (const as of [CODING, AGENT, PLUGIN]) {
+    for (const as of [CODING, AGENT, LUNA, PLUGIN]) {
       const real = "home/Studio/.clover/bots/alpha/memory";
       expect(await code(t.read(`${real}/secret.md`, { as }))).toBe("fenced");
       expect(await code(t.stat(`${real}/secret.md`, { as }))).toBe("fenced");
@@ -137,28 +132,24 @@ describe("home/memory", () => {
     const { studio } = await two();
     const t = studio.node.tree;
     // `ghost` isn't in this computer's list (not made yet, synced before the list caught up, or removed and left
-    // behind): its memory folder is still the bots' alone (the owner's ruling of November 9, amended: every bot's).
+    // behind): its memory folder is still only ghost's.
     const dir = join(studio.cloverHome, "bots", "ghost", "memory");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "MEMORY.md"), "ghost's");
     const GHOST = { kind: "session", sessionId: "s_ghost", sessionKind: "bot", bot: "ghost" } as const;
     const real = "home/Studio/.clover/bots/ghost/memory";
-    for (const as of [ALPHA, LUNA]) {
-      expect(await t.read(`${real}/MEMORY.md`, { as })).toEqual(utf8("ghost's"));
-      expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
-    }
-    for (const as of [CODING, AGENT, PLUGIN]) {
+    for (const as of [ALPHA, LUNA, CODING, AGENT, PLUGIN]) {
       expect(await code(t.read(`${real}/MEMORY.md`, { as }))).toBe("fenced");
       expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe("fenced");
       expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
       expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/MEMORY.md`);
     }
-    // Only a valid bot id reaches a memory folder (#197's check 5, kept by #234): `GHOST` isn't one; a valid id that
-    // doesn't fold equal, however close, is another bot, which reads it.
+    // Only a valid bot id reaches a memory folder (#197's check 5, kept by #234): `GHOST` isn't one, so it doesn't land
+    // on ghost's folder on a folding disk; and a valid id that doesn't fold equal, however close, doesn't either.
     const GHOST_UPPER = { kind: "session", sessionId: "s_GHOST", sessionKind: "bot", bot: "GHOST" } as const;
     const GHOSTS = { kind: "session", sessionId: "s_ghosts", sessionKind: "bot", bot: "ghosts" } as const;
     expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOST_UPPER }))).toBe("fenced");
-    expect(await t.read(`${real}/MEMORY.md`, { as: GHOSTS })).toEqual(utf8("ghost's"));
+    expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOSTS }))).toBe("fenced");
     // ghost itself, through its own `home/memory`, and the user's own surfaces at the real path.
     expect(await t.read("home/memory/MEMORY.md", { as: GHOST })).toEqual(utf8("ghost's"));
     expect(await t.read(`${real}/MEMORY.md`, { as: USER })).toEqual(utf8("ghost's"));
@@ -189,8 +180,7 @@ describe("a Clover home behind a link (#254's review, should-fix 7)", () => {
       // Then the bot's memory is made.
       mkdirSync(join(elsewhere, "bots", "alpha", "memory"), { recursive: true });
       writeFileSync(join(elsewhere, "bots", "alpha", "memory", "secret.md"), "alpha's");
-      expect(await h.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as: LUNA })).toEqual(utf8("alpha's"));
-      for (const as of [CODING, AGENT]) {
+      for (const as of [CODING, LUNA, AGENT]) {
         expect(await code(h.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe("fenced");
         expect(await code(h.write("home/Studio/.clover/bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
       }

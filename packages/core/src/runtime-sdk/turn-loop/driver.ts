@@ -55,14 +55,8 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { BOT_READ_DENIED, configCopyDenies, namesOtherThan, ownHomeConfigDenies } from "./home-deny";
-import { CloverFence } from "../../fence/fence";
-import { selfGrantDenyWrite } from "../mode-options";
-import { escapeSandboxGlobPath } from "../host/run-home/settings";
-import { RESUME_STAGING_PREFIX } from "../host/vendor-paths";
-import { homedir, tmpdir } from "node:os";
 import { fileToolFenceRefusal, type FileFence } from "./file-fence";
-import { fenceContextFor, ownFoldersOf, type Fence } from "../../contracts/fence";
+import type { Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -87,59 +81,6 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  `dangerouslyDisableSandbox` is refused), and the paths to launchd closed (F8). Bots, their side threads and routines,
  *  and in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
-
-/** What a bot's Bash may not read (the owner's ruling of November 9: bots read the whole Clover home, and only
- *  escalation is denied): `BOT_READ_DENIED`, the fence's other read-denied items (the browser profiles), and every
- *  config copy that carries keys, at any depth in the home (`ownHomeConfigDenies`) and under the staging roots
- *  (`configCopyDenies`). In the
- *  sandbox's glob grammar. */
-export function botDenyRead(home: string, fence: Pick<Fence, "fencedSet"> = homeFence(home)): string[] {
-  const literal = [...BOT_READ_DENIED.map((rel) => join(home, rel)), ...fence.fencedSet().filter((i) => i.deny === "read-write").map((i) => i.path)];
-  return [...new Set([
-    ...literal.map(escapeSandboxGlobPath),
-    // The runtime's own home is the Clover home: its top-level copies are named exactly (`ownHomeConfigDenies`).
-    ...ownHomeConfigDenies(home),
-    ...configCopyDenies({ base: tmpdir(), prefix: RESUME_STAGING_PREFIX }),
-  ])];
-}
-
-/** What a bot's Bash may not write, wherever its writable folders are: every item of the fence's set (settings,
- *  levels, saved rules, connector permissions, trust, devices, user layers, the credential index, the plugins' consent
- *  and registry, plugin data, the installed plugins, the run folder, the secrets file and its keys, the sessions'
- *  logs, the login-start places and the agents' installs), every self-grant path a coding session's Bash is denied
- *  (`selfGrantDenyWrite`), and in a bot's folder everything but its memory. */
-export function botDenyWrite(home: string, fence: Pick<Fence, "fencedSet"> = homeFence(home)): string[] {
-  return [...new Set([
-    ...[...fence.fencedSet().filter((i) => i.deny !== "caller").map((i) => i.path), ...selfGrantDenyWrite(home)].map(escapeSandboxGlobPath),
-    // In a bot's folder only its memory is written (`botWriteFolders` grants the bots' folder for every bot's memory):
-    // never its agents' transcripts or anything else beside the memory.
-    ...namesOtherThan(`${join(home, "bots")}/*`, ["memory"]),
-  ])];
-}
-
-/** Lane C's fence for this computer's Clover home. */
-function homeFence(home: string): CloverFence {
-  return new CloverFence({ home: homedir(), cloverHome: home });
-}
-
-/** The folders a bot's Bash writes (the owner's ruling of November 9, amended): every bot's scratch folder and memory
- *  (the bots' folder, all but each memory write-denied in `botDenyWrite`), and its own routines and session outputs
- *  (the fence's `ownFoldersOf`). */
-export function botWriteFolders(home: string, ctx: Pick<BotSessionContext, "paths" | "caller">): string[] {
-  const own = ownFoldersOf(fenceContextFor(ctx.caller), home);
-  return [join(home, "scratch"), join(home, "bots"), ...[own.ownRoutines, own.ownOutputs].filter((p): p is string => p !== undefined)];
-}
-
-/** The daemon's Bash sandbox for a bot's session: it reads the whole Clover home but the escalation list
- *  (`botDenyRead`), writes any bot's scratch and memory and its own routines and outputs (`botWriteFolders`), and
- *  never a permission, trust, settings or plugin file (`botDenyWrite`). Built at each session's start from fixed paths and
- *  patterns, so a folder made later changes nothing. */
-export function botHomeSandbox(home: string): (ctx: BotSessionContext) => SandboxSettingsConfig {
-  return (ctx) => {
-    const fence = homeFence(home);
-    return { filesystem: { allowWrite: botWriteFolders(home, ctx).map(escapeSandboxGlobPath), denyRead: botDenyRead(home, fence), denyWrite: botDenyWrite(home, fence) } };
-  };
-}
 
 /** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
  *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */

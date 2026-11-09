@@ -4,11 +4,8 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { botPaths } from "../../../src/bots/paths";
-import { botHomeSandbox } from "../../../src/runtime-sdk/turn-loop/driver";
 import { CONFIG_COPY_FILES, homeDenyRead, homeNamedDenials, namesOtherThan } from "../../../src/runtime-sdk/turn-loop/home-deny";
 import { RUN_FOLDER_CONFIG_FILES } from "../../../src/runtime-sdk/mode-options";
-import type { BotSessionContext } from "../../../src/bots/service";
 import { deniedBy } from "../../helpers/sandbox-glob";
 
 const temps: string[] = [];
@@ -81,55 +78,5 @@ describe("homeDenyRead", () => {
 
   test("the config copies' names are the run folders' (one list)", () => {
     expect([...RUN_FOLDER_CONFIG_FILES]).toEqual([...CONFIG_COPY_FILES]);
-  });
-});
-
-describe("a bot's Bash (botHomeSandbox, what the daemon passes): the owner's ruling of November 9, amended", () => {
-  const ctx = (h: string, bot = "pack/luna") => ({
-    paths: botPaths(h, bot),
-    caller: { kind: "session", sessionId: "b_luna", sessionKind: "bot", bot },
-  }) as unknown as BotSessionContext;
-  const sandbox = (h: string) => {
-    const fs = botHomeSandbox(h)(ctx(h)).filesystem!;
-    return {
-      reads: (p: string) => !deniedBy(fs.denyRead ?? [], join(h, p)),
-      writes: (p: string) => deniedBy(fs.allowWrite ?? [], join(h, p)) && !deniedBy(fs.denyWrite ?? [], join(h, p)),
-      fs,
-    };
-  };
-
-  test("it reads the whole Clover home: every bot's memory, scratch and conversations, the coding sessions' too", () => {
-    const h = temp("clover-bot-read-");
-    const { reads } = sandbox(h);
-    for (const p of ["bots/pack--mira/memory/MEMORY.md", "bots/pack--mira/agents/a_1/acp.ndjson", "scratch/pack--mira/x", "transcripts/pack--mira/b_mira.ndjson",
-      "transcripts/_/s_1.ndjson", "sessions/s_1.jsonl", "outputs/s_1/r.md", "sdk/projects/-p/t.jsonl", "routines/pack--mira/r.md", "settings.json", "plugins/x/clover.json", "cache/views/v/SKILL.md", "sdk/skills/a/SKILL.md"]) {
-      expect([p, reads(p)]).toEqual([p, true]);
-    }
-  });
-
-  test("never the escalation list: secrets, the run folder, the config copies that carry keys, the credential index, plugin data", () => {
-    const h = temp("clover-bot-escalation-");
-    const { reads } = sandbox(h);
-    for (const p of ["secrets.enc", "secrets.key", "secrets.key.cred", "run/app.token", "run/core.sock", "cache/runs/r1/.clover.json", "cache/runs/r1/.claude.json",
-      "cache/runs/r1/.credentials.json", "cache/runs/r1/backups/.claude.json.backup.1", "cache/runs/r1/settings.json", "sdk/.clover.json", "credentials/index.json",
-      "plugin-data/tarot/token.json", "runtimes/bin/winter", "sessions-runtime/b_luna.json", "bots/pack--mira/memory/.clover.json"]) {
-      expect([p, reads(p)]).toEqual([p, false]);
-    }
-    const fs = botHomeSandbox(h)(ctx(h)).filesystem!;
-    expect(deniedBy(fs.denyRead ?? [], join(tmpdir(), "claude-resume-1234", ".credentials.json"))).toBe(true);
-    expect(deniedBy(fs.denyRead ?? [], join(tmpdir(), "claude-resume-1234", "projects", "k", "s", "tool-results", "1.txt"))).toBe(false);
-  });
-
-  test("it writes any bot's scratch and memory, its own routines and outputs; never a permission, trust, settings or plugin file", () => {
-    const h = temp("clover-bot-write-");
-    const { writes } = sandbox(h);
-    for (const p of ["scratch/pack--luna/x", "scratch/pack--mira/x", "bots/pack--mira/memory/note.md", "bots/pack--luna/memory/MEMORY.md", "routines/pack--luna/r.md", "outputs/b_luna/r.md"]) {
-      expect([p, writes(p)]).toEqual([p, true]);
-    }
-    for (const p of ["settings.json", "settings/x.json", "sdk/settings.json", "trust.json", "trust/x", "rules/x.json", "levels/x", "connectors/x", "plugins/x/clover.json",
-      "plugins-state/oks/x", "plugins-state/installed.json", "run/app.token", "secrets.enc", "bots/pack--mira/agents/a_1/acp.ndjson", "bots/pack--mira/bot.json",
-      "routines/pack--mira/r.md", "outputs/s_9/r.md", "transcripts/pack--mira/b.ndjson", "user-layers/pack--luna.json", "sdk/plugins/x", "cache/runs/r1/x"]) {
-      expect([p, writes(p)]).toEqual([p, false]);
-    }
   });
 });
