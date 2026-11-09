@@ -1,9 +1,9 @@
 // The plugin API's core side (B-M2): the router's capability gate, `points.*`, storage, settings, `confirm`, the
 // commands and points lists, the caller binding (R7) and the pipe's listener subscriptions.
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { catalogPointDecl, SYNCED_STORE_LIMIT_BYTES, type Manifest } from "@waifucave/clover-plugin-sdk";
 import type { Caller } from "@waifucave/clover-protocol";
-import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync as makeTemp, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ContractError } from "../../contracts/common";
@@ -14,10 +14,23 @@ import { commandListMethods, commandOwner, commandsApi, commandViews, pointViews
 import { apiChannel, LISTENER_ARG } from "../api-channel";
 import { confirmApi } from "../api/confirm";
 import { pointsApi } from "../api/points";
+import { defaultAssetUrl } from "../daemon-host";
+import { assetPath } from "../paths";
 import { createApiRouter, type ApiHandlers } from "../api/router";
 import { filePluginSettings, memoryPluginSettings, PluginSettings, pluginSettingsMethods, settingsApi } from "../api/settings";
 import { fileSyncedStores, memorySyncedStores, pluginDataFolder, storageApi, SyncedStores } from "../api/storage";
 import { InvocationTable } from "../invocations";
+
+// Every temp folder a test makes goes at the end.
+const temps: string[] = [];
+const mkdtempSync = (prefix: string): string => {
+  const d = makeTemp(prefix);
+  temps.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of temps) rmSync(d, { recursive: true, force: true });
+});
 
 const API = "^1.0.0";
 const manifest = (m: Partial<Manifest> = {}): Manifest => ({ manifest: 1, name: "P", engines: { clover: API }, ...m }) as Manifest;
@@ -164,6 +177,23 @@ describe("points.*", () => {
     ]);
   });
 
+  test("a path field that could leave its plugin's folder is null; the rest is percent-encoded (#332's review)", async () => {
+    const bad = ["../../etc/passwd", "img/../../x", "img\\fool.png", "https://evil.example/x.png", "//evil.example/x", "/abs.png", "img//x.png", "./x.png", "a\u0000b"];
+    const sly: FakePluginInput = {
+      id: "sly",
+      manifest: manifest({ id: "sly", name: "Sly", contributes: { "luna.cards": [...bad, "art/the fool #1.png"].map((image, i) => ({ id: `c${i}`, image, draw: "d", title: "t" })) } } as Partial<Manifest>),
+    };
+    const reg = registry([sly]);
+    const r = routerWith(reg, [pointsApi({ registry: reg, host: hostStub(), assetUrl: defaultAssetUrl })]);
+    const images = ((await call(r, "luna", "points.entries", ["luna.cards"])) as { pluginId: string; value: { image: unknown } }[]).filter((e) => e.pluginId === "sly").map((e) => e.value.image);
+    expect(images).toEqual([...bad.map(() => null), "clover-plugin://sly/art/the%20fool%20%231.png"]);
+    for (const p of bad) {
+      expect(assetPath(p)).toBeUndefined();
+      expect(() => defaultAssetUrl("sly", p)).toThrow("isn't a path inside sly's folder");
+    }
+    expect(defaultAssetUrl("luna/tarot", "img/moon.png")).toBe("clover-plugin://luna/tarot/img/moon.png");
+  });
+
   test("only the declarer's tree reads a point; a core point is the core's; an undeclared one has no entries", async () => {
     const { r } = setup();
     expect(await code(call(r, "tarot", "points.entries", ["luna.cards"]))).toBe("refused");
@@ -290,6 +320,34 @@ describe("settings", () => {
     await expect(m["plugin.settings.set"]!({ id: "luna", key: "greeting", value: "x" }, { caller: session })).rejects.toThrow("only the user");
   });
 
+  test("a file that doesn't parse is kept aside and the read fails loudly; a __proto__ key is refused; a plain value of a field that became a secret moves to the store (#332's review)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-b2-home-"));
+    mkdirSync(join(home, "settings", "plugins"), { recursive: true });
+    writeFileSync(join(home, "settings", "plugins", "luna.json"), "{not json");
+    const settings = new PluginSettings({ registry: registry(), backend: filePluginSettings(home) });
+    expect(() => settings.get("luna", "greeting")).toThrow("couldn't be read; it's kept at");
+    expect(readdirSync(join(home, "settings", "plugins")).some((f) => f.startsWith("luna.json.corrupt-"))).toBe(true);
+    expect(settings.get("luna", "greeting")).toBe("hi");
+    mkdirSync(join(home, "settings", "plugin-stores"), { recursive: true });
+    writeFileSync(join(home, "settings", "plugin-stores", "luna.json"), "[1,2]");
+    const stores = new SyncedStores(fileSyncedStores(home));
+    expect(() => stores.get("luna", "k")).toThrow("couldn't be read");
+    for (const bad of ["__proto__", "constructor", "prototype"]) expect(() => stores.set("luna", bad, 1)).toThrow("isn't a store key");
+    stores.set("luna", "k", 1);
+    expect(Object.getPrototypeOf(JSON.parse(readFileSync(join(home, "settings", "plugin-stores", "luna.json"), "utf8")))).toBe(Object.prototype);
+    // `token` is a secret now; an older version kept it as a plain string.
+    writeFileSync(join(home, "settings", "plugins", "luna.json"), JSON.stringify({ account: { token: "plain-old", greeting: "yo" }, device: {}, bot: {} }));
+    const moved: { name: string; value: string }[] = [];
+    const withStore = new PluginSettings({
+      registry: registry(), backend: filePluginSettings(home),
+      secrets: { set: async (ref, value) => (moved.push({ name: ref.name, value: String(value) }), { ref, generation: 1, updatedAt: 0, synced: true }), delete: async () => true, list: async () => [] },
+    });
+    const views = await withStore.views("luna");
+    expect(moved).toEqual([{ name: "token", value: "plain-old" }]);
+    expect(readFileSync(join(home, "settings", "plugins", "luna.json"), "utf8")).not.toContain("plain-old");
+    expect(views.find((v) => v.key === "greeting")).toMatchObject({ value: "yo" });
+  });
+
   test("on disk, under the fenced settings folder", () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-home-"));
     const settings = new PluginSettings({ registry: registry(), backend: filePluginSettings(home) });
@@ -313,7 +371,39 @@ describe("confirm", () => {
         source: { type: "rows", rows: [{ label: "Plugin", value: "Tarot" }, { label: "Id", value: "tarot" }, { label: "Source", value: "local" }] },
       },
     });
-    for (const bad of ["", "   ", "x".repeat(2001), "\uD800", 3]) expect(await code(call(r, "tarot", "confirm", [bad]))).toBe("invalid");
+    for (const bad of ["", "   ", "x".repeat(2001), "\uD800", 3, "\u202e\u200f"]) expect(await code(call(r, "tarot", "confirm", [bad]))).toBe("invalid");
+  });
+
+  test("control and bidirectional characters are dropped from the text; a plugin has at most 3 cards open, and 10 a minute (#332's review)", async () => {
+    const asked: ApprovalRequest[] = [];
+    const answers: ((v: { allowed: boolean; by: "card"; cardId: string }) => void)[] = [];
+    const broker = { request: (req: ApprovalRequest) => new Promise<{ allowed: boolean; by: "card"; cardId: string }>((resolve) => { asked.push(req); answers.push(resolve); }) };
+    let t = 1_000_000;
+    const r = routerWith(registry(), [confirmApi(broker, { now: () => t })]);
+    const first = call(r, "tarot", "confirm", ["Pay \u202eevil\u202c now?\u0007\nReally?"]);
+    await Bun.sleep(1);
+    expect((asked[0]!.fields.what as { text: string }).text).toBe("Pay evil now?\nReally?");
+    const more = [call(r, "tarot", "confirm", ["2?"]), call(r, "tarot", "confirm", ["3?"])];
+    expect(await code(call(r, "tarot", "confirm", ["4?"]))).toBe("refused");
+    // Another plugin's cards count on their own.
+    const luna = call(r, "luna", "confirm", ["Luna's own?"]);
+    await Bun.sleep(1);
+    expect(asked.length).toBe(4);
+    for (const a of answers.splice(0)) a({ allowed: true, by: "card", cardId: "c" });
+    await Promise.all([first, ...more, luna]);
+    // Answered, they free their places; the rate still counts them.
+    for (let i = 0; i < 7; i++) {
+      const p = call(r, "tarot", "confirm", [`more ${i}?`]);
+      await Bun.sleep(1);
+      for (const a of answers.splice(0)) a({ allowed: false, by: "card", cardId: "c" });
+      await p;
+    }
+    expect(await code(call(r, "tarot", "confirm", ["eleventh?"]))).toBe("refused");
+    t += 60_000;
+    const later = call(r, "tarot", "confirm", ["a minute on?"]);
+    await Bun.sleep(1);
+    for (const a of answers.splice(0)) a({ allowed: true, by: "card", cardId: "c" });
+    expect(await later).toBe(true);
   });
 });
 

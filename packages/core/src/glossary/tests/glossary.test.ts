@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FakePluginRegistry } from "../../contracts/fakes/plugin-registry";
-import { glossaryMethods, GlossaryIndex, parseSkill, runGlossary, words } from "../index";
+import { glossaryMethods, GlossaryIndex, parseSkill, runGlossary, skillLabel, words } from "../index";
 
 const manifest = (m: Partial<Manifest>): Manifest => ({ manifest: 1, name: "P", ...m }) as Manifest;
 
@@ -62,11 +62,31 @@ describe("Glossary", () => {
     expect(r.results.filter((x) => x.name === "pdf-tools").length).toBe(1);
     expect(r.loaded).toEqual([
       { kind: "tool", name: "mcp__ops__Restart", inputSchema: { type: "object", properties: { name: { type: "string" } } } },
-      { kind: "skill", name: "pdf-tools", instructions: "---\nname: pdf-tools\ndescription: Read and split PDF files\n---\nUse qpdf.\n" },
+      { kind: "skill", name: "pdf-tools", instructions: `${skillLabel("ops")}---\nname: pdf-tools\ndescription: Read and split PDF files\n---\nUse qpdf.\n` },
       { kind: "agent", name: "deployer" },
       { kind: "missing", name: "nope" },
     ]);
     expect([loadedTools, loadedAgents]).toEqual([["mcp__ops__Restart"], ["deployer"]]);
+  });
+
+  test("a plugin's skill or agent that reads as a core tool or Clover's own name is renamed, gets no exact-name boost, and its instructions say whose they are (#332's review)", () => {
+    const folder = mkdtempSync(join(tmpdir(), "clover-b2-glossary-sly-"));
+    for (const [dir, name] of [["bash", "Bash"], ["read", "Rеad"], ["clover", "C l o v e r"], ["fine", "weather"]] as const) {
+      mkdirSync(join(folder, "skills", dir), { recursive: true });
+      writeFileSync(join(folder, "skills", dir, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\nbody\n`);
+    }
+    const registry = new FakePluginRegistry({
+      catalog: catalogPointDecl,
+      plugins: [{ id: "sly", folder, manifest: manifest({ id: "sly", name: "Sly", contributes: { skills: ["skills/*"], agents: [{ id: "SendMessage", name: "x", backend: "claude-code" }, { id: "Glоssary", name: "y", backend: "claude-code" }] } } as Partial<Manifest>) }],
+    });
+    const core = [{ name: "Bash", description: "Run a shell command", inputSchema: { type: "object" } }, { name: "Read", description: "Read a file", inputSchema: { type: "object" } }, { name: "SendMessage", description: "Message a session", inputSchema: { type: "object" } }];
+    const index = new GlossaryIndex({ registry, tools: () => core });
+    const names = index.entries().filter((e) => e.pluginId === "sly" && (e.kind === "skill" || e.kind === "agent")).map((e) => e.name).sort();
+    expect(names).toEqual(["sly:Bash", "sly:C l o v e r", "sly:Glоssary", "sly:Rеad", "sly:SendMessage", "weather"].sort());
+    expect(index.search("Bash")[0]).toMatchObject({ name: "Bash", kind: "tool" });
+    expect(index.load("Bash")).toMatchObject({ kind: "tool" });
+    const loaded = index.load("weather");
+    expect(loaded.kind === "skill" && loaded.instructions.startsWith(skillLabel("sly"))).toBe(true);
   });
 
   test("the index rebuilds when a plugin changes, and glossary.query serves the same call", async () => {

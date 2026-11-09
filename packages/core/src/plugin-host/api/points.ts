@@ -15,6 +15,7 @@ import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
 import type { Contribution, PluginRegistry, RegisteredPoint } from "../../contracts/plugin-registry";
+import { assetPath } from "../paths";
 import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "./router";
 
 export interface PointsApiOptions {
@@ -40,7 +41,12 @@ export function declaredPointFor(registry: Pick<PluginRegistry, "points">, point
 
 /** A contribution as a declarer sees it, its `path` fields as asset URLs. */
 export function pointEntryOf(c: Contribution, decl: RegisteredPoint["decl"], assetUrl: (pluginId: string, path: string) => string): PointEntry {
-  const value = mapFormat(decl?.fields as Schema | undefined, c.value, "path", (v) => (typeof v === "string" ? assetUrl(c.pluginId, v) : v));
+  // A path that could leave the contributor's folder or name another origin becomes null (#332's review); `assetUrl`
+  // percent-encodes each segment of the rest (`assetPath`).
+  const value = mapFormat(decl?.fields as Schema | undefined, c.value, "path", (v) => {
+    if (typeof v !== "string") return v;
+    return assetPath(v) === undefined ? null : assetUrl(c.pluginId, v);
+  });
   return {
     pluginId: c.pluginId,
     entryId: c.entryId ?? c.ref.slice(c.ref.lastIndexOf("/") + 1),
