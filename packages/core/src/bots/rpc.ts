@@ -8,6 +8,7 @@
 //
 // `peerSessionMethods` is the receiving side of `peer.session.send` (devices.ts), for a computer that runs a bot the
 // user messaged from another device: the sending device's signature decides whether the turn is the user's (N3).
+import { botSenderCheck } from "../links/bot-relay";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { z } from "zod";
@@ -318,7 +319,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
 }
 
 export interface PeerSessionMethodsDeps {
-  bots: Pick<BotService, "has" | "botsRunHere" | "mainSession">;
+  bots: Pick<BotService, "has" | "botsRunHere" | "mainSession" | "computerFor">;
   host: Pick<DurableSessionHost, "get" | "sendUser" | "deliver">;
   clock: Pick<Clock, "now">;
   /** The paired devices (lane H): whose answer key signs a user's message. Without it, no relayed message is signed. */
@@ -377,6 +378,8 @@ export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string,
         const linked = deps.computerOf?.(ctx.caller.device);
         if (deps.computerOf !== undefined && linked !== computer) throw new ContractError("refused", `the message names ${computer}, but it came from ${linked ?? "a device that runs no computer"}`);
         runningBot(id, PEER_SESSION_DELIVER);
+        // A bot's message only from the computer running that bot (#313's review): a peer can't name a sender it doesn't run.
+        if (input.from === "bot") botSenderCheck(deps.bots, input, computer);
         const { seq } = await deps.host.deliver(id, input);
         return { seq };
       } catch (err) {

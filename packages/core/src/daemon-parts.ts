@@ -31,7 +31,7 @@ import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
-import { linkBotRelay, mountSessionDelivery } from "./links/bot-relay";
+import { botDeliveryCheck, linkBotRelay, mountSessionDelivery } from "./links/bot-relay";
 import { peerSessionMethods } from "./bots/rpc";
 import { isContractError } from "./contracts/common";
 import type { DeliveredInput, Disposition } from "./contracts/session-host";
@@ -194,8 +194,11 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => s.close());
       // Lane D's bot-side options, the receiving half: other computers' messages to the bots this computer runs.
       if (links) {
+        // Only a bot's own sessions take another computer's message, and a bot's message only from the computer running
+        // that bot (#313's review): never an agent's or a coding session, never a sender the peer doesn't run.
         const offDelivery = mountSessionDelivery(links.transport, links.registry, (session, input) => s.host.deliver(session, input), {
           ...(links.main ? { isStale: (epoch: number, scope?: string) => links.main!.lease.isStale(epoch, scope) } : {}),
+          check: botDeliveryCheck({ host: s.host, bots: s.bots }),
         });
         closers.push(offDelivery);
         Object.assign(input.handlers, laneMethodHandlers(peerSessionMethods({
@@ -247,7 +250,7 @@ export function botSideOptions(o: { b: DaemonBotsInput; links: DeviceLinks | nul
   const { b, links, node } = o;
   const host = b.pluginHost;
   const relay = links === null ? undefined : withMailbox(linkBotRelay({
-    transport: links.transport, registry: links.registry, ...(links.main ? { fence: () => links.main!.lease.fence() } : {}),
+    transport: links.transport, registry: links.registry, self: () => o.computer, ...(links.main ? { fence: () => links.main!.lease.fence() } : {}),
   }), b.relayMailbox);
   const routines: NonNullable<BotSideOptions["routines"]> = {
     ...(b.routines?.secrets ? { secrets: b.routines.secrets } : {}),
