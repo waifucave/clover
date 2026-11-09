@@ -9,7 +9,7 @@ import { createApiRouter } from "../api/router";
 const USER: Caller = { kind: "user", client: "app" };
 const record = (id: string, granted: string[]) => ({ id, enabled: true, state: "running", granted, capabilities: granted }) as never;
 
-function world(o: { granted?: string[]; running?: boolean; length?: number; records?: unknown[]; transients?: { type: string }[]; noApp?: boolean } = {}) {
+function world(o: { granted?: string[]; running?: boolean; length?: number; records?: unknown[]; transients?: { type: string }[]; noApp?: boolean; exitsOnOpen?: boolean; historyThrows?: boolean } = {}) {
   const delivered: unknown[] = [];
   const treeCalls: unknown[] = [];
   const written: unknown[] = [];
@@ -25,7 +25,7 @@ function world(o: { granted?: string[]; running?: boolean; length?: number; reco
       host: {
         list: () => sessions, get: (id: string) => sessions.find((s) => s.id === id),
         deliver: async (id: string, input: unknown) => (delivered.push({ id, input }), { seq: 1 }),
-        history: (_id: string, q: { afterSeq: number; limit: number }) => (o.records ?? []).filter((r) => (r as { seq: number }).seq > q.afterSeq).slice(0, q.limit),
+        history: (_id: string, q: { afterSeq: number; limit: number }) => o.historyThrows ? (() => { throw new Error("the log is unreadable"); })() : (o.records ?? []).filter((r) => (r as { seq: number }).seq > q.afterSeq).slice(0, q.limit),
         length: () => o.length ?? (o.records?.length ?? 0),
         subscribe: (_id: string, fn: (r: unknown) => void) => (subscribers.add(fn), () => subscribers.delete(fn)),
         onTransient: (_id: string, fn: (e: { type: string }) => void) => { for (const e of o.transients ?? []) fn(e); return () => {}; },
@@ -41,7 +41,14 @@ function world(o: { granted?: string[]; running?: boolean; length?: number; reco
         watch: async () => () => {},
       },
       terminals: {
-        open: async (p: unknown, as: Caller) => (treeCalls.push({ open: as }), opened.push(p), { terminalId: `t_${opened.length}` }),
+        open: async (p: unknown, as: Caller) => {
+          treeCalls.push({ open: as });
+          opened.push(p);
+          const terminalId = `t_${opened.length}`;
+          // A shell that exits before the open returns (and another terminal's output meanwhile).
+          if (o.exitsOnOpen) for (const fn of [...outputs]) { fn({ terminalId: "t_other", data: "x" }); fn({ terminalId, data: "gone\r\n", exited: { code: 1 } }); }
+          return { terminalId };
+        },
         write: async (id: string, data: string, opts?: { paste?: boolean }) => void written.push({ id, data, ...opts }),
         resize: async (id: string, cols: number, rows: number) => void opened.push({ resize: [id, cols, rows] }), close: async (id: string) => void closed.push(id),
         onOutput: (fn: never) => (outputs.add(fn), () => outputs.delete(fn)),
@@ -118,6 +125,29 @@ describe("the API's areas", () => {
       expect((await failure(w.call("terminal.input", ["t_1", { data: "x" }], { process: "ui" })))?.code).toBe("not_found");
       expect(w.emitted.length).toBe(noApp ? 0 : 1);
     }
+  });
+
+  // #358's review: the listener is on before the open returns.
+  test("a terminal whose shell exits before its open returns is dropped too, and the app hears its exit", async () => {
+    const w = world({ exitsOnOpen: true });
+    expect(await w.call("terminal.open", [{ computer: "Studio" }], { process: "ui" })).toEqual({ terminalId: "t_1" });
+    expect(w.outputs.size).toBe(0);
+    expect((await failure(w.call("terminal.input", ["t_1", { data: "x" }], { process: "ui" })))?.code).toBe("not_found");
+    expect(w.emitted).toEqual([{ type: "terminal_output", pluginId: "tarot", terminalId: "t_1", data: "gone\r\n", exited: { code: 1 } }]);
+  });
+
+  test("follow: a replay whose read throws ends the follow and frees its watch, its queue not left growing", async () => {
+    const w = world({ records: [0, 1, 2].map((seq) => ({ type: "turn_started", seq, sessionId: "s_1", ts: seq })), historyThrows: true });
+    const got: unknown[] = [];
+    await w.call("conversation.follow", ["s_1", (e: unknown) => got.push(e), { since: -1 }]);
+    expect(w.subscribers.size).toBe(1);
+    for (let i = 0; i < 50 && w.subscribers.size > 0; i++) await Bun.sleep(5);
+    expect(w.subscribers.size).toBe(0);
+    expect(got).toEqual([]);
+    // Its slot is free again: as many watches as the cap open.
+    const stops: (() => void)[] = [];
+    for (let i = 0; i < WATCHES_PER_PLUGIN; i++) stops.push((await w.call("bots.watch", [() => {}])) as () => void);
+    for (const stop of stops) stop();
   });
 
   // #334's review.

@@ -30,6 +30,7 @@ import { computersApiRoutes, filesApiRoutes, filesWatch, type ApiRoute } from ".
 import type { ComputerNode } from "../../computers/node";
 import { deviceView } from "../../devices/rpc";
 import type { DeviceLinks } from "../../links/node";
+import type { TerminalOutput } from "../../tree/terminals";
 import { projectRecord, projectRecords, readsSealed, transientFor, type WireEvent } from "../../sessions/wire";
 import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from "./router";
 
@@ -52,6 +53,8 @@ export const WATCHES_PER_PLUGIN = 32;
 export const MESSAGE_MAX = 16_000;
 export const GREP_LIMIT_MAX = 1000;
 export const TERMINAL_INPUT_MAX = 64 * 1024;
+/** Output held while a terminal opens, before its id is known (any terminal's; ours is kept, the rest let go). */
+const EARLY_OUTPUT_MAX = 256;
 
 /** A size in columns or rows, as the peer schema takes it: an integer from 2 to 1000. */
 const termSize = (v: unknown, fallback: number): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(1000, Math.max(2, Math.round(v))) : fallback);
@@ -206,7 +209,10 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       const v = sessionOf(id);
       const opts = { kind: v.kind, sealed: sealedFor(ctx) };
       const me = asPlugin(ctx);
-      return watch(ctx, () => {
+      // The whole watch, its slot included, for a replay that fails (set once `watch` returns, before any page runs).
+      let unsubscribe: Unsubscribe = () => {};
+      const stopWatch = () => unsubscribe();
+      unsubscribe = watch(ctx, () => {
         let closed = false;
         let replaying = typeof since === "number";
         let last = -Infinity;
@@ -235,7 +241,16 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
           const page = () => {
             if (closed) return;
             if (after < end) {
-              for (const event of projectRecords(host.history(id, { afterSeq: after, limit: Math.min(REPLAY_PAGE, end - after) }), opts)) send(event);
+              // A read that throws ends the follow, rather than leaving it replaying with its queue growing (#358's
+              // review).
+              let events: WireEvent[];
+              try {
+                events = projectRecords(host.history(id, { afterSeq: after, limit: Math.min(REPLAY_PAGE, end - after) }), opts);
+              } catch {
+                stopWatch();
+                return;
+              }
+              for (const event of events) send(event);
               after += REPLAY_PAGE;
               setImmediate(page);
               return;
@@ -255,6 +270,7 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
           offTransient();
         };
       });
+      return unsubscribe;
     },
     "conversation.note": async (ctx, args) => {
       const id = stringArg(args, 0, "the session");
@@ -363,27 +379,46 @@ export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(plu
       const cols = termSize(p.cols, 80);
       const rows = termSize(p.rows, 24);
       const n = node();
-      // Opened as the call's caller, the plugin (a layer's call is its plugin's too, never the user's), which a computer
-      // at read-only refuses (J's rule).
-      const { terminalId } = await n.terminals.open({
-        computer, cols, rows,
-        ...(typeof p.cwd === "string" ? { cwd: p.cwd } : {}),
-        ...(ctx.session !== undefined ? { session: ctx.session } : typeof p.session === "string" ? { session: p.session } : {}),
-      }, ctx.caller);
       const layer = ctx.process === "ui";
       const entry: { pluginId: string; layer: boolean; stop?: Unsubscribe } = { pluginId: ctx.pluginId, layer };
       // A layer's output reaches the app as `terminal_output`; every terminal, a host half's too, is dropped from the
-      // map when its shell exits (#333/#334's review).
+      // map when its shell exits (#333/#334's review). The listener is on before the open, so a shell that exits before
+      // the open returns isn't missed (#358's review): until the id is known, output is held (a bounded few), then
+      // ours is replayed and the rest let go.
       const emit = layer ? s.emitToApp : undefined;
-      entry.stop = n.terminals.onOutput((o) => {
-        if (o.terminalId !== terminalId) return;
-        emit?.({ type: "terminal_output", pluginId: ctx.pluginId, terminalId, data: o.data, ...(o.exited !== undefined ? { exited: o.exited } : {}) });
+      let terminalId: string | undefined;
+      let early: TerminalOutput[] | undefined = [];
+      const handle = (o: TerminalOutput) => {
+        emit?.({ type: "terminal_output", pluginId: ctx.pluginId, terminalId: o.terminalId, data: o.data, ...(o.exited !== undefined ? { exited: o.exited } : {}) });
         if (o.exited !== undefined) {
           entry.stop?.();
-          terminals.delete(terminalId);
+          terminals.delete(o.terminalId);
         }
+      };
+      entry.stop = n.terminals.onOutput((o) => {
+        if (terminalId === undefined) {
+          // An exit is always held (one per shell); output only up to a bound.
+          if (early !== undefined && (o.exited !== undefined || early.length < EARLY_OUTPUT_MAX)) early.push(o);
+          return;
+        }
+        if (o.terminalId === terminalId) handle(o);
       });
+      try {
+        // Opened as the call's caller, the plugin (a layer's call is its plugin's too, never the user's), which a
+        // computer at read-only refuses (J's rule).
+        ({ terminalId } = await n.terminals.open({
+          computer, cols, rows,
+          ...(typeof p.cwd === "string" ? { cwd: p.cwd } : {}),
+          ...(ctx.session !== undefined ? { session: ctx.session } : typeof p.session === "string" ? { session: p.session } : {}),
+        }, ctx.caller));
+      } catch (err) {
+        entry.stop();
+        throw err;
+      }
       terminals.set(terminalId, entry);
+      const held = early.filter((o) => o.terminalId === terminalId);
+      early = undefined;
+      for (const o of held) handle(o);
       return { terminalId };
     },
     // The bytes a keydown makes, or a paste's text (the app's runtime turns the DOM event into these, lane E).
