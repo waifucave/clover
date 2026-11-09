@@ -6,24 +6,31 @@
 //   plugin's process isn't served yet: starting one fails with why, under the crash rules.
 // * A process gets only a small environment (the path, home, temp folder and locale), never the daemon's: its workers
 //   copy theirs from it.
-// * The router: the process check (S4) and the capability gate, in front of the areas it serves (none yet: every call
-//   answers `refused`, "not served on this computer", until B-M2's API PR adds them).
+// * The router: the process check (S4) and the capability gate, in front of the areas served here (points, synced
+//   storage, settings, commands and, with an approval broker, confirm cards).
 // * Logs: a worker's console lines go to `<home>/logs/plugins/<id>.log` (rate-limited, rotated at a cap:
 //   `pluginLogWriter`), a process's own output to the daemon's log.
 // * `pluginSecrets`: one plugin's own items, read-only, for the model plugins (lane A): `forPlugin(id).get(name)`
-//   reads `{ owner: { kind: "plugin", pluginId: id }, name }` and nothing else, so no reference to the core's, the
-//   user's or another plugin's items passes through (#322's review, S3).
+//   reads `{ owner: { kind: "plugin", pluginId: id }, name }` (where plugin settings put their `secret` fields) and
+//   nothing else, so no reference to the core's, the user's or another plugin's items passes through (#322's review, S3).
 import { appendFileSync, mkdirSync, realpathSync, renameSync, statSync } from "node:fs";
+import { API_CALLS, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { dirname, join } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
+import { commandOwner, commandsApi } from "../commands/views";
+import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import { guardApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
-import { createApiRouter, type ApiHandlers } from "./api/router";
-import { pluginDataFolder, pluginPath } from "./paths";
+import { confirmApi } from "./api/confirm";
+import { pointsApi } from "./api/points";
+import { createApiRouter, handlerOf, type ApiHandlers } from "./api/router";
+import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
+import { fileSyncedStores, storageApi, SyncedStores } from "./api/storage";
+import { assetPath, pluginDataFolder, pluginPath } from "./paths";
 import { CorePluginHost, type HostedRecord } from "./core-host";
 import { hostProcessLaunch, spawnHostProcess, type HostProcessLaunch } from "./launch";
 import type { RpcPeer } from "./link";
@@ -38,6 +45,13 @@ export interface DaemonPluginHost {
   readonly registry: PluginRegistry;
   /** One plugin's own items, read-only: the owner is fixed as `{ kind: "plugin", pluginId }`. */
   readonly pluginSecrets: PluginSecrets;
+  /** The user's side of plugin settings (`plugin.settings.get`/`set`). */
+  readonly settings: PluginSettings;
+  /** Serves more of the API after start (a core area that starts later, like the model plugins' keyed `net.fetch` and
+   *  `secrets.get`). The router's gate (the call exists there, the plugin is on and running, its OK granted the call's
+   *  capability) runs before any of them. A path another handler already serves is refused, never silently replaced.
+   *  The result takes them away again. */
+  addApiHandlers(handlers: ApiHandlers): () => void;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -70,6 +84,10 @@ export interface StartPluginHostOptions {
   registry: PluginRegistry;
   /** The contract secret store (lane C's). */
   secrets: SecretStore;
+  /** For `confirm` cards; absent, they're refused as not served. */
+  approvals?: Pick<ApprovalBroker, "request">;
+  /** The URL a component or host fetches a plugin's file from (lane E's asset server). */
+  assetUrl?: (pluginId: string, path: string) => string;
   /** The daemon's log, for a process's own output. */
   log?: (line: string) => void;
   clock?: Clock;
@@ -79,6 +97,15 @@ export interface StartPluginHostOptions {
   /** Test seams: the launch (default: the plugin Bun with the guard) and the environment it starts from. */
   launch?: HostProcessLaunch | (() => Promise<HostProcessLaunch>);
   env?: Readonly<Record<string, string | undefined>>;
+}
+
+/** Where a plugin's files are served from until lane E names it: the layer of its top-level plugin. */
+export function defaultAssetUrl(pluginId: string, path: string): string {
+  const safe = assetPath(path);
+  if (safe === undefined) throw new ContractError("invalid", `${JSON.stringify(path.slice(0, 200))} isn't a path inside ${pluginId}'s folder`);
+  const top = pluginId.split("/")[0]!;
+  const rest = pluginId.includes("/") ? `${pluginId.slice(top.length + 1)}/` : "";
+  return `clover-plugin://${top}/${rest}${safe}`;
 }
 
 /** A plugin's log file's cap: past it, the file moves to `<id>.log.1` (replacing the one before) and a new one starts. */
@@ -214,12 +241,19 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     log: pluginLog,
   });
 
-  const handlers: ApiHandlers[] = [];
+  const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets });
+  const handlers: ApiHandlers[] = [
+    pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
+    storageApi(new SyncedStores(fileSyncedStores(o.home))),
+    settingsApi(settings),
+    commandsApi(o.registry),
+    ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
+  ];
   const recordOf = (id: string) => {
     const r = o.registry.get(id);
     return r === undefined ? undefined : installRecordOf(r);
   };
-  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers }), recordOf));
+  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name) }), recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its
   // calls failing, and starts fresh on its next use; one running from a tree that has since changed reloads.
@@ -241,6 +275,21 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     host,
     registry: o.registry,
     pluginSecrets: pluginSecretsOf(o.secrets),
+    settings,
+    addApiHandlers(added) {
+      const paths = Object.keys(added) as ApiCallPath[];
+      for (const p of paths) {
+        if (!Object.hasOwn(API_CALLS, p)) throw new ContractError("invalid", `${p} isn't a call of the plugin API`);
+        if (typeof added[p] !== "function") throw new ContractError("invalid", `${p}'s handler isn't a function`);
+        if (handlerOf(handlers, p) !== undefined) throw new ContractError("invalid", `${p} is already served`);
+      }
+      const entry: ApiHandlers = Object.freeze({ ...added });
+      handlers.push(entry);
+      return () => {
+        const i = handlers.indexOf(entry);
+        if (i >= 0) handlers.splice(i, 1);
+      };
+    },
     async close() {
       if (closed) return;
       closed = true;

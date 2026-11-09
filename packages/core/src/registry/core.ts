@@ -187,6 +187,11 @@ export class RegistryCore implements PluginRegistry {
     this.#update();
   }
 
+  /** Whether the user has confirmed they are 18 or older (§5.7). */
+  get adultConfirmed(): boolean {
+    return this.#adult;
+  }
+
   /** The user confirmed they are 18 or older (§5.7). */
   confirmAdult(): void {
     this.#adult = true;
