@@ -45,7 +45,7 @@ describe("clover plugin new", () => {
       if (template === "tool") expect(v.plugin?.toolNames).toEqual(["mcp__my-tool__hello"]);
       // Its code parses.
       for (const f of filesIn(folder).filter((f) => /\.(ts|tsx)$/.test(f))) {
-        expect(() => new Bun.Transpiler({ loader: f.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(readFileSync(join(folder, f), "utf8"))).not.toThrow();
+        expect(() => new Bun.Transpiler({ loader: f.endsWith(".tsx") ? "tsx" : "ts", ...({ macro: false } as object) }).transformSync(readFileSync(join(folder, f), "utf8"))).not.toThrow();
       }
     }
   });
