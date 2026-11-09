@@ -1,9 +1,9 @@
 import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { cloverSharedRoots, ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
-import { fencedCommand, pluginFenceAvailable, toolFence } from "../registry/plugin-fence";
+import { fencedCommand, pluginFenceAvailable, realOrResolved, toolFence } from "../registry/plugin-fence";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -774,25 +774,29 @@ export class PluginSupervisor {
       // that isn't Bun is one a manifest declares (a stdio server, a helper), never a host.
       if (!isBunCommand(config.entry.command)) throw new Error(`a plugin host runs under Bun only, not ${basename(config.entry.command)}`);
       const token = this.deps.mintToken(config.id);
-      const cwd = config.entry.cwd ? join(config.dir, config.entry.cwd) : config.dir;
-      this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir) };
+      // Its folder by its real path (`/var` is `/private/var`): under the fence a folder above it may only be stat'ed, and
+      // Bun resolves its modules through the path it's given (measured, 2f).
+      const dir = realOrResolved(config.dir);
+      const cwd = config.entry.cwd ? join(dir, config.entry.cwd) : dir;
+      this.pluginRun ??= this.deps.pluginRun ?? { files: ensurePluginRunFiles(this.deps.runDir, { cloverHome: dirname(this.deps.runDir) }) };
       // The plugin Bun, never the one the manifest's command names (#234's check 5, K1): it chooses Bun and the args.
       const launch = pluginBunLaunch(
         config.entry.args ?? [],
-        { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: config.dir },
-        { pluginRoot: config.dir, ...this.pluginRun },
+        { ...process.env, CLOVER_PLUGIN_TOKEN: token, CLOVER_SOCKET: this.deps.socketPath, CLOVER_PLUGIN_ID: config.id, CLOVER_PLUGIN_DIR: dir },
+        { pluginRoot: dir, ...this.pluginRun },
       );
       const bunCmd = this.deps.bun === undefined ? launch.cmd : [this.deps.bun, ...launch.cmd.slice(1)];
-      // Under the fence (2f): a host is Bun, running only its Bun and its plugin's own files; it reaches the daemon
-      // through its socket alone.
+      // Under the fence (2f): a host is Bun and starts no process (`fork: false`, #345's review S3: nothing it starts
+      // could leave its process group, and a plugin's own programs are a stdio server or a helper, which the manifest
+      // declares); it reaches the daemon through its socket alone.
       const guard = this.pluginRun;
       let cmd = bunCmd;
       const env = launch.env;
       if (guard.fence !== false && pluginFenceAvailable()) {
         const proxy = guard.proxyFor?.(config.id);
-        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: config.dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
+        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
         Object.assign(env, proxy?.env ?? {});
-        cmd = fencedCommand(bunCmd, { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, sockets: [this.deps.socketPath] });
+        cmd = fencedCommand(bunCmd, { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, fork: false, sockets: [this.deps.socketPath] });
         env.TMPDIR = tmp;
       }
       proc = this.spawnFn(cmd, { cwd, env });

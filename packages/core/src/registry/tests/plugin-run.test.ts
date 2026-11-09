@@ -9,11 +9,12 @@ import { PLUGIN_BUN_IDENTIFIER } from "../../bundled-identities";
 import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
-import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags, pluginHostBunFlags, droppedEnv } from "../plugin-run";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags, pluginHostBunFlags, droppedEnv, envWithoutDropped } from "../plugin-run";
+import { fenceFolders, pluginFenceAvailable } from "../plugin-fence";
 
 function world() {
   const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
-  const files = ensurePluginRunFiles(join(base, "run"));
+  const files = ensurePluginRunFiles(join(base, "run"), { cloverHome: base });
   const outside = join(base, "outside");
   mkdirSync(join(outside, "jsx"), { recursive: true });
   const mark = join(base, "mark");
@@ -161,7 +162,8 @@ describe("a plugin process loads only its own tree", () => {
 
   test("a supervised host runs on the plugin Bun, never a bun the plugin ships (K1)", async () => {
     const ranOwn = join(w.base, "own-bun-ran");
-    const hostRan = join(w.base, "host-ran");
+    // Under the fence a host writes only its own folders (#345's review): its temp folder, which the test reads.
+    const hostRan = join(pluginFenceAvailable() ? fenceFolders(w.files.cloverHome, "ships@local", "host-ships@local").tmp : w.base, "host-ran");
     const root = w.plugin("ships-bun", {
       "bun": `#!/bin/sh\necho ran > ${JSON.stringify(ranOwn)}\n`,
       "host/index.ts": `require("node:fs").writeFileSync(${JSON.stringify(hostRan)}, process.execPath);\nsetTimeout(() => {}, 60_000);\n`,
@@ -328,7 +330,7 @@ describe("a plugin process loads only its own tree", () => {
   // refuses too for a process started some other way.
   test("the reviewer's plugin C: no plugin process starts with a node_modules above its folder", () => {
     const base = realpathSync(mkdtempSync(join(tmpdir(), "clover-b-plugin-c-")));
-    const files = ensurePluginRunFiles(join(base, "run"));
+    const files = ensurePluginRunFiles(join(base, "run"), { cloverHome: base });
     const mark = join(base, "mark");
     mkdirSync(join(base, "node_modules", "ghost"), { recursive: true });
     writeFileSync(join(base, "node_modules", "ghost", "index"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\n`);
@@ -408,9 +410,9 @@ describe("a plugin process loads only its own tree", () => {
     expect(env.BUN_OPTIONS).toBe(pluginBunFlags(w.files).join(" "));
     expect(env.BUN_OPTIONS).not.toMatch(/\s--preload=y/);
     expect([readFileSync(w.files.bunfig, "utf8"), readFileSync(w.files.guard, "utf8")]).toEqual([PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE]);
-    // A run folder with a space falls back to one without: BUN_OPTIONS takes no quotes.
-    const spaced = ensurePluginRunFiles(join(w.base, "run dir"));
-    expect(/\s/.test(spaced.guard)).toBe(false);
+    // A run folder with a space is refused (BUN_OPTIONS takes no quotes), never moved to the shared temp folder, where
+    // another plugin's process could rewrite the guard (#345's review).
+    expect(() => ensurePluginRunFiles(join(w.base, "run dir"), { cloverHome: w.base })).toThrow("has a space in its path");
   });
 });
 
@@ -433,6 +435,8 @@ describe("a plugin's environment never turns off its guard", () => {
     }
     // Without case too: Windows' names are case-insensitive, and a manifest runs everywhere.
     expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { clover_plugin_host: "1" } }, root, guard)).toThrow("clover_plugin_host");
+    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x", Clover_Plugin_Host: "1", Home: "h" }, "win32")).toEqual({ PATH: "b", HOME: "h" });
+    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x" }, "darwin")).toEqual({ Path: "a", PATH: "b", node_options: "x" });
     expect([droppedEnv("win32").test("node_options"), droppedEnv("win32").test("Clover_Plugin_Root"), droppedEnv("darwin").test("node_options"), droppedEnv("darwin").test("NODE_OPTIONS")]).toEqual([true, true, false, true]);
     // What loads nothing stays the plugin's.
     const ok = guardedMcpServer({ command: "bun", args: ["server.ts"], env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1", MY_TOKEN: "t" } }, root, guard);

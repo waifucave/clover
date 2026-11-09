@@ -31,7 +31,6 @@ import { fencedCommand, pluginFenceAvailable, toolFence } from "./plugin-fence";
 import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
-import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
 
 /** Clover's bunfig for plugin processes: nothing installed at run time. */
@@ -363,21 +362,22 @@ export interface PluginRunGuard {
 }
 
 /** Writes Clover's bunfig and guard for plugin processes into `dir` (the daemon's run folder), and returns their paths.
- *  `BUN_OPTIONS` splits on spaces and takes no quotes (measured on Bun 1.4.4), so the files live in a folder whose path
- *  has none: the run folder's, else one in the system temp folder; with neither it throws, and no plugin process starts. */
-export function ensurePluginRunFiles(dir: string, o: { cloverHome?: string } = {}): PluginRunFiles {
-  const candidates = [join(dir, "plugin-run"), join(tmpdir(), `clover-plugin-run-${createHash("sha256").update(dir).digest("hex").slice(0, 16)}`)];
-  const folder = candidates.find((c) => !/\s/.test(c));
-  if (folder === undefined) throw new Error("no folder without spaces for plugin processes' run files; plugin processes can't start");
+ *  `BUN_OPTIONS` splits on spaces and takes no quotes (measured on Bun 1.4.4), so the run folder's path may have none:
+ *  a Clover home whose path has a space starts no plugin process, and says why. Never a folder in the shared temp
+ *  folder, where one plugin's process could rewrite the guard the others load (#345's review). */
+export function ensurePluginRunFiles(dir: string, o: { cloverHome: string }): PluginRunFiles {
+  const folder = join(dir, "plugin-run");
+  if (/\s/.test(folder)) throw new Error(`plugin processes can't start: the Clover home's run folder (${folder}) has a space in its path, which Bun's options can't carry`);
   mkdirSync(folder, { recursive: true, mode: 0o700 });
-  // The guard is only as good as its file: the folder must be a real one of this user's that no one else can write
-  // (the temp fallback's path is predictable).
+  // The guard is only as good as its file: the folder must be a real one of this user's that no one else can write.
   const st = lstatSync(folder);
   const uid = process.getuid?.();
   if (!st.isDirectory() || (uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0) {
     throw new Error(`${folder} is not a private folder of this user's; plugin processes can't start`);
   }
-  const cloverHome = o.cloverHome ?? resolveCloverHome();
+  // Always named by the caller, never `~/.clover` by default: a fenced process's temp and data folders are made under
+  // it, so a default would put a test's folders in the real home (#345).
+  const cloverHome = o.cloverHome;
   // Every run file by its real path (`/var` is `/private/var` on macOS): a fenced process can't resolve a link through
   // a folder it may only stat, so what it's handed must need no resolving (2f).
   const real = realpathSync(folder);
@@ -462,9 +462,8 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
   if (guard.fence !== false && pluginFenceAvailable()) {
     const proxy = pluginId !== undefined ? guard.proxyFor?.(pluginId) : undefined;
-    const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
-    Object.assign(env, proxy?.env ?? {});
-    env.TMPDIR = tmp;
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
+    Object.assign(env, toolEnv, proxy?.env ?? {});
     const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
     return { ...entry, command: cmd!, args, env };
   }
@@ -516,11 +515,23 @@ export function refuseNodeModulesAbove(pluginRoot: string, shared: readonly stri
   }
 }
 
+/** `base` without the dropped names. On Windows, where a name's case doesn't matter, each name is written in capitals
+ *  first, so `Path` and `PATH` (or `node_options` and the guard's own names) can't both reach the process and leave which
+ *  one wins to the OS (#322's reviewer); the later one in `base` wins. */
+export function envWithoutDropped(base: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform): Record<string, string> {
+  const env: Record<string, string> = {};
+  const dropped = platform === process.platform ? DROPPED_ENV : droppedEnv(platform);
+  for (const [k, v] of Object.entries(base)) {
+    if (v === undefined || dropped.test(k)) continue;
+    env[platform === "win32" ? k.toUpperCase() : k] = v;
+  }
+  return env;
+}
+
 /** A plugin process's environment: `base` without what changes loading, Clover's flags in `BUN_OPTIONS`, and what the
  *  guard reads. `pluginRoot` is the plugin's top-level folder. */
 export function guardedPluginEnv(base: Readonly<Record<string, string | undefined>>, o: { pluginRoot: string; files: PluginRunFiles; shared?: readonly string[] }): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(base)) if (v !== undefined && !DROPPED_ENV.test(k)) env[k] = v;
+  const env = envWithoutDropped(base);
   env.BUN_OPTIONS = pluginBunFlags(o.files).join(" ");
   let root: string;
   try {

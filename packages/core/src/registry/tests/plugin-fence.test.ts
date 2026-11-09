@@ -14,10 +14,18 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { startPluginHost } from "../../plugin-host/daemon-host";
 import { HookRunner } from "../../plugins/hook-runner";
 import { openPluginRegistry } from "../open";
-import { LAUNCH_SERVICES_DENIES, pluginFenceProfile } from "../plugin-fence";
+import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, pluginFenceProfile, toolCacheEnv } from "../plugin-fence";
 import { ensurePluginRunFiles, guardedMcpServer } from "../plugin-run";
+import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
 const USER: Caller = { kind: "user", client: "app" };
+
+/** Waits for an OK'd plugin to leave "found" (its start runs after the answer), up to 5 s: a fixed sleep lost the race
+ *  under a loaded machine. */
+async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
+  for (let i = 0; i < 500 && registry.get(id)?.state === "found"; i++) await Bun.sleep(10);
+}
+
 const temps: string[] = [];
 const temp = (prefix: string) => {
   const d = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
@@ -29,11 +37,12 @@ afterAll(() => {
 });
 
 /** What the probe tries, as a script any of the three runs: one line of JSON, each try `ok` or the error's code. */
-function probeSource(w: { home: string; userHome: string; root: string; keychain: string; runFiles: string }): string {
+function probeSource(w: { home: string; userHome: string; root: string; keychain: string; runFiles: string; outside: string; sharedProbe: string; agentSocket: string; testPid: number; userDir: string }): string {
   const j = JSON.stringify;
   return `
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
+import { join as joinPath } from "node:path";
 const out = {};
 const t = (name, f) => { try { f(); out[name] = "ok"; } catch (e) { out[name] = e.code ?? e.message; } };
 t("readOwn", () => readFileSync(${j(join(w.root, "own.txt"))}));
@@ -68,6 +77,27 @@ try {
 } catch { out.keychain = "not read"; }
 out.socket = await new Promise((resolve) => {
   const c = connect(${j(join(w.home, "run", "core.sock"))});
+  c.on("connect", () => { c.destroy(); resolve("ok"); });
+  c.on("error", (e) => resolve(e.code ?? e.message));
+});
+// #345's review: no write outside its own folders (a folder outside both homes, the shared /Users/Shared), no read of
+// the per-user temp folder's other files, no other program's socket (an ssh-agent's); its own temp folder works.
+t("writeOutside", () => writeFileSync(${j(join(w.outside, "planted.txt"))}, "x"));
+t("writeShared", () => writeFileSync(${j(w.sharedProbe)}, "x"));
+t("readUserTemp", () => readFileSync(${j(join(w.outside, "secret.txt"))}));
+t("writeOwnTemp", () => writeFileSync(joinPath(process.env.TMPDIR, "ok.txt"), "x"));
+// #345's second review: the per-user folder (\`0\`), and signals: never the test's own process, always itself and its
+// own child (a host may start none).
+t("listUserDir", () => readdirSync(${j(w.userDir)}));
+t("signalParent", () => process.kill(${w.testPid}, 0));
+t("signalSelf", () => process.kill(process.pid, 0));
+try {
+  const c = Bun.spawn(["/bin/sleep", "5"], { stdio: ["ignore", "ignore", "ignore"] });
+  try { process.kill(c.pid, 0); out.signalChild = "ok"; } catch (e) { out.signalChild = e.code ?? e.message; }
+  c.kill();
+} catch { out.signalChild = "nofork"; }
+out.sshAgent = await new Promise((resolve) => {
+  const c = connect(${j(w.agentSocket)});
   c.on("connect", () => { c.destroy(); resolve("ok"); });
   c.on("error", (e) => resolve(e.code ?? e.message));
 });
@@ -107,7 +137,16 @@ function world() {
     writeFileSync(f, "Clover's");
   }
   const runFiles = dirname(ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }).guard);
-  const w = { home, userHome, root, keychain, server, runFiles };
+  // Outside both homes, in the per-user temp folder: a file to read, a folder to write, and a socket standing for the
+  // user's ssh-agent (short, under a socket address's length).
+  const outside = temp("cf-out-");
+  writeFileSync(join(outside, "secret.txt"), "another program's");
+  const agentSocket = join(realpathSync(mkdtempSync(join(tmpdir(), "a-"))), "s");
+  temps.push(dirname(agentSocket));
+  const agent = Bun.listen({ unix: agentSocket, socket: { data() {} } });
+  const sharedProbe = join("/Users/Shared", `.clover-fence-probe-${process.pid}-${Math.random().toString(36).slice(2)}`);
+  const userDir = Bun.spawnSync(["/usr/bin/getconf", "DARWIN_USER_DIR"]).stdout.toString().trim().replace(/\/$/, "");
+  const w = { home, userHome, root, keychain, server, runFiles, outside, agentSocket, agent, sharedProbe, testPid: process.pid, userDir };
   writeFileSync(join(root, "probe.mjs"), probeSource(w));
   return w;
 }
@@ -117,26 +156,59 @@ const DENIED = {
   readOtherData: "EPERM", writeZshrc: "EPERM", writeLaunchAgent: "EPERM", readKeychainFile: "EPERM",
   launchctl: "EPERM", open: "EPERM", osascript: "EPERM", keychain: "not read",
   writeRunFiles: "EPERM", writeBundled: "EPERM", writeBin: "EPERM", evalRead: "EPERM",
+  writeOutside: "EPERM", writeShared: "EPERM", readUserTemp: "EPERM", writeOwnTemp: "ok", sshAgent: expect.not.stringMatching(/^ok$/),
+  listUserDir: "EPERM", signalParent: "EPERM", signalSelf: "ok",
 };
 const untouched = (w: ReturnType<typeof world>) => {
   expect(readFileSync(join(w.userHome, ".zshrc"), "utf8")).toBe("# the user's");
   expect(existsSync(join(w.userHome, "Library", "LaunchAgents", "com.evil.plist"))).toBe(false);
   expect(existsSync(join(w.root, "planted.txt"))).toBe(false);
+  expect(existsSync(join(w.outside, "planted.txt"))).toBe(false);
+  const shared = existsSync(w.sharedProbe);
+  rmSync(w.sharedProbe, { force: true }); // only ever there if the fence failed
+  expect(shared).toBe(false);
+};
+const stop = (w: ReturnType<typeof world>) => {
+  w.server.stop(true);
+  w.agent.stop(true);
 };
 
-describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () => {
+darwinDescribe("the plugin-process fence", () => {
   test("the launch-services list is the agent runtime's", () => {
     const dist = dirname(Bun.resolveSync("@waifucave/clover-agent-runtime", import.meta.dir));
     const text = [...new Bun.Glob("**/*.js").scanSync({ cwd: dist })].map((f) => readFileSync(join(dist, f), "utf8")).find((t) => t.includes("com.apple.lsd.mapdb"))!;
     for (const s of [...LAUNCH_SERVICES_DENIES.exec, ...LAUNCH_SERVICES_DENIES.services]) expect(text).toContain(`"${s}"`);
   });
 
-  test("the profile denies the user's real home and the Keychain, whatever it is given", () => {
-    const p = pluginFenceProfile({ cloverHome: "/c", userHome: "/Users/u", read: ["/Users/u/plugin"], write: [], exec: "plugin", execs: ["/b/bun"] });
-    expect(p).toContain(`(deny file-read* file-write* (subpath "/Users/u") (subpath "/c"))`);
-    expect(p.indexOf(`(subpath "/Users/u/Library/Keychains")`)).toBeGreaterThan(p.indexOf(`(allow file-read* (subpath "/Users/u/plugin")`));
+  test("the profile denies every write, the homes, the per-user temp folders, the Keychain and credential files, and every other socket, whatever it is given", () => {
+    const p = pluginFenceProfile({ cloverHome: "/c", userHome: "/Users/u", read: ["/Users/u/plugin"], write: ["/c/run/plugin-tmp/x"], exec: "plugin", execs: ["/b/bun"], noNativeCode: true });
+    const at = (line: string) => p.split("\n").findIndex((l) => l.startsWith(line));
+    // Writes: none but its own folders and the devices (#345's review, the blocker).
+    expect(at("(deny file-write*)")).toBeGreaterThan(0);
+    expect(p).toContain(`(allow file-write* (literal "/dev/null") (literal "/dev/tty") (subpath "/dev/fd"))`);
+    expect(at(`(allow file-read* file-write* (subpath "/c/run/plugin-tmp/x"))`)).toBeGreaterThan(at("(deny file-write*)"));
+    // Reads: the homes and the per-user temp and cache folders (S2), then what it's given.
+    const closedLine = p.split("\n").find((l) => l.startsWith("(deny file-read* (subpath"))!;
+    expect(closedLine.startsWith(`(deny file-read* (subpath "/Users/u") (subpath "/c")`)).toBe(true);
+    // The per-user folders whole: the parent of T, which holds T, C and the per-user `0` folder (#345's second review).
+    const userTemp = Bun.spawnSync(["/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"]).stdout.toString().trim().replace(/\/$/, "");
+    expect(darwinUserFolders()).toEqual([dirname(userTemp)]);
+    expect(closedLine).toContain(`(subpath "${realpathSync(dirname(userTemp))}")`);
+    // No clipboard, no window server, and signals only to itself and its children.
+    for (const svc of ["com.apple.pasteboard.1", "com.apple.windowserver.active"]) expect(p).toContain(`(global-name "${svc}")`);
+    expect(at("(allow signal (target self) (target children))")).toBe(at("(deny signal)") + 1);
+    // Last, whatever was allowed: the Keychain, the credential files (S4), launchd.
+    const last = p.split("\n").findIndex((l) => l.includes(`(subpath "/Users/u/Library/Keychains")`));
+    expect(last).toBeGreaterThan(at(`(allow file-read* (subpath "/Users/u/plugin")`));
+    for (const f of CREDENTIAL_FILES) expect(p.split("\n")[last]).toContain(`(subpath "${join("/Users/u", f)}")`);
     expect(p).toContain(`(global-name "com.apple.SecurityServer")`);
     expect(p).toContain(`(deny process-exec (literal "/bin/launchctl")`);
+    // Sockets: none but the DNS resolver and the ones it's named (S1).
+    expect(at("(deny network-outbound (remote unix-socket))")).toBeGreaterThan(0);
+    expect(p).toContain(`(remote unix-socket (path-literal "/private/var/run/mDNSResponder"))`);
+    // Native code in the clover process: Bun's and the system's only, everywhere.
+    expect(p).toContain("(deny file-map-executable)\n");
+    expect(p).toContain(`(allow file-map-executable (subpath "/System") (subpath "/usr/lib") (literal "/b/bun"))`);
   });
 
   test("a plugin-host process: its own tree and data only; no token, socket, other plugin, bots, transcripts, Keychain, launchd or other program", async () => {
@@ -156,16 +228,16 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
         const { card } = await opened.registry.installed("spy", "app");
         const shown = broker.cards().find((c) => c.id === card)!;
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-        await Bun.sleep(5);
+        await approved(opened.registry, "spy");
         const out = (await ph.host.invoke({ pluginId: "spy", handler: "probe", args: null, caller: USER })) as Record<string, string>;
-        expect(out).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "EPERM", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+        expect(out).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "EPERM", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "nofork" });
         untouched(w);
       } finally {
         await ph.close();
         opened.close();
       }
     } finally {
-      w.server.stop(true);
+      stop(w);
     }
   }, 60_000);
 
@@ -176,23 +248,49 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
       const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
       const hook = await new HookRunner(guard).run({ pluginId: "spy", event: "SessionStart", command: "bun probe.mjs", cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "SessionStart" } as never);
       const fromHook = JSON.parse(String((hook as { stdout: string }).stdout).trim().split("\n").at(-1)!);
-      expect(fromHook).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+      expect(fromHook).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "ok" });
       const mcp = guardedMcpServer<{ command: string; args?: string[]; env?: Record<string, string> }>({ command: "bun", args: ["probe.mjs"] }, w.root, guard, "spy");
       expect(mcp.command).toBe("/usr/bin/sandbox-exec");
       const r = Bun.spawnSync([mcp.command, ...(mcp.args ?? [])], { cwd: w.root, env: mcp.env, stdout: "pipe", stderr: "pipe" });
       const fromMcp = JSON.parse(r.stdout.toString().trim().split("\n").at(-1)!);
-      expect(fromMcp).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+      expect(fromMcp).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "ok" });
       untouched(w);
       // Control: unfenced, the same probe reads the keychain item and the token (so the denials above are the fence's).
       const plain = Bun.spawnSync([process.execPath, "probe.mjs"], { cwd: w.root, env: { ...process.env, BUN_OPTIONS: "" }, stdout: "pipe", stderr: "pipe" });
       const control = JSON.parse(plain.stdout.toString().trim().split("\n").at(-1)!);
-      expect([control.keychain, control.readToken, control.socket]).toEqual(["read", "ok", "ok"]);
-      writeFileSync(join(w.userHome, ".zshrc"), "# the user's"); // the control wrote it
+      expect([control.keychain, control.readToken, control.socket, control.readUserTemp, control.writeOutside, control.sshAgent, control.listUserDir, control.signalParent]).toEqual(["read", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
+      writeFileSync(join(w.userHome, ".zshrc"), "# the user's"); // the control wrote these
       rmSync(join(w.userHome, "Library", "LaunchAgents", "com.evil.plist"), { force: true });
+      rmSync(join(w.outside, "planted.txt"), { force: true });
+      rmSync(w.sharedProbe, { force: true });
     } finally {
-      w.server.stop(true);
+      stop(w);
     }
   }, 60_000);
+
+  // #345's review S4: a hook's package manager caches in its own temp folder, never the user's shared caches.
+  test.if(Bun.which("npm") !== null)("a hook's npm install uses its own cache, and the user's .npmrc stays unread", async () => {
+    const w = world();
+    try {
+      writeFileSync(join(w.userHome, ".npmrc"), "//registry.example/:_authToken=npm_s3cret\n");
+      mkdirSync(join(w.root, "pkg", "package"), { recursive: true });
+      writeFileSync(join(w.root, "pkg", "package", "package.json"), JSON.stringify({ name: "tiny-pkg", version: "1.0.0" }));
+      expect(Bun.spawnSync(["/usr/bin/tar", "-czf", join(w.root, "tiny.tgz"), "-C", join(w.root, "pkg"), "package"]).exitCode).toBe(0);
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const command = `cd "$TMPDIR" && npm install --offline --no-audit --no-fund ${JSON.stringify(join(w.root, "tiny.tgz"))} >/dev/null 2>&1; echo "installed=$?"; echo "cache=$npm_config_cache"; cat "${join(w.userHome, ".npmrc")}" >/dev/null 2>&1 && echo npmrc=read || echo npmrc=denied`;
+      const hook = (await new HookRunner(guard).run({ pluginId: "spy", event: "SessionStart", command, cwd: w.root, timeoutMs: 60_000 } as never, { sessionId: "s_1", event: "SessionStart" } as never)) as { stdout: string };
+      const tmp = join(w.home, "run", "plugin-tmp", "hook-spy");
+      const want = toolCacheEnv(tmp).npm_config_cache!;
+      expect(hook.stdout).toContain("installed=0");
+      expect(hook.stdout).toContain(`cache=${want}`);
+      expect(hook.stdout).toContain("npmrc=denied");
+      expect(existsSync(join(want, "_cacache"))).toBe(true);
+      expect(existsSync(join(tmp, "node_modules", "tiny-pkg", "package.json"))).toBe(true);
+      expect(existsSync(join(w.userHome, ".npm"))).toBe(false);
+    } finally {
+      stop(w);
+    }
+  }, 90_000);
 
   test("the clover process, which holds many plugins, runs no plugin's native code: bun:ffi is disarmed and no addon loads; a third-party plugin's own process keeps both (B3)", async () => {
     const home = temp("cf-natives-");
@@ -218,7 +316,7 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
       const { card } = await opened.registry.installed("own", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "own");
       const run = (pluginId: string, handler: string) => ph.host.invoke({ pluginId, handler, args: null, caller: USER });
       expect(await run("clover", "ffi")).toContain("bun:ffi isn't available in a process that holds more than one plugin");
       expect(await run("clover", "addon")).toContain("a native addon doesn't load in a process that holds more than one plugin");

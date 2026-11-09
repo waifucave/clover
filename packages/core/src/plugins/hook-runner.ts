@@ -119,7 +119,10 @@ export class HookRunner {
   }
 
   private guardFor(): PluginRunGuard {
-    this.guard ??= { files: ensurePluginRunFiles(mkdtempSync(join(tmpdir(), "clover-hooks-"))) };
+    if (this.guard === undefined) {
+      const home = mkdtempSync(join(tmpdir(), "clover-hooks-"));
+      this.guard = { files: ensurePluginRunFiles(join(home, "run"), { cloverHome: home }) };
+    }
     return this.guard;
   }
 
@@ -140,7 +143,7 @@ export class HookRunner {
         env: guardedPluginEnv(
           {
             ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
-            ...(fenced !== undefined ? { ...(proxy?.env ?? {}), TMPDIR: fenced.tmp } : {}),
+            ...(fenced !== undefined ? { ...fenced.env, ...(proxy?.env ?? {}) } : {}),
             PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
           },
           { pluginRoot: spec.cwd, ...this.guardFor() },
