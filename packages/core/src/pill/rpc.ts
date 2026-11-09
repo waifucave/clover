@@ -21,6 +21,9 @@ export interface PillMethodsDeps {
   bots: { has(id: string): boolean; mainSession(id: string): string };
   /** Lane D's handlers (`sessionsMethods`): `session.send` and `session.stageImage`. */
   sessions: Readonly<Record<string, MethodHandler>>;
+  /** The session host's record of a user message by its `clientMessageId` (`DurableSessionHost.sentAs`): a resend
+   *  with pictures returns the first one's `seq` without staging them again. Absent, every send stages. */
+  sentAs?: (session: string, clientMessageId: string) => { seq: number } | undefined;
   /** The `pill.target` entries (`ui` entries on that spot) and the host that runs their plugins' handlers. Absent, a
    *  send to an entry is refused as not installed. */
   targets?: { registry: Pick<PluginRegistry, "entries">; host: Pick<PluginHost, "invoke"> };
@@ -74,6 +77,13 @@ export function pillMethods(deps: PillMethodsDeps): Record<string, MethodHandler
         id = deps.bots.mainSession(to.bot);
       } else {
         id = to.session;
+      }
+      // A resend of a message the host already has (the pill retried after a dropped answer) is the first one: its
+      // pictures were staged then, so staging them again would only leave files behind. Words alone go on to
+      // session.send, whose own dedup answers the same way.
+      if (images !== undefined && images.length > 0) {
+        const seen = deps.sentAs?.(id, clientMessageId);
+        if (seen !== undefined) return { seq: seen.seq };
       }
       const refs: { n: number; path: string }[] = [];
       for (const [i, image] of (images ?? []).entries()) {
