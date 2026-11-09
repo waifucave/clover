@@ -5,7 +5,7 @@
 // profiles). Kept per home, and git's files are checked again at each call (`runLaterExtras`): a change to them
 // shows at the next run's start.
 import { spawnSync } from "node:child_process";
-import { lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { RunLaterExtras } from "../contracts/fence";
@@ -128,6 +128,30 @@ export function parseRegValue(output: string, name: string): string | undefined 
   return undefined;
 }
 
+/** The most of a git config file the walk reads: the includes it names are near the top in practice. */
+export const GIT_CONFIG_READ_CAP = 1024 * 1024;
+
+/** A git config file's text, never through a link and never stalling (#366's review, the same hole here): opened
+ *  non-blocking with no link followed and no controlling terminal taken, required a regular file by `fstat` on the
+ *  opened descriptor (a FIFO or a device is nothing), and read up to `GIT_CONFIG_READ_CAP`. */
+export function readGitConfigFile(path: string): string | undefined {
+  let fd = -1;
+  try {
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | fsConstants.O_NOFOLLOW | fsConstants.O_NOCTTY);
+    if (!fstatSync(fd).isFile()) return undefined;
+    const buf = Buffer.alloc(GIT_CONFIG_READ_CAP);
+    let n = 0;
+    while (n < buf.length) {
+      const got = readSync(fd, buf, n, buf.length - n, null);
+      if (got === 0) break;
+      n += got;
+    }
+    return buf.toString("utf8", 0, n);
+  } catch { return undefined; } finally {
+    if (fd !== -1) { try { closeSync(fd); } catch { /* best effort */ } }
+  }
+}
+
 /** What a file was when it was read, by `lstat` alone: gone, not a regular file, or its inode, size and time. */
 function stampOf(path: string): string {
   try {
@@ -163,7 +187,7 @@ export function runLaterExtras(os: Os, home: string): RunLaterExtras {
     // fenced): a regular file, or nothing.
     read: (f) => {
       stamps.set(f, stampOf(f));
-      try { return lstatSync(f).isFile() ? readFileSync(f, "utf8") : undefined; } catch { return undefined; }
+      return readGitConfigFile(f);
     },
     documentsValue: () => {
       if (process.platform !== "win32") return undefined;

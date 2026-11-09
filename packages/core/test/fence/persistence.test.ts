@@ -6,7 +6,7 @@
 // Bash can't write them).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
 import { buildMandatoryFloorProfile } from "@waifucave/clover-agent-sdk";
@@ -17,7 +17,7 @@ import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { agentConfigPaths, autoRunEntries, autoRunPaths } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
-import { expandWindowsEnv, gitConfiguredDirs, parseRegValue, runLaterExtras, runLaterExtrasFrom } from "../../src/fence/run-later";
+import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue, readGitConfigFile, runLaterExtras, runLaterExtrasFrom } from "../../src/fence/run-later";
 import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
@@ -263,6 +263,25 @@ describe("git's includes are read again when the config changes, without a resta
     writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = me\n");
     expect(fence.check({ op: "write", path: local })).toEqual({ allowed: true });
   });
+
+  test("the git walk's read never stalls: a FIFO, a link to /dev/zero, a huge file (the same hole as #366's review)", () => {
+    if (process.platform === "win32") return; // no FIFOs or /dev/zero
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-fifo-")));
+    expect(spawnSync("mkfifo", [join(home, ".gitconfig")]).status).toBe(0);
+    symlinkSync("/dev/zero", join(home, "zero.inc"));
+    const started = Date.now();
+    expect(readGitConfigFile(join(home, ".gitconfig"))).toBeUndefined();
+    expect(readGitConfigFile(join(home, "zero.inc"))).toBeUndefined(); // never through a link
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    runLaterExtras(os, home); // the walk itself, over the FIFO
+    expect(Date.now() - started).toBeLessThan(5_000);
+    // A huge config is read up to the cap: an include near its top still counts.
+    const big = join(home, "big.cfg");
+    writeFileSync(big, `[include]\n\tpath = ~/x.inc\n${"#".repeat(GIT_CONFIG_READ_CAP * 2)}\n`);
+    const text = readGitConfigFile(big)!;
+    expect(text.length).toBe(GIT_CONFIG_READ_CAP);
+    expect(text).toContain("path = ~/x.inc");
+  }, 20_000);
 });
 
 // macOS: the list rendered by the agent SDK's Seatbelt profile builder, run for real under sandbox-exec in a temp home.
