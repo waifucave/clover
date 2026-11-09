@@ -30,7 +30,7 @@ import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents"
 import { CloverApprovalBroker } from "./approvals/broker";
 import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
-import { Listeners } from "./contracts/common";
+import { ContractError, Listeners } from "./contracts/common";
 import { CloverFence } from "./fence/fence";
 import { CloverRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/clover";
 import { embeddedSessionOptions } from "./runtime-sdk/turn-loop/embedded-session";
@@ -200,6 +200,16 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     }
 
     let node: ComputerNode | undefined;
+    // The one CloverFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
+    // card), the agents and the bot side all go through these, never a copy of their own.
+    const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
+    let broker: CloverApprovalBroker | undefined;
+    const lateApprovals: Pick<CloverApprovalBroker, "request"> = {
+      request: async (r, o) => {
+        if (!broker) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
+        return broker.request(r, o);
+      },
+    };
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
@@ -208,12 +218,14 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
-        ...(input.approvals ? { approvals: input.approvals } : {}),
+        // The broker below, bound late: it needs the node's own registry for each computer's level.
+        approvals: input.approvals ?? lateApprovals,
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
         ...nodeLinks,
+        fence,
         ...own,
         ...(input.node ?? {}),
         // A test's own shell launcher keeps the paste card.
@@ -228,10 +240,15 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => n.close());
       node = n;
       if (main) closers.push(followMain(n, main, links));
+      const here = main?.self ?? nodeLinks.self.name;
+      broker = new CloverApprovalBroker({
+        clock: input.clock, levels: (c) => n.registry.get(c)?.level ?? DEFAULT_LEVEL, fence: (c) => (c === here ? fence : undefined),
+        verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
+        log: (line) => log(`[approvals] ${line}`),
+      });
     }
 
     let agents: DaemonAgents | undefined;
-    let broker: CloverApprovalBroker | undefined;
     if (input.bots) {
       const b = input.bots;
       const runner = main ?? soleComputer(computer ?? "this-computer");
@@ -241,15 +258,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       const pauseChanged = new Listeners<void>();
       const pause: AgentPauseGate = { mayAct: () => side?.gate.mayAct({ kind: "agent" }) ?? false, watch: (fn) => pauseChanged.add(fn) };
       let agentsFactory: BotSideOptions["agents"];
-      if (a && node && links) {
+      if (a && node && links && broker) {
         const n = node;
         const here = runner.self;
-        const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
-        broker = new CloverApprovalBroker({
-          clock: input.clock, levels: (c) => n.registry.get(c)?.level ?? DEFAULT_LEVEL, fence: (c) => (c === here ? fence : undefined),
-          verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
-          log: (line) => log(`[approvals] ${line}`),
-        });
         const approvals = broker;
         agentsFactory = (d) => {
           const made = createAgents({

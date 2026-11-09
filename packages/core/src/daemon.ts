@@ -166,6 +166,7 @@ import { IslandRegistry, type IslandHost, type IslandSessionFacts } from "./isla
 import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection } from "./usage/wiring";
+import type { CloverApprovalBroker } from "./approvals/broker";
 import { rowForTag } from "./runtime-sdk/provider-selection";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
@@ -289,7 +290,7 @@ export interface RunningDaemon {
   /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
    *  background after the socket is bound. `ready` settles once they are up, or found absent (no sidecar), or failed
    *  (logged); each getter is undefined before then and without one. */
-  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined; agents(): DaemonAgents | undefined };
+  cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined; agents(): DaemonAgents | undefined; broker(): CloverApprovalBroker | undefined };
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
    *  run just before an update's restart (`beforeRestart`: lane H's lease renew). */
   updateGate: UpdateGate;
@@ -3637,7 +3638,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     sessions: store,
     buildSessionCapabilities,
     clover: cloverDrivers,
-    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots, agents: () => daemonParts?.agents },
+    cloverParts: { ready: partsReady, links: () => daemonLinks?.links ?? undefined, node: () => daemonParts?.node, bots: () => daemonParts?.bots, agents: () => daemonParts?.agents, broker: () => daemonParts?.broker },
     updateGate,
     setSelfUpdate(self) { selfUpdate = self; },
     dispatchChildren,
