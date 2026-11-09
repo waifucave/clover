@@ -320,8 +320,11 @@ export function patternItemAt(path: string, cloverHome: string, os?: Os):
 }
 
 /** Whether a caller reaches the memory in `bots/<folder>/`: the user, or the bot whose id (`/` as `--`) folds equal. */
-export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os): boolean {
+export function reachesMemoryFolder(folder: string, ctx: FenceContext | undefined, os?: Os, writes = true): boolean {
   if (ctx?.user) return true;
+  // The owner's ruling of November 9 (amended): a bot's sessions read and write every bot's memory.
+  void writes;
+  if (ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf)) return true;
   return ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) && foldName(ctx.memoryOf.replace("/", "--"), os) === foldName(folder, os);
 }
 
@@ -343,13 +346,20 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
   const same = (a: string, b: string) => foldName(a, os) === foldName(b, os);
   if (segs.length < home.length || !home.every((h, i) => same(h, segs[i]!))) return true; // not in the home
   const [area, x, sub, ...deeper] = segs.slice(home.length);
+  const bot = ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? ctx.memoryOf.replace("/", "--") : undefined;
+  // The owner's ruling of November 9 (amended): a bot's sessions read the whole Clover home (the escalation list, the
+  // fenced set's read-denied items and plugin data, is judged apart), and write any bot's scratch and memory.
+  if (bot !== undefined && !writes && !same(area ?? "", "plugin-data")) return true;
   if (area === undefined || x === undefined) return false; // the home itself, or a top folder in it
   const inside = sub !== undefined; // strictly inside `<area>/<x>`
   // 1. A session's own outputs.
   if (same(area, "outputs") && folderName(ctx?.sessionId) && same(x, ctx!.sessionId!)) return inside || !writes;
   // A plugin's own data folder, for its own code alone.
   if (same(area, "plugin-data")) return ownsPluginData(x, ctx, os) && (inside || !writes);
-  const bot = ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) ? ctx.memoryOf.replace("/", "--") : undefined;
+  if (bot !== undefined) {
+    if (same(area, "scratch")) return inside;
+    if (same(area, "bots") && sub !== undefined && same(sub, "memory")) return deeper.length > 0;
+  }
   if (bot === undefined || !same(x, bot)) return false;
   // 2. A bot's own scratch and its routines, for its main conversation and side threads.
   if (same(area, "scratch") || same(area, "routines")) return inside || !writes;
@@ -528,10 +538,10 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
       // `bots/` and `bots/<x>` hold memory: never deleted, moved or written over. Inside `bots/<x>/memory`, only its bot.
       if (!pattern.inside && writes) return { allowed: false, reason: "bot-memory", path: pattern.root };
       if (pattern.inside) {
-        if (!reachesMemoryFolder(pattern.folder, o.caller, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
+        if (!reachesMemoryFolder(pattern.folder, o.caller, o.os, writes)) return { allowed: false, reason: "bot-memory", path: pattern.root };
         if (writes && foldPath(path, o.os) === foldPath(pattern.root, o.os)) return { allowed: false, reason: "bot-memory", path: pattern.root };
       }
-    } else if (pattern?.kind === "sessions-runtime" && (writes || !o.caller?.user)) {
+    } else if (pattern?.kind === "sessions-runtime" && (writes || !(o.caller?.user || (o.caller?.memoryOf !== undefined && isAnyPluginId(o.caller.memoryOf))))) {
       return { allowed: false, reason: "sessions-runtime", path: pattern.root };
     }
     for (const item of set) {

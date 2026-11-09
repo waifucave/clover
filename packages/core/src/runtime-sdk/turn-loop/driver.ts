@@ -37,7 +37,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { query as sdkQuery, type CanUseTool, type HookCallbackMatcher, type McpServerConfig, type Options, type Query, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
-import type { TurnOrigin } from "@waifucave/clover-protocol";
+import type { Os, TurnOrigin } from "@waifucave/clover-protocol";
 import type { Unsubscribe } from "../../contracts/common";
 import type { SessionDriver, TurnControl, TurnEnd, TurnInput } from "../../contracts/session-host";
 import type { BotSessionContext } from "../../bots/service";
@@ -55,8 +55,14 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { homeDenyReadExcept } from "./home-deny";
-import { fenceContextFor, ownFoldersOf } from "../../contracts/fence";
+import { CONFIG_COPY_FILES, configCopyDenies, namesOtherThan } from "./home-deny";
+import { CloverFence } from "../../fence/fence";
+import { selfGrantDenyWrite } from "../mode-options";
+import { escapeSandboxGlobPath } from "../host/run-home/settings";
+import { RESUME_STAGING_PREFIX } from "../host/vendor-paths";
+import { homedir, tmpdir } from "node:os";
+import { fileToolFenceRefusal, type FileFence } from "./file-fence";
+import { fenceContextFor, ownFoldersOf, type Fence } from "../../contracts/fence";
 
 /** The runtime's built-in tools a bot's session is offered (spec §6.7). The runtime's own `SendMessage`, `ListAgents`,
  *  `TaskStop` and `Agent` are not: the core's take those names. Nor are `Skill` and `ToolSearch` (retired for
@@ -82,18 +88,69 @@ interface ToolUseInput { tool_name?: string; tool_input?: unknown; tool_use_id?:
  *  and in-process agents never run a command unsandboxed (the owner's ruling). */
 export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, denyLaunchServices: true } as const;
 
-/** The folders of the Clover home a bot's session reads from its Bash: its bot's folder (memory and agents' transcripts
- *  in it), its scratch folder and its routines (the fence's `own…` folders for a bot's runner, `ownFoldersOf`). Not the
- *  outputs folder, which is a coding session's. */
-export function botOwnFolders(home: string, ctx: Pick<BotSessionContext, "paths" | "caller">): string[] {
-  const own = ownFoldersOf(fenceContextFor(ctx.caller), home);
-  return [ctx.paths.root, ctx.paths.scratch, ...(own.ownRoutines === undefined ? [] : [own.ownRoutines])];
+/** What a bot's Bash may not read (the owner's ruling of November 9: bots read the whole Clover home, and only
+ *  escalation is denied): the fence's read-denied items (the run folder, with the app token, the core's socket and
+ *  the plugins' run files; the secrets file and its keys; the browser profiles), the credential index, the plugins'
+ *  own data, the secret store's files on every OS, and every config copy that carries keys (`configCopyDenies`, and
+ *  any `.clover.json`, `.claude.json` or `.credentials.json` in the home, the store's `sdk/.clover.json` with them). */
+export function botDenyRead(home: string, fence: Pick<Fence, "fencedSet"> = homeFence(home)): string[] {
+  const set = fence.fencedSet();
+  const literal = [
+    ...set.filter((i) => i.deny === "read-write" || i.kind === "credential-store" || i.kind === "plugin-data").map((i) => i.path),
+    ...["secrets.enc", "secrets.key", "secrets.key.cred"].map((n) => join(home, n)),
+  ];
+  return [...new Set([
+    ...literal.map(escapeSandboxGlobPath),
+    ...CONFIG_COPY_FILES.map((f) => `${escapeSandboxGlobPath(home)}/**/${f}`),
+    ...configCopyDenies(home, { base: tmpdir(), prefix: RESUME_STAGING_PREFIX }),
+  ])];
 }
 
-/** The daemon's Bash sandbox for a bot's session (the owner's November 6 ruling): the Clover home is read-denied but
- *  for the session's own folders (`botOwnFolders`), taken when the session's runtime is built (`homeDenyReadExcept`). */
+/** What a bot's Bash may not write, wherever its writable folders are: every item of the fence's set (settings,
+ *  levels, saved rules, connector permissions, trust, devices, user layers, the credential index, the plugins' consent
+ *  and registry, plugin data, the installed plugins, the run folder, the secrets file and its keys, the sessions'
+ *  logs, the login-start places and the agents' installs), every self-grant path a coding session's Bash is denied
+ *  (`selfGrantDenyWrite`), and in a bot's folder everything but its memory. */
+export function botDenyWrite(home: string, fence: Pick<Fence, "fencedSet"> = homeFence(home)): string[] {
+  return [...new Set([
+    ...[...fence.fencedSet().filter((i) => i.deny !== "caller").map((i) => i.path), ...selfGrantDenyWrite(home)].map(escapeSandboxGlobPath),
+    // In a bot's folder only its memory is written (`botWriteFolders` grants the bots' folder for every bot's memory):
+    // never its agents' transcripts or anything else beside the memory.
+    ...namesOtherThan(`${join(home, "bots")}/*`, ["memory"]),
+  ])];
+}
+
+/** Lane C's fence for this computer's Clover home. */
+function homeFence(home: string): CloverFence {
+  return new CloverFence({ home: homedir(), cloverHome: home });
+}
+
+/** The folders a bot's Bash writes (the owner's ruling of November 9, amended): every bot's scratch folder and memory
+ *  (the bots' folder, all but each memory write-denied in `botDenyWrite`), and its own routines and session outputs
+ *  (the fence's `ownFoldersOf`). */
+export function botWriteFolders(home: string, ctx: Pick<BotSessionContext, "paths" | "caller">): string[] {
+  const own = ownFoldersOf(fenceContextFor(ctx.caller), home);
+  return [join(home, "scratch"), join(home, "bots"), ...[own.ownRoutines, own.ownOutputs].filter((p): p is string => p !== undefined)];
+}
+
+/** The daemon's Bash sandbox for a bot's session: it reads the whole Clover home but the escalation list
+ *  (`botDenyRead`), writes any bot's scratch and memory and its own routines and outputs (`botWriteFolders`), and
+ *  never a permission, trust, settings or plugin file (`botDenyWrite`). Built at each session's start from fixed paths and
+ *  patterns, so a folder made later changes nothing. */
 export function botHomeSandbox(home: string): (ctx: BotSessionContext) => SandboxSettingsConfig {
-  return (ctx) => ({ filesystem: { denyRead: homeDenyReadExcept(home, botOwnFolders(home, ctx)) } });
+  return (ctx) => {
+    const fence = homeFence(home);
+    return { filesystem: { allowWrite: botWriteFolders(home, ctx).map(escapeSandboxGlobPath), denyRead: botDenyRead(home, fence), denyWrite: botDenyWrite(home, fence) } };
+  };
+}
+
+/** The daemon's fence for a bot's own Read, Glob and Grep: lane C's fence as the session meets it (`forCaller`), so
+ *  inside the Clover home only its own folders are readable (`fileToolFenceRefusal`). */
+export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?: Os): (ctx: BotSessionContext) => FileFence {
+  return (ctx) => {
+    const own = fence.forCaller(ctx.caller);
+    return { check: (op) => own.check(op), home, ...(os === undefined ? {} : { os }) };
+  };
 }
 
 export interface BotDriverDeps {
@@ -132,6 +189,9 @@ export interface BotDriverDeps {
   /** The Bash sandbox; the runtime's default floor when left out. Whatever it says, a bot's commands run sandboxed
    *  (`BOT_SANDBOX`). */
   sandbox?(ctx: BotSessionContext): SandboxSettingsConfig | undefined;
+  /** The fence for the session's own Read, Glob and Grep (`fileToolFenceRefusal`): the Clover home's default-deny, as
+   *  its Bash meets it in `sandbox`. None without it. */
+  fileFence?(ctx: BotSessionContext): FileFence | undefined;
   /** Extra environment for the runtime (never secrets). */
   env?: Record<string, string>;
   /** How long `stop` waits for the runtime to end. */
@@ -305,6 +365,7 @@ function backendIdFor(): string {
 export class BotSessionDriver implements SessionDriver {
   readonly canFold = true;
   readonly #ctx: BotSessionContext;
+  readonly #fileFence: FileFence | undefined;
   readonly #d: BotDriverDeps;
   readonly #log: (line: string) => void;
   readonly #statePath: string;
@@ -328,6 +389,7 @@ export class BotSessionDriver implements SessionDriver {
   constructor(ctx: BotSessionContext, deps: BotDriverDeps) {
     this.#ctx = ctx;
     this.#d = deps;
+    this.#fileFence = deps.fileFence?.(ctx);
     this.#log = deps.log ?? (() => {});
     this.#statePath = join(deps.home, "sessions-runtime", `${ctx.sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}.json`);
   }
@@ -502,14 +564,23 @@ export class BotSessionDriver implements SessionDriver {
     };
   }
 
+  /** Why the fence refuses one of the session's own file tool calls (`fileToolFenceRefusal`), or undefined. */
+  #fileFenceRefusal(input: ToolUseInput): string | undefined {
+    if (this.#fileFence === undefined) return undefined;
+    return fileToolFenceRefusal(input.tool_name ?? "", input.tool_input, this.#fileFence, this.#ctx.paths.scratch);
+  }
+
   /** The pause and the lease once more, after every other `PreToolUse` hook (`mergedHooks`' trailing check). */
   #trailingGate(): HookCallbackMatcher {
     return {
       failClosed: true,
       timeout: TOOL_HOOK_TIMEOUT_S,
-      hooks: [async (_raw, _id, { signal }) => {
+      hooks: [async (raw, _id, { signal }) => {
         const stop = await this.#gate(signal);
-        return stop === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
+        if (stop !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: stop } };
+        // The fence again, on the input as the earlier hooks left it.
+        const fenced = this.#fileFenceRefusal(raw as ToolUseInput);
+        return fenced === undefined ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: fenced } };
       }],
     };
   }
@@ -532,6 +603,10 @@ export class BotSessionDriver implements SessionDriver {
         // one (a read-only tool) has no later check (`#gatedCanUseTool`), so the gate is asked again here.
         const after = await this.#gate(signal);
         if (after !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: after } };
+        // The Clover home's default-deny for the session's own file tools, on the input a plugin's hook may have changed.
+        const changedInput = r.input !== input.tool_input && r.input !== null && typeof r.input === "object" && !Array.isArray(r.input);
+        const fenced = this.#fileFenceRefusal({ tool_name: name, tool_input: changedInput ? r.input : input.tool_input });
+        if (fenced !== undefined) return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: fenced } };
         // The call id the router gets, queued only for a call that goes on; a refusal after this drops it
         // (`#gatedCanUseTool`, `PostToolUseFailure`), so the next call of the tool never takes a stale one (review S1).
         if (name.startsWith("mcp__") && callId !== "") {

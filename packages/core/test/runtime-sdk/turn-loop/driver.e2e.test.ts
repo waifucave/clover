@@ -3,14 +3,17 @@
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, botHomeSandbox, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_SANDBOX, BotSessionDriver, botFileFence, botHomeSandbox, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { CloverFence } from "../../../src/fence/fence";
+import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
+import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import type { CoreToolDef, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
 import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
@@ -513,32 +516,90 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
   }, 60_000);
 
   // On every OS the runtime sandboxes: Seatbelt on macOS, bubblewrap on Linux (agent SDK 0.0.74).
-  test("the Clover home is read-denied to a bot's Bash but for its own folders (the daemon's botHomeSandbox)", async () => {
+  test("a bot's Bash and file tools: the whole Clover home read, any bot's scratch and memory written, never the escalation list (the owner's ruling of November 9, amended)", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
-    // Another session's log and the secrets file, as the daemon and the file store keep them.
-    mkdirSync(join(home, "sessions"), { recursive: true });
-    writeFileSync(join(home, "sessions", "s_other.jsonl"), "SESSION-LOG-SECRET\n");
-    writeFileSync(join(home, "secrets.enc"), "SECRETS-FILE-SECRET");
-    mkdirSync(ctx.paths.memory, { recursive: true });
-    writeFileSync(join(ctx.paths.memory, "MEMORY.md"), "OWN-MEMORY");
+    const put = (rel: string, text: string) => { mkdirSync(join(home, rel, ".."), { recursive: true }); writeFileSync(join(home, rel), text); };
+    // What a bot reads: another bot's memory, scratch and conversation, a coding session's transcript and outputs.
+    const readable = { mira: "bots/mira/memory/MEMORY.md", scratch: "scratch/mira/notes.txt", talk: "transcripts/mira/b_mira.ndjson", coding: "transcripts/_/s_1.ndjson", log: "sessions/s_1.jsonl", outputs: "outputs/s_1/report.md" };
+    for (const [tag, rel] of Object.entries(readable)) put(rel, `READ-${tag}`);
+    // The escalation list: the secrets file, a run folder's config copy, the run folder.
+    const secret = { secrets: "secrets.enc", config: "cache/runs/r1/.clover.json", run: "run/app.token" };
+    for (const [tag, rel] of Object.entries(secret)) put(rel, `SECRET-${tag}`);
+    for (const rel of ["settings.json", "trust.json"]) put(rel, "{}");
+    mkdirSync(join(home, "plugins", "p"), { recursive: true });
+    mkdirSync(ctx.paths.scratch, { recursive: true });
     const out = join(ctx.paths.scratch, "probe");
-    const driver = new BotSessionDriver(ctx, deps(home, spawn, { sandbox: botHomeSandbox(home) }));
+    const fence = new CloverFence({ home: dirname(home), cloverHome: home });
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { sandbox: botHomeSandbox(home), fileFence: botFileFence(fence, home) }));
     try {
       const sh = (command: string) => `CALL Bash ${JSON.stringify({ command, description: "probe" })}`;
+      const q = JSON.stringify;
       const calls = [
-        sh(`cat ${JSON.stringify(join(home, "sessions", "s_other.jsonl"))} > ${JSON.stringify(`${out}.sessions`)} 2>/dev/null; echo "$?" >> ${JSON.stringify(`${out}.sessions`)}`),
-        sh(`cat ${JSON.stringify(join(home, "secrets.enc"))} > ${JSON.stringify(`${out}.secrets`)} 2>/dev/null; echo "$?" >> ${JSON.stringify(`${out}.secrets`)}`),
-        sh(`cat ${JSON.stringify(join(ctx.paths.memory, "MEMORY.md"))} > ${JSON.stringify(`${out}.memory`)}`),
+        ...[...Object.entries(readable), ...Object.entries(secret)].map(([tag, rel]) => sh(`cat ${q(join(home, rel))} > ${q(`${out}.${tag}`)} 2>/dev/null; echo "$?" >> ${q(`${out}.${tag}`)}`)),
+        // Writes: another bot's scratch and memory land; settings, trust and a plugin install don't.
+        sh(`echo hi > ${q(join(home, "scratch", "mira", "from-luna.txt"))}`),
+        sh(`echo hi > ${q(join(home, "bots", "mira", "memory", "note.md"))}`),
+        ...["settings.json", "trust.json", "plugins/p/clover.json", "bots/mira/agents.json"].map((rel) => sh(`echo '{"x":1}' > ${q(join(home, rel))} 2>/dev/null; true`)),
+        // The file tools: a Read of the secrets file and a Write of the settings are refused, another bot's memory read.
+        `CALL Read ${q({ file_path: join(home, "secrets.enc") })}`,
+        `CALL Write ${q({ file_path: join(home, "settings.json"), content: "{\"x\":2}" })}`,
+        `CALL Read ${q({ file_path: join(home, readable.mira) })}`,
       ].join("\n");
-      expect((await driver.turn(user(calls), control())).reason).toBe("end_turn");
-      for (const tag of ["sessions", "secrets"]) {
+      const end = await driver.turn(user(calls), control());
+      expect(end.reason).toBe("end_turn");
+      for (const [tag] of Object.entries(readable)) expect([tag, readFileSync(`${out}.${tag}`, "utf8")]).toEqual([tag, `READ-${tag}0\n`]);
+      for (const [tag] of Object.entries(secret)) {
         const got = readFileSync(`${out}.${tag}`, "utf8");
-        expect(got).not.toContain("SECRET");
+        expect([tag, got.includes("SECRET")]).toEqual([tag, false]);
         expect(got.trim()).not.toBe("0");
       }
-      // The scratch folder is the session's own: written and read back. So is its memory.
-      expect(readFileSync(`${out}.memory`, "utf8")).toBe("OWN-MEMORY");
+      expect(readFileSync(join(home, "scratch", "mira", "from-luna.txt"), "utf8")).toBe("hi\n");
+      expect(readFileSync(join(home, "bots", "mira", "memory", "note.md"), "utf8")).toBe("hi\n");
+      for (const rel of ["settings.json", "trust.json"]) expect([rel, readFileSync(join(home, rel), "utf8")]).toEqual([rel, "{}"]);
+      expect(existsSync(join(home, "plugins", "p", "clover.json"))).toBe(false);
+      expect(existsSync(join(home, "bots", "mira", "agents.json"))).toBe(false);
+      const r = results(end);
+      const reads = r.filter((x) => x.name === "Read");
+      // Refused by the fence's hook before they ran: the reason is the result.
+      expect(reads[0]?.content).toContain("Read was not run");
+      expect(reads[0]?.content).not.toContain("SECRET");
+      expect(r.find((x) => x.name === "Write")?.content).toContain("Write was not run");
+      expect(reads[1]?.content).toContain("READ-mira");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  // A coding session's sandbox (`childSandboxConfigFor`), on real Bash through the same runtime: its own outputs, store
+  // entry and run folder read; another session's, a run folder's config copy and the bots' data never (#347's review).
+  test("a coding session's Bash: its own outputs, store entry and run folder; never another session's, a config copy or the bots' data", async () => {
+    const home = tempHome();
+    const ctx = context(home, "winter-test/calls");
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-a3-code-cwd-")));
+    temps.push(cwd);
+    const key = compatibilityKeys(cwd).transcriptProjectKey;
+    const put = (rel: string, text: string) => { mkdirSync(join(home, rel, ".."), { recursive: true }); writeFileSync(join(home, rel), text); };
+    const own = { outputs: "outputs/s_1/r.md", store: `sdk/projects/${key}/memory/MEMORY.md`, run: "cache/runs/run-own/settings.json" };
+    const others = { outputs: "outputs/s_2/r.md", store: "sdk/projects/-other/s.jsonl", run: "cache/runs/run-other/settings.json", config: "cache/runs/run-own/.clover.json",
+      memory: "bots/mira/memory/MEMORY.md", talk: "transcripts/mira/b.ndjson", secrets: "secrets.enc" };
+    for (const [tag, rel] of Object.entries(own)) put(rel, `OWN-${tag}`);
+    for (const [tag, rel] of Object.entries(others)) put(rel, `OTHER-${tag}`);
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    const out = join(ctx.paths.scratch, "probe");
+    // The harness's folder (the bot's scratch, where the probe writes) is one of the session's working directories here.
+    const sandbox = () => childSandboxConfigFor(home, cwd, [ctx.paths.scratch], { outputsDir: join(home, "outputs", "s_1"), runDir: join(home, "cache", "runs", "run-own") });
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { sandbox }));
+    try {
+      const q = JSON.stringify;
+      const calls = [...Object.entries(own).map(([t, r]) => [`own-${t}`, r] as const), ...Object.entries(others).map(([t, r]) => [`other-${t}`, r] as const)]
+        .map(([tag, rel]) => `CALL Bash ${q({ command: `cat ${q(join(home, rel))} > ${q(`${out}.${tag}`)} 2>/dev/null; echo "$?" >> ${q(`${out}.${tag}`)}`, description: "probe" })}`).join("\n");
+      expect((await driver.turn(user(calls), control())).reason).toBe("end_turn");
+      for (const tag of Object.keys(own)) expect([tag, readFileSync(`${out}.own-${tag}`, "utf8")]).toEqual([tag, `OWN-${tag}0\n`]);
+      for (const tag of Object.keys(others)) {
+        const got = readFileSync(`${out}.other-${tag}`, "utf8");
+        expect([tag, got.includes("OTHER")]).toEqual([tag, false]);
+      }
     } finally {
       await driver.stop();
     }
