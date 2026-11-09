@@ -80,10 +80,12 @@ describe.skipIf(process.platform === "win32")("the app against a real daemon (la
       expect(unsigned.error?.code).not.toBe(-32601);
       expect(await ok("device.answerKey.set", { publicKey, held: "none", signature: sign(null, statement, k.privateKey).toString("base64") })).toEqual({ applied: true });
       expect(await ok("usage.summary", { from: 0, to: Date.now(), groupBy: "day" })).toEqual({ groups: [] });
+      // B's plugin registry methods (#277, on main).
+      expect(Array.isArray((await ok("plugin.list")).plugins)).toBe(true);
 
       // Still unserved, each with its owner.
       for (const method of [
-        "plugin.ui", "plugin.list", // B (#277)
+        "plugin.ui", // B
         "card.list", // C, through INT's broker (#292)
         "ui.settings", // E
       ]) {
