@@ -17,6 +17,7 @@ import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { lateAgentDoors } from "../src/daemon-parts";
 import { MemoryNetwork } from "../src/links/memory-wire";
+import { darwinTest } from "./helpers/darwin-only";
 import { describeWithEmbeddedRuntime } from "./helpers/embedded-runtime";
 
 setDefaultTimeout(90_000);
@@ -107,8 +108,10 @@ function relay(project: string) {
   return { input, reply, exit };
 }
 
+// clover-code runs in the embedded runtime's sandbox, macOS-only for now (it refuses to start elsewhere, with a reason):
+// its tests are macOS's.
 describeWithEmbeddedRuntime("clover-core code-agent against the real daemon", () => {
-  test("the agents start with the bot side; the relay opens a coding session through the daemon's endpoint and a turn runs; a level drop reaches it; the stop ends it", async () => {
+  darwinTest("the agents start with the bot side; the relay opens a coding session through the daemon's endpoint and a turn runs; a level drop reaches it; the stop ends it", async () => {
     const { project } = await bootDaemon({ model: MODEL });
     const agents = daemon!.cloverParts.agents();
     expect(agents).toBeDefined();
@@ -168,7 +171,7 @@ describeWithEmbeddedRuntime("clover-core code-agent against the real daemon", ()
     input.end();
     expect(typeof (await exit)).toBe("number");
   });
-  test("an agent's turn gets its provider and credential as a bot's does: the daemon's one provider fill, the user's endpoint and the stored key", async () => {
+  darwinTest("an agent's turn gets its provider and credential as a bot's does: the daemon's one provider fill, the user's endpoint and the stored key", async () => {
     // The user's own OpenAI endpoint, a local stand-in that records what reaches it and refuses it.
     const seen: Array<{ path: string; auth: string | null }> = [];
     const server = Bun.serve({
