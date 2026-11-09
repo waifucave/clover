@@ -19,8 +19,9 @@
 //   `/dev/null`, `/dev/tty` and `/dev/fd` (#345's review, the blocker: writes are denied by default, so the app's
 //   install, `/Applications`, `/opt/homebrew`, `/Users/Shared`, `/Volumes` and the shared temp folders are out of
 //   reach);
-// * the per-user temp and cache folders (`DARWIN_USER_TEMP_DIR`, `DARWIN_USER_CACHE_DIR`), whose other programs'
-//   files it has no business reading (S2);
+// * the per-user folders (`/var/folders/<…>/`: the temp `T`, the cache `C` and the per-user `0` folders), whose
+//   other programs' files it has no business reading (S2, and #345's second review);
+// * the clipboard and the window server (their services), and any signal but to itself and its children;
 // * every Unix socket but the ones it's named (a supervised host's daemon socket) and the system's DNS resolver
 //   (`mDNSResponder`): no ssh-agent, no other program's socket (S1);
 // * in the `clover` process, which holds many plugins, any native code but Bun's and the system's (B3; since #345's
@@ -83,21 +84,27 @@ export const CREDENTIAL_FILES: readonly string[] = [
 /** The system's DNS resolver socket: the one Unix socket every fenced process may reach (name lookups go through it). */
 export const DNS_SOCKETS: readonly string[] = ["/private/var/run/mDNSResponder", "/var/run/mDNSResponder"];
 
-/** The per-user temp and cache folders (`getconf DARWIN_USER_TEMP_DIR`, `DARWIN_USER_CACHE_DIR`): denied (S2). */
-let userTempFolders: string[] | undefined;
+/** The per-user folders under `/var/folders`, denied whole (S2, and #345's second review): the parent of
+ *  `getconf DARWIN_USER_TEMP_DIR`, which holds the temp folder (`T`), the cache folder (`C`) and the per-user folder
+ *  (`0`, `DARWIN_USER_DIR`: Biome, ScreenTime, SharedWebCredentials, AppSSOAgent, Find My, Spotlight). */
+let userFolders: string[] | undefined;
 export function darwinUserFolders(): string[] {
-  if (userTempFolders !== undefined) return userTempFolders;
+  if (userFolders !== undefined) return userFolders;
   const out: string[] = [];
   if (process.platform === "darwin") {
-    for (const name of ["DARWIN_USER_TEMP_DIR", "DARWIN_USER_CACHE_DIR"]) {
-      const r = spawnSync("/usr/bin/getconf", [name], { encoding: "utf8" });
-      const v = (r.stdout ?? "").trim();
-      if (r.status === 0 && v.startsWith("/")) out.push(v.replace(/\/$/, ""));
-    }
+    const r = spawnSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" });
+    const t = (r.stdout ?? "").trim().replace(/\/$/, "");
+    if (r.status === 0 && (t.startsWith("/var/folders/") || t.startsWith("/private/var/folders/"))) out.push(dirname(t));
   }
-  userTempFolders = out;
+  userFolders = out;
   return out;
 }
+
+/** The pasteboard's and the window server's services: no fenced process reads the clipboard or the screen (#345's
+ *  second review; no capability grants them yet). */
+export const SCREEN_AND_CLIPBOARD_SERVICES: readonly string[] = [
+  "com.apple.pasteboard.1", "com.apple.pasteboard.2", "com.apple.windowserver", "com.apple.windowserver.active",
+];
 
 export interface PluginFenceInput {
   /** The Clover home: denied whole, but what `read` and `write` name. */
@@ -189,7 +196,10 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     `(allow file-read* file-write* ${subpaths(write)})`,
     // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
     `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
-    `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
+    `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services, ...SCREEN_AND_CLIPBOARD_SERVICES].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
+    // Signals only to itself and its own children: never the daemon, the app or another plugin (#345's second review).
+    "(deny signal)",
+    "(allow signal (target self) (target children))",
     // No Unix socket but the DNS resolver and the ones it's named (connect isn't a file read; S1).
     "(deny network-outbound (remote unix-socket))",
     `(allow network-outbound ${paths([...DNS_SOCKETS, ...(i.sockets ?? [])]).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`,

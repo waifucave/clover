@@ -37,10 +37,10 @@ afterAll(() => {
 });
 
 /** What the probe tries, as a script any of the three runs: one line of JSON, each try `ok` or the error's code. */
-function probeSource(w: { home: string; userHome: string; root: string; keychain: string; runFiles: string; outside: string; sharedProbe: string; agentSocket: string }): string {
+function probeSource(w: { home: string; userHome: string; root: string; keychain: string; runFiles: string; outside: string; sharedProbe: string; agentSocket: string; testPid: number; userDir: string }): string {
   const j = JSON.stringify;
   return `
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join as joinPath } from "node:path";
 const out = {};
@@ -86,6 +86,16 @@ t("writeOutside", () => writeFileSync(${j(join(w.outside, "planted.txt"))}, "x")
 t("writeShared", () => writeFileSync(${j(w.sharedProbe)}, "x"));
 t("readUserTemp", () => readFileSync(${j(join(w.outside, "secret.txt"))}));
 t("writeOwnTemp", () => writeFileSync(joinPath(process.env.TMPDIR, "ok.txt"), "x"));
+// #345's second review: the per-user folder (\`0\`), and signals: never the test's own process, always itself and its
+// own child (a host may start none).
+t("listUserDir", () => readdirSync(${j(w.userDir)}));
+t("signalParent", () => process.kill(${w.testPid}, 0));
+t("signalSelf", () => process.kill(process.pid, 0));
+try {
+  const c = Bun.spawn(["/bin/sleep", "5"], { stdio: ["ignore", "ignore", "ignore"] });
+  try { process.kill(c.pid, 0); out.signalChild = "ok"; } catch (e) { out.signalChild = e.code ?? e.message; }
+  c.kill();
+} catch { out.signalChild = "nofork"; }
 out.sshAgent = await new Promise((resolve) => {
   const c = connect(${j(w.agentSocket)});
   c.on("connect", () => { c.destroy(); resolve("ok"); });
@@ -135,7 +145,8 @@ function world() {
   temps.push(dirname(agentSocket));
   const agent = Bun.listen({ unix: agentSocket, socket: { data() {} } });
   const sharedProbe = join("/Users/Shared", `.clover-fence-probe-${process.pid}-${Math.random().toString(36).slice(2)}`);
-  const w = { home, userHome, root, keychain, server, runFiles, outside, agentSocket, agent, sharedProbe };
+  const userDir = Bun.spawnSync(["/usr/bin/getconf", "DARWIN_USER_DIR"]).stdout.toString().trim().replace(/\/$/, "");
+  const w = { home, userHome, root, keychain, server, runFiles, outside, agentSocket, agent, sharedProbe, testPid: process.pid, userDir };
   writeFileSync(join(root, "probe.mjs"), probeSource(w));
   return w;
 }
@@ -146,6 +157,7 @@ const DENIED = {
   launchctl: "EPERM", open: "EPERM", osascript: "EPERM", keychain: "not read",
   writeRunFiles: "EPERM", writeBundled: "EPERM", writeBin: "EPERM", evalRead: "EPERM",
   writeOutside: "EPERM", writeShared: "EPERM", readUserTemp: "EPERM", writeOwnTemp: "ok", sshAgent: expect.not.stringMatching(/^ok$/),
+  listUserDir: "EPERM", signalParent: "EPERM", signalSelf: "ok",
 };
 const untouched = (w: ReturnType<typeof world>) => {
   expect(readFileSync(join(w.userHome, ".zshrc"), "utf8")).toBe("# the user's");
@@ -178,8 +190,13 @@ darwinDescribe("the plugin-process fence", () => {
     // Reads: the homes and the per-user temp and cache folders (S2), then what it's given.
     const closedLine = p.split("\n").find((l) => l.startsWith("(deny file-read* (subpath"))!;
     expect(closedLine.startsWith(`(deny file-read* (subpath "/Users/u") (subpath "/c")`)).toBe(true);
-    for (const d of darwinUserFolders()) expect(closedLine).toContain(`(subpath "${realpathSync(d)}")`);
-    expect(darwinUserFolders().length).toBe(2);
+    // The per-user folders whole: the parent of T, which holds T, C and the per-user `0` folder (#345's second review).
+    const userTemp = Bun.spawnSync(["/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"]).stdout.toString().trim().replace(/\/$/, "");
+    expect(darwinUserFolders()).toEqual([dirname(userTemp)]);
+    expect(closedLine).toContain(`(subpath "${realpathSync(dirname(userTemp))}")`);
+    // No clipboard, no window server, and signals only to itself and its children.
+    for (const svc of ["com.apple.pasteboard.1", "com.apple.windowserver.active"]) expect(p).toContain(`(global-name "${svc}")`);
+    expect(at("(allow signal (target self) (target children))")).toBe(at("(deny signal)") + 1);
     // Last, whatever was allowed: the Keychain, the credential files (S4), launchd.
     const last = p.split("\n").findIndex((l) => l.includes(`(subpath "/Users/u/Library/Keychains")`));
     expect(last).toBeGreaterThan(at(`(allow file-read* (subpath "/Users/u/plugin")`));
@@ -213,7 +230,7 @@ darwinDescribe("the plugin-process fence", () => {
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
         await approved(opened.registry, "spy");
         const out = (await ph.host.invoke({ pluginId: "spy", handler: "probe", args: null, caller: USER })) as Record<string, string>;
-        expect(out).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "EPERM", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+        expect(out).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "EPERM", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "nofork" });
         untouched(w);
       } finally {
         await ph.close();
@@ -231,17 +248,17 @@ darwinDescribe("the plugin-process fence", () => {
       const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
       const hook = await new HookRunner(guard).run({ pluginId: "spy", event: "SessionStart", command: "bun probe.mjs", cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "SessionStart" } as never);
       const fromHook = JSON.parse(String((hook as { stdout: string }).stdout).trim().split("\n").at(-1)!);
-      expect(fromHook).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+      expect(fromHook).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "ok" });
       const mcp = guardedMcpServer<{ command: string; args?: string[]; env?: Record<string, string> }>({ command: "bun", args: ["probe.mjs"] }, w.root, guard, "spy");
       expect(mcp.command).toBe("/usr/bin/sandbox-exec");
       const r = Bun.spawnSync([mcp.command, ...(mcp.args ?? [])], { cwd: w.root, env: mcp.env, stdout: "pipe", stderr: "pipe" });
       const fromMcp = JSON.parse(r.stdout.toString().trim().split("\n").at(-1)!);
-      expect(fromMcp).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+      expect(fromMcp).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/), signalChild: "ok" });
       untouched(w);
       // Control: unfenced, the same probe reads the keychain item and the token (so the denials above are the fence's).
       const plain = Bun.spawnSync([process.execPath, "probe.mjs"], { cwd: w.root, env: { ...process.env, BUN_OPTIONS: "" }, stdout: "pipe", stderr: "pipe" });
       const control = JSON.parse(plain.stdout.toString().trim().split("\n").at(-1)!);
-      expect([control.keychain, control.readToken, control.socket, control.readUserTemp, control.writeOutside, control.sshAgent]).toEqual(["read", "ok", "ok", "ok", "ok", "ok"]);
+      expect([control.keychain, control.readToken, control.socket, control.readUserTemp, control.writeOutside, control.sshAgent, control.listUserDir, control.signalParent]).toEqual(["read", "ok", "ok", "ok", "ok", "ok", "ok", "ok"]);
       writeFileSync(join(w.userHome, ".zshrc"), "# the user's"); // the control wrote these
       rmSync(join(w.userHome, "Library", "LaunchAgents", "com.evil.plist"), { force: true });
       rmSync(join(w.outside, "planted.txt"), { force: true });
