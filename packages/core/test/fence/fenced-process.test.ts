@@ -485,6 +485,38 @@ describe("a bot's Linux view of the home (#355)", () => {
     expect(s).not.toContain("/dev/null /h/.clover/projects/k/m1.");
     expect(args.length).toBeLessThan(200);
   });
+
+  test("a glob with no fixed folder never hides the Clover home itself, however many it matches (#379's review)", () => {
+    const many = new Set(files);
+    const more = new Set(dirs);
+    for (let i = 0; i < 1_500; i++) { more.add(`${H}/q${i}`); many.add(`${H}/q${i}/s.provider-state.jsonl`); }
+    const big = { kind: (p: string) => (more.has(p) ? "dir" as const : many.has(p) ? "file" as const : null),
+      list: (d: string) => [...more, ...many].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)) };
+    const fence = new CloverFence({ os: "linux", home: "/h", cloverHome: H, temp: "/tmp/t" });
+    const caller: Caller = { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" };
+    const ctx = fenceContextFor(caller);
+    const policy = fence.policy(ctx);
+    const s = bwrapArgs({ cloverHome: H, cwd: "/h/p", uid: 1000, fs: big, caller: callerPlaces(H, "linux", ctx), policy: { ...policy, denyRead: [...policy.denyRead, `${H}/*/*.provider-state.jsonl`] } }).join(" ");
+    expect(s).not.toContain(`--tmpfs ${H} --remount-ro ${H}`);
+    expect(s).toContain(`--tmpfs ${H}/q1 --remount-ro ${H}/q1`);
+  });
+
+  test("past the folder cap too, projects/ and sdk/projects/ are hidden whole: bwrap's argument limit is never reached", () => {
+    const many = new Set(files);
+    const more = new Set(dirs);
+    for (let i = 0; i < 3_000; i++) { more.add(`${H}/projects/p${i}`); many.add(`${H}/projects/p${i}/s.provider-state.jsonl`); }
+    const big = { kind: (p: string) => (more.has(p) ? "dir" as const : many.has(p) ? "file" as const : null),
+      list: (d: string) => [...more, ...many].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)) };
+    const fence = new CloverFence({ os: "linux", home: "/h", cloverHome: H, temp: "/tmp/t" });
+    const caller: Caller = { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" };
+    const ctx = fenceContextFor(caller);
+    const args = bwrapArgs({ cloverHome: H, cwd: "/h/p", uid: 1000, fs: big, caller: callerPlaces(H, "linux", ctx), policy: fence.policy(ctx) });
+    const s = args.join(" ");
+    expect(s).toContain(`--tmpfs ${H}/projects --remount-ro ${H}/projects`);
+    expect(s).toContain(`--tmpfs ${H}/sdk/projects --remount-ro ${H}/sdk/projects`);
+    expect(s).not.toContain(`--tmpfs ${H}/projects/p1 `);
+    expect(args.length).toBeLessThan(200);
+  });
 });
 
 describe("the session's own repo", () => {

@@ -66,6 +66,10 @@ export function bwrapArgs(input: BwrapInput): string[] {
 /** How many files a bot's glob read-denies (the provider-state sidecars) are masked one by one; past it, the folders
  *  holding them are hidden whole. */
 export const GLOB_MASK_CAP = 1000;
+/** How many folders holding them are hidden one by one past `GLOB_MASK_CAP`; past it, each glob's fixed folder
+ *  (`projects/`, `sdk/projects/`) is hidden whole, so bwrap's argument limit is never reached (#355's review: about
+ *  2,240 project folders would pass it, and the bot would lose Bash). */
+export const GLOB_FOLDER_CAP = 500;
 
 /** A folder held read-only for new names because a fenced item in it isn't there yet. */
 export interface HeldFolder { readonly folder: string; readonly because: string }
@@ -195,7 +199,7 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
     // as it is when the run starts: each match masked. One made mid-run in a bound folder is the known gap the fence's
     // own check still covers.
     if (open !== null) {
-      const matches: { path: string; kind: "dir" | "file" | "other" }[] = [];
+      const matches: { path: string; kind: "dir" | "file" | "other"; fixed: string }[] = [];
       for (const g of policy.denyRead.filter((d) => d.includes("*") && inside(d, cloverHome))) {
         let at = [cloverHome];
         for (const seg of g.slice(cloverHome.length + 1).split("/")) {
@@ -207,12 +211,21 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
           }
           at = next;
         }
-        for (const m of at) { const k = fs.kind(m); if (k !== null) matches.push({ path: m, kind: k }); }
+        // The glob's fixed folder: its segments before the first with a `*`.
+        const segs = g.slice(cloverHome.length + 1).split("/");
+        const fixed = [cloverHome, ...segs.slice(0, segs.findIndex((x) => x.includes("*")))].join("/");
+        for (const m of at) { const k = fs.kind(m); if (k !== null) matches.push({ path: m, kind: k, fixed }); }
       }
       // One mount per sidecar is one per session: past `GLOB_MASK_CAP` the folders holding them are hidden instead
       // (their transcripts with them, failing closed), so the arguments and the mounts stay bounded.
-      if (matches.length > GLOB_MASK_CAP) {
-        for (const d of [...new Set(matches.map((m) => dirname(m.path)))].sort()) a.push("--tmpfs", d, "--remount-ro", d);
+      const folders = [...new Set(matches.map((m) => dirname(m.path)))].sort();
+      // A glob with no fixed folder (its first segment has a `*`) never hides the Clover home itself: its matches'
+      // folders are hidden one by one instead.
+      const wholes = [...new Set(matches.map((m) => m.fixed))];
+      if (matches.length > GLOB_MASK_CAP && folders.length > GLOB_FOLDER_CAP && !wholes.includes(cloverHome)) {
+        for (const d of wholes.sort()) a.push("--tmpfs", d, "--remount-ro", d);
+      } else if (matches.length > GLOB_MASK_CAP) {
+        for (const d of folders) a.push("--tmpfs", d, "--remount-ro", d);
       } else {
         for (const m of matches) {
           if (m.kind === "dir") a.push("--tmpfs", m.path, "--remount-ro", m.path);

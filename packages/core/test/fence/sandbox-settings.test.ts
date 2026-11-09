@@ -76,17 +76,25 @@ describe("sandboxSettingsOf", () => {
   });
 
   test("a root written out entry by entry takes no link: the runtime real-paths each root (#356's review)", () => {
-    const linked = new Set([`${HOME}/disk`, `${HOME}/clover-again`, `${CLOVER}/scratch/sol`]); // links, or real paths elsewhere
+    const linked = new Set([`${HOME}/disk`, `${HOME}/clover-again`, `${CLOVER}/scratch/sol`, `${CLOVER}/outputs/s1`]); // links, or real paths elsewhere
     const odd: Record<string, string[]> = { ...disk, [HOME]: [".clover", "project", ".zshrc", "disk", "clover-again"] };
     const fs = sandboxSettingsOf(policyFor(BOT), CLOVER, { list: (d) => odd[d] ?? [], plain: (p) => !linked.has(p) }).filesystem!;
     for (const l of linked) expect([l, fs.allowWrite!.includes(l)]).toEqual([l, false]);
     expect(writable(fs, `${HOME}/disk/etc/hosts`)).toBe(false);
     expect(writable(fs, `${CLOVER}/scratch/sol/n.md`)).toBe(false);
+    // The bot's own folders go through the same check (its own outputs here).
+    expect(writable(fs, `${CLOVER}/outputs/s1/r.md`)).toBe(false);
     // Each entry listed is held: a run can't swap it for a link the next run's root would follow.
     for (const e of [`${HOME}/project`, `${HOME}/.zshrc`]) {
       expect(fs.allowWrite).toContain(e);
       expect([e, fs.denyWrite!.includes(`${e}/${KEPT_FOLDER_PIN}`)]).toEqual([e, true]);
     }
+  });
+
+  test("on the real disk, a folder not there yet counts as plain: the bot's own outputs stay writable before they exist", () => {
+    const fs = sandboxSettingsOf(policyFor(BOT), CLOVER, { list }).filesystem!; // none of the fake paths exists
+    expect(fs.allowWrite).toContain(`${CLOVER}/outputs/s1`);
+    expect(fs.allowWrite).toContain(`${CLOVER}/scratch/luna`);
   });
 
   test("sandboxEnvOf: git's template is Clover's empty one, so `git init` copies no hooks", () => {
