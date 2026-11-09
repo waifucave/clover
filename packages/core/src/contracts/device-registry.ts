@@ -17,6 +17,7 @@
 // compromised plugin on a Windows or Linux computer could approve actions on other computers". A server, a cloud
 // computer and a browser never sign: their only key is the core's, or they may answer no card (`mayAnswerCards`).
 import type { AnswerKeyAlg, AnswerKeyHolder, DeviceKind, DeviceOs } from "@waifucave/clover-protocol";
+import { isStrictEd25519Point, isStrictEd25519Signature } from "../identity/ed25519-strict";
 import type { Unsubscribe } from "./common";
 
 export interface DeviceRecord {
@@ -115,6 +116,8 @@ export async function verifyKeySignature(alg: AnswerKeyAlg, publicKey: Uint8Arra
       const k = await crypto.subtle.importKey("raw", raw, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
       return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, k, sig, msg);
     }
+    // Strict, as identity/keys.ts's: canonical points outside the small-order subgroup, S below the group order.
+    if (!isStrictEd25519Point(raw) || !isStrictEd25519Signature(sig)) return false;
     const k = await crypto.subtle.importKey("raw", raw, { name: "Ed25519" }, false, ["verify"]);
     return await crypto.subtle.verify({ name: "Ed25519" }, k, sig, msg);
   } catch {

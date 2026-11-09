@@ -45,6 +45,11 @@ import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, 
 import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { computerNameFor } from "./devices/registry";
 import { startPluginHost, type DaemonPluginHost } from "./plugin-host/daemon-host";
+import { beforePluginsOpen, PLUGIN_METHOD_NAMES, pluginRegistryMethods } from "./plugin-host/registry-methods";
+import type { MethodContext, MethodHandler } from "./rpc/handler";
+import { pluginSettingsMethods } from "./plugin-host/api/settings";
+import { commandListMethods } from "./commands/views";
+import { GlossaryIndex, glossaryMethods } from "./glossary";
 import { refuseUntilApprovals, startDaemonParts, type DaemonBotsInput, type DaemonParts, type DaemonPartsInput } from "./daemon-parts";
 import { DeviceKey } from "./identity/device-key";
 import type { SecretStore as ContractSecretStore } from "./contracts/secret-store";
@@ -145,7 +150,6 @@ import { createConsoleProfileBroker } from "./auth/console-profile-broker";
 import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
-import type { ApiHandlers } from "./plugin-host/api/router";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
 import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
@@ -294,7 +298,7 @@ export interface RunningDaemon {
    */
   clover: CloverSessionDrivers;
   /** The daemon integration: this device's links, computer node and bot side (daemon-parts.ts), started in the
-   *  background after the socket is bound. `ready` settles once they are up, or found absent (no sidecar), or failed
+   *  background after the socket is bound. `ready` settles once they are up (local-only with no sidecar), or failed
    *  (logged); each getter is undefined before then and without one. */
   cloverParts: { ready: Promise<void>; links(): DeviceLinks | undefined; node(): ComputerNode | undefined; bots(): BotSide | undefined };
   /** M-M2: the update's idle gate. Lanes register their own busy work here (`updateGate.register`), and a step to
@@ -466,7 +470,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   /** C-M1: false runs no pair side (no app token, never starts an app). Default: on; with no app
    *  installed it runs alone anyway. */
   pair?: false;
-  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar logs that it has none).
+  /** C-M2: false starts no links to this device's other devices (tests; a daemon with no sidecar runs them local-only, and says so).
    *  An object is a test's seams (the daemon integration): the in-memory wire, a local handshake (`null` for none), no
    *  public time, the lease's timings. Production passes nothing: the sidecar beside the daemon, waifucave's handshake. */
   links?: false | Pick<DaemonLinksInput, "wire" | "directory" | "handshake" | "account" | "publicTime" | "mainComputer" | "driver" | "watch" | "binary" | "sidecar" | "self" | "openCard">;
@@ -3252,6 +3256,18 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
+  // are empty and anything else is refused while it opens; then the registry's handlers serve them.
+  let pluginMethods: Record<string, MethodHandler> = {};
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(Object.fromEntries(PLUGIN_METHOD_NAMES.map((name) => [name,
+    async (params: unknown, ctx: MethodContext) => {
+      const h = pluginMethods[name];
+      return h !== undefined ? h(params, ctx) : beforePluginsOpen(name);
+    }]))));
+  // B: `command.run` once the daemon has lane B's registry and host; each call's args are checked first.
+  if (opts.modelPluginHost !== undefined) {
+    Object.assign(cloverLaneHandlers, laneMethodHandlers(commandMethods({ registry: opts.modelPluginHost.registry, host: opts.modelPluginHost.host })));
+  }
   // This device's id is its link key's (H-M1): the one the links below load from the same store. A store that is
   // still locked (a keyring locked at the login screen) can't give it yet: the hello carries a stand-in id, stable per
   // home, and the links wait for the store to unlock (below). The boot never waits on it.
@@ -3496,7 +3512,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   }
   // C-M2 and the daemon integration: H's links, then J's computer node and D's bot side over them (daemon-parts.ts),
   // started in the background so a slow sidecar never holds the daemon's start; their methods join the Clover server's
-  // handlers when they're up. A daemon with no sidecar (run from source) runs none of them, and says so. The stop
+  // handlers when they're up. A daemon with no sidecar (run from source, a build without it) runs them local-only,
+  // with no other device on its links, and says so: one Mac on its own is the main case. The stop
   // closes them in reverse: the bot side, the node, the plugin registry, then the links (and with them the sidecar).
   const partsClock = new SystemClock();
   let partsRegistry: OpenedRegistry | undefined;
@@ -3505,6 +3522,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let pluginHost: DaemonPluginHost | undefined;
   // A-M3: the plugins' host MCP servers for bots (the web plugin's WebSearch and WebFetch first), over that host.
   let pluginMcp: PluginMcp | undefined;
+  let glossary: GlossaryIndex | undefined;
   let partsStopping = false;
   /** The plugins' host MCP servers as J's computer node's MCP host. */
   const mcpHostFor = (mcp: PluginMcp) => ({
@@ -3563,9 +3581,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
       log: (line) => console.error(line),
     })))(opened.registry);
-    Object.assign(cloverLaneHandlers, laneMethodHandlers({
+    glossary = new GlossaryIndex({ registry: opened.registry });
+    pluginMethods = {
       ...commandMethods({ registry: opened.registry, host: pluginHost.host }),
-    }));
+      ...commandListMethods(opened.registry),
+      ...pluginSettingsMethods(pluginHost.settings),
+      ...glossaryMethods(glossary),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets }),
+    };
     const host = pluginHost;
     // A-M2 on B-M2's host: the model plugins load through it once the store answers, links or not, every session
     // created once they're up running on them (a test daemon handed `modelPluginHost` started its own at boot). Not
@@ -3575,12 +3598,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // the sessions keep the SDK's own catalog and routing, and move onto the plugins live as the registry gains one
     // (`ModelPlugins.active`), with no restart.
     if (opts.modelPluginHost === undefined && modelPlugins === undefined) {
-      // B's `addApiHandlers` (2f) carries the model plugins' keyed fetch behind B's gate; a host without it serves no
-      // code adapter, and code providers stay on the compiled path.
-      const addApiHandlers = (host as { addApiHandlers?: (h: ApiHandlers) => () => void }).addApiHandlers;
+      // The model plugins' keyed fetch and secrets ride B's router as handlers (`addApiHandlers`), behind B's gate.
       void startModelPlugins({
         registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers,
-        ...(addApiHandlers !== undefined ? { addApiHandlers: (h: ApiHandlers) => addApiHandlers.call(host, h) } : {}),
+        addApiHandlers: (h) => host.addApiHandlers(h),
         log: (line) => console.error(line),
       }).then(
         (started) => {
@@ -3603,6 +3624,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     if (host === undefined || mcp === undefined) throw new Error("the plugin host isn't running");
     return {
       registry: registry,
+      // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
+      ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
@@ -3641,6 +3664,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       modelPlugins?.stop();
       modelPlugins = undefined;
     }
+    pluginMethods = {};
+    glossary?.close();
+    glossary = undefined;
     const host = pluginHost;
     pluginHost = undefined;
     await host?.close().catch((err: unknown) => { console.error(`[plugin-host] closing failed: ${(err as Error).message}`); });

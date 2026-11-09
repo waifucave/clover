@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { bundledLinkBinary } from "../packages/core/src/links/sidecar-binary";
 import { OTHER_INSTALL_HOMES } from "../packages/core/src/other-installs";
-import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devCompileCommand, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, devDaemonHome, devDaemonPlan, devDaemonRequirement, devOs, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
+import { LINK_BUILD, LINK_OUTPUT } from "./build-packages";
+import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_LINK_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devCompileCommand, devLinkSidecarPlan, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, devDaemonHome, devDaemonPlan, devDaemonRequirement, devOs, resolveDevSigningIdentity, signedFacts } from "./dev-daemon-lib";
 
 const TEAM = "37N77U9RSZ";
 const IDENTITIES = `  1) ${"A".repeat(40)} "Apple Development: someone@example.invalid (AAAAAAAAAA)"
@@ -141,6 +143,27 @@ describe("the dev daemon's plan on each OS", () => {
     expect(mac).toContain("  then     the one-time dev Keychain transition, and exit");
     expect(mac.some((l) => l.startsWith("  beside   dist/dev/clover-process-holder, signed under its own .dev identifier"))).toBe(true);
     expect(describeDevDaemonPlan(plan(["--dry-run", "--no-build"], "win32"))).toContain("  build    none (--no-build): dist/dev/clover-core.exe as it is");
+  });
+});
+
+describe("the dev daemon's link sidecar", () => {
+  test("built as the packages build it and staged beside the dev core, where the daemon looks for it; signed under its own .dev identifier on macOS", () => {
+    const root = "/repo";
+    const mac = devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/clover-core", platform: "darwin", linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
+    expect(mac.build).toEqual([...LINK_BUILD]);
+    expect(mac.cargoArgs).toEqual(LINK_BUILD.slice(1));
+    // The dev script runs the arguments on the cargo it finds: a command that isn't cargo's is refused, never half-run.
+    expect(() => devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/clover-core", platform: "darwin", linkBuild: ["make", "link"], linkOutput: LINK_OUTPUT })).toThrow(/isn't cargo's/);
+    expect(mac.from).toBe("/repo/native/link/target/release/clover-link");
+    // Exactly where the daemon's own lookup finds it.
+    expect(mac.to).toBe(bundledLinkBinary("/repo/dist/dev/clover-core", "darwin", (p) => p));
+    expect(mac.sign).toBe(true);
+    expect(DEV_LINK_IDENTIFIER).not.toBe(DEV_DAEMON_IDENTIFIER);
+    expect(DEV_LINK_IDENTIFIER.endsWith(".dev")).toBe(true);
+    const win = devLinkSidecarPlan({ repoRoot: root, binary: "/repo/dist/dev/clover-core.exe", platform: "win32", linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
+    expect(win.to.endsWith("clover-link.exe")).toBe(true);
+    expect(win.from.endsWith("clover-link.exe")).toBe(true);
+    expect(win.sign).toBe(false);
   });
 });
 
