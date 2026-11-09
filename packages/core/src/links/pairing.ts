@@ -33,6 +33,7 @@ import { deviceIdFor, type DeviceRecord, type PairingProof } from "../contracts/
 import type { SecretStore } from "../contracts/secret-store";
 import { type Bytes, constantTimeEqual, fromBase64, fromBase64Url, own, randomBytes, toBase64, toBase64Url, utf8 } from "../identity/bytes";
 import type { DeviceKey } from "../identity/device-key";
+import { isStrictEd25519Point } from "../identity/ed25519-strict";
 import { type AnswerKeyAlg, answerKeyBytes, type Ed25519Key, ed25519FromSecret, generateEd25519, verifyEd25519, verifyKeySignature } from "../identity/keys";
 import {
   canonicalRecord, derivePairId, derivePairSecret, finalTranscript, fullTranscript, joinerTranscript, nonceCommitment, PAIR_NONCE_BYTES,
@@ -687,7 +688,7 @@ export class PairingService {
     if (!d || typeof d !== "object") return undefined;
     if (typeof d.id !== "string" || typeof d.name !== "string" || typeof d.kind !== "string" || typeof d.runsCore !== "boolean" || typeof d.publicKey !== "string") return undefined;
     if (d.publicKey !== toBase64(key)) return undefined;
-    if (!(m.pairKey instanceof Uint8Array) || m.pairKey.length !== 32 || !(m.groupKey instanceof Uint8Array) || m.groupKey.length !== 32) return undefined;
+    if (!helloKeysStrict(m)) return undefined;
     if (m.group !== null && typeof m.group !== "string") return undefined;
     if (m.account !== null && typeof m.account !== "string") return undefined;
     // A device's answer key travels in its record (a phone's own, item 91; the link key never answers a card), with the
@@ -816,6 +817,8 @@ export class PairingService {
       if (!Array.isArray(v) || v.length !== 7) throw new ContractError("invalid", "not a pairing code");
       const [id, secret, hostKey, relay, direct, lan, expiresAt] = v as [unknown, unknown, unknown, unknown, unknown, unknown, unknown];
       if (typeof id !== "string" || !(secret instanceof Uint8Array) || secret.length !== 32 || !(hostKey instanceof Uint8Array) || typeof expiresAt !== "number") throw new ContractError("invalid", "not a pairing code");
+      // The host's link key, which the joiner dials and checks the handshake against: a strict Ed25519 point.
+      if (!isStrictEd25519Point(hostKey)) throw new ContractError("invalid", "not a pairing code");
       return {
         id, secret: own(secret), hostKey: own(hostKey), ...(typeof relay === "string" ? { relay } : {}),
         direct: Array.isArray(direct) ? direct.filter((x): x is string => typeof x === "string") : [],
@@ -830,7 +833,7 @@ export class PairingService {
     const offer = box === undefined ? undefined : (openPairBox(rendezvousKey(raw.subarray(5)), rendezvousContext(slot), box) as Record<string, unknown> | undefined);
     if (!offer || typeof offer.id !== "string" || typeof offer.key !== "string" || typeof offer.expiresAt !== "number") throw new ContractError("not_found", "no pairing has this code: check it, or start again");
     const hostKey = fromBase64Url(offer.key);
-    if (!hostKey) throw new ContractError("invalid", "not a pairing code");
+    if (!hostKey || !isStrictEd25519Point(hostKey)) throw new ContractError("invalid", "not a pairing code");
     return {
       id: offer.id, secret: codeSecret(raw.subarray(5)), hostKey, ...(typeof offer.relay === "string" ? { relay: offer.relay } : {}),
       direct: Array.isArray(offer.direct) ? (offer.direct as string[]) : [], lan: Array.isArray(offer.lan) ? (offer.lan as string[]) : [],
@@ -848,6 +851,12 @@ function sideForTranscript(s: Side, withGroup = true): PairSide {
 // ---- the short code: 15 bytes in Crockford base32, six groups of four ----
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/** A pairing hello's pair and group keys: each a strict Ed25519 point (identity/ed25519-strict.ts), since the pair key
+ *  becomes the handshake's peer key and the group key signs the group's admits. */
+export function helloKeysStrict(m: Record<string, unknown>): m is Record<string, unknown> & { pairKey: Uint8Array; groupKey: Uint8Array } {
+  return m.pairKey instanceof Uint8Array && isStrictEd25519Point(m.pairKey) && m.groupKey instanceof Uint8Array && isStrictEd25519Point(m.groupKey);
+}
 
 export function formatCode(raw: Uint8Array): string {
   let bits = 0;

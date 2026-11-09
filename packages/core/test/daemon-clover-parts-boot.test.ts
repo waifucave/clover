@@ -157,6 +157,37 @@ describe("the daemon's Clover parts, booted", () => {
     await waitFor("the laptop's link to go down", () => !laptop.links.transport.links().some((l) => l.peer === links.key.id && l.up));
   }, 60_000);
 
+  test("a Mac on its own with no link sidecar: the links run local-only, and the node, the folder tree and the bot side start", async () => {
+    const home = temp("clover-int-home-");
+    const bots = await fakeBots();
+    const lines: string[] = [];
+    const log = console.error;
+    console.error = (...a: unknown[]) => void lines.push(a.map(String).join(" "));
+    try {
+      daemon = await startDaemon({
+        home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+        // No sidecar and no test wire: what a daemon run from source, or a build without clover-link, has.
+        links: { binary: null, handshake: null, publicTime: null, mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" } },
+        parts: { userHome: temp("clover-int-user-"), bots },
+      });
+      await daemon.cloverParts.ready;
+    } finally {
+      console.error = log;
+    }
+    expect(lines.some((l) => /runs local-only, without links to other devices/.test(l))).toBe(true);
+    const links = daemon.cloverParts.links()!;
+    expect(links.sidecarPid()).toBeUndefined();
+    const node = daemon.cloverParts.node()!;
+    expect(node.registry.self()).toMatchObject({ name: "Studio", device: links.key.id });
+    expect(node.tree).toBeDefined();
+    const side = daemon.cloverParts.bots()!;
+    expect(side.bots.list().map((b) => b.id)).toEqual(["luna"]);
+    // Its own main: it runs its bots.
+    await waitFor("this computer running the bots", () => side.bots.botsRunHere().length === 1);
+    const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
+    expect((await cloverCall(daemon.socketPath, cli, "device.list", {}) as { devices: { isThis: boolean }[] }).devices).toEqual([expect.objectContaining({ isThis: true })]);
+  }, 30_000);
+
   test("node: false and bots: false start the links alone; links: false starts nothing", async () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");
