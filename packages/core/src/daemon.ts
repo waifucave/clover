@@ -25,6 +25,7 @@ import { loginKeychain } from "./auth/login-keychain";
 import { CredentialMigrationBusy } from "./auth/credential-migration-lock";
 import { beginKeychainPass, finishCredentialPass, type KeychainPass } from "./auth/keychain-boot";
 import { defaultSecretsBackend, KeychainSecretStore, type SecretStore } from "./auth/secret-store";
+import { guardBunSecrets } from "./auth/test-isolation";
 import { migrateLegacyCredentialMaterial } from "./auth/credential-material";
 import { SessionStore } from "./sessions/store";
 import { SessionHub } from "./sessions/hub";
@@ -3806,6 +3807,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
 /** Starts the daemon. A start that THROWS after the embedded host registered its (process-global) storage-policy consumer would leave that
  *  consumer behind with no handle to stop it, so the failure path shuts the host down. */
 export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] = {}): Promise<RunningDaemon> {
+  // A test daemon (a test's own, in-process or spawned from source, by the variables it inherits): `Bun.secrets`
+  // reaches only an isolated store, and throws for any other (auth/test-isolation.ts). A no-op outside a test.
+  guardBunSecrets();
   // C-M1 (review B1): before anything is spawned, so every child stays the daemon's: Linux's subreaper, the
   // daemon's own job on Windows.
   const claimed = claimDaemonChildren();
