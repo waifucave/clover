@@ -2,7 +2,7 @@
 // its child plugins one level deep, the files the manifests name, and the theme, layout and locale files they point
 // to. Nothing runs. The reader is how the folder is reached: the real file system for the CLI and the registry, or an
 // in-memory folder in tests.
-import type { ValidationIssue } from "@waifucave/clover-protocol";
+import { MAX_CHILD_PLUGINS, type ValidationIssue } from "@waifucave/clover-protocol";
 import { live2dReferences } from "../catalogs/avatars";
 import { spotInfo } from "../catalogs/spots";
 import { TOKENS, TOKEN_TYPES, type TokenValue, isTokenValue, isPluginTokenName, isValueForToken } from "../catalogs/tokens";
@@ -87,7 +87,13 @@ export async function validateTree(reader: PluginFolderReader, opts: { folderNam
   if (top.manifest) await checkFiles(reader, "", top.manifest, topId, top.bot, findings, cards);
 
   const children: { folder: string; ok: boolean; report: ManifestReport }[] = [];
-  for (const folder of (await reader.listDirs("plugins")).sort()) {
+  const childFolders = (await reader.listDirs("plugins")).sort();
+  // A bound every list of a plugin's children is held to (the protocol's): past it the tree is refused, and only the
+  // first that many are read.
+  if (childFolders.length > MAX_CHILD_PLUGINS) {
+    findings.error(MANIFEST_FILE, "plugin", "too_many_children", [], `a plugin has at most ${MAX_CHILD_PLUGINS} child plugins; this one has ${childFolders.length}`);
+  }
+  for (const folder of childFolders.slice(0, MAX_CHILD_PLUGINS)) {
     const base = `plugins/${folder}`;
     const file = `${base}/${MANIFEST_FILE}`;
     const childText = await reader.readText(file);

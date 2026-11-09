@@ -333,7 +333,7 @@
                   }
                 },
                 "children": {
-                  "maxItems": 256,
+                  "maxItems": 1024,
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -735,7 +735,7 @@
                 }
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "object",
@@ -1100,7 +1100,7 @@
             ]
           },
           "children": {
-            "maxItems": 256,
+            "maxItems": 1024,
             "type": "array",
             "items": {
               "type": "string",
@@ -1502,7 +1502,7 @@
                 }
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "object",

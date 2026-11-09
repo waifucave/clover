@@ -11,6 +11,8 @@ import { Caller as CallerSchema, DeviceOs, Os, isComputerOs } from "../src/commo
 import { DeviceView, LeaseView, PEER_STREAM_GRANTS } from "../src/devices";
 import { NeedsAnswer } from "../src/computers";
 import { CallBinding, TREE_TRANSFER, TreeTransferParams } from "../src/approvals";
+import { MAX_CHILD_PLUGINS } from "../src/common";
+import { PLUGINS_METHODS, PluginSummary } from "../src/plugins";
 import { paramsFor } from "../src/rpc";
 import {
   AnyPluginId, Caller, ComputerName, LANES, LEVELS, TopPluginId, TreePath, isAnyPluginId, isPluginId, fenceVerdict, levelAbove,
@@ -691,3 +693,22 @@ describe("lane F's F-M3 asks of B", () => {
     expect(PluginSettingView.parse({ ...view, type: "number", min: 1, max: 10 })).toMatchObject({ min: 1, max: 10 });
   });
 });
+
+// The audit's plugin.list crash: Clover's bundled plugin has 259 children, past the old cap of 256.
+describe("a plugin's children", () => {
+  test(`plugin.list carries a plugin with 300 children; past ${MAX_CHILD_PLUGINS} they don't`, () => {
+    const children = (n: number) => Array.from({ length: n }, (_, i) => `clover/c${i}`);
+    const summary = {
+      id: "clover", name: "Clover", version: "1.0.0", state: "running", enabled: true, source: "bundled", class: "code",
+      namespace: "clover", scope: "both", adult: false, dev: false,
+    };
+    const parse = (n: number) => PluginSummary.safeParse({ ...summary, children: children(n) });
+    const sp = parse(300);
+    if (!sp.success) throw new Error(JSON.stringify(sp.error.issues.slice(0, 3)));
+    expect(parse(MAX_CHILD_PLUGINS).success).toBe(true);
+    expect(parse(MAX_CHILD_PLUGINS + 1).success).toBe(false);
+    const list = PLUGINS_METHODS.pluginList.result.safeParse({ plugins: [{ ...summary, children: children(300) }] });
+    expect(list.success).toBe(true);
+  });
+});
+
