@@ -164,6 +164,8 @@ export class PluginFolders {
   /** Top-level id → the folder it came from; and what each folder held last read. */
   readonly #byFolder = new Map<string, string>();
   readonly #timers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Who installed a folder just copied in (`plugin.install`), until its record keeps it. */
+  readonly #installedBy = new Map<string, PluginProvenance>();
   readonly #watchers = new Map<string, FSWatcher>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
@@ -214,6 +216,17 @@ export class PluginFolders {
   }
 
   /** Reads one folder now (what a settled change does): it appeared, changed or went away. */
+  /** A folder `plugin.install` just copied into the plugins folder: read now, with who installed it as its provenance
+   *  (the OK card's "from" line). */
+  async installed(id: string, by: "user-app" | "user-terminal"): Promise<void> {
+    this.#installedBy.set(id, { by, at: this.#now() });
+    try {
+      await this.refresh(join(this.#o.pluginsDir, id));
+    } finally {
+      this.#installedBy.delete(id);
+    }
+  }
+
   async refresh(folder: string): Promise<void> {
     const abs = resolve(folder);
     const s = this.#sources().find((x) => resolve(x.folder) === abs);
@@ -338,7 +351,7 @@ export class PluginFolders {
     const holder = this.#byFolder.get(id);
     if (holder !== undefined && holder !== resolve(s.folder) && this.#isDevFolder(holder) && !s.dev) return undefined;
     const stored = this.#o.store.load().plugins[id];
-    const provenance: PluginProvenance = stored?.provenance ?? { by: s.bundled ? "bundled" : "found", at: this.#now() };
+    const provenance: PluginProvenance = stored?.provenance ?? this.#installedBy.get(id) ?? { by: s.bundled ? "bundled" : "found", at: this.#now() };
     const r = await readPluginFolder(s.folder, {
       source: s.source, bundled: s.bundled ?? false, provenance,
       ...(s.dev ? { dev: true } : {}),
