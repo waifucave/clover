@@ -248,14 +248,18 @@ describe("the real fence on a real disk", () => {
     void clover;
   });
 
-  test("a linked global git config is never followed for the hooks folder", () => {
+  test("a linked global git config is read through, as git reads it: its hooks folder is held (#392's review)", () => {
+    // A dotfiles manager's link. Only the user makes it: the fence denies writing `~/.gitconfig`, so no runner can plant
+    // one, and following it only ever adds denies.
     const { home, clover, fence } = make();
-    mkdirSync(join(home, "evil"), { recursive: true });
-    writeFileSync(join(home, "evil", "config"), "[core]\n\thooksPath = ~/hooked\n");
-    symlinkSync(join(home, "evil", "config"), join(home, ".gitconfig"));
+    mkdirSync(join(home, "dotfiles"), { recursive: true });
+    writeFileSync(join(home, "dotfiles", "config"), "[core]\n\thooksPath = ~/hooked\n");
+    symlinkSync(join(home, "dotfiles", "config"), join(home, ".gitconfig"));
     const kinds = fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path);
-    expect(kinds).not.toContain(join(home, "hooked"));
-    expect(fence.check({ op: "write", path: join(home, "hooked", "pre-commit") })).toEqual({ allowed: true });
+    expect(kinds).toContain(join(home, "hooked"));
+    expect(fence.check({ op: "write", path: join(home, "hooked", "pre-commit") })).toMatchObject({ allowed: false, reason: "login-start" });
+    // The config the link leads to is held where it lands.
+    expect(fence.check({ op: "write", path: join(home, "dotfiles", "config") }).allowed).toBe(false);
     void clover;
   });
 

@@ -960,7 +960,11 @@ export function selfGrantDenyWrite(home: string, options?: HostStorageFenceOptio
  *  agents meet them as the fence's `login-start` and `agent-installs` items, refused outright. */
 export function persistencePaths(userHome: string = homedir(), platform: NodeJS.Platform = process.platform): string[] {
   const os = platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux";
-  return [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
+  const listed = [...autoRunPaths(os, userHome, platform === process.platform ? runLaterExtras(os, userHome) : {}), ...agentConfigPaths(os, userHome)];
+  if (platform !== process.platform) return listed; // another OS's list: strings only, nothing on this disk is read
+  // Each by its real path too: a sandbox judges a write where it lands, so a dotfiles manager's linked `~/.gitconfig`
+  // or `~/.gitconfig.local` is denied at its target as well (#392's review).
+  return [...new Set(listed.flatMap((p) => { const r = realOrNearest(p); return r === p ? [p] : [p, r]; }))];
 }
 
 /** A path's real path, or its nearest existing ancestor's real path with the rest appended. */

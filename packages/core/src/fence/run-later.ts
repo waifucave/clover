@@ -5,7 +5,7 @@
 // profiles). Kept per home, and git's files are checked again at each call (`runLaterExtras`): a change to them
 // shows at the next run's start.
 import { spawnSync } from "node:child_process";
-import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readSync } from "node:fs";
+import { closeSync, constants as fsConstants, fstatSync, lstatSync, openSync, readSync, statSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { RunLaterExtras } from "../contracts/fence";
@@ -131,13 +131,15 @@ export function parseRegValue(output: string, name: string): string | undefined 
 /** The most of a git config file the walk reads: the includes it names are near the top in practice. */
 export const GIT_CONFIG_READ_CAP = 1024 * 1024;
 
-/** A git config file's text, never through a link and never stalling (#366's review, the same hole here): opened
- *  non-blocking with no link followed and no controlling terminal taken, required a regular file by `fstat` on the
- *  opened descriptor (a FIFO or a device is nothing), and read up to `GIT_CONFIG_READ_CAP`. */
+/** A git config file's text, read the way git reads it, through a link (a dotfiles manager's `~/.gitconfig` and its
+ *  includes: #392's review; only the user makes those links, as the fence denies writing them), and never stalling
+ *  (#366's review, the same hole here): opened non-blocking with no controlling terminal taken, required a regular
+ *  file by `fstat` on the opened descriptor (a FIFO or a device, a link to `/dev/zero` included, is nothing), and read
+ *  up to `GIT_CONFIG_READ_CAP`. */
 export function readGitConfigFile(path: string): string | undefined {
   let fd = -1;
   try {
-    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | fsConstants.O_NOFOLLOW | fsConstants.O_NOCTTY);
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | fsConstants.O_NOCTTY);
     if (!fstatSync(fd).isFile()) return undefined;
     const buf = Buffer.alloc(GIT_CONFIG_READ_CAP);
     let n = 0;
@@ -152,14 +154,15 @@ export function readGitConfigFile(path: string): string | undefined {
   }
 }
 
-/** What a file was when it was read, by `lstat` alone: gone, not a regular file, or its inode, size and time. */
-function stampOf(path: string): string {
-  try {
-    const st = lstatSync(path);
-    return st.isFile() ? `f:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "x";
-  } catch {
-    return "-";
-  }
+/** What a file was when it was read: the path itself (`lstat`: gone, a link, another kind, or a regular file's inode,
+ *  size and times) and, for a link, what it leads to (`stat`), so an edit in a dotfiles folder shows at the next look. */
+export function stampOf(path: string): string {
+  const one = (st: { isFile(): boolean; isSymbolicLink(): boolean; ino: number; size: number; mtimeMs: number; ctimeMs: number }) =>
+    st.isSymbolicLink() ? "l" : st.isFile() ? `f:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : "x";
+  let own: string;
+  try { own = one(lstatSync(path)); } catch { return "-"; }
+  if (own !== "l") return own;
+  try { return `l>${one(statSync(path))}`; } catch { return "l>-"; }
 }
 
 interface CachedExtras {
@@ -183,8 +186,8 @@ export function runLaterExtras(os: Os, home: string): RunLaterExtras {
   const stamps = new Map<string, string>();
   const extras = runLaterExtrasFrom(os, home, {
     env: process.env,
-    // Never through a link (the fence's own rule for the global git config: a planted link must not choose what is
-    // fenced): a regular file, or nothing.
+    // Through a link, as git reads it (a dotfiles manager's `~/.gitconfig`: #392's review); the link itself is
+    // fenced, so only the user made it. Never a FIFO or a device, never past the cap (`readGitConfigFile`).
     read: (f) => {
       stamps.set(f, stampOf(f));
       return readGitConfigFile(f);

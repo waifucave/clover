@@ -6,7 +6,7 @@
 // Bash can't write them).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
 import { buildMandatoryFloorProfile } from "@waifucave/clover-agent-sdk";
@@ -17,7 +17,7 @@ import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { agentConfigPaths, autoRunEntries, autoRunPaths } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
-import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue, readGitConfigFile, runLaterExtras, runLaterExtrasFrom } from "../../src/fence/run-later";
+import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue, readGitConfigFile, runLaterExtras, runLaterExtrasFrom, stampOf } from "../../src/fence/run-later";
 import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
@@ -264,6 +264,32 @@ describe("git's includes are read again when the config changes, without a resta
     expect(fence.check({ op: "write", path: local })).toEqual({ allowed: true });
   });
 
+  test("a dotfiles manager's linked ~/.gitconfig and linked include are read through: their hooks folder and includes are held (#392's review)", () => {
+    if (process.platform === "win32") return; // links need privileges there
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-dotfiles-")));
+    const dot = join(home, "dotfiles");
+    mkdirSync(dot);
+    writeFileSync(join(dot, "gitconfig"), "[core]\n\thooksPath = ~/.githooks\n[include]\n\tpath = ~/.gitconfig.local\n");
+    writeFileSync(join(dot, "local.inc"), "[include]\n\tpath = ~/deeper.inc\n");
+    symlinkSync(join(dot, "gitconfig"), join(home, ".gitconfig"));
+    symlinkSync(join(dot, "local.inc"), join(home, ".gitconfig.local"));
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    // The hooks folder the linked config names, the file the linked include leads to, and what it includes in turn.
+    for (const p of [join(home, ".githooks", "pre-commit"), join(dot, "local.inc"), join(home, "deeper.inc"), join(dot, "gitconfig")]) {
+      expect([p, fence.check({ op: "write", path: p }).allowed]).toEqual([p, false]);
+    }
+    expect(fence.check({ op: "write", path: join(dot, "notes.md") })).toEqual({ allowed: true });
+    // An edit in the dotfiles folder (the link unchanged) shows at the next look: the stamp follows the link.
+    const before = stampOf(join(home, ".gitconfig"));
+    writeFileSync(join(dot, "gitconfig"), "[core]\n\thooksPath = ~/.githooks\n[include]\n\tpath = ~/.gitconfig.local\n\tpath = ~/added.inc\n");
+    expect(stampOf(join(home, ".gitconfig"))).not.toBe(before);
+    expect(fence.check({ op: "write", path: join(home, "added.inc") }).allowed).toBe(false);
+    // A link whose target goes stamps differently from both.
+    rmSync(join(dot, "gitconfig"));
+    expect(stampOf(join(home, ".gitconfig"))).toBe("l>-");
+  });
+
   test("the git walk's read never stalls: a FIFO, a link to /dev/zero, a huge file (the same hole as #366's review)", () => {
     if (process.platform === "win32") return; // no FIFOs or /dev/zero
     const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-fifo-")));
@@ -271,7 +297,7 @@ describe("git's includes are read again when the config changes, without a resta
     symlinkSync("/dev/zero", join(home, "zero.inc"));
     const started = Date.now();
     expect(readGitConfigFile(join(home, ".gitconfig"))).toBeUndefined();
-    expect(readGitConfigFile(join(home, "zero.inc"))).toBeUndefined(); // never through a link
+    expect(readGitConfigFile(join(home, "zero.inc"))).toBeUndefined(); // through the link: a device, so nothing
     const os = process.platform === "darwin" ? "macos" : "linux";
     runLaterExtras(os, home); // the walk itself, over the FIFO
     expect(Date.now() - started).toBeLessThan(5_000);
@@ -313,5 +339,22 @@ darwinDescribe("Seatbelt, live", () => {
     expect(write(join(home, "w", "work.inc"), "[core]\n\tfsmonitor = /tmp/m\n")).toBe(false);
     expect(readFileSync(join(home, "w", "work.inc"), "utf8")).toBe("[user]\n\tname = me\n");
     expect(write(join(home, "w", "notes.md"), "x")).toBe(true);
+  });
+
+  test("a linked ~/.gitconfig (dotfiles): its hooks folder and its linked include can't be written (#392's review)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-dot-")));
+    const dot = join(home, "dotfiles");
+    mkdirSync(dot);
+    writeFileSync(join(dot, "gitconfig"), "[core]\n\thooksPath = ~/.githooks\n[include]\n\tpath = ~/.gitconfig.local\n");
+    writeFileSync(join(dot, "local.inc"), "[user]\n\tname = me\n");
+    symlinkSync(join(dot, "gitconfig"), join(home, ".gitconfig"));
+    symlinkSync(join(dot, "local.inc"), join(home, ".gitconfig.local"));
+    const profile = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: persistencePaths(home, "darwin") });
+    const write = (p: string, text: string) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", 'mkdir -p "$(dirname "$1")" && printf "$2" >> "$1"', "sh", p, text], { encoding: "utf8" }).status === 0;
+    expect(write(join(home, ".githooks", "pre-commit"), "#!/bin/sh\n")).toBe(false);
+    expect(existsSync(join(home, ".githooks", "pre-commit"))).toBe(false);
+    expect(write(join(home, ".gitconfig.local"), "[core]\n\tfsmonitor = /tmp/m\n")).toBe(false);
+    expect(readFileSync(join(dot, "local.inc"), "utf8")).toBe("[user]\n\tname = me\n");
+    expect(write(join(dot, "notes.md"), "x")).toBe(true);
   });
 });
