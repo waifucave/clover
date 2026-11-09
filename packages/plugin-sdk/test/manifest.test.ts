@@ -1,7 +1,7 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
-import { describeOk, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { describeOk, localNetworkHosts, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -390,15 +390,23 @@ describe("the OK's text", () => {
     expect(r.restylesCards).toBe(true);
   });
 
-  test("host code: held to the network list on macOS, where its proxy holds it (2g); not said to be elsewhere", () => {
-    const listed = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:api.luna.example"], contributes: { mcpServers: { tarot: { type: "stdio", command: "tarot-mcp" } } } });
-    expect(describeOk(listed, { os: "macos" })).toContain("Its components reach only api.luna.example; so does its host code.");
+  test("host code: said to be held to the network list only where the fence holds it (#371's review), and a local grant warns", () => {
+    const code = { contributes: { mcpServers: { tarot: { type: "stdio" as const, command: "tarot-mcp" } } } };
+    const listed = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:api.luna.example"], ...code });
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true })).toContain("Its components reach only api.luna.example; so does its host code.");
+    // macOS without the fence on says what's true there.
+    expect(describeOk(listed, { os: "macos" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
     expect(describeOk(listed, { os: "windows" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
-    expect(describeOk(listed)).toContain("Its components reach only api.luna.example; its host code can reach any host.");
-    const none = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { tarot: { type: "stdio", command: "tarot-mcp" } } } });
+    const none = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...code });
     expect(none.class).toBe("code");
-    expect(describeOk(none, { os: "macos" })).toContain("Its code reaches no host.");
+    expect(describeOk(none, { os: "macos", hostNetworkHeld: true })).toContain("Its code reaches no host.");
     expect(describeOk(none, { os: "linux" })).toContain("Its components reach no host; its host code can reach any host.");
+    // Grants of this computer or the local network say so.
+    const caps = ["network:localhost:3000", "network:127.0.0.1:8080", "network:*.local" /* not a grant: too wide */, "network:printer.local", "network:10.0.0.5", "network:192.168.1.2:80", "network:[::1]:9000", "network:api.luna.example"];
+    expect(localNetworkHosts(caps)).toEqual(["localhost:3000", "127.0.0.1:8080", "printer.local", "10.0.0.5", "192.168.1.2:80", "[::1]:9000"]);
+    const local = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:localhost:3000", "network:api.luna.example"], ...code });
+    expect(describeOk(local, { os: "macos", hostNetworkHeld: true })).toContain("It can reach services on this computer or your local network: localhost:3000.");
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true }).some((l) => l.includes("local network"))).toBe(false);
   });
 
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {
