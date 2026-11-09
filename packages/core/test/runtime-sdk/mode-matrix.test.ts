@@ -563,7 +563,7 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
   expect(sb.filesystem!.denyRead).toEqual(["/h/run", "/h/runtimes", "/h/sdk/.clover.json",
     "/h/connectors", "/h/credentials", "/h/devices", "/h/levels", "/h/plugin-data", "/h/plugins-state/adult.json",
     "/h/plugins-state/installed.json", "/h/plugins-state/oks", "/h/rules", "/h/secrets.enc", "/h/secrets.key",
-    "/h/secrets.key.cred", "/h/sessions", "/h/sessions-runtime", "/h/settings", "/h/settings.json", "/h/trust",
+    "/h/secrets.key.cred", "/h/sessions", "/h/sessions-runtime", "/h/settings", "/h/settings.json", "/h/transcripts", "/h/trust",
     "/h/trust.json", "/h/usage", "/h/user-layers"]);
   for (const p of [...sb.filesystem!.denyWrite!, ...sb.filesystem!.denyRead!]) {
     const anyDepth = /^\/repo\/\*\*\/\.clover\/(?:skills|commands|rules|output-styles|agents)$/.test(p);
