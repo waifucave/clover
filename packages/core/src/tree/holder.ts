@@ -26,12 +26,12 @@
 //   profile, `CLOVER_HOME`): the tree's one path to it, which the spec's `home/<Computer>/.clover/…` paths name.
 // * A bot's memory (the owner's ruling for J-M3): `home/memory/` in a bot's own sessions is that bot's
 //   `<Clover home>/bots/<bot>/memory/` here, on every computer that runs the core (lane H keeps the copies in sync,
-//   so a write lands here even while another computer is off). Only that bot's own sessions change it, by any path
-//   that leads there. Other bots may read it: the owner's ruling of November 9 opens the Clover home to bots through
-//   the tree (read everything; write any bot's scratch and their own memory, routines and outputs; secrets, `run/`
-//   and writes to permission, trust, settings and plugin files stay blocked). The fence's `homeAllows` (lane C)
-//   decides all of that; the tree adds no deny of its own beyond the memory's own-writes rule. Coding sessions,
-//   agents, plugins and another computer don't reach a bot's memory; the user and the core do.
+//   so a write lands here even while another computer is off). Every bot reaches every bot's memory, read and write:
+//   the owner's ruling of November 9 (and its amendment) opens the Clover home to bots through the tree (read
+//   everything; write any bot's memory and scratch, and their own routines and outputs; secrets, `run/` and writes to
+//   permission, trust, settings and plugin files stay blocked). The fence's `homeAllows` (lane C) decides all of a
+//   bot's reach; the tree adds no deny of its own for a bot. Coding sessions, agents, plugins and another computer
+//   don't reach a bot's memory; the user and the core do.
 // * A peer's write, remove or move is judged at the stricter of this computer's level and the call's (review N2;
 //   `judge.ts`, R1): at `ask-risky` this computer's reviewer passes what isn't risky, and where the level asks, only the
 //   user's signed answer bound to exactly that call lets it through; the refusal carries this computer's card for the
@@ -927,7 +927,7 @@ export class LocalHolder implements Holder {
     for (const p of op.op === "move" ? [op.path, op.to] : [op.path]) {
       // The same refusal as the fence's own `bot-memory` rule (lane B's #197), which says it at the OS's level too.
       if (!this.#memoryOk(p, as, op.op !== "read" && op.op !== "stat" && op.op !== "list")) {
-        throw new ContractError("fenced", "a bot's memory is changed by that bot's own sessions alone, and read only by bots", { computer: this.#o.name(), reason: "bot-memory" });
+        throw new ContractError("fenced", "a bot's memory is the bots' alone", { computer: this.#o.name(), reason: "bot-memory" });
       }
     }
     if (op.op === "write" || op.op === "delete" || op.op === "move") {
@@ -980,27 +980,22 @@ export class LocalHolder implements Holder {
     return r.real;
   }
 
-  /** Whether `as` may reach a real path as far as bots' memories go: a change inside `<bots>/<bot>/memory/` only that
-   *  bot's own sessions; and for a change (`change`), the bots' folder itself and a bot's whole folder, which hold
-   *  memories, are that bot's too (the bots' folder: nobody's). A read by any bot is the fence's alone to judge (the
-   *  owner's ruling of November 9: the Clover home is open to bots through the tree; lane C's `homeAllows`), so the
-   *  tree adds no deny that would still block it; a read by anyone else inside a memory stays that bot's own
-   *  sessions'. Names compare folded, as the disk may. Anything else (another bot's scratch, a transcript) is the
-   *  fence's alone. */
+  /** Whether `as` may reach a real path as far as bots' memories go. A bot's session or side thread: always here, its
+   *  reach is the fence's alone (the owner's ruling of November 9 and its amendment: every bot reads and writes every
+   *  bot's memory; lane C's `homeAllows` and the fence's own `bot-memory` rule judge it), so the tree adds no deny that
+   *  would still block it. Anyone else: nothing inside `<bots>/<bot>/memory/`, and for a change (`change`) not the
+   *  bots' folder itself or a bot's whole folder, which hold memories. Names compare folded, as the disk may. Anything
+   *  else is fine here. */
   #memoryOk(real: string, as: Caller, change: boolean): boolean {
     if (!this.#o.botsRoot) return true;
-    if (!change && memoryBotOf(as) !== undefined) return true;
+    if (memoryBotOf(as) !== undefined) return true;
     const fold = (p: string) => foldPath(p, this.os).replace(/\/+$/, "");
     const root = fold(this.#botsRoot());
     const p = fold(real);
     if (p !== root && !p.startsWith(`${root}/`)) return true;
     const names = p.slice(root.length).split("/").filter((n) => n !== "");
-    const mine = memoryBotOf(as);
-    const owns = (segment: string) => mine !== undefined && foldName(pluginIdToSegment(mine), this.os) === segment;
-    if (names.length === 0) return !change;
-    if (names.length === 1) return !change || owns(names[0]!);
-    if (names[1] !== foldName(MEMORY_FOLDER, this.os)) return true;
-    return owns(names[0]!);
+    if (names.length <= 1) return !change;
+    return names[1] !== foldName(MEMORY_FOLDER, this.os);
   }
 
   /** Lane B's second wall (`nonAsciiAlias`): a name that isn't ASCII where Clover names things under its home (its top

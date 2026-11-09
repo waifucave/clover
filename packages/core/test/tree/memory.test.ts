@@ -1,14 +1,15 @@
 // A bot's memory in the tree (the owner's ruling for J-M3): `home/memory/` beside the computers, that bot's
 // `<Clover home>/bots/<bot>/memory/` on every computer that runs the core, kept in sync by lane H. Only that bot's own
-// sessions change it, by any path; it never goes over the link; a write lands here even while another computer is off,
-// and lane H's sync is told of every change. For anyone else `home/memory` is no folder (not found), and the memory's
-// real path is fenced (`bot-memory`, as lane B's fence says it). Another bot's read is the fence's to judge (the owner's
-// ruling of November 9: bots read each other's memories; lane C's `homeAllows`): here it gets exactly the fence's
-// verdict, and `bot-reads.test.ts` pins that the tree adds no deny of its own.
+// sessions reach it as `home/memory`; it never goes over the link; a write lands here even while another computer is
+// off, and lane H's sync is told of every change. For anyone else `home/memory` is no folder (not found), and the
+// memory's real path is fenced (`bot-memory`, as lane B's fence says it) for every caller that isn't a bot. Another
+// bot's reach is the fence's to judge (the owner's ruling of November 9 and its amendment: every bot reads and writes
+// every bot's memory; lane C's `homeAllows`): here it gets exactly the fence's verdict, and `bot-reads.test.ts` pins
+// that the tree adds no deny of its own.
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import { fenceContextFor } from "../../src/contracts/fence";
 import { LocalHolder } from "../../src/tree/holder";
@@ -26,12 +27,17 @@ const USER = { kind: "user", client: "app" } as const;
 const utf8 = (text: string) => ({ encoding: "utf8" as const, text });
 const code = async (p: Promise<unknown>) => ((await p.then(() => undefined, (e: unknown) => e)) as { code?: string } | undefined)?.code ?? "ok";
 
-/** What a read of `real` gives `as` through the tree: a bot's read is the fence's verdict (C's `homeAllows`); anyone
- *  else's inside a bot's memory is fenced. */
-function readVerdict(c: TestComputer, as: Caller, real: string): "ok" | "fenced" {
+/** What an op on `real` (inside a bot's memory) gives `as` through the tree: a bot's is the fence's verdict (C's
+ *  `homeAllows`); anyone else's is fenced. */
+function verdict(c: TestComputer, as: Caller, real: string, op: "read" | "write" | "delete" = "read"): "ok" | "fenced" {
   const bot = as.kind === "session" && (as.sessionKind === "bot" || as.sessionKind === "side-thread") && as.bot !== undefined;
   if (!bot) return "fenced";
-  return c.fence.check({ op: "read", path: realpathSync(real) }, fenceContextFor(as)).allowed ? "ok" : "fenced";
+  return c.fence.check({ op, path: realOrNearest(real) }, fenceContextFor(as)).allowed ? "ok" : "fenced";
+}
+const readVerdict = (c: TestComputer, as: Caller, real: string) => verdict(c, as, real);
+/** The real path, or its folder's real path and its name when it doesn't exist yet. */
+function realOrNearest(p: string): string {
+  return existsSync(p) ? realpathSync(p) : join(realpathSync(dirname(p)), basename(p));
 }
 
 let cluster: Cluster;
@@ -73,7 +79,7 @@ describe("home/memory", () => {
     expect(changed.every((c) => c.startsWith("Studio alpha "))).toBe(true);
   });
 
-  test("nobody else reaches it: not other bots, coding sessions, agents, plugins or another computer, by any path", async () => {
+  test("only bots reach it (another bot as the fence says): not coding sessions, agents, plugins or another computer, by any path", async () => {
     const { studio, laptop } = await two();
     const t = studio.node.tree;
     await t.write("home/memory/secret.md", utf8("alpha's"), { as: ALPHA });
@@ -86,12 +92,12 @@ describe("home/memory", () => {
       expect(await code(t.read("home/memory/secret.md", { as }))).toBe("not_found");
       expect(await code(t.write("home/memory/x.md", utf8("x"), { as }))).toBe("not_found");
     }
-    // Nor by alpha's folder, or the home folder's own path to it, for anyone but alpha: no change; a read only for a
-    // bot, as the fence says.
+    // Nor by alpha's folder, or the home folder's own path to it, for anyone but a bot; another bot, as the fence says.
     const secret = join(studio.cloverHome, "bots", "alpha", "memory", "secret.md");
     for (const as of [LUNA, CODING, AGENT]) {
       expect(await code(t.read("bots/alpha/memory/secret.md", { as }))).toBe(readVerdict(studio, as, secret));
-      expect(await code(t.write("bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
+      const planted = join(studio.cloverHome, "bots", "alpha", "memory", `from-${as.sessionId}.md`);
+      expect(await code(t.write(`bots/alpha/memory/from-${as.sessionId}.md`, utf8("x"), { as }))).toBe(verdict(studio, as, planted, "write"));
       expect(await code(t.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe(readVerdict(studio, as, secret));
     }
     // The Clover home is default-deny (#234): another bot's whole folder is out of reach, not just its memory.
@@ -100,7 +106,8 @@ describe("home/memory", () => {
       expect(await code(t.glob("**/*", { as, cwd: "bots/alpha" }))).toBe("fenced");
       expect(await code(t.grep("alpha", { as, path: "bots/alpha" }))).toBe("fenced");
     }
-    expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe("fenced");
+    // The memory folder itself is never removed, whoever asks (the fence's own `bot-memory` rule).
+    expect(await code(t.remove("bots/alpha/memory", { as: LUNA, recursive: true }))).toBe(verdict(studio, LUNA, join(studio.cloverHome, "bots", "alpha", "memory"), "delete"));
     // The real path is no way around it for any model-driven caller (the user's own coding sessions included): only the
     // user's own surfaces and the core reach it there.
     for (const as of [CODING, AGENT, LUNA, PLUGIN] as Caller[]) {
@@ -109,12 +116,12 @@ describe("home/memory", () => {
       expect(await code(t.read(`${real}/secret.md`, { as }))).toBe(reads);
       expect(await code(t.stat(`${real}/secret.md`, { as }))).toBe(reads);
       if (reads === "fenced") expect(await code(t.list(real, { as }))).toBe("fenced");
-      expect(await code(t.write(`${real}/planted.md`, utf8("x"), { as }))).toBe("fenced");
+      expect(await code(t.write(`${real}/planted.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"), "write"));
       const ctx = { session: "s_x", sessionKind: "coding" as const, callId: `c-${as.kind}`, cwd: "home/Studio" };
       expect((await studio.node.tools.run("Read", { file_path: ".clover/bots/alpha/memory/secret.md" }, ctx)).isError).toBe(true);
       if (reads === "fenced") expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/secret.md`);
     }
-    expect(existsSync(join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"))).toBe(false);
+    expect(existsSync(join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"))).toBe(verdict(studio, LUNA, join(studio.cloverHome, "bots", "alpha", "memory", "planted.md"), "write") === "ok");
     // The bot itself, from another computer: memory never goes over the link.
     expect(await code(laptop.node.tree.read("bots/alpha/memory/secret.md", { as: ALPHA }))).toBe("fenced");
     // The user on this computer still has their own files.
@@ -158,7 +165,7 @@ describe("home/memory", () => {
     for (const as of [ALPHA, LUNA, CODING, AGENT, PLUGIN] as Caller[]) {
       const reads = readVerdict(studio, as, join(dir, "MEMORY.md"));
       expect(await code(t.read(`${real}/MEMORY.md`, { as }))).toBe(reads);
-      expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe("fenced");
+      expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(dir, "MEMORY.md"), "write"));
       expect(await code(t.remove("home/Studio/.clover/bots/ghost", { as, recursive: true }))).not.toBe("ok");
       if (reads === "fenced") expect(await t.glob("**/*", { as, cwd: "home/Studio" })).not.toContain(`${real}/MEMORY.md`);
     }
@@ -168,11 +175,11 @@ describe("home/memory", () => {
     const GHOSTS = { kind: "session", sessionId: "s_ghosts", sessionKind: "bot", bot: "ghosts" } as const;
     expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOST_UPPER }))).toBe(readVerdict(studio, GHOST_UPPER, join(dir, "MEMORY.md")));
     expect(await code(t.read(`${real}/MEMORY.md`, { as: GHOSTS }))).toBe(readVerdict(studio, GHOSTS, join(dir, "MEMORY.md")));
-    for (const as of [GHOST_UPPER, GHOSTS]) expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe("fenced");
+    for (const as of [GHOST_UPPER, GHOSTS]) expect(await code(t.write(`${real}/MEMORY.md`, utf8("x"), { as }))).toBe(verdict(studio, as, join(dir, "MEMORY.md"), "write"));
     // ghost itself, through its own `home/memory`, and the user's own surfaces at the real path.
     expect(await t.read("home/memory/MEMORY.md", { as: GHOST })).toEqual(utf8("ghost's"));
     expect(await t.read(`${real}/MEMORY.md`, { as: USER })).toEqual(utf8("ghost's"));
-    expect(readFileSync(join(dir, "MEMORY.md"), "utf8")).toBe("ghost's");
+    if (verdict(studio, LUNA, join(dir, "MEMORY.md"), "write") === "fenced") expect(readFileSync(join(dir, "MEMORY.md"), "utf8")).toBe("ghost's");
   });
 
   test("no computer can be called memory", () => {
@@ -200,9 +207,9 @@ describe("a Clover home behind a link (#254's review, should-fix 7)", () => {
       mkdirSync(join(elsewhere, "bots", "alpha", "memory"), { recursive: true });
       writeFileSync(join(elsewhere, "bots", "alpha", "memory", "secret.md"), "alpha's");
       for (const as of [CODING, LUNA, AGENT]) {
-        // No fence here: another bot's read is the fence's to judge, so it goes through; nobody else's does.
+        // No fence here: another bot's reach is the fence's to judge, so it goes through; nobody else's does.
         expect(await code(h.read("home/Studio/.clover/bots/alpha/memory/secret.md", { as }))).toBe(as === LUNA ? "ok" : "fenced");
-        expect(await code(h.write("home/Studio/.clover/bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
+        if (as !== LUNA) expect(await code(h.write("home/Studio/.clover/bots/alpha/memory/secret.md", utf8("x"), { as }))).toBe("fenced");
       }
       expect(await h.read("home/memory/secret.md", { as: ALPHA })).toEqual(utf8("alpha's"));
       expect(readFileSync(join(elsewhere, "bots", "alpha", "memory", "secret.md"), "utf8")).toBe("alpha's");
