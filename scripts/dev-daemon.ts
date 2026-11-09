@@ -51,8 +51,9 @@
  * daemon is prompted for every item, so dev-profile commands go through the signed binary from then on.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLOVER_TEAM_ID } from "../packages/core/src/auth/app-token-acl";
@@ -60,12 +61,14 @@ import { DEV_KEYCHAIN_SERVICE, oldCreatorStillOwnsItems, transitionDevKeychain }
 import { keychainUnlocked } from "../packages/core/src/auth/keychain-ffi";
 import { isDefaultCloverHome } from "../packages/core/src/clover-dir";
 import { pluginBunDigest } from "../packages/core/src/registry/plugin-run";
+import { buildDevBundledPlugins, devBundledDir } from "../packages/core/src/registry/bundled-stage";
 import { resolvePlatformPackageWinter } from "../packages/core/src/runtime-sdk/executable";
 import { hostTarget, runScriptLine } from "./build-daemon";
 import { BUNDLED_IDENTIFIERS, buildHolder, HOLDER_FILE, holderSource, PLUGIN_BUN_ENTITLEMENTS } from "./bundled-binaries";
+import { LINK_BUILD, LINK_OUTPUT } from "./build-packages";
 import { DYLD_ENTITLEMENT, sealFile } from "./seal-bun-doors";
 import { bunPinProblem } from "./bun-pin";
-import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devDaemonPlan, devDaemonRequirement, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
+import { describeDevDaemonPlan, designatedRequirementOf, DEV_DAEMON_IDENTIFIER, DEV_LINK_IDENTIFIER, DEV_PLUGIN_BUN_IDENTIFIER, devDaemonPlan, devDaemonRequirement, devLinkSidecarPlan, devPluginBunPath, devPluginBunSignArgs, devPluginBunStale, resolveDevSigningIdentity, signedFacts, type DevDaemonPlan } from "./dev-daemon-lib";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI_DIR = join(REPO_ROOT, "packages", "cli");
@@ -196,6 +199,7 @@ function stageDevPluginBun(home: string): void {
  * fall back to process-group tracking, which a packaged build never does (its package gate).
  */
 async function buildBundled(dir: string, sign: boolean): Promise<void> {
+  stageLinkSidecar(join(dir, "clover-core"), sign, true);
   if (hostTarget() !== "darwin-arm64") return;
   if (holderSource(REPO_ROOT) === undefined) {
     console.error(`dev:daemon: no ${HOLDER_FILE} (the installed agent runtime has no native/process-holder.c before SDK 0.0.70): a bot's commands fall back to process-group tracking`);
@@ -209,6 +213,43 @@ async function buildBundled(dir: string, sign: boolean): Promise<void> {
     if (r.status !== 0) die(`codesign of ${holder} failed: ${r.stderr.trim()}`);
   }
   console.error(`dev:daemon: beside it ${holder}${sign ? ` (${BUNDLED_IDENTIFIERS[HOLDER_FILE].dev})` : ""}`);
+}
+
+/**
+ * Lane H's link sidecar beside the dev core, so the dev daemon pairs and links like a packaged one: built with cargo for
+ * this machine and signed (macOS) with the dev identity under its own `.dev` identifier. Without cargo it says so and
+ * goes on: the dev daemon then runs local-only (its links on no other device), which a packaged build never does. With
+ * `--no-build` nothing is built: an existing build is copied and signed, or it says there is none.
+ */
+function stageLinkSidecar(binary: string, sign: boolean, build: boolean): void {
+  const plan = devLinkSidecarPlan({ repoRoot: REPO_ROOT, binary, linkBuild: LINK_BUILD, linkOutput: LINK_OUTPUT });
+  if (build) {
+    const cargo = Bun.which("cargo") ?? (existsSync(join(homedir(), ".cargo", "bin", "cargo")) ? join(homedir(), ".cargo", "bin", "cargo") : null);
+    if (cargo === null) {
+      console.error("dev:daemon: no cargo, so no clover-link beside the dev core: it runs local-only, without links to other devices");
+      return;
+    }
+    console.error("dev:daemon: building the link sidecar (clover-link)…");
+    const built = run(cargo, plan.cargoArgs, { cwd: REPO_ROOT });
+    if (built.status !== 0 || !existsSync(plan.from)) die(`the link sidecar didn't build (exit ${built.status}): ${built.stderr.trim().split("\n").slice(-3).join(" ")}`);
+  } else if (!existsSync(plan.from)) {
+    console.error(`dev:daemon: no built clover-link at ${plan.from} (--no-build builds none), so ${existsSync(plan.to) ? `the one already beside the dev core stays` : "the dev core runs local-only, without links to other devices"}`);
+    return;
+  }
+  // Beside the dev core, by a rename, so a running dev daemon's sidecar is never written in place.
+  const tmp = `${plan.to}.tmp-${process.pid}`;
+  copyFileSync(plan.from, tmp);
+  chmodSync(tmp, 0o755);
+  if (sign && plan.sign) {
+    const identity = devSigningIdentity();
+    const r = run("codesign", ["--force", "--sign", identity.hash, "--identifier", DEV_LINK_IDENTIFIER, "--options", "runtime", "--timestamp=none", tmp]);
+    if (r.status !== 0) {
+      rmSync(tmp, { force: true });
+      die(`codesign of clover-link failed: ${r.stderr.trim()}`);
+    }
+  }
+  renameSync(tmp, plan.to);
+  console.error(`dev:daemon: beside it ${plan.to}${sign && plan.sign ? ` (${DEV_LINK_IDENTIFIER})` : ""}`);
 }
 
 function devEnv(plan: DevDaemonPlan): NodeJS.ProcessEnv {
@@ -250,8 +291,18 @@ async function main(): Promise<void> {
     await buildBundled(dirname(binary), plan.build.sign);
   }
   if (!existsSync(binary)) die(`${binary} does not exist — run without --no-build`);
+  // --no-build: the sidecar as last built, copied and signed (macOS, as a build signs), never built here.
+  if (plan.build === undefined) stageLinkSidecar(binary, process.platform === "darwin", false);
   // Plugin code never runs on the core's binary: its own Bun, beside it (with --no-build too, when it's missing).
   stageDevPluginBun(home);
+  // The bundled plugins, built from this checkout's plugins/ for this computer (B-M2's dev layout): the compiled dev core
+  // loads them from the dev stage, through a private copy of its verified bytes, as a release loads its own.
+  {
+    const sources = join(REPO_ROOT, "plugins");
+    const ids = readdirSync(sources).filter((id) => existsSync(join(sources, id, "clover.json"))).sort();
+    const built = await buildDevBundledPlugins({ sources, ids, cloverHome: home });
+    console.error(`dev:daemon: bundled plugins ${built.built.join(", ")} built into ${devBundledDir(home)} (${built.ms} ms)`);
+  }
   const env = devEnv(plan);
 
   if (plan.transition) {

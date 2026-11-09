@@ -39,6 +39,8 @@ process.env[LEGACY_HOME_ENV] = mkdtempSync(join(tmpdir(), "clover-test-legacy-ho
 process.env.CLOVER_KEYCHAIN_SERVICE = "com.waifucave.clover.core.test-isolated";
 // macOS: and this process's own throwaway keychain FILE, the only keychain a test may reach.
 await import("../../core/test/test-keychain");
+// And `Bun.secrets` fenced as in core's preload: a call that would reach the user's own store throws.
+(await import("../../core/src/auth/test-isolation")).guardBunSecrets();
 // C0 review (minor): the agent SDK reads its OWN variables whenever a call carries no brand (`runtime-sdk/brand.ts`):
 // its home (`WINTER_HOME`) and temp root (`WINTER_TMPDIR`), which default to the live Winter install's folders, and
 // its Keychain. Point both folders at throwaway ones and turn on the SDK's in-memory test Keychain, so a brandless
