@@ -318,9 +318,9 @@ const coreHandlers: Handlers = {
   "session.context": ({ id }) => (id === "s_alpha" ? { used: 0.31, tokens: 62_000, window: 200_000 } : { used: 0.14, tokens: 28_000, window: 200_000 }),
   "session.connectors": () => ({ total: 7, needSignIn: 2 }),
   "models.catalog": () => ({ models: MODELS.models.map((m) => ({ id: m.id, label: m.label, ...(m.detail ? { provider: m.detail } : {}), efforts: MODELS.efforts ?? [] })) as never }),
-  "archive.list": ({ query, before }) => {
+  "archive.list": ({ query }) => {
     const matching = ARCHIVED.filter((s) => !query || (s.title ?? "").toLowerCase().includes(query.toLowerCase()));
-    return { sessions: before ? matching.filter((s) => s.updatedAt < before) : matching, more: false };
+    return { sessions: matching, more: false };
   },
   "archive.history": ({ id }) => ({ events: id === "w-1" ? ARCHIVE_HISTORY : [] }),
 };

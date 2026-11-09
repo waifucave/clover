@@ -29,6 +29,7 @@ import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import type { ApprovalBroker } from "./contracts/approval-broker";
+import type { FencedSpawner } from "./fence/spawn";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
 import { hostForSync } from "./daemon-session-sync";
@@ -42,6 +43,8 @@ export interface DaemonBotsInput {
   drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
+  pillTargets?: BotSideOptions["pillTargets"];
 }
 
 export interface DaemonPartsInput {
@@ -67,6 +70,10 @@ export interface DaemonPartsInput {
    *  level raise hands over (`get`, the registry's `cardRecord`). The daemon's own broker is bound here once it
    *  exists; without either, such a paste is refused with a reason, never dropped silently, and no card raises a level. */
   approvals?: Pick<ApprovalBroker, "request" | "get">;
+  /** Lane C's fenced process on this computer (`fencedSpawner({ fence })` over the daemon's one CloverFence): the
+   *  computer node's Bash runs through it (`fencedExecutor`, lane J). Without it the node has no executor and Bash on
+   *  its tree is refused; it never runs unsandboxed. A test's own `node.executor` wins. */
+  spawner?: FencedSpawner;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   log?(line: string): void;
@@ -119,12 +126,13 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
       // such a paste is refused with a reason), the broker's own record of a card a level raise hands over
       // (`cardRecord: (id) => approvals?.get(id)`; no broker, no card raises), and its safety reviewer for another computer's calls at "ask for risky
-      // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
-      // not here: the node options below carry what the daemon passes. A test's own node options win.
+      // actions" (the daemon's `BashReviewer`; it fails closed), and its Bash on lane C's fenced process when the daemon
+      // hands over its spawner (`input.spawner`; none, no executor). The fence, MCP and askUser/answers are not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
         ...(input.approvals ? { approvals: input.approvals } : {}),
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
+        ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome } } : {}),
         log: (line) => log(`[computers] ${line}`),
       });
       const n = startComputerNode({
@@ -153,6 +161,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         drivers: b.drivers({ side: () => side, node, main: runner }),
         defaultModel: b.defaultModel,
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.
