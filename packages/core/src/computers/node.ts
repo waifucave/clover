@@ -234,7 +234,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       // R1: asks the user up front for each holder whose level needs their answer, then sends the call once.
       return transferAsking({
         ...(fence ? { fence } : {}),
-        transport: o.transport, holder, receiveHere: xfer.receiveHere, as: call.as,
+        transport: o.transport, holder, receiveHere: xfer.receiveHere, as: call.as, ...(call.origin === undefined ? {} : { origin: call.origin }),
         source: where(source), destination: where(destination),
         params: {
           from, to, move, level: call.level ?? registry.self().level,

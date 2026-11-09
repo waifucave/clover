@@ -36,7 +36,7 @@ import { constants as FS, promises as fsp, realpathSync, type Dirent, type Stats
 import { basename, dirname, isAbsolute, join, relative, resolve as resolvePath, sep } from "node:path";
 import {
   DEFAULT_LEVEL, pluginIdFromSegment, pluginIdToSegment,
-  type Caller, type FileStat, type Level, type Os, type SignedCardAnswer,
+  type Caller, type FileStat, type Level, type Os, type SignedCardAnswer, type TurnOrigin,
 } from "@waifucave/clover-protocol";
 import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
@@ -60,6 +60,9 @@ export interface HolderCall {
   /** In-process only, never from the link: the change is part of a call already judged (an MCP call's files), so it
    *  isn't judged again. The fence still applies. */
   approved?: boolean;
+  /** In-process only, never sent: what started the caller's turn, for the card askUser raises on this computer when
+   *  another computer's holder needs the user's answer. */
+  origin?: TurnOrigin;
 }
 
 /** The most one read returns, and the most one write carries: bigger files move in parts (`offset`, `length`). */
