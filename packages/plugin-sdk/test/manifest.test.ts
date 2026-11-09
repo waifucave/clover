@@ -409,6 +409,21 @@ describe("the OK's text", () => {
     expect(describeOk(listed, { os: "macos", hostNetworkHeld: true }).some((l) => l.includes("local network"))).toBe(false);
   });
 
+  // The controller's ruling on #377: a third-party server's environment is readable by other processes of the user.
+  test("a stdio server given a secret through its environment is disclosed on the OK", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: {
+        keyed: { type: "stdio", command: "luna-mcp", env: { LUNA_API_KEY: "${secret:LUNA_KEY}", MODE: "fast" } },
+        plain: { type: "stdio", command: "luna-tools", env: { MODE: "fast" } },
+      } },
+    });
+    expect(r.envSecrets).toEqual(["keyed"]);
+    expect(describeOk(r, { os: "macos" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this Mac could read.");
+    expect(describeOk(r, { os: "linux" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this computer could read.");
+    expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { plain: { type: "stdio", command: "luna-tools" } } } }).envSecrets).toEqual([]);
+  });
+
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {
     const r = validateManifest(min());
     expect(r.restylesCards).toBe(false);

@@ -167,11 +167,17 @@ describe("the network list", () => {
       expect(idle).not.toContain("[still open]");
       expect(Date.now() - t0).toBeGreaterThanOrEqual(150);
       expect(lines.some((l) => l.includes("idle"))).toBe(true);
-      // Three connections at once (heads unsent) fill this proxy; a fourth is 503.
-      const held = [0, 1, 2].map(() => raw(proxy.port, undefined, 2_000));
+      // Connections that never show the token don't count toward this proxy's cap (#377's review): three of them, and an
+      // authenticated tunnel still opens.
+      const connect = `CONNECT api.test:${listed} HTTP/1.1\r\n${authOf(proxy)}\r\n`;
+      const strangers = [0, 1, 2].map(() => raw(proxy.port, undefined, 2_000));
       await Bun.sleep(30);
-      expect(await raw(proxy.port, undefined)).toStartWith("HTTP/1.1 503");
-      await Promise.all(held);
+      const tunnels = [0, 1, 2].map(() => raw(proxy.port, connect, 2_000));
+      await Bun.sleep(50);
+      // Three authenticated tunnels fill it; a fourth is 503.
+      expect(await raw(proxy.port, connect)).toStartWith("HTTP/1.1 503");
+      for (const t of await Promise.all(tunnels)) expect(t).toStartWith("HTTP/1.1 200 Connection Established");
+      await Promise.all(strangers);
     } finally {
       proxy.close();
     }

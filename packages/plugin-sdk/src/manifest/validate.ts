@@ -64,6 +64,10 @@ export interface ManifestReport {
   settings: string[];
   /** `stdio` commands that fetch code when they run (`npx`, `uvx`, …), which the OK flags (§5.6). */
   fetchesCode: string[];
+  /** `stdio` servers given a secret through their environment (`${secret:…}` in `env`), which the OK discloses: macOS
+   *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
+   *  to hide it (the controller's ruling on #377). */
+  envSecrets: string[];
   /** It declares programs of its own (a `stdio` server, a helper, or a Node host, Clover's own plugins only), which
    *  Clover's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
   ownPrograms: boolean;
@@ -301,7 +305,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -553,6 +557,13 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
   }
 
+  const envSecrets: string[] = [];
+  if (isObject(contributes.mcpServers)) {
+    for (const [name, s] of Object.entries(contributes.mcpServers)) {
+      if (s.type === "stdio" && isObject(s.env) && Object.values(s.env).some((v) => typeof v === "string" && v.includes("${secret:"))) envSecrets.push(name);
+    }
+  }
+
   const ownPrograms = isObject(top.helper) || (isObject(top.host) && top.host.runtime === "node")
     || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
   const ok = !f.refusesPlugin();
@@ -571,6 +582,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     toolNames,
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
+    envSecrets,
     ownPrograms,
     addons: top.addons !== undefined,
     adult: top.adult === true,
@@ -1024,6 +1036,9 @@ export function describeOk(
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
+  if (report.envSecrets.length > 0) {
+    lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
+  }
   if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");
