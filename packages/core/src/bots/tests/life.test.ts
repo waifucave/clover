@@ -614,10 +614,19 @@ describe("the new sessions methods", () => {
       expect(b.host.history(id).some((r) => r.type === "input")).toBe(false);
     }
     // peer.session.deliver: another computer's session's message, never the user's, naming the computer it came from.
-    const deliver = peerSessionMethods({ bots: b.bots, host: b.host, clock, computerOf: (d) => (d === "devlaptop000000000" ? "Laptop" : undefined) })[PEER_SESSION_DELIVER]!;
+    // Synced routines: Alpha's r_tick runs on Laptop, r_home on Studio.
+    const synced: Record<string, { bot: string; computer: string }> = { r_tick: { bot: "alpha", computer: "Laptop" }, r_home: { bot: "alpha", computer: "Studio" }, r_other: { bot: "luna", computer: "Laptop" } };
+    const deliver = peerSessionMethods({
+      bots: b.bots, host: b.host, clock, computerOf: (d) => (d === "devlaptop000000000" ? "Laptop" : undefined), routines: { get: (id: string) => synced[id] as never },
+    })[PEER_SESSION_DELIVER]!;
     const fromBot = { from: "bot", bot: "luna", session: "b_luna", text: "hi Alpha" };
     const fromRoutine = { from: "routine", routine: "r_tick", name: "Tick", sideThread: "t_tick", text: "done on Laptop" };
     expect(await deliver({ id: "b_alpha", computer: "Laptop", input: fromRoutine }, fromLaptop)).toMatchObject({ seq: expect.any(Number) });
+    // A routine's message names one of Alpha's synced routines, from the computer it runs on.
+    for (const [routine, why] of [["r_unknown", "isn't a routine of alpha's"], ["r_other", "isn't a routine of alpha's"], ["r_home", "runs on Studio, not Laptop"]]) {
+      const refused = await thrown(deliver({ id: "b_alpha", computer: "Laptop", input: { ...fromRoutine, routine } }, fromLaptop));
+      expect(refused instanceof MethodError && refused.message).toContain(why!);
+    }
     // A bot's message from its main conversation only from the computer running that bot (#313's review): Laptop runs
     // no Luna here, nor Alpha; and never another bot's main conversation named as the sender's.
     for (const bot of ["luna", "alpha"]) {

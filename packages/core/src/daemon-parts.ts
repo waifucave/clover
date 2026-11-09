@@ -198,11 +198,11 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // that bot (#313's review): never an agent's or a coding session, never a sender the peer doesn't run.
         const offDelivery = mountSessionDelivery(links.transport, links.registry, (session, input) => s.host.deliver(session, input), {
           ...(links.main ? { isStale: (epoch: number, scope?: string) => links.main!.lease.isStale(epoch, scope) } : {}),
-          check: botDeliveryCheck({ host: s.host, bots: s.bots }),
+          check: botDeliveryCheck({ host: s.host, bots: s.bots, ...(s.routines ? { routines: s.routines } : {}) }),
         });
         closers.push(offDelivery);
         Object.assign(input.handlers, laneMethodHandlers(peerSessionMethods({
-          bots: s.bots, host: s.host, clock: input.clock, devices: links.registry,
+          bots: s.bots, host: s.host, clock: input.clock, devices: links.registry, ...(s.routines ? { routines: s.routines } : {}),
           ...(input.updateGate ? { updateGate: input.updateGate } : {}),
           ...(links.main ? { computerOf: (device: string) => links.main!.computerOf(device) } : {}),
         })));

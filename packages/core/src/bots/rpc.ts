@@ -8,7 +8,8 @@
 //
 // `peerSessionMethods` is the receiving side of `peer.session.send` (devices.ts), for a computer that runs a bot the
 // user messaged from another device: the sending device's signature decides whether the turn is the user's (N3).
-import { botSenderCheck } from "../links/bot-relay";
+import { botSenderCheck, routineSenderCheck } from "../links/bot-relay";
+import type { RoutineEngine } from "../routines/engine";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { z } from "zod";
@@ -329,6 +330,8 @@ export interface PeerSessionMethodsDeps {
   /** A device's computer name (lane H's `DeviceRecord.computer`): `peer.session.deliver` must name the computer the
    *  link authenticated. Without it, the name is taken as given. */
   computerOf?: (device: string) => string | undefined;
+  /** The synced routines: a routine's message must name one of the bot's, from its computer. Without them, none is taken. */
+  routines?: Pick<RoutineEngine, "get">;
 }
 
 /** `peer.session.deliver`'s params (lane D's, until lane B adds the method to the protocol's peer role): another
@@ -377,9 +380,10 @@ export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string,
         const { id, computer, input } = parsed.data;
         const linked = deps.computerOf?.(ctx.caller.device);
         if (deps.computerOf !== undefined && linked !== computer) throw new ContractError("refused", `the message names ${computer}, but it came from ${linked ?? "a device that runs no computer"}`);
-        runningBot(id, PEER_SESSION_DELIVER);
+        const target = runningBot(id, PEER_SESSION_DELIVER);
         // A bot's message only from the computer running that bot (#313's review): a peer can't name a sender it doesn't run.
         if (input.from === "bot") botSenderCheck(deps.bots, input, computer);
+        if (input.from === "routine") routineSenderCheck(deps.routines, input, target.bot!, computer);
         const { seq } = await deps.host.deliver(id, input);
         return { seq };
       } catch (err) {

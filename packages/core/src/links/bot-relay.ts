@@ -8,13 +8,16 @@
 //   or a routine's message is never the user's: lane D's host keeps `originOf`):
 //   - the request must be the protocol's own `link.session.deliver` (the schema, strict per kind), its `computer` the
 //     link's own peer;
-//   - its session must be a bot's: a bot's main conversation or one of its side threads, for a bot installed here
-//     (`botDeliveryCheck`) — never an agent's, a coding session or anything else of the user's;
+//   - its session must be a bot's (`botDeliveryCheck`) — never an agent's, a coding session or anything else of the
+//     user's: a bot's main conversation, for a bot installed here, or one of its side threads, but a side thread only
+//     from that same bot (a side thread runs a routine, maybe at a raised level the user said yes to: no other bot, no
+//     agent, routine or agent's report steers it — those go to the bot's main conversation);
+//   - a routine's message names one of the target bot's synced routines, and comes from that routine's computer;
 //   - a bot's message (`botSenderCheck`) names a session of its own: from its main conversation (`b_<bot>`), only the
 //     computer that runs that bot sends it; from another session of the bot (a side thread, which may run elsewhere),
 //     never another bot's main conversation.
 // * Computers are named by their tree name (`DeviceRecord.computer`), as lane D's main computer names them.
-import { DEVICES_METHODS, type SessionView } from "@waifucave/clover-protocol";
+import { DEVICES_METHODS, type RoutineView, type SessionView } from "@waifucave/clover-protocol";
 import { mainSessionIdFor, SESSION_ID_PREFIX } from "../sessions/ids";
 import { ContractError, type Unsubscribe } from "../contracts/common";
 import type { LinkTransport } from "../contracts/link-transport";
@@ -77,6 +80,9 @@ export type DeliveryCheck = (session: string, input: DeliveredInput, peer: { dev
 export function botDeliveryCheck(o: {
   host: { get(id: string): Pick<SessionView, "kind" | "bot"> | undefined };
   bots: { has(bot: string): boolean; computerFor(bot: string): string | undefined };
+  /** The synced routines (the bot side's engine): a routine's message must name one of the target bot's. Without
+   *  them, no routine's message is taken. */
+  routines?: { get(id: string): Pick<RoutineView, "bot" | "computer"> | undefined };
 }): DeliveryCheck {
   return (session, input, peer) => {
     const view = o.host.get(session);
@@ -84,8 +90,26 @@ export function botDeliveryCheck(o: {
     if (view === undefined || (view.kind !== "bot" && view.kind !== "side-thread") || view.bot === undefined || !o.bots.has(view.bot)) {
       throw new ContractError("refused", `${session} isn't a bot's conversation here`);
     }
+    // A side thread takes only its own bot's message (as SendMessage here refuses another bot's side thread).
+    if (view.kind === "side-thread" && !(input.from === "bot" && input.bot === view.bot)) {
+      throw new ContractError("refused", `${session} is a side thread of ${view.bot}: only ${view.bot}'s own message reaches it`);
+    }
     if (input.from === "bot") botSenderCheck(o.bots, input, peer.computer);
+    if (input.from === "routine") routineSenderCheck(o.routines, input, view.bot, peer.computer);
   };
+}
+
+/** A routine's message names one of the target bot's synced routines, and comes from the computer it runs on. Throws;
+ *  with no routines to look in, every routine's message is refused. */
+export function routineSenderCheck(
+  routines: { get(id: string): Pick<RoutineView, "bot" | "computer"> | undefined } | undefined,
+  input: { routine: string },
+  bot: string,
+  computer: string,
+): void {
+  const routine = routines?.get(input.routine);
+  if (routine === undefined || routine.bot !== bot) throw new ContractError("refused", `${input.routine} isn't a routine of ${bot}'s`);
+  if (routine.computer.toLowerCase() !== computer.toLowerCase()) throw new ContractError("refused", `${input.routine} runs on ${routine.computer}, not ${computer}`);
 }
 
 /** A bot's message from another computer names a session of its own: from its main conversation only when that computer

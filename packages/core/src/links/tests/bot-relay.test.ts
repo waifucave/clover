@@ -69,14 +69,30 @@ describe("the bot relay over the link", () => {
       c_project: { kind: "coding" }, a_helper: { kind: "agent", bot: "alpha" }, b_gone: { kind: "bot", bot: "gone" },
     };
     const runs: Record<string, string> = { alpha: "Studio", beta: "Laptop" };
-    const check = botDeliveryCheck({ host: { get: (id) => views[id] }, bots: { has: (b) => b in runs, computerFor: (b) => runs[b] } });
+    // Synced routines: Alpha's r_alpha runs on Laptop, r_studio on Studio; r_beta is Beta's.
+    const routines: Record<string, { bot: string; computer: string }> = { r_alpha: { bot: "alpha", computer: "Laptop" }, r_studio: { bot: "alpha", computer: "Studio" }, r_beta: { bot: "beta", computer: "Laptop" } };
+    const check = botDeliveryCheck({ host: { get: (id) => views[id] }, bots: { has: (b) => b in runs, computerFor: (b) => runs[b] }, routines: { get: (id) => routines[id] } });
     const delivered: string[] = [];
     stops.push(mountSessionDelivery(studio.transport, studio.registry, async (session) => (delivered.push(session), { disposition: "folded", seq: 1 }), { check }));
     const relay = linkBotRelay({ transport: laptop.transport, registry: laptop.registry, self: () => "Laptop" });
     const fromBeta = { from: "bot" as const, bot: "beta", session: "b_beta", text: "hi" };
-    // Accepted: Alpha's conversation and her side thread, from the computer running Beta.
+    // Accepted: Alpha's conversation from the computer running Beta; her side thread from her own other side thread
+    // (on Laptop); her routine that runs on Laptop, into her conversation.
     expect(await relay.deliver("Studio", "b_alpha", fromBeta)).toEqual({ disposition: "folded", seq: 1 });
-    expect(await relay.deliver("Studio", "t_alpha1", { from: "routine", routine: "r_1", name: "Tick", sideThread: "t_alpha1", text: "done" })).toEqual({ disposition: "folded", seq: 1 });
+    expect(await relay.deliver("Studio", "t_alpha1", { from: "bot", bot: "alpha", session: "t_alpha2", text: "from my other thread" })).toEqual({ disposition: "folded", seq: 1 });
+    const routine = (id: string) => ({ from: "routine" as const, routine: id, name: "Tick", sideThread: "t_laptop1", text: "done" });
+    expect(await relay.deliver("Studio", "b_alpha", routine("r_alpha"))).toEqual({ disposition: "folded", seq: 1 });
+    // Refused into a side thread: another bot's message, a routine's, an agent's, an agent's report.
+    for (const input of [
+      fromBeta, routine("r_alpha"), { from: "agent" as const, agent: "a_1", text: "hi" },
+      { from: "task-notification" as const, agent: "a_1", backend: "codex", stopReason: "end_turn" as const, text: "done", transcript: "x" },
+    ]) {
+      expect(isContractError(await relay.deliver("Studio", "t_alpha1", input).catch((e: unknown) => e), "refused")).toBe(true);
+    }
+    // Refused: a routine that isn't one of Alpha's synced ones, Beta's, or one that runs on another computer.
+    for (const id of ["r_unknown", "r_beta", "r_studio"]) {
+      expect(isContractError(await relay.deliver("Studio", "b_alpha", routine(id)).catch((e: unknown) => e), "refused")).toBe(true);
+    }
     // Refused: a coding session, an agent's, an uninstalled bot's, a session that isn't here.
     for (const target of ["c_project", "a_helper", "b_gone", "b_nobody"]) {
       expect(isContractError(await relay.deliver("Studio", target, fromBeta).catch((e: unknown) => e), "refused")).toBe(true);
@@ -88,7 +104,7 @@ describe("the bot relay over the link", () => {
     }
     // Taken: a side thread of Beta's, which may run on any computer.
     expect(await relay.deliver("Studio", "b_alpha", { ...fromBeta, session: "t_beta1" })).toEqual({ disposition: "folded", seq: 1 });
-    expect(delivered).toEqual(["b_alpha", "t_alpha1", "b_alpha"]);
+    expect(delivered).toEqual(["b_alpha", "t_alpha1", "b_alpha", "b_alpha"]);
     // Refused: a request naming another computer than the link's peer, and malformed inputs.
     const link = await laptop.transport.connect(studio.id);
     const ask = (params: unknown) => link.request("link.session.deliver", params).catch((e: unknown) => e);
@@ -104,6 +120,6 @@ describe("the bot relay over the link", () => {
       expect(isContractError(await ask({ id: "b_alpha", computer: "Laptop", input }), "invalid")).toBe(true);
     }
     expect(isContractError(await ask({ id: "b_alpha", input: fromBeta }), "invalid")).toBe(true);
-    expect(delivered).toEqual(["b_alpha", "t_alpha1", "b_alpha"]);
+    expect(delivered).toEqual(["b_alpha", "t_alpha1", "b_alpha", "b_alpha"]);
   });
 });
