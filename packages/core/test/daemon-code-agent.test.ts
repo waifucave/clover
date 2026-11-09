@@ -125,6 +125,7 @@ describeWithEmbeddedRuntime("clover-core code-agent against the real daemon", ()
     expect(typeof sessionId).toBe("string");
     // The user's coding session, in the bot side's host, rooted in the project's place in the tree.
     expect(side.host.list({ kind: "coding" })).toEqual([expect.objectContaining({ kind: "coding", root: "home/Studio/project1" })]);
+    const relayed = side.host.list({ kind: "coding" })[0]!.id;
     input.push({ jsonrpc: "2.0", id: 3, method: "session/prompt", params: { sessionId, prompt: [{ type: "text", text: "hello" }] } });
     expect(((await reply(3))["result"] as { stopReason: string }).stopReason).toBe("end_turn");
 
@@ -149,9 +150,21 @@ describeWithEmbeddedRuntime("clover-core code-agent against the real daemon", ()
       AcpAgentSession.prototype.setLevel = setLevel;
     }
 
-    // The stop: the agents close before the bot side, and the relay's connection ends.
-    await daemon!.stop();
+    // The stop: the agents close before the bot side, the relay's coding session ends with them (#292 review S4: the
+    // server's doors close first, so the connection's own close never reaches the service), and its connection ends.
+    const lines: string[] = [];
+    const error = console.error;
+    console.error = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); error(...args); };
+    try {
+      await daemon!.stop();
+    } finally {
+      console.error = error;
+    }
     daemon = undefined;
+    expect(side.host.get(relayed)?.status).toBe("stopped");
+    // The code-agent service itself ended the relay (its served agent closed), not only the host's session: by the
+    // connection's close when the server goes first, else by the agents' close (`closeAll`).
+    expect(lines.some((l) => l.includes(`code-agent: ${relayed} ended (`))).toBe(true);
     input.end();
     expect(typeof (await exit)).toBe("number");
   });

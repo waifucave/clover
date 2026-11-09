@@ -25,7 +25,6 @@
 //   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
 //   it: a record from an earlier lease is taken as late.
 import type { CanUseTool, Options, SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
-import { DEFAULT_LEVEL } from "@waifucave/clover-protocol";
 import { createAgents, type AgentPauseGate, type AgentsOptions } from "./agents";
 import { CloverApprovalBroker } from "./approvals/broker";
 import { fileRuleStore } from "./approvals/rule-store";
@@ -155,12 +154,13 @@ export function lateAgentDoors(handlers: Record<string, CloverHandler>): LateAge
       sessionInfo: (id) => agents?.clover.bridge.sessionInfo(id),
     },
     set(next) {
-      offRevoke?.();
-      offRevoke = undefined;
       for (const name of mounted) delete handlers[name];
       mounted = [];
       agents = next;
+      // Cleared at the stop, the agents' revocations still reach the server while they close (their tokens are revoked
+      // after the doors close): the old listener goes only when new agents take its place.
       if (!next) return;
+      offRevoke?.();
       offRevoke = next.clover.bridge.gate.onRevoke?.((e) => revoked.emit(e));
       Object.assign(handlers, next.clover.handlers);
       mounted = Object.keys(next.clover.handlers);
@@ -199,6 +199,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => m.close());
       main = m;
     }
+    // This computer's name, one for the node's broker, the bot side and the agents.
+    const here = main?.self ?? computer ?? "this-computer";
 
     let node: ComputerNode | undefined;
     // The one CloverFence and the one approval broker on this computer: the node (its folder tree, its terminals' paste
@@ -243,9 +245,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => n.close());
       node = n;
       if (main) closers.push(followMain(n, main, links));
-      const here = main?.self ?? nodeLinks.self.name;
       broker = new CloverApprovalBroker({
-        clock: input.clock, levels: (c) => n.registry.get(c)?.level ?? DEFAULT_LEVEL, fence: (c) => (c === here ? fence : undefined),
+        clock: input.clock, // A computer the registry doesn't know is judged at read-only, failing closed as the agents' manager does.
+        levels: (c) => n.registry.get(c)?.level ?? "read-only", fence: (c) => (c === here ? fence : undefined),
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
         log: (line) => log(`[approvals] ${line}`),
       });
@@ -254,7 +256,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     let agents: DaemonAgents | undefined;
     if (input.bots) {
       const b = input.bots;
-      const runner = main ?? soleComputer(computer ?? "this-computer");
+      const runner = main ?? soleComputer(here);
       // Lane K's agents over the bot side's host: they need the node's folder tree. The pause is the bot side's switch,
       // read through `side` once it exists (closed until then: no agent acts before the side is up).
       const a = input.agents;
@@ -263,7 +265,6 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       let agentsFactory: BotSideOptions["agents"];
       if (a && node && links && broker) {
         const n = node;
-        const here = runner.self;
         const approvals = broker;
         agentsFactory = (d) => {
           const made = createAgents({
@@ -328,6 +329,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));
+    }
+    // The broker closes first at the stop (closers run in reverse): its open cards are cancelled and no new one is
+    // raised, so nothing the bot side or the agents wait on is left hanging while they stop.
+    if (broker) {
+      const b = broker;
+      closers.push(() => b.close());
     }
     return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(agents ? { agents } : {}), ...(broker ? { broker } : {}), ...(main ? { main } : {}), close };
   } catch (err) {

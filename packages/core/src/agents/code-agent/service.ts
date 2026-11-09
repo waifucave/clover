@@ -183,6 +183,12 @@ export class CodeAgentService {
     if (relay) void this.#close(relay, "the client's connection closed", { end: false });
   }
 
+  /** Clover is stopping: every relayed session ends, its client's connection with it (INT, #292 review S4: the daemon
+   *  closes the server's doors before the agents, so a connection's own close never reaches this). */
+  async closeAll(reason = "Clover is stopping"): Promise<void> {
+    await Promise.all([...this.#relays.values()].map((relay) => this.#close(relay, reason)));
+  }
+
   /** The connections that relay a session (for the endpoint's refusals). */
   bound(connId: number): boolean {
     return this.#relays.has(connId);

@@ -121,8 +121,15 @@ export interface ComputerNode {
   close(): void;
 }
 
-/** The fenced items that are folders (lane C's layout names files and folders alike). */
+/** The fenced items that are folders, by kind (lane C's layout names files and folders alike). Two folder kinds also
+ *  name files, listed by their place in the Clover home (`fence/layout.ts`): those are never made as folders, only the
+ *  folder that holds them (INT, for lane J: the daemon's fence reaches the node with #292, and a home's
+ *  `settings.json` made as a folder broke the settings, or crashed the start where the file was there). */
 const FENCED_FOLDER_KINDS = new Set(["settings", "levels", "saved-rules", "connector-permissions", "trust", "user-layers", "plugin-oks", "plugin-data", "run-folder"]);
+const FENCED_FILES_OF_FOLDER_KINDS: Readonly<Record<string, readonly string[]>> = {
+  settings: ["settings.json", "sdk/settings.json"],
+  trust: ["trust.json"],
+};
 
 /** Makes Clover's fenced folders under its home if they aren't there yet, and the folders that hold its fenced files,
  *  so a name in another case finds them on disk (review B1: the folded fence is the guard; this is the second). */
@@ -132,10 +139,9 @@ export function makeFencedFolders(cloverHome: string, fence: Pick<Fence, "fenced
   for (const item of fence.fencedSet()) {
     const p = norm(item.path);
     if (!p.startsWith(`${home}/`)) continue;
-    const rest = p.slice(home.length + 1).split("/");
-    // A folder kind names files too (`settings.json`, `trust.json`): a name with an extension is a file, so only the
-    // folder that holds it is made (INT, for lane J: the daemon's fence reaches the node with #292).
-    const isFolder = FENCED_FOLDER_KINDS.has(item.kind) && !/\.[A-Za-z0-9]+$/.test(rest[rest.length - 1] ?? "");
+    const relative = p.slice(home.length + 1);
+    const rest = relative.split("/");
+    const isFolder = FENCED_FOLDER_KINDS.has(item.kind) && !(FENCED_FILES_OF_FOLDER_KINDS[item.kind] ?? []).includes(relative);
     const folder = isFolder ? rest : rest.slice(0, -1);
     if (folder.length === 0) continue;
     mkdirSync(join(cloverHome, ...folder), { recursive: true, mode: 0o700 });

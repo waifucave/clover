@@ -347,3 +347,17 @@ describe("a bot's tool calls through the broker", () => {
     expect(await stopped).toEqual({ behavior: "deny", message: "Bash was refused: the turn was stopped." });
   });
 });
+
+describe("the broker's close (INT, #292 review: the daemon closes it first at the stop)", () => {
+  test("an open card is cancelled, and a request after the close is refused without a card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const pending = b.request(bash());
+    await Bun.sleep(0);
+    expect(b.cards()).toHaveLength(1);
+    b.close();
+    expect(await pending).toMatchObject({ allowed: false, by: "cancelled" });
+    expect(b.cards()).toEqual([]);
+    expect(await b.request(bash())).toEqual({ allowed: false, by: "cancelled" });
+    expect(b.cards()).toEqual([]);
+  });
+});
