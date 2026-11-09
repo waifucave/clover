@@ -18,11 +18,19 @@
 //   servers answers "plugin stopped: <reason>" (`plugin_stopped`), which its tools then answer (lane A keeps the last
 //   listing), until `restart`, which has the MCP host list them again. Nothing restarts on its
 //   own: a crashed server starts again at its next open, so none runs that nothing wants.
-// * **Bounded:** a line from the server over `lineMax` (8 MiB) ends it as a crash; the last 50 lines of its stderr are
-//   kept, each cut to 1,000 characters, for the plugin's log and Settings (`lastLines`), never in the reason a tool
-//   answers: a server may print its own key.
-import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
-import { mkdirSync } from "node:fs";
+// * **Bounded:** a line from the server over `lineMax` (8 MiB), more than 10,000 messages in a second, or more than
+//   `stdinMax` (8 MiB) waiting in its input (it stopped reading) ends it as a crash. Its stderr goes to the plugin's log
+//   through lane B's `pluginLogWriter` (its size, per-window and window caps: `stdioStderrLog`), and its last 50 lines,
+//   each cut to 1,000 characters, to Settings (`lastLines`); never into the reason a tool answers: a server may print
+//   its own key.
+// * **Signals** go to its group only while its leader runs (a group id is reused only once the group is gone), and once
+//   more right after its exit, for what it left in the group.
+// * **A daemon that died** leaves its servers running (they are detached): each start is recorded under
+//   `run/stdio-mcp/` (pid and start time), and the next daemon reaps them before it starts any
+//   (`reapStdioMcpLeftovers`), killing a group only when its leader's start time is the recorded one.
+import { execFile, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseInterpolation } from "@waifucave/clover-plugin-sdk";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import type { McpChannel } from "../contracts/plugin-host";
@@ -31,6 +39,7 @@ import type { Secret } from "../contracts/secret-store";
 import type { PluginRunGuard } from "../registry/plugin-run";
 import type { PluginSecretFiles } from "../registry/secret-files";
 import { resolvedPluginStdioMcpServer } from "../runtime-sdk/external-mcp";
+import { pluginLogWriter } from "../plugin-host/daemon-host";
 
 /** A server ready to start: its command (guarded and fenced), the folder it starts in, and what to undo when it stops. */
 export interface StdioServerSpec {
@@ -49,6 +58,10 @@ export const STDIO_MCP_MAX_DELAY_MS = 60_000;
 export const STDIO_MCP_CRASH_WINDOW_MS = 10 * 60_000;
 export const STDIO_MCP_CRASHES_TO_STOP = 3;
 export const STDIO_MCP_LINE_MAX = 8 * 1024 * 1024;
+/** What may wait in a server's input before it counts as not reading it. */
+export const STDIO_MCP_STDIN_MAX = 8 * 1024 * 1024;
+/** Messages a server may send in a second. */
+export const STDIO_MCP_MESSAGES_PER_SECOND = 10_000;
 const STOP_GRACE_MS = 3_000;
 const STDERR_LINES = 50;
 const STDERR_LINE_MAX = 1_000;
@@ -73,6 +86,10 @@ export interface StdioMcpLauncherOptions {
   /** How long a stop waits after SIGTERM before SIGKILL. */
   stopGraceMs?: number;
   lineMax?: number;
+  stdinMax?: number;
+  messagesPerSecond?: number;
+  /** Where each start is recorded for `reapStdioMcpLeftovers` (`stdioMcpRecordsDir`); left out, none is. */
+  records?: string;
 }
 
 /** One plugin's crashes on this computer. */
@@ -265,18 +282,50 @@ export class StdioMcpLauncher {
       pluginId, server, child, spec, startedAt: this.#now(), stopping: false, released: false, exited, stderr: [],
       channel: undefined as unknown as StdioChannel,
     };
+    const stdinMax = this.#o.stdinMax ?? STDIO_MCP_STDIN_MAX;
+    // What waits in its input: counted from the first write the pipe didn't take until it drains (Bun's
+    // `writableLength` stays 0 while it buffers), never less than the stream's own count.
+    let waiting = 0;
+    let full = false;
+    child.stdin?.on("drain", () => {
+      full = false;
+      waiting = 0;
+    });
     r.channel = new StdioChannel(
       (line) => {
-        if (child.stdin?.writable) child.stdin.write(line);
-        else throw new ContractError("closed", "the MCP server stopped");
+        const stdin = child.stdin;
+        if (stdin === null || !stdin.writable) throw new ContractError("closed", "the MCP server stopped");
+        const bytes = Buffer.byteLength(line);
+        if (Math.max(waiting, stdin.writableLength) + bytes > stdinMax) {
+          r.crash ??= `${server} stopped reading its input`;
+          this.#kill(r);
+          throw new ContractError("closed", "the MCP server stopped reading its input");
+        }
+        if (full) waiting += bytes;
+        if (!stdin.write(line) && !full) {
+          full = true;
+          waiting += bytes;
+        }
       },
       () => { void this.#stop(r); },
     );
     this.#running.set(keyOf(pluginId, server), r);
+    const record = this.#o.records !== undefined && child.pid !== undefined ? join(this.#o.records, `${child.pid}.json`) : undefined;
+    if (record !== undefined) {
+      try {
+        mkdirSync(this.#o.records!, { recursive: true, mode: 0o700 });
+        writeFileSync(record, JSON.stringify({ pid: child.pid, startedAt: Date.now(), pluginId, server }), { mode: 0o600 });
+      } catch (err) {
+        this.#o.log?.(`stdio MCP ${pluginId}/${server}: its start couldn't be recorded (${err instanceof Error ? err.message : String(err)}); a daemon crash would leave it running`);
+      }
+    }
     child.stdin?.on("error", () => {});
     // Its messages, a line each, held to the line cap.
     let buffer = "";
     const lineMax = this.#o.lineMax ?? STDIO_MCP_LINE_MAX;
+    const perSecond = this.#o.messagesPerSecond ?? STDIO_MCP_MESSAGES_PER_SECOND;
+    let second = 0;
+    let inSecond = 0;
     child.stdout?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => {
       buffer += chunk;
@@ -285,6 +334,17 @@ export class StdioMcpLauncher {
         const line = buffer.slice(0, nl).replace(/\r$/, "");
         buffer = buffer.slice(nl + 1);
         if (line.trim() === "") continue;
+        const now = Date.now();
+        if (now - second >= 1_000) {
+          second = now;
+          inSecond = 0;
+        }
+        if (++inSecond > perSecond) {
+          buffer = "";
+          r.crash ??= `${server} sent more than ${perSecond} messages in a second`;
+          this.#kill(r);
+          return;
+        }
         let message: unknown;
         try {
           message = JSON.parse(line);
@@ -317,9 +377,10 @@ export class StdioMcpLauncher {
     const ended = (why: string) => {
       if (r.released) return;
       r.channel.ended();
-      // What it left running in its group goes with it.
-      this.#signalGroup(child, "SIGKILL");
+      // What it left running in its group goes with it (the one signal sent after its exit).
+      this.#signalGroup(child, "SIGKILL", true);
       this.#release(r);
+      if (record !== undefined) rmSync(record, { force: true });
       if (this.#running.get(keyOf(pluginId, server)) === r) this.#running.delete(keyOf(pluginId, server));
       if (!r.stopping) this.#crashed(r, r.crash ?? why);
       resolveExited();
@@ -354,8 +415,11 @@ export class StdioMcpLauncher {
     this.#o.log?.(`stdio MCP ${r.pluginId}/${r.server}: crashed (${reason})${c.stopped === undefined ? "" : `; the plugin stopped on this computer`}`);
   }
 
-  #signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  /** Signals `child`'s group (its tree on Windows). Only while it runs, unless `afterExit` (the sweep right after its
+   *  exit, while what it left still holds the group id): a late chunk from its output never signals a reused id. */
+  #signalGroup(child: ChildProcess, signal: NodeJS.Signals, afterExit = false): void {
     if (child.pid === undefined) return;
+    if (!afterExit && (child.exitCode !== null || child.signalCode !== null)) return;
     try {
       // Windows has no process groups: `taskkill /T` ends the tree (forced: a console program takes no SIGTERM).
       if (process.platform === "win32") nodeSpawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => child.kill(signal));
@@ -450,4 +514,100 @@ export function pluginStdioPrepare(o: {
       secrets.clear();
     }
   };
+}
+
+/** `<home>/run/stdio-mcp`: one record per running server, for `reapStdioMcpLeftovers`. */
+export function stdioMcpRecordsDir(cloverHome: string): string {
+  return join(cloverHome, "run", "stdio-mcp");
+}
+
+/** How far a process's start time may be from its record's (`ps` gives seconds; the record is written just after). */
+const START_SLACK_MS = 3_000;
+
+const run = (cmd: string, args: string[]): Promise<string> => new Promise((resolve) => {
+  execFile(cmd, args, { maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout) => resolve(err ? "" : stdout));
+});
+
+/** Every process: its pid, its group, and when it started. */
+async function processes(): Promise<{ pid: number; pgid: number; started: number }[]> {
+  const out = await run("ps", ["-A", "-o", "pid=,pgid=,lstart="]);
+  const rows: { pid: number; pgid: number; started: number }[] = [];
+  for (const line of out.split("\n")) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
+    if (!m) continue;
+    const started = Date.parse(m[3]!);
+    if (Number.isFinite(started)) rows.push({ pid: Number(m[1]), pgid: Number(m[2]), started });
+  }
+  return rows;
+}
+
+/** The daemon starts: stops what a daemon before it left running (it died without stopping its servers), and clears
+ *  the records. A record's group is killed only when it is still that server's: its leader runs, leads its own group,
+ *  and started when the record says; or its leader is gone and the processes left in its group all started after the
+ *  record (a group id is reused only once its group is empty, and then by a new leader). Anything else is left alone. */
+export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: string) => void }): Promise<{ reaped: number[] }> {
+  let names: string[];
+  try {
+    names = readdirSync(o.dir).filter((n) => /^\d+\.json$/.test(n));
+  } catch {
+    return { reaped: [] };
+  }
+  const reaped: number[] = [];
+  const records: { pid: number; startedAt: number; label: string; file: string }[] = [];
+  for (const n of names) {
+    const file = join(o.dir, n);
+    try {
+      const r = JSON.parse(readFileSync(file, "utf8")) as { pid?: unknown; startedAt?: unknown; pluginId?: unknown; server?: unknown };
+      if (typeof r.pid === "number" && Number.isInteger(r.pid) && r.pid > 1 && typeof r.startedAt === "number" && `${r.pid}.json` === n) {
+        records.push({ pid: r.pid, startedAt: r.startedAt, label: `${String(r.pluginId)}/${String(r.server)}`, file });
+        continue;
+      }
+    } catch {
+      // Unreadable: dropped below.
+    }
+    rmSync(file, { force: true });
+  }
+  if (records.length === 0) return { reaped };
+  if (process.platform === "win32") {
+    for (const r of records) {
+      const created = (await run("powershell", ["-NoProfile", "-NonInteractive", "-Command", `$p = Get-CimInstance Win32_Process -Filter 'ProcessId=${r.pid}'; if ($p) { $p.CreationDate.ToUniversalTime().ToString('o') }`])).trim();
+      const started = Date.parse(created);
+      if (Number.isFinite(started) && Math.abs(started - r.startedAt) <= START_SLACK_MS) {
+        await run("taskkill", ["/pid", String(r.pid), "/T", "/F"]);
+        reaped.push(r.pid);
+        o.log?.(`stdio MCP: stopped ${r.label} (pid ${r.pid}), left running by a daemon before`);
+      }
+      rmSync(r.file, { force: true });
+    }
+    return { reaped };
+  }
+  const all = await processes();
+  for (const r of records) {
+    const leader = all.find((p) => p.pid === r.pid);
+    const members = all.filter((p) => p.pgid === r.pid);
+    const ours = leader !== undefined
+      ? leader.pgid === r.pid && Math.abs(leader.started - r.startedAt) <= START_SLACK_MS
+      : members.length > 0 && members.every((p) => p.started >= r.startedAt - START_SLACK_MS);
+    if (ours) {
+      try {
+        process.kill(-r.pid, "SIGKILL");
+        reaped.push(r.pid);
+        o.log?.(`stdio MCP: stopped ${r.label} (group ${r.pid}), left running by a daemon before`);
+      } catch {
+        // Gone meanwhile.
+      }
+    }
+    rmSync(r.file, { force: true });
+  }
+  return { reaped };
+}
+
+/** A server's stderr into its plugin's log (`logs/plugins/<id>.log`), through lane B's writer and its caps: the file's
+ *  size (rotated past `maxBytes`), and lines per window (the rest counted and noted once). */
+export function stdioStderrLog(o: { cloverHome: string; log: (line: string) => void; now?: () => number; maxBytes?: number; perWindow?: number; windowMs?: number }): (pluginId: string, server: string, line: string) => void {
+  const write = pluginLogWriter({
+    dir: join(o.cloverHome, "logs", "plugins"), log: o.log, now: o.now ?? Date.now,
+    ...(o.maxBytes === undefined ? {} : { maxBytes: o.maxBytes }), ...(o.perWindow === undefined ? {} : { perWindow: o.perWindow }), ...(o.windowMs === undefined ? {} : { windowMs: o.windowMs }),
+  });
+  return (pluginId, server, line) => write(pluginId, [`[mcp ${server}] ${line}`]);
 }

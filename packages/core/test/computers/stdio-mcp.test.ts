@@ -2,13 +2,14 @@
 // they wrote released once, crashes delayed and counted, and a plugin that crashed 3 times in 10 minutes stopped with
 // its reason until it is restarted. Real processes (a small MCP server on the test's Bun), temp folders only.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { McpChannel } from "../../src/contracts/plugin-host";
 import { ensurePluginRunFiles } from "../../src/registry/plugin-run";
 import { PluginSecretFiles, secretFilesFolder } from "../../src/registry/secret-files";
-import { pluginStdioPrepare, StdioMcpLauncher, type StdioServerSpec } from "../../src/computers/stdio-mcp";
+import { pluginStdioPrepare, reapStdioMcpLeftovers, StdioMcpLauncher, stdioStderrLog, type StdioServerSpec } from "../../src/computers/stdio-mcp";
+import { spawn } from "node:child_process";
 
 const temps: string[] = [];
 const temp = (prefix: string) => {
@@ -25,11 +26,14 @@ afterAll(() => {
 const SERVER = `
 const mode = process.env.MODE ?? "ok";
 if (mode === "crash-at-start") { console.error("boom: no config"); process.exit(2); }
+if (mode === "big-exit") { process.stdout.write("x".repeat(5000)); process.exit(4); }
+if (mode === "flood") { for (let i = 0; i < 50; i++) process.stdout.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/message", params: { i } }) + "\\n"); }
+if (mode === "no-read") { setInterval(() => {}, 1000); }
 console.error("server up " + process.pid);
 let buf = "";
 const out = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (c) => {
+if (mode !== "no-read") process.stdin.setEncoding("utf8");
+if (mode !== "no-read") process.stdin.on("data", (c) => {
   buf += c;
   let i;
   while ((i = buf.indexOf("\\n")) >= 0) {
@@ -96,25 +100,30 @@ const until = async (f: () => boolean, ms = 5000) => {
 };
 
 /** A launcher over the fixture, counting each start's release. */
-function rig(o: { mode?: () => string; clock?: { now(): number }; sleep?: (ms: number) => Promise<void>; lineMax?: number } = {}) {
+function rig(o: { mode?: () => string; clock?: { now(): number }; sleep?: (ms: number) => Promise<void>; lineMax?: number; stdinMax?: number; messagesPerSecond?: number; records?: string; onRelease?: () => void } = {}) {
   const dir = fixture();
   const releases: string[] = [];
   const starts: string[] = [];
   const restarted: string[] = [];
+  const logs: string[] = [];
   let n = 0;
   const launcher = new StdioMcpLauncher({
     prepare: async (pluginId, server): Promise<StdioServerSpec> => {
       const id = `${pluginId}/${server}#${++n}`;
       starts.push(id);
-      return { config: { command: process.execPath, args: [join(dir, "server.js")], env: { MODE: o.mode?.() ?? "ok" } }, cwd: join(dir, "data"), release: () => releases.push(id) };
+      return { config: { command: process.execPath, args: [join(dir, "server.js")], env: { MODE: o.mode?.() ?? "ok" } }, cwd: join(dir, "data"), release: () => { o.onRelease?.(); releases.push(id); } };
     },
     stopGraceMs: 500,
     onRestart: (id) => restarted.push(id),
+    log: (l) => logs.push(l),
     ...(o.clock ? { clock: o.clock } : {}),
     ...(o.sleep ? { sleep: o.sleep } : {}),
     ...(o.lineMax ? { lineMax: o.lineMax } : {}),
+    ...(o.stdinMax ? { stdinMax: o.stdinMax } : {}),
+    ...(o.messagesPerSecond ? { messagesPerSecond: o.messagesPerSecond } : {}),
+    ...(o.records ? { records: o.records } : {}),
   });
-  return { launcher, releases, starts, restarted };
+  return { launcher, releases, starts, restarted, logs };
 }
 
 describe("a stdio server's life", () => {
@@ -238,6 +247,101 @@ describe("a stdio server's life", () => {
     const failing = new StdioMcpLauncher({ prepare: async () => { throw new Error("secret KEY is not set"); } });
     await expect(failing.openMcp("acme/tools", "echo")).rejects.toThrow("secret KEY is not set");
     expect(failing.state("acme/tools")).toEqual({ crashes: 0 });
+    await launcher.close();
+  });
+});
+
+describe("bounds and signals", () => {
+  test("no signal reaches its group id after it exited, but the one sweep (a late chunk of its output kills nothing)", async () => {
+    const calls: number[] = [];
+    const real = process.kill;
+    let pid = 0;
+    let atRelease = -1;
+    process.kill = ((p: number, sig?: string | number) => {
+      if (p === -pid) calls.push(p);
+      return real.call(process, p, sig as never);
+    }) as typeof process.kill;
+    try {
+      const { launcher, releases } = rig({ mode: () => "big-exit", lineMax: 1000, onRelease: () => { atRelease = calls.length; } });
+      await launcher.openMcp("acme/tools", "echo");
+      pid = launcher.running()[0]?.pid ?? 0;
+      await until(() => releases.length === 1);
+      await new Promise((r) => setTimeout(r, 200));
+      // Every call happened by the time it was released (the sweep is the last); none after.
+      expect(calls.length).toBe(atRelease);
+      expect(calls.length).toBeLessThanOrEqual(2);
+      await launcher.close();
+    } finally {
+      process.kill = real;
+    }
+  });
+
+  test("a server that stops reading its input is ended as a crash once its waiting input passes the cap", async () => {
+    const { launcher, releases } = rig({ mode: () => "no-read", stdinMax: 256 * 1024 });
+    const ch = await launcher.openMcp("acme/tools", "echo");
+    const big = "y".repeat(16 * 1024);
+    let err: unknown;
+    for (let i = 0; i < 200 && err === undefined; i++) {
+      try {
+        ch.send({ jsonrpc: "2.0", id: i, method: "tools/call", params: { name: "Echo", arguments: { big } } });
+      } catch (e) {
+        err = e;
+      }
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    expect((err as Error).message).toContain("stopped reading its input");
+    await until(() => releases.length === 1);
+    expect(launcher.state("acme/tools").crashes).toBe(1);
+    await launcher.close();
+  });
+
+  test("more messages in a second than the cap end it as a crash", async () => {
+    const { launcher, releases, logs } = rig({ mode: () => "flood", messagesPerSecond: 10 });
+    await launcher.openMcp("acme/tools", "echo");
+    await until(() => releases.length === 1);
+    expect(logs.some((l) => l.includes("more than 10 messages in a second"))).toBe(true);
+    await launcher.close();
+  });
+
+  test("its stderr goes to the plugin's log with lane B's caps, each line marked with its server", () => {
+    const home = temp("lane-j-stdio-log-");
+    let now = 0;
+    const write = stdioStderrLog({ cloverHome: home, log: () => {}, now: () => now, perWindow: 2, windowMs: 1000 });
+    write("acme/tools", "echo", "one");
+    write("acme/tools", "echo", "two");
+    write("acme/tools", "echo", "three");
+    now = 2000;
+    write("acme/tools", "echo", "four");
+    const text = readFileSync(join(home, "logs", "plugins", "acme", "tools.log"), "utf8");
+    expect(text).toContain("[mcp echo] one");
+    expect(text).toContain("[mcp echo] two");
+    expect(text).not.toContain("three");
+    expect(text).toContain("1 more lines dropped");
+    expect(text).toContain("[mcp echo] four");
+  });
+});
+
+describe("a daemon that died", () => {
+  test("the next daemon reaps what it left running, and never a process that isn't that server", async () => {
+    if (process.platform === "win32") return;
+    const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
+    const { launcher } = rig({ records });
+    const ch = await launcher.openMcp("acme/tools", "echo");
+    await request(ch, 1, "initialize");
+    const grandchild = Number(((await request(ch, 2, "tools/call", { name: "Spawn", arguments: {} })).result as { content: { text: string }[] }).content[0]!.text);
+    const pid = launcher.running()[0]!.pid!;
+    // An unrelated process, recorded with a start time that isn't its own (a reused pid): left alone.
+    const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+    writeFileSync(join(records, `${other.pid}.json`), JSON.stringify({ pid: other.pid, startedAt: Date.now() - 3_600_000, pluginId: "x", server: "y" }));
+    writeFileSync(join(records, "garbage.json"), "{");
+    writeFileSync(join(records, "123.json"), "not json");
+    // The daemon died: nothing stopped its server. The next one reaps.
+    const reaped = await reapStdioMcpLeftovers({ dir: records });
+    expect(reaped.reaped).toEqual([pid]);
+    await until(() => !alive(pid) && !alive(grandchild));
+    expect(alive(other.pid!)).toBe(true);
+    expect(readdirSync(records).filter((n) => n.endsWith(".json") && n !== "garbage.json")).toEqual([]);
+    process.kill(-other.pid!, "SIGKILL");
     await launcher.close();
   });
 });
