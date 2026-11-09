@@ -15,7 +15,7 @@ import { startPluginHost } from "../../plugin-host/daemon-host";
 import { HookRunner } from "../../plugins/hook-runner";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
 import { openPluginRegistry } from "../open";
-import { CREDENTIAL_FILES, darwinUserFolders, LAUNCH_SERVICES_DENIES, gitFoldersOf, gitHooksPaths, gitIncludedFiles, pluginFenceProfile, projectFolders, toolCacheEnv } from "../plugin-fence";
+import { CREDENTIAL_FILES, darwinUserFolders, fencedSpawn, LAUNCH_SERVICES_DENIES, gitFoldersOf, gitHooksPaths, gitIncludedFiles, pluginFenceProfile, PRIVACY_DENIES, projectFolders, toolCacheEnv } from "../plugin-fence";
 import { ensurePluginRunFiles, guardedMcpServer } from "../plugin-run";
 import { darwinDescribe } from "../../../test/helpers/darwin-only";
 
@@ -537,6 +537,79 @@ darwinDescribe("the plugin-process fence", () => {
       stop(w);
     }
   }, 90_000);
+
+  // #357's review: after the disclaim each process is judged by its own program, so a privacy grant to one plugin's
+  // would be every plugin's. Every fenced process is denied the ones that aren't files before TCC is asked. Checked by
+  // the profile and by what the sandbox refuses first: a service's name lookup, a data folder's read, `osascript`'s
+  // exec. Nothing here sends an Apple Event or opens a camera, microphone or location (no prompt can be raised).
+  test("no plugin process reaches a privacy service that isn't a file: camera, microphone, Apple Events, screen, location, Contacts, Calendar, Reminders, Photos", async () => {
+    for (const exec of ["plugin", "any"] as const) {
+      const p = pluginFenceProfile({ cloverHome: "/c", userHome: "/Users/u", read: ["/Users/u/plugin"], write: [], exec, execs: ["/b/bun"] });
+      for (const op of ["device-camera", "device-microphone", "appleevent-send"]) expect(p).toContain(`(deny ${op})\n`);
+      for (const prefix of ["com.apple.locationd", "com.apple.replayd", "com.apple.screencapture", "com.apple.contactsd", "com.apple.CalendarAgent", "com.apple.remindd", "com.apple.photos.", "com.apple.assetsd"]) {
+        expect(p).toContain(`(global-name-prefix "${prefix}")`);
+      }
+      for (const f of PRIVACY_DENIES.dataFolders) expect(p).toContain(`(subpath "${join("/Users/u", f)}")`);
+      expect(p).toContain(String.raw`(regex #"\.photoslibrary(/|$)")`);
+      // After every allow: a project folder that holds a Photos library doesn't open it.
+      const withProject = pluginFenceProfile({ cloverHome: "/c", userHome: "/Users/u", read: ["/Users/u/plugin"], write: [], exec, projects: ["/Users/u/Pictures"], projectWrite: true });
+      const lines = withProject.split("\n");
+      expect(lines.findIndex((l) => l.includes("photoslibrary"))).toBeGreaterThan(lines.findIndex((l) => l.startsWith("(allow file-read* file-write*")));
+    }
+    const w = world();
+    try {
+      const pictures = join(w.userHome, "Pictures");
+      mkdirSync(join(pictures, "Photos Library.photoslibrary", "database"), { recursive: true });
+      mkdirSync(join(pictures, "Old.photoslibrary"), { recursive: true });
+      writeFileSync(join(pictures, "Photos Library.photoslibrary", "database", "Photos.sqlite"), "photos");
+      writeFileSync(join(pictures, "Old.photoslibrary", "x"), "photos");
+      writeFileSync(join(pictures, "drawing.txt"), "mine");
+      const lookup = [
+        `const { dlopen, ptr } = require("bun:ffi");`,
+        `const { symbols: s } = dlopen("/usr/lib/libSystem.B.dylib", { task_self_trap: { args: [], returns: "u32" }, task_get_special_port: { args: ["u32", "i32", "ptr"], returns: "i32" }, bootstrap_look_up: { args: ["u32", "cstring", "ptr"], returns: "i32" } });`,
+        `const bp = new Uint32Array(1); s.task_get_special_port(s.task_self_trap(), 4, ptr(bp));`,
+        `const out = {}; for (const n of process.argv.slice(2)) out[n] = s.bootstrap_look_up(bp[0], Buffer.from(n + "\\0"), ptr(new Uint32Array(1)));`,
+        `console.log(JSON.stringify(out));`,
+      ].join("\n");
+      writeFileSync(join(w.root, "lookup.cjs"), `${lookup}\n`);
+      // A name lookup alone: the sandbox answers it (1100, not privileged) before the service is reached.
+      const services = ["com.apple.CalendarAgent", "com.apple.calaccessd", "com.apple.contactsd.persistence", "com.apple.remindd", "com.apple.photos.service", "com.apple.replayd", "com.apple.locationd.desktop.registration", "com.apple.screencapture.interactive"];
+      const control = "com.apple.system.notification_center";
+      const q = (x: string) => JSON.stringify(x);
+      const command = [
+        `bun lookup.cjs ${[...services, control].join(" ")}`,
+        `cat ${q(join(pictures, "drawing.txt"))} >/dev/null 2>&1 && echo own=ok || echo own=denied`,
+        `cat ${q(join(pictures, "Photos Library.photoslibrary", "database", "Photos.sqlite"))} >/dev/null 2>&1 && echo library=ok || echo library=denied`,
+        `cat ${q(join(pictures, "Old.photoslibrary", "x"))} >/dev/null 2>&1 && echo otherlibrary=ok || echo otherlibrary=denied`,
+        // osascript is never run (its exec is refused), so no Apple Event is sent; `return 1` sends none anyway.
+        "/usr/bin/osascript -e 'return 1' >/dev/null 2>&1 && echo osascript=ok || echo osascript=denied",
+      ].join("; ");
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const runner = new HookRunner(guard, { projectFor: () => ({ dirs: [pictures], write: true }) });
+      const r = (await runner.run({ pluginId: "spy", event: "SessionStart", command, cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "SessionStart" } as never)) as { stdout: string };
+      const [json, ...rest] = r.stdout.trim().split("\n");
+      const looked = JSON.parse(json!) as Record<string, number>;
+      for (const n of services) expect([n, looked[n]]).toEqual([n, 1100]);
+      expect(looked[control]).toBe(0);
+      expect(Object.fromEntries(rest.map((l) => l.split("=") as [string, string]))).toEqual({ own: "ok", library: "denied", otherlibrary: "denied", osascript: "denied" });
+    } finally {
+      stop(w);
+    }
+  }, 60_000);
+
+  test("the spawn trampoline's own environment is exactly what it carries, its folder and descriptors, PATH and TMPDIR", () => {
+    const home = temp("cf-tramp-");
+    const files = ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home });
+    const fence = { cloverHome: home, userHome: temp("cf-tramp-user-"), read: [], write: [], exec: "any" as const };
+    const env = { PATH: "/opt/x/bin:/usr/bin", TMPDIR: "/t/", HOME: "/Users/u", NODE_OPTIONS: "--require x", BUN_OPTIONS: "--preload y", SECRET: "s", UNSET: undefined };
+    const spawned = fencedSpawn({ cmd: ["sh", "-c", "true"], env, fence, files, cwd: "/w", fds: [0, 1, 2, 3] }, "darwin");
+    expect(Object.keys(spawned.env).sort()).toEqual(["CLOVER_SPAWN_CWD", "CLOVER_SPAWN_ENV", "CLOVER_SPAWN_FDS", "PATH", "TMPDIR"]);
+    expect(spawned.env).toMatchObject({ CLOVER_SPAWN_CWD: "/w", CLOVER_SPAWN_FDS: "0,1,2,3", PATH: "/usr/bin:/bin", TMPDIR: "/t/" });
+    expect(JSON.parse(spawned.env.CLOVER_SPAWN_ENV!)).toEqual({ PATH: "/opt/x/bin:/usr/bin", TMPDIR: "/t/", HOME: "/Users/u", NODE_OPTIONS: "--require x", BUN_OPTIONS: "--preload y", SECRET: "s" });
+    // No TMPDIR, no folder: neither is invented.
+    const bare = fencedSpawn({ cmd: ["true"], env: { PATH: "/usr/bin" }, fence, files }, "darwin");
+    expect(Object.keys(bare.env).sort()).toEqual(["CLOVER_SPAWN_ENV", "CLOVER_SPAWN_FDS", "PATH"]);
+  });
 
   test("the clover process, which holds many plugins, runs no plugin's native code: bun:ffi is disarmed and no addon loads; a third-party plugin's own process keeps both (B3)", async () => {
     const home = temp("cf-natives-");

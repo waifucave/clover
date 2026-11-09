@@ -255,6 +255,17 @@ Why not inside the daemon: a buggy plugin would freeze or crash the always-on da
 
 **[P] On macOS every plugin process is its own TCC-responsible process** (the controller's ruling after #345). Each one starts through Clover's spawn trampoline, which disclaims responsibility (`posix_spawn` with `POSIX_SPAWN_SETEXEC` and the disclaim attribute), keeping its pid, process group and descriptors. So a plugin process never inherits a privacy permission (Screen Recording, Accessibility, the microphone, the camera) granted to the daemon, the app or whatever started them. That covers plugin-host processes, supervised hosts, hooks and stdio MCP servers.
 
+**[P] A privacy grant is held by a program, not a plugin.** Once responsibility is disclaimed, macOS judges each process by its own program: the one shared plugin Bun for hosts, and `sh`, `node` and the like for hooks and MCP servers. A grant the user approves for one plugin's process is therefore held by every plugin that runs the same program.
+* **File grants (Documents, Desktop, Downloads, iCloud Drive) may be shared this way.** The fence already holds each process to its own folders and its session's project folders, so a shared grant opens nothing outside any plugin's fence.
+* **Privacy services that aren't files are denied in every plugin profile, before TCC is asked.** So no plugin can raise a prompt or share such a grant. This covers:
+  * the camera and microphone (`device-camera`, `device-microphone`);
+  * Apple Events (`appleevent-send`);
+  * screen capture;
+  * location;
+  * Contacts, Calendar, Reminders and Photos, through their Mach services and their data folders (and any Photos library, wherever it is).
+
+  No plugin capability grants any of these yet; one that does needs its own row in §5.4.
+
 **[D] On Windows and Linux, plugin code runs as the user** (revision 13; this replaces the narrow jail chosen in revision 12). Windows Credential Manager and the Secret Service have no per-app check, and a jail loose enough for plugins to work can't stop a plugin asking another program (a terminal, the Task Scheduler, a desktop service) to act for it; AppContainer, the strict kind, would have shut out computer use. So, as in VS Code, Claude Code and Devin, the sandboxes go on what the models run (bots' Bash, §9.1; coding agents' commands, §9.3), and code the user installs is trusted: a plugin's OK there says its code could read Clover's logins and approve its own cards (§5.1), **[P]** and approve actions on the user's other computers, since any desktop answers another computer's cards (item 91, §5.5). Computer use is plugin code like any other and needs no exception. **[P]** On macOS the plugin host's sandbox also blocks the daemon's socket; on every OS the host talks to the daemon over the pipe it was started with.
 
 **[P] Where each contribution runs:**

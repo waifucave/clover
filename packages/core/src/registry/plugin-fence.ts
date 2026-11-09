@@ -270,6 +270,33 @@ export const SCREEN_AND_CLIPBOARD_SERVICES: readonly string[] = [
   "com.apple.pasteboard.1", "com.apple.pasteboard.2", "com.apple.windowserver", "com.apple.windowserver.active",
 ];
 
+/** The privacy services that aren't files (#357's review): after the spawn disclaims, macOS judges each process by its
+ *  own program, so a grant to one plugin's Bun, `sh` or `node` would be every plugin's. No plugin capability grants any
+ *  of these yet, so every fenced process is denied them outright, before TCC is ever asked: no prompt is raised and no
+ *  grant is shared. Camera, microphone and Apple Events by their operations; location, screen capture, Contacts,
+ *  Calendar, Reminders and Photos by their services (by prefix) and their data folders (under the user's home, and any
+ *  Photos library anywhere). File grants (Documents, Desktop, Downloads, iCloud) stay shared: each process is held to
+ *  its own folders by the fence regardless. */
+export const PRIVACY_DENIES = {
+  operations: ["device-camera", "device-microphone", "appleevent-send"],
+  servicePrefixes: [
+    "com.apple.locationd",
+    "com.apple.replayd", "com.apple.screencapture", "com.apple.ScreenCaptureKit",
+    "com.apple.contactsd", "com.apple.AddressBook",
+    "com.apple.CalendarAgent", "com.apple.calaccessd",
+    "com.apple.remindd",
+    "com.apple.photos.", "com.apple.assetsd", "com.apple.cloudphotosd", "com.apple.photoanalysisd",
+  ],
+  dataFolders: [
+    "Library/Application Support/AddressBook", "Library/Containers/com.apple.AddressBook",
+    "Library/Calendars", "Library/Group Containers/group.com.apple.calendar", "Library/Containers/com.apple.iCal",
+    "Library/Reminders", "Library/Group Containers/group.com.apple.reminders", "Library/Containers/com.apple.reminders",
+    "Library/Containers/com.apple.Photos", "Pictures/Photos Library.photoslibrary",
+  ],
+  /** A Photos library wherever it is (a project folder can hold one). */
+  photosLibrary: String.raw`\.photoslibrary(/|$)`,
+} as const;
+
 export interface PluginFenceInput {
   /** The Clover home: denied whole, but what `read` and `write` name. */
   cloverHome: string;
@@ -371,6 +398,11 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     // can be renamed away and back; its credential files unread too.
     ...(projects.length > 0 ? projectDenyLines(projects, user) : []),
     `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services, ...SCREEN_AND_CLIPBOARD_SERVICES].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
+    // No privacy service that isn't a file, for any plugin (#357's review): no prompt, and no grant one plugin's
+    // program would share with every other's.
+    ...PRIVACY_DENIES.operations.map((op) => `(deny ${op})`),
+    `(deny mach-lookup ${PRIVACY_DENIES.servicePrefixes.map((s) => `(global-name-prefix "${sbpl(s)}")`).join(" ")})`,
+    `(deny file-read* file-write* ${subpaths(PRIVACY_DENIES.dataFolders.map((f) => join(user, f)))} (regex #"${PRIVACY_DENIES.photosLibrary}"))`,
     // Signals only to itself and its own children: never the daemon, the app or another plugin (#345's second review).
     "(deny signal)",
     "(allow signal (target self) (target children))",
