@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -1054,3 +1054,42 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
 const session = (sessionId: string): Caller => ({ kind: "session", sessionId, sessionKind: "coding" });
 const agent = (bot: string): Caller => ({ kind: "session", sessionId: "a1", sessionKind: "agent", bot });
+
+// Linux: the same holds under bubblewrap, run for real (the VM gate; skipped elsewhere and where bwrap can't run).
+(process.platform === "linux" ? describe : describe.skip)("bubblewrap, live (#392's review)", () => {
+  const coding = { kind: "session" as const, sessionId: "c1", sessionKind: "coding" as const };
+  const runIn = (home: string) => {
+    for (const d of ["project", "tmp", ".clover"]) mkdirSync(join(home, d), { recursive: true });
+    const spawner = fencedSpawner({ fence: new CloverFence({ os: "linux", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") }) });
+    return { spawner, run: (command: string) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 30_000, who: { caller: coding } }) };
+  };
+  const out = (r: Awaited<ReturnType<ReturnType<typeof runIn>["run"]>>) => (r.kind === "exited" ? r.stdout : r.kind === "refused" ? `refused: ${r.reason}` : "timeout");
+
+  test("each folder between the home and a deep held link (~/a/b/c/gitconfig) can't be renamed, nor the link swapped", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-bwrap-deep-")));
+    const at = (...p: string[]) => join(home, ...p);
+    for (const d of [at("a", "b", "c"), at("real")]) mkdirSync(d, { recursive: true });
+    writeFileSync(at("real", "deep"), "[user]\n\tname = me\n");
+    symlinkSync(at("real", "deep"), at("a", "b", "c", "gitconfig"));
+    symlinkSync(at("a", "b", "c", "gitconfig"), at(".gitconfig"));
+    const { spawner, run } = runIn(home);
+    if (!spawner.available) return;
+    for (const f of [at("a"), at("a", "b"), at("a", "b", "c")]) {
+      expect([f, out(await run(`mv '${f}' '${f}.away' && echo moved`))]).toEqual([f, ""]);
+      expect(existsSync(`${f}.away`)).toBe(false);
+    }
+    expect(out(await run(`rm -f '${at("a", "b", "c", "gitconfig")}' && ln -s '${at("project")}' '${at("a", "b", "c", "gitconfig")}' && echo swapped`))).toBe("");
+    expect(readlinkSync(at("a", "b", "c", "gitconfig"))).toBe(at("real", "deep"));
+    expect(out(await run(`printf x > '${at("a", "b", "notes.md")}' && echo wrote`))).toBe("wrote\n");
+  }, 120_000);
+
+  test("a fresh home: a first `mkdir -p ~/.config/gh` works, and ~/.config can't be renamed", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-bwrap-fresh-")));
+    const { spawner, run } = runIn(home);
+    if (!spawner.available) return;
+    expect(out(await run('mkdir -p "$HOME/.config/gh" && echo made'))).toBe("made\n");
+    expect(existsSync(join(home, ".config", "gh"))).toBe(true);
+    expect(out(await run('mv "$HOME/.config" "$HOME/.config.away" && echo moved'))).toBe("");
+    expect(existsSync(join(home, ".config.away"))).toBe(false);
+  }, 120_000);
+});
