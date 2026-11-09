@@ -31,7 +31,7 @@ function device() {
   return {
     raw,
     publicKey: Buffer.from(raw).toString("base64"),
-    boxKey: Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url"),
+    boxKey: Buffer.from(generateKeyPairSync("x25519").publicKey.export({ format: "der", type: "spki" }).subarray(12)).toString("base64url"),
     sign: (data: Uint8Array) => sign(null, data, privateKey).toString("base64url"),
   };
 }

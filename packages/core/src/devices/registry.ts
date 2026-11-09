@@ -27,6 +27,7 @@ import { fromBase64, fromBase64Url, toBase64, utf8 } from "../identity/bytes";
 import { encode } from "../links/codec";
 import type { DeviceKey } from "../identity/device-key";
 import { type AnswerKeyAlg, answerKeyBytes, publicKeyFromBase64, verifyEd25519, verifyKeySignature } from "../identity/keys";
+import { isStrictX25519PublicKey } from "../identity/x25519-strict";
 import { readJsonFile, writeJsonFile } from "./json-file";
 
 /** A pair of devices paired without an account (item 81). The pair's signing keys stay in the secret store. */
@@ -549,6 +550,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
   setBoxKey(id: string, key: string): void {
     const raw = fromBase64Url(key);
     if (!raw || raw.length !== 32) throw new ContractError("invalid", "an X25519 key is 32 bytes");
+    if (!isStrictX25519PublicKey(raw)) throw new ContractError("invalid", "not a usable X25519 key");
     if (!this.#find(id)) throw new ContractError("not_found", `no device ${id}`);
     if (this.#state.boxKeys[id] === key) return;
     this.#state.boxKeys[id] = key;

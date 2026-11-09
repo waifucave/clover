@@ -5,7 +5,7 @@ import { runInDurableObject } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, test } from "vitest";
 
-import { fromB64u } from "../../shared/encoding";
+import { b64u, fromB64u } from "../../shared/encoding";
 import { clearJwksCache, verifyAccountTokenFrom } from "../../shared/jwks";
 import { StepLimiter } from "../../shared/testing/step-limiter";
 import type { AccountDO } from "../src/account-do";
@@ -155,6 +155,11 @@ describe("devices", () => {
       { name: "x".repeat(LIMITS.maxName + 1) },
       { boxKey: "AAAA" },
       { boxKey: device.boxKey + "A" },
+      // Box keys that aren't usable X25519 keys: low-order points, u ≥ p, the high bit set.
+      { boxKey: b64u(new Uint8Array(32)) },
+      { boxKey: b64u(Uint8Array.from(Buffer.from("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800", "hex"))) },
+      { boxKey: b64u(Uint8Array.from(Buffer.from("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f", "hex"))) },
+      { boxKey: b64u(fromB64u(device.boxKey).map((b, i) => (i === 31 ? b | 0x80 : b))) },
       { publicKey: "AAAA" },
       { id: "Not-An-Id" },
     ]) {

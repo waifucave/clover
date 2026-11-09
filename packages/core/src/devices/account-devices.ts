@@ -67,7 +67,13 @@ export async function syncAccountDevices(o: AccountDevicesOptions): Promise<{ ad
         continue;
       }
     }
-    if (o.registry.get(d.id)?.revokedAt === undefined) o.registry.setBoxKey(d.id, d.boxKey);
+    if (o.registry.get(d.id)?.revokedAt !== undefined) continue;
+    try {
+      o.registry.setBoxKey(d.id, d.boxKey);
+    } catch (err) {
+      // A box key that isn't a usable X25519 key is left out: nothing is sealed to that device, and the rest still sync.
+      if (!(err instanceof ContractError && err.code === "invalid")) throw err;
+    }
   }
   return { added, revoked };
 }

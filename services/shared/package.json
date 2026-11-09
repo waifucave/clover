@@ -11,6 +11,7 @@
     "./http": "./http.ts",
     "./jwks": "./jwks.ts",
     "./web": "./web.ts",
+    "./x25519-strict": "./x25519-strict.ts",
     "./testing/step-limiter": "./testing/step-limiter.ts"
   },
   "scripts": {

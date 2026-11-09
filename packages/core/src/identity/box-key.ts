@@ -8,6 +8,7 @@ import { createCipheriv, createDecipheriv, createHmac, createPrivateKey, createP
 import { ContractError } from "../contracts/common";
 import type { SecretRef, SecretStore } from "../contracts/secret-store";
 import { type Bytes, concat, fromBase64, fromBase64Url, own, toBase64, toBase64Url, utf8 } from "./bytes";
+import { isStrictX25519PublicKey } from "./x25519-strict";
 
 export const BOX_KEY_REF: SecretRef = { owner: { kind: "device" }, name: "device:box-key" };
 export const HANDSHAKE_BOX_INFO = "clover handshake v1 box";
@@ -52,6 +53,7 @@ export class BoxKey {
     if (!bytes || bytes.length < 32 + 16) return undefined;
     try {
       const enc = bytes.subarray(0, 32);
+      if (!isStrictX25519PublicKey(enc)) return undefined;
       const dh = diffieHellman({ privateKey: this.#private, publicKey: x25519Public(enc) });
       if (dh.every((b) => b === 0)) return undefined;
       const shared = extractAndExpand(dh, concat(enc, this.publicKey));
@@ -70,6 +72,7 @@ export class BoxKey {
 /** SealBase, single shot, to a device's X25519 public key: base64url of `enc (32) || ciphertext`. */
 export function sealToBoxKey(recipient: Uint8Array, aad: Uint8Array, plaintext: Uint8Array, info = HANDSHAKE_BOX_INFO): string {
   if (recipient.length !== 32) throw new ContractError("invalid", "an X25519 key is 32 bytes");
+  if (!isStrictX25519PublicKey(recipient)) throw new ContractError("invalid", "not a usable X25519 key");
   const eph = generateKeyPairSync("x25519");
   const enc = own((createPublicKey(eph.privateKey).export({ format: "der", type: "spki" }) as Buffer).subarray(SPKI_PREFIX.length));
   const dh = diffieHellman({ privateKey: eph.privateKey, publicKey: x25519Public(recipient) });

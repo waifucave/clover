@@ -81,6 +81,32 @@ describe("the pairing exchange", () => {
     expect(other.secret).not.toEqual(atPage.secret);
   });
 
+  test("a computer X25519 key that isn't usable (a low-order point, the high bit set) is refused", async () => {
+    const page = await generateX25519();
+    const computer = await generateX25519();
+    const transcript = {
+      invitePair: invite.pair,
+      pair: "CCCCCCCCCCCCCCCCCCCCCC",
+      computerKey: invite.computerKey,
+      browserKey: "D".repeat(43),
+      computerX25519: computer.publicKey,
+      browserX25519: page.publicKey,
+      code: invite.code,
+    };
+    const hex = (h: string) => Buffer.from(h, "hex").toString("base64url");
+    const highBit = Buffer.from(computer.publicKey, "base64url");
+    highBit[31]! |= 0x80;
+    for (const bad of [
+      hex("0000000000000000000000000000000000000000000000000000000000000000"),
+      hex("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"),
+      hex("5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157"),
+      hex("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+      highBit.toString("base64url"),
+    ]) {
+      await expect(pairingResult(page.privateKey, bad, { ...transcript, computerX25519: bad }, invite.secret)).rejects.toThrow("not a usable X25519 key");
+    }
+  });
+
   test("words are four base-1296 digits of the first five bytes, most significant first", () => {
     expect(EFF_SHORT_WORDLIST).toHaveLength(1296);
     expect(wordsFrom(new Uint8Array(32))).toEqual(["acid", "acid", "acid", "acid"]);
