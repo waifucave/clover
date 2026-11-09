@@ -143,6 +143,16 @@ describe("RemoteMcpListings: revokes and clashes", () => {
     expect(r.listings.listing("blender", ["studio"])?.plugin).toBe("acme/blender");
   });
 
+  test("a fetch started before a revoke keeps nothing, even once the device is paired again", async () => {
+    const r = rig();
+    r.hello("studio");
+    await r.fetching();
+    r.revoke("studio");
+    r.repair("studio");
+    await r.answer();
+    expect(r.listings.listing("blender", ["studio"])).toBeUndefined();
+  });
+
   test("a fetch in flight at the revoke keeps nothing", async () => {
     const r = rig();
     r.hello("studio");
