@@ -133,8 +133,9 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         computer: () => node?.registry.self().name ?? nodeLinks.self.name,
         ...(input.approvals ? { approvals: input.approvals } : {}),
         ...(input.reviewer ? { reviewer: input.reviewer } : {}),
-        // TMPDIR: a bot's own scratch folder, else the fence's temp folder (the one every runner may write; once INT's
-        // one CloverFence lands here, `fence.temp`).
+        // `temp`: the fence's temp folder, which the fence lets every runner write: TMPDIR for every Bash run here except
+        // a bot's own, which gets its scratch folder instead (`fencedExecutor`, from `cloverHome`). Read from a fence of
+        // this home until INT's one daemon-wide CloverFence lands here (#365); then it is that fence's `temp`.
         ...(input.spawner ? { bash: { spawner: input.spawner, home: input.userHome, cloverHome: input.cloverHome, temp: new CloverFence({ home: input.userHome, cloverHome: input.cloverHome }).temp } } : {}),
         answers: { devices: nodeLinks.devices, cloverHome: input.cloverHome, clock: input.clock },
         log: (line) => log(`[computers] ${line}`),

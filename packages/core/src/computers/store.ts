@@ -92,7 +92,13 @@ export class FileAnswerLedger implements AnswerLedger {
       this.#brokenSince = clock.now();
       return;
     }
-    for (const [id, at] of Object.entries(used)) if (typeof at === "number" && Number.isFinite(at)) this.#used.set(id, at);
+    // An entry that isn't a time makes the whole file untrustworthy (it may have dropped a used id): corrupt, closed.
+    const entries = Object.entries(used);
+    if (entries.some(([, at]) => typeof at !== "number" || !Number.isFinite(at))) {
+      this.#brokenSince = clock.now();
+      return;
+    }
+    for (const [id, at] of entries) this.#used.set(id, at as number);
   }
 
   claim(cardId: string): boolean {
