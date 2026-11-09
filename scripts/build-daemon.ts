@@ -277,17 +277,17 @@ export function embeddedManifestLine(binary: string): string {
   }
 }
 
-/** The fd-receiver Worker's probe (`__fd-receiver-probe`, no home, Keychain or daemon) on a built core: it starts
- *  only if the compiled entry `./fd-receiver-worker.ts` resolves, as the embedded chat Worker's does. Throws when not. */
+/** `__worker-entry-probe` (no home, Keychain or daemon) on a built core: a compiled Worker entry
+ *  (`./fd-receiver-worker.ts`, named as `./embedded-worker.ts` is) loads inside the binary, on every OS. Throws when not. */
 export function workerEntryLine(binary: string): string {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-worker-"));
   try {
-    const r = spawnSync(binary, ["__fd-receiver-probe"], { env: probeEnv(home), encoding: "utf8", timeout: 60_000 });
+    const r = spawnSync(binary, ["__worker-entry-probe"], { env: probeEnv(home), encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim().split("\n").at(-1) ?? "";
     let ok = false;
     try { ok = (JSON.parse(out) as { ok?: unknown }).ok === true; } catch { ok = false; }
-    if (r.status !== 0 || !ok) throw new Error(`${binary} __fd-receiver-probe: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out.slice(0, 300))}: a compiled Worker entry doesn't resolve (is compile:core's \`--root src\` still there?)`);
-    return "Worker entries resolve (the fd-receiver probe's line came back)";
+    if (r.status !== 0 || !ok) throw new Error(`${binary} __worker-entry-probe: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out.slice(0, 300))}${r.stderr ? ` (stderr: ${r.stderr.trim().slice(0, 600)})` : ""}: a compiled Worker entry doesn't resolve (is compile:core's \`--root src\` still there?)`);
+    return "Worker entries resolve (the worker-entry probe loaded ./fd-receiver-worker.ts)";
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
