@@ -14,7 +14,7 @@ import { classifyPermissionMode } from "@waifucave/clover-agent-sdk/messaging";
 import { DISPATCH_CHILD_APPROVAL_TIMEOUT_MS, canUseToolFor, neverPromptsMessage, type BridgeLogger } from "../../src/runtime-sdk/approval-bridge";
 import { REVIEWER_ESCALATION_REASON, noteReviewerCleared, takeReviewerCleared } from "../../src/runtime-sdk/bridge-common";
 import {
-  buildCloverOptions, permissionModeFor, disallowedToolsFor, toolsFor, deferToolsFor, persistencePaths,
+  buildCloverOptions, codeSessionHomeDenyRead, permissionModeFor, disallowedToolsFor, toolsFor, deferToolsFor, persistencePaths,
   CAPABILITY_TOOL_MODES, CHAT_BUILTIN_TOOLS, DISPATCH_BUILTIN_TOOLS, DISPATCH_READ_ALLOW_RULES, GLOBAL_READ_ALLOW_RULES,
   WEB_BUILTIN_ALLOW_RULES, KNOWN_RUNTIME_BUILTINS, CAPABILITY_PLAIN_NAMES, LEGACY_TOOL_NAMES, toolSurfaceViolations,
   type ToolExposure, type CloverOptionsInput,
@@ -557,15 +557,12 @@ test("the Bash sandbox names real DIRECTORIES — plus, since R.3 I-4, the any-d
     "/repo/**/.clover/skills", "/repo/**/.clover/commands", "/repo/**/.clover/rules", "/repo/**/.clover/output-styles", "/repo/**/.clover/agents",
   ]);
   // The run folder, the runtimes (Task 17: model-denied, 8a) and (WS-21 spec §7.1) the user's MCP server list; then
-  // the home's default-deny (the owner's November 6 ruling, `codeSessionHomeFolders`): `/h` doesn't exist, so only
-  // the names that matter, denied whether or not they exist yet. Those in a kept folder (`sdk/settings.json`, the
-  // plugins folder) are left out.
-  expect(sb.filesystem!.denyRead).toEqual(["/h/run", "/h/runtimes", "/h/sdk/.clover.json",
-    "/h/connectors", "/h/credentials", "/h/devices", "/h/levels", "/h/plugin-data", "/h/plugins-state/adult.json",
-    "/h/plugins-state/installed.json", "/h/plugins-state/oks", "/h/rules", "/h/secrets.enc", "/h/secrets.key",
-    "/h/secrets.key.cred", "/h/sessions", "/h/sessions-runtime", "/h/settings", "/h/settings.json", "/h/transcripts", "/h/trust",
-    "/h/trust.json", "/h/usage", "/h/user-layers"]);
-  for (const p of [...sb.filesystem!.denyWrite!, ...sb.filesystem!.denyRead!]) {
+  // the home's default-deny (`codeSessionHomeDenyRead`: the owner's November 6 ruling and #347's review), patterns and
+  // all, and nothing else.
+  expect(sb.filesystem!.denyRead).toEqual([...new Set(["/h/run", "/h/runtimes", "/h/sdk/.clover.json", ...codeSessionHomeDenyRead("/h", "/repo")])]);
+  expect(sb.filesystem!.denyRead!.slice(0, 3)).toEqual(["/h/run", "/h/runtimes", "/h/sdk/.clover.json"]);
+  // Write denials stay literal but for the any-depth project fence.
+  for (const p of sb.filesystem!.denyWrite!) {
     const anyDepth = /^\/repo\/\*\*\/\.clover\/(?:skills|commands|rules|output-styles|agents)$/.test(p);
     expect({ p, glob: p.includes("*") }).toEqual({ p, glob: anyDepth });
   }
