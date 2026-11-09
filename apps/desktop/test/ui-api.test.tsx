@@ -356,6 +356,36 @@ describe("the UI API in a layer", () => {
     expect((await hooks.api!.conversation!.get!("s")) as unknown).toEqual({ id: "s", computer: "Laptop" });
   });
 
+  test("the layer API's files pass their options whole, so noFollow survives (a planted link stays refused at the tree's own check)", async () => {
+    const files = hooks.api!.files!;
+    const mount = (fake.calls.find((c) => c.op === "api") ?? { args: ["m?"] }).args[0];
+    // Reads carry noFollow through whole, never rebuilt from offset and length: the tree refuses a link on the way.
+    // (The refusal itself is the core's, pinned with a planted link in its own suite; here the layer proves it keeps
+    // the flag the tree decides on.)
+    await files.readText("home/Laptop/notes.md", { offset: 4, length: 8, noFollow: true });
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "files.readText", ["home/Laptop/notes.md", { offset: 4, length: 8, noFollow: true }]] });
+    await files.readBytes("home/Laptop/notes.md", { noFollow: true });
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "files.readBytes", ["home/Laptop/notes.md", { noFollow: true }]] });
+    await files.stat("home/Laptop/notes.md", { noFollow: true });
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "files.stat", ["home/Laptop/notes.md", { noFollow: true }]] });
+    // Without options nothing is sent after the path, as before.
+    await files.readText("home/Laptop/notes.md");
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "files.readText", ["home/Laptop/notes.md"]] });
+  });
+
+  test("the layer API's storage rides the part's own connection, so shortcut bindings persist core-side", async () => {
+    const storage = hooks.api!.storage!;
+    const mount = (fake.calls.find((c) => c.op === "api") ?? { args: ["m?"] }).args[0];
+    await storage.synced.set("bindings/palette", { key: "mod+k" });
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "storage.synced.set", ["bindings/palette", { key: "mod+k" }]] });
+    await storage.synced.get("bindings/palette");
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "storage.synced.get", ["bindings/palette"]] });
+    await storage.synced.delete("bindings/palette");
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "storage.synced.delete", ["bindings/palette"]] });
+    await storage.synced.keys();
+    expect(fake.calls).toContainEqual({ op: "api", args: [mount, "storage.synced.keys", []] });
+  });
+
   test("props across a frame's edge: functions become markers; markers become functions", () => {
     const fns: Function[] = [];
     const encoded = ui.encodeProps({ a: 1, nested: { f: () => 2 }, list: [() => 3, "x"], date: new Date(0) }, (fn) => {

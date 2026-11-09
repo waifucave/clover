@@ -18,7 +18,7 @@ const SESSION_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 /** The session partition a tab lives in: one per bot, one per session without a bot, one for the user, never per site
  *  (§12.1). A plugin id never holds `--`, so a child bot's `/` becomes `--` without two bots ever sharing a partition.
  *  A session's partition is named by a hash of its id, so no id ever spells a folder name. On disk each is
- *  `<userData>/Partitions/<name after "persist:">`. */
+ *  `<sessionData>/Partitions/<name after "persist:">` (the app's sessionData; Electron's default is userData). */
 export function partitionFor(owner: TabOwner): string {
   if (owner.kind === "user") return "persist:user";
   if (owner.kind === "session") {

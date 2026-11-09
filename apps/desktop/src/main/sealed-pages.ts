@@ -229,6 +229,15 @@ body {
 .seal-deny .seal-button { background: var(--clover-card-deny-background, #ededed); color: var(--clover-card-deny-text, #1f1f1f) }
 .state { margin: 0; font-size: 0.85em; color: var(--clover-card-muted, #6b6b6b); min-height: 1.2em }
 .hidden { visibility: hidden }
+/* The fallback card stands on its own tokens alone (no layer dresses it): its fixed colours follow the OS, live,
+ *  through the color scheme, so an appearance change while it stands needs no reload. Content a layer dressed with
+ *  card.* tokens keeps the layer's own theming in dark mode (M2: acceptable as is); this only retouches the untokened
+ *  fallbacks. */
+@media (prefers-color-scheme: dark) {
+  body { color: #F2F2F2; }
+  .seal-deny .seal-button { background: #3a3a3a; color: #F2F2F2; }
+  .state { color: #9A9A9A; }
+}
 </style>
 ${script ? `<script>${extra}</script>` : ""}
 </head>

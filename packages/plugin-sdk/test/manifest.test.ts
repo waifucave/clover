@@ -1,7 +1,7 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
-import { describeOk, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { describeOk, normalizeChord, parseJsonc, reservedCommandKey, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -167,6 +167,40 @@ describe("code, engines and platforms", () => {
     expect(r.manifest?.contributes?.commands).toEqual([]);
     const ui = validateManifest({ ...min(), contributes: { ui: [{ spot: "status", component: "Status" }] } });
     expect(has(ui, "component_needs_client", "entry")).toBe(true);
+  });
+});
+
+describe("reserved keys (lane E)", () => {
+  test("normalizeChord: mod resolves per platform, modifiers sort, keys lower-case", () => {
+    expect(normalizeChord("Mod+Shift+K", "darwin")).toBe("meta+shift+k");
+    expect(normalizeChord("shift+mod+z", "win32")).toBe("ctrl+shift+z");
+    expect(normalizeChord("ctrl+c", "darwin")).toBe("ctrl+c");
+    expect(normalizeChord("mod+q", "linux")).toBe("ctrl+q");
+    expect(() => normalizeChord("mod+cmd+q", "darwin")).toThrow();
+    expect(() => normalizeChord("", "darwin")).toThrow();
+  });
+
+  test("a command key on a reserved chord is refused, in any spelling or modifier order", () => {
+    const cmds = (key: string) => validateManifest({ ...min(), engines: { clover: "^1.0.0" }, host: { entry: "host/index.ts" }, contributes: { commands: [{ name: "go", description: "Go", handler: "go", key }] } });
+    // The grammar itself is lowercase-only (an uppercase key fails the schema first); every spelling it allows that
+    // lands on a reserved chord is refused here, whatever the modifiers' order.
+    for (const bad of ["mod+q", "ctrl+q", "meta+q", "mod+shift+z", "shift+mod+z", "ctrl+c", "meta+c", "ctrl+v", "mod+h", "mod+alt+h", "alt+mod+h", "mod+m", "mod+alt+shift+v", "ctrl+meta+space"]) {
+      const r = cmds(bad);
+      expect(has(r, "command_key_reserved", "entry"), bad).toBe(true);
+      expect(r.manifest?.contributes?.commands ?? []).toEqual([]);
+    }
+    const ok = cmds("mod+k");
+    expect(has(ok, "command_key_reserved")).toBe(false);
+    expect(ok.manifest?.contributes?.commands?.length).toBe(1);
+  });
+
+  test("reservedCommandKey names the reserved spelling; free chords read undefined", () => {
+    expect(reservedCommandKey("ctrl+c")).toBe("mod+c");
+    expect(reservedCommandKey("Mod+Q")).toBe("mod+q");
+    expect(reservedCommandKey("ctrl+meta+space")).toBe("ctrl+mod+space");
+    expect(reservedCommandKey("mod+k")).toBeUndefined();
+    // A chord that won't normalise is reserved too: refused, never silently taken.
+    expect(reservedCommandKey("mod+cmd+q")).toBe("mod+cmd+q");
   });
 });
 

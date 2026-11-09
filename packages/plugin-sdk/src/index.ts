@@ -11,6 +11,7 @@ export * from "./jsonc";
 export * from "./semver";
 
 export * from "./manifest/fields";
+export * from "./manifest/keys";
 export * from "./manifest/schema";
 export type * from "./manifest/types";
 export * from "./manifest/interpolation";

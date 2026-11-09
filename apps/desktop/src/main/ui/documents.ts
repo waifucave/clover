@@ -43,7 +43,9 @@ export const IMPORT_MAP = {
 const IMPORT_MAP_TEXT = JSON.stringify(IMPORT_MAP);
 const IMPORT_MAP_HASH = `'sha256-${createHash("sha256").update(IMPORT_MAP_TEXT).digest("base64")}'`;
 
-/** The layer's own declared hosts (none until lane B's registry hands them over). */
+/** The layer's own declared hosts (none until lane B's registry hands them over). Workers run only from the layer's
+ *  own pages and in-bundle blobs (`worker-src 'self' blob:`, for the live2d decoder and its kind); scripts never come
+ *  from a remote origin and never eval (`script-src 'self'` plus the import map's hash alone). */
 export function layerCsp(hosts: readonly string[] = []): string {
   const net = hosts.join(" ");
   return [

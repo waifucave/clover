@@ -100,8 +100,8 @@ export interface NotifierContext extends HandlerContext {
 
 export interface DesktopNotifications {
   /** Shows or replaces the banner with this id. `shown: false` when the app showed nothing, because it is in front
-   *  showing that session already. */
-  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean }): Promise<{ shown: boolean }>;
+   *  showing that session already. `silent` rides through to the OS banner (lane G's sounds setting). */
+  show(banner: { id: string; title: string; body?: string; session?: string; urgent?: boolean; silent?: boolean }): Promise<{ shown: boolean }>;
   /** Closes one banner, or every banner this notifier showed. */
   close(id?: string): Promise<void>;
 }

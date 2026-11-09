@@ -1126,6 +1126,9 @@
           },
           "urgent": {
             "type": "boolean"
+          },
+          "silent": {
+            "type": "boolean"
           }
         },
         "required": [

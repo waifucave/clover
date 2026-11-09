@@ -6,7 +6,7 @@ import { createPublicKey, verify } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AnswerKey, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
+import { AnswerKey, AnswerKeyRegistration, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
 
 const SPKI_ED25519 = Buffer.from("302a300506032b6570032100", "hex");
 const verifier = (publicKey: string) => createPublicKey({ key: Buffer.concat([SPKI_ED25519, Buffer.from(publicKey, "base64")]), format: "der", type: "spki" });
@@ -77,5 +77,90 @@ describe("the answer key", () => {
     expect(await key.register({ request: async () => { throw new Error("no device.answerKey.set"); } }, "dev_x")).toBe(false);
     expect(lines).toEqual(["answer key: not registered (no device.answerKey.set)"]);
     expect(lines.join("\n")).not.toContain(key.publicKey().slice(0, 12));
+  });
+});
+
+describe("the answer key's registration, retried", () => {
+  function setup(locked: () => boolean) {
+    const calls: string[] = [];
+    const client = {
+      request: async <T,>(method: string): Promise<T> => {
+        calls.push(method);
+        if (locked()) throw new Error("no device.answerKey.set");
+        return { ok: true } as T;
+      },
+    };
+    const queue: { ms: number; fn: () => void }[] = [];
+    // One-shot like setTimeout: firing removes the entry, so the queue holds only pending waits.
+    const schedule = (ms: number, fn: () => void) => {
+      const e = { ms, fn: () => { queue.splice(queue.indexOf(e), 1); fn(); } };
+      queue.push(e);
+      return { cancel: () => void queue.splice(queue.indexOf(e), 1) };
+    };
+    const key = new AnswerKey(memoryVault("none"));
+    const reg = new AnswerKeyRegistration(key, () => {}, schedule);
+    return { client, calls, queue, reg };
+  }
+
+  test("connected while the store is locked, unlocked later: registered with no reconnect, backing off", async () => {
+    let locked = true;
+    const { client, calls, queue, reg } = setup(() => locked);
+    await reg.onConnected(client, "dev_temp");
+    expect(calls).toEqual(["device.answerKey.set"]);
+    // One retry waits, backing off.
+    expect(queue.map((q) => q.ms)).toEqual([2000]);
+    locked = false;
+    await queue[0]!.fn();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set"]);
+    expect(queue).toHaveLength(0);
+  });
+
+  test("the backoff grows while the store stays locked", async () => {
+    const { client, calls, queue, reg } = setup(() => true);
+    await reg.onConnected(client, "dev_temp");
+    expect(queue.map((q) => q.ms)).toEqual([2000]);
+    await queue[0]!.fn();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set"]);
+    expect(queue.map((q) => q.ms)).toEqual([4000]);
+    await queue[0]!.fn();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set", "device.answerKey.set"]);
+    expect(queue.map((q) => q.ms)).toEqual([8000]);
+  });
+
+  test("its own device id changing registers again; anyone else's is none of ours", async () => {
+    const { client, calls, queue, reg } = setup(() => false);
+    await reg.onConnected(client, "dev_standin");
+    expect(calls).toEqual(["device.answerKey.set"]);
+    await reg.onDeviceChanged(client, { id: "dev_other", isThis: false });
+    expect(calls).toEqual(["device.answerKey.set"]);
+    // Its own record changed (the stand-in id became the unlocked one): registers again, and an echo after the
+    // acceptance registers nothing more.
+    await reg.onDeviceChanged(client, { id: "dev_real", isThis: true });
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set"]);
+    expect(queue).toHaveLength(0);
+    await reg.onDeviceChanged(client, { id: "dev_real", isThis: true });
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set"]);
+  });
+
+  test("a reconnect registers again: a restarted daemon kept nothing", async () => {
+    const { client, calls, reg } = setup(() => false);
+    await reg.onConnected(client, "dev_real");
+    await reg.onConnected(client, "dev_real");
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set"]);
+  });
+
+  test("a reconnect restarts the backoff: the next failure waits 2 s again", async () => {
+    const { client, calls, queue, reg } = setup(() => true);
+    await reg.onConnected(client, "dev_real");
+    await queue[0]!.fn();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(queue.map((q) => q.ms)).toEqual([4000]);
+    await reg.onConnected(client, "dev_real");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual(["device.answerKey.set", "device.answerKey.set", "device.answerKey.set"]);
+    expect(queue.map((q) => q.ms)).toEqual([2000]);
   });
 });

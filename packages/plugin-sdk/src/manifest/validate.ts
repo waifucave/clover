@@ -21,6 +21,7 @@ import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, POINT_NAME_RE } from "./fields";
 import { checkArgsSchema } from "./args";
+import { reservedCommandKey } from "./keys";
 import { parseInterpolation, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
@@ -803,7 +804,15 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
           return false;
         }
       }
-      return needHost("handler");
+      if (!needHost("handler")) return false;
+      if (typeof e.key === "string") {
+        const hit = reservedCommandKey(e.key);
+        if (hit !== undefined) {
+          f.error("entry", "command_key_reserved", [...at, "key"], `\`key\` ${JSON.stringify(e.key)} is reserved for the app (${hit} spelling); pick another`);
+          return false;
+        }
+      }
+      return true;
     }
     case "triggers":
     case "relays":

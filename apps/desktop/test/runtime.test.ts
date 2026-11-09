@@ -213,6 +213,23 @@ describe("each part themed by its tab (decision 77)", () => {
     expect(tokens).toBeDefined();
     expect((tokens!.m as { tokens: Record<string, Record<string, unknown>> }).tokens[shell.info.mount]!["color.accent"]).toBe("#FF0000");
   });
+
+  test("a text-size change re-themes every document with its scale; the default is one", () => {
+    const s = setup();
+    const shell = mountShell(s);
+    expect(shell.info.tokens["text.scale"]).toBe(1);
+    s.sent.length = 0;
+    s.rt.setTextSize("large");
+    const to = `${shell.shellFrame.processId}:${shell.shellFrame.routingId}`;
+    const large = s.sent.find((x) => x.m.type === "tokens" && x.to === to);
+    expect(large).toBeDefined();
+    expect((large!.m as { tokens: Record<string, Record<string, unknown>> }).tokens[shell.info.mount]!["text.scale"]).toBe(1.125);
+    s.sent.length = 0;
+    s.rt.setTextSize("small");
+    const small = s.sent.find((x) => x.m.type === "tokens" && x.to === to);
+    expect(small).toBeDefined();
+    expect((small!.m as { tokens: Record<string, Record<string, unknown>> }).tokens[shell.info.mount]!["text.scale"]).toBe(0.875);
+  });
 });
 
 describe("the themes' CSS (§5.5's stack, E-M2)", () => {

@@ -160,6 +160,17 @@ export interface PartTheme {
   appearance: Appearance;
   systemAccent?: string;
   frame: FrameMetrics;
+  /** The user's text size (the settings plugin's own vocabulary until lane B's UiSettings carries it, F-M3). */
+  textSize: TextSize;
+}
+
+/** The user's text size: the settings plugin's own three steps, which F-M3 moves into the core's UiSettings. */
+export type TextSize = "small" | "default" | "large";
+
+/** The text size as a token (`--clover-text-scale`): the standard steps around the default size, which a part
+ *  multiplies its type by. The runtime holds the choice; F-M3 drives it from UiSettings. */
+export function textTokens(textSize: TextSize): Record<string, TokenValue> {
+  return { "text.scale": textSize === "small" ? 0.875 : textSize === "large" ? 1.125 : 1 };
 }
 
 /** The stack, lowest first (§5.5): base theme, global theme (the base until the user picks one), the bot's theme, the
@@ -219,5 +230,5 @@ export function botTheme(store: ThemeStore, plugins: readonly UiPlugin[], bot: s
 
 export function partTokens(store: ThemeStore, input: PartTheme): Record<string, TokenValue> {
   const tokens = resolveTokens(input.appearance, tokenLayers(store, input), input.systemAccent !== undefined ? { systemAccent: input.systemAccent } : {});
-  return { ...tokens, ...frameTokens(input.frame) };
+  return { ...tokens, ...frameTokens(input.frame), ...textTokens(input.textSize) };
 }

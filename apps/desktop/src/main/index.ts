@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, DeviceChangedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { housingFor, loadScreens } from "./housing";
@@ -26,14 +26,14 @@ import { quitQuestion, type QuitChoice } from "./pair/quit";
 import { appHello, devOverridesAllowed, pairEnv, readAppToken, readStartInfo } from "./pair/start";
 import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protocol/client";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
-import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
+import { AnswerKey, AnswerKeyRegistration, memoryVault, safeStorageVault } from "./answer-key";
 import { LayerLinks } from "./layer-links";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
-import { Notifications } from "./notify";
-import { appShortcut, sealedInputAllowed } from "./shortcuts";
+import { Notifications, notificationOptions } from "./notify";
+import { appShortcut, sealedInputAllowed, testSwitchAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
@@ -379,8 +379,11 @@ function makePair(): Pair {
     prove: { pid: process.pid },
     log,
     onConnected: (client, hello) => {
-      // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).
-      void answerKey().register(client, hello.device);
+      // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`). The daemon
+      // takes it only once its keychain store unlocks and the links are up, and `hello.device` is a stand-in id
+      // until then: the registration retries with backoff and on this device's own changes, without a reconnect.
+      if (answerKeyRegistration === undefined) answerKeyRegistration = new AnswerKeyRegistration(answerKey(), log);
+      void answerKeyRegistration.onConnected(client, hello.device);
       signedDevice = hello.device;
       // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones, and the
       // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
@@ -413,7 +416,7 @@ function makePair(): Pair {
     const raw = (params ?? {}) as Record<string, unknown>;
     const parsed = APP_METHODS.appNotify.params.safeParse(raw);
     if (!parsed.success) throw new Error("app.notify needs an id and a title");
-    const r = notifications.notify({ ...parsed.data, ...(raw.urgent === true ? { urgent: true } : {}) }, front());
+    const r = notifications.notify({ ...parsed.data, ...(raw.urgent === true ? { urgent: true } : {}), ...(raw.silent === true ? { silent: true } : {}) }, front());
     return { ok: true, ...r };
   });
   p.handle("app.notify.close", (params) => {
@@ -450,6 +453,16 @@ function makePair(): Pair {
         disarmFallback(parsed.data.id);
       }
     }
+    // This computer's own device record changed (its stand-in id became the unlocked one, or the core took the
+    // answer key): the registration runs again, and the proofs sign under the id the core knows now.
+    if (type === "device_changed") {
+      const parsed = DeviceChangedEvent.safeParse(params);
+      if (parsed.success && parsed.data.device.isThis === true) {
+        signedDevice = parsed.data.device.id;
+        const client = pair.client;
+        if (client !== undefined && answerKeyRegistration !== undefined) void answerKeyRegistration.onDeviceChanged(client, parsed.data.device);
+      }
+    }
     // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback. A card_pending
     // goes only to layers; the app hears card_requested. Nothing else here.
   });
@@ -459,6 +472,8 @@ function makePair(): Pair {
 /** The answer key (a headless run's in memory: it never touches the OS's store) and the no-prompt rule's limits: an
  *  unpackaged app keeps it in memory alone (S4: no Keychain or keyring dialog from a dev build), and a Linux whose
  *  safeStorage would fall back to `basic_text` — no secret store at all — keeps it in memory, said once (S3). */
+/** This desktop's answer key, registered with retries (its keychain store may still be locked at connect). */
+let answerKeyRegistration: AnswerKeyRegistration | undefined;
 let answerKeyValue: AnswerKey | undefined;
 function answerKey(): AnswerKey {
   if (answerKeyValue === undefined) {
@@ -602,10 +617,11 @@ async function requestQuit(source: string): Promise<void> {
   const q = quitQuestion(status);
   let choice: QuitChoice = "quit";
   if (q.ask) {
-    if (headless) {
+    // Test-only (like the sealed paths): a packaged run never takes the test's choice, whatever env it started with.
+    if (testSwitchAllowed({ packaged: app.isPackaged, headless })) {
       const env = process.env.CLOVER_TEST_QUIT_CHOICE;
       choice = env === "handover" || env === "cancel" ? env : "quit";
-    } else {
+    } else if (!headless) {
       const r = await dialog.showMessageBox({ type: "question", message: q.message, detail: q.detail, buttons: q.buttons.map((b) => b.label), defaultId: 0, cancelId: q.buttons.length - 1, noLink: true });
       choice = q.buttons[r.response]?.id ?? "cancel";
     }
@@ -665,6 +681,16 @@ async function daemonGone(maxMs: number): Promise<void> {
 function syncAppearance(): void {
   const raw = process.platform === "darwin" || process.platform === "win32" ? systemPreferences.getAccentColor() : "";
   runtime?.setAppearance(nativeTheme.shouldUseDarkColors ? "dark" : "light", raw === "" ? undefined : systemAccentFromOs(raw));
+  // The fallback card stands open under its creation-time colours otherwise: its window follows the OS too (its page
+  // follows through the color scheme, no reload).
+  const solid = nativeTheme.shouldUseDarkColors ? "#202020" : "#FFFFFF";
+  for (const own of fallbacks.values()) {
+    if (own.win !== undefined && !own.win.isDestroyed()) {
+      try {
+        own.win.setBackgroundColor(solid);
+      } catch { /* gone */ }
+    }
+  }
 }
 
 /** macOS: a Dock icon only while a window shows (never in a headless run). */
@@ -910,7 +936,10 @@ async function terminalInput(windowId: number, frameId: string, pluginId: string
 
 /** Asks before a paste of more than one line goes to a terminal (a headless run answers with CLOVER_TEST_PASTE_OK). */
 async function okToPaste(windowId: number, lines: number): Promise<boolean> {
-  if (headless) return process.env.CLOVER_TEST_PASTE_OK === "1";
+  // Test-only (like the sealed paths): a packaged run never takes the test's answer. Headless and packaged fails
+  // closed, as an absent answer does.
+  if (testSwitchAllowed({ packaged: app.isPackaged, headless })) return process.env.CLOVER_TEST_PASTE_OK === "1";
+  if (headless) return false;
   const t = (key: string, params?: Record<string, string | number>) => translate(runtime.coreStrings(), `clover.core.${key}`, params);
   const win = BrowserWindow.fromId(windowId);
   const options = { type: "question" as const, message: t("terminal.paste-title", { count: lines }), detail: t("terminal.paste-detail"), buttons: [t("terminal.paste"), t("terminal.cancel")], defaultId: 1, cancelId: 1, noLink: true };
@@ -996,7 +1025,7 @@ const notifications = new Notifications((req, onClick) => {
     log(`notify: ${headless ? "a headless run shows no notification" : "this desktop has no notifications"} (${req.id})`);
     return undefined;
   }
-  const n = new Notification({ title: req.title, ...(req.body !== undefined ? { body: req.body } : {}), ...(process.platform === "linux" && req.urgent === true ? { urgency: "critical" as const } : {}) });
+  const n = new Notification(notificationOptions(req, process.platform));
   n.on("click", onClick);
   n.show();
   return n;
@@ -1102,7 +1131,9 @@ async function popupMenu(windowId: number, items: MenuItem[], point: { x: number
   try {
     if (headless || !win.isVisible()) {
       log(`menu: ${items.length} item(s) at ${point.x},${point.y} (not shown: headless)`);
-      return process.env.CLOVER_TEST_MENU_PICK ?? null;
+      // Test-only (like the sealed paths): a packaged run never takes the test's pick.
+      if (testSwitchAllowed({ packaged: app.isPackaged, headless })) return process.env.CLOVER_TEST_MENU_PICK ?? null;
+      return null;
     }
     return await nativeMenu(win, items, point);
   } finally {
@@ -1223,6 +1254,8 @@ async function smoke(): Promise<void> {
   let frames: Probed[] = [];
   let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
   let sealedClicked = false;
+  // Item 10: a packaged run makes the sealed test paths fully inert. Said once, whatever vars it started with.
+  let sealedProbeRefused = false;
   type WebFact = { mount: string; url: string; visible: boolean; text: string };
   let webFacts: WebFact[] = [];
   const probeWeb = async (): Promise<WebFact[]> => Promise.all(webViews.list().map(async (v) => {
@@ -1243,7 +1276,8 @@ async function smoke(): Promise<void> {
   let hung = false;
   // The UI test's user on the core's own pages (unpackaged runs only): a page to open once everything has drawn, and
   // steps in the root, one a turn, each once its element is there (a click, a tick, text typed into a field).
-  const smokePage = process.env.CLOVER_SMOKE_PAGE;
+  // Test-only like the sealed paths: a packaged run never takes the test's page.
+  const smokePage = testSwitchAllowed({ packaged: app.isPackaged, headless }) ? process.env.CLOVER_SMOKE_PAGE : undefined;
   let pageOpened = false;
   type Step = { click?: string; check?: string; fill?: string; value?: string };
   const steps: Step[] = !app.isPackaged ? (JSON.parse(process.env.CLOVER_SMOKE_ROOT_STEPS ?? "[]") as Step[]) : [];
@@ -1311,7 +1345,14 @@ async function smoke(): Promise<void> {
     // themselves, not the shell's composer (which a sealed run never needs).
     if (!sealedClicked) {
       const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
-      if (spec !== undefined) {
+      // Test-only on every axis (item 10): a packaged run makes the whole probe and cover-script block inert — no
+      // reads, no cover script, no press. Said once.
+      const probeAllowed = spec === undefined || sealedInputAllowed({ packaged: app.isPackaged, headless });
+      if (!probeAllowed && !sealedProbeRefused) {
+        sealedProbeRefused = true;
+        log(`sealed-click: probe refused (packaged app)`);
+      }
+      if (spec !== undefined && probeAllowed) {
         try {
           const {
             cardId, element, cover, opacity, doubleClick,
@@ -1439,22 +1480,17 @@ async function smoke(): Promise<void> {
               await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
               // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
-              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. Test-only
-              // on every axis (B1): a packaged app never attaches the debugger, whatever env vars it started with.
-              const inputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. (The
+              // outer gate above already refused packaged runs the whole block.)
               let cdp = false;
-              if (inputAllowed) {
-                try {
-                  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
-                  cdp = win.webContents.debugger.isAttached();
-                } catch { /* fall back to sendInputEvent */ }
-              }
-              const dispatch = !inputAllowed
-                ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
-                : cdp
-                  ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
-                  : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
-              log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
+              try {
+                if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
+                cdp = win.webContents.debugger.isAttached();
+              } catch { /* fall back to sendInputEvent */ }
+              const dispatch = cdp
+                ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+                : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+              log(`sealed-click: input via ${cdp ? "cdp" : "sendInputEvent"}`);
               await dispatch("mouseMoved");
               await new Promise((r) => setTimeout(r, 120));
               await dispatch("mousePressed");
@@ -1495,8 +1531,14 @@ async function smoke(): Promise<void> {
     }
     // The fallback card: if no sealed frame was clicked and the fallback run is enabled, click the fallback window's
     // Approve button so its answer rides `card.answer` to the fake daemon (unpackaged runs only). Gated on the
-    // fallback window itself, not the shell.
-    if (!sealedClicked && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") {
+    // fallback window itself, not the shell. Test-only on every axis like the part path above (item 10).
+    const fallbackSpec = process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+    const fallbackAllowed = !fallbackSpec || sealedInputAllowed({ packaged: app.isPackaged, headless });
+    if (fallbackSpec && !fallbackAllowed && !sealedProbeRefused) {
+      sealedProbeRefused = true;
+      log(`sealed-click: fallback probe refused (packaged app)`);
+    }
+    if (!sealedClicked && fallbackSpec && fallbackAllowed) {
       for (const w of BrowserWindow.getAllWindows()) {
         if (w === win || w.isDestroyed()) continue;
         if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
@@ -1516,20 +1558,16 @@ async function smoke(): Promise<void> {
           // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
           // does not reach the page here. Test-only on every axis (B1): a packaged app never attaches the debugger,
           // whatever env vars it started with.
-          const fbInputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+          // CDP input like the part path above (the outer gate already refused packaged runs the whole block).
           let fbCdp = false;
-          if (fbInputAllowed) {
-            try {
-              if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
-              fbCdp = w.webContents.debugger.isAttached();
-            } catch { /* fall back to sendInputEvent */ }
-          }
-          const fbDispatch = !fbInputAllowed
-            ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
-            : fbCdp
-              ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
-              : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
-          log(`sealed-click: fallback input via ${!fbInputAllowed ? "refused" : fbCdp ? "cdp" : "sendInputEvent"}`);
+          try {
+            if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
+            fbCdp = w.webContents.debugger.isAttached();
+          } catch { /* fall back to sendInputEvent */ }
+          const fbDispatch = fbCdp
+            ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+            : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+          log(`sealed-click: fallback input via ${fbCdp ? "cdp" : "sendInputEvent"}`);
           await fbDispatch("mouseMoved");
           await new Promise((r) => setTimeout(r, 1300));
           if (w.isDestroyed()) break;
@@ -1554,8 +1592,8 @@ async function smoke(): Promise<void> {
       }
     }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
-    // press in each window, which the menu gate counts as the user's input.
-    if (drawn && process.env.CLOVER_SMOKE_INPUT === "1") {
+    // press in each window, which the menu gate counts as the user's input. Test-only like the sealed paths.
+    if (drawn && testSwitchAllowed({ packaged: app.isPackaged, headless }) && process.env.CLOVER_SMOKE_INPUT === "1") {
       for (const w of [win, ...[...surfaces.values()].map((x) => x.win)]) {
         if (w.isDestroyed()) continue;
         w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Shift" });
