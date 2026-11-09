@@ -30,7 +30,7 @@ import { CloudComputers, FileCloudStateStore, type CloudCard } from "./cloud";
 import { CloudPoint, leaseAuthority, pluginProviders, providerIds } from "./cloud-point";
 import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, placementFields, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
-import { botServer, RemoteMcpListings, scopeServes, serveMcpList, type McpListing } from "./mcp-listing";
+import { botServer, kindServed, RemoteMcpListings, servedKinds, serveMcpList, type KnownMcpPlugin, type McpListing, type McpScope } from "./mcp-listing";
 import { FileMcpTicks, mcpTicksPath, type McpTicks } from "./mcp-ticks";
 import type { BotMcpServer } from "../runtime-sdk/turn-loop/servers";
 import { ComputerPeers } from "./peers";
@@ -86,6 +86,10 @@ export interface ComputerNodeOptions {
     /** The host's listing of its local servers, tools as they are (lane A's `PluginMcp.listing`): the ones ticked
      *  here are what another computer's bots see of them (`mcp.list`, `mcp-listing.ts`). */
     listing?: () => readonly McpListing[];
+    /** This computer's record of a plugin's server (lane A, from the plugin registry: `pluginMcpServerKey` and the
+     *  scope here): another computer's server is listed only when this gives its plugin and name the same key, and its
+     *  scope is cut to this record's. Left out, nothing from another computer is listed. */
+    known?: KnownMcpPlugin;
     /** This computer's ticks (default: `levels/mcp-servers.json` under the Clover home). */
     ticks?: McpTicks;
     /** Told after this computer's ticks change: the host starts a newly ticked server and closes an unticked one
@@ -232,9 +236,10 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     return out;
   };
   // Another computer's local servers, listed here from the computer running each (`mcp-listing.ts`).
-  const remoteMcp = o.mcp
+  const known = o.mcp?.known;
+  const remoteMcp = o.mcp && known
     ? new RemoteMcpListings({
-      transport: o.transport, devices: o.devices, named: (d) => peers.mcpServers(d), onHello: (fn) => peers.onHello(fn),
+      transport: o.transport, devices: o.devices, named: (d) => peers.mcpServers(d), onHello: (fn) => peers.onHello(fn), known,
       ...(o.log ? { log: o.log } : {}),
     })
     : undefined;
@@ -248,11 +253,18 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       },
     })
     : () => {};
-  /** `server` as another computer lists it, when this computer's host doesn't place it. */
-  const remoteListing = (server: string): McpListing | undefined => {
-    if (!remoteMcp || o.mcp!.placement(server) !== undefined) return undefined;
+  /** `server` as another computer lists it, when this computer's host doesn't place it, this computer's record still
+   *  gives its plugin's server that key (asked again each time: the record may have changed since the fetch), and no
+   *  local server here gives the key to a different plugin. */
+  const remoteListing = (server: string): (McpListing & { here: { scope?: McpScope } }) | undefined => {
+    if (!remoteMcp || !known || o.mcp!.placement(server) !== undefined) return undefined;
     const devices = mcpComputers(server).map((n) => registry.get(n)?.device).filter((d): d is string => d !== undefined);
-    return remoteMcp.listing(server, devices);
+    const l = remoteMcp.listing(server, devices);
+    if (l === undefined) return undefined;
+    const here = known(l.plugin, l.name);
+    if (here?.server !== server) return undefined;
+    if (localServers().some((s) => s.server === server && s.plugin !== l.plugin)) return undefined;
+    return { ...l, here };
   };
   const remotePlacement = (server: string): McpServerPlacement => ({ name: server, kind: "local", computers: mcpComputers(server) });
   const mcpRemoteServers = (kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] => {
@@ -260,7 +272,7 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     const out: BotMcpServer[] = [];
     for (const server of remoteMcp.servers()) {
       const l = remoteListing(server);
-      if (l === undefined || !scopeServes(l.scope, kind)) continue;
+      if (l === undefined || !kindServed(servedKinds(l.scope, l.here), kind)) continue;
       const computers = mcpComputers(server);
       if (computers.length > 0) out.push(botServer(l, computers));
     }
