@@ -3538,6 +3538,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     placement: (server: string) => mcp.placement(server),
     // Lane J's node ticks these per computer (`levels/mcp-servers.json`) and places a local server on exactly those.
     localServers: () => mcp.localServers(),
+    // After any change to this computer's ticks (lane J's node: install, Mirror, untick), the servers it runs here start
+    // or stop at once.
+    onTicksChanged: () => void mcp.refresh(),
     fields: (server: string) => mcp.fields(server),
     call: mcp.call,
     scratch: (session: string) => {
