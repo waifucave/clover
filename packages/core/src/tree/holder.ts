@@ -27,10 +27,11 @@
 // * A bot's memory (the owner's ruling for J-M3): `home/memory/` in a bot's own sessions is that bot's
 //   `<Clover home>/bots/<bot>/memory/` here, on every computer that runs the core (lane H keeps the copies in sync,
 //   so a write lands here even while another computer is off). Only that bot's own sessions change it, by any path
-//   that leads there. Other bots may READ it (the owner's ruling of November 9: bots read each other's memories and
-//   transcripts, writes stay their own): for a bot's read the tree adds no deny of its own, and the fence's
-//   `homeAllows` (lane C) decides. Coding sessions, agents, plugins and another computer don't reach it; the user and
-//   the core do.
+//   that leads there. Other bots may read it: the owner's ruling of November 9 opens the Clover home to bots through
+//   the tree (read everything; write any bot's scratch and their own memory, routines and outputs; secrets, `run/`
+//   and writes to permission, trust, settings and plugin files stay blocked). The fence's `homeAllows` (lane C)
+//   decides all of that; the tree adds no deny of its own beyond the memory's own-writes rule. Coding sessions,
+//   agents, plugins and another computer don't reach a bot's memory; the user and the core do.
 // * A peer's write, remove or move is judged at the stricter of this computer's level and the call's (review N2;
 //   `judge.ts`, R1): at `ask-risky` this computer's reviewer passes what isn't risky, and where the level asks, only the
 //   user's signed answer bound to exactly that call lets it through; the refusal carries this computer's card for the
@@ -982,9 +983,10 @@ export class LocalHolder implements Holder {
   /** Whether `as` may reach a real path as far as bots' memories go: a change inside `<bots>/<bot>/memory/` only that
    *  bot's own sessions; and for a change (`change`), the bots' folder itself and a bot's whole folder, which hold
    *  memories, are that bot's too (the bots' folder: nobody's). A read by any bot is the fence's alone to judge (the
-   *  owner's ruling of November 9: bots read each other's memories; lane C's `homeAllows`), so the tree adds no deny
-   *  that would still block it; a read by anyone else inside a memory stays that bot's own sessions'. Names compare
-   *  folded, as the disk may. Anything else is fine here. */
+   *  owner's ruling of November 9: the Clover home is open to bots through the tree; lane C's `homeAllows`), so the
+   *  tree adds no deny that would still block it; a read by anyone else inside a memory stays that bot's own
+   *  sessions'. Names compare folded, as the disk may. Anything else (another bot's scratch, a transcript) is the
+   *  fence's alone. */
   #memoryOk(real: string, as: Caller, change: boolean): boolean {
     if (!this.#o.botsRoot) return true;
     if (!change && memoryBotOf(as) !== undefined) return true;
