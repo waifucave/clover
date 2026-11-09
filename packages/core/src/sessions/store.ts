@@ -10,6 +10,7 @@ import { hasOpenPanelTabs } from "../panel/store";
 import type { SessionDirs } from "./dirs";
 import { isUnrunnableSessionMode, type RunnableSessionMode } from "./session-mode";
 import { outdirPath } from "./outdir";
+import { readLogRange, type LogRange, type LogRangeOptions } from "./log-range";
 import { BashEditPairer, bashCommandOf } from "./bash-edits";
 import { removeSessionDiffs } from "../diffs/store";
 import { canonicalModelTag, isModelTag, UNSTATED_TAG } from "../runtime-sdk/model-tag";
@@ -770,6 +771,18 @@ export class SessionStore {
       try { out.push(SessionEvent.parse(JSON.parse(line))); } catch { /* skipped, as readGoodLines does */ }
     }
     return out;
+  }
+
+  /** The session's events after `afterSeq`, a page at a time (`log-range.ts`): the page's start is found by bisecting
+   *  the log, so the lines before it are neither read in full nor parsed, and the page stops at `limit` events or
+   *  `maxBytes` of lines. Throws on an unknown session, like `read`. */
+  readRange(sessionId: string, afterSeq: number, opts: LogRangeOptions): LogRange {
+    const row = this.db.query("SELECT scope FROM sessions WHERE session_id = ?").get(sessionId) as
+      | { scope: string } | null;
+    if (!row) throw new Error(`unknown session: ${sessionId}`);
+    const path = this.logPath(row.scope, sessionId);
+    if (!existsSync(path)) return { events: [], more: false };
+    return readLogRange(path, afterSeq, opts);
   }
 
   list(): SessionRow[] {

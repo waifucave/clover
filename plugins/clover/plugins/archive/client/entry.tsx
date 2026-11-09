@@ -26,6 +26,8 @@ export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
   const [asked, setAsked] = useState("");
   const [sessions, setSessions] = useState<ArchivedSessionView[]>([]);
   const [more, setMore] = useState(false);
+  /** The last page's cursor (`archive.list` pages by updatedAt and id), for the next. */
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<string | undefined>(props.params?.session);
 
@@ -38,6 +40,7 @@ export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
         if (!live) return;
         setSessions(page.sessions);
         setMore(page.more);
+        setCursor(page.cursor);
         setLoading(false);
       },
       () => live && setLoading(false),
@@ -48,11 +51,11 @@ export function ArchiveEntry({ props }: { props: ArchiveEntryProps }) {
   }, [core, asked]);
 
   const older = () => {
-    const last = sessions[sessions.length - 1];
-    if (!core || !last) return;
-    void core.call("archive.list", { ...(asked ? { query: asked } : {}), before: last.updatedAt, limit: PAGE }).then((page) => {
+    if (!core || cursor === undefined) return;
+    void core.call("archive.list", { ...(asked ? { query: asked } : {}), cursor, limit: PAGE }).then((page) => {
       setSessions((s) => [...s, ...page.sessions.filter((x) => !s.some((y) => y.id === x.id))]);
       setMore(page.more);
+      setCursor(page.cursor);
     });
   };
 

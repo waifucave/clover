@@ -18,6 +18,11 @@ DerivedData/
 # `dist/`, already ignored above. Never committed — it is a build input, fetched at the pinned tag.
 .clover-sdk/
 
+# The pinned srt-win source lane C's Windows fence builds (scripts/build-srt-win.ps1 clones it at
+# the pinned commit; a build input, never committed — like `.clover-sdk/` above). The built
+# `vendor/srt-win/srt-win.exe` is lane M's signed artifact and is committed once it lands.
+vendor/srt-win-src/
+
 # Build artifacts
 dist/
 *.tsbuildinfo
