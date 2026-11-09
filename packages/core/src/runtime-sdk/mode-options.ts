@@ -14,9 +14,9 @@ import {
 import { escapeRulePath, escapeSandboxGlobPath, PROTECTED_ITEM_DIRS, RESUME_STAGING_PREFIX, type CredentialPresence } from "./host";
 import { EXA_API_KEY_SECRET } from "../agent/exa-key";
 import { approvedProjectRulesDir, homeCacheDir, sdkHomeFor, storeHomeFor, trustRecordFile } from "../agent/paths";
-import { repoRootFor } from "../agent/memory-dir";
+import { memoryProjectKeyFor, repoRootFor } from "../agent/memory-dir";
 import { projectWalk } from "./project-walk";
-import { CONFIG_COPY_FILES, configCopyDenies, homeDenyRead } from "./turn-loop/home-deny";
+import { CONFIG_COPY_FILES, configCopyDenies, homeDenyRead, ownHomeConfigDenies } from "./turn-loop/home-deny";
 import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
 import { parseRule } from "../agent/permission-rules";
@@ -1116,9 +1116,9 @@ export interface CodeSessionOwnFolders {
 }
 
 /** The project keys a coding session's store entries are under (`<store>/projects/<key>`): its transcripts' (the cwd's)
- *  and its memory's (the repository's), as the agent SDK derives them, and the shared `_global` and `_assistant`
- *  memory buckets. */
-export function codeSessionProjectKeys(cwd?: string | null): string[] {
+ *  and its memory's (the repository's), as the agent SDK derives them and as the daemon files its MEMDIR
+ *  (`memoryProjectKeyFor`), and the shared `_global` and `_assistant` memory buckets. */
+export function codeSessionProjectKeys(cwd?: string | null, home?: string): string[] {
   const keys = new Set(["_global", "_assistant"]);
   if (cwd) {
     try {
@@ -1126,6 +1126,9 @@ export function codeSessionProjectKeys(cwd?: string | null): string[] {
       keys.add(k.transcriptProjectKey);
       keys.add(k.memoryProjectKey);
     } catch { /* a cwd that can't be resolved has no entry of its own */ }
+    if (home !== undefined) {
+      try { keys.add(memoryProjectKeyFor(cwd, { cloverHome: home })); } catch { /* as above */ }
+    }
   }
   return [...keys];
 }
@@ -1136,8 +1139,9 @@ export function codeSessionProjectKeys(cwd?: string | null): string[] {
  * only its own entries (`codeSessionProjectKeys`), the plugin views in `<home>/cache` but of its `runs/` only its own run
  * folder, the installed plugins, its own `outputs/<id>`, and its working directories where they are in the home.
  * Never the bots' folders, scratch or conversations, the sessions' logs, another session's outputs, transcript or run
- * folder, the secrets file, or any run folder's or staging root's config copies (`configCopyDenies`). The siblings are
- * denied by pattern (`homeDenyRead`), bounded by the kept names' length, never one entry per session.
+ * folder, the secrets file, or the config copies that carry keys: its own run folder's (`ownHomeConfigDenies`, the top
+ * ones spelled exactly so the runtime still loads its own MCP list) and every staging root's (`configCopyDenies`). The
+ * siblings are denied by pattern (`homeDenyRead`), bounded by the kept names' length, never one entry per session.
  */
 export function codeSessionHomeDenyRead(home: string, cwd?: string | null, extraDirs: readonly string[] = [], own: CodeSessionOwnFolders = {}): string[] {
   const store = storeHomeFor(home);
@@ -1145,10 +1149,11 @@ export function codeSessionHomeDenyRead(home: string, cwd?: string | null, extra
     home,
     keep: [sdkHomeFor(home), store, homeCacheDir(home), join(home, "plugins"), ...(own.outputsDir ? [own.outputsDir] : []), ...(cwd ? [cwd] : []), ...extraDirs],
     only: [
-      ...(store === home ? [] : [{ parent: join(store, "projects"), names: codeSessionProjectKeys(cwd) }]),
+      ...(store === home ? [] : [{ parent: join(store, "projects"), names: codeSessionProjectKeys(cwd, home) }]),
       { parent: join(homeCacheDir(home), "runs"), names: own.runDir ? [basename(own.runDir)] : [] },
     ],
-    deny: configCopyDenies(home, { base: tmpdir(), prefix: RESUME_STAGING_PREFIX }),
+    // Every other run folder is denied whole above; its own run folder's config copies, and every staging root's.
+    deny: [...configCopyDenies({ base: tmpdir(), prefix: RESUME_STAGING_PREFIX }), ...(own.runDir ? ownHomeConfigDenies(own.runDir) : [])],
   });
 }
 

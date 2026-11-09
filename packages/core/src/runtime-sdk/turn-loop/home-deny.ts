@@ -16,7 +16,7 @@
 // matched by any pattern: such names are listed literally as they are when the list is built. Every name Clover makes
 // in these folders (session ids, run ids, project keys, bot ids) is in that alphabet; a project key may hold other
 // letters, but only as a kept name. The fenced set's paths in the home are denied by name too (`homeNamedDenials`).
-import { readdirSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import { fenceLayout } from "../../fence/layout";
@@ -46,10 +46,21 @@ export function homeNamedDenials(home: string, os: Os = hostOsOf()): string[] {
   return [...out].sort();
 }
 
-/** The config copies in every run folder and staging root, at any depth, in the sandbox's glob grammar. */
-export function configCopyDenies(home: string, staging: { base: string; prefix: string }): string[] {
-  const roots = [`${escapeSandboxGlobPath(join(resolve(home), "cache", "runs"))}`, `${escapeSandboxGlobPath(resolve(staging.base))}/${staging.prefix}*`];
-  return roots.flatMap((r) => [...CONFIG_COPY_FILES.map((f) => `${r}/**/${f}`), `${r}/**/backups`]);
+/** The config copies under every staging root, at any depth, in the sandbox's glob grammar. */
+export function configCopyDenies(staging: { base: string; prefix: string }): string[] {
+  const root = `${escapeSandboxGlobPath(resolve(staging.base))}/${staging.prefix}*`;
+  return [...CONFIG_COPY_FILES.map((f) => `${root}/**/${f}`), `${root}/**/backups`];
+}
+
+/** The config copies in a runtime's own home (`dir`): at its top, spelled exactly, and at any depth below it. The
+ *  runtime reads its own top-level MCP list past a denial only when that denial names the file exactly (the agent SDK's
+ *  `readOwnGlobalMcpControl`); a pattern that also matches it would keep the session's MCP servers from loading. */
+export function ownHomeConfigDenies(dir: string): string[] {
+  const d = escapeSandboxGlobPath(resolve(dir));
+  // A top-level copy that is a link (a run folder's `.claude.json` points at its `.clover.json`) is left to its target's
+  // denial: naming it would deny the target too, past the exact spelling the runtime's own read needs.
+  const isLink = (f: string) => { try { return lstatSync(join(dir, f)).isSymbolicLink(); } catch { return false; } };
+  return [...CONFIG_COPY_FILES.filter((f) => !isLink(f)).map((f) => `${d}/${f}`), `${d}/backups`, ...CONFIG_COPY_FILES.map((f) => `${d}/*/**/${f}`), `${d}/*/**/backups`];
 }
 
 export interface HomeDenySpec {

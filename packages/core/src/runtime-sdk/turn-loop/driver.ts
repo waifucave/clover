@@ -55,7 +55,7 @@ import { embeddedSessionOptions, fillProvider } from "./embedded-session";
 import { mergedHooks } from "./hook-merge";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { GLOSSARY_TOOL_NAME, glossaryTool, type GlossaryDeps } from "./glossary";
-import { BOT_READ_DENIED, CONFIG_COPY_FILES, configCopyDenies, namesOtherThan } from "./home-deny";
+import { BOT_READ_DENIED, configCopyDenies, namesOtherThan, ownHomeConfigDenies } from "./home-deny";
 import { CloverFence } from "../../fence/fence";
 import { selfGrantDenyWrite } from "../mode-options";
 import { escapeSandboxGlobPath } from "../host/run-home/settings";
@@ -90,14 +90,16 @@ export const BOT_SANDBOX = { enabled: true, allowUnsandboxedCommands: false, den
 
 /** What a bot's Bash may not read (the owner's ruling of November 9: bots read the whole Clover home, and only
  *  escalation is denied): `BOT_READ_DENIED`, the fence's other read-denied items (the browser profiles), and every
- *  config copy that carries keys, at any depth in the home and under the staging roots (`configCopyDenies`). In the
+ *  config copy that carries keys, at any depth in the home (`ownHomeConfigDenies`) and under the staging roots
+ *  (`configCopyDenies`). In the
  *  sandbox's glob grammar. */
 export function botDenyRead(home: string, fence: Pick<Fence, "fencedSet"> = homeFence(home)): string[] {
   const literal = [...BOT_READ_DENIED.map((rel) => join(home, rel)), ...fence.fencedSet().filter((i) => i.deny === "read-write").map((i) => i.path)];
   return [...new Set([
     ...literal.map(escapeSandboxGlobPath),
-    ...CONFIG_COPY_FILES.map((f) => `${escapeSandboxGlobPath(home)}/**/${f}`),
-    ...configCopyDenies(home, { base: tmpdir(), prefix: RESUME_STAGING_PREFIX }),
+    // The runtime's own home is the Clover home: its top-level copies are named exactly (`ownHomeConfigDenies`).
+    ...ownHomeConfigDenies(home),
+    ...configCopyDenies({ base: tmpdir(), prefix: RESUME_STAGING_PREFIX }),
   ])];
 }
 

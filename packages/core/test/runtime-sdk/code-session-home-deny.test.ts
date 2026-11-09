@@ -3,7 +3,7 @@
 // entries, the plugin views but of `cache/runs/` only its own run folder, the installed plugins, its own outputs and its
 // working directories; never a config copy that carries keys, the bots' data, or the sessions' logs.
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
@@ -56,6 +56,19 @@ describe("a coding session's Bash sandbox (childSandboxConfigFor)", () => {
       const staged = join(tmpdir(), "claude-resume-0000", f);
       expect([f, deniedBy(list, staged) || deniedBy(list, join(realpathSync(tmpdir()), "claude-resume-0000", f))]).toEqual([f, true]);
     }
+  });
+
+  test("its own run folder's MCP list is denied by its exact name, so the runtime still loads it (a link to it isn't named)", () => {
+    const h = temp("clover-code-own-mcp-");
+    const runDir = join(h, "cache", "runs", "run-own");
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, ".clover.json"), "{}");
+    symlinkSync("./.clover.json", join(runDir, ".claude.json"));
+    const list = childSandboxConfigFor(h, null, [], { runDir }).filesystem?.denyRead ?? [];
+    expect(list).toContain(join(runDir, ".clover.json"));
+    expect(list).not.toContain(join(runDir, ".claude.json"));
+    // No pattern names the top-level file too (the agent SDK's own read wants the exact denial alone).
+    expect(list.filter((e) => /[*?]/.test(e) && deniedBy([e], join(runDir, ".clover.json")))).toEqual([]);
   });
 
   test("the bots' data, the sessions' logs and the secrets file are refused", () => {
