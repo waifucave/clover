@@ -3543,6 +3543,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     onTicksChanged: () => void mcp.refresh(),
     // What this computer lists of its per-computer servers, for lane J's node to serve to the others.
     listing: () => mcp.listing(),
+    // The key this computer gives a plugin's server, for J's node to check a remote listing against.
+    known: (plugin: string, name: string) => mcp.known(plugin, name),
     fields: (server: string) => mcp.fields(server),
     call: mcp.call,
     scratch: (session: string) => {

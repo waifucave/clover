@@ -187,7 +187,7 @@ test("remote servers fill only names this computer doesn't list; listing() gives
     // The name round-trips: the served key is the plugin's and its own name's.
     expect(listing[0]!.name).toBe("blender");
     expect(pluginMcpServerKey(listing[0]!.plugin, listing[0]!.name)).toBe(listing[0]!.server);
-    expect(pluginMcpServerKey("acme/sub", "x.y")).toBe("acme-sub-x-y");
+    expect(listing[0]!.scope).toBe("agents");
     expect(listing[0]!.scope).toBe("agents");
     expect(listing[0]!.tools.map((t) => [t.name, t.load])).toEqual([["WebSearch", "preload"], ["WebFetch", "on-demand"], ["Later", "on-demand"]]);
     expect(Object.keys(listing[0]!.tools[0]!.inputSchema.properties ?? {})).not.toContain("computer");
@@ -305,25 +305,26 @@ test("a third-party `web` server can't take mcp__web__*, and a third-party `clov
 test("every server key round-trips through a tool name, never holds `__`, and is a namespace; a name that gives none is refused", async () => {
   const { isServerKey } = await import("../../../src/runtime-sdk/turn-loop/plugin-mcp");
   const { mcpToolName, parseMcpToolName } = await import("../../../src/computers/mcp");
-  const cases: [string, string][] = [["acme", "blender"], ["acme/sub", "x.y"], ["Acme_Tools", "Big__Server"], ["a--b", "_x_"], ["clover/model-google", "web"], ["x", "Ünïcode name"]];
-  for (const [plugin, name] of cases) {
+  const cases: [string, string, string][] = [["acme", "blender", "acme-blender"], ["pack/luna", "voice", "pack-luna-voice"], ["clover", "model-google", "clover-model-google"], ["a1", "b-2-c", "a1-b-2-c"]];
+  for (const [plugin, name, want] of cases) {
     const key = pluginMcpServerKey(plugin, name)!;
-    expect(key).toBeDefined();
-    expect(key).not.toContain("__");
+    expect(key).toBe(want);
     expect(key).not.toContain("_");
     expect(isServerKey(key)).toBe(true);
     expect(parseMcpToolName(mcpToolName(key, "Some__Tool"))).toEqual({ server: key, tool: "Some__Tool" });
   }
-  expect(pluginMcpServerKey("acme", "___")).toBeUndefined();
-  expect(pluginMcpServerKey("@@", "x")).toBeUndefined();
+  // A bundled server keeps its name; a name that isn't a namespace is refused, never escaped.
+  expect(pluginMcpServerKey("clover", "web", true)).toBe("web");
+  for (const bad of ["Blender", "big__server", "x.y", "_x", "x-", "", "ünï"]) expect(pluginMcpServerKey("acme", bad)).toBeUndefined();
+  expect(pluginMcpServerKey("acme", "x".repeat(60))).toBeUndefined(); // past 64 characters
   for (const bad of ["a__b", "a_b", "_a", "a-", "A", "a--b", ""]) expect(isServerKey(bad)).toBe(false);
   // Served keys too: each one the registry gives round-trips, and a plugin whose server name gives no key is refused.
   const registry = fakeRegistry([
-    entry("Acme_Tools", "Big__Server", { type: "host" }),
-    entry("acme", "___", { type: "host" }),
+    entry("acme/tools", "big-server", { type: "host" }),
+    entry("acme", "Big__Server", { type: "host" }),
     entry("clover", "web", { type: "host" }),
     entry("clover", "Not_A_Namespace", { type: "host" }),
-  ], { Acme_Tools: "/nonexistent", acme: "/nonexistent", clover: "/nonexistent" });
+  ], { "acme/tools": "/nonexistent", acme: "/nonexistent", clover: "/nonexistent" });
   const lines: string[] = [];
   const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", log: (l) => lines.push(l) });
   try {
@@ -336,6 +337,11 @@ test("every server key round-trips through a tool name, never holds `__`, and is
     expect(mergedServers(mcp.servers("agent"), (s) => driverRefused.push(s.server)).map((s) => s.server).sort()).toEqual(["acme-tools-big-server", "web"]);
     expect(driverRefused).toEqual([]);
     expect(lines.filter((l) => l.includes("refused"))).toHaveLength(2);
+    // known(): the key and scope this registry gives a plugin's server; none for a refused or unknown one.
+    expect(mcp.known("acme/tools", "big-server")).toEqual({ server: "acme-tools-big-server", scope: "both" });
+    expect(mcp.known("acme", "Big__Server")).toBeUndefined();
+    expect(mcp.known("nobody", "web")).toBeUndefined();
+    expect(mcp.known("clover", "web")).toEqual({ server: "web", scope: "both" });
   } finally {
     mcp.close();
   }
@@ -343,16 +349,16 @@ test("every server key round-trips through a tool name, never holds `__`, and is
 
 test("two plugins that come to the same key are both refused, logged, never first wins", async () => {
   const registry = fakeRegistry([
-    entry("a/b", "x", { type: "host" }),
-    entry("a_b", "x", { type: "host" }),
+    entry("acme", "x-y", { type: "host" }),
+    entry("acme-x", "y", { type: "host" }),
     entry("other", "y", { type: "host" }),
-  ], { "a/b": "/nonexistent", a_b: "/nonexistent", other: "/nonexistent" });
+  ], { acme: "/nonexistent", "acme-x": "/nonexistent", other: "/nonexistent" });
   const lines: string[] = [];
   const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", log: (l) => lines.push(l) });
   try {
     await mcp.refresh();
     expect(names(mcp)).toEqual(["other-y"]);
-    expect(lines.filter((l) => l.includes("a-b-x"))).toHaveLength(2);
+    expect(lines.filter((l) => l.includes("acme-x-y"))).toHaveLength(2);
   } finally {
     mcp.close();
   }

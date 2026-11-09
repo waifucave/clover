@@ -46,31 +46,27 @@ export const RESULT_MAX_CHARS = 1_048_576;
 /** Server names only the core owns, which no non-bundled plugin may serve under. */
 const RESERVED_NAMES: readonly string[] = ["clover", "clover_core"];
 
-/** One part of a server key: lower case, every run of characters but `[a-z0-9]` written as one `-`, none at the ends. */
-function keySegment(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
+/** The longest server key. */
+export const SERVER_KEY_MAX = 64;
 
 /** Whether `key` can name a server: a namespace (the driver's grammar, lower-case letters and digits joined by single
- *  hyphens, so never `__`), and it comes back whole from a tool name (`parseMcpToolName(mcpToolName(key, tool))`), so
- *  approvals, saved rules and hooks see the server it is. */
+ *  hyphens, so never `__`), at most `SERVER_KEY_MAX` characters, and it comes back whole from a tool name
+ *  (`parseMcpToolName(mcpToolName(key, tool))`), so approvals, saved rules and hooks see the server it is. */
 export function isServerKey(key: string): boolean {
-  if (!NAMESPACE_RE.test(key)) return false;
+  if (key.length > SERVER_KEY_MAX || !NAMESPACE_RE.test(key)) return false;
   const parsed = parseMcpToolName(mcpToolName(key, "Tool"));
   return parsed !== null && parsed.server === key && parsed.tool === "Tool";
 }
 
-/** The key a non-bundled plugin's `host` server is served under: `<plugin id>-<name>`, each part lower case with every
- *  run of other characters one `-` (a bundled server keeps its own name). Undefined when the result can't name a
- *  server (`isServerKey`). The key is never parsed back: which plugin and server it is comes from the registry. It is
- *  lossy (`a/b` and `a.b` both give `a-b`), so a key two plugins reach, or one that is a bundled server's name or a
- *  reserved one, is refused for both, here and in a remote listing. Lane J's node checks a remote listing's `server`
- *  against this key of its `plugin` and `name`. */
-export function pluginMcpServerKey(pluginId: string, name: string): string | undefined {
-  const plugin = keySegment(pluginId);
-  const server = keySegment(name);
-  if (plugin === "" || server === "") return undefined;
-  const key = `${plugin}-${server}`;
+/** The key a plugin's `host` server is served under (settled with lane J, whose node checks a remote listing against
+ *  it): a bundled plugin's server keeps its own `name`; any other's is `<plugin id with its "/" as "-">-<name>`. The
+ *  name must already be a namespace (`NAMESPACE_RE`): nothing is escaped, so no two names map to one key by spelling.
+ *  Undefined when the result can't name a server (`isServerKey`). The key is never parsed back: which plugin and server
+ *  it is comes from the registry. A key two plugins reach by the hyphen (`acme` + `x-y`, `acme-x` + `y`), or one that is
+ *  a bundled server's name or a reserved one, is refused for every claimant, here and in a remote listing. */
+export function pluginMcpServerKey(pluginId: string, name: string, bundled = false): string | undefined {
+  if (!NAMESPACE_RE.test(name)) return undefined;
+  const key = bundled ? name : `${pluginId.replace("/", "-")}-${name}`;
   return isServerKey(key) ? key : undefined;
 }
 /** The note a cut result ends with. */
@@ -218,7 +214,7 @@ export interface PluginMcpListing {
   name: string;
   tools: (McpToolDef & { load: "preload" | "on-demand" })[];
   instructions?: string;
-  scope?: "bots" | "agents" | "both";
+  scope: "bots" | "agents" | "both";
 }
 
 interface Listed {
@@ -300,7 +296,7 @@ export class PluginMcp {
       const isBundled = bundled(c);
       let key = name;
       if (isBundled) {
-        if (!isServerKey(key)) {
+        if (pluginMcpServerKey(c.pluginId, name, true) === undefined) {
           refused.push({ c, why: `the name ${name} can't name a server (lower-case letters and digits, single hyphens)` });
           continue;
         }
@@ -311,7 +307,7 @@ export class PluginMcp {
         }
         const minted = pluginMcpServerKey(c.pluginId, name);
         if (minted === undefined) {
-          refused.push({ c, why: `the name ${name} gives no server key` });
+          refused.push({ c, why: `the name ${name} gives no server key (it must be lower-case letters and digits, single hyphens)` });
           continue;
         }
         if (RESERVED_NAMES.includes(minted) || bundledNames.has(minted)) {
@@ -433,7 +429,7 @@ export class PluginMcp {
   servers(kind: "bot" | "side-thread" | "agent" | "coding"): BotMcpServer[] {
     const out: BotMcpServer[] = [];
     for (const [server, l] of this.#listed) {
-      const scope = l.entry.scope ?? (this.#o.registry.get(l.plugin)?.manifest as { scope?: HostServerEntry["scope"] } | undefined)?.scope ?? "both";
+      const scope = this.#scopeOf(l.plugin, l.entry);
       const serves = scope === "both" || (scope === "bots" ? kind === "bot" || kind === "side-thread" : kind === "agent" || kind === "coding");
       if (!serves) continue;
       const p = this.placement(server)!;
@@ -460,19 +456,30 @@ export class PluginMcp {
     return out;
   }
 
+  /** The key this computer's registry gives `plugin`'s server `name`, and its scope here; undefined when the plugin or
+   *  server isn't here or its key is refused here (lane J's node keeps a remote entry only when this matches it). */
+  known(plugin: string, name: string): { server: string; scope: "bots" | "agents" | "both" } | undefined {
+    const hit = this.#keys().served.find(({ c }) => c.pluginId === plugin && this.#nameOf(c) === name);
+    return hit === undefined ? undefined : { server: hit.key, scope: this.#scopeOf(plugin, hit.c.value as HostServerEntry) };
+  }
+
+  #scopeOf(plugin: string, entry: HostServerEntry): "bots" | "agents" | "both" {
+    return entry.scope ?? (this.#o.registry.get(plugin)?.manifest as { scope?: HostServerEntry["scope"] } | undefined)?.scope ?? "both";
+  }
+
   /** The per-computer servers listed here, for lane J's node to serve to the other computers (`mcp.list`; the node
    *  keeps only what's ticked here). */
   listing(): PluginMcpListing[] {
     const out: PluginMcpListing[] = [];
     for (const [server, l] of this.#listed) {
       if (l.entry.perComputer !== true) continue;
-      const scope = l.entry.scope ?? (this.#o.registry.get(l.plugin)?.manifest as { scope?: HostServerEntry["scope"] } | undefined)?.scope;
       const loads = l.entry.tools ?? {};
       out.push({
         server, plugin: l.plugin, name: l.name,
         tools: l.tools.map((t) => ({ ...t, load: loads[t.name] ?? loads["*"] ?? "on-demand" })),
         ...(l.instructions === undefined ? {} : { instructions: l.instructions }),
-        ...(scope === undefined ? {} : { scope }),
+        // Always stated: a remote listing with no scope serves no one (lane J's node).
+        scope: this.#scopeOf(l.plugin, l.entry),
       });
     }
     return out;
