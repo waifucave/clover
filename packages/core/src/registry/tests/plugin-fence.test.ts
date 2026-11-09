@@ -550,7 +550,7 @@ darwinDescribe("the plugin-process fence", () => {
         expect(p).toContain(`(global-name-prefix "${prefix}")`);
       }
       for (const f of PRIVACY_DENIES.dataFolders) expect(p).toContain(`(subpath "${join("/Users/u", f)}")`);
-      expect(p).toContain(String.raw`(regex #"\.photoslibrary(/|$)")`);
+      expect(p).toContain(String.raw`(regex #"\.[Pp][Hh][Oo][Tt][Oo][Ss][Ll][Ii][Bb][Rr][Aa][Rr][Yy](/|$)")`);
       // After every allow: a project folder that holds a Photos library doesn't open it.
       const withProject = pluginFenceProfile({ cloverHome: "/c", userHome: "/Users/u", read: ["/Users/u/plugin"], write: [], exec, projects: ["/Users/u/Pictures"], projectWrite: true });
       const lines = withProject.split("\n");
@@ -563,6 +563,10 @@ darwinDescribe("the plugin-process fence", () => {
       mkdirSync(join(pictures, "Old.photoslibrary"), { recursive: true });
       writeFileSync(join(pictures, "Photos Library.photoslibrary", "database", "Photos.sqlite"), "photos");
       writeFileSync(join(pictures, "Old.photoslibrary", "x"), "photos");
+      mkdirSync(join(pictures, "Odd.PhotosLibrary"));
+      writeFileSync(join(pictures, "Odd.PhotosLibrary", "x"), "photos");
+      // A link in the project folder to a library: the sandbox judges the file it reaches.
+      symlinkSync(join(pictures, "Old.photoslibrary"), join(pictures, "link"));
       writeFileSync(join(pictures, "drawing.txt"), "mine");
       const lookup = [
         `const { dlopen, ptr } = require("bun:ffi");`,
@@ -581,6 +585,10 @@ darwinDescribe("the plugin-process fence", () => {
         `cat ${q(join(pictures, "drawing.txt"))} >/dev/null 2>&1 && echo own=ok || echo own=denied`,
         `cat ${q(join(pictures, "Photos Library.photoslibrary", "database", "Photos.sqlite"))} >/dev/null 2>&1 && echo library=ok || echo library=denied`,
         `cat ${q(join(pictures, "Old.photoslibrary", "x"))} >/dev/null 2>&1 && echo otherlibrary=ok || echo otherlibrary=denied`,
+        // Case variants: the library's own odd case, and another spelling of the default one (APFS ignores case).
+        `cat ${q(join(pictures, "Odd.PhotosLibrary", "x"))} >/dev/null 2>&1 && echo oddcase=ok || echo oddcase=denied`,
+        `cat ${q(join(pictures, "photos library.PHOTOSLIBRARY", "database", "Photos.sqlite"))} >/dev/null 2>&1 && echo respelled=ok || echo respelled=denied`,
+        `cat ${q(join(pictures, "link", "x"))} >/dev/null 2>&1 && echo link=ok || echo link=denied`,
         // osascript is never run (its exec is refused), so no Apple Event is sent; `return 1` sends none anyway.
         "/usr/bin/osascript -e 'return 1' >/dev/null 2>&1 && echo osascript=ok || echo osascript=denied",
       ].join("; ");
@@ -591,7 +599,7 @@ darwinDescribe("the plugin-process fence", () => {
       const looked = JSON.parse(json!) as Record<string, number>;
       for (const n of services) expect([n, looked[n]]).toEqual([n, 1100]);
       expect(looked[control]).toBe(0);
-      expect(Object.fromEntries(rest.map((l) => l.split("=") as [string, string]))).toEqual({ own: "ok", library: "denied", otherlibrary: "denied", osascript: "denied" });
+      expect(Object.fromEntries(rest.map((l) => l.split("=") as [string, string]))).toEqual({ own: "ok", library: "denied", otherlibrary: "denied", oddcase: "denied", respelled: "denied", link: "denied", osascript: "denied" });
     } finally {
       stop(w);
     }

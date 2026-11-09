@@ -293,8 +293,9 @@ export const PRIVACY_DENIES = {
     "Library/Reminders", "Library/Group Containers/group.com.apple.reminders", "Library/Containers/com.apple.reminders",
     "Library/Containers/com.apple.Photos", "Pictures/Photos Library.photoslibrary",
   ],
-  /** A Photos library wherever it is (a project folder can hold one). */
-  photosLibrary: String.raw`\.photoslibrary(/|$)`,
+  /** A Photos library wherever it is (a project folder can hold one), in any case (APFS ignores it; Seatbelt's regex
+   *  doesn't). */
+  photosLibrary: String.raw`\.[Pp][Hh][Oo][Tt][Oo][Ss][Ll][Ii][Bb][Rr][Aa][Rr][Yy](/|$)`,
 } as const;
 
 export interface PluginFenceInput {
