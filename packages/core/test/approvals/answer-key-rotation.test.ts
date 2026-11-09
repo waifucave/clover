@@ -105,7 +105,7 @@ describe("answer-key rotation", () => {
     expect(w.devices.self().answerKey?.publicKey).toBe(w.nextPub);
     expect(w.devices.ownAnswerKeyProof()?.rotations.at(-1)).toMatchObject({ from: w.currentPub, to: w.nextPub });
     // The approved rotation card is no level raise.
-    const studio = new CoreComputerRegistry({ clock: w.clock, cards: (id) => w.broker.get(id), self: { name: "Studio", device: "studio00000000000000" } });
+    const studio = new CoreComputerRegistry({ clock: w.clock, self: { name: "Studio", device: "studio00000000000000" } });
     await studio.setLevel("Studio", "ask");
     const rejected = await studio.setLevel("Studio", "automatic", { via: "card", record: w.broker.get(card.id)! }).then(() => undefined, (e: unknown) => e);
     expect(isContractError(rejected, "refused")).toBe(true);

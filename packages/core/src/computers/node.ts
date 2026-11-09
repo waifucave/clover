@@ -5,7 +5,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import type { AnswerDevices, AnswerLedger, CallCardRenderer, CardRecord } from "../contracts/approval-broker";
+import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeviceRegistry } from "../contracts/device-registry";
@@ -48,8 +48,6 @@ export interface ComputerNodeOptions {
   devices: DeviceRegistry;
   /** What checks a signed answer here: the paired devices, the ledger of card ids used, this computer's own cards. */
   answers?: { devices: AnswerDevices; ledger: AnswerLedger; render: CallCardRenderer };
-  /** This computer's broker's card records (`broker.get`), for a level raise by card here; without it, none counts. */
-  cards?: (id: string) => CardRecord | undefined;
   /** The bots this computer runs (lane D). */
   bots?: () => string[];
   /** Which computer runs a bot, from lane D's registry (review S2). Left out, the computers' hellos say, and a bot
@@ -149,7 +147,6 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     self: { name: o.self.name, device: o.self.device, os, hasDisplay: o.self.hasDisplay ?? true, agents: o.self.agents ?? [] },
     store: o.store ?? new FileSelfStateStore(selfStatePath(o.cloverHome)),
     ...(o.answers ? { devices: o.answers.devices, ledger: o.answers.ledger, render: o.answers.render } : {}),
-    ...(o.cards ? { cards: o.cards } : {}),
   });
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);

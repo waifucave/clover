@@ -515,6 +515,8 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       // A source outside the request too, and a transfer whose two ends are both named is a card.
       const transfer = { computer: "Studio", source: "Desk", method: "tree.transfer", params: {} };
       expect(await broker.request(bash({ effect: "move", binds: transfer }))).toEqual({ allowed: false, by: "unbound" });
+      // A source on a level raise (or any call but a transfer) binds nothing: refused, though both computers are named.
+      expect(await broker.request(bash({ kind: "change", change: "computer-level", effect: "other", computers: ["Studio", "Desk"], binds: { ...raise(), source: "Desk" } }))).toEqual({ allowed: false, by: "unbound" });
       expect(broker.cards()).toHaveLength(0);
       void broker.request(bash({ effect: "move", computers: ["Studio", "Desk"], binds: transfer }));
       await flush();
