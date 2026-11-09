@@ -44,6 +44,13 @@ const INSTRUCTIONS_MAX_CHARS = 4_096;
 export const RESULT_MAX_CHARS = 1_048_576;
 /** Server names only the core owns, which no non-bundled plugin may serve under. */
 const RESERVED_NAMES: readonly string[] = ["clover", "clover_core"];
+
+/** The key a non-bundled plugin's `host` server is served under: `<pluginId>__<name>`, every character but
+ *  `[A-Za-z0-9_-]` written `_` (a bundled server keeps its own name). Lane J's node checks a remote listing's
+ *  `server` against this key of its `plugin` and `name`, so a peer can't name a server another plugin's key. */
+export function pluginMcpServerKey(pluginId: string, name: string): string {
+  return `${pluginId}__${name}`.replace(/[^A-Za-z0-9_-]/g, "_");
+}
 /** The note a cut result ends with. */
 const TRUNCATED_NOTE = "[result truncated: it was over 1 MiB]";
 
@@ -184,6 +191,9 @@ export interface PluginMcpOptions {
 export interface PluginMcpListing {
   server: string;
   plugin: string;
+  /** The server's own name, as its plugin declares it: `server` is `pluginMcpServerKey(plugin, name)`, or `name` itself
+   *  for a bundled plugin's server. */
+  name: string;
   tools: (McpToolDef & { load: "preload" | "on-demand" })[];
   instructions?: string;
   scope?: "bots" | "agents" | "both";
@@ -272,7 +282,7 @@ export class PluginMcp {
           refused.push({ c, why: `the name ${name} is reserved` });
           continue;
         }
-        key = `${c.pluginId}__${name}`.replace(/[^A-Za-z0-9_-]/g, "_");
+        key = pluginMcpServerKey(c.pluginId, name);
       }
       const group = groups.get(key) ?? [];
       group.push({ c, bundled: isBundled });
@@ -423,7 +433,7 @@ export class PluginMcp {
       const scope = l.entry.scope ?? (this.#o.registry.get(l.plugin)?.manifest as { scope?: HostServerEntry["scope"] } | undefined)?.scope;
       const loads = l.entry.tools ?? {};
       out.push({
-        server, plugin: l.plugin,
+        server, plugin: l.plugin, name: l.name,
         tools: l.tools.map((t) => ({ ...t, load: loads[t.name] ?? loads["*"] ?? "on-demand" })),
         ...(l.instructions === undefined ? {} : { instructions: l.instructions }),
         ...(scope === undefined ? {} : { scope }),

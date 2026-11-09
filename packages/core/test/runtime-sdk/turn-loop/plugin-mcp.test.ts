@@ -8,7 +8,7 @@ import type { Caller } from "@waifucave/clover-protocol";
 import { Listeners } from "../../../src/contracts/common";
 import type { McpChannel } from "../../../src/contracts/plugin-host";
 import type { Contribution, PluginRecord, RegistryChange } from "../../../src/contracts/plugin-registry";
-import { PluginMcp, RESULT_MAX_CHARS } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
+import { pluginMcpServerKey, PluginMcp, RESULT_MAX_CHARS } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -184,6 +184,10 @@ test("remote servers fill only names this computer doesn't list; listing() gives
     // The listing: per-computer servers listed here, raw tools with their loading, scope; never web, never maya.
     const listing = mcp.listing();
     expect(listing.map((l) => l.server)).toEqual(["acme__blender"]);
+    // The name round-trips: the served key is the plugin's and its own name's.
+    expect(listing[0]!.name).toBe("blender");
+    expect(pluginMcpServerKey(listing[0]!.plugin, listing[0]!.name)).toBe(listing[0]!.server);
+    expect(pluginMcpServerKey("acme/sub", "x.y")).toBe("acme_sub__x_y");
     expect(listing[0]!.scope).toBe("agents");
     expect(listing[0]!.tools.map((t) => [t.name, t.load])).toEqual([["WebSearch", "preload"], ["WebFetch", "on-demand"], ["Later", "on-demand"]]);
     expect(Object.keys(listing[0]!.tools[0]!.inputSchema.properties ?? {})).not.toContain("computer");
