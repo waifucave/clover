@@ -4,7 +4,7 @@
 import { USAGE_METHODS } from "@waifucave/clover-protocol";
 import { handler, type MethodHandler } from "../bots/rpc";
 import type { UsageLedger } from "./ledger";
-import { planWindowKey, type PlanReading as ServicePlanReading } from "./plan";
+import { planWindowKey, staleness, type PlanReading as ServicePlanReading } from "./plan";
 import type { PlanReading as WirePlanReading } from "@waifucave/clover-protocol";
 
 export function usageMethods(deps: { ledger: UsageLedger }): Record<string, MethodHandler> {
@@ -41,7 +41,10 @@ export interface PlanReaders {
 const NO_READING = new Set(["none", "disabled", "not-installed"]);
 
 /** `usage.plans` (§12 "Usage"): the latest reading of each of the user's apps' plan windows on this computer, as the
- *  Usage tab and the island show them. A source that can't answer is left out, never an error. */
+ *  Usage tab and the island show them. A source that can't answer is left out, never an error.
+ *
+ *  It covers THIS computer only: the readers read the apps installed here, and `computer` names this one. Another
+ *  computer's plans are that computer's own `usage.plans`; nothing here asks a peer or merges its readings. */
 export function usagePlansMethods(deps: { readers: PlanReaders; computer(): string; now?(): number }): Record<string, MethodHandler> {
   const M = USAGE_METHODS;
   return {
@@ -61,7 +64,12 @@ export async function planReadings(deps: { readers: PlanReaders; computer(): str
   const out: WirePlanReading[] = [];
   for (const r of read) {
     if (r === undefined || NO_READING.has(r.source)) continue;
+    const readAt = r.at ?? now();
     for (const w of r.windows) {
+      // Only a window still current: one whose reset has passed, or that was read longer ago than it lasts, describes
+      // a window that is over, so it is left out rather than shown as now (the reader's verdict, and again at this
+      // moment, since a kept reading ages).
+      if (w.stale || staleness(readAt, w.windowMinutes, w.resetsAt, now()).stale) continue;
       out.push({
         source: r.provider,
         computer,
@@ -69,7 +77,7 @@ export async function planReadings(deps: { readers: PlanReaders; computer(): str
         window: (w.windowKey ?? planWindowKey(w)).slice(0, 32),
         usedPercent: Math.min(1000, Math.max(0, w.usedPercent)),
         ...(w.resetsAt === undefined ? {} : { resetsAt: Math.max(0, Math.round(w.resetsAt)) }),
-        readAt: Math.max(0, Math.round(r.at ?? now())),
+        readAt: Math.max(0, Math.round(readAt)),
       });
     }
   }

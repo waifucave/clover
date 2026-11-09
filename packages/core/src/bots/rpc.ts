@@ -4,8 +4,7 @@
 //
 // The server decides who may call what before a handler runs (the allow lists, the capabilities, `userOnly`); the
 // handlers check the caller again where the method changes something, since a bot's or a plugin's call must never
-// count as the user's (§3.1, §9.1). Not here yet: `session.answer` (the runtime's questions, A-M3) and the routines'
-// methods (M3).
+// count as the user's (§3.1, §9.1).
 //
 // `peerSessionMethods` is the receiving side of `peer.session.send` (devices.ts), for a computer that runs a bot the
 // user messaged from another device: the sending device's signature decides whether the turn is the user's (N3).
@@ -28,7 +27,7 @@ import { botPaths } from "./paths";
 import { StagedImages } from "./staged-images";
 import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
-import type { QuestionBroker } from "../agent/questions";
+import type { BotQuestions } from "./questions";
 
 // The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
 export { MethodError, handler, requireUser, toMethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
@@ -49,7 +48,7 @@ export interface SessionsMethodsDeps {
    *  new model is recorded in the session's view and its driver reads it at the next turn. */
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
   /** The bot side's questions (questions.ts): `session.answer` resolves the one waiting. Without it, none waits. */
-  questions?: Pick<QuestionBroker, "isPending" | "respond">;
+  questions?: Pick<BotQuestions, "answer">;
 }
 
 /** How far back a bot conversation's messages are read for the staged copies they still name (never pruned). */
@@ -261,8 +260,10 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       const caller = ctx.caller;
       if (caller.kind !== "user" && caller.kind !== "plugin") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user, or a plugin showing the question, answers it");
       reachable(id);
-      if (deps.questions === undefined || !deps.questions.isPending(id, callId)) throw new ContractError("not_found", `no question ${callId} is waiting in ${id}`);
-      deps.questions.respond(id, callId, answers, caller.kind === "user" ? "user" : `plugin:${caller.pluginId}`, notes);
+      const by = caller.kind === "user" ? "user" : `plugin:${caller.pluginId}`;
+      const outcome = deps.questions?.answer(id, callId, answers, by, notes)
+        ?? { ok: false as const, code: "not_found" as const, message: `no question ${callId} is waiting in ${id}` };
+      if (!outcome.ok) throw new ContractError(outcome.code, outcome.message);
       return { ok: true as const };
     }),
 

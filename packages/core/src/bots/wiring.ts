@@ -196,6 +196,8 @@ export function createBotSide(o: BotSideOptions): BotSide {
   const offReopen = updates?.onReopen(() => host.resume());
   // The turns running here keep an update waiting (lane M's busy registry).
   const offBusy = updates?.register({ name: "bot-turns", count: () => host.list().filter((v) => host.turnOrigin(v.id) !== undefined).length });
+  // So do the bots' questions still waiting for an answer: a restart would drop them.
+  const offQuestions = updates?.register({ name: "bot-questions", count: () => questions.broker.pendingCount() });
   const routineTool = routines === undefined || o.routines === undefined ? undefined : {
     home: o.home, computer: o.computer, routines,
     computers: o.routines.computers ?? (() => [{ name: o.computer, level: computerLevel() }]),
@@ -231,7 +233,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
         home: o.home, computer: o.computer, bots, host, clock: deps.clock ?? o.clock, localDevice: deps.localDevice,
         ...(updates === undefined ? {} : { updateGate: updates }),
         ...(hooks === undefined ? {} : { setAgentModel: (id: string, model: string, effort?: string) => hooks.setAgentModel(id, model, effort) }),
-        questions: questions.broker,
+        questions,
       });
       return {
       ...sessions,
@@ -249,6 +251,7 @@ export function createBotSide(o: BotSideOptions): BotSide {
     },
     close: async () => {
       offBusy?.();
+      offQuestions?.();
       offReopen?.();
       ingress?.stop();
       routines?.stop();
