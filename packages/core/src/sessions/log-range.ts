@@ -34,7 +34,7 @@ export interface LogRange {
   events: SessionEvent[];
   /** The first line after `afterSeq`, when it is longer than `maxOne` (then `events` is empty). */
   oversized?: { seq: number; bytes: number };
-  /** Whether the log goes on past this page. */
+  /** Whether a readable line follows this page (a tail that doesn't parse is not more). */
   more: boolean;
 }
 
@@ -58,7 +58,7 @@ export function readLogRange(path: string, afterSeq: number, o: LogRangeOptions)
         const seq = line.long.seq;
         if (seq !== undefined && seq > afterSeq) {
           if (events.length > 0) break;
-          return done({ events, oversized: { seq, bytes: line.long.bytes }, more: line.end < size });
+          return done({ events, oversized: { seq, bytes: line.long.bytes }, more: io.goodLineFrom(line.end) !== undefined });
         }
       } else {
         const raw = jsonOf(line.bytes);
@@ -74,7 +74,8 @@ export function readLogRange(path: string, afterSeq: number, o: LogRangeOptions)
       }
       at = line.end;
     }
-    return done({ events, more: at < size });
+    // More only when a readable line follows: a corrupt tail is not more.
+    return done({ events, more: at < size && io.goodLineFrom(at) !== undefined });
   } finally {
     closeSync(fd);
   }

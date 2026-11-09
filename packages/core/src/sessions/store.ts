@@ -155,6 +155,21 @@ export interface SessionRow {
  *  over-long title wedged that session's replication with INVALID_PARAMS on every pass, healing only
  *  if the title changed. A clamp whose output its own schema rejects is a contradiction regardless
  *  of who is reachable today. */
+/** A synced line as the log keeps it: the client's bytes when they already begin `{"seq":<its seq>,`, else the same
+ *  object re-serialised with its seq first (every other key in the client's order). Throws, before anything is
+ *  written, for a line that can't be. */
+export function canonicalSeqLine(raw: string, seq: number, index = 0): string {
+  const head = `{"seq":${seq},`;
+  if (raw.startsWith(head)) return raw;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { throw new Error(`event ${index} can't be re-serialised`); }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`event ${index} can't be re-serialised`);
+  const { seq: _seq, ...rest } = parsed as Record<string, unknown>;
+  const line = JSON.stringify({ seq, ...rest });
+  if (!line.startsWith(head) || line.includes("\n")) throw new Error(`event ${index} can't be re-serialised`);
+  return line;
+}
+
 /** A message the archive counts (`message_count`): the user's and the assistant's, on any thread. */
 function isMessage(event: SessionEvent): boolean {
   return event.type === "user_message" || event.type === "assistant_message";
@@ -1316,13 +1331,22 @@ export class SessionStore {
     );
   }
 
-  /** Appends a syncing client's events VERBATIM, preserving their `seq` and `ts`.
+  /** Appends a syncing client's events VERBATIM, preserving their `seq` and `ts` — except a line that doesn't start
+   *  with its own seq (below).
    *
    *  Writes `entry.raw` — the client's exact line bytes — NOT `JSON.stringify(entry.event)`. Zod
    *  rebuilds a parsed object in SCHEMA key order, so re-serializing would silently rewrite every
    *  line and break the one property this whole surface rests on: that `sync.pull` returns what
    *  `sync.push` sent, byte for byte (see the protocol's SyncPull/SyncPush doc comments). The
    *  parsed `event` is used only to validate and to derive the index columns.
+   *
+   *  The one change (the second exception to byte-for-byte replication, beside `sync.push`'s `siteIcons` strip): a
+   *  line that doesn't begin `{"seq":N,` for its own parsed seq is stored re-serialised so that it does
+   *  (`canonicalSeqLine`), as the core writes its own lines. A log's readers take an over-long line's seq from its head
+   *  (`log-range.ts`), so a line may never name another seq there: not a forged `{"seq":999,…,"seq":4}` (JSON.parse
+   *  keeps the last key, so validation saw 4), and not an honest encoder's `{"type":…,"seq":4,…}` either, which would
+   *  leave its head without one. Lines the core's own encoder wrote, and every Clover client's, already start so and
+   *  stay byte for byte.
    *
    *  Re-validates contiguity and ownership INSIDE the store rather than trusting the IPC layer —
    *  this is the last gate before bytes hit an append-only log that has no undo. Throws before
@@ -1345,7 +1369,8 @@ export class SessionStore {
       if (event.seq !== expectedFirst + i) throw new Error(`event ${i} has seq ${event.seq}, expected ${expectedFirst + i}`);
       if (raw.includes("\n")) throw new Error(`event ${i} raw line contains a newline`); // would forge extra log lines
     }
-    appendFileSync(this.logPath(row.scope, sessionId), entries.map((e) => e.raw + "\n").join(""));
+    const lines = entries.map(({ raw, event }, i) => canonicalSeqLine(raw, event.seq, i));
+    appendFileSync(this.logPath(row.scope, sessionId), lines.map((l) => l + "\n").join(""));
     const lastSeq = expectedFirst + entries.length - 1;
     const messages = entries.filter(({ event }) => isMessage(event)).length;
     this.db.run("UPDATE sessions SET last_seq = ?, message_count = message_count + ? WHERE session_id = ?", [lastSeq, messages, sessionId]);

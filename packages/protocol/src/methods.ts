@@ -3024,6 +3024,9 @@ export const WorkflowGetResult = z.object({ run: WorkflowRunViewSchema });
 // event-granular pager would have to either drop it or blow the transport's frame limit. It also
 // keeps the replica byte-identical — the daemon stores the client's exact line bytes rather than a
 // re-serialization, so pull → push → pull is a fixed point and a future content hash stays stable.
+// Two exceptions, each made once and then fixed: a `tool_result`'s `siteIcons` is stripped, and a
+// line that doesn't start `{"seq":N,` for its own seq is stored re-serialised with `seq` first (every
+// other key in the client's order), since a log's readers take an over-long line's seq from its head.
 // ---------------------------------------------------------------------------------------------
 
 /** No params: the daemon reports the head of every chat session it holds, and the client diffs. */

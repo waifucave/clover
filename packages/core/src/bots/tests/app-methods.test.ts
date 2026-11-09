@@ -244,6 +244,8 @@ describe("the archive of the previous app's sessions", () => {
       expect(page.events.map((e) => e.seq)).toEqual([after + 1, after + 2, after + 3].filter((s) => s <= 300));
       expect(page.more).toBe(after + 3 < 300);
     }
+    // A page that ends where only the cut tail remains says there is no more.
+    expect(readLogRange(path, 297, { ...big, limit: 3 })).toMatchObject({ more: false });
     expect(readLogRange(path, 300, big)).toEqual({ events: [], more: false });
     expect(readLogRange(path, 10_000, big)).toEqual({ events: [], more: false });
     // The byte budget: as many whole lines as fit, never none.
@@ -297,6 +299,36 @@ describe("the archive of the previous app's sessions", () => {
       Buffer.alloc = alloc;
       Buffer.allocUnsafe = allocUnsafe;
     }
+  });
+
+  test("a synced line is stored starting with its own seq: a forged head seq or a seq written last can't hide records", async () => {
+    const { SessionEvent } = await import("@waifucave/clover-protocol");
+    const { readFileSync } = await import("node:fs");
+    const home = tempDir();
+    const store = new SessionStore(home);
+    const id = store.createSession("global", { mode: "chat" });
+    store.append(id, { type: "user_message", sessionId: id, threadId: "main", text: "one", clientName: "t" });
+    store.append(id, { type: "assistant_message", sessionId: id, threadId: "main", text: "two" } as never);
+    const long = "x".repeat(2_000);
+    const synced = (raw: string) => ({ raw, event: SessionEvent.parse(JSON.parse(raw)) });
+    // Seq 4 forged to name 999 at its head (JSON.parse keeps the last key, so validation sees 4); 5 written seq last,
+    // as another encoder may; 6 as the core writes it.
+    const forged = `{"seq":999,"sessionId":"${id}","ts":1004,"type":"user_message","threadId":"main","text":"${long}","clientName":"t","seq":4}`;
+    const seqLast = `{"type":"user_message","sessionId":"${id}","threadId":"main","text":"${long}","clientName":"t","ts":1005,"seq":5}`;
+    const honest = JSON.stringify(SessionEvent.parse({ type: "user_message", sessionId: id, threadId: "main", text: "six", clientName: "t", seq: 6, ts: 1006 }));
+    const shortSeqLast = `{"type":"assistant_message","sessionId":"${id}","threadId":"main","text":"seven","ts":1007,"seq":7}`;
+    expect(store.appendSynced(id, [synced(forged), synced(seqLast), synced(honest), synced(shortSeqLast)])).toBe(7);
+    // On disk every line starts with its own seq; the core's own line is the client's bytes exactly.
+    const lines = readFileSync(join(home, "sessions", "global", `${id}.jsonl`), "utf8").trim().split("\n");
+    expect(lines.slice(3).map((l) => l.slice(0, 10))).toEqual(['{"seq":4,"', '{"seq":5,"', '{"seq":6,"', '{"seq":7,"']);
+    expect(lines[5]).toBe(honest);
+    expect(JSON.parse(lines[6]!)).toEqual(JSON.parse(shortSeqLast));
+    // With a 1 KiB cap: 4 and 5 are named, each in turn, and 6 and 7 still come.
+    const o = { limit: 10, maxBytes: 1 << 20, maxOne: 1_024 };
+    expect(store.readRange(id, 3, o)).toMatchObject({ events: [], oversized: { seq: 4 }, more: true });
+    expect(store.readRange(id, 4, o)).toMatchObject({ events: [], oversized: { seq: 5 }, more: true });
+    expect(store.readRange(id, 5, o).events.map((e) => e.seq)).toEqual([6, 7]);
+    store.close();
   });
 
   test("archive.history names an event too long to send and pages past it", async () => {
