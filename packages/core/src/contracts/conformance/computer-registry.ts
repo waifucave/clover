@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { callBindingInput, cardHashInput, type Card, type Level } from "@waifucave/clover-protocol";
 import type { CardRecord } from "../approval-broker";
 import { isContractError } from "../common";
-import { holdsOverlap, levelRaiseCall, type ComputerChange } from "../computer-registry";
+import { CARD_PROOF_MAX_AGE_MS, holdsOverlap, levelRaiseCall, type ComputerChange } from "../computer-registry";
 import { FakeClock } from "../fakes/clock";
 import { type FakeComputerRegistry } from "../fakes/computer-registry";
 
@@ -55,25 +55,58 @@ export function runComputerRegistryConformance(make: ComputerRegistryFactory): v
     });
 
     test("a raise takes the approved card binding this computer and level, once; lowering takes nothing", async () => {
-      const reg = setup();
+      const clock = new FakeClock();
+      clock.advance(1_000);
+      // This computer's broker's records: the registry checks a card raise against these, never the one it is handed.
+      const held = new Map<string, CardRecord>();
+      const reg = make({
+        clock, cards: (id) => held.get(id),
+        self: { name: "Studio", device: "studio0000000000000" },
+        others: [{ name: "Laptop1", device: "laptop000000000000", os: "windows", hasDisplay: true }],
+      });
       const refused = async (p: Promise<unknown>) => isContractError(await p.catch((e: unknown) => e), "refused");
-      const record = (name: string, level: Level, over: Partial<CardRecord> = {}): CardRecord => {
+      let n = 0;
+      const make1 = (name: string, level: Level, over: Partial<CardRecord> = {}, binds: Record<string, unknown> = {}): CardRecord => {
         const { method, params } = levelRaiseCall(name, level);
         const unhashed = {
-          id: `card_${name.toLowerCase()}${level.replace(/-/g, "")}`.padEnd(29, "0").slice(0, 29), kind: "change" as const, change: "computer-level" as const,
+          id: `card_${(n++).toString().padStart(24, "0")}`, kind: "change" as const, change: "computer-level" as const,
           computer: name, origin: "user" as const, issuedAt: 1, expiresAt: null, fields: {},
           options: [{ id: "approve", kind: "approve" as const, label: "Raise" }, { id: "deny", kind: "deny" as const, label: "Keep" }],
-          binds: { computer: name, method, params: sha256(callBindingInput(method, params)) },
+          binds: { computer: name, method, params: sha256(callBindingInput(method, params)), ...binds },
         };
-        return { card: { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card, outcome: "approved", optionId: "approve", ...over };
+        return { card: { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card, outcome: "approved", optionId: "approve", resolvedAt: clock.now(), ...over };
+      };
+      /** A record this computer's broker holds. */
+      const record = (name: string, level: Level, over: Partial<CardRecord> = {}, binds: Record<string, unknown> = {}): CardRecord => {
+        const r = make1(name, level, over, binds);
+        held.set(r.card.id, r);
+        return structuredClone(r);
       };
       expect(await refused(reg.setLevel("Studio", "automatic"))).toBe(true);
       // A card for another computer, another level, or a denied one is no proof.
       expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Laptop1", "automatic") }))).toBe(true);
       expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "accept-edits") }))).toBe(true);
       expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "automatic", { outcome: "denied", optionId: "deny" }) }))).toBe(true);
+      // A binding with a source binds no raise.
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "automatic", {}, { source: "Laptop1" }) }))).toBe(true);
+      // A record made up in-process, however well formed, that the broker never held.
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: make1("Studio", "automatic") }))).toBe(true);
+      // The broker's own record decides, not the one handed over: a denied card handed over as approved is refused.
+      const denied = record("Studio", "automatic", { outcome: "denied", optionId: "deny" });
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: { ...denied, outcome: "approved", optionId: "approve" } }))).toBe(true);
+      // A handed record whose hash isn't the broker's card's (another card under the same id).
+      const swapped = record("Studio", "automatic");
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: { ...swapped, card: { ...swapped.card, hash: "0".repeat(64) } } }))).toBe(true);
+      // An answer older than CARD_PROOF_MAX_AGE_MS, or from before the registry started.
+      const stale = record("Studio", "automatic");
+      clock.advance(CARD_PROOF_MAX_AGE_MS + 1);
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: stale }))).toBe(true);
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "automatic", { resolvedAt: 999 }) }))).toBe(true);
       // A signed answer needs a device registry to check it, which this fake wasn't given.
       expect(await refused(reg.setLevel("Studio", "automatic", { via: "signed", answer: { card: record("Studio", "automatic").card, option: "approve", device: "phone0000000000000", at: 1, signature: "AAAA" } }))).toBe(true);
+      // Without the broker's records, no card is proof.
+      const blind = make({ clock, self: { name: "Studio", device: "studio0000000000000" } });
+      expect(await refused(blind.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "automatic") }))).toBe(true);
       const good = record("Studio", "automatic");
       await reg.setLevel("Studio", "automatic", { via: "card", record: good });
       expect(reg.self().level).toBe("automatic");

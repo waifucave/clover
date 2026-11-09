@@ -7,7 +7,7 @@ import {
   type TreeTransferParams, DEFAULT_LEVEL, TREE_TRANSFER, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, callBindingInput, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  ALWAYS_CARD_KINDS, CALL_CARD_METHODS, callBindingOf, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
+  ALWAYS_CARD_KINDS, bindsOutsideRequest, CALL_CARD_METHODS, callBindingOf, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
   type AnswerLedger, type CallCardRenderer, type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../approval-broker";
@@ -143,7 +143,8 @@ export class FakeApprovalBroker implements ApprovalBroker {
   }
 
   async #decide(req: ApprovalRequest): Promise<ApprovalDecision | undefined> {
-    // Rule 1.
+    // Rule 9's first refusal, then rule 1.
+    if (bindsOutsideRequest(req)) return { allowed: false, by: "unbound" };
     if (ALWAYS_CARD_KINDS.includes(req.kind)) return undefined;
     const bound = req.binds !== undefined;
     // Rule 2.

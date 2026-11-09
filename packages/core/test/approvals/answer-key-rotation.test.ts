@@ -5,7 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cardAnswerSigningInput, type Card } from "@waifucave/clover-protocol";
-import { ANSWER_KEY_ROTATE, rotateOwnAnswerKey, type AnswerKeyRotationAsk } from "../../src/approvals/answer-key-rotation";
+import { ANSWER_KEY_ROTATE, ANSWER_KEY_ROTATE_MAX_SKEW_MS, rotateOwnAnswerKey, type AnswerKeyRotationAsk } from "../../src/approvals/answer-key-rotation";
 import { CloverApprovalBroker } from "../../src/approvals/broker";
 import { CoreComputerRegistry } from "../../src/computers/registry";
 import { deviceProofVerifier } from "../../src/contracts/approval-broker";
@@ -40,7 +40,7 @@ async function world() {
   /** Starts a rotation, waits for its card, and returns both. */
   const started = async (a: AnswerKeyRotationAsk) => {
     let shown: string | undefined;
-    const outcome = rotateOwnAnswerKey({ broker, devices, computer: "Studio", onCard: (id) => { shown = id; } }, a);
+    const outcome = rotateOwnAnswerKey({ broker, devices, computer: "Studio", now: () => clock.now(), onCard: (id) => { shown = id; } }, a);
     await flush();
     const card = broker.cards().at(-1)!;
     expect(shown).toBe(card.id);
@@ -54,11 +54,17 @@ describe("answer-key rotation", () => {
     const w = await world();
     const at = w.clock.now();
     const forged = { from: w.currentPub, at, signature: w.next.sign(answerKeyRotateStatement(w.key.id, w.currentPub, w.nextPub, at)) };
-    const opts = { broker: w.broker, devices: w.devices, computer: "Studio" };
+    const opts = { broker: w.broker, devices: w.devices, computer: "Studio", now: () => w.clock.now() };
     expect(await rotateOwnAnswerKey(opts, w.ask({ rotation: forged }))).toEqual({ ok: false, why: "bad-signature" });
     expect(await rotateOwnAnswerKey(opts, w.ask({ registration: w.current.sign(answerKeyStatement(w.key.id, w.nextPub, "app-keychain")) }))).toEqual({ ok: false, why: "bad-signature" });
     expect(await rotateOwnAnswerKey(opts, w.ask({ rotation: { ...w.ask().rotation, from: w.nextPub } }))).toEqual({ ok: false, why: "not-current" });
     expect(await rotateOwnAnswerKey(opts, w.ask({ publicKey: w.currentPub }))).toEqual({ ok: false, why: "same-key" });
+    // A hand-over signed long ago (or far ahead) is a replay: refused, though its signature holds.
+    const old = w.ask();
+    w.clock.advance(ANSWER_KEY_ROTATE_MAX_SKEW_MS + 1);
+    expect(await rotateOwnAnswerKey(opts, old)).toEqual({ ok: false, why: "stale" });
+    const ahead = w.clock.now() + ANSWER_KEY_ROTATE_MAX_SKEW_MS + 1;
+    expect(await rotateOwnAnswerKey(opts, w.ask({ rotation: { from: w.currentPub, at: ahead, signature: w.current.sign(answerKeyRotateStatement(w.key.id, w.currentPub, w.nextPub, ahead)) } }))).toEqual({ ok: false, why: "stale" });
     expect(w.broker.cards()).toHaveLength(0);
     expect(w.devices.self().answerKey?.publicKey).toBe(w.currentPub);
     w.devices.clearOwnAnswerKey();
@@ -99,7 +105,7 @@ describe("answer-key rotation", () => {
     expect(w.devices.self().answerKey?.publicKey).toBe(w.nextPub);
     expect(w.devices.ownAnswerKeyProof()?.rotations.at(-1)).toMatchObject({ from: w.currentPub, to: w.nextPub });
     // The approved rotation card is no level raise.
-    const studio = new CoreComputerRegistry({ clock: w.clock, self: { name: "Studio", device: "studio00000000000000" } });
+    const studio = new CoreComputerRegistry({ clock: w.clock, cards: (id) => w.broker.get(id), self: { name: "Studio", device: "studio00000000000000" } });
     await studio.setLevel("Studio", "ask");
     const rejected = await studio.setLevel("Studio", "automatic", { via: "card", record: w.broker.get(card.id)! }).then(() => undefined, (e: unknown) => e);
     expect(isContractError(rejected, "refused")).toBe(true);

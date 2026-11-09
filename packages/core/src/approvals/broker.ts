@@ -17,7 +17,7 @@ import {
   DEFAULT_LEVEL, UNATTENDED_CARD_TIMEOUT_MS, answerTimeOk, cardHashInput,
 } from "@waifucave/clover-protocol";
 import {
-  ALWAYS_CARD_KINDS, callBindingOf, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
+  ALWAYS_CARD_KINDS, bindsOutsideRequest, callBindingOf, cardExpires, cardMetaOf, isBridgeCall, levelDecision, strictestLevel, writesRunLater,
   type AnswerOrigin, type AnswerResult, type ApprovalBroker, type ApprovalDecision, type ApprovalEvent,
   type ApprovalRequest, type CardAnswer, type CardRecord, type ProofVerifier, type Reviewer, type SavedRule,
 } from "../contracts/approval-broker";
@@ -208,6 +208,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
   }
 
   async #decide(req: ApprovalRequest): Promise<ApprovalDecision | undefined> {
+    if (bindsOutsideRequest(req)) return { allowed: false, by: "unbound" }; // rule 9: the level and the card name one computer
     if (ALWAYS_CARD_KINDS.includes(req.kind)) return undefined; // rule 1
     const bound = req.binds !== undefined;
     if (!bound && req.kind === "agent-permission" && isBridgeCall(req.agent)) return { allowed: true, by: "bridge" }; // rule 2
@@ -246,7 +247,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     const unhashed: Omit<Card, "hash"> = {
       id: `card_${randomBytes(12).toString("hex")}`,
       kind: req.kind,
-      computer: req.binds?.computer ?? req.computers[0] ?? null,
+      computer: req.binds?.computer ?? req.computers[0] ?? null, // the binding's computer is one the request touches (rule 9)
       ...(req.session === undefined ? {} : { session: req.session }),
       ...(req.bot === undefined ? {} : { bot: req.bot }),
       ...(req.pluginId === undefined ? {} : { pluginId: req.pluginId }),

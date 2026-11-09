@@ -501,9 +501,24 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       const passed = await carded(broker, bash({ binds: { ...call, computer: "Studio" }, options: [{ id: "approve", kind: "approve", label: "Allow" }, always] }));
       expect(passed.card.options.map((o) => o.id)).toEqual(["approve"]);
       // The bridge's own tool and a plainly safe command (the reviewer says so) are cards once bound.
-      await carded(broker, bash({ kind: "agent-permission", binds: call, agent: { backend: "codex", toolCallId: "t1", toolKind: "other", title: "x", mcp: { server: "clover", tool: "ask" }, bridge: { server: "clover", tools: ["ask"] }, options: [] } }));
+      await carded(broker, bash({ kind: "agent-permission", binds: { ...call, computer: "Studio" }, agent: { backend: "codex", toolCallId: "t1", toolKind: "other", title: "x", mcp: { server: "clover", tool: "ask" }, bridge: { server: "clover", tools: ["ask"] }, options: [] } }));
       await carded(broker, bash({ computers: ["Laptop1"], effect: "execute", binds: call }));
       expect(broker.cards()).toHaveLength(4);
+    });
+
+    test("a binding naming a computer the request doesn't touch is refused before anything, with no card", async () => {
+      const { broker } = setup({ levels: { Studio: "automatic", Laptop1: "read-only" } });
+      const call = { computer: "Laptop1", method: "tool.run", params: { tool: "Bash", input: {} } };
+      // Judged at Studio's level, carded for Laptop1: never.
+      expect(await broker.request(bash({ binds: call }))).toEqual({ allowed: false, by: "unbound" });
+      expect(await broker.request(bash({ kind: "change", change: "computer-level", effect: "other", binds: raise("Laptop1") }))).toEqual({ allowed: false, by: "unbound" });
+      // A source outside the request too, and a transfer whose two ends are both named is a card.
+      const transfer = { computer: "Studio", source: "Desk", method: "tree.transfer", params: {} };
+      expect(await broker.request(bash({ effect: "move", binds: transfer }))).toEqual({ allowed: false, by: "unbound" });
+      expect(broker.cards()).toHaveLength(0);
+      void broker.request(bash({ effect: "move", computers: ["Studio", "Desk"], binds: transfer }));
+      await flush();
+      expect(broker.cards().map((c) => [c.computer, c.binds?.source])).toEqual([["Studio", "Desk"]]);
     });
 
     test("read-only's deny and rule 3's refusal still come first", async () => {

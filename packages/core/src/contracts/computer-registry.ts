@@ -10,6 +10,9 @@
 // * Names are unique, letters, digits and hyphens; a renamed computer keeps its old name as an alias (§9.1).
 // * A computer's level changes only through this registry. Raising it takes proof (`LevelRaiseProof`, review S10): the
 //   approved card that binds `computer.setLevel` for exactly this computer and level, from this computer's own broker,
+//   looked up there by its id (`cards`, the broker's `get`), never the record a caller hands over: its hash, its
+//   answer within `CARD_PROOF_MAX_AGE_MS` and since this registry started, and no `source` in its binding
+//   (`cardRaiseProblem`). No broker, no card proof.
 //   or a paired device's signed answer when the raise comes from elsewhere (§8.5: levels stay on each computer, and a
 //   raise travels only with its signed answer), or the IPC layer's word that the user's own terminal asked. A card id
 //   counts once. Lowering needs none (§5.5, §9.1).
@@ -20,13 +23,41 @@
 // * The user-working mark lifts only on the user's message or a card answer, never on a release (as computer-use
 //   helper 1.22.0 does).
 // * While an action runs on a computer, a click on a sealed card there doesn't count (§5.5).
-import type { CloverWindow, ComputerView, HoldTarget, HoldView, Level, SignedCardAnswer } from "@waifucave/clover-protocol";
-import type { CardRecord } from "./approval-broker";
+import { callBindingInput, cardHashInput, type CloverWindow, type ComputerView, type HoldTarget, type HoldView, type Level, type SignedCardAnswer } from "@waifucave/clover-protocol";
+import type { AnswerLedger, CardRecord } from "./approval-broker";
 import type { Unsubscribe } from "./common";
 
 /** What a raise takes: this computer's approved card record, a paired device's signed answer, or the user's own
  *  terminal, which only the IPC layer may claim, after its caller check (§3.1), and never for a peer. */
 export type LevelRaiseProof = { via: "card"; record: CardRecord } | { via: "signed"; answer: SignedCardAnswer } | { via: "terminal" };
+
+/** How long after the user's answer a card still raises a level. */
+export const CARD_PROOF_MAX_AGE_MS = 10 * 60 * 1000;
+
+/** Why a `{ via: "card" }` raise isn't proof, or null when it is: the record is this computer's broker's own (`cards`,
+ *  by the handed record's id; the handed one only names it, and must carry the same hash), its hash checks, it was
+ *  approved with an approve option no longer than `CARD_PROOF_MAX_AGE_MS` ago and not before `since` (the registry's
+ *  start: a ledger in memory forgets what it took, so no answer from before it counts), and it binds `computer.setLevel`
+ *  for exactly this computer and level under `computer-level`, with no `source`. Then the ledger takes the card id,
+ *  once. */
+export function cardRaiseProblem(
+  handed: CardRecord,
+  c: { name: string; level: Level; cards: ((id: string) => CardRecord | undefined) | undefined; now: number; since: number; sha256(text: string): string; ledger: AnswerLedger },
+): string | null {
+  if (!c.cards) return "no broker here to check a card";
+  const own = c.cards(handed.card.id);
+  if (!own) return "this computer's broker holds no such card";
+  const { card, outcome, optionId, resolvedAt } = own;
+  if (c.sha256(cardHashInput(card)) !== card.hash || card.hash !== handed.card.hash) return "the card isn't the one this computer's broker holds";
+  if (outcome !== "approved" || card.options.find((o) => o.id === optionId)?.kind !== "approve") return "the card wasn't approved";
+  if (resolvedAt === undefined || resolvedAt < c.since || resolvedAt > c.now || c.now - resolvedAt > CARD_PROOF_MAX_AGE_MS) return "the card's answer is too old";
+  const { method, params } = levelRaiseCall(c.name, c.level);
+  const b = card.binds;
+  if (card.change !== "computer-level" || !b || b.source !== undefined || b.computer !== c.name || b.method !== method || b.params !== c.sha256(callBindingInput(method, params))) {
+    return "the card is for another change";
+  }
+  return c.ledger.claim(card.id) ? null : "the card was used already";
+}
 
 /** The method and params a raise's card binds. */
 export function levelRaiseCall(name: string, level: Level): { method: "computer.setLevel"; params: { name: string; level: Level } } {

@@ -18,6 +18,9 @@ import type { DeviceRecord } from "../contracts/device-registry";
 import { answerKeyRotateStatement, answerKeyStatement, type FileDeviceRegistry } from "../devices/registry";
 import { type AnswerKeyAlg, answerKeyBytes, verifyKeySignature } from "../identity/keys";
 
+/** How far a hand-over's `at` may be from now: the app signs it as it asks, so an older one is a replay. */
+export const ANSWER_KEY_ROTATE_MAX_SKEW_MS = 5 * 60 * 1000;
+
 /** The call the card binds. A binding only, never a method on the wire. */
 export const ANSWER_KEY_ROTATE = "device.answerKey.rotate";
 
@@ -52,6 +55,8 @@ export type AnswerKeyRotationRefusal =
   | "same-key"
   /** `rotation.from` isn't the key held. */
   | "not-current"
+  /** The hand-over's `at` is more than `ANSWER_KEY_ROTATE_MAX_SKEW_MS` from now. */
+  | "stale"
   /** The hand-over or the registration doesn't verify. */
   | "bad-signature"
   /** The user said no, or the card expired, was withdrawn or cancelled. */
@@ -66,6 +71,8 @@ export interface AnswerKeyRotationOptions {
   devices: Pick<FileDeviceRegistry, "self" | "setOwnAnswerKey">;
   /** This computer's name: the card is its. */
   computer: string;
+  /** The time, for the hand-over's age (`Date.now` by default). */
+  now?: () => number;
   signal?: AbortSignal;
   /** Told the card's id once it shows, so a caller can answer `{ applied: false, card }` and wait for the rest. */
   onCard?: (cardId: string) => void;
@@ -94,6 +101,7 @@ export async function rotateOwnAnswerKey(o: AnswerKeyRotationOptions, ask: Answe
   if (!held) return { ok: false, why: "no-current-key" };
   if (held.publicKey === ask.publicKey) return { ok: false, why: "same-key" };
   if (ask.rotation.from !== held.publicKey) return { ok: false, why: "not-current" };
+  if (!Number.isFinite(ask.rotation.at) || Math.abs((o.now ?? Date.now)() - ask.rotation.at) > ANSWER_KEY_ROTATE_MAX_SKEW_MS) return { ok: false, why: "stale" };
   const fromAlg = algOf(held);
   const toAlg = ask.alg ?? "ed25519";
   const current = answerKeyBytes(fromAlg, held.publicKey);

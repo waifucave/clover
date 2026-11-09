@@ -41,7 +41,9 @@
 // 9. A request that binds one call (`binds`: a level raise's `computer.setLevel`, the answer key's hand-over, a call
 //    for another computer) is always a card, at every level, past any saved rule, the bridge and the reviewer, and
 //    never offers an "always": the card is the proof, so it is answered on its own. Read-only's deny and rule 3's
-//    refusal still come first. The card is the binding's computer's, and seals `callBindingOf(binds)`: the method and
+//    refusal still come first; before them all, a binding that names a computer (or a `source`) the request doesn't
+//    touch is refused without a card (`by: "unbound"`), so the level that judges and the card name the same
+//    computers. The card is the binding's computer's, and seals `callBindingOf(binds)`: the method and
 //    SHA-256 over the call's canonical JSON. An approve carries that binding back (`ApprovalDecision.binds`), and
 //    `boundCardRecord` hands the approved record to whoever takes it as proof (the computer registry's
 //    `{ via: "card" }` raise), which checks it binds exactly its own call: a card answered for one binding never
@@ -143,7 +145,14 @@ export interface ApprovalRequest {
   binds?: CallRequestBinding;
 }
 
-export type DecisionSource = "level" | "rule" | "bridge" | "card" | "expired" | "withdrawn" | "cancelled" | "fence";
+export type DecisionSource = "level" | "rule" | "bridge" | "card" | "expired" | "withdrawn" | "cancelled" | "fence" | "unbound";
+
+/** Rule 9's first refusal: a binding whose computer, or `source`, isn't among the computers the request touches. */
+export function bindsOutsideRequest(req: Pick<ApprovalRequest, "binds" | "computers">): boolean {
+  const b = req.binds;
+  if (b === undefined) return false;
+  return !req.computers.includes(b.computer) || (b.source !== undefined && !req.computers.includes(b.source));
+}
 
 /** The effects that write a path (rule 3's refusal). */
 export const WRITE_EFFECTS: readonly ActionEffect[] = ["edit", "move", "delete"];

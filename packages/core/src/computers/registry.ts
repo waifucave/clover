@@ -10,14 +10,14 @@
 // the action signal and the windows are kept by the computer whose screen they are about.
 import { createHash } from "node:crypto";
 import {
-  COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
+  COMPUTER_NAME_RE, DEFAULT_LEVEL, levelAbove,
   type CloverWindow, type ComputerView, type HoldView, type Level, type SignedCardAnswer,
 } from "@waifucave/clover-protocol";
-import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../contracts/approval-broker";
+import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, type CardRecord, verifySignedAnswer } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
 import {
-  holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
+  cardRaiseProblem, holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
 } from "../contracts/computer-registry";
 import { MEMORY_FOLDER } from "../tree/holder";
 
@@ -71,6 +71,9 @@ export interface CoreComputerRegistryOptions {
   ledger?: AnswerLedger;
   /** This computer's own card for a call, which a signed answer's card must match (review N1). */
   render?: CallCardRenderer;
+  /** This computer's broker's card records (`broker.get`): a `{ via: "card" }` raise is checked against its own record,
+   *  never the one it is handed (`cardRaiseProblem`). Without it, no card raises a level. */
+  cards?: (id: string) => CardRecord | undefined;
   /** Where this computer's own level and old names are kept. */
   store?: SelfStateStore;
   /** Asks another computer to change its own level, with the user's signed answer for a raise (J-M2, "levels per
@@ -90,6 +93,9 @@ export class CoreComputerRegistry implements ComputerRegistry {
   readonly #devices: AnswerDevices | undefined;
   readonly #ledger: AnswerLedger;
   readonly #render: CallCardRenderer;
+  readonly #cards: CoreComputerRegistryOptions["cards"];
+  /** When this registry started: no card answered before it counts (the ledger is in memory). */
+  readonly #since: number;
   readonly #store: SelfStateStore;
   #remoteLevel: CoreComputerRegistryOptions["remoteLevel"];
   #holdSeq = 0;
@@ -98,6 +104,8 @@ export class CoreComputerRegistry implements ComputerRegistry {
     this.#clock = opts.clock;
     this.#devices = opts.devices;
     this.#render = opts.render ?? (() => undefined);
+    this.#cards = opts.cards;
+    this.#since = opts.clock.now();
     this.#ledger = opts.ledger ?? new Ledger();
     this.#store = opts.store ?? MEMORY_SELF_STORE;
     this.#remoteLevel = opts.remoteLevel;
@@ -379,11 +387,7 @@ export class CoreComputerRegistry implements ComputerRegistry {
       const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger, render: this.#render });
       return verdict === "ok" ? null : verdict;
     }
-    const { card, outcome, optionId } = proof.record;
-    if (outcome !== "approved" || card.options.find((o) => o.id === optionId)?.kind !== "approve") return "the card wasn't approved";
-    const b = card.binds;
-    if (card.change !== "computer-level" || !b || b.computer !== name || b.method !== method || b.params !== sha256(callBindingInput(method, params))) return "the card is for another change";
-    return this.#ledger.claim(card.id) ? null : "the card was used already";
+    return cardRaiseProblem(proof.record, { name, level, cards: this.#cards, now: this.#clock.now(), since: this.#since, sha256, ledger: this.#ledger });
   }
 
   #emitHolds(computer: string): void {
