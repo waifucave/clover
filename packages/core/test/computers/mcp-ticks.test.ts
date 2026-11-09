@@ -3,7 +3,7 @@
 // elsewhere isn't ticked; Mirror ticks one server on another computer after that computer's card; the user unticks
 // one here. The hello names what's ticked, and the `computer` field's list follows.
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -13,6 +13,11 @@ import { answersFor, makePhone } from "../tree/answer-support";
 import { Cluster, until } from "../tree/cluster-support";
 
 const temp = (prefix: string) => mkdtempSync(join(tmpdir(), prefix));
+/** A Clover home whose ticks record exists already (an earlier run's). */
+const ranBefore = (home: string) => {
+  mkdirSync(join(home, "levels"), { recursive: true });
+  writeFileSync(mcpTicksPath(home), JSON.stringify({ plugins: {}, servers: {} }));
+};
 const BOT: Caller = { kind: "session", sessionId: "s_alpha", sessionKind: "bot", bot: "alpha" };
 const code = async (p: Promise<unknown>) => ((await p.then(() => undefined, (e: unknown) => e)) as { code?: string } | undefined)?.code ?? "ok";
 
@@ -35,8 +40,9 @@ describe("FileMcpTicks", () => {
   });
 
   test("the install flow ticks a plugin's servers; one server's untick wins; each change is told", () => {
-    const path = mcpTicksPath(temp("lane-j-ticks-"));
-    new FileMcpTicks(path);
+    const home = temp("lane-j-ticks-");
+    const path = mcpTicksPath(home);
+    ranBefore(home);
     let changes = 0;
     const t = new FileMcpTicks(path, () => changes++);
     expect(t.ticked("render", "acme/tools")).toBe(false);
@@ -53,6 +59,52 @@ describe("FileMcpTicks", () => {
     t.installed("acme/tools");
     t.set("render", true);
     expect(changes).toBe(3);
+  });
+});
+
+describe("the migration across runs", () => {
+  test("a run that never lists a local server writes nothing, and the next run adopts", () => {
+    const path = mcpTicksPath(temp("lane-j-ticks-mig-"));
+    const loading = new FileMcpTicks(path);
+    expect(loading.adopt([])).toBe(false);
+    expect(existsSync(path)).toBe(false);
+    const next = new FileMcpTicks(path);
+    expect(next.adopt([{ server: "blender", plugin: "acme/blender" }])).toBe(true);
+    expect(next.ticked("blender", "acme/blender")).toBe(true);
+    expect(new FileMcpTicks(path).ticked("blender", "acme/blender")).toBe(true);
+  });
+
+  test("a tick before any listing is a record of its own: nothing is adopted after it", () => {
+    const path = mcpTicksPath(temp("lane-j-ticks-mig-"));
+    const t = new FileMcpTicks(path);
+    t.installed("acme/tools");
+    expect(t.adopt([{ server: "blender", plugin: "acme/blender" }])).toBe(false);
+    expect(t.ticked("blender", "acme/blender")).toBe(false);
+    expect(new FileMcpTicks(path).adopt([{ server: "blender", plugin: "acme/blender" }])).toBe(false);
+  });
+});
+
+describe("the node's migration", () => {
+  let cluster: Cluster | undefined;
+  afterEach(() => cluster?.close());
+
+  test("an install from before ticks keeps running: the first listing is ticked here, and the host is told", async () => {
+    cluster = new Cluster();
+    let refreshed = 0;
+    const studio = await cluster.add("Studio", {
+      mcp: () => ({
+        placement: () => undefined, fields: () => ({}), call: async () => ({ content: [] }), scratch: () => "home/Studio",
+        localServers: () => [{ server: "blender", plugin: "acme/blender" }],
+        onTicksChanged: () => { refreshed++; },
+      }),
+    });
+    expect(studio.node.mcpComputers("blender")).toEqual(["Studio"]);
+    await until(() => refreshed === 1, 2000, "the host to hear of the migration's ticks");
+    expect(existsSync(mcpTicksPath(studio.cloverHome))).toBe(true);
+    // Once: later listings change nothing.
+    studio.node.mcpComputers("blender");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(refreshed).toBe(1);
   });
 });
 
@@ -77,7 +129,8 @@ describe("a local server across two computers", () => {
     const phone = await makePhone();
     const homes = { Studio: temp("lane-j-ticks-studio-"), Laptop1: temp("lane-j-ticks-laptop-") };
     // Both computers ran before (no migration): the plugin is on both, synced, but installed only on Studio.
-    for (const h of Object.values(homes)) new FileMcpTicks(mcpTicksPath(h));
+    // Each computer ran before (its record is there): no migration.
+    for (const h of Object.values(homes)) ranBefore(h);
     const ticks = { Studio: new FileMcpTicks(mcpTicksPath(homes.Studio)), Laptop1: new FileMcpTicks(mcpTicksPath(homes.Laptop1)) };
     ticks.Studio.installed("acme/blender");
     const calls: string[] = [];
