@@ -14,7 +14,10 @@ export interface OkText {
   source: string;
 }
 
-export function brokerOkCards(broker: ApprovalBroker, describe: (id: string) => OkText): OkCardRaiser {
+/** `onApproved` runs on this computer when the user approves its OK card (on whichever of their clients answered it),
+ *  after the registry has the answer: never for an OK record that arrives by sync. Lane J ticks the plugin's local MCP
+ *  servers here with it (the controller's ruling: each computer keeps its own ticks; a synced copy isn't ticked). */
+export function brokerOkCards(broker: ApprovalBroker, describe: (id: string) => OkText, onApproved?: (pluginId: string) => void, log?: (line: string) => void): OkCardRaiser {
   return {
     raise(req, answered) {
       const text = describe(req.id);
@@ -39,6 +42,14 @@ export function brokerOkCards(broker: ApprovalBroker, describe: (id: string) => 
           if (d.by !== "card") return; // withdrawn or cancelled: the plugin stays found
           const children = d.cardId === undefined ? undefined : broker.get(d.cardId)?.children;
           answered({ approved: d.allowed, ...(children === undefined ? {} : { children }) });
+          if (d.allowed) {
+            try {
+              onApproved?.(req.id);
+            } catch (err) {
+              // Another lane's hook: its failure never undoes the OK, and it's logged (#376's review).
+              log?.(`plugins: after ${req.id}'s OK, its approve hook failed: ${(err as Error)?.message ?? String(err)}`);
+            }
+          }
           if (cardId === undefined && d.cardId !== undefined) resolve(d.cardId);
         });
       });

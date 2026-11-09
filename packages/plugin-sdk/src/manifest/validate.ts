@@ -21,7 +21,7 @@ import { isRange, satisfies } from "../semver";
 import { FORMATS, MANIFEST_FILE, PLUGIN_API_VERSION } from "../version";
 import { DOTTED_POINT_NAME_RE, POINT_NAME_RE } from "./fields";
 import { checkArgsSchema } from "./args";
-import { parseInterpolation, usesSecrets } from "./interpolation";
+import { parseInterpolation, usesSecretFiles, usesSecrets } from "./interpolation";
 import { fetchesCodeAtRunTime, toolWireName } from "./names";
 import { CORE_CONTRIBUTION_KEYS, CORE_CONTRIBUTION_SCHEMAS, ManifestSchema, isToolKey, type CoreContributionKey } from "./schema";
 import type { Manifest, PointDecl } from "./types";
@@ -64,6 +64,10 @@ export interface ManifestReport {
   settings: string[];
   /** `stdio` commands that fetch code when they run (`npx`, `uvx`, …), which the OK flags (§5.6). */
   fetchesCode: string[];
+  /** `stdio` servers given a secret through their environment (`${secret:…}` in `env`), which the OK discloses: macOS
+   *  lets any process of the same user read another's environment, and a third-party server's program can't be signed
+   *  to hide it (the controller's ruling on #377). */
+  envSecrets: string[];
   /** It declares programs of its own (a `stdio` server, a helper, or a Node host, Clover's own plugins only), which
    *  Clover's load guard doesn't hold to the plugin's folder: the OK says so (#234's check 3). */
   ownPrograms: boolean;
@@ -206,8 +210,9 @@ function hostOf(url: string): { host?: string; dynamic: boolean } {
   }
 }
 
-/** Checks a value that may hold interpolation (§5.9); `secrets` says whether `${secret:…}` may appear. */
-function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: boolean): boolean {
+/** Checks a value that may hold interpolation (§5.9); `secrets` says whether `${secret:…}` may appear, `secretFiles`
+ *  whether `${secretFile:…}` may (a stdio server's `env` and `args`). */
+function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: boolean, secretFiles = false): boolean {
   if (typeof value !== "string") return true;
   const parsed = parseInterpolation(value);
   if (!parsed.ok) {
@@ -216,6 +221,10 @@ function checkInterpolated(f: Findings, path: Seg[], value: unknown, secrets: bo
   }
   if (!secrets && usesSecrets(parsed.parts)) {
     f.error("entry", "secret_outside_env", path, "secrets may appear only in `env` and `headers`");
+    return false;
+  }
+  if (!secretFiles && usesSecretFiles(parsed.parts)) {
+    f.error("entry", "secret_file_outside_stdio", path, "a secret's file may appear only in a stdio server's `env` and `args`");
     return false;
   }
   return true;
@@ -301,7 +310,7 @@ function checkDeclares(f: Findings, topId: string | undefined, declares: unknown
 export function refusedReport(issues: ValidationIssue[], id?: string, namespace?: string): ManifestReport {
   return {
     ok: false, id, namespace, manifest: undefined, class: "data", contributions: [], declares: [], networkHosts: [], dynamicHosts: false,
-    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
+    helperPermissions: [], capabilities: [], toolNames: [], settings: [], fetchesCode: [], envSecrets: [], ownPrograms: false, addons: false, adult: false, bot: false, restylesCards: false, issues,
   };
 }
 
@@ -553,6 +562,13 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     }
   }
 
+  const envSecrets: string[] = [];
+  if (isObject(contributes.mcpServers)) {
+    for (const [name, s] of Object.entries(contributes.mcpServers)) {
+      if (s.type === "stdio" && isObject(s.env) && Object.values(s.env).some((v) => typeof v === "string" && v.includes("${secret:"))) envSecrets.push(name);
+    }
+  }
+
   const ownPrograms = isObject(top.helper) || (isObject(top.host) && top.host.runtime === "node")
     || (isObject(contributes.mcpServers) && Object.values(contributes.mcpServers).some((s) => s.type === "stdio"));
   const ok = !f.refusesPlugin();
@@ -571,6 +587,7 @@ export function validateManifest(input: unknown, opts: ValidateOptions = {}): Ma
     toolNames,
     settings: isObject(top.settings) ? Object.keys(top.settings) : [],
     fetchesCode,
+    envSecrets,
     ownPrograms,
     addons: top.addons !== undefined,
     adult: top.adult === true,
@@ -761,8 +778,9 @@ function checkEntry(f: Findings, key: CoreContributionKey, e: Record<string, unk
         }
       }
       let ok = checkInterpolated(f, [...at, "command"], e.command, false) && checkInterpolated(f, [...at, "url"], e.url, false);
-      if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false) && ok; });
-      if (isObject(e.env)) for (const [k, v] of Object.entries(e.env)) ok = checkInterpolated(f, [...at, "env", k], v, true) && ok;
+      const stdio = e.type === "stdio";
+      if (Array.isArray(e.args)) e.args.forEach((a, i) => { ok = checkInterpolated(f, [...at, "args", i], a, false, stdio) && ok; });
+      if (isObject(e.env)) for (const [k, v] of Object.entries(e.env)) ok = checkInterpolated(f, [...at, "env", k], v, true, stdio) && ok;
       if (isObject(e.headers)) for (const [k, v] of Object.entries(e.headers)) ok = checkInterpolated(f, [...at, "headers", k], v, true) && ok;
       return ok;
     }
@@ -1024,6 +1042,9 @@ export function describeOk(
   if (report.dynamicHosts) lines.push("Some of the hosts it reaches come from its settings.");
   if (report.helperPermissions.length > 0) lines.push(`Its helper asks for: ${report.helperPermissions.join(", ")}.`);
   for (const cmd of report.fetchesCode) lines.push(`It fetches code when it runs: ${cmd}.`);
+  if (report.envSecrets.length > 0) {
+    lines.push(`Its server${report.envSecrets.length > 1 ? "s" : ""} ${report.envSecrets.join(", ")} get${report.envSecrets.length > 1 ? "" : "s"} your keys in ${report.envSecrets.length > 1 ? "their" : "its"} environment, which other plugins on this ${opts.os === "macos" ? "Mac" : "computer"} could read.`);
+  }
   if (report.ownPrograms) lines.push("It runs its own programs, which Clover doesn't confine.");
   if (report.addons) lines.push("It loads add-ons of its own, which Clover doesn't check.");
   if (report.adult) lines.push("It may contain adult content.");

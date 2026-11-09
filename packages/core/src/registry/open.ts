@@ -32,6 +32,8 @@ export interface OpenRegistryOptions {
   /** Whether plugin processes here run fenced to their network proxy, which the OK then says (#371's review). Default:
    *  macOS with its sandbox there (the plugin host's own default); the daemon passes false when it runs them unfenced. */
   hostNetworkHeld?: boolean;
+  /** Called on this computer when the user approves a plugin's OK card here (`brokerOkCards`'s `onApproved`). */
+  onOkApproved?: (pluginId: string) => void;
 }
 
 export interface OpenedRegistry {
@@ -87,7 +89,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     catalog: catalogPointDecl,
     store,
     ...(o.now ? { now: o.now } : {}),
-    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os, hostNetworkHeld)) } : {}),
+    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os, hostNetworkHeld), o.onOkApproved, o.log) } : {}),
     onOk: (id, hash) => folders?.okGiven(id, hash),
   });
   folders = new PluginFolders({
