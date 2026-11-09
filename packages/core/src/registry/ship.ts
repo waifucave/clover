@@ -12,7 +12,8 @@
 //   left as an import and shipped in the plugin's own `node_modules`, with its dependencies and the prebuilt binary
 //   for `target` (from this checkout's install when it is that one, else the registry's tarball, checked against the
 //   lockfile's integrity), and reported in `natives`;
-// * the manifests are rewritten to name the built files and marked `built: true`; a `package.json` is cut down to
+// * the manifests are rewritten to name the built files (and, for a bundled tree only, marked `built: true`, which a
+//   third-party manifest may not say); a `package.json` is cut down to
 //   what running needs (`type: module`, the natives); TypeScript sources, tests, `tsconfig`, `bunfig.toml`, lockfiles,
 //   `.env` files and `node_modules` are left out, and every other file is copied as it is.
 //
@@ -188,6 +189,7 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
           outFile: join(out, ...outRel.split("/")),
           side,
           forbid,
+          builtins: builtinsOf(units[0]!.manifest),
           keepExternal: side === "client" ? undefined : (spec, importer) => natives.keep(spec, importer, unit.base),
         });
         written.add(outRel);
@@ -242,7 +244,14 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
       else if (!i.path.startsWith(".") && !i.path.startsWith("/") && !allowed(i.path)) copiedProblems.push(`${rel}: imports ${i.path}, which nothing in the shipped tree provides`);
       else if (i.path.startsWith("/")) copiedProblems.push(`${rel}: imports ${i.path}, an absolute path`);
     }
-    copiedProblems.push(...runtimeLoadProblems(text, rel, { client: false, allowed }), ...forbiddenIn(text, rel, forbid));
+    copiedProblems.push(...runtimeLoadProblems(text, rel, { client: false, allowed, builtins: builtinsOf(units[0]!.manifest) }), ...forbiddenIn(text, rel, forbid));
+  }
+  // Every other text file the tree ships could carry a path too (JSON, HTML, CSS, a source map, YAML, TOML, notes …;
+  // R1's smaller item, every one of them since #337's review): a file with no NUL byte is read as text.
+  for (const rel of [...written].filter((f) => !/\.[cm]?js$/.test(f) && !f.split("/").includes("node_modules")).sort()) {
+    const bytes = readFileSync(join(out, ...rel.split("/")));
+    if (bytes.includes(0)) continue;
+    copiedProblems.push(...forbiddenIn(bytes.toString("utf8"), rel, forbid));
   }
   if (copiedProblems.length > 0) throw new PluginBuildError(copiedProblems);
   for (const unit of units) writeRunPackage(src, out, unit, natives.dependenciesOf(unit.base), modules.some((x) => x.file.startsWith(unit.base) && (unit.base !== "" || !x.file.startsWith("plugins/"))), written);
@@ -250,6 +259,12 @@ async function shipWith(src: string, out: string, o: ShipOptions, natives: Nativ
   await checkBuiltTree(src, out, o.bundled === true);
   const files = listFiles(out);
   return { dir: out, files, modules: modules.sort((a, b) => (a.file < b.file ? -1 : 1)), natives: shippedNatives };
+}
+
+/** The code-loading built-ins a plugin tree named (`builtins`): its top-level plugin's only, the ones its OK card lists
+ *  (a child's is refused by validation, #337's review S2). */
+function builtinsOf(top: Json): string[] {
+  return Array.isArray(top.builtins) ? top.builtins.filter((x): x is string => typeof x === "string") : [];
 }
 
 /** What no shipped file may hold: this computer's home folder and user name, the checkout, the plugin's folder and the
@@ -289,7 +304,7 @@ function readUnits(src: string): Unit[] {
  *  value, and that take none, before the program's file (#271's L4). */
 const MODULE_FLAGS = new Set(["--import", "--require", "-r", "--preload", "--loader", "--experimental-loader"]);
 const VALUE_FLAGS = new Set(["--conditions", "-C", "--input-type", "--title", "--stack-size", "--max-old-space-size", "--env-file", "--config", "-c", "--tsconfig-override", "--define", "-d", "--port", "--inspect-port"]);
-const BOOLEAN_FLAGS = new Set(["--smol", "--bun", "--no-warnings", "--enable-source-maps", "--no-deprecation", "--trace-warnings", "--experimental-strip-types", "--no-experimental-strip-types", "--expose-gc", "--silent", "--no-env-file", "--no-addons"]);
+const BOOLEAN_FLAGS = new Set(["--smol", "--bun", "--no-warnings", "--enable-source-maps", "--no-deprecation", "--trace-warnings", "--experimental-strip-types", "--no-experimental-strip-types", "--expose-gc", "--silent", "--no-env-file", "--no-addons", "--no-macros"]);
 
 /** Programs a manifest runs with `bun` or `node` from files of the plugin's: a `stdio` server's or an agent backend's
  *  command. Each names the `args` positions to build: the program's file (`bun file`, `bun run file`, `node file`) and
