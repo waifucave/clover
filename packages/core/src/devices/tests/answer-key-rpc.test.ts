@@ -1,6 +1,7 @@
 // `device.answerKey.set` (devices/rpc.ts): this desktop's app registers the key it answers cards with, on every
 // connection. The registry takes it only with the app's signature; the first key and the same key again apply; another
-// key in place of a held one is refused (no card subject or hand-over for it yet); only the app's user may set it.
+// key in place of a held one is refused (no card subject or hand-over for it yet); a small-order key never is taken;
+// only the app's user may set it.
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -50,6 +51,15 @@ describe("device.answerKey.set", () => {
     await set(first);
     expect(await code(set(generateEd25519()))).toBe(ERR.INVALID_REQUEST);
     expect(registry.self().answerKey?.publicKey).toBe(toBase64(first.publicKey));
+  });
+
+  test("a small-order key (the all-zero one among them) is refused, signature or not, and nothing is taken", async () => {
+    const { registry, m, code } = await make();
+    for (const hex of ["0000000000000000000000000000000000000000000000000000000000000000", "0100000000000000000000000000000000000000000000000000000000000000", "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"]) {
+      const publicKey = Buffer.from(hex, "hex").toString("base64");
+      expect(await code(m["device.answerKey.set"]!({ publicKey, held: "app-keychain", signature: toBase64(new Uint8Array(64)) }, { caller: app }))).not.toBe("ok");
+    }
+    expect(registry.self().answerKey).toBeUndefined();
   });
 
   test("only the app's user sets it: not the terminal, not a session", async () => {
