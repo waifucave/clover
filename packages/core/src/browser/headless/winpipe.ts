@@ -81,29 +81,40 @@ self.onmessage = async (e) => {
   self.postMessage({ eof: true });
 };`;
 
-/** The reader thread: blocking `ReadFile` until the pipe breaks, then the process's exit code. Inline, so the compiled
- *  daemon needs no extra entry point for it. */
+/** The reader thread: blocking `ReadFile` until the pipe breaks. Inline, so the compiled daemon needs no extra entry
+ *  point for it. */
 const READER_SOURCE = `
 self.onmessage = async (e) => {
   const { dlopen, FFIType, ptr } = await import("bun:ffi");
   const k = dlopen("kernel32.dll", {
     ReadFile: { args: [FFIType.u64, FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.ptr], returns: FFIType.i32 },
     GetLastError: { args: [], returns: FFIType.u32 },
-    WaitForSingleObject: { args: [FFIType.u64, FFIType.u32], returns: FFIType.u32 },
-    GetExitCodeProcess: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.i32 },
   }).symbols;
-  const read = BigInt(e.data.read), proc = BigInt(e.data.process);
+  const read = BigInt(e.data.read);
   const buf = new Uint8Array(1 << 20), got = new Uint32Array(1);
   for (;;) {
     if (k.ReadFile(read, ptr(buf), buf.length, ptr(got), null) === 0) { self.postMessage({ eof: true, error: k.GetLastError() }); break; }
     if (got[0] > 0) self.postMessage({ chunk: buf.slice(0, got[0]) });
   }
+};`;
+
+/** The exit thread: the process's own exit, whether or not something it started still holds the pipe open (a browser
+ *  that exits on its own leaves its children; they hold the pipe's write end until the job ends). */
+const EXIT_SOURCE = `
+self.onmessage = async (e) => {
+  const { dlopen, FFIType, ptr } = await import("bun:ffi");
+  const k = dlopen("kernel32.dll", {
+    WaitForSingleObject: { args: [FFIType.u64, FFIType.u32], returns: FFIType.u32 },
+    GetExitCodeProcess: { args: [FFIType.u64, FFIType.ptr], returns: FFIType.i32 },
+  }).symbols;
+  const proc = BigInt(e.data.process);
   k.WaitForSingleObject(proc, 0xffffffff);
   const code = new Uint32Array(1);
   k.GetExitCodeProcess(proc, ptr(code));
   self.postMessage({ exit: code[0] });
 };`;
 
+let exitUrl: string | undefined;
 let readerUrl: string | undefined;
 let stderrUrl: string | undefined;
 
@@ -265,27 +276,33 @@ export async function spawnWithWinPipes(bin: string, args: string[], env?: Recor
       readDone = true;
       for (const l of closeListeners) l(why);
     };
-    worker.onmessage = (e: MessageEvent<{ chunk?: Uint8Array; eof?: boolean; error?: number; exit?: number }>) => {
+    worker.onmessage = (e: MessageEvent<{ chunk?: Uint8Array; eof?: boolean; error?: number }>) => {
       if (e.data.chunk !== undefined) {
         if (!readDone) for (const l of listeners) l(e.data.chunk);
       } else if (e.data.eof === true) {
         endRead("the browser closed its end of the pipe");
-      } else if (e.data.exit !== undefined) {
-        // The thread is done with both handles.
-        exitCode = e.data.exit;
-        f.CloseHandle(ourRead);
-        f.CloseHandle(hProcess);
-        // The last handle to the job: whatever the browser started and left behind dies with it, which also breaks
-        // the error pipe, so its reader finishes.
-        f.CloseHandle(job);
-        closeWrite();
         worker.terminate();
-        resolveExit({ code: exitCode, signal: null });
+        f.CloseHandle(ourRead);
       }
     };
     worker.onerror = () => endRead("the pipe's reader failed");
-    worker.postMessage({ read: String(ourRead), process: String(hProcess) });
+    worker.postMessage({ read: String(ourRead) });
     (worker as unknown as { unref(): void }).unref();
+    exitUrl ??= URL.createObjectURL(new Blob([EXIT_SOURCE], { type: "application/javascript" }));
+    const waiter = new Worker(exitUrl);
+    waiter.onmessage = (e: MessageEvent<{ exit?: number }>) => {
+      if (e.data.exit === undefined || exitCode !== undefined) return;
+      exitCode = e.data.exit;
+      waiter.terminate();
+      f.CloseHandle(hProcess);
+      // The last handle to the job: whatever the browser started and left behind dies with it, which also breaks the
+      // pipes, so their readers finish.
+      f.CloseHandle(job);
+      closeWrite();
+      resolveExit({ code: exitCode, signal: null });
+    };
+    waiter.postMessage({ process: String(hProcess) });
+    (waiter as unknown as { unref(): void }).unref();
     return {
       process: {
         pid,

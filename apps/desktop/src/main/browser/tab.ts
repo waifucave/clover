@@ -196,6 +196,7 @@ export class OffscreenTab extends BrowserTab {
     // Windows fits a new window to the screen's work area: the page's size is set after it is made (S7 §7.1).
     sizeContent(window, AGENT_VIEWPORT.width, AGENT_VIEWPORT.height);
     const tab = new OffscreenTab(id, owner, window, env);
+    tab.emulateViewSize();
     tab.contents.setFrameRate(BOT_FPS);
     tab.contents.on("paint", (_e, dirty, image) => {
       const fitted = tab.fit(image);
@@ -219,6 +220,7 @@ export class OffscreenTab extends BrowserTab {
     const [w, h] = this.window.getContentSize();
     if (w !== viewport.width || h !== viewport.height) {
       sizeContent(this.window, viewport.width, viewport.height);
+      this.emulateViewSize();
       this.frames.clear();
       this.drawn = false;
     }
@@ -288,6 +290,21 @@ export class OffscreenTab extends BrowserTab {
     return frame !== undefined ? { image: frame.image, contentAgeMs: Date.now() - frame.at } : undefined;
   }
 
+  /** On a display at another scale the system rounds the window to a pixel or two more than asked (Windows at 150 %:
+   *  1282x801 for 1280x800), and the page would lay out at that. The page's own view size is fixed to the viewport's,
+   *  so the agent's page is exactly 1280x800 whatever the display (lane L-M3, §3). */
+  private emulateViewSize(): void {
+    let factor = 1;
+    try {
+      factor = screen.getDisplayMatching(this.window.getBounds()).scaleFactor;
+    } catch {
+      return;
+    }
+    if (factor === 1 || this.contents.isDestroyed()) return;
+    const { width, height } = this.viewport;
+    this.contents.enableDeviceEmulation({ screenPosition: "desktop", screenSize: { width, height }, viewPosition: { x: 0, y: 0 }, deviceScaleFactor: 0, viewSize: { width, height }, scale: 1 });
+  }
+
   /** The image of the tab at its current size, or undefined if it is of another one (a frame from before a resize). On a
    *  display at another scale (Windows at 150 %, 200 %) the compositor hands back device pixels: that picture, scaled
    *  down to the viewport, is the tab's picture all the same (lane L-M3, §3). */
@@ -302,7 +319,8 @@ export class OffscreenTab extends BrowserTab {
     } catch {
       // No display to ask: scale 1.
     }
-    if (factor !== 1 && Math.abs(width - w * factor) <= 2 && Math.abs(height - h * factor) <= 2) return image.resize({ width: w, height: h, quality: "best" });
+    // The window may be a pixel or two over (rounded by the system): within 1 % of the scaled size is the same picture.
+    if (factor !== 1 && Math.abs(width - w * factor) <= w * factor * 0.01 && Math.abs(height - h * factor) <= h * factor * 0.01) return image.resize({ width: w, height: h, quality: "best" });
     return undefined;
   }
 
