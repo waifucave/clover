@@ -511,11 +511,23 @@ export function refuseNodeModulesAbove(pluginRoot: string, shared: readonly stri
   }
 }
 
+/** `base` without the dropped names. On Windows, where a name's case doesn't matter, each name is written in capitals
+ *  first, so `Path` and `PATH` (or `node_options` and the guard's own names) can't both reach the process and leave which
+ *  one wins to the OS (#322's reviewer); the later one in `base` wins. */
+export function envWithoutDropped(base: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform): Record<string, string> {
+  const env: Record<string, string> = {};
+  const dropped = platform === process.platform ? DROPPED_ENV : droppedEnv(platform);
+  for (const [k, v] of Object.entries(base)) {
+    if (v === undefined || dropped.test(k)) continue;
+    env[platform === "win32" ? k.toUpperCase() : k] = v;
+  }
+  return env;
+}
+
 /** A plugin process's environment: `base` without what changes loading, Clover's flags in `BUN_OPTIONS`, and what the
  *  guard reads. `pluginRoot` is the plugin's top-level folder. */
 export function guardedPluginEnv(base: Readonly<Record<string, string | undefined>>, o: { pluginRoot: string; files: PluginRunFiles; shared?: readonly string[] }): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(base)) if (v !== undefined && !DROPPED_ENV.test(k)) env[k] = v;
+  const env = envWithoutDropped(base);
   env.BUN_OPTIONS = pluginBunFlags(o.files).join(" ");
   let root: string;
   try {

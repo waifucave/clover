@@ -9,7 +9,7 @@ import { PLUGIN_BUN_IDENTIFIER } from "../../bundled-identities";
 import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
-import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags, pluginHostBunFlags, droppedEnv } from "../plugin-run";
+import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags, pluginHostBunFlags, droppedEnv, envWithoutDropped } from "../plugin-run";
 import { fenceFolders, pluginFenceAvailable } from "../plugin-fence";
 
 function world() {
@@ -435,6 +435,8 @@ describe("a plugin's environment never turns off its guard", () => {
     }
     // Without case too: Windows' names are case-insensitive, and a manifest runs everywhere.
     expect(() => guardedMcpServer({ command: "bun", args: ["server.ts"], env: { clover_plugin_host: "1" } }, root, guard)).toThrow("clover_plugin_host");
+    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x", Clover_Plugin_Host: "1", Home: "h" }, "win32")).toEqual({ PATH: "b", HOME: "h" });
+    expect(envWithoutDropped({ Path: "a", PATH: "b", node_options: "x" }, "darwin")).toEqual({ Path: "a", PATH: "b", node_options: "x" });
     expect([droppedEnv("win32").test("node_options"), droppedEnv("win32").test("Clover_Plugin_Root"), droppedEnv("darwin").test("node_options"), droppedEnv("darwin").test("NODE_OPTIONS")]).toEqual([true, true, false, true]);
     // What loads nothing stays the plugin's.
     const ok = guardedMcpServer({ command: "bun", args: ["server.ts"], env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1", MY_TOKEN: "t" } }, root, guard);
