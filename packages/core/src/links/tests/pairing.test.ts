@@ -1,18 +1,20 @@
 // Pairing without an account: the QR and the short code, the four words, the card, the pair credential and the group
 // at the handshake (a local stand-in for lane I's service), and three devices that pair and then link.
 import { afterEach, describe, expect, test } from "bun:test";
+import { hkdfSync } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isContractError } from "../../contracts/common";
 import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { FileDeviceRegistry } from "../../devices/registry";
-import { toBase64Url } from "../../identity/bytes";
+import { fromBase64Url, toBase64Url } from "../../identity/bytes";
+import { decode, encode } from "../codec";
 import { DeviceKey } from "../../identity/device-key";
 import { generateEd25519 } from "../../identity/keys";
 import { SystemClock } from "../../clock/system-clock";
 import { EFF_SHORT_WORDLIST } from "../../identity/wordlist";
-import { HandshakeClient, pairKeyRef, pairSecretRef } from "../handshake";
+import { HandshakeClient, openPairBox, pairKeyRef, pairSecretRef, sealPairBox } from "../handshake";
 import { type FakeHandshake, startFakeHandshake } from "../handshake-fake";
 import { MemoryNetwork } from "../memory-wire";
 import { formatCode, MemoryRendezvous, PairingService, parseCode } from "../pairing";
@@ -126,6 +128,40 @@ describe("pairing", () => {
     // Without the service the registration waits, signed, for `retryRegistrations`.
     expect(a.registry.pairWith(b.key.id)?.registration?.sigs.length).toBe(2);
     expect(a.registry.pairWith(b.key.id)?.registeredAt).toBeUndefined();
+  });
+
+  test("a QR whose host key is small-order or non-canonical is refused before anything is dialled", async () => {
+    const net = new MemoryNetwork();
+    const [host, joiner] = [await device(net, "Studio"), await device(net, "Phone")];
+    const view = await host.pairing.begin();
+    const prefix = "clover-pair:1:";
+    const fields = decode(fromBase64Url(view.qr!.slice(prefix.length))!) as unknown[];
+    const p = (1n << 255n) - 19n;
+    const nonCanonical = Uint8Array.from({ length: 32 }, (_, i) => Number(((p + 1n) >> BigInt(8 * i)) & 0xffn));
+    for (const bad of [new Uint8Array(32), Uint8Array.from(Buffer.from("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f", "hex")), nonCanonical]) {
+      const tampered = [...fields];
+      tampered[2] = bad;
+      const err = await joiner.pairing.join(`${prefix}${toBase64Url(encode(tampered))}`).catch((e: unknown) => e);
+      expect(isContractError(err, "invalid")).toBe(true);
+    }
+    // The untouched QR still pairs.
+    const joined = await joiner.pairing.join(view.qr!);
+    expect(joined.words).toBeDefined();
+  });
+
+  test("a short code whose offer names a small-order host key is refused", async () => {
+    const net = new MemoryNetwork();
+    const rendezvous = new MemoryRendezvous();
+    const [host, joiner] = [await device(net, "Studio", { rendezvous }), await device(net, "Server", { rendezvous })];
+    const view = await host.pairing.begin();
+    const raw = parseCode(view.code!)!;
+    const slot = toBase64Url(raw.subarray(0, 5));
+    const key = new Uint8Array(hkdfSync("sha256", raw.subarray(5), new Uint8Array(0), new TextEncoder().encode("clover/pair-rendezvous/1"), 32));
+    const context = { scope: slot, from: "host", to: "joiner", kind: "signal" as const };
+    const offer = openPairBox(key, context, rendezvous.slots.get(slot)!) as Record<string, unknown>;
+    rendezvous.slots.set(slot, sealPairBox(key, context, { ...offer, key: toBase64Url(new Uint8Array(32)) }));
+    const err = await joiner.pairing.join(view.code!).catch((e: unknown) => e);
+    expect(isContractError(err, "invalid")).toBe(true);
   });
 
   test("words that differ end the pairing; nothing is added", async () => {
