@@ -27,7 +27,7 @@
 // Linux and Windows: not fenced yet (Linux under bubblewrap comes next; Windows waits, the owner's priority).
 import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import type { PluginRunFiles } from "./plugin-run";
 
 /** What the agent runtime's `sandbox.denyLaunchServices` denies (`@waifucave/clover-agent-runtime`'s
@@ -98,7 +98,12 @@ export function realOrResolved(p: string): string {
   try {
     return realpathSync(p);
   } catch {
-    return resolve(p);
+    // Not there yet (a socket the daemon makes later): its folder's real path, and its name.
+    try {
+      return join(realpathSync(dirname(p)), basename(p));
+    } catch {
+      return resolve(p);
+    }
   }
 }
 const paths = (ps: readonly string[]): string[] => [...new Set(ps.flatMap((p) => {

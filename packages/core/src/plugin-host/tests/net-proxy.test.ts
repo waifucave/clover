@@ -36,9 +36,9 @@ function upstream(text: string): number {
 }
 /** The proxies' upstream: `<name>.test` is this computer, as a resolver would make it; any other name fails. */
 const testConnect = ((o: Parameters<typeof Bun.connect>[0]) => {
-  const name = (o as { hostname: string }).hostname;
+  const name = (o as unknown as { hostname: string }).hostname;
   if (!name.endsWith(".test") && name !== "127.0.0.1") return Promise.reject(new Error(`no such host ${name}`));
-  return Bun.connect({ ...(o as object), hostname: "127.0.0.1" } as Parameters<typeof Bun.connect>[0]);
+  return Bun.connect({ ...(o as object), hostname: "127.0.0.1" } as unknown as Parameters<typeof Bun.connect>[0]);
 }) as typeof Bun.connect;
 
 describe("the network list", () => {
