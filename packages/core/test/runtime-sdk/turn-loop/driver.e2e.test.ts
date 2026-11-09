@@ -512,7 +512,8 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
-  darwinTest("the Clover home is read-denied to a bot's Bash but for its own folders (the daemon's botHomeSandbox)", async () => {
+  // On every OS the runtime sandboxes: Seatbelt on macOS, bubblewrap on Linux (agent SDK 0.0.74).
+  test("the Clover home is read-denied to a bot's Bash but for its own folders (the daemon's botHomeSandbox)", async () => {
     const home = tempHome();
     const ctx = context(home, "winter-test/calls");
     // Another session's log and the secrets file, as the daemon and the file store keep them.
