@@ -62,12 +62,14 @@ export function loginStartPaths(os: Os, home: string | undefined, cloverHome: st
 /** Each kind's paths under `cloverHome` on `os`. `home` locates the login items and the default
  *  userData; `userData` overrides it; `agentInstalls` are the OK'd agents' folders. */
 export function fenceLayout(cloverHome: string, os: Os, o?: {
-  home?: string; userData?: string; agentInstalls?: readonly string[];
+  home?: string; userData?: string; sessionData?: string; agentInstalls?: readonly string[];
 }): Record<LaidOutKind, string[]> {
   const p = pathFor(os, cloverHome);
   const h = (...parts: string[]) => p.join(cloverHome, ...parts);
   const offMac = (path: string) => (os === "macos" ? [] : [path]);
   const userData = o?.userData ?? (o?.home !== undefined ? defaultUserData(os, o.home) : undefined);
+  // The browser's partitions live under the app's sessionData; Electron's default for it is userData itself.
+  const sessionData = o?.sessionData ?? userData;
   return {
     settings: [h("settings.json"), h("settings"), h("sdk", "settings.json")],
     levels: [h("levels")],
@@ -90,7 +92,7 @@ export function fenceLayout(cloverHome: string, os: Os, o?: {
     "bot-memory": [],
     transcripts: [h("sessions")],
     usage: [h("usage")],
-    "browser-profiles": userData === undefined ? [] : [p.join(userData, "Partitions")],
+    "browser-profiles": sessionData === undefined ? [] : [p.join(sessionData, "Partitions")],
     // Clover's own login item, and every place a file runs from later outside any sandbox (the #301 review's ruling).
     "login-start": [...new Set([...loginStartPaths(os, o?.home, cloverHome), ...(o?.home === undefined ? [] : autoRunPaths(os, o.home, extrasHere(os, o.home)))])],
     // The OK'd agents' installs, and the coding agents' own sandbox settings.
@@ -101,7 +103,7 @@ export function fenceLayout(cloverHome: string, os: Os, o?: {
 /** The items of the fenced set whose kinds B's contract doesn't have yet (spec §9.1; D-M2, L-M1, S2), by the kind
  *  asked for. `userData` is the app's own folder (E's), where the Clover Browser keeps its partitions. */
 export function pendingFenced(o: {
-  home: string; cloverHome: string; os: Os; userData?: string;
+  home: string; cloverHome: string; os: Os; userData?: string; sessionData?: string;
   /** The install folders of the coding agents the user has OK'd to run unsandboxed (lane K, keyed to each program's
    *  real path and hash): the resolved program's folder, and npm's global package folder for its package. Write-denied
    *  to sessions and agents, so none can swap in a new copy of itself or of another agent. */
@@ -124,7 +126,7 @@ export function pendingFenced(o: {
   return {
     transcripts: [p.join(o.cloverHome, "transcripts")], // `transcriptsDir(home)`, joined in this OS's form
     usage: [p.join(o.cloverHome, "usage")],
-    "browser-profiles": o.userData ? [p.join(o.userData, "Partitions")] : [],
+    "browser-profiles": (o.sessionData ?? o.userData) ? [p.join((o.sessionData ?? o.userData)!, "Partitions")] : [],
     "login-start": [...new Set([...loginStart[o.os], ...autoRunPaths(o.os, o.home, extrasHere(o.os, o.home))])],
     "agent-installs": [...(o.agentInstalls ?? []), ...agentConfigPaths(o.os, o.home)],
     plugins: [p.join(o.cloverHome, "plugins")],

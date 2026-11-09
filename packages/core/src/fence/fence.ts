@@ -35,6 +35,8 @@ export interface CloverFenceOptions {
   agentInstalls?: string[];
   /** The app's userData folder (E's); per-OS default under `home` when absent. */
   userData?: string;
+  /** The app's sessionData folder (the browser's partitions live under it); userData when absent. */
+  sessionData?: string;
   /** Other folders plugin code loads from (the app's bundled plugins), for `pluginLoadDenies` (B's #234). */
   pluginLoadFolders?: string[];
   /** Replaces the layout for some items (tests). */
@@ -64,6 +66,7 @@ export class CloverFence implements Fence {
   readonly #bots: string[];
   readonly #agentInstalls: string[];
   readonly #userData: string | undefined;
+  readonly #sessionData: string | undefined;
   #devFolders: string[];
   readonly #pluginLoadFolders: string[];
 
@@ -78,6 +81,7 @@ export class CloverFence implements Fence {
     this.#bots = [...(opts.bots ?? [])];
     this.#agentInstalls = [...(opts.agentInstalls ?? [])];
     this.#userData = opts.userData;
+    this.#sessionData = opts.sessionData;
     this.#layout = opts.layout ?? {};
     this.#loopbackPorts = opts.loopbackPorts ?? (() => []);
   }
@@ -87,7 +91,7 @@ export class CloverFence implements Fence {
     const add = (kind: FencedKind, path: string) =>
       out.push({ kind, path: this.#canonical(path), deny: READ_DENIED_KINDS.includes(kind) ? "read-write" : "write" });
     for (const [kind, paths] of Object.entries(fenceLayout(this.#cloverHome, this.os, {
-      home: this.#home, userData: this.#userData, agentInstalls: this.#agentInstalls,
+      home: this.#home, userData: this.#userData, sessionData: this.#sessionData, agentInstalls: this.#agentInstalls,
     })) as [LaidOutKind, string[]][]) {
       for (const p of this.#layout[kind] ?? paths) add(kind, p);
     }
