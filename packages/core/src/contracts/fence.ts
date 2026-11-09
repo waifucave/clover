@@ -285,7 +285,7 @@ export function policyAllows(policy: SandboxPolicy, op: "read" | "write" | "unli
     const a = names(path);
     const b = names(root);
     if (a.length < b.length || (strict && a.length === b.length)) return false;
-    return b.every((n, i) => n === "*" || n === a[i]);
+    return b.every((n, i) => n === "*" || n === a[i] || (n.startsWith("*") && a[i]!.endsWith(n.slice(1))));
   };
   const rw = [policy.ownMemory, policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData].filter((p): p is string => p !== undefined);
   const ro = [...rw, ...(policy.ownBot === undefined ? [] : [policy.ownBot])];
@@ -365,7 +365,27 @@ export function isBotCaller(ctx: FenceContext | undefined): boolean {
  *  key, the browser profiles): the credential index, the runtimes' store (the Console profile), the SDK's own config
  *  copy and the run folders' generated configs, which carry API keys and MCP servers' secrets, and the plugins' own
  *  data (a plugin's tokens may sit there; its own code alone reaches it). Relative to the home. */
-export const BOT_READ_DENIED: readonly (readonly string[])[] = [["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["plugin-data"]];
+export const BOT_READ_DENIED: readonly (readonly string[])[] = [
+  ["credentials"], ["runtimes"], ["sdk", ".clover.json"], ["cache", "runs"], ["plugin-data"],
+  // The headless browser's profiles (cookies and saved sign-ins: #355's review).
+  ["browser"],
+  // The secrets file and its keys by name on every OS (macOS's are in the Keychain, but a file store may be there too).
+  ["secrets.enc"], ["secrets.key"], ["secrets.key.cred"],
+  // The runtime's user settings, where an `env` block can carry API keys (the user edits it; legacy settings are
+  // carried into it).
+  ["sdk", "settings.json"],
+  // The runtimes' provider-state sidecars beside each transcript (`<session>.provider-state.jsonl`), as the SDK's own
+  // Bash deny has them: a segment `*` is any one name, `*.x` any name ending `.x`.
+  ["projects", "*", "*.provider-state.jsonl"], ["sdk", "projects", "*", "*.provider-state.jsonl"],
+];
+
+/** A name against one segment of a `BOT_READ_DENIED` entry or a policy glob: `*` any name, `*<suffix>` any name ending so. */
+export function segmentMatches(name: string, pattern: string, os?: Os): boolean {
+  const n = foldName(name, os);
+  if (pattern === "*") return true;
+  if (pattern.startsWith("*")) return n.endsWith(foldName(pattern.slice(1), os));
+  return n === foldName(pattern, os);
+}
 
 /** Whether a caller reaches a `caller` item. */
 export function callerReaches(item: Pick<FencedPath, "deny" | "bot">, ctx: FenceContext | undefined, os?: Os): boolean {
@@ -386,7 +406,7 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
   if (segs.length < home.length || !home.every((h, i) => same(h, segs[i]!))) return true; // not in the home
   const [area, x, sub, ...deeper] = segs.slice(home.length);
   // The home itself, or a top folder in it: a bot reads them (its open access); nobody else, and nobody writes them.
-  if (area === undefined || x === undefined) return !writes && ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) && !BOT_READ_DENIED.some((rel) => rel.length === 1 && area !== undefined && same(area, rel[0]!));
+  if (area === undefined || x === undefined) return !writes && ctx?.memoryOf !== undefined && isAnyPluginId(ctx.memoryOf) && !BOT_READ_DENIED.some((rel) => rel.length === 1 && area !== undefined && segmentMatches(area, rel[0]!, os));
   const inside = sub !== undefined; // strictly inside `<area>/<x>`
   // 1. A session's own outputs.
   if (same(area, "outputs") && folderName(ctx?.sessionId) && same(x, ctx!.sessionId!)) return inside || !writes;
@@ -396,7 +416,7 @@ export function homeAllows(path: string, writes: boolean, ctx: FenceContext | un
   // A bot's open access (the owner's ruling of November 9): it reads everything in the home but `BOT_READ_DENIED`
   // (the read-denied kinds are judged before this), and writes inside any bot's scratch folder.
   if (bot !== undefined) {
-    if (!writes) return !BOT_READ_DENIED.some((rel) => rel.every((n, i) => [area, x, sub, ...deeper][i] !== undefined && same([area, x, sub, ...deeper][i]!, n)));
+    if (!writes) return !BOT_READ_DENIED.some((rel) => rel.every((n, i) => [area, x, sub, ...deeper][i] !== undefined && segmentMatches([area, x, sub, ...deeper][i]!, n, os)));
     if (same(area, "scratch") && inside) return true;
     // Any bot's memory, written inside (the owner's amendment); never the memory folder itself.
     if (same(area, "bots") && sub !== undefined && same(sub, "memory") && deeper.length > 0) return true;

@@ -172,7 +172,7 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
         // C's base (J's ruling): every bot's memory by its pattern, known or not, and the agents folder for every runner;
         // a bot's read list drops the memory pattern (it reads every bot's memory).
         expect(p.denyRead.includes(`${CLOVER}/bots/*/memory`)).toBe(!bot);
-        expect(p.denyWrite).toContain(`${CLOVER}/bots/*/memory`);
+        expect(p.denyWrite.includes(`${CLOVER}/bots/*/memory`)).toBe(!bot);
         expect(p.denyWrite.some((d) => `${CLOVER}/bots/luna/agents/a_1.jsonl`.startsWith(d))).toBe(true);
         expect([policyAllows(p, "read", `${mem("alpha")}/MEMORY.md`), policyAllows(p, "write", `${mem("alpha")}/MEMORY.md`)]).toEqual([bot, bot]);
         expect(policyAllows(p, "write", `${CLOVER}/bots/alpha/agents/a.jsonl`)).toBe(false);
@@ -385,6 +385,24 @@ export function runFenceConformance(make: FenceFactory, opts: { pending?: readon
       // Where bots now write (scratch, memory) holds no log and no grant: those are the transcripts' alone.
       expect(luna.check({ op: "write", path: `${CLOVER}/scratch/sol/notes.md` }).allowed).toBe(true);
       expect(luna.check({ op: "write", path: `${CLOVER}/bots/sol/memory/MEMORY.md` }).allowed).toBe(true);
+    });
+
+    test("a bot's open read stops at what escalates: browser profiles, the secrets by name, the SDK's settings and copies, provider state (#355's review)", () => {
+      for (const os of ["macos", "linux", "windows"] as const) {
+        const f = fence(os);
+        const luna = f.forCaller({ kind: "session", sessionId: "b_luna", sessionKind: "bot", bot: "luna" });
+        const p = luna.policy();
+        const denied = [`${CLOVER}/browser/profiles/p1/Default/Cookies`, `${CLOVER}/browser/profiles/p1/Default/Login Data`, `${CLOVER}/browser`,
+          `${CLOVER}/secrets.enc`, `${CLOVER}/secrets.key`, `${CLOVER}/secrets.key.cred`, `${CLOVER}/sdk/settings.json`, `${CLOVER}/sdk/.clover.json`,
+          `${CLOVER}/projects/k/s1.provider-state.jsonl`, `${CLOVER}/sdk/projects/k/s1.provider-state.jsonl`];
+        for (const path of denied) expect([os, path, luna.check({ op: "read", path }).allowed, policyAllows(p, "read", path)]).toEqual([os, path, false, false]);
+        // By name in the sandbox's own list too, on every OS (macOS included), so a file made later is denied as well.
+        for (const name of ["secrets.enc", "secrets.key", "secrets.key.cred", "browser", "sdk/settings.json"]) expect([os, p.denyRead.includes(`${CLOVER}/${name}`)]).toEqual([os, true]);
+        // What sits beside them stays open: the transcript next to a sidecar, the home's own settings.
+        for (const path of [`${CLOVER}/projects/k/s1.jsonl`, `${CLOVER}/sdk/projects/k/s1.jsonl`, `${CLOVER}/settings.json`, `${CLOVER}/projects/k/s1.provider-state.jsonl.md`]) {
+          expect([os, path, luna.check({ op: "read", path }).allowed, policyAllows(p, "read", path)]).toEqual([os, path, true, true]);
+        }
+      }
     });
 
     test("reads outside the Clover home are free; inside it, the home default-deny (the controller's ruling)", () => {

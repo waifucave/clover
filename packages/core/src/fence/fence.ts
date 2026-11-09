@@ -353,7 +353,8 @@ export class CloverFence implements Fence {
       // runner's own memory comes back below as `ownMemory`.
       // B's #234: the whole Clover home too, for every runner (the home default-deny; its own folders come back below,
       // `ownFoldersOf`), and every `node_modules` above a folder plugin code loads from.
-      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      // A bot writes every bot's memory (the owner's amendment): no memory pattern in its write list either.
+      denyWrite: [...set.map((i) => i.path), ...(isBotCaller(ctx) ? [] : [patterns[0]!]), `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
       // A bot's own conversation and side threads have open access to the home (the owner's ruling of November 9):
       // no memory or sessions-runtime pattern in their read list (the bot driver's state is a transcript id, no
       // secret), and what they still can't read named one by one (`BOT_READ_DENIED`),

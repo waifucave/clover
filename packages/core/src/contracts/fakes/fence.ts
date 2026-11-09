@@ -250,7 +250,8 @@ export class FakeFence implements Fence {
       allowWrite: [this.#home, this.#temp],
       // The whole Clover home, for every runner (the home default-deny), and the bots folder and the pattern items by
       // name (C's base); the runner's own folders come back below (`ownFoldersOf`, its own memory included).
-      denyWrite: [...set.map((i) => i.path), patterns[0]!, `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
+      // A bot writes every bot's memory (the owner's amendment): no memory pattern in its write list either.
+      denyWrite: [...set.map((i) => i.path), ...(isBotCaller(ctx) ? [] : [patterns[0]!]), `${this.#cloverHome}/bots`, this.#cloverHome, ...this.#pluginLoadDenies()],
       // A bot's open access (the owner's ruling of November 9): no memory pattern, what it can't read by name.
       denyRead: [...set.filter((i) => i.deny === "read-write").map((i) => i.path),
         ...(isBotCaller(ctx) ? BOT_READ_DENIED.map((rel) => [this.#cloverHome, ...rel].join("/")) : patterns), this.#cloverHome],
