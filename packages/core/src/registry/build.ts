@@ -26,7 +26,7 @@
 import { CLIENT_BARE_IMPORTS } from "@waifucave/clover-plugin-sdk";
 import { mkdirSync, readFileSync, renameSync } from "node:fs";
 import { isBuiltin } from "node:module";
-import { basename, dirname, extname } from "node:path";
+import { basename, dirname, extname, resolve } from "node:path";
 
 /** Who runs the module: the app's layers (a browser), the plugin Bun, or Node (a `runtime: "node"` host). */
 export type BuildSide = "client" | "bun" | "node";
@@ -69,6 +69,11 @@ export interface BuiltPluginModule {
   assets: string[];
   /** The bare imports left in it (the layers' for a client module; Node's, Bun's and `keepExternal`'s otherwise). */
   imports: string[];
+  /**
+   * Every file the bundler read into it (its metafile's inputs), absolute, sorted. The bundler inlines whatever an
+   * entry imports, wherever it is, so a release build checks each of these against what it may ship.
+   */
+  inputs: string[];
 }
 
 /** The package a bare specifier names (`@scope/name/sub` → `@scope/name`). */
@@ -120,6 +125,12 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
           });
         },
       }],
+      // NO MACROS. A plugin file importing `with { type: "macro" }` would run that function in THIS process at build
+      // time and inline what it returns (a file it read, the builder's environment): plugin code running in the
+      // builder, which can be the daemon. Off, such an import fails the build ("Macros are disabled"). bun-types has
+      // no field for it, hence the spread; Bun refuses macros from node_modules on its own.
+      // LAST, so nothing after it turns them back on.
+      ...{ macros: false },
     });
   } catch (e) {
     throw new PluginBuildError([`${o.entry}: ${e instanceof Error ? e.message : String(e)}`]);
@@ -142,10 +153,13 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
   // The bundler marks where each input starts with a comment naming its path from this process's folder, which can
   // run through the folders above the checkout (a home folder's name): those lines go, and nothing else changes.
   const meta = typeof result.metafile === "string" ? JSON.parse(result.metafile) : result.metafile;
-  const markers = new Set(Object.keys((meta as { inputs?: Record<string, unknown> } | undefined)?.inputs ?? {}).map((k) => `// ${k}`));
+  const inputKeys = Object.keys((meta as { inputs?: Record<string, unknown> } | undefined)?.inputs ?? {});
+  // The metafile names each input from this process's folder.
+  const inputs = [...new Set(inputKeys.map((k) => resolve(process.cwd(), k)))].sort();
+  const markers = new Set(inputKeys.map((k) => `// ${k}`));
   const source = (await Bun.file(o.outFile).text()).split("\n").filter((line) => !markers.has(line)).join("\n");
   await Bun.write(o.outFile, source);
-  const imports = [...new Set(new Bun.Transpiler({ loader: "js" }).scanImports(source).map((i) => i.path))].sort();
+  const imports = [...new Set(new Bun.Transpiler({ loader: "js", ...({ macro: false } as object) }).scanImports(source).map((i) => i.path))].sort();
   const problems: string[] = [];
   const name = basename(o.outFile);
   for (const spec of imports) {
@@ -163,7 +177,7 @@ export async function buildPluginModule(o: BuildModuleOptions): Promise<BuiltPlu
   for (const f of css) await Bun.write(f, readFileSync(f, "utf8").split("\n").filter((line) => !cssMarkers.has(line)).join("\n"));
   for (const f of [o.outFile, ...css, ...assets]) problems.push(...forbiddenIn(f === o.outFile ? source : readFileSync(f, "latin1"), basename(f), o.forbid ?? []));
   if (problems.length > 0) throw new PluginBuildError(problems);
-  return { file: o.outFile, source, css, assets, imports };
+  return { file: o.outFile, source, css, assets, imports, inputs };
 }
 
 /** What a bundle's CommonJS `__dirname` and `__filename` become: the module's own, at run time. */

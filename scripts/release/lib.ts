@@ -16,11 +16,18 @@
 // A server's daemon (a `clover-core server install`, no app) updates itself from the same releases: each OS's build
 // also leaves its daemon as `clover-core-<version>-<target>` and the daemon's update file `<channel>-core-<target>.yml`
 // (version, file, sha512, size; packages/update-feed's `formatCoreFeed`), and the owner's release step signs both.
+// Beside them go plain Bun for plugins (`clover-plugin-bun-<bun version>-<target>`, `<channel>-plugin-bun-<target>.yml`)
+// and the bundled plugins (`clover-plugins-<version>-<target>.tar.gz`, `<channel>-plugins-<target>.yml`: exactly the
+// tree that target's core embeds the manifest of, packed from the built app's resources/plugins).
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { coreBinaryFile, coreFeedFile, formatCoreFeed, parseCoreFeed, type CoreTarget } from "../../packages/update-feed/src/index";
+import {
+  coreBinaryFile, coreFeedFile, formatCoreFeed, packTarball, parseCoreFeed, parsePluginBunFeed, parsePluginsFeed, pluginBunBinaryFile, pluginBunFeedFile, pluginsFeedFile,
+  pluginsTarballFile, type CoreTarget, type TarballFile,
+} from "../../packages/update-feed/src/index";
+import { PLUGIN_BUN } from "../bundled-binaries";
 
 export const CHANNELS = ["latest", "beta"] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -61,16 +68,26 @@ export function buildCommitFile(os: ReleaseOs): string {
   return `BUILD-COMMIT-${os}.txt`;
 }
 
-/** The checkout's commit, or a refusal: a release build is of a commit, and a signed one of a clean checkout. */
-export function checkoutCommit(root: string, requireClean: boolean): string {
+/**
+ * The checkout's commit, or a refusal: a release build (signed or not, every OS's) is of one commit, from a fully
+ * clean checkout. The build reads the whole tree (the bundler reads packages/* and services/*, the plugins are staged
+ * from it), so `git status --porcelain` must be empty across the repository: no edit, no staged change, no untracked
+ * file. What the build itself writes is ignored by git and doesn't count.
+ */
+export function checkoutCommit(root: string): string {
   const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" });
   const commit = (head.stdout ?? "").trim();
   if (head.status !== 0 || !/^[0-9a-f]{40}$/.test(commit)) throw new Error("a release builds from a git checkout");
-  if (requireClean) {
-    const dirty = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: root, encoding: "utf8" });
-    if (dirty.status !== 0 || (dirty.stdout ?? "").trim() !== "") throw new Error("a signed release builds from a clean checkout: commit or stash the changes first");
-  }
+  const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
+  if (status.status !== 0) throw new Error("a release build couldn't read git status");
+  const dirty = dirtyEntries(status.stdout ?? "");
+  if (dirty.length > 0) throw new Error(`a release builds from a fully clean checkout; commit, stash or remove these first: ${dirty.slice(0, 5).join(", ")}${dirty.length > 5 ? `, and ${dirty.length - 5} more` : ""}`);
   return commit;
+}
+
+/** The entries of `git status --porcelain` output (empty for a clean checkout). */
+export function dirtyEntries(porcelain: string): string[] {
+  return porcelain.split("\n").map((l) => l.trimEnd()).filter((l) => l !== "");
 }
 
 /** Records the commit a build came from beside its files (`buildCommitFile`). */
@@ -86,10 +103,86 @@ export function coreArtifacts(version: string, os: ReleaseOs, channel: Channel):
   return [coreBinaryFile(version, CORE_TARGET[os]), ...channelsServed(channel).map((c) => coreFeedFile(c, CORE_TARGET[os]))];
 }
 
-/** Every file `os`'s release build must leave: its installers, its update files for each channel served, and the
- *  daemon's (`coreArtifacts`). */
+/** Plain Bun for plugins in `os`'s release, for a server install (scripts/bundled-binaries.ts): its binary, named by
+ *  the daemon's Bun version, and its update file for each channel served. */
+export function pluginBunArtifacts(os: ReleaseOs, channel: Channel): string[] {
+  return [pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]), ...channelsServed(channel).map((c) => pluginBunFeedFile(c, CORE_TARGET[os]))];
+}
+
+/** The bundled plugins in `os`'s release, for a server install: the tarball and its update file for each channel. */
+export function pluginsArtifacts(version: string, os: ReleaseOs, channel: Channel): string[] {
+  return [pluginsTarballFile(version, CORE_TARGET[os]), ...channelsServed(channel).map((c) => pluginsFeedFile(c, CORE_TARGET[os]))];
+}
+
+/** Every file `os`'s release build must leave: its installers, its update files for each channel served, the
+ *  daemon's (`coreArtifacts`), plugin Bun's (`pluginBunArtifacts`) and the bundled plugins' (`pluginsArtifacts`). */
 export function expectedArtifacts(version: string, os: ReleaseOs, channel: Channel): string[] {
-  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os)), ...coreArtifacts(version, os, channel)];
+  return [...installers(version, os), ...channelsServed(channel).map((c) => feedFile(c, os)), ...coreArtifacts(version, os, channel), ...pluginBunArtifacts(os, channel), ...pluginsArtifacts(version, os, channel)];
+}
+
+/** Every regular file under `dir` with its executable bit, for the tarball; a symlink or anything else throws. */
+export function tarballFilesOf(dir: string): TarballFile[] {
+  const out: TarballFile[] = [];
+  const walk = (rel: string): void => {
+    for (const name of readdirSync(rel === "" ? dir : join(dir, rel)).sort()) {
+      const r = rel === "" ? name : `${rel}/${name}`;
+      const st = lstatSync(join(dir, r));
+      if (st.isDirectory()) walk(r);
+      else if (st.isFile()) out.push({ path: r, bytes: new Uint8Array(readFileSync(join(dir, r))), executable: process.platform !== "win32" && (st.mode & 0o111) !== 0 });
+      else throw new Error(`${join(dir, r)} is not a regular file: the bundled plugins' tarball holds regular files only`);
+    }
+  };
+  walk("");
+  return out;
+}
+
+/** After the build: the bundled plugins the app ships (`pluginsDir`, its resources/plugins, already held to the core's
+ *  manifest) packed as `clover-plugins-<version>-<target>.tar.gz`, and its update file for each channel served. */
+export function writePluginsAssets(outDir: string, version: string, os: ReleaseOs, channel: Channel, pluginsDir: string): string[] {
+  const file = pluginsTarballFile(version, CORE_TARGET[os]);
+  const bytes = packTarball(tarballFilesOf(pluginsDir));
+  writeFileSync(join(outDir, file), bytes);
+  const feed = formatCoreFeed({ version, file, sha512: sha512Base64(bytes), size: bytes.length });
+  const feeds = channelsServed(channel).map((c) => pluginsFeedFile(c, CORE_TARGET[os]));
+  for (const f of feeds) writeFileSync(join(outDir, f), feed);
+  return [file, ...feeds];
+}
+
+/** Whether `name` is one of the bundled plugins' update files. */
+export function isPluginsFeed(name: string): boolean {
+  return /^(latest|beta)-plugins-[a-z0-9-]+\.yml$/.test(name);
+}
+
+/** What's wrong with the bundled plugins' update file against the tarball it names. */
+export function checkPluginsFeed(text: string, version: string, read: (name: string) => Uint8Array | undefined): string[] {
+  return checkCoreFeed(text, version, read, parsePluginsFeed);
+}
+
+/** After the build: plugin Bun (`binary`, the one beside the daemon in the app, signed with it on a signed macOS
+ *  build) copied as `clover-plugin-bun-<bun version>-<target>`, and its update file for each channel served. */
+export function writePluginBunAssets(outDir: string, os: ReleaseOs, channel: Channel, binary: string): string[] {
+  const file = pluginBunBinaryFile(PLUGIN_BUN.version, CORE_TARGET[os]);
+  copyFileSync(binary, join(outDir, file));
+  const bytes = readFileSync(join(outDir, file));
+  const feed = formatCoreFeed({ version: PLUGIN_BUN.version, file, sha512: sha512Base64(bytes), size: bytes.length });
+  const feeds = channelsServed(channel).map((c) => pluginBunFeedFile(c, CORE_TARGET[os]));
+  for (const f of feeds) writeFileSync(join(outDir, f), feed);
+  return [file, ...feeds];
+}
+
+/** Whether `name` is one of plugin Bun's update files. */
+export function isPluginBunFeed(name: string): boolean {
+  return /^(latest|beta)-plugin-bun-[a-z0-9-]+\.yml$/.test(name);
+}
+
+/** What's wrong with plugin Bun's update file: its version is the daemon's Bun (PLUGIN_BUN), not the release's. */
+export function checkPluginBunFeed(text: string, read: (name: string) => Uint8Array | undefined): string[] {
+  try {
+    parsePluginBunFeed(text);
+  } catch (err) {
+    return [(err as Error).message];
+  }
+  return checkCoreFeed(text, PLUGIN_BUN.version, read, parsePluginBunFeed);
 }
 
 /**
@@ -107,10 +200,10 @@ export function writeCoreAssets(outDir: string, version: string, os: ReleaseOs, 
 }
 
 /** What's wrong with a daemon's update file against the binary it names (`read` gives a file's bytes, or undefined). */
-export function checkCoreFeed(text: string, version: string, read: (name: string) => Uint8Array | undefined): string[] {
+export function checkCoreFeed(text: string, version: string, read: (name: string) => Uint8Array | undefined, parse: (text: string) => ReturnType<typeof parseCoreFeed> = parseCoreFeed): string[] {
   let feed: ReturnType<typeof parseCoreFeed>;
   try {
-    feed = parseCoreFeed(text);
+    feed = parse(text);
   } catch (err) {
     return [(err as Error).message];
   }
@@ -232,16 +325,46 @@ export function identityTeam(identity: string): string {
  * The binaries Clover's own build puts in the app's resources, which it signs itself (electron-builder.yml's
  * `signIgnore` leaves them to it): each with the hardened runtime, a secure timestamp, its own identifier, and
  * only the entitlements it needs. The daemon is Bun, whose JIT needs `allow-jit` and, until the SIP-on check drops
- * it, `allow-unsigned-executable-memory` (scripts/clover-core.entitlements); the link sidecar is Rust and needs none.
+ * it, `allow-unsigned-executable-memory` (scripts/clover-core.entitlements); the link sidecar is Rust and needs none;
+ * plugin Bun also loads plugins' native addons; the process holder is C on libSystem and needs none. All of them are
+ * inside the app that notarization submits, so each is notarized with it.
  */
 export const RESOURCE_BINARIES = [
   { file: "clover-core", identifier: "com.waifucave.clover.core", entitlements: "scripts/clover-core.entitlements" },
   { file: "clover-link", identifier: "com.waifucave.clover.link", entitlements: undefined },
+  // The binaries that run code not the core's own (scripts/bundled-binaries.ts), never under the core's identifier:
+  // plain Bun for plugins (JIT, bun:ffi, native addons), and lane A's process holder (none).
+  { file: "clover-plugin-bun", identifier: "com.waifucave.clover.plugin-bun", entitlements: "scripts/clover-plugin-bun.entitlements" },
+  { file: "clover-process-holder", identifier: "com.waifucave.clover.process-holder", entitlements: undefined },
 ] as const;
 
 export function codesignArgs(path: string, identity: string, identifier: string, entitlements?: string): string[] {
   return ["codesign", "--force", "--sign", identity, "--options", "runtime", "--timestamp", "--identifier", identifier,
     ...(entitlements === undefined ? [] : ["--entitlements", entitlements]), path];
+}
+
+/**
+ * The owner's dev-signed alpha (`release/build.ts --sign-dev`): the same binaries signed with the owner's Apple
+ * Development identity (by its SHA-1, so two same-named certificates can't make codesign guess), with the hardened
+ * runtime and each binary's own identifier and entitlements, but no secure timestamp (nothing notarizes it) and an
+ * explicit designated requirement on Clover's team, `identifier "<id>" and anchor apple generic and certificate
+ * leaf[subject.OU] = "<team>"`. That is the requirement the Keychain items and plugin Bun's check hold the binary to,
+ * and a later Developer ID build of the same identifier satisfies it too (an Apple Development certificate's default
+ * requirement names the person's certificate instead, which a Developer ID build would not meet).
+ */
+export function codesignDevArgs(path: string, identityHash: string, identifier: string, teamId: string, entitlements?: string, keychain?: string): string[] {
+  if (!/^[0-9A-F]{40}$/i.test(identityHash)) throw new Error("a dev-signed build names its identity by its SHA-1 hash");
+  return ["codesign", "--force", "--sign", identityHash, "--options", "runtime", "--timestamp=none", "--identifier", identifier,
+    `-r=designated => ${teamRequirement(identifier, teamId)}`,
+    ...(entitlements === undefined ? [] : ["--entitlements", entitlements]),
+    // A keychain named for this build only (CLOVER_MAC_DEV_KEYCHAIN): the identity is looked up there, and the user's
+    // keychain search list is never changed for it.
+    ...(keychain === undefined ? [] : ["--keychain", keychain]), path];
+}
+
+/** A binary's requirement on Clover's team: its identifier, Apple's chain, the team's certificate. */
+export function teamRequirement(identifier: string, teamId: string): string {
+  return `identifier "${identifier}" and anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`;
 }
 
 /** A disk image is signed without the hardened runtime (it isn't code that runs). */
@@ -304,13 +427,14 @@ export function authenticodeCommand(path: string): string[] {
     `$s = Get-AuthenticodeSignature -LiteralPath '${literal}'; Write-Output ($s.Status.ToString() + '|' + $(if ($s.SignerCertificate) { $s.SignerCertificate.Subject } else { '' }))`];
 }
 
-/** What's wrong with one signed file for a release by `teamId` (notarization refuses each of these). */
-export function signatureProblems(name: string, sig: CodeSignature, teamId: string, identifier?: string): string[] {
+/** What's wrong with one signed file for a release by `teamId` (notarization refuses each of these). A dev-signed
+ *  alpha (`dev: true`) is held to the same, but for the secure timestamp: nothing notarizes it. */
+export function signatureProblems(name: string, sig: CodeSignature, teamId: string, identifier?: string, o: { dev?: boolean } = {}): string[] {
   const problems: string[] = [];
-  if (sig.adhoc || sig.teamId === undefined) problems.push(`${name} is not signed with a Developer ID`);
+  if (sig.adhoc || sig.teamId === undefined) problems.push(`${name} is not signed with ${o.dev === true ? `team ${teamId}'s identity` : "a Developer ID"}`);
   else if (sig.teamId !== teamId) problems.push(`${name} is signed by team ${sig.teamId}, not ${teamId}`);
   if (!sig.runtime) problems.push(`${name} has no hardened runtime`);
-  if (!sig.timestamped) problems.push(`${name} has no secure timestamp`);
+  if (!sig.timestamped && o.dev !== true) problems.push(`${name} has no secure timestamp`);
   if (identifier !== undefined && sig.identifier !== identifier) problems.push(`${name}'s identifier is ${sig.identifier ?? "(none)"}, not ${identifier}`);
   return problems;
 }

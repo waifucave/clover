@@ -133,7 +133,10 @@ export function makeFencedFolders(cloverHome: string, fence: Pick<Fence, "fenced
     const p = norm(item.path);
     if (!p.startsWith(`${home}/`)) continue;
     const rest = p.slice(home.length + 1).split("/");
-    const folder = FENCED_FOLDER_KINDS.has(item.kind) ? rest : rest.slice(0, -1);
+    // A folder kind names files too (`settings.json`, `trust.json`): a name with an extension is a file, so only the
+    // folder that holds it is made (INT, for lane J: the daemon's fence reaches the node with #292).
+    const isFolder = FENCED_FOLDER_KINDS.has(item.kind) && !/\.[A-Za-z0-9]+$/.test(rest[rest.length - 1] ?? "");
+    const folder = isFolder ? rest : rest.slice(0, -1);
     if (folder.length === 0) continue;
     mkdirSync(join(cloverHome, ...folder), { recursive: true, mode: 0o700 });
   }

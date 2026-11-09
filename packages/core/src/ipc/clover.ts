@@ -14,7 +14,7 @@
 // `laneMethodHandlers` mounts handlers written in D's shape (`bots/rpc.ts`; D's sessions, H's devices,
 // the usage counter): each runs as the connection's caller, with its event stream.
 import {
-  CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, CODE_AGENT_LINE_NOTIFICATION, ERR,
+  CLOVER_ERR, CLOVER_METHODS, CLOVER_PROTOCOL_MIN_VERSION, CLOVER_ROLES, CLOVER_PROTOCOL_VERSION, CloverHelloParams, CODE_AGENT_LINE_NOTIFICATION, CODE_AGENT_MAX_LINE, ERR,
   PairStatus, encodeLine, helloVersionServed, type Caller, type CloverHelloResult, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
 import { createHash } from "node:crypto";
@@ -25,6 +25,7 @@ import { probePeer, socketFd, WindowsPipePeers, type PeerFacts } from "../platfo
 import { peerHandle, type PeerHandle } from "../platform/peer-handle";
 import type { DaemonPair, PairStopReason } from "../platform/pair/policy";
 import type { DaemonPlatform } from "../platform/transport";
+import { sendCoreEvent, type CoreEventInput, type CoreEventOptions } from "./core-events";
 
 /** A thrown JSON-RPC error; the server's pump reads `code`, `message` and `data` off it. */
 export class CloverRpcError extends Error {
@@ -52,6 +53,9 @@ export interface CloverConn {
   notify(method: string, params: unknown): void;
   /** The sessions this connection follows live (`session.attach`), each with its unsubscribe; ended at close. */
   readonly follows: Map<string, () => void>;
+  /** K-M3b: bound to a coding session (`codeAgent.open`): it is sent `codeAgent.line` and nothing else, no session
+   *  event and no core event (#274's sender skips it). */
+  relayed?: boolean;
 }
 
 export type CloverHandler = (conn: CloverConn, params: unknown) => Promise<unknown> | unknown;
@@ -132,6 +136,8 @@ export interface CloverServerDeps {
   pairStatusExtras?(): Omit<PairStatus, "safeMode">;
   /** Release the lease so another computer takes the bots (`pair.quit{handOver}`; lanes F and H). */
   handOver?(): Promise<void>;
+  /** Whether any computer-use session is driving this desktop right now (lane E's B3 answer gate). */
+  computerUse?: { acting(): Promise<{ running: boolean; session?: string }> };
   /** The pid the daemon started a plugin-host process with. */
   hostPidOf?(hostProcess: "clover" | "shared" | "own", pluginId?: string): number | undefined;
   /** The link sidecar's pid (lane H): the only local process that says hello as `remote`, `web` or `peer`. */
@@ -144,6 +150,9 @@ export interface CloverServerDeps {
    *  then committed to the restart. */
   acceptUpdateExit?(): boolean;
   readonly features?: readonly string[];
+  /** A plugin's granted capabilities (lane B's registry), for the `core.event`s that need one; without it a plugin's
+   *  connection gets none of those. */
+  pluginCapabilities?(pluginId: string): readonly string[] | undefined;
   readonly os?: DaemonPlatform;
   /** The endpoint this server answers on (Windows: only that pipe's ends are matched to connections, review S4). */
   readonly endpoint?: string;
@@ -188,6 +197,12 @@ export interface CloverServer {
   isCloverHello(params: unknown): boolean;
   /** `end` closes the connection (a revoked bridge token's, a refused bridge). */
   hello(socket: object, connId: number, params: unknown, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
+  /** A paired phone's or browser's hello on its link (lane H's `mountRemoteClients`, through `linkClientServer`): no
+   *  local process to probe, since the link proved the device. The token must be the one the core minted for that
+   *  device and role, and that token is spent by the check (one hello per mint). `stillLinked` is asked again after
+   *  the check, so a device revoked meanwhile isn't registered. The caller is the user on that
+   *  device. `end` closes the link's stream (`endConnections`). Never reachable from the socket. */
+  linkHello(connId: number, params: unknown, link: { device: string; role: "remote" | "web"; stillLinked?: () => boolean }, write: (bytes: Uint8Array) => void, end?: () => void): Promise<{ conn: CloverConn; result: CloverHelloResult }>;
   handle(conn: CloverConn, method: string, params: unknown): Promise<unknown>;
   closed(conn: CloverConn | null, socket: object): void;
   /** A response from the client to one of the daemon's requests (the heartbeat's). */
@@ -195,6 +210,11 @@ export interface CloverServer {
   /** `app.quit{reason}` to these app connections (the pair's `tellAppQuit`). */
   tellAppQuit(reason: PairStopReason, connIds: readonly string[]): void;
   connections(): readonly CloverConn[];
+  /** Closes every connection `match` picks that the server can close itself (a link's, through its `end`); how many. */
+  endConnections(match: (conn: CloverConn) => boolean): number;
+  /** Sends a daemon-wide event as `core.event` to the connections that may have it (`ipc/core-events.ts`): its role,
+   *  its subscribed areas, a plugin's capability, and `opts.to`. How many it went to. */
+  coreEvent(event: CoreEventInput, opts?: CoreEventOptions): number;
   /** Runs a method for a caller with no connection here: another computer's `peer.call` (lane H's door), under
    *  `role`'s allow list. `answer`: the user's signed answer the door verified, by its card id and the call hash it
    *  binds (`canonicalCallHash`). It stands in for the user on a `userOnly` method only for this method and these
@@ -256,8 +276,10 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   // pid) finds its connection gone and gives back what it took.
   const gone = new WeakSet<object>();
   const bridged = new Map<number, { sessionId: string; connection: number; end?: () => void }>();
-  // K-M3b: each connection's way to close itself, and the connections bound to a coding session.
+  // Each connection's way to close itself (K-M3b's, and a link's stream, #278), and the connections bound to a coding
+  // session.
   const ends = new Map<number, () => void>();
+  const binding = new Set<number>();
   const relayed = new Set<number>();
   const unrevoke = deps.bridge?.gate.onRevoke?.(({ sessionId, connection }) => {
     for (const [connId, b] of bridged) {
@@ -298,6 +320,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
   // One request through the role's allow list, `userOnly` (unless the user's signed answer for this call stands
   // in), the method's params, then its handler.
   const run = async (conn: CloverConn, method: string, params: unknown, answered: boolean): Promise<unknown> => {
+    if (binding.has(conn.connId)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this connection is opening a coding session; it takes nothing until then");
     if (relayed.has(conn.connId) && method !== "codeAgent.send") {
       throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "this connection relays one coding session; it takes nothing else");
     }
@@ -310,6 +333,35 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     const handler = own[method] ?? deps.handlers?.[method];
     if (handler === undefined) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, `${method} is not served yet`);
     return handler(conn, p.data);
+  };
+
+  const parseHello = (params: unknown): CloverHelloParams => {
+    const parsed = CloverHelloParams.safeParse(params);
+    if (!parsed.success) throw new CloverRpcError(ERR.INVALID_PARAMS, "invalid hello");
+    if (!helloVersionServed(parsed.data.protocolVersion)) {
+      throw new CloverRpcError(CLOVER_ERR.VERSION_REFUSED, "protocol version not served", { min: CLOVER_PROTOCOL_MIN_VERSION, max: CLOVER_PROTOCOL_VERSION });
+    }
+    return parsed.data;
+  };
+
+  // A connection after its hello: kept for routing (`coreEvent`) and closing.
+  const register = (connId: number, h: CloverHelloParams, caller: Caller, write: (bytes: Uint8Array) => void, extra: Pick<CloverConn, "hostProcess" | "bridgeConnection">): { conn: CloverConn; result: CloverHelloResult } => {
+    if (conns.has(connId)) throw new CloverRpcError(ERR.INVALID_REQUEST, "that connection already said hello");
+    const conn: CloverConn = {
+      connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...extra,
+      send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
+      notify(method, p) {
+        if (conn.relayed === true && method !== CODE_AGENT_LINE_NOTIFICATION) return;
+        write(encodeLine({ jsonrpc: "2.0", method, params: p }));
+      },
+      follows: new Map(),
+    };
+    conns.set(connId, conn);
+    deps.log?.(`[clover] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
+    return {
+      conn,
+      result: { ok: true, serverVersion: deps.serverVersion, protocolVersion: CLOVER_PROTOCOL_VERSION, caller, device: deps.deviceId, features: [...(deps.features ?? [])] },
+    };
   };
 
   const pairStatus = (): PairStatus => {
@@ -339,14 +391,46 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     // A token for one plugin's UI layer, which the app's main process opens a `layer` connection with.
     // The plugin registry (lane B) will check the plugin is installed and has a layer before minting.
     "layer.token": (_conn, p) => ({ token: deps.tokens.mint({ role: "layer", pluginId: (p as { pluginId: string }).pluginId }) }),
+    // Whether any computer-use session is driving this desktop right now (lane E's B3). User and app only:
+    // no plugin asks. With no computer-use service, nothing is acting, so answer `running: false` (check 3: this
+    // replaces the earlier fail-closed-when-absent rule). The app still fails closed when the call itself errors.
+    // Feeding in plugin-run computer use stays with lanes J and H.
+    "computer.acting": async () => {
+      const r = await deps.computerUse?.acting?.();
+      if (r === undefined) return { running: false, session: undefined };
+      return { running: r?.running === true, session: r?.session };
+    },
     // K-M3b: one coding session per connection, which then relays its ACP lines and nothing else.
     "codeAgent.open": async (conn, p) => {
       if (!deps.codeAgent) throw new CloverRpcError(ERR.METHOD_NOT_FOUND, "codeAgent.open is not served yet");
       const end = ends.get(conn.connId) ?? (() => {});
-      const r = await deps.codeAgent.open({ connId: conn.connId, clientName: conn.clientName, toClient: (line) => conn.notify(CODE_AGENT_LINE_NOTIFICATION, { line }), end }, p as { cwd: string; model?: string; effort?: string });
+      const toClient = (line: string) => {
+        // Over the cap a line can't be relayed whole: it is dropped, and said so without its content.
+        if (line.length > CODE_AGENT_MAX_LINE) {
+          deps.log?.(`[clover] code-agent connection ${conn.connId}: dropped a line of ${line.length} characters (over ${CODE_AGENT_MAX_LINE})`);
+          return;
+        }
+        conn.notify(CODE_AGENT_LINE_NOTIFICATION, { line });
+      };
+      // Binding from here: nothing else is taken meanwhile, a second open included; a failed open lets it go.
+      binding.add(conn.connId);
+      let r: { session: string };
+      try {
+        r = await deps.codeAgent.open({ connId: conn.connId, clientName: conn.clientName, toClient, end }, p as { cwd: string; model?: string; effort?: string });
+      } finally {
+        binding.delete(conn.connId);
+      }
       // The connection closed while the session opened: it ends at once.
-      if (!conns.has(conn.connId)) deps.codeAgent.close(conn.connId);
-      else relayed.add(conn.connId);
+      if (!conns.has(conn.connId)) {
+        deps.codeAgent.close(conn.connId);
+        return r;
+      }
+      // Bound: what it followed or subscribed to before stops, and from now on it is sent its lines only.
+      relayed.add(conn.connId);
+      conn.relayed = true;
+      for (const stop of conn.follows.values()) { try { stop(); } catch { /* the session is gone */ } }
+      conn.follows.clear();
+      conn.areas.clear();
       return r;
     },
     "codeAgent.send": (conn, p) => {
@@ -385,12 +469,7 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     async hello(socket, connId, params, write, end) {
-      const parsed = CloverHelloParams.safeParse(params);
-      if (!parsed.success) throw new CloverRpcError(ERR.INVALID_PARAMS, "invalid hello");
-      const h = parsed.data;
-      if (!helloVersionServed(h.protocolVersion)) {
-        throw new CloverRpcError(CLOVER_ERR.VERSION_REFUSED, "protocol version not served", { min: CLOVER_PROTOCOL_MIN_VERSION, max: CLOVER_PROTOCOL_VERSION });
-      }
+      const h = parseHello(params);
       let caller: Caller;
       let peer: PeerFacts;
       let bridge: { sessionId: string; connection: number } | undefined;
@@ -413,20 +492,33 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
         if (gone.has(socket)) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "closed");
       }
       if (bridge) bridged.set(connId, { ...bridge, ...(end ? { end } : {}) });
-      const conn: CloverConn = {
-        connId, role: h.role, caller, features: h.features ?? [], clientName: h.clientName, areas: new Set(), ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}),
-        send(method, p) { const id = `d${++requestSeq}`; write(encodeLine({ jsonrpc: "2.0", id, method, params: p })); return id; },
-        notify(method, p) { write(encodeLine({ jsonrpc: "2.0", method, params: p })); },
-        follows: new Map(),
-      };
-      conns.set(connId, conn);
+      const r = register(connId, h, caller, write, { ...(hostProcess ? { hostProcess } : {}), ...(bridge ? { bridgeConnection: bridge.connection } : {}) });
       if (end) ends.set(connId, end);
-      if (h.role === "app") { deps.pair?.appConnected(String(connId), conn.features); startBeat(conn, peer.pid, peer.handle); }
-      deps.log?.(`[clover] ${h.role} connection ${connId} (${h.clientName}) counts as ${caller.kind}`);
-      return {
-        conn,
-        result: { ok: true, serverVersion: deps.serverVersion, protocolVersion: CLOVER_PROTOCOL_VERSION, caller, device: deps.deviceId, features: [...(deps.features ?? [])] },
-      };
+      if (h.role === "app") { deps.pair?.appConnected(String(connId), r.conn.features); startBeat(r.conn, peer.pid, peer.handle); }
+      return r;
+    },
+
+    async linkHello(connId, params, link, write, end) {
+      let h: CloverHelloParams;
+      let binding: Awaited<ReturnType<CloverTokens["verify"]>>;
+      try {
+        h = parseHello(params);
+        if (h.role !== link.role || h.device !== link.device) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "a link's hello is its device's, in its role");
+        binding = await deps.tokens.verify(h);
+      } finally {
+        // One hello per minted token: spent by the check whatever it found, a hello that doesn't even parse included,
+        // so the table never grows per connection.
+        const token = (params as { token?: unknown } | null | undefined)?.token;
+        if (typeof token === "string") deps.tokens.revoke(token);
+      }
+      if (isRefusal(binding)) throw new CloverRpcError(binding.code, binding.message);
+      if (binding.role !== link.role || !("device" in binding) || binding.device !== link.device) throw new CloverRpcError(ERR_UNAUTHORIZED, "the token is for another device or role");
+      // The device may have been revoked while the token was checked: asked again just before it's registered.
+      if (link.stillLinked !== undefined && !link.stillLinked()) throw new CloverRpcError(CLOVER_ERR.ROLE_REFUSED, "the device is no longer paired");
+      const caller: Caller = { kind: "user", client: link.role === "remote" ? "ios" : "web", device: link.device };
+      const r = register(connId, h, caller, write, {});
+      if (end) ends.set(connId, end);
+      return r;
     },
 
     async handle(conn, method, params) {
@@ -461,11 +553,11 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
       if (conn === null) return;
       stopBeat(conn.connId);
       conns.delete(conn.connId);
+      ends.delete(conn.connId);
       for (const stop of conn.follows.values()) { try { stop(); } catch { /* the session is gone */ } }
       conn.follows.clear();
       const b = bridged.get(conn.connId);
       if (b) { bridged.delete(conn.connId); deps.bridge?.gate.release(b.sessionId, b.connection); }
-      ends.delete(conn.connId);
       if (relayed.delete(conn.connId)) deps.codeAgent?.close(conn.connId);
       if (conn.role === "app") deps.pair?.appDisconnected(String(conn.connId));
     },
@@ -481,6 +573,26 @@ export function createCloverServer(deps: CloverServerDeps): CloverServer {
     },
 
     connections() { return [...conns.values()]; },
+
+    endConnections(match) {
+      let n = 0;
+      for (const [connId, end] of [...ends]) {
+        const conn = conns.get(connId);
+        if (conn === undefined || !match(conn)) continue;
+        ends.delete(connId);
+        try { end(); } catch { /* already gone */ }
+        n++;
+      }
+      return n;
+    },
+
+    coreEvent(event, opts) {
+      return sendCoreEvent({
+        connections: () => conns.values(),
+        pluginCapabilities: (id) => deps.pluginCapabilities?.(id),
+        log: (line) => deps.log?.(line),
+      }, event, opts);
+    },
 
     dispose() {
       unrevoke?.();

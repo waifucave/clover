@@ -14,11 +14,16 @@ const VERSION = "9.8.7";
 // Every asset name the script can pick, so the stand-in serves whichever this machine asks for.
 const ASSETS = ["darwin-aarch64", "darwin-x64", "darwin-x64-baseline", "linux-aarch64", "linux-aarch64-musl", "linux-x64", "linux-x64-baseline", "linux-x64-musl", "linux-x64-musl-baseline"].map((a) => `bun-${a}`);
 
-/** A checkout pinning `version`, so the script reads its `.bun-version` and not this repo's. */
-function checkout(version = VERSION): string {
+/** The stand-in binary inside every zip. */
+const standIn = (prints: string): string => `#!/bin/sh\nif [ "$1" = "--version" ]; then echo ${prints}; else command -v bun; echo "args: $*"; fi\n`;
+
+/** A checkout pinning `version`, so the script reads its `.bun-version` and not this repo's, and the binary's SHA-256
+ *  in `.bun-sha256` (by default the stand-in's that prints the version; `null` pins nothing). */
+function checkout(version = VERSION, pinned: string | null = createHash("sha256").update(standIn(version)).digest("hex")): string {
   const dir = mkdtempSync(join(tmpdir(), "clover-pinned-bun-checkout-"));
   spawnSync("git", ["init", "-q"], { cwd: dir });
   writeFileSync(join(dir, ".bun-version"), `${version}\n`);
+  writeFileSync(join(dir, ".bun-sha256"), `# test pins\n${pinned === null ? "" : ASSETS.map((a) => `${version} ${a} ${pinned}`).join("\n")}\n`);
   return dir;
 }
 
@@ -28,7 +33,7 @@ function zips(prints: string): Map<string, Buffer> {
   for (const asset of ASSETS) {
     const dir = mkdtempSync(join(tmpdir(), "clover-pinned-bun-zip-"));
     mkdirSync(join(dir, asset));
-    writeFileSync(join(dir, asset, "bun"), `#!/bin/sh\nif [ "$1" = "--version" ]; then echo ${prints}; else command -v bun; echo "args: $*"; fi\n`, { mode: 0o755 });
+    writeFileSync(join(dir, asset, "bun"), standIn(prints), { mode: 0o755 });
     const r = spawnSync("zip", ["-qr", `${asset}.zip`, asset], { cwd: dir });
     if (r.status !== 0) throw new Error(`zip failed: ${r.stderr}`);
     out.set(`${asset}.zip`, readFileSync(join(dir, `${asset}.zip`)));
@@ -112,7 +117,8 @@ describe.if(posix)("scripts/pinned-bun", () => {
   test("a binary that prints another version installs nothing", async () => {
     serve(zips("1.0.0"));
     const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
-    const r = await run(["--dir"], checkout(), cache);
+    // Pinned to exactly that binary, so the version answer is what refuses it.
+    const r = await run(["--dir"], checkout(VERSION, createHash("sha256").update(standIn("1.0.0")).digest("hex")), cache);
     expect(r.status).toBe(1);
     expect(r.stderr).toContain(`prints "1.0.0", not ${VERSION}`);
     expect(existsSync(join(cache, VERSION, "bun"))).toBe(false);
@@ -125,6 +131,46 @@ describe.if(posix)("scripts/pinned-bun", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("could not download");
     expect(existsSync(join(cache, "9.9.9", "bun"))).toBe(false);
+  });
+
+  test("every run checks the cached binary against .bun-sha256: a replaced one is fetched again", async () => {
+    serve(zips(VERSION));
+    const cwd = checkout();
+    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    expect((await run(["--dir"], cwd, cache)).status).toBe(0);
+    const bin = join(cache, VERSION, "bun");
+    // Something that can write the user's cache swaps the binary (same version answer, other code).
+    writeFileSync(bin, `#!/bin/sh\necho ${VERSION}\necho swapped >&2\n`, { mode: 0o755 });
+    const r = await run(["x"], cwd, cache);
+    expect(r.stderr).toContain("not the pinned");
+    expect(r.stderr).toContain("fetching it again");
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe(`${bin}\nargs: x\n`);
+    expect(readFileSync(bin, "utf8")).toBe(standIn(VERSION));
+    expect(requests.filter((p) => p.endsWith(".zip"))).toHaveLength(2);
+    // An unchanged cache is not fetched again.
+    expect((await run(["--dir"], cwd, cache)).status).toBe(0);
+    expect(requests.filter((p) => p.endsWith(".zip"))).toHaveLength(2);
+  });
+
+  test("a downloaded binary whose SHA-256 is not the pinned one installs nothing, even when the release agrees", async () => {
+    serve(zips(VERSION));
+    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const r = await run(["--dir"], checkout(VERSION, "1".repeat(64)), cache);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("but");
+    expect(r.stderr).toContain(".bun-sha256 pins");
+    expect(r.stderr).toContain("nothing installed");
+    expect(existsSync(join(cache, VERSION, "bun"))).toBe(false);
+  });
+
+  test("a .bun-sha256 with no line for this version and asset is refused before anything runs", async () => {
+    serve(zips(VERSION));
+    const cache = mkdtempSync(join(tmpdir(), "clover-pinned-bun-cache-"));
+    const r = await run(["--dir"], checkout(VERSION, null), cache);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("pins no SHA-256");
+    expect(requests).toEqual([]);
   });
 
   test("a .bun-version that holds no version is refused", async () => {

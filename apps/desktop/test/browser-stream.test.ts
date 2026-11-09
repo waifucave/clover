@@ -44,7 +44,7 @@ window.decodeRun = async (cfg, run, points) => {
 </script></body></html>`;
 
 async function bundle(entry: string, dir: string, name: string, format: "esm" | "cjs"): Promise<string> {
-  const r = await Bun.build({ entrypoints: [entry], outdir: dir, target: "node", format, external: ["electron"], naming: name });
+  const r = await Bun.build({ entrypoints: [entry], outdir: dir, target: "node", format, external: ["electron"], naming: name, ...{ macros: false } });
   if (!r.success) throw new Error(r.logs.map(String).join("\n"));
   return join(dir, name);
 }

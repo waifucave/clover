@@ -204,6 +204,39 @@
         "additionalProperties": false
       }
     },
+    "computer.acting": {
+      "doc": "Whether any computer-use session is acting on this computer now, with that session when one is.",
+      "owner": "J",
+      "direction": "to-daemon",
+      "roles": [
+        "app"
+      ],
+      "userOnly": true,
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {}
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "running": {
+            "type": "boolean"
+          },
+          "session": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          }
+        },
+        "required": [
+          "running"
+        ],
+        "additionalProperties": false
+      }
+    },
     "computer.get": {
       "doc": "One computer, by name or alias.",
       "owner": "J",
@@ -1601,7 +1634,7 @@
       }
     },
     "tree.stat": {
-      "doc": "A path's type, size and time; null when it doesn't exist.",
+      "doc": "A path's type, size and time; null when it doesn't exist. `noFollow`: no link on the way is followed.",
       "owner": "J",
       "direction": "to-daemon",
       "roles": [
@@ -2059,6 +2092,9 @@
             "minLength": 1,
             "maxLength": 4096,
             "pattern": "^(home|bots)(\\/|$)"
+          },
+          "noFollow": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -2125,7 +2161,7 @@
       }
     },
     "tree.read": {
-      "doc": "Reads a file on the computer that holds it.",
+      "doc": "Reads a file on the computer that holds it. `noFollow`: only a plain file reached without a link is read.",
       "owner": "J",
       "direction": "to-daemon",
       "roles": [
@@ -2600,6 +2636,9 @@
               "utf8",
               "base64"
             ]
+          },
+          "noFollow": {
+            "type": "boolean"
           }
         },
         "required": [

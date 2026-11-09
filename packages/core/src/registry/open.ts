@@ -3,6 +3,7 @@
 // broker when there is one.
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
+import { registerPluginLoadFolders } from "../runtime-sdk/plugin-load-folders";
 import { catalogPointDecl } from "@waifucave/clover-plugin-sdk";
 import type { Os } from "@waifucave/clover-protocol";
 import type { ApprovalBroker } from "../contracts/approval-broker";
@@ -93,7 +94,10 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     ...(o.now ? { now: o.now } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
+  // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,
+  // read live, and the bundled plugins.
+  const unregisterLoadFolders = registerPluginLoadFolders(o.cloverHome, () => [...(o.bundledDirs ?? []), ...folders!.devFolderPaths()]);
   folders.start();
   await folders.scan();
-  return { registry, folders, close: () => folders!.stop() };
+  return { registry, folders, close: () => { unregisterLoadFolders(); folders!.stop(); } };
 }

@@ -4,8 +4,8 @@ export { startDaemon, stopOnSignals, CORE_VERSION, type RunningDaemon } from "./
 export { bootstrapCloverDir, resolveCloverHome, isDefaultCloverHome } from "./clover-dir";
 export { resolveEndpoint, homePipeId, isPipe, endpointPresent, WINDOWS_PIPE_PREFIX, type DaemonPlatform, type Endpoint } from "./platform/transport";
 export {
-  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs,
-  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, loginLabel, loginUnitPath,
+  loginEnable, loginDisable, loginRemove, loginStatus, readUnit, liveLoginOsDeps, bunRunner, startDaemonThroughOs, windowsUserSid, windowsProfilePath, parseProfileImagePath, stopDaemonCleanly, stopThroughOs,
+  renderLaunchdPlist, renderSystemdUnit, renderSchtasksXml, schtasksFallbackProblem, loginLabel, loginUnitPath,
   systemdUnitName, schtasksTaskName, SUPERVISE_ARGS,
   superviseLoop, backoffMs, UPDATE_RESTART_EXIT_CODE,
   type LoginSpec, type LoginOsDeps, type LoginStatus, type LoginState, type Runner, type DaemonStartResult, type CleanStopResult, type CleanStopDeps,
@@ -25,10 +25,32 @@ export { UpdateGate, UpdateRestartingRefusal, isUpdateRestarting, UPDATE_RESTART
 export { type SelfUpdate } from "./update/service";
 export { INSTALL_MARKER, parseInstallMarker, readInstallMarker, removeInstallMarker, updatesItself, writeInstallMarker, type InstallChannel, type InstallKind, type InstallMarker } from "./update/install-marker";
 export { createCloverServer, CloverRpcError, bridgeMethodHandlers, laneMethodHandlers, type LaneMethodHandler, type CloverConn, type CloverServer, type CloverServerDeps, type CloverHandler, type BridgeGate, type BridgeMethods, type BridgeVerdict } from "./ipc/clover";
+export { linkClientServer, mountCloverRemoteClients, LINK_CONN_ID_BASE, type CloverRemoteClientsOptions } from "./ipc/link-clients";
+export { sendCoreEvent, OWNER_SCOPED_EVENTS, type CoreEventInput, type CoreEventOptions, type CoreEventRouting } from "./ipc/core-events";
+export { approvalCoreEvents } from "./approvals/core-events";
 export { probePeer, peerPid, peerUid, processImage, parentPid, ancestry, sandboxProbe, socketFd, descendsFrom, spawnedByDaemon, WindowsPipePeers, type PeerFacts } from "./platform/caller-probe";
 export { checkDaemonServer, type ServerCheck } from "./platform/server-check";
 export { lockPipeDacl, currentUserSid, pipeDaclSddl, pipeServerIdentity, isOurDaemon, ownerOnlyPipeSddl, type PipeServerIdentity } from "./platform/win-pipe";
 export { AgentJob } from "./platform/win-job";
+export {
+  principalNameFromSid, SANDBOX_PRINCIPAL_PREFIX, CLOVER_WFP_SUBLAYER, SRT_WIN_TAG, SRT_WIN_COMMIT, SRT_WIN_PINS, SANDBOX_EXIT,
+  srtWinPath, srtWinArch, launcherDigest, launcherPinned, launcherProblem, setupArgs, removeArgs, statusArgs,
+  parseSrtStatus, setupBashRefusal, elevatedFromNetSession, NET_SESSION_PROBE, setupExitMessage,
+  winCallerRules, winLaunchPlan, principalResetPlan, sessionResetPlan, setupProfileSteps,
+  protectedCopyPath, isProtectedCopy, profileLaunchCheck, sandboxHomeEnv,
+  setDescriptionArgs, getDescriptionArgs, descriptionMatches, parseWhoamiSid,
+  warmUpArgs, profileQueryArgs, parseProfileImagePath as sandboxProfileImagePath, startupFolders,
+  mkdirArgs, removeDirArgs, claimDirArgs, icaclsDenyArgs, icaclsRemoveDenyArgs, isTemporaryProfile,
+  installerTargetSid, psEncodedArgs, knownFolderArgs,
+  sessionGrantArgs, sessionGrantInput, sessionRevokeArgs, sessionForgetArgs, sessionRestoreArgs,
+  installMarkerPath, formatInstallMarker, parseInstallMarker as parseSandboxInstallMarker, markerAllowsSetup, markerAllowsRemove,
+  poolLockPath, createWindowsLockStore, readLeasesDirSecurity, leasesDirAccessProblem,
+  sandboxLeasesDir, acquirePoolLease,
+  minimalChildEnv, userStatusArgs,
+  poolPrincipalName, poolSublayerGuid, sandboxPool, SANDBOX_POOL_SIZE,
+  type SrtUserStatus, type SrtWfpStatus, type SandboxStatus, type SandboxStep, type WinCallerRules, type SrtWinArch,
+  type PoolLockGuard, type LeaseStore, type LeasesDirSecurity,
+} from "./fence/win-sandbox";
 export { claimDaemonChildren, spawnDisclaimed, type DisclaimedProcess } from "./platform/daemon-children";
 export { acquireLock, AlreadyRunningError, LockHeldNoDaemonError, LockFailedError, classifyLockFailure, endpointAnswers, type Lock, type AcquireLockOptions } from "./lock";
 export { resolveCloverProfile, keychainService, profileDisplayName, cliCommandName, type CloverProfile } from "./profile";
@@ -325,10 +347,15 @@ export { CloverApprovalBroker, RESOLVED_KEEP_MS, RESOLVED_KEEP_MAX, type CloverA
 export { fileRuleStore, savedRulesPath, SAVED_RULES_VERSION } from "./approvals/rule-store";
 export { botApprovalCheck, botToolRequest, effectOf as botToolEffect, isBuiltinTool, resolveSessionPath, type BotToolRequestOptions } from "./approvals/bot-check";
 export { looksCredentialBearing } from "./approvals/strings";
+export { cloudCardConfirm, cloudCardRequest, cloudCardSubject, CloudCardDesk, CLOUD_CARD_TEXT, CLOUD_PAIRED_TEXT, CLOUD_VALUE_MAX, type CloudCardOutcome, type CloudCardRequest, type CloudVmRef } from "./approvals/cloud-cards";
 export { DIST_BUILD, isCompiledBinary, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, TLS_TRUST_ENV } from "./build-kind";
 export {
-  bundledManifest, bundledPluginIds, bundledPluginsDir, loadBundledManifest, readBundledFile, readBundledPlugin,
+  bundledManifest, bundledPluginIds, bundledPluginsDir, formatBundledManifest, loadBundledManifest, measureBundledTree, readBundledFile, readBundledPlugin,
   type BundledEntry, type BundledManifest, type BundledPluginRead, type BundledRead,
 } from "./bundled-plugins-dir";
 export { accountHome, dyldRefusal, homeRefusal, rawEnvironment, testKeychainRefusal } from "./startup-guard";
 export { pinnedSecretsBackend, TEST_KEYCHAIN_ENV } from "./auth/login-keychain";
+// C-M2 part 2: the fenced process, for INT's daemon fence (bots' Bash and hook commands under the one CloverFence).
+export { CloverFence } from "./fence/fence";
+export { fencedSpawner, type FencedProcessOptions } from "./fence/fenced-process";
+export { hookSpawner, FENCED_SPAWN_NOT_YET, RUN_AS_USER, type DescendantEnd, type FencedRun, type FencedRunResult, type FencedSpawner } from "./fence/spawn";

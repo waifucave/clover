@@ -29,6 +29,8 @@ export const LinkView = z.object({
   relay: utf16(128).optional(),
   rttMs: z.number().nonnegative().optional(),
   since: Timestamp.optional(),
+  /** What the peer's `peer.hello` named on the live connection (its tree protocol among them, `treeFeature`). */
+  features: z.array(utf16(64)).max(64).optional(),
 });
 export type LinkView = z.infer<typeof LinkView>;
 
@@ -110,6 +112,15 @@ export const LeaseView = z.object({
   /** The computer the user chose, or that was chosen automatically (§6.4). */
   main: DeviceId.nullable(),
   holder: DeviceId.nullable(),
+  /** Who `holder` is to this device, so a client shows it without guessing (lane H): this device (`self`), a computer
+   *  this device knows (`computer`, by its name), or a device it doesn't know (`unknown`: not paired with this one yet,
+   *  or removed), shown as "held by a computer this one doesn't know". Null with no holder. The core fills it in
+   *  `main.get` and `lease_changed`; a lease's own state, before the core names its holder, leaves it out. */
+  heldBy: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("self") }),
+    z.object({ kind: z.literal("computer"), computer: ComputerName }),
+    z.object({ kind: z.literal("unknown") }),
+  ]).nullable().optional(),
   /** The lease's scope: the account's, or the account-less devices' group's (item 85); with `epoch`, its fencing token. */
   scope: utf16(128, 1).optional(),
   epoch: z.number().int().nonnegative(),

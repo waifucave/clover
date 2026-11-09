@@ -1,9 +1,11 @@
-import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, SelfUpdater } from "./self-update";
-import { parseServerArgs, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
-import { join, resolve } from "node:path";
+import { beginUpdatedBoot, bootWasGood, coreTargetOf, GOOD_BOOT_MS, healFromOld, oldBinary, SelfUpdater, superviseTarget, updateWatched } from "./self-update";
+import { daemonBunVersion, ensurePluginBun, serverPluginBun } from "./plugin-bun-install";
+import { ensureServerPlugins, PluginsLock, recoverServerPlugins, serverPluginsDir, stageServerPlugins } from "./plugins-install";
+import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serverInstall, serverUninstall, SERVER_USAGE } from "./server-install";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, type LoginSpec, type DaemonRun, type DaemonStartResult, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -67,6 +69,8 @@ import { ShellCardQueue, approvalPromptLine, approvalResolvedHow } from "./shell
 import { legacyFilesDoctorLine, sdkHomeDoctorSection } from "./doctor-legacy-files";
 import { makeEventBridge, type EventBridge } from "./tui/event-bridge";
 import { COMPUTER_WAKE_CLIENT_NAME, endedWords, stoppedWords, waitingWords, type ArmedWakeFacts } from "./wake-words";
+/** A build define (`compile:core`: false; `verify:fd-receiver`: true): the plugin-run probe route (#234). */
+declare const CLOVER_PLUGIN_RUN_PROBE: boolean | undefined;
 
 const AQUA = "\x1b[38;2;53;214;232m";
 
@@ -1515,7 +1519,15 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
   });
   if (r !== "timed-out") return r;
   await stopThroughOs(spec, bunRunner);
-  return "stopped through the OS";
+  // Windows: a daemon the app started isn't the task's, so `schtasks /End` can't reach it; it is ended by its
+  // pid, and only while that pid is still the daemon's binary (review M5).
+  if (spec.os === "win32" && alive() && isDaemonImage(processImage(pid), spec.bin)) { try { process.kill(pid); } catch { /* gone */ } }
+  // Done only when its endpoint is gone and the lock holder with it (an upgrade replaces the files next).
+  for (let i = 0; i < 75; i++) {
+    if (!alive() && !(await endpointAnswers(socketPath()))) return "stopped through the OS";
+    await Bun.sleep(200);
+  }
+  return "still running";
 }
 
 /** `clover autostart enable|disable|stop|remove|start|status [--json] [--app <path>]`: login start on this OS. The
@@ -1571,6 +1583,7 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
       // version starts at the next login or `autostart start`. Succeeds when nothing is running.
       const stopped = await stopRunningDaemon(spec);
       console.log(`the daemon: ${stopped}; autostart unchanged (${spec.profile})`);
+      if (stopped === "still running") process.exitCode = 1;
       break;
     }
     case "remove": {
@@ -1624,9 +1637,387 @@ async function runDaemonStart(): Promise<void> {
   process.exitCode = 1;
 }
 
+/** `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+ *  `setup` is idempotent, `remove` exits 0 when nothing is left, `status` never elevates. Exits 0
+ *  on done, 2 when not elevated, 3 on a launcher hash mismatch (both fail closed). */
+async function runSandboxCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  const {
+    SANDBOX_EXIT,
+    srtWinPath,
+    srtWinArch,
+    launcherProblem,
+    setupArgs,
+    removeArgs,
+    statusArgs,
+    userStatusArgs,
+    sandboxPool,
+    parseSrtStatus,
+    setupExitMessage,
+    NET_SESSION_PROBE,
+    currentUserSid,
+    protectedCopyPath,
+    isProtectedCopy,
+    installerTargetSid,
+    warmUpArgs,
+    profileQueryArgs,
+    sandboxProfileImagePath: parseProfileImagePath,
+    startupFolders,
+    mkdirArgs,
+    removeDirArgs,
+    claimDirArgs,
+    icaclsDenyArgs,
+    icaclsRemoveDenyArgs,
+    setDescriptionArgs,
+    getDescriptionArgs,
+    descriptionMatches,
+    profileLaunchCheck,
+    isTemporaryProfile,
+    knownFolderArgs,
+    installMarkerPath,
+    formatInstallMarker,
+    parseSandboxInstallMarker: parseInstallMarker,
+    markerAllowsSetup,
+    markerAllowsRemove,
+    minimalChildEnv,
+  } = await import("@waifucave/clover-core");
+  const usage = "usage: clover-core sandbox setup [--force]|remove|status [--json]";
+  if (process.platform !== "win32") {
+    console.error("sandbox setup runs on Windows only");
+    process.exitCode = 1;
+    return;
+  }
+  const fromProtected = await isProtectedCopy();
+  // The installer target: our own protected-copy path names the user we serve (should-fix). The live
+  // token and the environment may name the elevating administrator instead — never use them for identity.
+  const targetSid = installerTargetSid();
+  const arch = srtWinArch();
+  const childEnv = minimalChildEnv();
+  const run = async (argv: readonly string[]): Promise<{ code: number; out: string }> => {
+    try {
+      const proc = Bun.spawn([...argv], { stdin: "ignore", stdout: "pipe", stderr: "pipe", windowsHide: true, env: childEnv });
+      const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      return { code: await proc.exited, out: out + err };
+    } catch (e) {
+      return { code: 1, out: (e as Error).message };
+    }
+  };
+  // A known folder without environment variables (should-fix).
+  const knownFolder = async (kind: "System" | "CommonStartup" | "CommonApplicationData"): Promise<string | null> => {
+    const r = await run([...knownFolderArgs(kind)]);
+    const v = r.out.trim();
+    return r.code === 0 && v !== "" ? v : null;
+  };
+  // A pool member's live SID, from `srt-win user status --user`.
+  const memberSid = async (launcherPath: string, principal: string): Promise<{ exists: boolean; sid: string | null }> => {
+    const r = await run([...userStatusArgs(launcherPath, principal)]);
+    if (r.code !== 0) return { exists: false, sid: null };
+    try {
+      const u = (JSON.parse(r.out) as { user?: { exists?: unknown; user?: { exists?: unknown; sid?: unknown }; sid?: unknown } }).user;
+      const inner = u?.user && typeof u.user === "object" ? (u.user as { exists?: unknown; sid?: unknown }) : undefined;
+      const exists = (inner?.exists ?? u?.exists) === true;
+      const sid = typeof inner?.sid === "string" ? inner.sid : (typeof u?.sid === "string" ? u.sid : null);
+      return { exists, sid };
+    } catch {
+      return { exists: false, sid: null };
+    }
+  };
+  // A principal's profile root by SID, or null when it cannot be resolved.
+  const memberProfile = async (principalSid: string): Promise<string | null> => {
+    const reg = await run([...profileQueryArgs(principalSid)]);
+    if (reg.code !== 0) return null;
+    return parseProfileImagePath(reg.out);
+  };
+  switch (sub ?? "status") {
+    case "setup": {
+      const elevated = (await run([...NET_SESSION_PROBE])).code === 0;
+      if (!elevated) {
+        console.error("sandbox setup needs elevation; run it as administrator");
+        process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
+        return;
+      }
+      // setup and remove run from the installer's protected copy (Addendum 8): the per-user install
+      // folder is user-writable, so running from there could launch a swapped binary (TOCTOU).
+      if (!fromProtected || targetSid === null) {
+        console.error("sandbox setup runs from the protected copy %ProgramFiles%\\Clover Sandbox\\<your SID>\\clover-core.exe (lane M's installer puts it there)");
+        process.exitCode = 1;
+        return;
+      }
+      const ownerSid = targetSid;
+      const pool = sandboxPool(ownerSid);
+      const launcher = srtWinPath();
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
+        console.error(`sandbox setup refused: ${problem}`);
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      const programData = await knownFolder("CommonApplicationData");
+      if (programData === null) {
+        console.error("sandbox setup: could not resolve ProgramData");
+        process.exitCode = 1;
+        return;
+      }
+      // Cross-owner force is refused: another user's install is theirs to remove (ruling 3).
+      const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+      const { dirname, join } = await import("node:path");
+      // Claim the markers home for admins (should-fix, like lane M's protected copy): a folder
+      // owned by a non-admin fails setup closed instead of inheriting a squatted DACL.
+      const markersRoot = join(programData, "Clover Sandbox");
+      for (const dir of [markersRoot, join(markersRoot, "markers")]) {
+        const claim = await run([...claimDirArgs(dir)]);
+        if (claim.code !== 0) {
+          const lines = claim.out.split(/\r?\n/).filter((l) => /refusing state dir|Access is denied|denied/i.test(l));
+          const why = (lines.length > 0 ? lines.join(" ") : claim.out.trim()).slice(0, 500);
+          console.error(`sandbox setup refused: cannot secure ${dir}${why ? `\n${why}` : ""}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
+      const markerFile = installMarkerPath(programData, ownerSid);
+      const existing = await readFile(markerFile, "utf8").then((t) => parseInstallMarker(t), () => null);
+      const gate = markerAllowsSetup(existing, ownerSid);
+      if (!gate.ok) {
+        console.error(`sandbox setup refused: ${gate.reason}`);
+        process.exitCode = 1;
+        return;
+      }
+      const force = rest.includes("--force");
+      const systemDir = await knownFolder("System");
+      if (systemDir === null) {
+        console.error("sandbox setup: could not resolve the System folder");
+        process.exitCode = 1;
+        return;
+      }
+      const systemRoot = dirname(systemDir);
+      // Profile paths come from ProfileList, never from the environment (should-fix): the elevated
+      // token and its env may name the elevating administrator instead of the installer target.
+      const ownerReg = await run([...profileQueryArgs(ownerSid)]);
+      const realUserProfile = ownerReg.code === 0 ? parseProfileImagePath(ownerReg.out) : null;
+      const commonStartup = await knownFolder("CommonStartup");
+      if (realUserProfile === null || commonStartup === null) {
+        console.error("sandbox setup: could not resolve the user or common Startup folder");
+        process.exitCode = 1;
+        return;
+      }
+      // One install per pool member: each principal gets its own account, WFP filters (per-slot
+      // sublayer), warm-up logon, resolved profile and locked-down Startup folders.
+      const members: { principal: string; principalSid: string; sublayer: string }[] = [];
+      let failed = false;
+      for (const slot of pool) {
+        const { principal, sublayer } = slot;
+        const fail = (msg: string) => { console.error(`sandbox setup: ${principal}: ${msg}`); process.exitCode = 1; failed = true; };
+        const { code, out } = await run([...setupArgs(launcher, sublayer, principal, ownerSid), ...(force ? ["--force"] : [])]);
+        const message = setupExitMessage(code);
+        if (message !== null) { fail(`${message}${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`); break; }
+        // Finish the profile work in the same call (brief item 5): stamp the owner SID, warm up
+        // (first logon creates the profile), resolve by SID, lock down Startup.
+        const stamp = await run([...setDescriptionArgs(principal, ownerSid)]);
+        if (stamp.code !== 0) { fail(`stamping the owner SID failed (exit ${stamp.code})${stamp.out.trim() ? `\n${stamp.out.trim().slice(0, 2000)}` : ""}`); break; }
+        const warm = await run([...warmUpArgs({ launcher, systemRoot })]);
+        if (warm.code !== 0) { fail(`the first logon failed (exit ${warm.code})${warm.out.trim() ? `\n${warm.out.trim().slice(0, 2000)}` : ""}`); break; }
+        const { sid: principalSid } = await memberSid(launcher, principal);
+        if (principalSid === null) { fail("the principal's SID isn't reported; set up again"); break; }
+        const profileRoot = await memberProfile(principalSid);
+        const check = profileLaunchCheck(profileRoot === null ? null : { sid: principalSid, path: profileRoot });
+        if (!check.ok) { fail(`${check.reason}; set up again`); break; }
+        const allStartups = startupFolders({ profileRoot: profileRoot!, realUserProfile, commonStartup });
+        const startups = realUserProfile !== profileRoot ? allStartups : [allStartups[0]!, allStartups[2]!];
+        for (const path of startups) {
+          const made = await run([...mkdirArgs(path)]);
+          if (made.code !== 0) { fail(`creating ${path} failed (exit ${made.code})${made.out.trim() ? `\n${made.out.trim().slice(0, 2000)}` : ""}`); break; }
+        }
+        if (failed) break;
+        for (const path of startups) {
+          const deny = await run([...icaclsDenyArgs(path, principalSid)]);
+          if (deny.code !== 0) { fail(`denying ${path} failed (exit ${deny.code})${deny.out.trim() ? `\n${deny.out.trim().slice(0, 2000)}` : ""}`); break; }
+        }
+        if (failed) break;
+        members.push({ principal, principalSid, sublayer });
+      }
+      if (failed) return;
+      // Record this install for the next setup/remove (ruling 3): owner plus every pool member.
+      await mkdir(dirname(markerFile), { recursive: true });
+      await writeFile(markerFile, formatInstallMarker({ version: 2, ownerSid, members }), "utf8");
+      console.log("Bash is set up under Clover's fence");
+      return;
+    }
+    case "remove": {
+      const elevated = (await run([...NET_SESSION_PROBE])).code === 0;
+      if (!elevated) {
+        console.error("sandbox remove needs elevation; run it as administrator");
+        process.exitCode = SANDBOX_EXIT.NOT_ELEVATED;
+        return;
+      }
+      if (!fromProtected || targetSid === null) {
+        console.error("sandbox remove runs from the protected copy %ProgramFiles%\\Clover Sandbox\\<your SID>\\clover-core.exe (lane M's installer puts it there)");
+        process.exitCode = 1;
+        return;
+      }
+      const ownerSid = targetSid;
+      const pool = sandboxPool(ownerSid);
+      const launcher = srtWinPath();
+      // Remove uninstalls each pool member's principal and WFP filters. Deleting the protected-copy
+      // folder itself belongs to the installer, which removes it after `remove` exits 0 (Addendum 8).
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
+        // Refuse only if something is actually installed: probe every pool member.
+        let anyPresent = false;
+        for (const slot of pool) {
+          if ((await run(["net", "user", slot.principal])).code === 0) { anyPresent = true; break; }
+        }
+        if (!anyPresent) {
+          console.log("Bash's fence is removed");
+          return;
+        }
+        console.error(`sandbox remove refused: a principal exists but ${problem}`);
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      {
+        // Ownership first (Addendum 9 + ruling 3): the marker must belong to this user, and each live
+        // principal's description must name this user. A hash collision can never remove another
+        // user's principal.
+        const programData = await knownFolder("CommonApplicationData");
+        if (programData === null) {
+          console.error("sandbox remove: could not resolve ProgramData");
+          process.exitCode = 1;
+          return;
+        }
+        const { readFile, unlink } = await import("node:fs/promises");
+        const markerFile = installMarkerPath(programData, ownerSid);
+        const marker = await readFile(markerFile, "utf8").then((t) => parseInstallMarker(t), () => null);
+        const gate = markerAllowsRemove(marker, ownerSid);
+        if (!gate.ok) {
+          console.error(`sandbox remove refused: ${gate.reason}`);
+          process.exitCode = 1;
+          return;
+        }
+        const ownerReg = await run([...profileQueryArgs(ownerSid)]);
+        const realUserProfile = ownerReg.code === 0 ? parseProfileImagePath(ownerReg.out) : null;
+        const commonStartup = await knownFolder("CommonStartup");
+        let failed = false;
+        const fail = (msg: string) => { console.error(`sandbox remove: ${msg}`); process.exitCode = 1; failed = true; };
+        for (const slot of pool) {
+          const { principal, sublayer } = slot;
+          const { exists: principalExists, sid: liveSid } = await memberSid(launcher, principal);
+          const principalSid = liveSid ?? marker?.members.find((m) => m.principal === principal)?.principalSid ?? null;
+          if (principalExists) {
+            const desc = await run([...getDescriptionArgs(principal)]);
+            if (!(desc.code === 0 && descriptionMatches(desc.out, ownerSid))) {
+              fail(`${principal} belongs to another user`); break;
+            }
+          }
+          // The profile for the reset below, resolved before the uninstall.
+          const profileRoot = principalSid !== null ? await memberProfile(principalSid) : null;
+          // Full remove (principal + filters) for this member.
+          const { code, out } = await run([...removeArgs(launcher, sublayer, principal)]);
+          if (code !== 0) {
+            fail(`${principal}: remove failed (exit ${code})${out.trim() ? `\n${out.trim().slice(0, 2000)}` : ""}`); break;
+          }
+          // Undo what setup did outside srt-win (best effort: the uninstall already took the account).
+          // A temporary profile is shared and keyless: never delete it or its (absent) key.
+          if (profileRoot !== null && principalSid !== null && !isTemporaryProfile(profileRoot)) {
+            await run(["reg", "unload", `HKU\\${principalSid}`]);
+            await run(["reg", "delete", `HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\${principalSid}`, "/f"]);
+            await run([...removeDirArgs(profileRoot)]);
+            if (realUserProfile !== null && commonStartup !== null) {
+              const startups = startupFolders({ profileRoot, realUserProfile, commonStartup });
+              for (const path of startups) await run([...icaclsRemoveDenyArgs(path, principalSid)]);
+            }
+          }
+        }
+        if (failed) return;
+        await unlink(markerFile).catch(() => {});
+        console.log("Bash's fence is removed");
+        return;
+      }
+    }
+    case "status": {
+      // status works from either location; the launcher is the protected copy's when we run from there,
+      // else the copy the installer recorded for this user (missing copy reads as missing launcher).
+      const protectedPath = fromProtected ? process.execPath : await protectedCopyPath();
+      const launcher = srtWinPath(fromProtected ? undefined : protectedPath);
+      const problem = launcherProblem(launcher, arch);
+      if (problem !== null) {
+        if (rest.includes("--json")) console.log(JSON.stringify({ ready: false, reason: "launcher-missing-or-unpinned" }));
+        else console.log("Bash isn't set up under Clover's fence: the launcher is missing or unpinned");
+        process.exitCode = SANDBOX_EXIT.HASH_MISMATCH;
+        return;
+      }
+      const ownerSid = targetSid ?? currentUserSid();
+      if (ownerSid === null) {
+        console.error("sandbox status: could not read the current user SID");
+        process.exitCode = 1;
+        return;
+      }
+      // Every pool member reports: per-principal user status plus its slot's WFP filters.
+      const pool = sandboxPool(ownerSid);
+      const members: { principal: string; ready: boolean; reason: string | null }[] = [];
+      let firstUser: unknown = null;
+      for (const slot of pool) {
+        const ust = await run([...userStatusArgs(launcher, slot.principal)]);
+        if (ust.code !== 0) {
+          members.push({ principal: slot.principal, ready: false, reason: `user status failed (exit ${ust.code})` });
+          continue;
+        }
+        let user: unknown = null;
+        let wfp: unknown = null;
+        try {
+          user = JSON.parse(ust.out);
+        } catch { /* not ready below */ }
+        const st = await run([...statusArgs(launcher, slot.sublayer)]);
+        if (st.code === 0) {
+          try {
+            wfp = (JSON.parse(st.out) as { wfp?: unknown }).wfp ?? null;
+          } catch { /* not ready below */ }
+        }
+        if (members.length === 0) firstUser = user;
+        const merged = JSON.stringify({ user, wfp });
+        const base = parseSrtStatus(merged, { launcher, arch });
+        // The owner-SID check (Addendum 9): the principal's description must name this user.
+        let owned: boolean | null = null;
+        if (base.user?.exists === true) {
+          const desc = await run([...getDescriptionArgs(slot.principal)]);
+          owned = desc.code === 0 && descriptionMatches(desc.out, ownerSid);
+        }
+        // The profile check (brief item 7): resolve by SID, fail closed on missing or temporary.
+        const principalSid = base.user?.sid ?? null;
+        let profile: { sid: string; path: string } | null = null;
+        if (principalSid !== null) {
+          const root = await memberProfile(principalSid);
+          if (root !== null) profile = { sid: principalSid, path: root };
+        }
+        let verdict = base;
+        if (base.ready) {
+          if (owned === false) {
+            verdict = { ...base, ready: false, reason: `${slot.principal} belongs to another user; set it up again`, exit: SANDBOX_EXIT.FAILED };
+          } else {
+            verdict = parseSrtStatus(merged, { launcher, arch, profile, profileChecked: true });
+          }
+        }
+        members.push({ principal: slot.principal, ready: verdict.ready, reason: verdict.reason });
+      }
+      const ready = members.length === pool.length && members.every((m) => m.ready);
+      const reason = ready ? null : (members.find((m) => !m.ready)?.reason ?? "a pool member isn't set up");
+      process.exitCode = ready ? SANDBOX_EXIT.OK : SANDBOX_EXIT.FAILED;
+      if (rest.includes("--json")) {
+        console.log(JSON.stringify({ ready, reason, user: firstUser, members }));
+        return;
+      }
+      console.log(ready ? "Bash is set up under Clover's fence" : `Bash isn't set up under Clover's fence: ${reason ?? "unknown"}`);
+      return;
+    }
+    default:
+      console.error(usage);
+      process.exitCode = 1;
+  }
+}
+
 /** `clover-core supervise`: start the daemon and restart it after a crash; a clean stop ends the loop. */
 async function runSupervise(): Promise<void> {
-  const bin = process.execPath;
+  // The logon task's fallback (a server on Windows) may have started this as `<bin>.old.exe`: each start of the daemon
+  // takes `<bin>` once that is back (self-update.ts's healFromOld), so `bin` is asked again at every start.
+  const binNow = () => superviseTarget(process.execPath);
   let alive = true;
   let stopChild: (() => void) | null = null;
   let wake: (() => void) | null = null;
@@ -1656,14 +2047,14 @@ async function runSupervise(): Promise<void> {
     spawnDaemon(): DaemonRun {
       // macOS: the daemon starts with responsibility disclaimed, so it is its own responsible process and a
       // double fork of anything it starts still names it (the caller check, review B1).
-      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([bin, "daemon", "run"]) : null;
+      const disclaimed = process.platform === "darwin" ? spawnDisclaimed([binNow(), "daemon", "run"]) : null;
       if (disclaimed) {
         childExited = disclaimed.exited;
         const stopIt = () => { try { process.kill(disclaimed.pid, "SIGTERM"); } catch { /* already gone */ } };
         stopChild = stopIt;
         return { exited: disclaimed.exited, stop: stopIt };
       }
-      const child = Bun.spawn([bin, "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+      const child = Bun.spawn([binNow(), "daemon", "run"], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
       childExited = child.exited;
       const kill = () => { try { child.kill(); } catch { /* already gone */ } };
       stopChild = kill;
@@ -1680,6 +2071,12 @@ async function runSupervise(): Promise<void> {
     shouldContinue: () => alive,
   });
   console.error(`[supervise] loop ended: ${result.ended} (starts=${result.starts}, crashes=${result.crashes})`);
+}
+
+/** The SHA-256 of the bundled-plugins manifest text this binary carries (its embedded Blob), or undefined for none. */
+async function ownManifestSha256(): Promise<string | undefined> {
+  const { text } = await loadBundledManifest();
+  return text === undefined ? undefined : new Bun.CryptoHasher("sha256").update(text).digest("hex");
 }
 
 if (import.meta.main) {
@@ -1849,6 +2246,16 @@ if (import.meta.main) {
     process.stdout.write(`${r.line}\n${peer.line}\n`);
     process.exit(r.ok && peer.ok ? 0 : 1);
   }
+  // #234's checks 4 and 5: a plugin host started inside the compiled core runs on `clover-plugin-bun`, guarded
+  // (`scripts/verify-fd-receiver-compiled.ts`, step 3d). argv[3]: an empty scratch folder; touches nothing else. Only in a
+  // build with `--define CLOVER_PLUGIN_RUN_PROBE=true` (the gate's): `compile:core` defines it false, so no release
+  // build has the route, and from source it is undefined.
+  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-run-probe") {
+    const { runPluginRunProbe } = await import("./plugin-run-probe");
+    const result = runPluginRunProbe(process.argv[3]);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.exit(result.ok ? 0 : 1);
+  }
   // M-M2: the update feed's signature, against the key this binary carries (./verify-feed.ts).
   if (process.argv[2] === "__verify-feed") {
     const { runVerifyFeed } = await import("./verify-feed");
@@ -1977,12 +2384,34 @@ if (import.meta.main) {
       process.exit(1);
     }
     const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+    // Windows: the logon task names its folder under %USERPROFILE% as the account sees it at logon, which this
+    // process's own USERPROFILE may not be (a profile moved, a session with another environment): the registry says.
+    let profile: string | undefined;
+    if (base.os === "win32") {
+      profile = winUser === undefined ? undefined : await windowsProfilePath(winUser, bunRunner);
+      if (profile === undefined) {
+        console.error("server install: this account's profile folder could not be read from the registry (ProfileList), so its logon task can't be written");
+        process.exit(1);
+      }
+      const note = profileNote(profile);
+      if (note !== undefined) console.log(note);
+    }
     mkdirSync(base.logsDir, { recursive: true });
     const deps = {
-      spec: winUser ? { ...base, winUser } : base,
+      spec: { ...base, ...(winUser ? { winUser } : {}), ...(profile !== undefined ? { homedir: profile } : {}) },
       os: liveLoginOsDeps(), run: bunRunner, loginEnable, loginRemove, stopDaemon: stopRunningDaemon,
       readMarker: (home: string) => readInstallMarker(home), writeMarker: writeInstallMarker, removeMarker: removeInstallMarker,
       user: process.env.USER ?? process.env.LOGNAME, log: (line: string) => console.log(line),
+      pluginBun: (path: string, channel: "latest" | "beta") => {
+        const target = coreTargetOf(process.platform, process.arch);
+        if (target === undefined) return Promise.resolve({ kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` });
+        return ensurePluginBun({ path, bunVersion: daemonBunVersion(), target, channel, log: (line) => console.log(line) });
+      },
+      plugins: async (dir: string, channel: "latest" | "beta") => {
+        const target = coreTargetOf(process.platform, process.arch);
+        if (target === undefined) return { kind: "refused" as const, why: `no release for ${process.platform}-${process.arch}` };
+        return ensureServerPlugins({ dir, home: base.home, version: CORE_VERSION, manifestSha256: await ownManifestSha256(), target, channel, committed: () => false, log: (line) => console.log(line) });
+      },
     };
     process.exit(parsed.action === "install" ? await serverInstall(deps, parsed.channel) : await serverUninstall(deps));
     break;
@@ -1994,11 +2423,56 @@ if (import.meta.main) {
     process.exit(0);
     break;
   }
+  case "sandbox": {
+    // `clover-core sandbox setup|remove|status`: Windows Bash under the fence (lane C, C-M2 part 2).
+    // Lane M's per-user NSIS installer runs `setup` via runas at install; the app's Set up Bash
+    // action runs the same command. Exit codes: 0 done, 2 not elevated, 3 launcher hash mismatch.
+    await runSandboxCommand(sub, process.argv.slice(4));
+    process.exit(process.exitCode ?? 0);
+    break;
+  }
   case "daemon run": {
     // LANE C — M-M2's boot-count hook (self-update.ts), first, before anything else the daemon does (the log file
     // included), so a crash anywhere in the start counts: after a server's daemon swapped in its update, this counts
     // each start of the new version, and the third (two crashes) puts the old binary back and restarts into it.
-    if (beginUpdatedBoot(resolveCloverHome(), process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
+    // A server (`<home>/install.json` says server) first leaves the earlier layout if it still runs from there
+    // (server-install.ts's one migration step), then knows its binary as `<home>/bin/daemon/clover-core`.
+    const bootHome = resolveCloverHome();
+    const bootOs = currentDaemonPlatform();
+    const bootTarget = coreTargetOf(process.platform, process.arch);
+    const bootMarker = readInstallMarker(bootHome, process.execPath);
+    const isServer = updatesItself(bootMarker) && bootTarget !== undefined;
+    if (isServer) {
+      const migrated = await migrateEarlierLayout({
+        home: bootHome, os: bootOs, execPath: process.execPath, log: (line) => console.error(line),
+        reRegister: async (bin) => {
+          const base = currentLoginSpec();
+          const winUser = base.os === "win32" ? await windowsUserSid(bunRunner) : undefined;
+          const profile = winUser === undefined ? undefined : await windowsProfilePath(winUser, bunRunner);
+          if (profile === undefined) return false;
+          return (await loginEnable({ ...base, bin, fallbackBin: oldBinary(bin), winUser: winUser!, homedir: profile }, liveLoginOsDeps())).registered;
+        },
+      });
+      if (migrated.kind === "restart") process.exit(UPDATE_RESTART_EXIT_CODE);
+      if (migrated.kind === "failed") console.error(`server: leaving the earlier layout failed, so this daemon doesn't update itself: ${migrated.why}`);
+    }
+    const sameFile = (a: string, b: string) => { try { return realpathSync(a) === realpathSync(b); } catch { return false; } };
+    // Started as the rollback copy because the binary is missing (Windows: a cut between a swap's two renames, which
+    // the logon task's fallback answered): the binary is put back first, then a restart starts it.
+    if (isServer) {
+      const healed = healFromOld(bootHome, serverBinary(bootHome, bootOs), process.execPath);
+      if (healed.kind === "failed") console.error(`update: putting the binary back failed: ${healed.why}`);
+      if (healed.kind === "finished the swap" || healed.kind === "restored") {
+        console.error(`update: ${serverBinary(bootHome, bootOs)} was missing: ${healed.kind === "restored" ? "restored from this copy" : "the interrupted swap is finished"}; restarting into it`);
+        process.exit(UPDATE_RESTART_EXIT_CODE);
+      }
+    }
+    const serverBin = isServer && sameFile(process.execPath, serverBinary(bootHome, bootOs)) ? serverBinary(bootHome, bootOs) : undefined;
+    if (beginUpdatedBoot(bootHome, serverBin ?? process.execPath, (line) => console.error(line)) === "rolled-back") process.exit(UPDATE_RESTART_EXIT_CODE);
+    // The bundled plugins' local recovery, before anything reads the folder: a folder that isn't this core's
+    // manifest's tree takes `.new` or `.old` back when either is (plugins-install.ts), with no download.
+    const ownSha = serverBin === undefined ? undefined : await ownManifestSha256();
+    if (serverBin !== undefined) recoverServerPlugins({ dir: serverPluginsDir(bootHome), manifestSha256: ownSha, watching: updateWatched(bootHome), log: (line) => console.error(line) });
     // Whole-branch review: register the shutdown handlers HERE, not (only) in daemon.ts. daemon.ts's
     // SIGTERM/SIGINT handlers live under `if (import.meta.main)`, which is FALSE for the compiled
     // binary and this CLI entry (main.ts is `import.meta.main`, daemon.ts is not) — so without this
@@ -2038,23 +2512,47 @@ if (import.meta.main) {
     // hands back is what releases the lock (→ unlinks the socket). `process.exit(0)` on the same
     // line would kill the process mid-drain and leave the stale socket this handler exists to avoid.
     // M-M2: a start that ran GOOD_BOOT_MS, or stopped cleanly, is a good one (self-update.ts's `bootWasGood`).
-    const home = resolveCloverHome();
-    const goodBoot = setTimeout(() => bootWasGood(home, process.execPath), GOOD_BOOT_MS);
+    const home = bootHome;
+    const goodBoot = setTimeout(() => bootWasGood(home, serverBin ?? process.execPath), GOOD_BOOT_MS);
     goodBoot.unref?.();
-    const shutdown = async () => { await daemon.stop(); bootWasGood(home, process.execPath); process.exit(0); };
+    const shutdown = async () => { await daemon.stop(); bootWasGood(home, serverBin ?? process.execPath); process.exit(0); };
     // A server install (`<home>/install.json` says server, and this is its binary) updates itself.
-    const target = coreTargetOf(process.platform, process.arch);
-    const marker = readInstallMarker(home, process.execPath);
-    if (updatesItself(marker) && target !== undefined && process.execPath === serverBinary(home, currentDaemonPlatform())) {
+    const target = bootTarget;
+    const marker = bootMarker;
+    if (serverBin !== undefined && target !== undefined) {
+      // One lock for everything that touches `<home>/bin/plugins` (plugins-install.ts).
+      const pluginsLock = new PluginsLock();
       const self = new SelfUpdater({
-        home, bin: process.execPath, version: CORE_VERSION, target, channel: marker?.channel ?? "latest",
+        home, bin: serverBin, version: CORE_VERSION, target, channel: marker?.channel ?? "latest",
         gate: daemon.updateGate, restartCode: UPDATE_RESTART_EXIT_CODE,
         drain: async () => { clearTimeout(goodBoot); await daemon.stop(); },
         exit: (code) => process.exit(code),
         log: (line) => console.error(line),
+        // The bundled plugins update with the daemon: each version's tarball, against the new binary's manifest.
+        plugins: {
+          dir: serverPluginsDir(home),
+          lock: pluginsLock,
+          stage: (version, manifestSha256) => stageServerPlugins({ dir: serverPluginsDir(home), version, manifestSha256, target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) }),
+        },
       });
       daemon.setSelfUpdate(self);
-      self.start();
+      // Plain Bun for plugins follows the daemon's Bun: after a self-update that moved Bun (or a rollback), the
+      // matching one is fetched (or put back from `.old`) at this start (plugin-bun-install.ts).
+      void ensurePluginBun({ path: serverPluginBun(home, process.platform), bunVersion: daemonBunVersion(), target, channel: marker?.channel ?? "latest", log: (line) => console.error(line) })
+        .then((r) => { if (r.kind === "refused") console.error(`update: plain Bun for plugins: ${r.why}`); });
+      // So do the bundled plugins: a folder that isn't this core's manifest's tree and that no local copy could
+      // replace (above) is fetched again, in the plugins lock, never swapped once the gate committed a restart. The
+      // registry reads bundled plugins at its start, so a folder fetched now is taken by a restart at the next idle
+      // moment. The self-update starts only once this settled.
+      void pluginsLock.run(() => ensureServerPlugins({
+        dir: serverPluginsDir(home), home, version: CORE_VERSION, manifestSha256: ownSha, target, channel: marker?.channel ?? "latest",
+        committed: () => daemon.updateGate.committed, log: (line) => console.error(line),
+      }))
+        .then((r) => {
+          if (r.kind === "refused") console.error(`update: the bundled plugins: ${r.why}`);
+          if (r.kind === "installed") self.restartWhenIdle("the bundled plugins were fetched again, and the registry reads them at its start");
+        }, (err: unknown) => console.error(`update: the bundled plugins: ${err instanceof Error ? err.message : String(err)}`))
+        .finally(() => self.start());
     }
     // C-M1: the pair stopping on purpose (a Quit, the app leaving for good) ends the daemon with exit 0,
     // so its crash-only login unit leaves it down. A signal stops at once; `stop()` sends the app
@@ -2938,6 +3436,13 @@ if (import.meta.main) {
     await runDaemonStart();
     break;
   }
+  case "daemon stop": {
+    // An upgrade's first step (lane M): `autostart stop` under the daemon's own name. The running daemon stops
+    // cleanly (pair.quit, else SIGTERM to its binary, else the OS's stop) and this waits until its endpoint is
+    // gone; login start is left as it is. Exit 0 when it stopped or none was running, 1 when it is still running.
+    await runAutostartCommand("stop");
+    break;
+  }
   case "daemon check-server": {
     // Before a client sends its token: is this home's endpoint served by this user's daemon (and,
     // with --image, by that binary)? The app runs it before its hello (E-M1's review). Exit 0 when ok.
@@ -3608,7 +4113,7 @@ if (import.meta.main) {
   }
   default:
     console.log(`clover ${CORE_VERSION} — commands:
-  daemon run | daemon start | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
+  daemon run | daemon start | daemon stop | daemon check-server --image <path> [--json] | autostart enable|disable [--stop]|stop|remove|start|status [--json] [--app <path>] (daemon install|uninstall|status are aliases) | supervise
   ping | sessions | status | quota | send <sessionId|new> <text> | watch <sessionId> | add-dir <sessionId> <path> [--persist] | cd <sessionId> <path>
   steer <sessionId> <text> | interrupt <sessionId> | compact <sessionId>
   doctor [--repair <op> [--session <id>] [--backend <uuid>] [--backup <path>]]   runtime-state diagnostics and repair (runs without a daemon)

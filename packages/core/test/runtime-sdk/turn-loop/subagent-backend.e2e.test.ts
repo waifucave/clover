@@ -300,33 +300,55 @@ describeWithEmbeddedRuntime("the in-process agent backend", (spawn) => {
   }, 60_000);
 
   test("a prompt right after a cancelled turn's end runs to its own end: nothing of the cancel reaches it", async () => {
-    // Cancelled before the runtime took the prompt up, and cancelled while a call runs (the turn's later messages send
-    // the interrupt again until its end); either way the next prompt goes the moment the cancelled turn's end is seen.
+    // Cancelled before the runtime took the prompt up, and cancelled while its first call runs (held at the pause gate,
+    // so the cancel lands on that call on every OS, whatever the runtime refuses there; the turn's later messages send
+    // the interrupt again until its end). Either way the next prompt goes the moment the cancelled turn's end is seen.
+    // The calls test model, given a prompt after a list it didn't finish, finishes that list first: the turn after a
+    // mid-call cancel runs the list's second Read, and the one after that answers its own. The next turn's call is
+    // held for a while too, so an interrupt of the cancel's that reached it would cut it there.
     for (const early of [true, false]) {
       const home = temp("clover-a3-sub-home-");
       const root = temp("clover-a3-sub-root-");
-      await Bun.write(join(root, "README"), "read me");
-      const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => OPEN }).start(spec(root, "winter-test/calls"));
+      const readme = join(root, "README");
+      await Bun.write(readme, "read me");
+      // Open for a prompt itself; then, until released, closed: the turn's first call holds at its start.
+      let consults = 0;
+      let released = early;
+      const listeners = new Set<() => void>();
+      const gate = { mayAct: () => ++consults <= 1 || released, watch: (fn: () => void) => { listeners.add(fn); return () => listeners.delete(fn); } };
+      const release = () => { released = true; for (const fn of listeners) fn(); };
+      const holdNextCall = () => { consults = 0; released = false; };
+      const session = await inProcessAgentBackend({ home, spawn, defaultModel: () => "winter-test/calls", pauseGateFor: () => gate }).start(spec(root, "winter-test/calls"));
       session.onPermission(async () => ({ outcome: "selected", optionId: "allow" }));
       const events: AgentEvent[] = [];
       session.onEvent((e) => events.push(e));
+      const read = `CALL Read {"file_path":${JSON.stringify(readme)}}`;
       try {
-        const first = session.prompt({ text: [`CALL Bash {"command":"sleep 3"}`, `CALL Bash {"command":"sleep 3"}`].join("\n") });
+        const first = session.prompt({ text: [read, read].join("\n") });
         if (!early) {
           const t0 = Date.now();
-          while (!events.some((e) => e.type === "tool_call") && Date.now() - t0 < 20_000) await Bun.sleep(20);
+          while (consults < 2 && Date.now() - t0 < 20_000) await Bun.sleep(20);
+          expect(consults).toBeGreaterThanOrEqual(2);
         }
         await session.cancel();
-        expect((await first).stopReason).toBe("cancelled");
-        const next = await session.prompt({ text: `CALL Read {"file_path":${JSON.stringify(join(root, "README"))}}` });
+        release();
+        expect([early, (await first).stopReason]).toEqual([early, "cancelled"]);
+        holdNextCall();
+        const nextP = session.prompt({ text: read });
+        const t1 = Date.now();
+        while (consults < 2 && Date.now() - t1 < 20_000) await Bun.sleep(20);
+        await Bun.sleep(600);
+        release();
+        const next = await nextP;
         expect([early, next.stopReason]).toEqual([early, "end_turn"]);
-        // Cancelled before it started, the turn left nothing, and the new one answers its own prompt. Cancelled mid-call,
-        // the test model takes its unfinished list up again in the new turn. Either way the new turn's last call ran
-        // to its own result, never interrupted (what that result is depends on the OS: off macOS, Bash is refused for
-        // want of the sandbox).
         const results = JSON.parse(next.text) as { content: string }[];
-        expect([early, results.at(-1)?.content]).not.toEqual([early, "[interrupted]"]);
-        if (early) expect(next.text).toContain("read me");
+        // Its own call (the list's second Read, or its own Read) answered, uncut; the only call the cancel stopped is
+        // the cancelled turn's first one.
+        expect([early, results.at(-1)?.content]).toEqual([early, "read me"]);
+        expect([early, results.filter((r) => r.content === "[interrupted]").length <= (early ? 0 : 1)]).toEqual([early, true]);
+        // And the session goes on answering its own prompts.
+        const after = await session.prompt({ text: read });
+        expect([early, after.stopReason, (JSON.parse(after.text) as { content: string }[]).at(-1)?.content]).toEqual([early, "end_turn", "read me"]);
         expect(session.state()).toBe("idle");
       } finally {
         await session.stop();

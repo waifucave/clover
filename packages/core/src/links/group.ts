@@ -31,6 +31,7 @@ import type { SecretStore } from "../contracts/secret-store";
 import type { CardOpener } from "../devices/rpc";
 import type { FileDeviceRegistry, GroupLeaving, GroupRecord } from "../devices/registry";
 import { fromBase64Url, randomBytes, toBase64Url, utf8 } from "../identity/bytes";
+import { isStrictEd25519Point } from "../identity/ed25519-strict";
 import { ed25519FromSecret, generateEd25519, type Ed25519Key, verifyEd25519 } from "../identity/keys";
 import {
   admitStatement, groupKeyRef, groupStatement, HandshakeError, joinStatement, pairKeyRef, pairStatement, quorumOf, removeStatement,
@@ -421,7 +422,8 @@ export class GroupKeeper {
   async #admitFor(raw: unknown, from: string): Promise<{ by: string; sig: string }> {
     this.#mustBeMember(from);
     const p = raw as { group?: unknown; key?: unknown; t?: unknown } | undefined;
-    if (typeof p?.group !== "string" || typeof p.key !== "string" || typeof p.t !== "number" || fromBase64Url(p.key)?.length !== 32) {
+    const asked = typeof p?.key === "string" ? fromBase64Url(p.key) : null;
+    if (typeof p?.group !== "string" || typeof p.key !== "string" || typeof p.t !== "number" || !asked || !isStrictEd25519Point(asked)) {
       throw new ContractError("invalid", "link.group.admit takes a group, a key and t");
     }
     if (await this.#o.signedIn()) throw new ContractError("refused", "a signed-in device keeps no group");

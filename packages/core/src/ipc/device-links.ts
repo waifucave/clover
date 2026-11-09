@@ -5,8 +5,11 @@
 //     with its links resolved (`bundledLinkBinary`), never one an environment variable or the PATH names: the sidecar
 //     is handed the device key. Without it the daemon runs with no links, and says so.
 //   - The device key and box key live in the contract secret store (`CloverSecretStore`), as device items.
-//   - The handshake (`https://handshake.waifucave.com`) finds peers and keeps the main computer's lease on the group's
-//     record; public time servers set the shared clock's reference.
+//   - The handshake (`https://handshake.waifucave.com`, or the dev/test build's `CLOVER_HANDSHAKE_URL`) finds peers and
+//     keeps the main computer's lease on the group's record; public time servers set the shared clock's reference.
+//   - The waifucave account and short codes' rendezvous come from lane I's settings (`waifucaveAccount`: the
+//     environment in dev and test builds only, `<clover home>/account.json`, then production's). The daemon never
+//     passes `distBuild` or an environment of its own: the compile-time build kind decides.
 //   - A sensitive device change (add, revoke, the main computer) made in the user's own terminal goes through; any
 //     other opens a card through `openCard`, which refuses until C-M3's approval broker raises it (the controller's
 //     ruling: `refuseUntilBroker`; C-M3 passes `brokerCardOpener(broker)`).
@@ -14,8 +17,9 @@
 //     the pair's hand-over (`handOver`), and the lease renewed just before an update's restart (`updateGate`).
 //   - `peer.call` runs through the Clover server's `dispatch`. A call that needs the user's signed answer is refused
 //     until C-M3's cards render (`renderNothing`), so verifySignedAnswer fails closed.
-// Still to come: the sidecar's spawn under the fence (with C-M2's Bash fence: UDP and its pipes only), H-M2's
-// `mountRemoteClients` (lane I's phone over the link), the account (lane I's service and its config), and the devices
+//   - A paired phone or browser speaks the Clover protocol over its link (H-M2's `mountRemoteClients`, on the Clover
+//     server through `mountCloverRemoteClients`, C-M3 item 3) when the daemon passes `clients`.
+// Still to come: the sidecar's spawn under the fence (with C-M2's Bash fence: UDP and its pipes only), and the devices
 // area's events (`devicesEvents`), once the Clover server sends `core.event`s.
 import { existsSync } from "node:fs";
 import { hostname } from "node:os";
@@ -24,15 +28,19 @@ import type { Clock } from "../contracts/clock";
 import type { SecretStore } from "../contracts/secret-store";
 import type { AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
 import { SntpTimeSource } from "../clock/shared-clock";
-import { WAIFUCAVE_DEVICE_SERVICES } from "../devices/account-devices";
+import { waifucaveAccount, type WaifucaveAccount } from "../identity/account-config";
+import { DIST_BUILD } from "../build-kind";
+import { ContractError } from "../contracts/common";
 import { devicesMethods, mountMainChoiceRequests, type CardOpener } from "../devices/rpc";
 import type { UpdateRestartGate } from "../lease/main";
 import { HandshakeClient } from "../links/handshake";
+import { MemoryNetwork } from "../links/memory-wire";
 import { startDeviceLinks, type DeviceLinks, type DeviceLinksOptions } from "../links/node";
 import { bundledLinkBinary } from "../links/sidecar-binary";
 import { mountPeerCall } from "../links/peer-call";
 import { watchNetwork } from "../platform/network-watch";
 import { laneMethodHandlers, type CloverHandler } from "./clover";
+import { mountCloverRemoteClients, type CloverRemoteClientsOptions } from "./link-clients";
 
 /** Until C-M3's broker: no card can be raised, so a change that needs one is refused. */
 export const refuseUntilBroker: CardOpener = async () => ({ allowed: Promise.resolve(false) });
@@ -75,15 +83,21 @@ export interface DaemonLinksInput {
   self?: DeviceLinksOptions["self"];
   /** Runs a peer's call as that peer, under the role's allow list (`CloverServer.dispatch`). */
   dispatch(method: string, params: unknown, caller: Extract<Caller, { kind: "peer" }>, role: Extract<CloverRole, "remote" | "web">): Promise<unknown>;
+  /** The Clover server and its tokens, for paired phones' and browsers' connections over their links. */
+  clients?: { server: CloverRemoteClientsOptions["server"]; tokens: CloverRemoteClientsOptions["tokens"] };
   /** The Clover server's lane handlers, filled in once the links are up. */
   handlers: Record<string, CloverHandler>;
   /** Opens a sensitive change's card (lane C's broker, `brokerCardOpener`); `refuseUntilBroker` until C-M3. */
   openCard?: CardOpener;
   /** The daemon's update gate (`RunningDaemon.updateGate`, lane M): the lease renews just before an update's restart. */
   updateGate?: UpdateRestartGate;
-  /** The handshake: production's (`WAIFUCAVE_DEVICE_SERVICES.handshake`) by default; a test's local stand-in, or null
-   *  for none. */
+  /** The handshake: at the account settings' `handshakeUrl` (production's unless a dev or test build overrides it) by
+   *  default; a test's local stand-in, or null for none. */
   handshake?: HandshakeClient | null;
+  /** The account and short codes' rendezvous: `waifucaveAccount`'s by default; a test's own, or null for neither (signed
+   *  out, no short codes). Only with the default handshake: the rendezvous lives at the handshake, so a test that
+   *  passes its own handshake (or none) passes its own account and rendezvous too, or has neither. */
+  account?: Pick<WaifucaveAccount, "account" | "rendezvous"> | null;
   /** Public time for the shared clock's reference: SNTP by default; null for none (tests never reach the network). */
   publicTime?: DeviceLinksOptions["publicTime"] | null;
   /** The main computer's timings and clocks, for tests. */
@@ -109,25 +123,42 @@ export interface DaemonLinks {
 export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonLinks> {
   const log = input.log ?? (() => {});
   const binary = input.binary !== undefined ? input.binary : linkSidecarBinary();
-  if (!input.wire && !binary) {
-    log("[links] no link sidecar (clover-link) beside the daemon: this computer runs without links to its devices");
-    return { links: null, handOver: async () => {}, close: async () => {} };
+  // No sidecar (a daemon run from source, a build without it): this computer runs local-only, on a wire with no other
+  // device on it. Its links, the computer node, the folder tree, the bots and the agents all start; it just can't pair
+  // or reach another device until it has the sidecar. One computer on its own is the main case, not an error.
+  const localOnly = !input.wire && !binary;
+  if (localOnly) log("[links] no link sidecar (clover-link) beside the daemon: this computer runs local-only, without links to other devices");
+  // Local-only, nothing leaves the machine: no account or handshake (no other device to find or pair), no public time
+  // (the shared clock has no one to share with), no directories' driver (nothing to publish or look up) and no network
+  // watch (no one to re-dial). A test's own seams still win.
+  const settings = input.handshake === undefined && !localOnly
+    ? await waifucaveAccount({ home: input.home, store: input.store, clock: input.clock, log })
+    : undefined;
+  // A dev or test build that names a handshake it can't use (http to a host that isn't this one, say) doesn't start
+  // its links on production's instead: it says why and stops there. A release build ignores the override anyway.
+  const badHandshake = DIST_BUILD ? undefined : settings?.config.problems.find((p) => p.startsWith("handshakeUrl ("));
+  if (badHandshake !== undefined) {
+    throw new ContractError("invalid", `the links don't start: ${badHandshake}, and a dev build never falls back to production's handshake`);
   }
+  const account = input.account === undefined ? settings : input.account ?? undefined;
   const handshake = input.handshake === undefined
-    ? new HandshakeClient({ baseUrl: WAIFUCAVE_DEVICE_SERVICES.handshake.url, clock: input.clock })
+    ? (localOnly ? undefined : new HandshakeClient({ baseUrl: settings!.handshakeUrl, clock: input.clock }))
     : input.handshake ?? undefined;
-  const publicTime = input.publicTime === undefined ? new SntpTimeSource() : input.publicTime ?? undefined;
+  const publicTime = input.publicTime === undefined ? (localOnly ? undefined : new SntpTimeSource()) : input.publicTime ?? undefined;
+  const driver = input.driver !== undefined ? input.driver : localOnly ? false : undefined;
   const openCard = input.openCard ?? refuseUntilBroker;
   const sidecar: NonNullable<DeviceLinksOptions["sidecar"]> = { ...(input.sidecar ?? {}), binary: binary!, onLog: (l: string) => log(`[clover-link] ${l}`) };
   const links = await startDeviceLinks({
     home: input.home, store: input.store, clock: input.clock,
     self: input.self ?? { name: defaultDeviceName(hostname()), kind: "desktop", os: process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux" },
-    ...(input.wire ? { wire: input.wire } : { sidecar }),
+    ...(input.wire ? { wire: input.wire } : localOnly ? { wire: (key: { publicKey: Uint8Array }) => new MemoryNetwork().endpoint(key.publicKey) } : { sidecar }),
     ...(input.directory ? { directory: input.directory } : {}),
     ...(handshake ? { handshake } : {}),
+    ...(account?.account ? { account: account.account } : {}),
+    ...(account?.rendezvous ? { rendezvous: account.rendezvous } : {}),
     ...(publicTime ? { publicTime } : {}),
     ...(input.mainComputer !== undefined ? { mainComputer: input.mainComputer } : {}),
-    ...(input.driver !== undefined ? { driver: input.driver } : {}),
+    ...(driver !== undefined ? { driver } : {}),
     ...(input.updateGate ? { updateGate: input.updateGate } : {}),
     openCard,
     log,
@@ -145,7 +176,10 @@ export async function startDaemonLinks(input: DaemonLinksInput): Promise<DaemonL
       devices: links.registry, ledger: memoryLedger(), render: renderNothing, clock: input.clock,
       dispatch: (method, params, caller, role) => input.dispatch(method, params, caller, role),
     }));
-    offs.push((input.watch ?? watchNetwork)((why) => {
+    if (input.clients !== undefined) {
+      offs.push(mountCloverRemoteClients({ transport: links.transport, registry: links.registry, server: input.clients.server, tokens: input.clients.tokens, log }));
+    }
+    if (!localOnly || input.watch) offs.push((input.watch ?? watchNetwork)((why) => {
       log(`[links] network ${why === "wake" ? "after a wake" : "changed"}: re-dialling`);
       void links.networkChanged().catch(() => undefined);
     }));
