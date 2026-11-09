@@ -446,6 +446,7 @@ export interface ConversationApi {
   list(filter?: { bot?: string; kinds?: SessionView["kind"][] }): Promise<SessionView[]>;
   get(session: string): Promise<SessionView>;
   history(session: string, page: { before?: number; limit: number }): Promise<{ events: Record<string, unknown>[]; hasMore: boolean }>;
+  /** A follow whose replay can't read the session's history ends with one `{ type: "follow_ended", reason }` event. */
   follow(session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe;
   note(session: string, note: { label?: string; text: string }): Promise<void>;
   send(session: string, text: string): Promise<void>;
