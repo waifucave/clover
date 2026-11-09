@@ -486,6 +486,21 @@ describe("a bot's Linux view of the home (#355)", () => {
     expect(args.length).toBeLessThan(200);
   });
 
+  test("a glob with no fixed folder never hides the Clover home itself, however many it matches (#379's review)", () => {
+    const many = new Set(files);
+    const more = new Set(dirs);
+    for (let i = 0; i < 1_500; i++) { more.add(`${H}/q${i}`); many.add(`${H}/q${i}/s.provider-state.jsonl`); }
+    const big = { kind: (p: string) => (more.has(p) ? "dir" as const : many.has(p) ? "file" as const : null),
+      list: (d: string) => [...more, ...many].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)) };
+    const fence = new CloverFence({ os: "linux", home: "/h", cloverHome: H, temp: "/tmp/t" });
+    const caller: Caller = { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" };
+    const ctx = fenceContextFor(caller);
+    const policy = fence.policy(ctx);
+    const s = bwrapArgs({ cloverHome: H, cwd: "/h/p", uid: 1000, fs: big, caller: callerPlaces(H, "linux", ctx), policy: { ...policy, denyRead: [...policy.denyRead, `${H}/*/*.provider-state.jsonl`] } }).join(" ");
+    expect(s).not.toContain(`--tmpfs ${H} --remount-ro ${H}`);
+    expect(s).toContain(`--tmpfs ${H}/q1 --remount-ro ${H}/q1`);
+  });
+
   test("past the folder cap too, projects/ and sdk/projects/ are hidden whole: bwrap's argument limit is never reached", () => {
     const many = new Set(files);
     const more = new Set(dirs);

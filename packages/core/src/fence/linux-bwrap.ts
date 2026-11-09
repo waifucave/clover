@@ -219,8 +219,11 @@ export function bwrapPlan(input: BwrapInput): { args: string[]; held: HeldFolder
       // One mount per sidecar is one per session: past `GLOB_MASK_CAP` the folders holding them are hidden instead
       // (their transcripts with them, failing closed), so the arguments and the mounts stay bounded.
       const folders = [...new Set(matches.map((m) => dirname(m.path)))].sort();
-      if (matches.length > GLOB_MASK_CAP && folders.length > GLOB_FOLDER_CAP) {
-        for (const d of [...new Set(matches.map((m) => m.fixed))].sort()) a.push("--tmpfs", d, "--remount-ro", d);
+      // A glob with no fixed folder (its first segment has a `*`) never hides the Clover home itself: its matches'
+      // folders are hidden one by one instead.
+      const wholes = [...new Set(matches.map((m) => m.fixed))];
+      if (matches.length > GLOB_MASK_CAP && folders.length > GLOB_FOLDER_CAP && !wholes.includes(cloverHome)) {
+        for (const d of wholes.sort()) a.push("--tmpfs", d, "--remount-ro", d);
       } else if (matches.length > GLOB_MASK_CAP) {
         for (const d of folders) a.push("--tmpfs", d, "--remount-ro", d);
       } else {

@@ -39,12 +39,17 @@ export interface SandboxSettingsOptions {
   plain?: (path: string) => boolean;
 }
 
+/** Plain on the disk: no link and its own real path; a folder not there yet counts as plain (nothing to follow: the
+ *  runner can't make it there, and the core makes it a real folder). */
 const realPlain = (path: string): boolean => {
-  try { return !lstatSync(path).isSymbolicLink() && realpathSync(path) === path; } catch { return false; }
+  try { return !lstatSync(path).isSymbolicLink() && realpathSync(path) === path; } catch (e) { return (e as NodeJS.ErrnoException).code === "ENOENT"; }
 };
 
 /** The environment a bot's Bash runs with beside these settings: `GIT_TEMPLATE_DIR` at Clover's empty template, so
- *  `git init` and `git clone` in a scratch folder work with every `.git/hooks` write-denied (they copy no hooks). */
+ *  `git init` and `git clone` copy no hooks into a `.git/hooks` the settings write-deny. Under the session's cwd they
+ *  still fail: the runtime's own default protection refuses writing `.git/config` anywhere under the cwd (agent SDK
+ *  0.0.72's `allowGitConfig`, left off here: the per-call git-key recheck is a second line, not a reason to drop the
+ *  first). Outside the cwd (another bot's scratch folder, a project in the user's home) they work. */
 export function sandboxEnvOf(cloverHome: string): Record<string, string> {
   const template = gitTemplateDir(cloverHome);
   try { mkdirSync(template, { recursive: true, mode: 0o700 }); } catch { /* git then finds no template: it copies nothing either */ }
@@ -71,7 +76,8 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
   const outputs = p.join(home, "outputs");
 
   // The folders kept for writing and for reading.
-  const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory].filter((x): x is string => x !== undefined);
+  // Each plain, like every other root (the runtime real-paths them all); one not there yet stays.
+  const ownRw = [policy.ownOutputs, policy.ownScratch, policy.ownRoutines, policy.ownPluginData, policy.ownMemory].filter((x): x is string => x !== undefined && plain(x));
   const writeKeep = [...ownRw];
   if (open !== undefined) {
     // Each one plain: a link (an old one, or one a run made) would be real-pathed to its target by the runtime.
