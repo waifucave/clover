@@ -70,6 +70,19 @@ const rootEnv = hostThread ? undefined : process.env.CLOVER_PLUGIN_ROOT;
 const sharedEnv = process.env.CLOVER_PLUGIN_SHARED ?? "[]";
 if (!hostThread && (typeof rootEnv !== "string" || rootEnv === "")) fail("a plugin process starts only with its plugin's folder");
 if (hostThread) delete process.env.CLOVER_PLUGIN_ROOT;
+// A process that holds more than one plugin (the bundled clover tree's) runs no native code of a plugin's (#322's
+// review, B3): a worker's bun:ffi or a native addon could read every other worker's memory. The daemon says so to the
+// host process alone, and its guard hands it to each worker.
+const noNatives = process.env.CLOVER_PLUGIN_NO_NATIVES === "1";
+delete process.env.CLOVER_PLUGIN_NO_NATIVES;
+if (noNatives && !hostThread) {
+  // A preload's onResolve never sees a Bun builtin, so the module itself is disarmed: every export a throwing stub,
+  // then frozen (measured on Bun 1.4.4: require and import, static and dynamic, get the stubs, in every thread).
+  const ffi = createRequire(import.meta.url)("bun:ffi");
+  const none = () => fail("bun:ffi isn't available in a process that holds more than one plugin");
+  for (const k of Object.keys(ffi)) Object.defineProperty(ffi, k, { value: typeof ffi[k] === "function" ? none : undefined, writable: false, configurable: false });
+  Object.freeze(ffi);
+}
 const root = hostThread ? undefined : realpathSync(rootEnv);
 // The guard's own folder (its run files) loads too: a worker preloads the guard from there.
 const shared = [...JSON.parse(sharedEnv), dirname(guardFile)].map(real);
@@ -125,10 +138,20 @@ Module._resolveFilename = function (request, ...rest) {
 };
 const guardedResolve = Module._resolveFilename;
 Object.defineProperty(Module, "_resolveFilename", { get: () => guardedResolve, set: () => fail("the load guard stays"), enumerable: true, configurable: false });
-// A native addon loads through process.dlopen: held to the same rule.
+// A native addon loads through process.dlopen: held to the same rule; refused outright where natives are off; and a
+// bundled plugin's checked against the digest its staging verified (the worker publishes the check, S2).
 const dlopen = process.dlopen.bind(process);
+const verifiedNative = (filename) => {
+  const check = globalThis[Symbol.for("clover.verifiedFile")];
+  if (typeof check === "function") check(filename);
+};
 Object.defineProperty(process, "dlopen", {
-  value: (module, filename, ...rest) => { if (!allowed(filename)) refuse(filename); return dlopen(module, filename, ...rest); },
+  value: (module, filename, ...rest) => {
+    if (noNatives) fail("refused " + filename + ": a native addon doesn't load in a process that holds more than one plugin");
+    if (!allowed(filename)) refuse(filename);
+    verifiedNative(filename);
+    return dlopen(module, filename, ...rest);
+  },
   writable: false, configurable: false,
 });
 }
@@ -144,6 +167,7 @@ const guarded = (opts) => {
   const env = { ...(o.env !== null && typeof o.env === "object" ? o.env : process.env) };
   // A host's worker runs the plugin guard (never the host's), and a Bun its plugin starts gets the plugin flags.
   if (hostThread) env.BUN_OPTIONS = __CLOVER_WORKER_BUN_OPTIONS__;
+  if (hostThread && noNatives) env.CLOVER_PLUGIN_NO_NATIVES = "1";
   return { ...o, preload: [hostThread ? __CLOVER_WORKER_GUARD__ : guardFile, ...own], env: { ...env, CLOVER_PLUGIN_ROOT: workerRoot, CLOVER_PLUGIN_SHARED: sharedEnv } };
 };
 const wrap = (Original) => {
@@ -396,7 +420,7 @@ export function pluginHostBunFlags(files: PluginRunFiles): string[] {
 
 /** Variables a plugin process never inherits: they change what Bun or Node loads, or they're what Clover's guard and
  *  host read, which only Clover sets (#322's review, B1). */
-const DROPPED_ENV_SOURCE = "^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+|CLOVER_PLUGIN_(HOST|ROOT|SHARED|WORKER))$";
+const DROPPED_ENV_SOURCE = "^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+|CLOVER_PLUGIN_(HOST|ROOT|SHARED|WORKER|NO_NATIVES))$";
 /** On Windows environment names are case-insensitive (`node_options` is NODE_OPTIONS), so there they match without case. */
 export const droppedEnv = (platform: NodeJS.Platform = process.platform): RegExp => new RegExp(DROPPED_ENV_SOURCE, platform === "win32" ? "i" : "");
 const DROPPED_ENV = droppedEnv();

@@ -228,6 +228,24 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(daemon.cloverParts.links()).toBeUndefined();
   }, 30_000);
 
+  // #322's review: a start that fails isn't left undone.
+  test("a plugin start that fails is tried again", async () => {
+    const home = temp("clover-int-home-");
+    let tries = 0;
+    let started: (r: unknown) => void = () => {};
+    const done = new Promise((resolve) => { started = resolve; });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false, links: false, pluginRetryMs: 50,
+      pluginHost: async (registry) => {
+        tries++;
+        if (tries < 3) throw new Error(`the store answered with an error (try ${tries})`);
+        started(registry);
+        throw new Error("no host in this test");
+      },
+    });
+    expect(await Promise.race([done.then(() => tries), Bun.sleep(10_000).then(() => "timed out")])).toBe(3);
+  }, 30_000);
+
   test("the daemon's own registry and drivers: the bot side starts over the plugins folder, which is made if missing", async () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");

@@ -29,7 +29,7 @@ afterAll(() => {
 });
 
 /** What the probe tries, as a script any of the three runs: one line of JSON, each try `ok` or the error's code. */
-function probeSource(w: { home: string; userHome: string; root: string; keychain: string }): string {
+function probeSource(w: { home: string; userHome: string; root: string; keychain: string; runFiles: string }): string {
   const j = JSON.stringify;
   return `
 import { readFileSync, writeFileSync } from "node:fs";
@@ -48,6 +48,17 @@ t("readOtherData", () => readFileSync(${j(join(w.home, "plugin-data", "other", "
 t("writeZshrc", () => writeFileSync(${j(join(w.userHome, ".zshrc"))}, "evil"));
 t("writeLaunchAgent", () => writeFileSync(${j(join(w.userHome, "Library", "LaunchAgents", "com.evil.plist"))}, "<plist/>"));
 t("readKeychainFile", () => readFileSync(${j(join(w.userHome, "Library", "Keychains", "login.keychain-db"))}));
+// Read-only for a plugin (B4): Clover's run files, the verified bundled copy, the plugin Bun and its digest.
+t("writeRunFiles", () => writeFileSync(${j(join(w.runFiles, "guard.mjs"))}, "// gone"));
+t("writeBundled", () => writeFileSync(${j(join(w.home, "run", "bundled-plugins", "clover", "x.js"))}, "x"));
+t("writeBin", () => writeFileSync(${j(join(w.home, "bin", "clover-plugin-bun.digest"))}, "sha256:0"));
+// Code made at run time (B2) is the OS profile's, like any other.
+t("evalRead", () => new Function("fs", "p", "return fs.readFileSync(p)")({ readFileSync }, ${j(join(w.home, "run", "app.token"))}));
+// A child with a clean environment (no guard flags) is fenced all the same (B2).
+try {
+  const clean = Bun.spawnSync(["/usr/bin/env", "-i", process.execPath, "-e", ${j(`require("node:fs").readFileSync(${JSON.stringify(join(w.home, "run", "app.token"))})`)}], { stdio: ["ignore", "ignore", "pipe"] });
+  out.cleanEnvChild = clean.success ? "ok" : (/EPERM|not permitted/.test(clean.stderr.toString()) ? "EPERM" : "failed");
+} catch (e) { out.cleanEnvChild = e.code ?? "failed"; }
 for (const [name, cmd] of [["launchctl", ["/bin/launchctl", "list"]], ["open", ["/usr/bin/open", "-h"]], ["osascript", ["/usr/bin/osascript", "-e", "return 1"]], ["ls", ["/bin/ls", "/"]]]) {
   t(name, () => { const r = Bun.spawnSync(cmd, { stdio: ["ignore", "ignore", "ignore"] }); if (!r.success && r.exitCode === null) throw new Error("killed"); });
 }
@@ -91,7 +102,12 @@ function world() {
   }
   temps.push(keychain);
   const server = Bun.listen({ unix: join(home, "run", "core.sock"), socket: { data() {} } });
-  const w = { home, userHome, root, keychain, server };
+  for (const f of [join(home, "run", "bundled-plugins", "clover", "keep.txt"), join(home, "bin", "clover-plugin-bun.digest")]) {
+    mkdirSync(dirname(f), { recursive: true });
+    writeFileSync(f, "Clover's");
+  }
+  const runFiles = dirname(ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }).guard);
+  const w = { home, userHome, root, keychain, server, runFiles };
   writeFileSync(join(root, "probe.mjs"), probeSource(w));
   return w;
 }
@@ -100,6 +116,7 @@ const DENIED = {
   writeOwnFolder: "EPERM", readToken: "EPERM", readBots: "EPERM", readSessions: "EPERM", readSettings: "EPERM", readOtherPlugin: "EPERM",
   readOtherData: "EPERM", writeZshrc: "EPERM", writeLaunchAgent: "EPERM", readKeychainFile: "EPERM",
   launchctl: "EPERM", open: "EPERM", osascript: "EPERM", keychain: "not read",
+  writeRunFiles: "EPERM", writeBundled: "EPERM", writeBin: "EPERM", evalRead: "EPERM",
 };
 const untouched = (w: ReturnType<typeof world>) => {
   expect(readFileSync(join(w.userHome, ".zshrc"), "utf8")).toBe("# the user's");
@@ -141,7 +158,7 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
         await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
         await Bun.sleep(5);
         const out = (await ph.host.invoke({ pluginId: "spy", handler: "probe", args: null, caller: USER })) as Record<string, string>;
-        expect(out).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+        expect(out).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "EPERM", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
         untouched(w);
       } finally {
         await ph.close();
@@ -156,15 +173,15 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
     const w = world();
     try {
       writeFileSync(join(w.root, "probe.mjs"), `${probeSource(w)}\nconsole.log(JSON.stringify(out));\n`);
-      const guard = { files: ensurePluginRunFiles(join(w.home, "run"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
+      const guard = { files: ensurePluginRunFiles(join(w.home, "run", "plugin-host"), { cloverHome: w.home }), shared: [], fence: { userHome: w.userHome } };
       const hook = await new HookRunner(guard).run({ pluginId: "spy", event: "SessionStart", command: "bun probe.mjs", cwd: w.root, timeoutMs: 30_000 } as never, { sessionId: "s_1", event: "SessionStart" } as never);
       const fromHook = JSON.parse(String((hook as { stdout: string }).stdout).trim().split("\n").at(-1)!);
-      expect(fromHook).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", socket: expect.not.stringMatching(/^ok$/) });
-      const mcp = guardedMcpServer({ command: "bun", args: ["probe.mjs"] }, w.root, guard, "spy");
+      expect(fromHook).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
+      const mcp = guardedMcpServer<{ command: string; args?: string[]; env?: Record<string, string> }>({ command: "bun", args: ["probe.mjs"] }, w.root, guard, "spy");
       expect(mcp.command).toBe("/usr/bin/sandbox-exec");
       const r = Bun.spawnSync([mcp.command, ...(mcp.args ?? [])], { cwd: w.root, env: mcp.env, stdout: "pipe", stderr: "pipe" });
       const fromMcp = JSON.parse(r.stdout.toString().trim().split("\n").at(-1)!);
-      expect(fromMcp).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", socket: expect.not.stringMatching(/^ok$/) });
+      expect(fromMcp).toMatchObject({ readOwn: "ok", writeData: "ok", ...DENIED, ls: "ok", cleanEnvChild: "EPERM", socket: expect.not.stringMatching(/^ok$/) });
       untouched(w);
       // Control: unfenced, the same probe reads the keychain item and the token (so the denials above are the fence's).
       const plain = Bun.spawnSync([process.execPath, "probe.mjs"], { cwd: w.root, env: { ...process.env, BUN_OPTIONS: "" }, stdout: "pipe", stderr: "pipe" });
@@ -174,6 +191,41 @@ describe.skipIf(process.platform !== "darwin")("the plugin-process fence", () =>
       rmSync(join(w.userHome, "Library", "LaunchAgents", "com.evil.plist"), { force: true });
     } finally {
       w.server.stop(true);
+    }
+  }, 60_000);
+
+  test("the clover process, which holds many plugins, runs no plugin's native code: bun:ffi is disarmed and no addon loads; a third-party plugin's own process keeps both (B3)", async () => {
+    const home = temp("cf-natives-");
+    const root = join(home, "resources", "plugins");
+    const probe = `export const ffi = async () => { try { const { ptr } = await import("bun:" + "ffi"); ptr(new Uint8Array(1)); return "usable"; } catch (e) { return e.message; } };\n`
+      + `export const addon = async () => { try { process.dlopen({ exports: {} }, "/usr/lib/libSystem.B.dylib"); return "loaded"; } catch (e) { return e.message; } };\n`;
+    const tree = (dir: string, id: string) => {
+      mkdirSync(join(dir, "host"), { recursive: true });
+      writeFileSync(join(dir, "clover.json"), JSON.stringify({ manifest: 1, id, name: id, version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }));
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
+      writeFileSync(join(dir, "host", "index.js"), probe);
+    };
+    tree(join(root, "clover"), "clover");
+    tree(join(home, "plugins", "own"), "own");
+    const { measureBundledTree } = await import("../../bundled-plugins-dir");
+    const { stageBundledPlugins, stagedBundledDir } = await import("../bundled-stage");
+    const staged = stageBundledPlugins({ root, manifest: measureBundledTree(root), out: stagedBundledDir(home) });
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests, userHome: temp("cf-natives-user-") });
+    try {
+      const { card } = await opened.registry.installed("own", "app");
+      const shown = broker.cards().find((c) => c.id === card)!;
+      await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
+      await Bun.sleep(5);
+      const run = (pluginId: string, handler: string) => ph.host.invoke({ pluginId, handler, args: null, caller: USER });
+      expect(await run("clover", "ffi")).toContain("bun:ffi isn't available in a process that holds more than one plugin");
+      expect(await run("clover", "addon")).toContain("a native addon doesn't load in a process that holds more than one plugin");
+      expect(await run("own", "ffi")).toBe("usable");
+    } finally {
+      await ph.close();
+      opened.close();
     }
   }, 60_000);
 });

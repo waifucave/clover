@@ -73,6 +73,11 @@ export interface PluginFenceInput {
   execs?: readonly string[];
   /** A hook or MCP server: the package managers' folders (`TOOL_READ_DIRS`, `TOOL_WRITE_DIRS`). */
   tools?: boolean;
+  /** False: it starts no process at all (a host process: its plugins' workers are threads, and it may run only its Bun),
+   *  so nothing it starts can leave its process group (`setsid`), which Seatbelt has no rule for (#322's review, B1). */
+  fork?: boolean;
+  /** No native code from what it reads or writes (`file-map-executable` denied there): the clover process (B3). */
+  noNativeCode?: boolean;
   /** Unix sockets under the homes it may connect to (a supervised host's daemon socket); every other one there is
    *  denied. A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
   sockets?: readonly string[];
@@ -136,6 +141,8 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     lines.push("(deny process-exec*)");
     lines.push(`(allow process-exec ${[...paths(i.execs ?? []).map((p) => `(literal "${sbpl(p)}")`), ...(own !== undefined ? [subpaths([own])] : [])].join(" ")})`);
   }
+  if (i.fork === false) lines.push("(deny process-fork)");
+  if (i.noNativeCode) lines.push(`(deny file-map-executable ${subpaths([...i.read.slice(0, 1), ...i.write])})`);
   lines.push(`(deny process-exec ${LAUNCH_SERVICES_DENIES.exec.map((p) => `(literal "${sbpl(p)}")`).join(" ")})`);
   return `${lines.join("\n")}\n`;
 }

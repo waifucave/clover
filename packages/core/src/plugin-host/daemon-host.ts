@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { fencedCommand, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
 import type { Clock } from "../contracts/clock";
@@ -29,6 +29,7 @@ import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { createApiRouter, type ApiHandlers } from "./api/router";
 import { pluginDataFolder, pluginPath } from "./paths";
 import { CorePluginHost, type HostedRecord } from "./core-host";
+import type { VerifiedFiles } from "./runtime";
 import { hostProcessLaunch, spawnHostProcess, type HostProcessLaunch } from "./launch";
 import type { RpcPeer } from "./link";
 
@@ -155,18 +156,21 @@ export function hostedRecordOf(registry: Pick<PluginRegistry, "get">, home: stri
     entry: host.entry,
     dataFolder: pluginDataFolder(home, pluginId),
     // A bundled plugin runs only the entry bytes its staging verified (S2); with no digest recorded, it doesn't run.
-    ...(r.source === "bundled" ? { entrySha256: verifiedDigest(verified, join(r.folder, host.entry)) } : {}),
+    ...(r.source === "bundled" ? { verified: verifiedTree(verified, top?.folder ?? r.folder) } : {}),
   };
 }
 
-function verifiedDigest(verified: ReadonlyMap<string, string> | undefined, file: string): string {
-  let real: string;
+function verifiedTree(verified: ReadonlyMap<string, string> | undefined, tree: string): VerifiedFiles {
+  let root: string;
   try {
-    real = realpathSync(file);
+    root = realpathSync(tree);
   } catch {
-    return "";
+    return { root: tree, files: {} };
   }
-  return verified?.get(real) ?? "";
+  const files: Record<string, string> = {};
+  const prefix = root.endsWith(sep) ? root : root + sep;
+  for (const [path, sha] of verified ?? []) if (path.startsWith(prefix)) files[path] = sha;
+  return { root, files };
 }
 
 function installRecordOf(r: PluginRecord): InstallRecord {
@@ -207,7 +211,8 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     mkdirSync(data, { recursive: true, mode: 0o700 });
     const fence: PluginFenceInput = {
       cloverHome: o.home, userHome: o.userHome ?? homedir(),
-      read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!],
+      read: [tree, ...(l.reads ?? [])], write: [data, tmp], exec: "plugin", execs: [l.cmd[0]!], fork: false,
+      ...(key === "clover" ? { noNativeCode: true } : {}),
     };
     return { ...l, cmd: fencedCommand(l.cmd, fence), env: { ...l.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp } };
   };
@@ -233,7 +238,9 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
       if (launch instanceof Error) throw new ContractError("failed", `plugin processes can't start here: ${launch.message}`);
       const live = processes.get(key);
       if (live !== undefined && !live.peer.closed) return live.peer;
-      const fenced = fencedLaunch(launch, key, process === "clover" ? "clover" : top);
+      // The clover process holds many plugins: none of them runs native code there (B3, its guard's flag).
+      const forKey = process === "clover" ? { ...launch, env: { ...launch.env, CLOVER_PLUGIN_NO_NATIVES: "1" } } : launch;
+      const fenced = fencedLaunch(forKey, key, process === "clover" ? "clover" : top);
       const started = spawnHostProcess({ ...fenced, onOutput: (line) => log(`[plugin-host ${key}] ${line}`) });
       processes.set(key, started);
       started.peer.onClose(() => {
