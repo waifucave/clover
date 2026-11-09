@@ -218,7 +218,7 @@ export class FileDeviceRegistry implements DeviceRegistry {
     if (existing) {
       if (existing.v !== 1 || existing.self !== opts.key.id) throw new ContractError("conflict", "the device registry belongs to another device key");
       return new FileDeviceRegistry(path, {
-        ...existing, pairs: existing.pairs ?? [], rotations: existing.rotations ?? [], updates: existing.updates ?? {}, boxKeys: existing.boxKeys ?? {},
+        ...existing, pairs: existing.pairs ?? [], rotations: existing.rotations ?? [], updates: existing.updates ?? {}, boxKeys: usableBoxKeys(existing.boxKeys ?? {}),
         answerKeyGone: existing.answerKeyGone ?? {}, pendingRevokes: existing.pendingRevokes ?? [], groupsLeft: existing.groupsLeft ?? {},
       }, opts);
     }
@@ -544,7 +544,9 @@ export class FileDeviceRegistry implements DeviceRegistry {
   /** A device's X25519 key, base64url: this device's own, or one the account's device list gave. */
   boxKey(id: string): string | undefined {
     const d = this.#find(id);
-    return d && d.revokedAt === undefined ? this.#state.boxKeys[id] : undefined;
+    const key = d && d.revokedAt === undefined ? this.#state.boxKeys[id] : undefined;
+    // One stored before keys were checked, and not usable, counts as none (the load drops them too).
+    return key !== undefined && isUsableBoxKey(key) ? key : undefined;
   }
 
   setBoxKey(id: string, key: string): void {
@@ -651,4 +653,15 @@ export function computerNameFor(name: string): string {
 
 function stripUndefined<T extends object>(o: T): T {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
+}
+
+/** A box key as the registry keeps it: base64url of a strict X25519 public key. */
+function isUsableBoxKey(key: string): boolean {
+  const raw = fromBase64Url(key);
+  return raw !== null && isStrictX25519PublicKey(raw);
+}
+
+/** The stored box keys that are usable; one kept before keys were checked, and not usable, is dropped. */
+function usableBoxKeys(keys: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(keys).filter(([, k]) => typeof k === "string" && isUsableBoxKey(k)));
 }

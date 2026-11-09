@@ -3,7 +3,7 @@
 // Workers' copy of the check agrees with the core's.
 import { afterEach, describe, expect, test } from "bun:test";
 import { diffieHellman, generateKeyPairSync, createPublicKey } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isStrictX25519PublicKey as sharedCheck } from "@waifucave/clover-service-shared/x25519-strict";
@@ -18,6 +18,8 @@ import { startFakeAccountService } from "../account-fake";
 import { BoxKey, sealToBoxKey } from "../box-key";
 import { concat, toBase64Url, utf8 } from "../bytes";
 import { DeviceKey } from "../device-key";
+import { AccountDirectory } from "../../links/account-directory";
+import type { HandshakeClient } from "../../links/handshake";
 import { isStrictX25519PublicKey } from "../x25519-strict";
 
 const hex = (h: string) => new Uint8Array(Buffer.from(h, "hex"));
@@ -152,5 +154,56 @@ describe("where a box key enters", () => {
     const { added } = await syncAccountDevices({ registry, account: unchecked, device: key, boxKey: BoxKey.generate() });
     expect(added).toEqual([other.id]);
     expect(registry.boxKey(other.id)).toBeUndefined();
+  });
+});
+
+describe("box keys stored before they were checked", () => {
+  async function registryWithPeers(n: number) {
+    const home = mkdtempSync(join(tmpdir(), "clover-k-x25519-"));
+    const key = await DeviceKey.loadOrCreate(new MemorySecretStore());
+    const registry = await FileDeviceRegistry.open({ home, key, clock: { now: () => Date.now() }, self: { name: "Studio", os: "macos" } });
+    const peers: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const k = await DeviceKey.loadOrCreate(new MemorySecretStore());
+      await registry.add({ id: k.id, name: `Peer ${i}`, kind: "desktop", runsCore: true, publicKey: k.publicKeyBase64, os: "macos", computer: `Peer${i}` }, { via: "account", account: "someone" });
+      registry.setBoxKey(k.id, toBase64Url(realKey()));
+      peers.push(k.id);
+    }
+    return { home, key, registry, peers };
+  }
+
+  test("count as none, and the registry drops them at load", async () => {
+    const { home, key, registry, peers } = await registryWithPeers(2);
+    const path = join(home, "devices", "registry.json");
+    const doc = JSON.parse(readFileSync(path, "utf8")) as { boxKeys: Record<string, string> };
+    const good = doc.boxKeys[peers[1]!]!;
+    doc.boxKeys[peers[0]!] = toBase64Url(LOW_ORDER[2]!);
+    writeFileSync(path, JSON.stringify(doc));
+    expect(registry.boxKey(peers[1]!)).toBe(good);
+    const again = await FileDeviceRegistry.open({ home, key, clock: { now: () => Date.now() }, self: { name: "Studio", os: "macos" } });
+    expect(again.boxKey(peers[0]!)).toBeUndefined();
+    expect(again.boxKey(peers[1]!)).toBe(good);
+  });
+
+  test("the account directory publishes to every device it can, whatever one device's failure", async () => {
+    const { registry, peers } = await registryWithPeers(3);
+    const put: string[] = [];
+    const logged: string[] = [];
+    const client = {
+      putAccountRecord: async (_token: string, to: string) => {
+        if (to === peers[0]) throw new Error("the service refused it");
+        put.push(to);
+        return true;
+      },
+    } as unknown as HandshakeClient;
+    const dir = new AccountDirectory({
+      registry, client, boxKey: BoxKey.generate(), clock: { now: () => Date.now() },
+      account: { accountId: async () => "someone", tokens: { current: async () => ({ value: new Secret("t") }) } } as never,
+      localAddr: async () => ({ lan: [], stun: [], mapping: "unknown" }) as never,
+      log: (line) => void logged.push(line),
+    });
+    expect(await dir.publish()).toBe(2);
+    expect(put.sort()).toEqual([peers[1]!, peers[2]!].sort());
+    expect(logged.some((l) => l.includes(peers[0]!))).toBe(true);
   });
 });

@@ -194,6 +194,7 @@ export async function startDeviceLinks(o: DeviceLinksOptions): Promise<DeviceLin
   const accountDirectory = o.handshake && o.account
     ? new AccountDirectory({
       registry, account: o.account, client: o.handshake, boxKey, clock: o.clock,
+      ...(o.log ? { log: o.log } : {}),
       onDialNow: (peer) => transport.dialNow(peer),
       onLease: (l) => {
         if (main && scopeNow?.id === "account") main.lease.observe({ holder: l.holder, holderRaw: l.holder, epoch: l.epoch, expiresAt: l.expiresAt });

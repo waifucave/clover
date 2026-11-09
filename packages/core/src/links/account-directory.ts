@@ -48,6 +48,7 @@ export interface AccountDirectoryOptions {
   onPresence?(device: string, online: boolean): void;
   cacheMs?: number;
   ttlSeconds?: number;
+  log?(line: string): void;
 }
 
 /** The `aad` lines of an account-scope box (PROTOCOL.md "Boxes"). */
@@ -124,10 +125,15 @@ export class AccountDirectory implements PeerDirectory {
       const box = this.#o.registry.boxKey(d.id);
       const to = box ? fromBase64Url(box) : null;
       if (!to) continue;
-      const gen = Math.floor(this.#o.clock.now());
-      const plain: AddrPlaintext = { v: 1, at: gen, ...local };
-      const sealed = sealToBoxKey(to, accountBoxAad({ account, from: self, to: d.id, kind: "addr", gen }), utf8(JSON.stringify(plain)));
-      if (await this.#o.client.putAccountRecord(token, d.id, "addr", { gen, ttl: this.#o.ttlSeconds ?? 900, box: sealed })) n++;
+      // One device's failure (a key that won't seal, a record the service refused) leaves the others their address.
+      try {
+        const gen = Math.floor(this.#o.clock.now());
+        const plain: AddrPlaintext = { v: 1, at: gen, ...local };
+        const sealed = sealToBoxKey(to, accountBoxAad({ account, from: self, to: d.id, kind: "addr", gen }), utf8(JSON.stringify(plain)));
+        if (await this.#o.client.putAccountRecord(token, d.id, "addr", { gen, ttl: this.#o.ttlSeconds ?? 900, box: sealed })) n++;
+      } catch (err) {
+        this.#o.log?.(`[account] no address for ${d.id}: ${(err as Error).message}`);
+      }
     }
     return n;
   }
@@ -141,7 +147,12 @@ export class AccountDirectory implements PeerDirectory {
     const token = await this.#token();
     const at = Math.floor(this.#o.clock.now());
     const plain = { v: 1, at, addr: { v: 1, at, ...(await this.#o.localAddr()) } };
-    const sealed = sealToBoxKey(to, accountBoxAad({ account, from: this.#o.registry.self().id, to: device, kind: "dial" }), utf8(JSON.stringify(plain)));
+    let sealed: string;
+    try {
+      sealed = sealToBoxKey(to, accountBoxAad({ account, from: this.#o.registry.self().id, to: device, kind: "dial" }), utf8(JSON.stringify(plain)));
+    } catch {
+      return false; // a box key that won't seal: no dial
+    }
     return (await this.#o.client.sendAccountMessage(token, { to: device, kind: "dial", ttl: 30, box: sealed })).delivered;
   }
 

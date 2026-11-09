@@ -8,6 +8,9 @@
 // point at infinity. A key of low order gives an all-zero shared secret whatever the other side's key is.
 //
 // Plain BigInt on public data: no constant time needed.
+//
+// services/shared/x25519-strict.ts is a copy of this file for the Workers and the web page (its header, then this file
+// byte for byte); identity/tests/x25519-strict.test.ts fails when the two differ, so change both together.
 
 const P = (1n << 255n) - 19n;
 const A24 = 121666n; // (A + 2) / 4, A = 486662
