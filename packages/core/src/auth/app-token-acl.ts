@@ -59,6 +59,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { CLOVER_TEAM_ID } from "../bundled-identities";
 import { MIGRATION_SHADOW_SUFFIX } from "./secret-store";
 import { TOKEN_NAMES } from "./tokens";
 import { addGenericPassword, createKeychainAccess, deleteGenericPassword, genericPasswordPresent, readGenericPassword, ERR_SEC_DUPLICATE_ITEM, KeychainFfiError, type KeychainAccess, type KeychainTarget } from "./keychain-ffi";
@@ -67,8 +68,8 @@ import { addGenericPassword, createKeychainAccess, deleteGenericPassword, generi
 export const APP_READ_TOKEN_NAMES: readonly string[] = [TOKEN_NAMES.harness, TOKEN_NAMES.remote];
 export const APP_TOKEN_SHADOW_SUFFIX = MIGRATION_SHADOW_SUFFIX;
 export const APP_TOKEN_ACL_MARKER_VERSION = 2;
-/** The Apple developer team Clover's apps are signed by (`apple/Winter/project.yml`'s `DEVELOPMENT_TEAM`). */
-export const CLOVER_TEAM_ID = "37N77U9RSZ";
+/** The Apple developer team Clover's apps are signed by: one source, `bundled-identities.ts`. */
+export { CLOVER_TEAM_ID };
 
 export function appTokenAclMarkerPath(home: string): string {
   return join(home, "migration", "app-token-acl.json");

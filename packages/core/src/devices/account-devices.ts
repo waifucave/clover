@@ -177,7 +177,7 @@ async function runRevokeSteps(o: RevokeOptions, id: string): Promise<RevokeOutco
       if (!svc) return;
       const token = await account.tokens.current(svc.audience);
       if (!token) throw new ContractError("refused", "no account token");
-      const res = await fetcher(new Request(`${svc.url.replace(/\/+$/, "")}${path}`, { method: "DELETE", headers: { authorization: `Bearer ${token.value.reveal()}` } }));
+      const res = await fetcher(new Request(`${svc.url.replace(/\/+$/, "")}${path}`, { method: "DELETE", headers: { authorization: `Bearer ${token.value.reveal()}` }, redirect: "error" }));
       if (!res.ok && res.status !== 404) throw new ContractError("failed", `${svc.audience} answered ${res.status}`);
     };
     const s = o.services ?? {};

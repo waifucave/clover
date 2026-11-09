@@ -399,6 +399,32 @@ describe("FrameReader", () => {
   });
 });
 
+describe("the tree protocol in the hello (lane J's noFollow, #225)", () => {
+  test("a noFollow read to a peer on tree 1.0 is refused here and never sent; to a tree 1.1 peer it goes", async () => {
+    const c = await cluster(["studio", "old", "new"], { clock: new SystemClock(), perDevice: { old: { treeProtocol: { major: 1, minor: 0 } } } });
+    const seen: unknown[] = [];
+    for (const n of ["old", "new"]) {
+      c.t(n).handle("tree.stat", (params) => (seen.push(params), { stat: null }));
+      c.t(n).handle("tree.read", (params) => (seen.push(params), { encoding: "utf8", text: "" }));
+    }
+    const old = await c.t("studio").connect(c.id("old"));
+    const fresh = await c.t("studio").connect(c.id("new"));
+    for (const method of ["tree.stat", "tree.read"]) {
+      const err = await rejection(old.request(method, { path: "home/Old/a.txt", noFollow: true }));
+      expect([method, isContractError(err, "unsupported")]).toEqual([method, true]);
+    }
+    expect(seen).toEqual([]);
+    // What every peer speaks still goes to the old one; the new one takes noFollow.
+    expect(await old.request("tree.stat", { path: "home/Old/a.txt" })).toEqual({ stat: null });
+    expect(await old.request("tree.stat", { path: "home/Old/a.txt", noFollow: false })).toEqual({ stat: null });
+    expect(await fresh.request("tree.read", { path: "home/New/a.txt", noFollow: true })).toEqual({ encoding: "utf8", text: "" });
+    expect(seen).toEqual([{ path: "home/Old/a.txt" }, { path: "home/Old/a.txt", noFollow: false }, { path: "home/New/a.txt", noFollow: true }]);
+    // The link view shows what each peer's hello named.
+    expect(old.view().features).toEqual([]);
+    expect(fresh.view().features).toContain("tree/1.1");
+  });
+});
+
 describe("an incoming stream's window, from its header (#288 N2)", () => {
   test("a header's window counts only on a live stream, never above this side's own; any other stream gets the wire's", () => {
     // A live stream (screenshots: browser.stream): the opener's window, at most this side's.

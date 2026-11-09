@@ -14,6 +14,11 @@
 //   restart (`startDaemonLinks`), and the bot side takes the gate itself (lane D's #246): its running turns are the
 //   gate's `bot-turns` source, so an update never restarts the daemon in the middle of one, and no turn starts while
 //   an update closes the gate. Each turn is counted once, there.
+// * **The sessions' records** (H's `SessionRecordSync` into D's host, #279): the sessions this computer runs are
+//   copied live to the user's other computers, and theirs land here, so a computer that takes the bots over finds their
+//   open turns at once. What comes in goes through `hostForSync`: a grant copied from another computer never grants
+//   here (D's reviewer's rule), so a session that moves here asks again on this computer's own card. The lease fences
+//   it: a record from an earlier lease is taken as late.
 import type { CanUseTool } from "@waifucave/clover-agent-sdk";
 import type { BotSide, BotSideOptions } from "./bots/wiring";
 import { createBotSide } from "./bots/wiring";
@@ -23,11 +28,15 @@ import type { Clock } from "./contracts/clock";
 import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { computerMethods } from "./computers/rpc";
+import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
+import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
 import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
 import { usageMethods } from "./usage/rpc";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
+import { hostForSync } from "./daemon-session-sync";
+import { SessionRecordSync } from "./sync/session-records";
 
 /** What the bot side needs that the daemon builds: where the bots come from and what drives their sessions. */
 export interface DaemonBotsInput {
@@ -55,6 +64,12 @@ export interface DaemonPartsInput {
   node?: false | Partial<Pick<ComputerNodeOptions, "treeRoot" | "executor" | "fence" | "reviewer" | "askUser" | "terminals" | "answers">>;
   /** The bot side; false for none. */
   bots?: false | DaemonBotsInput;
+  /** The daemon's safety reviewer (`BashReviewer`, on the internal-jobs model): the computer node judges another
+   *  computer's calls with it at "ask for risky actions", and fails closed without it (lane J's `nodeParts`). */
+  reviewer?: SafetyReviewer;
+  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
+   *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
+  approvals?: Pick<ApprovalBroker, "request">;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   log?(line: string): void;
@@ -103,9 +118,23 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
 
     let node: ComputerNode | undefined;
     if (links && nodeLinks && input.node !== false) {
+      // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
+      // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
+      // such a paste is refused with a reason), and its safety reviewer for another computer's calls at "ask for risky
+      // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
+      // not here: the node options below carry what the daemon passes. A test's own node options win.
+      const own = nodeParts({
+        computer: () => node?.registry.self().name ?? nodeLinks.self.name,
+        ...(input.approvals ? { approvals: input.approvals } : {}),
+        ...(input.reviewer ? { reviewer: input.reviewer } : {}),
+        log: (line) => log(`[computers] ${line}`),
+      });
       const n = startComputerNode({
         ...nodeLinks,
+        ...own,
         ...(input.node ?? {}),
+        // A test's own shell launcher keeps the paste card.
+        terminals: { ...own.terminals, ...(input.node ? input.node.terminals ?? {} : {}) },
         clock: input.clock,
         home: input.userHome,
         cloverHome: input.cloverHome,
@@ -140,6 +169,19 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         const handle = links.main;
         handle.setHandBack(() => s.bots.handBack());
         closers.push(() => handle.setHandBack(undefined));
+      }
+      if (links) {
+        const lease = links.main?.lease;
+        const sync = new SessionRecordSync({
+          self: links.key.id,
+          computer: () => runner.self,
+          transport: links.transport,
+          registry: links.registry,
+          host: hostForSync(s.host),
+          ...(lease ? { holder: () => lease.state().holder, isStale: (epoch: number, scope?: string) => lease.isStale(epoch, scope), scope: () => lease.scopeId() } : {}),
+          log: (line) => log(`[sessions sync] ${line}`),
+        });
+        closers.push(() => sync.close());
       }
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));

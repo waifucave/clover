@@ -323,6 +323,11 @@ export interface LayerBridge {
   dragOffer(mount: string, offer: DragOffer): Promise<{ token: string } | { error: string }>;
   /** Claims a dropped grant for the part `mount`. */
   dragClaim(mount: string, token: string): Promise<DragOffer | { error: string }>;
+  /** A sealed frame's own single-use URL for the part `mount`: one per sealed element of the card (§5.5). A plugin
+   *  with the `approvals` capability places its `<Card>`'s fields and buttons inside iframes from the app's sealed
+   *  scheme, which the part can position and style but never read. `option` names the option a button answers;
+   *  undefined for a field. */
+  sealedFrame(mount: string, cardId: string, element: `field:${string}` | `button:${string}`): Promise<string | undefined>;
   onMessage(listener: (message: LayerMessage) => void): () => void;
 }
 

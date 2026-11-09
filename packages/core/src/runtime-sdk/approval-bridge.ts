@@ -894,8 +894,11 @@ export function canUseToolFor(deps: CanUseToolDeps): ApprovalBridge {
     // only to code sessions (and to the daemon's own saved-rule checks, e.g. the browser's dangerous-domain
     // floor, `site-policy.ts`, which honour a `WebFetch(domain:…)` rule in dispatch as in code); and a connector action with a stored connector permission (a stored "Always
     // ask" outranks a saved allow rule, so remembering one would change nothing).
+    // …and a protected write (the #301 review's ruling: "an ask, no always"): an "always" would be saved and never
+    // used, since the path fence's hook asks ahead of every saved allow rule and (5e) above cards it again.
     const plainCard = deps.mode !== "code"
-      || isConnectorToolName(toolName, liveKeys) && connector?.setting !== undefined;
+      || isConnectorToolName(toolName, liveKeys) && connector?.setting !== undefined
+      || protectedWrite;
     return await raiseCard(deps, { log, now, threadId, policy, state, privateTarget, plainCard }, toolName, gateToolName, input, ctx);
   };
   return Object.assign(canUse, { withdrawPending });

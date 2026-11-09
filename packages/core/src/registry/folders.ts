@@ -30,6 +30,7 @@ export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> =
   bundled: "It ships with Clover.",
 };
 import { TreeProblem, folderReader, treeEntries } from "./tree";
+import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 
 /** How long a folder must be unchanged before it is read (§5.1). */
 export const SETTLE_MS = 2_000;
@@ -92,8 +93,16 @@ export async function readPluginFolder(
   const hash = await treeHash(entries);
   const tree: TreeReport = await validateTree(folderReader(folder), { folderName: name, bundled: opts.bundled ?? false, apiVersion: opts.apiVersion ?? PLUGIN_API_VERSION });
   const id = tree.top.id ?? name;
-  const topIssues = [...tree.top.issues, ...tree.issues.filter((i) => !i.file.startsWith("plugins/"))];
-  const topInvalid = tree.ok ? undefined : (firstError(topIssues) ?? "the plugin doesn't validate");
+  // Loader configs: what their `extends`, `paths` and package maps reach is code; reaching outside the tree makes the
+  // whole plugin invalid (#234's review, F2): a plugin never pulls code or config in from elsewhere.
+  const loader = folderLoaderReach(folder, entries.map((e) => e.path));
+  // Every plugin but a bundled one, which ships with the app and extends the repository's shared tsconfig: a development
+  // folder's code runs in plugin processes too (#234's check 5, K3).
+  const judged = opts.bundled !== true;
+  const loaderIssues = judged ? loaderOutsideIssues(loader) : [];
+  const topIssues = [...tree.top.issues, ...tree.issues.filter((i) => !i.file.startsWith("plugins/")), ...loaderIssues];
+  const treeOk = tree.ok && loaderIssues.length === 0;
+  const topInvalid = treeOk ? undefined : (firstError(topIssues) ?? "the plugin doesn't validate");
   const top: RegistryInput = {
     ...base, id, manifest: tree.top.manifest ?? placeholder(), treeHash: hash, class: tree.top.class, issues: topIssues,
     ...(topInvalid === undefined ? {} : { invalid: topInvalid }),
@@ -109,7 +118,7 @@ export async function readPluginFolder(
       class: child.report.class, issues, folder: join(folder, "plugins", child.folder), ...(invalid === undefined ? {} : { invalid }),
     });
   }
-  const snapshot = tree.ok ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields) : undefined;
+  const snapshot = treeOk ? okSnapshot(hash, entries, tree, opts.codeFieldsOf ?? catalogCodeFields, loader.inside) : undefined;
   return { id, inputs, ...(snapshot ? { snapshot } : {}), parses, tree };
 }
 
@@ -118,6 +127,33 @@ interface Source {
   source: PluginSource;
   dev?: DevFolderState;
   bundled?: boolean;
+}
+
+/** What each agent backend the plugin contributes takes from the user's environment and sets in its own (lane K's
+ *  #233 lists them on the agent's OK card; the plugin's own OK shows them too, so the user sees them when approving the
+ *  plugin, not only when delegating). Read from each backend's quirks file as main has it today
+ *  (`{ quirks: { launch: { envAllow, envSet } } }`). K: keep this reader's shape aligned with #233's entries. */
+export function agentEnvLines(folder: string, tree: TreeReport): string[] {
+  const lines: string[] = [];
+  const reports = [{ dir: "", report: tree.top }, ...tree.children.map((c) => ({ dir: `plugins/${c.folder}/`, report: c.report }))];
+  for (const { dir, report } of reports) {
+    for (const backend of report.manifest?.contributes?.agentBackends ?? []) {
+      if (backend.quirks === undefined) continue;
+      let launch: { envAllow?: unknown; envSet?: unknown } | undefined;
+      try {
+        const doc = JSON.parse(readFileSync(join(folder, dir, backend.quirks), "utf8")) as { quirks?: { launch?: unknown }; launch?: unknown };
+        launch = (doc.quirks?.launch ?? doc.launch) as typeof launch;
+      } catch {
+        launch = undefined;
+      }
+      const name = typeof backend.name === "string" ? backend.name : backend.id;
+      const allow = Array.isArray(launch?.envAllow) ? launch.envAllow.filter((n): n is string => typeof n === "string") : [];
+      const set = launch?.envSet !== null && typeof launch?.envSet === "object" ? Object.keys(launch.envSet as object) : [];
+      if (allow.length > 0) lines.push(`Its agent backend ${name} gets from your environment: ${allow.join(", ")}.`);
+      if (set.length > 0) lines.push(`Its agent backend ${name} sets in its environment: ${set.join(", ")}.`);
+    }
+  }
+  return lines;
 }
 
 export class PluginFolders {
@@ -131,7 +167,7 @@ export class PluginFolders {
   readonly #watchers = new Map<string, FSWatcher>();
   #expiry: ReturnType<typeof setTimeout> | undefined;
   readonly #devListeners = new Set<() => void>();
-  readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance }>();
+  readonly #reports = new Map<string, { tree: TreeReport; source: PluginSource; provenance: PluginProvenance; folder: string }>();
 
   constructor(opts: PluginFoldersOptions) {
     this.#o = opts;
@@ -206,7 +242,7 @@ export class PluginFolders {
     const name = r.tree.top.manifest?.name;
     return {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
-      lines: describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards }),
+      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards }), ...agentEnvLines(r.folder, r.tree)],
       source: PROVENANCE_TEXT[r.provenance.by],
     };
   }
@@ -320,7 +356,7 @@ export class PluginFolders {
       if (change !== undefined) input.change = change;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
-    if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance });
+    if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });
     return r;
   }
 
