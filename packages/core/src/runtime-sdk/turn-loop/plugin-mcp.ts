@@ -169,6 +169,10 @@ export interface PluginMcpOptions {
   log?(line: string): void;
   /** How long one server's listing may take, its `open()` included (default 30 s). */
   listTimeoutMs?: number;
+  /** The computers that run a `perComputer` server (lane J's node: each computer ticks its own, `mcpComputers`), none
+   *  when none ticks it; this computer alone when the option is left out. Read at each placement, so the prompt's `computer` field follows its next refresh
+   *  and the router checks the live list meanwhile. */
+  computers?(server: string): readonly string[];
 }
 
 interface Listed {
@@ -339,7 +343,14 @@ export class PluginMcp {
   placement(server: string): McpServerPlacement | undefined {
     const l = this.#listed.get(server);
     if (l === undefined) return undefined;
-    return l.entry.perComputer === true ? { name: server, kind: "local", computers: [this.#o.self()] } : { name: server, kind: "remote", computers: [] };
+    if (l.entry.perComputer !== true) return { name: server, kind: "remote", computers: [] };
+    // Exactly the computers that tick it: none ticked (no OK card answered on any computer) runs it nowhere.
+    return { name: server, kind: "local", computers: [...(this.#o.computers?.(server) ?? [this.#o.self()])] };
+  }
+
+  /** The `perComputer` servers listed here, with their plugin: what lane J's node ticks per computer (`localServers`). */
+  localServers(): { server: string; plugin: string }[] {
+    return [...this.#listed].filter(([, l]) => l.entry.perComputer === true).map(([server, l]) => ({ server, plugin: l.plugin }));
   }
 
   fields(server: string): McpFields {

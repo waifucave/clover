@@ -105,6 +105,33 @@ test("a host server's tools are listed with their loading and instructions, plac
   }
 });
 
+test("a per-computer server is placed on exactly the computers lane J's node says run it (this one alone without the option); localServers lists them with their plugin", async () => {
+  const registry = fakeRegistry([
+    entry("acme", "blender", { type: "host", perComputer: true, tools: { "*": "preload" } }),
+    entry("clover", "web", { type: "host" }),
+  ], { acme: "/nonexistent", clover: "/nonexistent" });
+  const running: Record<string, string[]> = { acme__blender: ["Studio", "Laptop"] };
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", computers: (server) => running[server] ?? [] });
+  try {
+    await mcp.refresh();
+    expect(mcp.localServers()).toEqual([{ server: "acme__blender", plugin: "acme" }]);
+    expect(mcp.placement("acme__blender")).toEqual({ name: "acme__blender", kind: "local", computers: ["Studio", "Laptop"] });
+    // Two computers run it: the model gets the `computer` field.
+    expect(mcp.fields("acme__blender").computer).toBeDefined();
+    // The list is read at each placement: one computer now, no field.
+    running.acme__blender = ["Laptop"];
+    expect(mcp.placement("acme__blender")!.computers).toEqual(["Laptop"]);
+    expect(mcp.fields("acme__blender").computer).toBeUndefined();
+    // Ticked nowhere: it runs nowhere.
+    running.acme__blender = [];
+    expect(mcp.placement("acme__blender")!.computers).toEqual([]);
+    // A remote server is untouched by the list.
+    expect(mcp.placement("web")).toEqual({ name: "web", kind: "remote", computers: [] });
+  } finally {
+    mcp.close();
+  }
+});
+
 test("calls go as the session's caller over one shared channel; a closed channel opens again; a cancel reaches the server", async () => {
   const registry = fakeRegistry([entry("clover", "web", { type: "host" })], { clover: "/nonexistent" });
   const fake = fakeHost();
