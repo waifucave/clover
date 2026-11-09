@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HookRunner, type HookEventPayload, type HookSpec } from "../../src/plugins/hook-runner";
+import { fenceFolders, pluginFenceAvailable } from "../../src/registry/plugin-fence";
+import { ensurePluginRunFiles, type PluginRunGuard } from "../../src/registry/plugin-run";
 
 function tmpDir(): string {
   return mkdtempSync(join(tmpdir(), "clover-hook-runner-"));
@@ -14,6 +16,14 @@ function mkPayload(overrides: Partial<HookEventPayload> = {}): HookEventPayload 
 
 function mkSpec(overrides: Partial<HookSpec> = {}): HookSpec {
   return { pluginId: "demo", command: "true", cwd: tmpDir(), ...overrides };
+}
+
+/** A runner over its own temp Clover home, and where a hook of `demo` may write there: its own temp folder under the
+ *  fence (its TMPDIR; it writes nowhere else, #345's review), else `dir`. */
+function runnerWritingTo(dir: string): { runner: HookRunner; writable: string } {
+  const home = mkdtempSync(join(tmpdir(), "clover-hook-home-"));
+  const guard: PluginRunGuard = { files: ensurePluginRunFiles(join(home, "run"), { cloverHome: home }) };
+  return { runner: new HookRunner(guard), writable: pluginFenceAvailable() ? fenceFolders(home, "demo", "hook-demo").tmp : dir };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -49,9 +59,9 @@ describe("HookRunner.run", () => {
   });
 
   test("(d) sleeping script + timeoutMs 100 → timeout in ~100ms, process is actually dead", async () => {
-    const runner = new HookRunner();
     const dir = tmpDir();
-    const pidFile = join(dir, "pid");
+    const { runner, writable } = runnerWritingTo(dir);
+    const pidFile = join(writable, "pid");
     const start = Date.now();
     const result = await runner.run(
       mkSpec({ cwd: dir, command: `echo $$ > "${pidFile}"; sleep 5`, timeoutMs: 100 }),
@@ -150,9 +160,9 @@ describe("HookRunner.run", () => {
   test(
     "(j) C2: SIGTERM-ignoring hook (trap '' TERM; sleep 2) + timeoutMs ~100 → timeout resolves promptly via SIGKILL, child is dead",
     async () => {
-      const runner = new HookRunner();
       const dir = tmpDir();
-      const pidFile = join(dir, "pid");
+      const { runner, writable } = runnerWritingTo(dir);
+      const pidFile = join(writable, "pid");
       const start = Date.now();
       const result = await runner.run(
         mkSpec({ cwd: dir, command: `trap '' TERM; echo $$ > "${pidFile}"; sleep 2`, timeoutMs: 100 }),

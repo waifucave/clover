@@ -95,8 +95,9 @@ export function pluginStdioMcpServer(
   entry: { command: string; args?: string[]; env?: Record<string, string>; versionNegotiation?: VersionNegotiation },
   pluginRoot: string,
   guard: PluginRunGuard,
+  pluginId?: string,
 ): McpServerConfig {
-  return stdio(guardedMcpServer(entry, pluginRoot, guard));
+  return stdio(guardedMcpServer(entry, pluginRoot, guard, pluginId));
 }
 
 /** `settings.mcpServers`' own entry shape (already `type`-discriminated by the schema, batch 3 item
