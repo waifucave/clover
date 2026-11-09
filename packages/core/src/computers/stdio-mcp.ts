@@ -25,15 +25,20 @@
 //   its own key.
 // * **Signals** go to its group only while its leader runs (a group id is reused only once the group is gone), and once
 //   more right after its exit, for what it left in the group.
-// * **A daemon that died** leaves its servers running (they are detached). Each start puts a random mark in the
-//   server's environment (`CLOVER_STDIO_RUN`), which every process it starts inherits, and records it under
-//   `run/stdio-mcp/`. The next daemon, holding its lock, reaps before it starts any (`reapStdioMcpLeftovers`): it kills,
-//   one by one, only the processes whose environment carries a recorded mark (the leader also its recorded program
-//   and start time). A process whose environment can't be read (a platform binary hides it; Windows doesn't show
-//   another process's) is left alone, as is the daemon itself, its parent and its group.
-import { execFile, spawn as nodeSpawn, type ChildProcess } from "node:child_process";
+// * **A daemon that died** leaves its servers running (they are detached). Each start records its pid, start time and
+//   program under `run/stdio-mcp/`, and puts a random mark in the server's environment (`CLOVER_STDIO_RUN`), which
+//   every process it starts inherits. The next daemon, holding its lock, reaps before it starts any
+//   (`reapStdioMcpLeftovers`): a leader still running that leads its own group, runs the recorded program and started
+//   at the recorded time has its group killed (a live leader holds its group id, so it can't be another's); with the
+//   leader gone, only processes that visibly carry the mark are killed, each on its own. A process whose environment
+//   can't be read is left alone: so the orphans of a server whose binary hides its environment (the plugin Bun, signed
+//   with `restrict`) aren't reaped once their leader is gone (fail-safe), nor anything on Windows. Never the daemon
+//   itself, its parent or its group. Of each process only its ids, start time, program and whether it carries a mark
+//   are kept: no command line or environment is held beyond the line or buffer being read.
+import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { parseInterpolation } from "@waifucave/clover-plugin-sdk";
 import { ContractError, Listeners, type Unsubscribe } from "../contracts/common";
@@ -537,19 +542,14 @@ export function stdioMcpRecordsDir(cloverHome: string): string {
 /** How far a process's start time may be from its record's (`ps` gives seconds; the record is written just after). */
 const START_SLACK_MS = 3_000;
 
-const run = (cmd: string, args: string[]): Promise<string> => new Promise((resolve) => {
-  // `C`: `ps` writes its start times in English, as `lstart` parses them.
-  execFile(cmd, args, { maxBuffer: 64 * 1024 * 1024, windowsHide: true, env: { ...process.env, LC_ALL: "C", LANG: "C" } }, (err, stdout) => resolve(err ? "" : stdout));
-});
-
-/** One process as the reaper sees it: its group, its start time (undefined when it can't be read), its command line,
- *  and its environment's entries (undefined when it can't be read). */
+/** One process as the reaper keeps it: its ids, start time (undefined when it can't be read), its program (undefined
+ *  when unknown) and the nonce of the record whose mark its environment visibly carries. Nothing else of it is kept. */
 export interface SeenProcess {
   pid: number;
   pgid: number;
   started?: number;
-  command: string;
-  env?: readonly string[];
+  program?: string;
+  marked?: string;
 }
 
 /** A record of a start (`run/stdio-mcp/<pid>.json`). */
@@ -560,23 +560,36 @@ export interface StdioRunRecord {
   exe: string;
 }
 
-/** Which processes a daemon that died left running, by its records: a process is one only when its environment
- *  carries a record's mark (exactly `CLOVER_STDIO_RUN=<nonce>`) and its start time is known and not before the record's;
- *  the record's own pid also runs its recorded program and started at the recorded time. Never this daemon, its
- *  parent or a process in its group. */
-export function reapTargets(records: readonly StdioRunRecord[], seen: readonly SeenProcess[], self: { pid: number; ppid: number; pgid?: number }): number[] {
-  const out = new Set<number>();
+/** What to kill, by the controller's identity ruling: for a record whose leader still runs, leads its own group, runs
+ *  the recorded program and started within 3 s of the record, its group (a live leader holds the group id, so no other
+ *  group can have it); and, for every record, each process that visibly carries its mark and started after it. Never
+ *  this daemon, its parent or its group. */
+export function reapTargets(records: readonly StdioRunRecord[], seen: readonly SeenProcess[], self: { pid: number; ppid: number; pgid?: number }): { groups: number[]; pids: number[] } {
+  const spared = (pid: number, pgid: number) => pid <= 1 || pid === self.pid || pid === self.ppid || (self.pgid !== undefined && pgid === self.pgid);
+  const groups = new Set<number>();
+  const pids = new Set<number>();
   for (const r of records) {
-    const mark = `${STDIO_RUN_ENV}=${r.nonce}`;
+    const leader = seen.find((p) => p.pid === r.pid);
+    if (leader !== undefined && leader.pgid === leader.pid && !spared(leader.pid, leader.pgid) && leader.program !== undefined && sameProgram(leader.program, r.exe)
+      && leader.started !== undefined && Math.abs(leader.started - r.startedAt) <= START_SLACK_MS) {
+      groups.add(leader.pid);
+    }
     for (const p of seen) {
-      if (p.pid <= 1 || p.pid === self.pid || p.pid === self.ppid || (self.pgid !== undefined && p.pgid === self.pgid)) continue;
-      if (p.env === undefined || !p.env.includes(mark)) continue;
-      if (p.started === undefined || p.started < r.startedAt - START_SLACK_MS) continue;
-      if (p.pid === r.pid && (Math.abs(p.started - r.startedAt) > START_SLACK_MS || !p.command.includes(r.exe))) continue;
-      out.add(p.pid);
+      if (p.marked !== r.nonce || spared(p.pid, p.pgid) || p.started === undefined || p.started < r.startedAt - START_SLACK_MS) continue;
+      if (!groups.has(p.pgid)) pids.add(p.pid);
     }
   }
-  return [...out].sort((a, b) => a - b);
+  return { groups: [...groups].sort((a, b) => a - b), pids: [...pids].sort((a, b) => a - b) };
+}
+
+/** Whether a process's program is the recorded one: the same path, or the same file once links are resolved. */
+function sameProgram(program: string, exe: string): boolean {
+  if (program === exe) return true;
+  try {
+    return realpathSync(program) === realpathSync(exe);
+  } catch {
+    return false;
+  }
 }
 
 /** `ps`'s start time (`lstart`), or undefined when it doesn't parse. */
@@ -585,54 +598,91 @@ function lstart(text: string): number | undefined {
   return Number.isFinite(t) ? t : undefined;
 }
 
-/** Every process this user can see, with its environment where the OS shows it: macOS `ps -wwE` (the environment after
- *  the command; a process that hides it shows none, so it isn't matched), Linux `/proc/<pid>/environ`. */
-async function seenProcesses(): Promise<SeenProcess[]> {
-  const LSTART = String.raw`[A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}`;
-  const out: SeenProcess[] = [];
-  if (process.platform === "darwin") {
-    const text = await run("ps", ["-A", "-wwE", "-o", "pid=,pgid=,lstart=,command="]);
-    const re = new RegExp(String.raw`^\s*(\d+)\s+(\d+)\s+(${LSTART})\s+(.*)$`);
-    for (const line of text.split("\n")) {
-      const m = re.exec(line);
-      if (!m) continue;
-      const rest = m[4]!;
-      const started = lstart(m[3]!);
-      // The environment, as `ps -E` appends it: the words of the shape NAME=value. Only an exact word counts.
-      out.push({ pid: Number(m[1]), pgid: Number(m[2]), ...(started === undefined ? {} : { started }), command: rest, env: rest.split(/\s+/).filter((w) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) });
-    }
-    return out;
-  }
-  const text = await run("ps", ["-A", "-o", "pid=,pgid=,lstart="]);
-  const re = new RegExp(String.raw`^\s*(\d+)\s+(\d+)\s+(${LSTART})\s*$`);
-  for (const line of text.split("\n")) {
-    const m = re.exec(line);
-    if (!m) continue;
-    const pid = Number(m[1]);
-    let env: string[] | undefined;
-    let command = "";
+/** `ps` with only what it needs in its environment (never this daemon's), each line handed to `line` as it comes and
+ *  dropped. */
+function psLines(args: string[], line: (text: string) => void): Promise<void> {
+  return new Promise((resolve) => {
+    let child: ChildProcess;
     try {
-      env = readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").filter((e) => e !== "");
-      command = readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").join(" ");
+      child = nodeSpawn("ps", args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, env: { PATH: process.env.PATH ?? "/usr/bin:/bin", LC_ALL: "C", LANG: "C" } });
     } catch {
-      env = undefined;
+      resolve();
+      return;
     }
+    const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
+    lines.on("line", (l) => {
+      try {
+        line(l);
+      } catch {
+        // One line that doesn't parse: skipped.
+      }
+    });
+    child.on("error", () => resolve());
+    lines.on("close", () => resolve());
+  });
+}
+
+const LSTART = String.raw`[A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}`;
+
+/** Every process this user can see, reduced as it is read to `SeenProcess`: whether it carries one of `marks` (by
+ *  nonce) is decided on each line or buffer, which is then dropped. macOS: `ps -wwE` (an exact `NAME=value` word),
+ *  `comm` for the program; Linux: `/proc/<pid>/environ`, and `/proc/<pid>/exe` for the program. */
+async function seenProcesses(marks: ReadonlyMap<string, string>): Promise<SeenProcess[]> {
+  const byPid = new Map<number, SeenProcess>();
+  const head = new RegExp(String.raw`^\s*(\d+)\s+(\d+)\s+(${LSTART})\s+(.*)$`);
+  await psLines(["-A", "-o", "pid=,pgid=,lstart=,comm="], (l) => {
+    const m = head.exec(l);
+    if (!m) return;
     const started = lstart(m[3]!);
-    out.push({ pid, pgid: Number(m[2]), ...(started === undefined ? {} : { started }), command, ...(env === undefined ? {} : { env }) });
+    const pid = Number(m[1]);
+    const comm = m[4]!.trim();
+    byPid.set(pid, { pid, pgid: Number(m[2]), ...(started === undefined ? {} : { started }), ...(process.platform === "darwin" && comm !== "" ? { program: comm } : {}) });
+  });
+  const markOf = (words: Iterable<string>): string | undefined => {
+    for (const w of words) {
+      const nonce = marks.get(w);
+      if (nonce !== undefined) return nonce;
+    }
+    return undefined;
+  };
+  if (process.platform === "darwin") {
+    const pidOf = /^\s*(\d+)\s/;
+    await psLines(["-A", "-wwE", "-o", "pid=,command="], (l) => {
+      const m = pidOf.exec(l);
+      const p = m ? byPid.get(Number(m[1])) : undefined;
+      if (p === undefined || !l.includes(`${STDIO_RUN_ENV}=`)) return;
+      const nonce = markOf(l.split(/\s+/));
+      if (nonce !== undefined) p.marked = nonce;
+    });
+    return [...byPid.values()];
   }
-  return out;
+  for (const p of byPid.values()) {
+    try {
+      const nonce = markOf(readFileSync(`/proc/${p.pid}/environ`, "utf8").split("\0"));
+      if (nonce !== undefined) p.marked = nonce;
+    } catch {
+      // Not readable (another user's, or gone): not marked.
+    }
+    try {
+      p.program = readlinkSync(`/proc/${p.pid}/exe`);
+    } catch {
+      // Unknown: never a leader match.
+    }
+  }
+  return [...byPid.values()];
 }
 
 /** The daemon starts, holding its lock and before any plugin server starts: stops what a daemon before it left running
- *  (it died without stopping its servers), by `reapTargets`, each process signalled on its own (never a group), and
- *  clears the records. Windows shows no other process's environment, so there nothing is killed: the records are
- *  cleared and what they name is logged. */
-export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: string) => void; seen?: () => Promise<SeenProcess[]> }): Promise<{ reaped: number[] }> {
+ *  (it died without stopping its servers), by `reapTargets` (a matched leader's group, else each visibly marked
+ *  process on its own), and clears the records. Windows shows no other process's environment and has no groups to
+ *  match, so there nothing is killed: the records are cleared and what they named is logged. */
+export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: string) => void; seen?: (marks: ReadonlyMap<string, string>) => Promise<SeenProcess[]> }): Promise<{ groups: number[]; pids: number[] }> {
+  const none = { groups: [], pids: [] };
   let names: string[];
   try {
     names = readdirSync(o.dir).filter((n) => n.endsWith(".json"));
   } catch {
-    return { reaped: [] };
+    return none;
   }
   const records: StdioRunRecord[] = [];
   const labels = new Map<number, string>();
@@ -650,27 +700,36 @@ export async function reapStdioMcpLeftovers(o: { dir: string; log?: (line: strin
     }
     rmSync(file, { force: true });
   }
-  if (records.length === 0) return { reaped: [] };
+  if (records.length === 0) return none;
   if (process.platform === "win32" && o.seen === undefined) {
     for (const r of records) o.log?.(`stdio MCP: ${labels.get(r.pid)} (pid ${r.pid}) may still run from a daemon before; Windows doesn't show its mark, so it was left alone`);
-    return { reaped: [] };
+    return none;
   }
-  const seen = await (o.seen ?? seenProcesses)();
-  const self = { pid: process.pid, ppid: process.ppid, ...((): { pgid?: number } => {
-    const me = seen.find((p) => p.pid === process.pid);
-    return me === undefined ? {} : { pgid: me.pgid };
-  })() };
-  const reaped: number[] = [];
-  for (const pid of reapTargets(records, seen, self)) {
+  // The exact words to look for, built once: `CLOVER_STDIO_RUN=<nonce>` → nonce.
+  const marks = new Map(records.map((r) => [`${STDIO_RUN_ENV}=${r.nonce}`, r.nonce]));
+  const seen = await (o.seen ?? seenProcesses)(marks);
+  const me = seen.find((p) => p.pid === process.pid);
+  const targets = reapTargets(records, seen, { pid: process.pid, ppid: process.ppid, ...(me === undefined ? {} : { pgid: me.pgid }) });
+  const groups: number[] = [];
+  const pids: number[] = [];
+  for (const g of targets.groups) {
     try {
-      process.kill(pid, "SIGKILL");
-      reaped.push(pid);
+      process.kill(-g, "SIGKILL");
+      groups.push(g);
     } catch {
       // Gone meanwhile.
     }
   }
-  if (reaped.length > 0) o.log?.(`stdio MCP: stopped ${reaped.length} process(es) a daemon before left running (${[...new Set(records.map((r) => labels.get(r.pid)))].join(", ")})`);
-  return { reaped };
+  for (const pid of targets.pids) {
+    try {
+      process.kill(pid, "SIGKILL");
+      pids.push(pid);
+    } catch {
+      // Gone meanwhile.
+    }
+  }
+  if (groups.length + pids.length > 0) o.log?.(`stdio MCP: stopped what a daemon before left running (${groups.length} group(s), ${pids.length} process(es)) of ${[...new Set(records.map((r) => labels.get(r.pid)))].join(", ")}`);
+  return { groups, pids };
 }
 
 /** A server's stderr into its plugin's log (`logs/plugins/<id>.log`), through lane B's writer and its caps: the file's

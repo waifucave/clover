@@ -324,35 +324,43 @@ describe("bounds and signals", () => {
 
 describe("reapTargets", () => {
   const nonce = "a".repeat(32);
-  const mark = `CLOVER_STDIO_RUN=${nonce}`;
   const rec = { pid: 500, startedAt: 1_000_000, nonce, exe: "/opt/bun" };
-  const p = (pid: number, o: Partial<SeenProcess> = {}): SeenProcess => ({ pid, pgid: 500, started: 1_000_500, command: "/opt/bun server.js", env: [mark], ...o });
-  test("only a process carrying the exact mark, started after the record; the leader also its program and start time", () => {
-    const seen = [
-      p(500),
-      p(501, { command: "child" }),
-      p(502, { env: [`CLOVER_STDIO_RUN=${nonce}x`] }),
-      p(503, { env: undefined }),
-      p(504, { started: undefined }),
-      p(505, { started: 1_000_000 - 10_000 }),
-      p(506, { env: ["OTHER=1"] }),
-    ];
-    expect(reapTargets([rec], seen, { pid: 1, ppid: 1 })).toEqual([500, 501]);
-    // A leader running another program, or started at another time, is spared; its marked descendants aren't.
-    expect(reapTargets([rec], [p(500, { command: "/usr/bin/other" }), p(501)], { pid: 1, ppid: 1 })).toEqual([501]);
-    expect(reapTargets([rec], [p(500, { started: 1_000_000 + 60_000 }), p(501)], { pid: 1, ppid: 1 })).toEqual([501]);
+  const p = (pid: number, o: Partial<SeenProcess> = {}): SeenProcess => ({ pid, pgid: 500, started: 1_000_500, ...o });
+  const self = { pid: 1, ppid: 1 };
+
+  test("leader alive, leading its group, the recorded program and start time: its group (marks or not: a restricted binary hides them)", () => {
+    expect(reapTargets([rec], [p(500, { program: "/opt/bun" }), p(501), p(502, { marked: nonce })], self)).toEqual({ groups: [500], pids: [] });
+    // Another program, another start time, or not leading its own group: a reused pid, so no group; marked ones alone.
+    for (const leader of [p(500, { program: "/usr/bin/other" }), p(500, { program: "/opt/bun", started: 1_000_000 + 60_000 }), p(500, { program: "/opt/bun", started: undefined }), p(500, { program: "/opt/bun", pgid: 77 }), p(500)]) {
+      expect(reapTargets([rec], [leader, p(501), p(502, { marked: nonce })], self)).toEqual({ groups: [], pids: [502] });
+    }
   });
 
-  test("never this daemon, its parent or its group, even carrying the mark", () => {
-    const seen = [p(700, { pgid: 700 }), p(701, { pgid: 9 }), p(702, { pgid: 9 }), p(703, { pgid: 9 }), p(704, { pgid: 9 })];
-    expect(reapTargets([rec], seen, { pid: 701, ppid: 702, pgid: 700 })).toEqual([703, 704]);
+  test("leader gone: only processes visibly carrying the mark, started after the record, each on its own", () => {
+    const seen = [p(501), p(502, { marked: nonce }), p(503, { marked: "b".repeat(32) }), p(504, { marked: nonce, started: undefined }), p(505, { marked: nonce, started: 1_000_000 - 10_000 })];
+    expect(reapTargets([rec], seen, self)).toEqual({ groups: [], pids: [502] });
+  });
+
+  test("never this daemon, its parent or its group, as a leader or a marked process", () => {
+    const seen = [p(700, { pgid: 700, marked: nonce }), p(701, { pgid: 9, marked: nonce }), p(702, { pgid: 9, marked: nonce }), p(703, { pgid: 9, marked: nonce })];
+    expect(reapTargets([rec], seen, { pid: 701, ppid: 702, pgid: 700 })).toEqual({ groups: [], pids: [703] });
+    const ownLeader = { ...rec, pid: 701 };
+    expect(reapTargets([ownLeader], [p(701, { pgid: 701, program: "/opt/bun", started: 1_000_000 })], { pid: 701, ppid: 1, pgid: 701 })).toEqual({ groups: [], pids: [] });
   });
 });
 
 describe("a daemon that died", () => {
   const posix = process.platform !== "win32";
+  const leaderScript = `const c = require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" }); console.log(c.pid); process.exit(0);`;
+  /** A leader that starts a child and exits (the child keeps its group and environment). */
+  const startOrphan = (env: Record<string, string>) => new Promise<{ leader: number; child: number }>((resolve) => {
+    const l = spawn(process.execPath, ["-e", leaderScript], { detached: true, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, ...env } });
+    let out = "";
+    l.stdout!.on("data", (d) => { out += d; });
+    l.on("exit", () => resolve({ leader: l.pid!, child: Number(out.trim()) }));
+  });
 
-  test("the next daemon kills what it left running by their mark, each on its own", async () => {
+  test("leader alive: the next daemon kills its group by the leader's identity", async () => {
     if (!posix) return;
     const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
     const { launcher } = rig({ records });
@@ -361,37 +369,41 @@ describe("a daemon that died", () => {
     const grandchild = Number(((await request(ch, 2, "tools/call", { name: "Spawn", arguments: {} })).result as { content: { text: string }[] }).content[0]!.text);
     const pid = launcher.running()[0]!.pid!;
     // The daemon died: nothing stopped its server. The next one reaps.
-    const { reaped } = await reapStdioMcpLeftovers({ dir: records });
-    expect(reaped).toEqual([pid, grandchild].sort((a, b) => a - b));
+    const reaped = await reapStdioMcpLeftovers({ dir: records });
+    expect(reaped.groups).toEqual([pid]);
     await until(() => !alive(pid) && !alive(grandchild));
     expect(readdirSync(records)).toEqual([]);
     await launcher.close();
   });
 
-  test("an orphan carrying the mark is killed though its leader is gone; a stranger in a reused-pid group is spared", async () => {
+  test("leader gone: an orphan carrying the mark is killed; a stranger in a reused-pid group is spared", async () => {
     if (!posix) return;
     const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
     mkdirSync(records, { recursive: true });
-    // A leader that starts a child and exits: the child keeps its environment.
-    const leaderScript = `const c = require("node:child_process").spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", detached: false }); console.log(c.pid); process.exit(0);`;
-    const start = (env: Record<string, string>) => new Promise<{ leader: number; child: number }>((resolve) => {
-      const l = spawn(process.execPath, ["-e", leaderScript], { detached: true, stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, ...env } });
-      let out = "";
-      l.stdout!.on("data", (d) => { out += d; });
-      l.on("exit", () => resolve({ leader: l.pid!, child: Number(out.trim()) }));
-    });
     const nonce = randomBytes(16).toString("hex");
-    const ours = await start({ CLOVER_STDIO_RUN: nonce });
+    const ours = await startOrphan({ CLOVER_STDIO_RUN: nonce });
     writeFileSync(join(records, `${ours.leader}.json`), JSON.stringify({ pid: ours.leader, startedAt: Date.now() - 2_000, nonce, exe: process.execPath, pluginId: "acme/tools", server: "echo" }));
-    // The stranger: its group's leader is gone too, its child carries no mark; the record names that leader's pid.
-    const stranger = await start({});
+    // The stranger: its leader is gone too, its child carries no mark, and a record names that leader's pid.
+    const stranger = await startOrphan({});
     writeFileSync(join(records, `${stranger.leader}.json`), JSON.stringify({ pid: stranger.leader, startedAt: Date.now() - 2_000, nonce: randomBytes(16).toString("hex"), exe: process.execPath, pluginId: "x", server: "y" }));
     expect(alive(ours.child) && alive(stranger.child)).toBe(true);
-    const { reaped } = await reapStdioMcpLeftovers({ dir: records });
-    expect(reaped).toEqual([ours.child]);
+    const reaped = await reapStdioMcpLeftovers({ dir: records });
+    expect(reaped).toEqual({ groups: [], pids: [ours.child] });
     await until(() => !alive(ours.child));
     expect(alive(stranger.child)).toBe(true);
     process.kill(stranger.child, "SIGKILL");
+  });
+
+  test("a live process at a recorded pid that isn't the recorded program (a reused pid) is spared with its group", async () => {
+    if (!posix) return;
+    const records = join(temp("lane-j-stdio-rec-"), "run", "stdio-mcp");
+    mkdirSync(records, { recursive: true });
+    const other = spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" });
+    await new Promise((r) => setTimeout(r, 100));
+    writeFileSync(join(records, `${other.pid}.json`), JSON.stringify({ pid: other.pid, startedAt: Date.now() - 100, nonce: randomBytes(16).toString("hex"), exe: process.execPath }));
+    expect(await reapStdioMcpLeftovers({ dir: records })).toEqual({ groups: [], pids: [] });
+    expect(alive(other.pid!)).toBe(true);
+    process.kill(-other.pid!, "SIGKILL");
   });
 
   test("the daemon's own pid, its parent and its group are never signalled", async () => {
@@ -399,20 +411,23 @@ describe("a daemon that died", () => {
     mkdirSync(records, { recursive: true });
     const nonce = randomBytes(16).toString("hex");
     writeFileSync(join(records, `${process.pid}.json`), JSON.stringify({ pid: process.pid, startedAt: Date.now() - 1_000, nonce, exe: process.execPath }));
-    const mark = [`CLOVER_STDIO_RUN=${nonce}`];
     const signalled: number[] = [];
     const real = process.kill;
     process.kill = ((pid: number) => { signalled.push(pid); return true; }) as typeof process.kill;
     try {
-      const { reaped } = await reapStdioMcpLeftovers({
+      const reaped = await reapStdioMcpLeftovers({
         dir: records,
-        seen: async () => [
-          { pid: process.pid, pgid: 4242, started: Date.now(), command: process.execPath, env: mark },
-          { pid: process.ppid, pgid: 4242, started: Date.now(), command: "parent", env: mark },
-          { pid: 999_991, pgid: 4242, started: Date.now(), command: "same group", env: mark },
-        ],
+        seen: async (marks) => {
+          // The reaper hands over only the exact words it looks for.
+          expect([...marks.keys()]).toEqual([`CLOVER_STDIO_RUN=${nonce}`]);
+          return [
+            { pid: process.pid, pgid: process.pid, started: Date.now() - 1_000, program: process.execPath, marked: nonce },
+            { pid: process.ppid, pgid: 4242, started: Date.now(), marked: nonce },
+            { pid: 999_991, pgid: process.pid, started: Date.now(), marked: nonce },
+          ];
+        },
       });
-      expect(reaped).toEqual([]);
+      expect(reaped).toEqual({ groups: [], pids: [] });
       expect(signalled).toEqual([]);
     } finally {
       process.kill = real;
