@@ -28,6 +28,8 @@ import type { Clock } from "./contracts/clock";
 import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
+import { appTerminals } from "./computers/app-terminals";
+import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
 import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
@@ -65,6 +67,9 @@ export interface DaemonPartsInput {
   /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
    *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
   approvals?: Pick<ApprovalBroker, "request">;
+  /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
+   *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
+  coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   log?(line: string): void;
@@ -138,6 +143,13 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         log: (line) => log(`[computers] ${line}`),
       });
       closers.push(() => n.close());
+      // The terminal panel's methods for this computer's app (lane J's `appTerminals`): the node's terminals, the paste
+      // card with them, the output to the connection that opened each one.
+      if (input.coreEvent) {
+        const panel = appTerminals({ terminals: n.terminals, coreEvent: input.coreEvent, log: (line) => log(`[computers] ${line}`) });
+        Object.assign(input.handlers, panel.handlers);
+        closers.push(() => panel.close());
+      }
       node = n;
       if (main) closers.push(followMain(n, main, links));
     }
