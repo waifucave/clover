@@ -4,7 +4,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { Options } from "@waifucave/clover-agent-sdk";
 import { FileSecretStore } from "../../../src/auth/secret-store";
 import { writeCredentialMaterial, writeOpenAiApiKey } from "../../../src/auth/credential-material";
@@ -122,4 +122,21 @@ test("a bot's allowlist is its own provider, the user's default's and the ones a
   // Without a session context (an in-process agent's fill), approvals can't be read: none count.
   await narrow("openai/gpt-test-model", { model: "openai/gpt-test-model" });
   expect([...allowlists[2]!.accounts].filter((a) => a === slot("groq") || a === slot("mistral"))).toEqual([]);
+});
+
+test("the consent grants this allowlist reads live in the bot's conversation log, never where bots may write (scratch, memory)", async () => {
+  const { sessionLogPath } = await import("../../../src/sessions/ids");
+  const { botPaths } = await import("../../../src/bots/paths");
+  const home = temp("clover-a3-fill-home-");
+  // A grant is recorded in the bot's main conversation's log (`SessionGrants`, `recordCore`).
+  const log = sessionLogPath(home, "alpha", "b_alpha");
+  const inside = (dir: string) => { const r = relative(dir, log); return r !== "" && !r.startsWith("..") && !isAbsolute(r); };
+  for (const bot of ["alpha", "beta"]) {
+    const p = botPaths(home, bot);
+    expect(inside(p.scratch)).toBe(false);
+    expect(inside(p.memory)).toBe(false);
+  }
+  expect(inside(join(home, "scratch"))).toBe(false);
+  expect(inside(join(home, "bots"))).toBe(false);
+  expect(inside(join(home, "transcripts"))).toBe(true);
 });
