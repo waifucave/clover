@@ -3774,6 +3774,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         log: (line) => console.error(line),
       });
       if (partsStopping) return void (await closeStarted());
+      // The node is up with its ticks loaded: list the plugins' servers again, so a per-computer server this computer
+      // ticks starts now (the registry's first listing ran before the node, when no server was ticked here yet).
+      void pluginMcp?.refresh();
     } catch (err) {
       console.error(`[parts] the computer node and bot side not started: ${(err as Error).message}`);
     }
