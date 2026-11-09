@@ -580,6 +580,9 @@ export function judge(set: readonly FencedPath[], op: FenceOp, o: JudgeOptions =
 export interface RunLaterExtras {
   /** git's `init.templateDir` and `core.hooksPath` from the user's global config files. */
   readonly gitDirs?: readonly string[];
+  /** The files git's global config includes (`include.path`, `includeIf … path`), however deep, whether or not they
+   *  exist yet: each is read as the global config, so a write there sets `core.hooksPath` or `core.fsmonitor`. */
+  readonly gitFiles?: readonly string[];
   /** `$ZDOTDIR` when it isn't the home (a folder). */
   readonly envPaths?: readonly string[];
   /** `$PYTHONSTARTUP` (a file). */
@@ -651,6 +654,7 @@ export function autoRunEntries(os: Os, home: string, extras: RunLaterExtras = {}
     d("AppData", "Roaming", "Python"); d("AppData", "Roaming", "pip");
   }
   for (const p of extras.gitDirs ?? []) out.push({ path: p, file: false });
+  for (const p of extras.gitFiles ?? []) out.push({ path: p, file: true });
   for (const p of extras.envPaths ?? []) out.push({ path: p, file: false });
   for (const p of extras.envFiles ?? []) out.push({ path: p, file: true });
   const seen = new Set<string>();

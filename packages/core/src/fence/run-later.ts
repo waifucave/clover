@@ -1,5 +1,6 @@
 // What only the user's own settings can add to the persistence list (`autoRunPaths`, contracts/fence.ts): where git's
-// templates and hooks are (`init.templateDir`, `core.hooksPath` in the global config), `$ZDOTDIR` and
+// templates and hooks are (`init.templateDir`, `core.hooksPath` in the global config), the files the global config
+// includes (each one is global config too: `core.hooksPath`, `core.fsmonitor`), `$ZDOTDIR` and
 // `$PYTHONSTARTUP`, and on Windows the Documents known folder, which OneDrive moves (and with it the PowerShell
 // profiles). Read once per home and kept for the process: a change shows at the daemon's next start.
 import { spawnSync } from "node:child_process";
@@ -58,21 +59,32 @@ export function gitIncludedFiles(text: string, os: Os, home: string, baseDir: st
   return out;
 }
 
-/** git's directories the global config names, following its includes (git's own depth limit, 10; each file once). */
-export function gitConfiguredDirsDeep(files: readonly string[], os: Os, home: string, read: (path: string) => string | undefined): string[] {
+/** The global config followed through its includes (git's own depth limit, 10; each file once): the directories it
+ *  names, and every file it includes other than `files` themselves, read or not (one that isn't there yet is global
+ *  config the moment it's written). */
+export function gitConfigWalk(files: readonly string[], os: Os, home: string, read: (path: string) => string | undefined): { dirs: string[]; includes: string[] } {
   const p = os === "windows" ? win32 : posix;
   const seen = new Set<string>();
   const dirs: string[] = [];
+  const includes: string[] = [];
   const visit = (file: string, depth: number) => {
     if (depth > 10 || seen.has(file)) return;
     seen.add(file);
     const text = read(file);
     if (text === undefined) return;
     dirs.push(...gitConfiguredDirs(text, os, home));
-    for (const inc of gitIncludedFiles(text, os, home, p.dirname(file))) visit(inc, depth + 1);
+    for (const inc of gitIncludedFiles(text, os, home, p.dirname(file))) {
+      if (!files.includes(inc)) includes.push(inc);
+      visit(inc, depth + 1);
+    }
   };
   for (const f of files) visit(f, 0);
-  return [...new Set(dirs)];
+  return { dirs: [...new Set(dirs)], includes: [...new Set(includes)] };
+}
+
+/** git's directories the global config names, following its includes. */
+export function gitConfiguredDirsDeep(files: readonly string[], os: Os, home: string, read: (path: string) => string | undefined): string[] {
+  return gitConfigWalk(files, os, home, read).dirs;
 }
 
 /** `%NAME%` expanded from `env` (Windows names are case-insensitive); undefined if a name has no value. */
@@ -91,7 +103,7 @@ export function runLaterExtrasFrom(os: Os, home: string, sources: RunLaterSource
   const p = os === "windows" ? win32 : posix;
   const xdg = sources.env.XDG_CONFIG_HOME;
   const gitFiles = [p.join(home, ".gitconfig"), p.join(xdg && p.isAbsolute(xdg) ? xdg : p.join(home, ".config"), "git", "config")];
-  const gitDirs = gitConfiguredDirsDeep(gitFiles, os, home, sources.read);
+  const { dirs: gitDirs, includes } = gitConfigWalk(gitFiles, os, home, sources.read);
   const envPaths: string[] = [], envFiles: string[] = [];
   for (const [name, into] of [["ZDOTDIR", envPaths], ["PYTHONSTARTUP", envFiles]] as const) {
     const v = sources.env[name];
@@ -103,7 +115,7 @@ export function runLaterExtrasFrom(os: Os, home: string, sources: RunLaterSource
     const expanded = raw === undefined ? undefined : expandWindowsEnv(raw, sources.env);
     if (expanded !== undefined && win32.isAbsolute(expanded)) documents = win32.normalize(expanded).replace(/\\+$/, "");
   }
-  return { gitDirs, envPaths, envFiles, ...(documents === undefined ? {} : { documents }) };
+  return { gitDirs, ...(includes.length > 0 ? { gitFiles: includes } : {}), envPaths, envFiles, ...(documents === undefined ? {} : { documents }) };
 }
 
 /** Parses `reg query … /v Personal`'s output: the value after its type. */
