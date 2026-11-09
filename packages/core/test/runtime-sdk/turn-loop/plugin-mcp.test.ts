@@ -55,11 +55,11 @@ function fakeHost() {
   return { host, opened, calls, hang: (on: boolean) => { hang = on; }, big: (n: number) => { big = n; }, gate: (fn: typeof gate) => { gate = fn; } };
 }
 
-function fakeRegistry(entries: Contribution[], folders: Record<string, string>, manifests: Record<string, unknown> = {}) {
+function fakeRegistry(entries: Contribution[], folders: Record<string, string>, manifests: Record<string, unknown> = {}, records: Record<string, Record<string, unknown>> = {}) {
   const watchers = new Listeners<RegistryChange>();
   return {
     entries: (point: string) => (point === "mcpServers" ? entries : []),
-    get: (id: string) => (folders[id] === undefined ? undefined : { id, source: id === "clover" || id.startsWith("clover/") ? "bundled" : "user", folder: folders[id], manifest: manifests[id] } as unknown as PluginRecord),
+    get: (id: string) => (folders[id] === undefined ? undefined : { id, source: id === "clover" || id.startsWith("clover/") ? "bundled" : "user", folder: folders[id], manifest: manifests[id], enabled: true, state: "running", treeHash: "t1", okHash: "t1", ...(records[id] ?? {}) } as unknown as PluginRecord),
     watch: (fn: (c: RegistryChange) => void) => watchers.add(fn),
     changed: () => watchers.emit({ type: "entries", point: "mcpServers" }),
   };
@@ -338,10 +338,50 @@ test("every server key round-trips through a tool name, never holds `__`, and is
     expect(driverRefused).toEqual([]);
     expect(lines.filter((l) => l.includes("refused"))).toHaveLength(2);
     // known(): the key and scope this registry gives a plugin's server; none for a refused or unknown one.
-    expect(mcp.known("acme/tools", "big-server")).toEqual({ server: "acme-tools-big-server", scope: "both" });
-    expect(mcp.known("acme", "Big__Server")).toBeUndefined();
-    expect(mcp.known("nobody", "web")).toBeUndefined();
-    expect(mcp.known("clover", "web")).toEqual({ server: "web", scope: "both" });
+    // Neither is a per-computer server: known() answers nothing for them (see the known() test).
+    expect(mcp.known("acme/tools", "big-server")).toBeUndefined();
+    expect(mcp.known("clover", "web")).toBeUndefined();
+  } finally {
+    mcp.close();
+  }
+});
+
+test("known(): only a per-computer server of a plugin installed, enabled, running and OK'd here, under a key no other plugin here reaches; never from the peer's strings", async () => {
+  const pc = { type: "host", perComputer: true };
+  const registry = fakeRegistry([
+    entry("acme", "blender", { ...pc, scope: "agents" }),
+    entry("acme", "plain", { type: "host" }),
+    entry("a-b/c", "x", pc), // a-b-c-x
+    entry("a/b-c", "x", pc), // a-b-c-x too: both refused
+    entry("off", "s", pc),
+    entry("found", "s", pc),
+    entry("changed", "s", pc),
+    entry("blocked", "s", pc),
+    entry("clover", "studio", pc),
+  ], { acme: "/n", "a-b/c": "/n", "a/b-c": "/n", off: "/n", found: "/n", changed: "/n", blocked: "/n", clover: "/n" }, {}, {
+    off: { enabled: false, state: "off" },
+    found: { state: "found", okHash: undefined },
+    changed: { treeHash: "t2" }, // its folder changed since the OK
+    blocked: { state: "blocked" },
+    clover: { okHash: undefined }, // bundled: the core's own
+  });
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+  try {
+    await mcp.refresh();
+    expect(mcp.known("acme", "blender")).toEqual({ server: "acme-blender", scope: "agents" });
+    expect(mcp.known("clover", "studio")).toEqual({ server: "studio", scope: "both" });
+    // Not per-computer, not that name, not installed here.
+    expect(mcp.known("acme", "plain")).toBeUndefined();
+    expect(mcp.known("acme", "Blender")).toBeUndefined();
+    expect(mcp.known("acme", "blender-2")).toBeUndefined();
+    expect(mcp.known("evil", "blender")).toBeUndefined();
+    // Real ids whose keys meet: a-b/c + x and a/b-c + x are both a-b-c-x, so neither answers.
+    expect(pluginMcpServerKey("a-b/c", "x")).toBe("a-b-c-x");
+    expect(pluginMcpServerKey("a/b-c", "x")).toBe("a-b-c-x");
+    expect(mcp.known("a-b/c", "x")).toBeUndefined();
+    expect(mcp.known("a/b-c", "x")).toBeUndefined();
+    // Off, never OK'd, changed since its OK, blocked: nothing.
+    for (const p of ["off", "found", "changed", "blocked"]) expect(mcp.known(p, "s")).toBeUndefined();
   } finally {
     mcp.close();
   }

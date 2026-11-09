@@ -456,11 +456,19 @@ export class PluginMcp {
     return out;
   }
 
-  /** The key this computer's registry gives `plugin`'s server `name`, and its scope here; undefined when the plugin or
-   *  server isn't here or its key is refused here (lane J's node keeps a remote entry only when this matches it). */
+  /** What this computer's own registry says of `plugin`'s server `name`, for lane J's node to check a remote listing
+   *  against: its key here and its scope here. It answers only when the plugin is installed HERE, enabled, running (or
+   *  stopped, still on), OK'd for its folder as it is now (a bundled one is the core's own), and its manifest declares
+   *  a per-computer `host` server of exactly that name, served under a key no other plugin here also reaches (`#keys`
+   *  refuses every claimant of a shared key: `a-b/c`'s and `a/b-c`'s `x` are both `a-b-c-x`). The key always comes
+   *  from this registry, never from the peer's strings. Undefined otherwise. */
   known(plugin: string, name: string): { server: string; scope: "bots" | "agents" | "both" } | undefined {
+    const record = this.#o.registry.get(plugin);
+    if (record === undefined || record.enabled !== true || (record.state !== "running" && record.state !== "stopped")) return undefined;
+    if (!isBundledClover(record) && (record.okHash === undefined || record.okHash !== record.treeHash)) return undefined;
     const hit = this.#keys().served.find(({ c }) => c.pluginId === plugin && this.#nameOf(c) === name);
-    return hit === undefined ? undefined : { server: hit.key, scope: this.#scopeOf(plugin, hit.c.value as HostServerEntry) };
+    if (hit === undefined || (hit.c.value as HostServerEntry).perComputer !== true) return undefined;
+    return { server: hit.key, scope: this.#scopeOf(plugin, hit.c.value as HostServerEntry) };
   }
 
   #scopeOf(plugin: string, entry: HostServerEntry): "bots" | "agents" | "both" {
