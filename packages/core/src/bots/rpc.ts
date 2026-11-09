@@ -4,8 +4,7 @@
 //
 // The server decides who may call what before a handler runs (the allow lists, the capabilities, `userOnly`); the
 // handlers check the caller again where the method changes something, since a bot's or a plugin's call must never
-// count as the user's (§3.1, §9.1). Not here yet: `session.answer` (the runtime's questions, A-M3) and the routines'
-// methods (M3).
+// count as the user's (§3.1, §9.1).
 //
 // `peerSessionMethods` is the receiving side of `peer.session.send` (devices.ts), for a computer that runs a bot the
 // user messaged from another device: the sending device's signature decides whether the turn is the user's (N3).
@@ -28,6 +27,7 @@ import { botPaths } from "./paths";
 import { StagedImages } from "./staged-images";
 import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
+import type { BotQuestions } from "./questions";
 
 // The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
 export { MethodError, handler, requireUser, toMethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
@@ -47,6 +47,8 @@ export interface SessionsMethodsDeps {
   /** `session.setModel` for a background agent or a coding session (lane K's `AgentManager.setModel`); without it the
    *  new model is recorded in the session's view and its driver reads it at the next turn. */
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
+  /** The bot side's questions (questions.ts): `session.answer` resolves the one waiting. Without it, none waits. */
+  questions?: Pick<BotQuestions, "answer">;
 }
 
 /** How far back a bot conversation's messages are read for the staged copies they still name (never pruned). */
@@ -250,6 +252,19 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
         ? await host.deliver(id, { from: "note", label: (label ?? pluginId).slice(0, 120), text, by: { kind: "plugin", pluginId } })
         : await host.deliver(id, { from: "plugin", pluginId, text });
       return { seq };
+    }),
+
+    // The answer to a session's `AskUserQuestion` (§5.5): the user's, from any of their clients, or a plugin's that
+    // shows the question (`conversation.post`); never a session's, so no bot answers its own or another's.
+    [M.sessionAnswer.name]: handler(M.sessionAnswer, async ({ id, callId, answers, notes }, ctx) => {
+      const caller = ctx.caller;
+      if (caller.kind !== "user" && caller.kind !== "plugin") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user, or a plugin showing the question, answers it");
+      reachable(id);
+      const by = caller.kind === "user" ? "user" : `plugin:${caller.pluginId}`;
+      const outcome = deps.questions?.answer(id, callId, answers, by, notes)
+        ?? { ok: false as const, code: "not_found" as const, message: `no question ${callId} is waiting in ${id}` };
+      if (!outcome.ok) throw new ContractError(outcome.code, outcome.message);
+      return { ok: true as const };
     }),
 
     [M.sessionInterrupt.name]: handler(M.sessionInterrupt, async ({ id }, ctx) => {
