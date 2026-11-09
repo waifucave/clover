@@ -15,6 +15,11 @@ import { toBase64 } from "../bytes";
 import { DeviceKey } from "../device-key";
 import { ED25519_L, isStrictEd25519Point, isStrictEd25519Signature } from "../ed25519-strict";
 import { answerKeyBytes, generateEd25519, publicKeyFromBase64, verifyEd25519, verifyKeySignature } from "../keys";
+import * as service from "@waifucave/clover-service-shared/ed25519-strict";
+import { deviceIdFor, type PairingProof } from "../../contracts/device-registry";
+import { FakeDeviceRegistry, makeFakeDevice } from "../../contracts/fakes/device-registry";
+import { fallbackDialTarget } from "../../links/node";
+import { helloKeysStrict } from "../../links/pairing";
 
 const hex = (h: string) => new Uint8Array(Buffer.from(h, "hex"));
 const le = (n: bigint) => {
@@ -120,5 +125,51 @@ describe("strict Ed25519 keys", () => {
       all: () => [{ id: "self", publicKey: "x" }, { id: "a", publicKey: toBase64(real.publicKey) }, { id: "b", publicKey: toBase64(new Uint8Array(32)) }],
     });
     expect(lists.keys).toEqual([real.publicKey]);
+  });
+
+  test("the Workers' copy (services/shared) agrees with this one, input for input", () => {
+    const inputs: Uint8Array[] = [...SMALL_ORDER.map(hex), le(P), le(P + 1n), le((1n << 255n) - 1n), le(1n | (1n << 255n))];
+    for (let i = 0; i < 200; i++) inputs.push(generateEd25519().publicKey, new Uint8Array(Buffer.from(crypto.getRandomValues(new Uint8Array(32)))));
+    for (const x of inputs) expect(service.isStrictEd25519Point(x)).toBe(isStrictEd25519Point(x));
+    expect(service.ED25519_L).toBe(ED25519_L);
+    const k = generateEd25519();
+    const sig = k.sign(new Uint8Array([1]));
+    const bigS = new Uint8Array(sig);
+    bigS.set(le(ED25519_L), 32);
+    for (const x of [sig, bigS, new Uint8Array(64)]) expect(service.isStrictEd25519Signature(x)).toBe(isStrictEd25519Signature(x));
+  });
+
+  test("a pairing hello's pair and group keys must be strict (the pair key becomes the handshake's peer key)", () => {
+    const pairKey = generateEd25519().publicKey;
+    const groupKey = generateEd25519().publicKey;
+    expect(helloKeysStrict({ pairKey, groupKey })).toBe(true);
+    for (const h of SMALL_ORDER) {
+      expect(helloKeysStrict({ pairKey: hex(h), groupKey }), h).toBe(false);
+      expect(helloKeysStrict({ pairKey, groupKey: hex(h) }), h).toBe(false);
+    }
+    expect(helloKeysStrict({ pairKey: le(P + 1n), groupKey })).toBe(false);
+    expect(helloKeysStrict({ pairKey: "x", groupKey })).toBe(false);
+  });
+
+  test("the fallback dial target is only a strict registry key", () => {
+    const real = generateEd25519().publicKey;
+    const records: Record<string, { publicKey: string; revokedAt?: number }> = { a: { publicKey: toBase64(real) }, b: { publicKey: toBase64(new Uint8Array(32)) }, c: { publicKey: toBase64(real), revokedAt: 1 } };
+    const registry = { get: (id: string) => records[id] as never };
+    expect(fallbackDialTarget(registry, "a")?.key).toEqual(real);
+    expect(fallbackDialTarget(registry, "b")).toBeUndefined();
+    expect(fallbackDialTarget(registry, "c")).toBeUndefined();
+  });
+
+  test("the fake device registry verifies through the contract's strict verifier", async () => {
+    const { registry } = await FakeDeviceRegistry.create({ clock: new FakeClock() });
+    const zero = new Uint8Array(32);
+    const zeroId = await deviceIdFor(zero);
+    await registry.add({ id: zeroId, publicKey: toBase64(zero), name: "Zero", kind: "desktop", runsCore: true }, { via: "code", card: "card_test" } as PairingProof);
+    // A statement the all-zero signature passes under a plain verify: refused here.
+    const statement = new TextEncoder().encode("clover/answer-key/1\nabc\nxyz\nnone");
+    expect(await registry.verify(zeroId, statement, new Uint8Array(64))).toBe(false);
+    const real = await makeFakeDevice();
+    await registry.add({ id: real.id, publicKey: real.publicKey, name: "Real", kind: "desktop", runsCore: true }, { via: "code", card: "card_test" } as PairingProof);
+    expect(await registry.verify(real.id, statement, await real.sign(statement))).toBe(true);
   });
 });
