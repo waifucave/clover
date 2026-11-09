@@ -158,6 +158,9 @@ describe("merging two groups (R18)", () => {
     const fresh = toBase64Url(generateEd25519().publicKey);
     const refused = await link.request("link.group.admit", { group: g, key: fresh, t: t.client.now() }).catch((e: unknown) => e);
     expect(isContractError(refused, "refused")).toBe(true);
+    // A small-order key is refused as invalid before anything is weighed.
+    const small = await link.request("link.group.admit", { group: g, key: toBase64Url(new Uint8Array(32)), t: t.client.now() }).catch((e: unknown) => e);
+    expect(isContractError(small, "invalid")).toBe(true);
     // Not even its own key again: it has a live one.
     const again = await link.request("link.group.admit", { group: g, key: t.links.registry.group()!.ownKey, t: t.client.now() }).catch((e: unknown) => e);
     expect(isContractError(again, "refused")).toBe(true);
