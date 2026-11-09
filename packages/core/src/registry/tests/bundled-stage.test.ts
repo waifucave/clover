@@ -73,8 +73,7 @@ describe("the dev stage from the repository's plugins/", () => {
       // registry, `adoptLink` and its `pairs` store, plugins/clover/plugins/companion-web/host/api.ts), which isn't in the
       // plugin API yet. Anything else that fails to start fails this test; fixing that one updates it.
       expect(failed.map((f) => f.split(":")[0])).toEqual(["clover/companion-web"]);
-      // (Until B-M2's API PR serves settings, its first call to fail is `settings.get`; after it, `pairs.list`.)
-      expect(failed[0]).toMatch(/settings\.get is not served on this computer|pairs\.list isn't a call of the plugin API/);
+      expect(failed[0]).toContain("pairs.list isn't a call of the plugin API");
 
       // #322's review, S2: a bundled entry rewritten after staging (run/bundled-plugins/clover/...) is refused at load,
       // and its new code never runs.

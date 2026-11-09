@@ -3,7 +3,7 @@
 // `$PYTHONSTARTUP`, and on Windows the Documents known folder, which OneDrive moves (and with it the PowerShell
 // profiles). Read once per home and kept for the process: a change shows at the daemon's next start.
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join, posix, win32 } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
 import type { RunLaterExtras } from "../contracts/fence";
@@ -86,7 +86,9 @@ export function runLaterExtras(os: Os, home: string): RunLaterExtras {
   if (hit) return hit;
   const extras = runLaterExtrasFrom(os, home, {
     env: process.env,
-    read: (f) => { try { return readFileSync(f, "utf8"); } catch { return undefined; } },
+    // Never through a link (the fence's own rule for the global git config: a planted link must not choose what is
+    // fenced): a regular file, or nothing.
+    read: (f) => { try { return lstatSync(f).isFile() ? readFileSync(f, "utf8") : undefined; } catch { return undefined; } },
     documentsValue: () => {
       if (process.platform !== "win32") return undefined;
       try {
