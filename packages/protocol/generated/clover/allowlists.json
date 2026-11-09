@@ -30,6 +30,7 @@
       "clock.status",
       "command.list",
       "command.run",
+      "computer.acting",
       "computer.get",
       "computer.list",
       "computer.rename",
