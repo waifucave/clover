@@ -161,3 +161,49 @@ jobs:
             apps/desktop/out/dist/SHA256SUMS-*.txt
             apps/desktop/out/dist/BUILD-COMMIT-*.txt
           if-no-files-found: error
+
+  # The Linux package repositories' metadata (scripts/release/linux-repo.ts): apt's pool and dists for the suite
+  # (stable for latest, beta for beta) and dnf's repodata, from both architectures' packages. Unsigned: the owner signs
+  # it on their Mac with the repository key from their Keychain, and uploads it by hand.
+  linux-repo:
+    name: release · linux repositories
+    needs: linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Only from main
+        env:
+          REF: ${{ github.ref }}
+        run: test "$REF" = refs/heads/main || { echo "::error::a release builds from main, not $REF"; exit 1; }
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: apt-ftparchive and createrepo_c
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends apt-utils createrepo-c
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: clover-linux-*-${{ inputs.channel }}
+          path: packages-in
+
+      - name: The repositories' metadata (unsigned)
+        env:
+          CHANNEL: ${{ inputs.channel }}
+        run: bun scripts/release/linux-repo.ts metadata --from "$(ls -d packages-in/* | paste -sd, -)" --channel "$CHANNEL" --out linux-repo
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: clover-linux-repo-${{ inputs.channel }}
+          path: linux-repo
+          if-no-files-found: error

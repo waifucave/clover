@@ -43,6 +43,8 @@ interface Runtime {
   tokens: Map<string, Readonly<Record<string, TokenValue>>>;
   /** The questions waiting, as the core last sent them (to a plugin with `conversation.read`). */
   questions: readonly PendingQuestion[];
+  /** The pending cards, ids and computers and options, as the core last sent them (`approve`/`deny`, §5.5). */
+  cards: readonly CardMeta[];
   /** How long a frame stays away from the screen before it sleeps (§5.5). */
   sleepAfterMs: number;
 }
@@ -67,6 +69,7 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
     callbacks: new Map(),
     tokens: new Map(),
     questions: [],
+    cards: [],
     sleepAfterMs: input.sleepAfterMs ?? SLEEP_AFTER_MS,
   };
   runtime = r;
@@ -83,6 +86,14 @@ export function configureLayer(input: { bridge: LayerBridge; modules?: Record<st
     }
     if (m.type === "focus-returned") restoreFocus();
     if (m.type === "questions") r.questions = m.questions;
+    if (m.type === "api-event") {
+      const e = m.params as { type?: unknown; card?: CardMeta; id?: unknown; outcome?: unknown } | undefined;
+      if (e?.type === "card_pending" && e.card !== undefined) {
+        r.cards = [...r.cards.filter((c) => c.id !== e.card!.id), e.card];
+      } else if (e?.type === "card_resolved" && typeof e.id === "string") {
+        r.cards = r.cards.filter((c) => c.id !== e.id);
+      }
+    }
     if (m.type === "rect-query") {
       // The menu broker asks where a child frame is in this document's viewport.
       const el = typeof document === "undefined" ? undefined : Array.from(document.querySelectorAll("iframe[data-clover-mount]")).find((f) => f.getAttribute("data-clover-mount") === m.child);
@@ -929,18 +940,76 @@ export function useActiveSession(session: string | undefined): void {
 
 /** Pending cards without their text. Sealed cards come in E-M3: none until then. */
 export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe } {
-  return useMemo(() => ({ cards: [], subscribe: () => () => {} }), []);
+  // The `approvals` are here only as ids, where they are and what they ask (§5.5). The runtime routes the core's
+  // `card_pending` events through the layer's connection; a card answered elsewhere goes as `card_resolved`.
+  const part = usePart();
+  const mount = part.mount;
+  const pluginId = part.entry.pluginId;
+  useEffect(() => subscribe(mount, pluginId, "approvals"), [mount, pluginId]);
+  const [cards, setCards] = useState(() => rt().cards);
+  const listeners = useRef(new Set<() => void>());
+  useEffect(() => onLayerMessage(() => setCards([...rt().cards])), []);
+  useEffect(() => { for (const l of listeners.current) l(); }, [cards]);
+  return useMemo(() => ({ cards, subscribe: (listener: () => void) => { listeners.current.add(listener); return () => listeners.current.delete(listener); } }), [cards]);
 }
 
-// Sealed cards (E-M3): the frames come from a core-owned origin. Until then they draw nothing, and the app's own
-// fallback card stands in for any card a component places.
-const CardRoot = (_props: CardElementProps) => null;
-const CardField = (_props: CardFieldProps) => null;
-const CardButton = (_props: CardButtonProps) => null;
-export const Card: CardComponents = Object.assign(CardRoot, { Field: CardField, Approve: CardButton, Deny: CardButton });
+// Sealed cards (E-M3, §5.5): a part with the `approvals` capability places each card's sealed frames — its fields'
+// words and its buttons' own, one frame each, from the app's sealed scheme. The part positions and styles the
+// element; the frames' contents are the core's, and the plugin never reads them. `<Card id>`'s place requests the
+// frames by id and element; a card answered elsewhere draws nothing, so its place is the part's own.
+/** The sealed element's own frame: the part's size holds the frame's scroll (a field never cut unseen), with the
+ *  frame's identity in the URL and the element's own place marked on the element itself. */
+function SealedFrame({ mount, cardId, kind, name }: { mount: string; cardId: string; kind: "field" | "button"; name?: string }) {
+  const [src, setSrc] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void rt().bridge.sealedFrame?.(mount, cardId, kind === "field" ? `field:${name}` : `button:${name}`).then((u) => {
+      if (live && u !== undefined) setSrc(u);
+    }).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [mount, cardId, kind, name]);
+  if (src === undefined) return null;
+  return <iframe src={src} data-clover-sealed={`${kind}:${name}`} style={{ border: "none", display: "block", width: "100%", height: "100%" }} title={kind === "field" ? `card field ${name}` : `card button ${name}`} referrerPolicy="no-referrer" sandbox={undefined} />;
+}
+
+export function Card({ id, tokens, className, children }: CardElementProps) {
+  const part = usePart();
+  const present = useApprovals().cards.some((c) => c.id === id);
+  if (!present) return null;
+  // The card's own tokens go in alone (§5.5): the values the part resolved, clipped to `card.*` names. The runtime's
+  // mint passes them to the frames (the sdk's own `tokens` prop stays what a part overrides).
+  const given: Readonly<Record<string, TokenValue>> | undefined = tokens === undefined
+    ? Object.fromEntries(Object.entries(part.tokens).filter(([name, v]) => name.startsWith("card.") && typeof v === "string"))
+    : Object.fromEntries(Object.entries(tokens).filter(([name, v]) => name.startsWith("card.")));
+  return (
+    <div data-clover-card={id} className={className}>
+      <CardOwner.Provider value={{ mount: part.mount, cardId: id, tokens: given }}>{children as never}</CardOwner.Provider>
+    </div>
+  );
+}
+
+const CardOwner = createContext<{ mount: string; cardId: string; tokens: Readonly<Record<string, TokenValue>> } | null>(null);
+
+export function CardField({ name }: CardFieldProps) {
+  const owner = useContext(CardOwner);
+  if (owner === null) return null;
+  return <SealedFrame mount={owner.mount} cardId={owner.cardId} kind="field" name={name} />;
+}
+
+export function CardButton({ option }: CardButtonProps) {
+  const owner = useContext(CardOwner);
+  if (owner === null) return null;
+  return <SealedFrame mount={owner.mount} cardId={owner.cardId} kind="button" name={option} />;
+}
+
+export const Cards = { Root: Card, Field: CardField, Approve: CardButton, Deny: CardButton };
 
 /** MCP Apps views (E-M3): until then the tool's result shows as text, as for a page no component places. */
 export const AppView = (_props: AppViewProps) => null;
 
 /** The UI API as lane B declared it. */
-export const ui: UiApi = { Spot: Spot as unknown as UiComponent<SpotElementProps>, Card, AppView, usePluginApi, useTokens, useT, useApprovals };
+export const CardKit: CardComponents = Object.assign(Card, { Field: CardField, Approve: CardButton, Deny: CardButton });
+// The UI API as lane B declared it.
+export const ui: UiApi = { Spot: Spot as unknown as UiComponent<SpotElementProps>, Card: CardKit, AppView, usePluginApi, useTokens, useT, useApprovals };

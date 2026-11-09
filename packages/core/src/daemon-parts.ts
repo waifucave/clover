@@ -42,6 +42,8 @@ import type { DriverFactory } from "./bots/service";
 import type { Clock } from "./contracts/clock";
 import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
+import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
+import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
 import { hostForSync } from "./daemon-session-sync";
@@ -72,6 +74,12 @@ export interface DaemonPartsInput {
   node?: false | Partial<Pick<ComputerNodeOptions, "treeRoot" | "executor" | "fence" | "reviewer" | "askUser" | "terminals" | "answers">>;
   /** The bot side; false for none. */
   bots?: false | DaemonBotsInput;
+  /** The daemon's safety reviewer (`BashReviewer`, on the internal-jobs model): the computer node judges another
+   *  computer's calls with it at "ask for risky actions", and fails closed without it (lane J's `nodeParts`). */
+  reviewer?: SafetyReviewer;
+  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
+   *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
+  approvals?: Pick<ApprovalBroker, "request">;
   /** The daemon's update gate: the bot side's running turns keep an update waiting. */
   updateGate?: BotSideOptions["updateGate"];
   /** Lane K's agents over the bot side's host; false for none. They need the node (the folder tree) and the bot side. */
@@ -193,9 +201,23 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
 
     let node: ComputerNode | undefined;
     if (links && nodeLinks && input.node !== false) {
+      // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
+      // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
+      // such a paste is refused with a reason), and its safety reviewer for another computer's calls at "ask for risky
+      // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
+      // not here: the node options below carry what the daemon passes. A test's own node options win.
+      const own = nodeParts({
+        computer: () => node?.registry.self().name ?? nodeLinks.self.name,
+        ...(input.approvals ? { approvals: input.approvals } : {}),
+        ...(input.reviewer ? { reviewer: input.reviewer } : {}),
+        log: (line) => log(`[computers] ${line}`),
+      });
       const n = startComputerNode({
         ...nodeLinks,
+        ...own,
         ...(input.node ?? {}),
+        // A test's own shell launcher keeps the paste card.
+        terminals: { ...own.terminals, ...(input.node ? input.node.terminals ?? {} : {}) },
         clock: input.clock,
         home: input.userHome,
         cloverHome: input.cloverHome,
