@@ -323,6 +323,40 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(removed).toBe(1);
   }, 30_000);
 
+  test("a per-computer MCP server this computer doesn't tick never starts: the host's openMcp is never called for it", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const opened: string[] = [];
+    // A third-party plugin with a per-computer server and an ordinary one. No node here ticks the per-computer one (the
+    // node's ticks are lane J's; without them the list is empty and it fails closed).
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
+      id: "acme", source: "local",
+      manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true }, notes: { type: "host" } } } } as never,
+    }] });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: async () => {
+        const host = new FakePluginHost({ clock });
+        const openMcp = host.openMcp.bind(host);
+        host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
+        return {
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          addApiHandlers: () => () => {},
+          close: async () => {},
+        } as unknown as DaemonPluginHost;
+      },
+    });
+    await daemon.cloverParts.ready;
+    // The ordinary server is opened (its listing), so the plugin MCP host did run; the per-computer one never is.
+    await waitFor("the ordinary server listed", () => opened.includes("acme/notes"));
+    expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+    const node = daemon.cloverParts.node();
+    await expect(node!.mcp!.run("acme-blender", "Render", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+  }, 30_000);
+
   test("the model plugins' start guard and a stop while they are still starting", async () => {
     const net = new MemoryNetwork();
     const fakeHost = (calls: { added: number; removed: number }) => async (registry: unknown) => ({

@@ -80,7 +80,7 @@ test("a host server's tools are listed with their loading and instructions, plac
     entry("acme", "off", { type: "host" }, "waiting"),
   ], { clover: folder, acme: folder });
   const { host } = fakeHost();
-  const mcp = new PluginMcp({ registry, host, self: () => "Studio" });
+  const mcp = new PluginMcp({ registry, host, self: () => "Studio", computers: () => ["Studio"] });
   try {
     await mcp.refresh();
     const forBot = mcp.servers("bot");
@@ -196,12 +196,18 @@ test("remote servers fill only names this computer doesn't list; listing() gives
   }
 });
 
-test("with no tick list from the host, a per-computer server runs here, as before", async () => {
-  const registry = fakeRegistry([entry("acme", "blender", { type: "host", perComputer: true })], { acme: "/nonexistent" });
-  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+test("with no tick list from the host (no node yet), a per-computer server fails closed: it never starts, isn't listed or called", async () => {
+  const registry = fakeRegistry([entry("acme", "blender", { type: "host", perComputer: true }), entry("clover", "web", { type: "host" })], { acme: "/nonexistent", clover: "/nonexistent" });
+  const fake = fakeHost();
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio" });
   try {
     await mcp.refresh();
-    expect(mcp.placement("acme-blender")).toEqual({ name: "acme-blender", kind: "local", computers: ["Studio"] });
+    expect(fake.opened.map((o) => o.server)).toEqual(["web"]);
+    expect(mcp.placement("acme-blender")).toBeUndefined();
+    await expect(mcp.call({ server: "acme-blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(fake.opened.map((o) => o.server)).toEqual(["web"]);
+    // Still declared, for J's node to tick (localServers reads the registry).
+    expect(mcp.localServers()).toEqual([{ server: "acme-blender", plugin: "acme" }]);
   } finally {
     mcp.close();
   }
@@ -358,7 +364,12 @@ test("known(): only a per-computer server of a plugin installed, enabled, runnin
     entry("changed", "s", pc),
     entry("blocked", "s", pc),
     entry("clover", "studio", pc),
-  ], { acme: "/n", "a-b/c": "/n", "a/b-c": "/n", off: "/n", found: "/n", changed: "/n", blocked: "/n", clover: "/n" }, {}, {
+    entry("tree/kid", "s", pc),
+    entry("stale/kid", "s", pc),
+  ], { acme: "/n", "a-b/c": "/n", "a/b-c": "/n", off: "/n", found: "/n", changed: "/n", blocked: "/n", clover: "/n", tree: "/n", "tree/kid": "/n", stale: "/n", "stale/kid": "/n" }, {}, {
+    "tree/kid": { okHash: undefined, treeHash: "kid-hash" },
+    "stale/kid": { okHash: undefined },
+    stale: { treeHash: "t2" },
     off: { enabled: false, state: "off" },
     found: { state: "found", okHash: undefined },
     changed: { treeHash: "t2" }, // its folder changed since the OK
@@ -382,6 +393,9 @@ test("known(): only a per-computer server of a plugin installed, enabled, runnin
     expect(mcp.known("a/b-c", "x")).toBeUndefined();
     // Off, never OK'd, changed since its OK, blocked: nothing.
     for (const p of ["off", "found", "changed", "blocked"]) expect(mcp.known(p, "s")).toBeUndefined();
+    // A child carries no OK of its own: its tree's top-level plugin's OK covers it (and a stale tree OK doesn't).
+    expect(mcp.known("tree/kid", "s")).toEqual({ server: "tree-kid-s", scope: "both" });
+    expect(mcp.known("stale/kid", "s")).toBeUndefined();
   } finally {
     mcp.close();
   }

@@ -22,10 +22,10 @@
 // * Only `host` servers are served here; a plugin's `stdio` and `http` servers are the MCP host's (lanes B and D).
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
-import type { Caller } from "@waifucave/clover-protocol";
+import { topPluginIdOf, type Caller } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { McpChannel, PluginHost } from "../../contracts/plugin-host";
-import type { Contribution, PluginRegistry } from "../../contracts/plugin-registry";
+import type { Contribution, PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { NAMESPACE_RE } from "@waifucave/clover-plugin-sdk";
 import { mcpToolName, parseMcpToolName, placementFields, type McpCaller, type McpFields, type McpResult, type McpServerPlacement, type McpToolDef } from "../../computers/mcp";
 import { isBundledClover } from "../model-plugins/load";
@@ -195,9 +195,10 @@ export interface PluginMcpOptions {
   /** How long one server's listing may take, its `open()` included (default 30 s). */
   listTimeoutMs?: number;
   /** The computers that run a `perComputer` server (lane J's node: each computer ticks its own, `mcpComputers`), none
-   *  when none ticks it; this computer alone when the option is left out. Read at each placement, so the prompt's
-   *  `computer` field follows its next refresh and the router checks the live list meanwhile. Its process starts here
-   *  only when this computer is on the list: the host calls `refresh()` when the ticks change. */
+   *  when none ticks it. Read at each placement, so the prompt's `computer` field follows its next refresh and the
+   *  router checks the live list meanwhile. Its process starts here only when this computer is on the list, and it
+   *  fails closed: with no list (the option left out, or no node yet), no per-computer server starts here. The host
+   *  calls `refresh()` when the ticks change. */
   computers?(server: string): readonly string[];
   /** Per-computer servers another computer runs and lists (lane J's node, `mcpRemoteServers`), ready for the prompt:
    *  placement fields, scope applied, `load` set. They fill only names this computer doesn't list itself. */
@@ -402,8 +403,8 @@ export class PluginMcp {
     const l = this.#listed.get(server);
     if (l === undefined) return undefined;
     if (l.entry.perComputer !== true) return { name: server, kind: "remote", computers: [] };
-    // Exactly the computers that tick it: none ticked (no OK card answered on any computer) runs it nowhere.
-    return { name: server, kind: "local", computers: [...(this.#o.computers?.(server) ?? [this.#o.self()])] };
+    // Exactly the computers that tick it: none ticked (no OK card answered on any computer), or no list, runs it nowhere.
+    return { name: server, kind: "local", computers: [...(this.#o.computers?.(server) ?? [])] };
   }
 
   /** The `perComputer` servers the plugins declare, with their plugin, whether this computer ticks them or not: what
@@ -413,10 +414,10 @@ export class PluginMcp {
   }
 
   /** Whether `key`'s process may start on this computer: any server but a per-computer one, and a per-computer one only
-   *  where it's ticked (lane J's `computers`; with no such list, this computer alone runs them). */
+   *  where it's ticked (lane J's `computers`). With no list it fails closed: no per-computer server starts. */
   #runsHere(key: string, c: Contribution): boolean {
-    if ((c.value as HostServerEntry).perComputer !== true || this.#o.computers === undefined) return true;
-    return this.#o.computers(key).includes(this.#o.self());
+    if ((c.value as HostServerEntry).perComputer !== true) return true;
+    return this.#o.computers?.(key).includes(this.#o.self()) ?? false;
   }
 
   fields(server: string): McpFields {
@@ -465,10 +466,18 @@ export class PluginMcp {
   known(plugin: string, name: string): { server: string; scope: "bots" | "agents" | "both" } | undefined {
     const record = this.#o.registry.get(plugin);
     if (record === undefined || record.enabled !== true || (record.state !== "running" && record.state !== "stopped")) return undefined;
-    if (!isBundledClover(record) && (record.okHash === undefined || record.okHash !== record.treeHash)) return undefined;
+    if (!this.#okd(record)) return undefined;
     const hit = this.#keys().served.find(({ c }) => c.pluginId === plugin && this.#nameOf(c) === name);
     if (hit === undefined || (hit.c.value as HostServerEntry).perComputer !== true) return undefined;
     return { server: hit.key, scope: this.#scopeOf(plugin, hit.c.value as HostServerEntry) };
+  }
+
+  /** Whether the user's OK covers the plugin's folder as it is now: a bundled one is the core's own; a child carries
+   *  no OK of its own when its tree's covers it, so a child without one is judged by its tree's top-level plugin. */
+  #okd(record: PluginRecord): boolean {
+    if (isBundledClover(record)) return true;
+    const own = record.okHash !== undefined ? record : this.#o.registry.get(topPluginIdOf(record.id));
+    return own !== undefined && own.okHash !== undefined && own.okHash === own.treeHash;
   }
 
   #scopeOf(plugin: string, entry: HostServerEntry): "bots" | "agents" | "both" {
@@ -498,7 +507,7 @@ export class PluginMcp {
     const l = this.#listed.get(server);
     if (l === undefined) throw new ContractError("not_installed", `no MCP server ${server}`);
     // Its tick may have gone since the listing: then nothing starts it here, and its channel closes.
-    if (l.entry.perComputer === true && this.#o.computers !== undefined && !this.#o.computers(server).includes(this.#o.self())) {
+    if (l.entry.perComputer === true && !(this.#o.computers?.(server).includes(this.#o.self()) ?? false)) {
       this.#clients.get(server)?.client.close();
       this.#clients.delete(server);
       throw new ContractError("not_installed", `the MCP server ${server} isn't ticked on this computer`);

@@ -3630,7 +3630,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       );
     }
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
-    pluginMcp = new PluginMcp({ registry: opened.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`) });
+    pluginMcp = new PluginMcp({
+      // The plugin host's registry (the one it runs the plugins from; the same as `opened.registry` in production), as
+      // the model plugins take it.
+      registry: host.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`),
+      // The computers that tick each per-computer server (lane J's node), read late: with no node yet, or a node without
+      // the ticks, the list is empty and no per-computer server starts here (fail closed).
+      computers: (server) => (daemonParts?.node as { mcpComputers?(server: string): readonly string[] } | undefined)?.mcpComputers?.(server) ?? [],
+    });
     void pluginMcp.refresh();
     return opened.registry;
   };
