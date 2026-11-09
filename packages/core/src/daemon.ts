@@ -3568,7 +3568,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome }),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets }),
       ...pluginUiParts.methods,
     };
     return opened.registry;

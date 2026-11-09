@@ -15,7 +15,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { ContractError, Listeners, type Unsubscribe } from "../../contracts/common";
 import { listenerArg, stringArg, type ApiHandlers } from "./router";
-import { pluginDataFolder, pluginPath } from "../paths";
+import { pluginDataFolder, pluginPath, readJsonOrKeepAside } from "../paths";
+import { randomUUID } from "node:crypto";
 
 export { pluginDataFolder, pluginPath };
 
@@ -30,18 +31,12 @@ export function fileSyncedStores(cloverHome: string): SyncedStoreBackend {
   return {
     read(id) {
       const f = file(id);
-      if (!existsSync(f)) return {};
-      try {
-        const v = JSON.parse(readFileSync(f, "utf8"));
-        return typeof v === "object" && v !== null && !Array.isArray(v) ? v : {};
-      } catch {
-        return {};
-      }
+      return readJsonOrKeepAside(f, `${id}'s synced store`);
     },
     write(id, values) {
       const f = file(id);
       mkdirSync(dirname(f), { recursive: true, mode: 0o700 });
-      const tmp = `${f}.${process.pid}.tmp`;
+      const tmp = `${f}.${process.pid}.${randomUUID()}.tmp`;
       writeFileSync(tmp, JSON.stringify(values), { mode: 0o600 });
       renameSync(tmp, f);
     },
@@ -92,6 +87,7 @@ export class SyncedStores {
   }
 
   set(pluginId: string, key: string, value: unknown): void {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") throw new ContractError("invalid", `${JSON.stringify(key)} isn't a store key`);
     const values = this.#backend.read(pluginId);
     values[key] = jsonValue(value);
     const size = new TextEncoder().encode(JSON.stringify(values)).length;

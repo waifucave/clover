@@ -29,7 +29,7 @@ import { pointsApi } from "./api/points";
 import { createApiRouter, type ApiHandlers } from "./api/router";
 import { filePluginSettings, PluginSettings, settingsApi } from "./api/settings";
 import { fileSyncedStores, storageApi, SyncedStores } from "./api/storage";
-import { pluginDataFolder, pluginPath } from "./paths";
+import { assetPath, pluginDataFolder, pluginPath } from "./paths";
 import { CorePluginHost, type HostedRecord } from "./core-host";
 import { hostProcessLaunch, spawnHostProcess, type HostProcessLaunch } from "./launch";
 import type { RpcPeer } from "./link";
@@ -98,10 +98,12 @@ export interface StartPluginHostOptions {
 }
 
 /** Where a plugin's files are served from until lane E names it: the layer of its top-level plugin. */
-function defaultAssetUrl(pluginId: string, path: string): string {
+export function defaultAssetUrl(pluginId: string, path: string): string {
+  const safe = assetPath(path);
+  if (safe === undefined) throw new ContractError("invalid", `${JSON.stringify(path.slice(0, 200))} isn't a path inside ${pluginId}'s folder`);
   const top = pluginId.split("/")[0]!;
   const rest = pluginId.includes("/") ? `${pluginId.slice(top.length + 1)}/` : "";
-  return `clover-plugin://${top}/${rest}${path.replace(/^\/+/, "")}`;
+  return `clover-plugin://${top}/${rest}${safe}`;
 }
 
 /** A plugin's log file's cap: past it, the file moves to `<id>.log.1` (replacing the one before) and a new one starts. */

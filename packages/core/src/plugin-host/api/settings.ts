@@ -21,6 +21,8 @@ import type { SecretStore } from "../../contracts/secret-store";
 import type { Setting } from "@waifucave/clover-plugin-sdk";
 import { handler, requireUser, type MethodHandler } from "../../rpc/handler";
 import { pluginPath } from "./storage";
+import { readJsonOrKeepAside } from "../paths";
+import { randomUUID } from "node:crypto";
 import { listenerArg, stringArg, type ApiHandlers } from "./router";
 
 /** What one plugin's file holds. */
@@ -36,6 +38,7 @@ export interface PluginSettingsBackend {
 }
 
 const empty = (): PluginSettingValues => ({ account: {}, device: {}, bot: {} });
+
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 export function filePluginSettings(cloverHome: string): PluginSettingsBackend {
@@ -44,18 +47,13 @@ export function filePluginSettings(cloverHome: string): PluginSettingsBackend {
     read(id) {
       const f = file(id);
       if (!existsSync(f)) return empty();
-      try {
-        const v = JSON.parse(readFileSync(f, "utf8"));
-        if (!isObject(v)) return empty();
-        return { account: isObject(v.account) ? v.account : {}, device: isObject(v.device) ? v.device : {}, bot: isObject(v.bot) ? (v.bot as PluginSettingValues["bot"]) : {} };
-      } catch {
-        return empty();
-      }
+      const v = readJsonOrKeepAside(f, `${id}'s settings`);
+      return { account: isObject(v.account) ? v.account : {}, device: isObject(v.device) ? v.device : {}, bot: isObject(v.bot) ? (v.bot as PluginSettingValues["bot"]) : {} };
     },
     write(id, values) {
       const f = file(id);
       mkdirSync(dirname(f), { recursive: true, mode: 0o700 });
-      const tmp = `${f}.${process.pid}.tmp`;
+      const tmp = `${f}.${process.pid}.${randomUUID()}.tmp`;
       writeFileSync(tmp, JSON.stringify(values), { mode: 0o600 });
       renameSync(tmp, f);
     },
@@ -92,11 +90,13 @@ export function checkSettingValue(key: string, field: Setting, value: unknown): 
       return value;
     case "secret":
       throw new ContractError("refused", `${key} is a secret: the user sets it, and the plugin gets it only through the keyed fetch or secrets.get`);
+    default:
+      throw bad(`a setting of a type this Clover doesn't know (${String((field as { type?: unknown }).type)})`);
   }
 }
 
 export interface PluginSettingsOptions {
-  registry: Pick<PluginRegistry, "get">;
+  registry: Pick<PluginRegistry, "get"> & Partial<Pick<PluginRegistry, "watch">>;
   backend: PluginSettingsBackend;
   /** For `secret` fields: the credential store (C's). Absent: a secret can't be set here. */
   secrets?: Pick<SecretStore, "set" | "delete" | "list">;
@@ -115,13 +115,23 @@ export class PluginSettings {
 
   constructor(o: PluginSettingsOptions) {
     this.#o = o;
+    // A plugin changed (an update may have made a plain field a secret): its plaintext goes at once.
+    o.registry.watch?.((c) => {
+      if (c.type === "entries" || c.type === "removed") return;
+      try {
+        if (o.registry.get(c.id) !== undefined) void this.scrubSecrets(c.id).catch(() => {});
+      } catch {
+        /* not a plugin with settings */
+      }
+    });
   }
 
   /** The manifest's field, or `not_found`. */
   field(pluginId: string, key: string): Setting {
     const record = this.#o.registry.get(pluginId);
     if (record === undefined) throw new ContractError("not_installed", `${pluginId} isn't installed`);
-    const f = record.manifest?.settings?.[key];
+    const settings = record.manifest?.settings;
+    const f = settings !== undefined && Object.hasOwn(settings, key) ? settings[key] : undefined;
     if (f === undefined) throw new ContractError("not_found", `${pluginId} has no setting ${key}`);
     return f;
   }
@@ -175,8 +185,34 @@ export class PluginSettings {
     this.#changes.emit({ pluginId, key });
   }
 
+  /** A field that is a `secret` now but held a plain value before (an update changed its type, #332's review): the
+   *  value moves into the credential store (when there is one, and no secret is stored yet) and is scrubbed from the
+   *  settings file either way. Returns the keys moved or scrubbed. */
+  async scrubSecrets(pluginId: string): Promise<string[]> {
+    const secretKeys = this.fields(pluginId).filter(([, f]) => f.type === "secret").map(([k]) => k);
+    if (secretKeys.length === 0) return [];
+    const values = this.#o.backend.read(pluginId);
+    const slots = [values.account, values.device, ...Object.values(values.bot)];
+    const scrubbed: string[] = [];
+    for (const key of secretKeys) {
+      const found = slots.find((s) => Object.hasOwn(s, key));
+      if (found === undefined) continue;
+      const plain = found[key];
+      if (this.#o.secrets !== undefined && typeof plain === "string" && plain !== "" && plain.length <= 16_384) {
+        const ref = { owner: { kind: "plugin" as const, pluginId }, name: key };
+        const stored = (await this.#o.secrets.list({ kind: "plugin", pluginId })).some((m) => m.ref.name === key);
+        if (!stored) await this.#o.secrets.set(ref, plain);
+      }
+      for (const s of slots) delete s[key];
+      scrubbed.push(key);
+    }
+    if (scrubbed.length > 0) this.#o.backend.write(pluginId, values);
+    return scrubbed;
+  }
+
   /** The fields as Settings shows them; a secret's value never, only whether one is stored. */
   async views(pluginId: string, bot?: string): Promise<PluginSettingView[]> {
+    await this.scrubSecrets(pluginId);
     const values = this.#o.backend.read(pluginId);
     const stored = new Set((this.#o.secrets ? await this.#o.secrets.list({ kind: "plugin", pluginId }) : []).map((m) => m.ref.name));
     return this.fields(pluginId).map(([key, f]) => {
