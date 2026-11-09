@@ -3570,7 +3570,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // created once they're up running on them (a test daemon handed `modelPluginHost` started its own at boot). Not
     // awaited: the links don't wait on plugin processes. One that finishes after a stop closes itself; a failure leaves
     // the compiled catalog, logged.
-    if (opts.modelPluginHost === undefined && modelPlugins === undefined) {
+    // Only when the registry carries a model plugin: with none (a test daemon's own store, a home with them all off)
+    // the sessions keep the SDK's compiled catalog and its credential routing, never an empty set.
+    if (opts.modelPluginHost === undefined && modelPlugins === undefined && host.registry.entries("models").length > 0) {
       void startModelPlugins({ registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers, log: (line) => console.error(line) }).then(
         (started) => {
           if (partsStopping || pluginHost !== host) started.stop();
