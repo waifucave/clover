@@ -12,6 +12,10 @@
 //   change (a bot's plugin-chosen provider, `bots/provider-consent.ts`); no level or saved rule answers either (the
 //   broker's rule 1), and only a decision `by: "card"` counts: a broker that says yes by level, by rule or any other way
 //   grants nothing (review B1).
+// * **A no the asker holds is kept too** (`hold`, `lift`: `bots/provider-consent.ts` holds a provider's no until the
+//   user's next message of their own): `session_grant_declined` and `session_grant_lifted` in the same log, core-only
+//   like the grant, so a held no survives a restart. A no on its own grants nothing and holds nothing: holding is the
+//   asker's choice.
 // * The card's effect and sealed fields (from the built-in tables) are the asker's to build; the grant adds the kind,
 //   the session, its bot and its turn's origin, so the user's own turn waits for the answer and any other expires.
 import type { ApprovalBroker, ApprovalDecision, ApprovalRequest } from "../contracts/approval-broker";
@@ -38,8 +42,8 @@ export interface SessionGrantsOptions {
 
 export class SessionGrants {
   readonly #o: SessionGrantsOptions;
-  /** By session, the grants it holds, read from its log the first time. */
-  readonly #held = new Map<string, Map<string, string | undefined>>();
+  /** By session, the grants it holds and the noes held, read from its log the first time. */
+  readonly #held = new Map<string, { grants: Map<string, string | undefined>; declined: Set<string> }>();
   readonly #asking = new Map<string, Promise<GrantDecision>>();
 
   constructor(opts: SessionGrantsOptions) {
@@ -48,7 +52,28 @@ export class SessionGrants {
 
   /** Whether the session holds the grant already. */
   has(session: string, key: string): boolean {
-    return this.#grants(session).has(key);
+    return this.#state(session).grants.has(key);
+  }
+
+  /** Whether a no on this grant is held in the session (`hold`), until `lift`. */
+  held(session: string, key: string): boolean {
+    return this.#state(session).declined.has(key);
+  }
+
+  /** Holds the user's no on this grant, in the session's log too (it survives a restart). */
+  hold(session: string, key: string): void {
+    const state = this.#state(session);
+    if (state.declined.has(key)) return;
+    this.#o.host.recordCore(session, { type: "session_grant_declined", key });
+    state.declined.add(key);
+  }
+
+  /** Lets a held no go: the next `ensure` asks again. */
+  lift(session: string, key: string): void {
+    const state = this.#state(session);
+    if (!state.declined.has(key)) return;
+    this.#o.host.recordCore(session, { type: "session_grant_lifted", key });
+    state.declined.delete(key);
   }
 
   /** The grant, asking the user with `card` the first time in this session. `asker`: the session whose turn asks, when
@@ -58,7 +83,7 @@ export class SessionGrants {
     const view = this.#o.host.get(session);
     if (view === undefined) throw new ContractError("not_found", `no session ${session}`);
     if (view.status === "stopped" || view.status === "failed") throw new ContractError("closed", `session ${session} has ended`);
-    const grants = this.#grants(session);
+    const grants = this.#state(session).grants;
     if (grants.has(key)) {
       const cardId = grants.get(key);
       return { allowed: true, by: "grant", ...(cardId === undefined ? {} : { cardId }) };
@@ -87,18 +112,27 @@ export class SessionGrants {
     return pending;
   }
 
-  #grants(session: string): Map<string, string | undefined> {
-    let grants = this.#held.get(session);
-    if (grants !== undefined) return grants;
-    grants = new Map();
+  #state(session: string): { grants: Map<string, string | undefined>; declined: Set<string> } {
+    let state = this.#held.get(session);
+    if (state !== undefined) return state;
+    state = { grants: new Map(), declined: new Set() };
     const length = this.#o.host.length(session);
     for (const r of this.#o.host.history(session, { afterSeq: Math.max(-1, length - GRANT_SCAN - 1) })) {
       const grant = grantOf(r);
-      if (grant !== undefined) grants.set(grant.key, grant.cardId);
+      if (grant !== undefined) state.grants.set(grant.key, grant.cardId);
+      const hold = holdOf(r);
+      if (hold?.held === true) state.declined.add(hold.key);
+      else if (hold?.held === false) state.declined.delete(hold.key);
     }
-    this.#held.set(session, grants);
-    return grants;
+    this.#held.set(session, state);
+    return state;
   }
+}
+
+function holdOf(r: SessionRecord): { key: string; held: boolean } | undefined {
+  if (r.type !== "driver" || (r.event.type !== "session_grant_declined" && r.event.type !== "session_grant_lifted")) return undefined;
+  const key = r.event["key"];
+  return typeof key === "string" ? { key, held: r.event.type === "session_grant_declined" } : undefined;
 }
 
 function grantOf(r: SessionRecord): { key: string; cardId?: string } | undefined {

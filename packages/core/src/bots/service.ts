@@ -799,13 +799,16 @@ export class BotService {
     return pin === undefined ? bot : { ...bot, model: pin.model, modelFrom: pin.modelFrom };
   }
 
-  /** Whether the bot may use its voice's provider (a plugin-chosen one asks once, `bot.voice:<provider>`): the user is
-   *  talking to it, so a held no is asked again. */
-  checkVoice(id: string): Promise<ProviderConsent> {
+  /** Whether the bot may use its voice's provider (a plugin-chosen one asks once, `bot.voice:<provider>`). `at`: the
+   *  session using the voice (its card, and its running turn's origin unless `at.origin` says), or the user's own
+   *  origin when the user is talking: only then is a held no asked again. */
+  checkVoice(id: string, at: { session?: string; origin?: TurnOrigin } = {}): Promise<ProviderConsent> {
     const live = this.#must(id);
     const consent = this.#o.providerConsent;
     if (consent === undefined) return Promise.resolve({ ok: true });
-    return consent.checkVoice(this.#effective(live), live.mainSession, { origin: "user" });
+    const asker = at.session !== undefined && this.#o.host.get(at.session) !== undefined ? at.session : undefined;
+    const origin = at.origin ?? (asker === undefined ? undefined : this.#o.host.turnOrigin(asker));
+    return consent.checkVoice(this.#effective(live), live.mainSession, { ...(origin === undefined ? {} : { origin }), ...(asker === undefined ? {} : { asker }) });
   }
 
   #context(live: Live, sessionId: string, kind: "bot" | "side-thread", computer: string, level?: Level): BotSessionContext {

@@ -167,6 +167,7 @@ import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection } from "./usage/wiring";
 import { rowForTag } from "./runtime-sdk/provider-selection";
+import { botKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
 import { BROWSER_HOST_SOCKET_NAME } from "./computer-use/browser/extension/protocol";
@@ -3502,6 +3503,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     return {
       registry: opened.registry,
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
+      // A plugin's model only where the user holds its key (§6.1), from the same stored credentials the provider fill
+      // reads (`credentialPresenceFrom`); otherwise the bot falls back to the user's default and nothing asks.
+      hasKeyFor: await botKeyPresence(secrets, cloverHome),
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),

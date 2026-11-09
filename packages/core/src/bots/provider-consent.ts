@@ -14,8 +14,10 @@
 // * **The same rule for what else a bot picks:** an agent it starts with a model on another provider than the bot's own
 //   user-chosen one (#311 S1), and a voice provider its plugin chose that uses the user's stored voice key (`bot.voice:`).
 // * **A no holds** until the user's next message of their own: until then nothing asks again, not a wake, a routine or
-//   an agent's report (#311 S2); the turn fails with a clear reason, and nothing reaches the provider. With no broker
-//   to ask, a plugin's provider is refused.
+//   an agent's report (#311 S2); the turn fails with a clear reason, and nothing reaches the provider. The hold is kept
+//   with the grants (`SessionGrants.hold`), in the bot's main conversation's log, so it survives a restart. Only the
+//   user's own no on the card holds: a card nobody answered in time, or one withdrawn or cancelled with its turn, says
+//   so in the reason and asks again next time. With no broker to ask, a plugin's provider is refused.
 // * **The card is Clover's own words** (#267's house rule, #311 B2): a fixed title and sentence; the bot, the provider
 //   and the model, which a plugin wrote, only as code values with every hiding character removed (`plainOf`). Its
 //   origin is the asking session's turn (a side thread's own), never the main conversation's.
@@ -57,15 +59,13 @@ export interface ConsentAsk {
 export interface BotProviderConsentOptions {
   /** The computer's one `SessionGrants` (`BotSide.grants`); without it nothing can be asked, and a plugin's provider
    *  is refused. */
-  grants?: Pick<SessionGrants, "has" | "ensure">;
+  grants?: Pick<SessionGrants, "has" | "ensure" | "held" | "hold" | "lift">;
 }
 
 type Subject = { what: "model" | "agent"; provider: string; model: string } | { what: "voice"; provider: string; voice: string; model?: string };
 
 export class BotProviderConsent {
   readonly #o: BotProviderConsentOptions;
-  /** The noes held until the user's next message of their own, by bot and grant. */
-  readonly #declined = new Set<string>();
 
   constructor(opts: BotProviderConsentOptions) {
     this.#o = opts;
@@ -111,18 +111,19 @@ export class BotProviderConsent {
       return { ok: false, reason: `This bot's plugin chose ${what}, and Clover can't ask you here whether it may use your stored key. Pick it in the bot's settings.` };
     }
     if (grants.has(mainSession, key)) return { ok: true };
-    const held = `${bot.id}\u0000${key}`;
-    if (this.#declined.has(held)) {
+    if (grants.held(mainSession, key)) {
       // A no holds until the user's next message of their own (#311 S2).
       if (opts.origin !== "user") return { ok: false, reason: declined(what) };
-      this.#declined.delete(held);
+      grants.lift(mainSession, key);
     }
     const decision = await grants.ensure(mainSession, key, { kind: "change", change: "bot-provider", computers: [], effect: "other", fields: cardFields(bot, subject) }, {
       ...(opts.signal === undefined ? {} : { signal: opts.signal }),
       ...(opts.asker === undefined ? {} : { asker: opts.asker }),
     });
     if (decision.allowed) return { ok: true };
-    this.#declined.add(held);
+    // Only the user's own no on the card holds; a card that ended any other way says how, and asks again next time.
+    if (decision.by !== "card") return { ok: false, reason: unanswered(what, decision.by) };
+    grants.hold(mainSession, key);
     return { ok: false, reason: declined(what) };
   }
 }
@@ -132,6 +133,19 @@ function describe(subject: Subject): string {
   if (subject.what === "voice") return "a voice provider";
   if (subject.what === "agent") return "a model for an agent on a provider you didn't choose for it";
   return "a model on a provider you didn't choose";
+}
+
+/** Why a card that ended without the user's answer refused: expired, withdrawn or cancelled with its turn, or
+ *  answered some way other than on the card (which never grants). */
+function unanswered(what: string, by: string): string {
+  const asked = `the card asking whether this bot may use ${what} with your stored key`;
+  if (by === "expired") return `Nobody answered ${asked} in time, so it didn't go ahead. It asks again next time.`;
+  if (by === "withdrawn" || by === "cancelled") return `${capital(asked)} was withdrawn when its turn stopped, before anyone answered, so it didn't go ahead. It asks again next time.`;
+  return `Only your own answer on ${asked} lets it, and that card ended without one, so it didn't go ahead. It asks again next time.`;
+}
+
+function capital(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function declined(what: string): string {

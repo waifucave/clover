@@ -13,7 +13,7 @@ const VOICE_PLUGIN = "clover/fish-audio";
 
 afterEach(() => removeTemps());
 
-function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean; listenIdleMs?: number } = {}) {
+function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean; listenIdleMs?: number; mayUse?: ConstructorParameters<typeof VoiceService>[0]["mayUse"] } = {}) {
   const host = new FakePluginHost({ clock: new FakeClock() });
   const heard: Uint8Array[] = [];
   const spoke: unknown[] = [];
@@ -38,6 +38,7 @@ function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean; liste
   const voices = new VoiceService({
     registry, host, warn: (m) => warned.push(m),
     ...(opts.listenIdleMs === undefined ? {} : { listenIdleMs: opts.listenIdleMs }),
+    ...(opts.mayUse === undefined ? {} : { mayUse: opts.mayUse }),
     voiceOf: (bot) => (opts.voice === false || bot !== "alpha" ? undefined : { provider: "fish-audio", voice: "v1", model: "s2.1-pro-free" }),
     play: (p) => {
       played.push(p);
@@ -49,6 +50,21 @@ function setup(opts: { speak?: boolean; listen?: boolean; voice?: boolean; liste
 const b64 = (s: string) => Buffer.from(s).toString("base64");
 
 describe("the voices point", () => {
+  test("the provider check gets the real origin: speaking, the speaking session's (or the caller's); listening, the user's", async () => {
+    const asked: unknown[] = [];
+    const { voices } = setup({ mayUse: async (bot, at) => (asked.push([bot, at]), at.origin === "user" ? { ok: true } : { ok: false, reason: "held" }) });
+    await expect(voices.speak({ bot: "alpha", session: "t_side", text: "hi" })).rejects.toThrow("held");
+    await expect(voices.speak({ bot: "alpha", session: "b_alpha", text: "hi", origin: "routine" })).rejects.toThrow("held");
+    expect((await voices.speak({ bot: "alpha", session: "b_alpha", text: "hi", origin: "user" })).bytes).toBe(2);
+    expect(await voices.listen({ bot: "alpha", utterance: "u9", seq: 0, audio: b64("hey"), format: "pcm16-16k", final: true })).toEqual({ text: "hey" });
+    expect(asked).toEqual([
+      ["alpha", { session: "t_side" }],
+      ["alpha", { session: "b_alpha", origin: "routine" }],
+      ["alpha", { session: "b_alpha", origin: "user" }],
+      ["alpha", { origin: "user" }],
+    ]);
+  });
+
   test("a bot's text is spoken piece by piece to the app, the last marked final", async () => {
     const { voices, played, spoke } = setup();
     const r = await voices.speak({ bot: "alpha", session: "b_alpha", text: "good morning everyone" });

@@ -136,7 +136,7 @@ export async function boot(opts: {
     ...(opts.relay === undefined ? {} : { relay: opts.relay }),
     ...(opts.compaction === undefined ? {} : { compaction: opts.compaction }),
     ...(opts.approvals === undefined ? {} : { approvals: opts.approvals }),
-    ...(opts.askProvider === true ? {} : { providerConsent: new BotProviderConsent({ grants: { has: () => true, ensure: async () => ({ allowed: true, by: "grant" }) } }) }),
+    ...(opts.askProvider === true ? {} : { providerConsent: new BotProviderConsent({ grants: { has: () => true, held: () => false, hold: () => {}, lift: () => {}, ensure: async () => ({ allowed: true, by: "grant" }) } }) }),
     ...(opts.reattach === undefined ? {} : { reattach: opts.reattach }),
     ...(opts.userHome === undefined ? {} : { userHome: opts.userHome }),
     ...(opts.agents === undefined ? {} : { agents: opts.agents }),

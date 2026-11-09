@@ -2,7 +2,11 @@
 // plugin chose asks the user with a sealed change card, a yes holds for that bot and provider, a new provider asks
 // again, a no fails the turn with its reason, and the user's own choice never asks.
 import { afterEach, describe, expect, test } from "bun:test";
+import { join } from "node:path";
+import { FileSecretStore } from "../../auth/secret-store";
 import type { ApprovalDecision, ApprovalRequest } from "../../contracts/approval-broker";
+import { CLOVER_CREDENTIAL_INVENTORY } from "../../runtime-sdk/keychain";
+import { botKeyPresence } from "../key-presence";
 import { flush } from "../../contracts/fakes/clock";
 import { projectRecords } from "../../sessions/wire";
 import { agentToolDefs } from "../../agents/tools";
@@ -15,7 +19,7 @@ const theUser = { kind: "user", client: "app" } as const;
 const user = (text: string) => ({ text, device: "studio0000000000000", sentAt: 1, clientMessageId: `m-${text}` });
 
 /** Luna, whose plugin names `model` (or none), on a side whose broker answers each card with what `answer` says. */
-async function luna(model: string | undefined, opts: { broker?: boolean; hold?: boolean; voice?: Record<string, unknown> } = {}) {
+async function luna(model: string | undefined, opts: { broker?: boolean; hold?: boolean; voice?: Record<string, unknown>; home?: string; hasKeyFor?: (model: string) => boolean } = {}) {
   const root = tempDir();
   const write = (m: string | undefined) => writePlugin(root, "luna", {
     "clover.json": botManifest("luna", "Luna", { ...(m === undefined ? {} : { model: { default: m } }), ...(opts.voice === undefined ? {} : { voice: opts.voice }) }),
@@ -34,8 +38,9 @@ async function luna(model: string | undefined, opts: { broker?: boolean; hold?: 
     },
   };
   const b = await boot({
-    home: tempDir(), plugins: (await pluginFromFolder(write(model))).inputs, askProvider: true,
+    home: opts.home ?? tempDir(), plugins: (await pluginFromFolder(write(model))).inputs, askProvider: true,
     ...(opts.broker === false ? {} : { approvals: approvals as never }),
+    ...(opts.hasKeyFor === undefined ? {} : { hasKeyFor: opts.hasKeyFor }),
   });
   /** The plugin's next version, naming another model. */
   const update = async (m: string) => {
@@ -299,3 +304,104 @@ describe("#311's review", () => {
   });
 });
 
+describe("#311's check 2", () => {
+  const slotOf = (provider: string) => CLOVER_CREDENTIAL_INVENTORY.find((x) => x.provider === provider)!.secretName;
+
+  test("the daemon's hasKeyFor: a plugin's model on a provider with no stored key falls back to the user's default, and nothing asks", async () => {
+    const home = tempDir();
+    const store = new FileSecretStore(join(home, "secrets.json"));
+    const noKey = await luna("anthropic/claude-sonnet-5-5", { home, hasKeyFor: await botKeyPresence(store, home, { pluginServes: () => false }) });
+    expect(noKey.b.bots.effective("luna")).toMatchObject({ model: "fireworks/kimi-k3", modelFrom: "default" });
+    await noKey.say("hi");
+    expect(noKey.asked).toHaveLength(0);
+    expect(noKey.driver().turns).toHaveLength(1);
+    expect(noKey.b.drivers.made.find((m) => m.ctx.sessionId === "b_luna")!.ctx.current().model).toBe("fireworks/kimi-k3");
+    await noKey.end();
+    await noKey.b.shutdown();
+    // With the key stored, the plugin's model is used, and its provider asks once.
+    const keyed = tempDir();
+    const withKey = new FileSecretStore(join(keyed, "secrets.json"));
+    await withKey.set(slotOf("anthropic"), JSON.stringify({ kind: "api-key", key: "sk-ant-test" }));
+    const has = await luna("anthropic/claude-sonnet-5-5", { home: keyed, hasKeyFor: await botKeyPresence(withKey, keyed, { pluginServes: () => false }) });
+    expect(has.b.bots.effective("luna")).toMatchObject({ model: "anthropic/claude-sonnet-5-5", modelFrom: "plugin" });
+    has.answers.push({ allowed: true, by: "card", cardId: "card_1" });
+    await has.say("hi");
+    expect(has.asked).toHaveLength(1);
+    await has.end();
+    await has.b.shutdown();
+  });
+
+  test("a held no is kept with the grants: it survives a restart, until the user's own next message", async () => {
+    const home = tempDir();
+    const first = await luna("anthropic/claude-sonnet-5-5", { home });
+    first.answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    await first.say("hi");
+    expect(first.asked).toHaveLength(1);
+    expect(first.b.side.grants!.held("b_luna", providerGrantKey("anthropic"))).toBe(true);
+    // Core-only: the hold never reaches a client.
+    expect(projectRecords(first.b.host.history("b_luna"), { kind: "bot" }).some((e) => String(e.type).startsWith("session_grant"))).toBe(false);
+    await first.b.shutdown();
+
+    const again = await luna("anthropic/claude-sonnet-5-5", { home });
+    expect(again.b.side.grants!.held("b_luna", providerGrantKey("anthropic"))).toBe(true);
+    await again.b.host.deliver("b_luna", { from: "bot", bot: "sol", session: "b_sol", text: "ping" });
+    await flush();
+    await flush();
+    expect(again.asked).toHaveLength(0);
+    expect(again.driver().turns).toHaveLength(0);
+    // The user's own message lifts it, in the log too, and asks again.
+    again.answers.push({ allowed: true, by: "card", cardId: "card_2" });
+    await again.say("again");
+    expect(again.asked).toHaveLength(1);
+    expect(again.driver().turns).toHaveLength(1);
+    expect(again.b.side.grants!.held("b_luna", providerGrantKey("anthropic"))).toBe(false);
+    await again.end();
+    await again.b.shutdown();
+    const third = await luna("anthropic/claude-sonnet-5-5", { home });
+    expect(third.b.side.grants!.held("b_luna", providerGrantKey("anthropic"))).toBe(false);
+    expect(third.b.side.grants!.has("b_luna", providerGrantKey("anthropic"))).toBe(true);
+    await third.b.shutdown();
+  });
+
+  test("a card nobody answered, or one withdrawn with its turn, says so, holds nothing, and asks again next time", async () => {
+    const { b, asked, answers, say, driver } = await luna("anthropic/claude-sonnet-5-5");
+    const reasons = () => b.host.history("b_luna").filter((r) => r.type === "turn_ended").map((r) => (r as { end: { text: string } }).end.text);
+    answers.push({ allowed: false, by: "expired", cardId: "card_1" });
+    await say("hi");
+    expect(reasons().at(-1)).toContain("Nobody answered the card asking whether this bot may use a model on a provider you didn't choose");
+    expect(reasons().at(-1)).not.toContain("You didn't let");
+    expect(b.side.grants!.held("b_luna", providerGrantKey("anthropic"))).toBe(false);
+    // Not held: a turn that isn't the user's asks again.
+    answers.push({ allowed: false, by: "withdrawn", cardId: "card_2" });
+    await b.host.deliver("b_luna", { from: "bot", bot: "sol", session: "b_sol", text: "ping" });
+    await flush();
+    await flush();
+    expect(asked).toHaveLength(2);
+    expect(reasons().at(-1)).toContain("was withdrawn when its turn stopped, before anyone answered");
+    answers.push({ allowed: false, by: "cancelled", cardId: "card_3" });
+    await say("third");
+    expect(reasons().at(-1)).toContain("was withdrawn when its turn stopped");
+    expect(driver().turns).toHaveLength(0);
+    expect(b.side.grants!.held("b_luna", providerGrantKey("anthropic"))).toBe(false);
+    await b.shutdown();
+  });
+
+  test("a voice check takes the real origin: speaking in a turn the user didn't start never lifts a held no", async () => {
+    const { b, asked, answers } = await luna(undefined, { voice: { provider: "fish-audio", voice: "v1" } });
+    answers.push({ allowed: false, by: "card", cardId: "card_1" });
+    // Speaking in the main conversation with no turn of the user's: the card is that session's, not the user's turn.
+    expect((await b.bots.checkVoice("luna", { session: "b_luna" })).ok).toBe(false);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ session: "b_luna" });
+    expect(asked[0]!.origin).not.toBe("user");
+    // Held: speaking again doesn't ask.
+    expect((await b.bots.checkVoice("luna", { session: "b_luna" })).ok).toBe(false);
+    expect((await b.bots.checkVoice("luna", { session: "b_luna", origin: "routine" })).ok).toBe(false);
+    expect(asked).toHaveLength(1);
+    // The user talking (push-to-talk passes the user's origin) asks again.
+    answers.push({ allowed: true, by: "card", cardId: "card_2" });
+    expect(await b.bots.checkVoice("luna", { origin: "user" })).toEqual({ ok: true });
+    expect(asked).toHaveLength(2);
+    await b.shutdown();
+  });
+});

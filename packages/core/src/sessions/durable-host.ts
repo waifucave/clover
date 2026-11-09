@@ -112,7 +112,7 @@ export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "tas
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
-export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant", "session_grant_copied"]);
+export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant", "session_grant_copied", "session_grant_declined", "session_grant_lifted"]);
 
 /** What a copied `session_grant` becomes in this computer's log (review N7, H-M3): a record of another computer's grant,
  *  which grants nothing here (`SessionGrants` reads only `session_grant`) and, core-only, is never sent to clients. */
