@@ -11,11 +11,18 @@
 // * `conversation.*`: list, get and history are D's `session.*` reads, with the sealed rule for the caller; `follow`
 //   replays from `since` and then streams, as `session.attach` does; `note` and `send` post into the session as the
 //   plugin (D's `session.post`), into a reachable session only. `answer` has no service on main yet: refused.
+//   Sealed parts and transient events are judged for the plugin itself, whatever process or caller the call came with
+//   (#334's review). `conversation.*` and `bots.*` reach every bot once granted: there is no per-bot grant yet.
 // * `bots.*`, `devices.*`: the services' own views; a watch gets each changed view (a removal carries none).
+// * Limits: a plugin has at most WATCHES_PER_PLUGIN watches open across the areas; a note or message is at most
+//   MESSAGE_MAX characters; `files.grep` returns at most GREP_LIMIT_MAX matches; terminal input is at most
+//   TERMINAL_INPUT_MAX characters a call, and a size is 2 to 1000 columns and rows.
 // * `computers.*`, `files.*`: J's adapters (`computers/api.ts`); files are always the plugin's, fenced by the tree.
 // * `terminal.*`: a terminal opened by a plugin is that plugin's, and only it writes to, resizes, reads or closes it.
-//   Its output reaches a component as the `terminal_output` core event for the app (a listener can't cross the layer
-//   path), and a host half's `onData` listener directly.
+//   Its output reaches a component as the `terminal_output` core event for the app, carrying the opener's `pluginId`
+//   so the app delivers it to that plugin's layer only (a listener can't cross the layer path), and a host half's
+//   `onData` listener directly. A plugin's terminals close when it stops or is removed (`forget`).
+import { foldTitle } from "@waifucave/clover-plugin-sdk";
 import type { BotView, Caller, DeviceView } from "@waifucave/clover-protocol";
 import { ContractError, type Unsubscribe } from "../../contracts/common";
 import type { BotSide } from "../../bots/wiring";
@@ -39,6 +46,24 @@ export interface AreaServices {
 const HISTORY_PAGE_MAX = 500;
 const HISTORY_SCAN_STEP = 500;
 const REPLAY_PAGE = 500;
+/** A follow replays at most this many of the latest events (older ones are `history`'s). */
+export const REPLAY_MAX = 10_000;
+export const WATCHES_PER_PLUGIN = 32;
+export const MESSAGE_MAX = 16_000;
+export const GREP_LIMIT_MAX = 1000;
+export const TERMINAL_INPUT_MAX = 64 * 1024;
+
+/** A size in columns or rows, as the peer schema takes it: an integer from 2 to 1000. */
+const termSize = (v: unknown, fallback: number): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(1000, Math.max(2, Math.round(v))) : fallback);
+
+/** A note's label (#334's review): one line, no control characters, never reading as Clover or the system, and
+ *  always the plugin's own: it starts with the plugin's id. */
+export function noteLabel(pluginId: string, raw: unknown): string {
+  const clean = typeof raw === "string" ? raw.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100) : "";
+  const folded = foldTitle(clean);
+  if (clean === "" || ["clover", "system", "waifucave"].some((w) => folded.includes(foldTitle(w)))) return pluginId;
+  return clean.startsWith(`${pluginId}`) ? clean : `${pluginId}: ${clean}`;
+}
 
 const opt = (v: unknown): Record<string, unknown> => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const notRunning = (what: string): never => {
@@ -47,6 +72,11 @@ const notRunning = (what: string): never => {
 
 /** The handlers for the six areas. */
 export function areasApi(s: AreaServices): ApiHandlers {
+  return areasParts(s).handlers;
+}
+
+/** The handlers, and `forget`, which closes and drops what a stopped or removed plugin had open (its terminals). */
+export function areasParts(s: AreaServices): { handlers: ApiHandlers; forget(pluginId: string): Promise<void> } {
   const now = s.now ?? Date.now;
   const side = () => s.bots() ?? notRunning("the bot side");
   const node = () => s.node() ?? notRunning("the computer node");
@@ -63,7 +93,52 @@ export function areasApi(s: AreaServices): ApiHandlers {
     if (v.kind === "bot" && (v.bot === undefined || !side().bots.has(v.bot))) throw new ContractError("not_found", `the bot of ${id} isn't installed`);
     return v;
   };
-  const sealedFor = (caller: Caller) => !readsSealed(caller);
+  // Judged for the plugin, never for the caller it carries (#334's review: a layer's call came as the user).
+  const asPlugin = (ctx: ApiCallContext): Caller => ({ kind: "plugin", pluginId: ctx.pluginId });
+  const sealedFor = (ctx: ApiCallContext) => !readsSealed(asPlugin(ctx));
+  // Watches per plugin, across the areas.
+  const watching = new Map<string, number>();
+  const reserve = (ctx: ApiCallContext): (() => void) => {
+    const n = watching.get(ctx.pluginId) ?? 0;
+    if (n >= WATCHES_PER_PLUGIN) throw new ContractError("refused", `${ctx.pluginId} has ${WATCHES_PER_PLUGIN} watches open; close one first`);
+    watching.set(ctx.pluginId, n + 1);
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      const left = (watching.get(ctx.pluginId) ?? 1) - 1;
+      if (left <= 0) watching.delete(ctx.pluginId);
+      else watching.set(ctx.pluginId, left);
+    };
+  };
+  const watch = (ctx: ApiCallContext, open: () => Unsubscribe): Unsubscribe => {
+    const release = reserve(ctx);
+    let stop: Unsubscribe;
+    try {
+      stop = open();
+    } catch (err) {
+      release();
+      throw err;
+    }
+    return () => {
+      release();
+      stop();
+    };
+  };
+  const watchAsync = async (ctx: ApiCallContext, open: () => Promise<Unsubscribe>): Promise<Unsubscribe> => {
+    const release = reserve(ctx);
+    let stop: Unsubscribe;
+    try {
+      stop = await open();
+    } catch (err) {
+      release();
+      throw err;
+    }
+    return () => {
+      release();
+      stop();
+    };
+  };
 
   // ---- computers and files (J's adapters, which take the arguments first) ----
   const route = (pick: (n: ComputerNode) => Record<string, ApiRoute>, path: string) =>
@@ -83,7 +158,7 @@ export function areasApi(s: AreaServices): ApiHandlers {
     return t;
   };
 
-  return {
+  const handlers: ApiHandlers = {
     "conversation.list": (_ctx, args) => {
       const f = opt(args[0]);
       const kinds = Array.isArray(f.kinds) ? (f.kinds as string[]) : undefined;
@@ -96,7 +171,7 @@ export function areasApi(s: AreaServices): ApiHandlers {
       const limit = typeof page.limit === "number" && page.limit >= 1 ? Math.min(Math.floor(page.limit), HISTORY_PAGE_MAX) : 50;
       const host = side().host;
       const v = sessionOf(id);
-      const opts = { kind: v.kind, sealed: sealedFor(ctx.caller) };
+      const opts = { kind: v.kind, sealed: sealedFor(ctx) };
       const eventsIn = (start: number, end: number) => projectRecords(host.history(id, { afterSeq: start - 1, limit: end - start }), opts);
       let end = Math.min(typeof page.before === "number" ? page.before : host.length(id), host.length(id));
       const events: WireEvent[] = [];
@@ -119,42 +194,73 @@ export function areasApi(s: AreaServices): ApiHandlers {
       }
       return { events, hasMore };
     },
+    // `since` (an integer, -1 for everything) replays after the watch opens, a page at a time with a yield between
+    // pages, at most the latest REPLAY_MAX events; what lands meanwhile waits for the replay, then follows in order.
     "conversation.follow": (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const listener = listenerArg<WireEvent>(args, 1);
       const since = opt(args[2]).since;
+      if (since !== undefined && !(Number.isInteger(since) && (since as number) >= -1)) throw new ContractError("invalid", "since is an event's seq, or -1 for every event");
       const host = side().host;
       const v = sessionOf(id);
-      const opts = { kind: v.kind, sealed: sealedFor(ctx.caller) };
-      if (typeof since === "number") {
-        for (let after = since; after < host.length(id) - 1; after += REPLAY_PAGE) {
-          for (const event of projectRecords(host.history(id, { afterSeq: after, limit: REPLAY_PAGE }), opts)) listener(event);
+      const opts = { kind: v.kind, sealed: sealedFor(ctx) };
+      const me = asPlugin(ctx);
+      return watch(ctx, () => {
+        let closed = false;
+        let replaying = typeof since === "number";
+        let last = -Infinity;
+        const queued: WireEvent[] = [];
+        const send = (event: WireEvent) => {
+          if (closed || event.seq <= last) return;
+          last = event.seq;
+          listener(event);
+        };
+        const offRecords = host.subscribe(id, (record) => {
+          const event = projectRecord(record, opts);
+          if (!event) return;
+          if (replaying) queued.push(event);
+          else send(event);
+        });
+        const offTransient = host.onTransient(id, (event) => {
+          if (!closed && transientFor(me, event.type)) listener({ ...event, seq: Math.max(0, host.length(id) - 1), sessionId: id, ts: now() } as WireEvent);
+        });
+        if (typeof since === "number") {
+          const end = host.length(id) - 1;
+          let after = Math.max(since, end - REPLAY_MAX);
+          const page = () => {
+            if (closed) return;
+            if (after < end) {
+              for (const event of projectRecords(host.history(id, { afterSeq: after, limit: Math.min(REPLAY_PAGE, end - after) }), opts)) send(event);
+              after += REPLAY_PAGE;
+              setImmediate(page);
+              return;
+            }
+            replaying = false;
+            for (const event of queued.splice(0)) send(event);
+          };
+          setImmediate(page);
         }
-      }
-      const offRecords = host.subscribe(id, (record) => {
-        const event = projectRecord(record, opts);
-        if (event) listener(event);
+        return () => {
+          closed = true;
+          offRecords();
+          offTransient();
+        };
       });
-      const offTransient = host.onTransient(id, (event) => {
-        if (transientFor(ctx.caller, event.type)) listener({ ...event, seq: Math.max(0, host.length(id) - 1), sessionId: id, ts: now() } as WireEvent);
-      });
-      return () => {
-        offRecords();
-        offTransient();
-      };
     },
     "conversation.note": async (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const n = opt(args[1]);
       if (typeof n.text !== "string" || n.text.trim() === "") throw new ContractError("invalid", "a note needs text");
+      if (n.text.length > MESSAGE_MAX) throw new ContractError("invalid", `a note is at most ${MESSAGE_MAX} characters`);
       reachable(id);
-      const label = (typeof n.label === "string" && n.label !== "" ? n.label : ctx.pluginId).slice(0, 120);
+      const label = noteLabel(ctx.pluginId, n.label);
       await side().host.deliver(id, { from: "note", label, text: n.text, by: { kind: "plugin", pluginId: ctx.pluginId } });
     },
     "conversation.send": async (ctx, args) => {
       const id = stringArg(args, 0, "the session");
       const text = args[1];
       if (typeof text !== "string" || text.trim() === "") throw new ContractError("invalid", "a message needs text");
+      if (text.length > MESSAGE_MAX) throw new ContractError("invalid", `a message is at most ${MESSAGE_MAX} characters`);
       reachable(id);
       await side().host.deliver(id, { from: "plugin", pluginId: ctx.pluginId, text });
     },
@@ -166,11 +272,12 @@ export function areasApi(s: AreaServices): ApiHandlers {
       if (!bot) throw new ContractError("not_found", `no bot ${id}`);
       return bot;
     },
-    "bots.watch": (_ctx, args) => {
+    "bots.watch": (ctx, args) => {
       const listener = listenerArg<BotView>(args, 0);
-      return side().bots.onEvent((e) => {
+      const bots = side().bots;
+      return watch(ctx, () => bots.onEvent((e) => {
         if (e.type === "bot_changed") listener(e.bot);
-      });
+      }));
     },
 
     "computers.list": route(computers, "computers.list"),
@@ -181,11 +288,12 @@ export function areasApi(s: AreaServices): ApiHandlers {
     "computers.setUserWorking": route(computers, "computers.setUserWorking"),
     "computers.setActionRunning": route(computers, "computers.setActionRunning"),
     "computers.cloverWindows": route(computers, "computers.cloverWindows"),
-    "computers.watch": (_ctx, args) => {
+    "computers.watch": (ctx, args) => {
       const listener = listenerArg<unknown>(args, 0);
-      return node().registry.watch((c) => {
+      const registry = node().registry;
+      return watch(ctx, () => registry.watch((c) => {
         if (c.type === "computer") listener(c.computer);
-      });
+      }));
     },
 
     "devices.list": () => {
@@ -194,9 +302,10 @@ export function areasApi(s: AreaServices): ApiHandlers {
       const self = l.registry.self().id;
       return l.registry.list().map((d) => deviceView(d, self, l.transport.links().find((k) => k.peer === d.id), d.id === main));
     },
-    "devices.watch": (_ctx, args) => {
+    "devices.watch": (ctx, args) => {
       const listener = listenerArg<DeviceView>(args, 0);
       const l = links();
+      return watch(ctx, () => {
       const self = l.registry.self().id;
       const view = (id: string) => {
         const d = l.registry.get(id);
@@ -211,6 +320,7 @@ export function areasApi(s: AreaServices): ApiHandlers {
         offRegistry();
         offLinks();
       };
+      });
     },
 
     "files.stat": route(files, "files.stat"),
@@ -226,20 +336,26 @@ export function areasApi(s: AreaServices): ApiHandlers {
       const p = opt(args[1]);
       return node().tree.grepAll(stringArg(args, 0, "the pattern", 4096), {
         as: { kind: "plugin", pluginId: ctx.pluginId }, cwd: stringArg([p.cwd], 0, "cwd", 4096),
-        ...(typeof p.glob === "string" ? { glob: p.glob } : {}), ...(typeof p.limit === "number" ? { limit: p.limit } : {}),
+        ...(typeof p.glob === "string" ? { glob: p.glob } : {}),
+        limit: typeof p.limit === "number" && Number.isFinite(p.limit) ? Math.min(GREP_LIMIT_MAX, Math.max(1, Math.floor(p.limit))) : GREP_LIMIT_MAX,
         ...(p.ignoreCase === true ? { ignoreCase: true } : {}),
       } as Parameters<ComputerNode["tree"]["grepAll"]>[1]);
     },
-    "files.watch": (ctx, args) => filesWatch(node().tree, ctx, stringArg(args, 0, "the path", 4096), listenerArg(args, 1)),
+    "files.watch": (ctx, args) => {
+      const tree = node().tree;
+      const path = stringArg(args, 0, "the path", 4096);
+      const listener = listenerArg(args, 1);
+      return watchAsync(ctx, () => filesWatch(tree, ctx, path, listener));
+    },
 
     "terminal.open": async (ctx, args) => {
       const p = opt(args[0]);
       const computer = stringArg([p.computer], 0, "the computer");
-      const cols = typeof p.cols === "number" ? p.cols : 80;
-      const rows = typeof p.rows === "number" ? p.rows : 24;
+      const cols = termSize(p.cols, 80);
+      const rows = termSize(p.rows, 24);
       const n = node();
-      // Opened as the call's caller: a layer's call is the user's, a host half's is the plugin's, which a computer at
-      // read-only refuses (J's rule).
+      // Opened as the call's caller, the plugin (a layer's call is its plugin's too, never the user's), which a computer
+      // at read-only refuses (J's rule).
       const { terminalId } = await n.terminals.open({
         computer, cols, rows,
         ...(typeof p.cwd === "string" ? { cwd: p.cwd } : {}),
@@ -251,7 +367,7 @@ export function areasApi(s: AreaServices): ApiHandlers {
         const emit = s.emitToApp;
         entry.stop = n.terminals.onOutput((o) => {
           if (o.terminalId !== terminalId) return;
-          emit({ type: "terminal_output", terminalId, data: o.data, ...(o.exited !== undefined ? { exited: o.exited } : {}) });
+          emit({ type: "terminal_output", pluginId: ctx.pluginId, terminalId, data: o.data, ...(o.exited !== undefined ? { exited: o.exited } : {}) });
           if (o.exited !== undefined) {
             entry.stop?.();
             terminals.delete(terminalId);
@@ -266,6 +382,8 @@ export function areasApi(s: AreaServices): ApiHandlers {
       const id = stringArg(args, 0, "the terminal");
       own(ctx, id);
       const e = opt(args[1]);
+      const text = e.type === "paste" ? e.text : e.data;
+      if (typeof text === "string" && text.length > TERMINAL_INPUT_MAX) throw new ContractError("invalid", `terminal input is at most ${TERMINAL_INPUT_MAX} characters a call`);
       if (e.type === "paste" && typeof e.text === "string") return node().terminals.write(id, e.text, { paste: true });
       if (typeof e.data === "string") return node().terminals.write(id, e.data);
       throw new ContractError("invalid", "terminal input is { data } for keys, or { type: \"paste\", text }");
@@ -274,17 +392,16 @@ export function areasApi(s: AreaServices): ApiHandlers {
       const id = stringArg(args, 0, "the terminal");
       own(ctx, id);
       const listener = listenerArg<string>(args, 1) as unknown as (data: string, exited?: { code: number | null }) => void;
-      return node().terminals.onOutput((o) => {
+      const terms = node().terminals;
+      return watch(ctx, () => terms.onOutput((o) => {
         if (o.terminalId === id) listener(o.data, o.exited);
-      });
+      }));
     },
     "terminal.resize": async (ctx, args) => {
       const id = stringArg(args, 0, "the terminal");
       own(ctx, id);
-      const cols = args[1];
-      const rows = args[2];
-      if (typeof cols !== "number" || typeof rows !== "number") throw new ContractError("invalid", "a terminal's size is cols and rows");
-      await node().terminals.resize(id, cols, rows);
+      if (typeof args[1] !== "number" || typeof args[2] !== "number") throw new ContractError("invalid", "a terminal's size is cols and rows");
+      await node().terminals.resize(id, termSize(args[1], 80), termSize(args[2], 24));
     },
     "terminal.close": async (ctx, args) => {
       const id = stringArg(args, 0, "the terminal");
@@ -292,6 +409,17 @@ export function areasApi(s: AreaServices): ApiHandlers {
       t.stop?.();
       terminals.delete(id);
       await node().terminals.close(id);
+    },
+  };
+  return {
+    handlers,
+    async forget(pluginId) {
+      for (const [id, t] of [...terminals]) {
+        if (t.pluginId !== pluginId) continue;
+        t.stop?.();
+        terminals.delete(id);
+        await s.node()?.terminals.close(id).catch(() => {});
+      }
     },
   };
 }
