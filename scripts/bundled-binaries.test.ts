@@ -137,30 +137,44 @@ describe("plain Bun's zip is unpacked in-process (no tar: Git Bash's GNU tar rea
     expect(() => zipEntry(new TextEncoder().encode("not a zip at all"), "a/bun")).toThrow("not a zip");
   });
 
-  test("a zip at a Windows drive-letter path unpacks, with no tar or unzip on PATH", () => {
+  test("the checked bytes are what unpacks: no tar or unzip on PATH, and no second read of the file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clover-plugin-bun-unpack-"));
     const zip = zipOf({ "bun-windows-x64/bun.exe": "the windows bun", "bun-linux-x64/bun": "the linux bun" });
-    const here = process.cwd();
+    const pins = PLUGIN_BUN.assets as unknown as Record<string, { asset: string; sha256: string }>;
+    const real = pins["windows-x64"]!.sha256;
     const path = process.env.PATH;
     try {
-      // `C:\Users\runner\…\bun-windows-x64.zip`, relative to this folder: on Windows a drive path, elsewhere a file
-      // name that GNU tar would read as a remote host's path. And no unpacking tool is reachable at all.
-      process.chdir(dir);
+      // The cache is a `C:\Users\…` folder: a drive path on Windows, and elsewhere the shape GNU tar read as host:path.
+      const cache = join(dir, "C:\\Users\\runner\\AppData\\Local\\clover-bun");
+      pins["windows-x64"]!.sha256 = createHash("sha256").update(zip).digest("hex");
+      const file = join(cache, PLUGIN_BUN.version, "zips", "bun-windows-x64.zip");
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, zip);
       process.env.PATH = "";
-      const winZip = "C:\\Users\\runner\\AppData\\Local\\clover-bun\\bun-windows-x64.zip";
-      const target = process.platform === "win32" ? join(dir, "C-drive", "bun-windows-x64.zip") : winZip;
-      if (process.platform === "win32") mkdirSync(join(dir, "C-drive"), { recursive: true });
-      writeFileSync(target, zip);
-      unpackPluginBun(target, "windows-x64", join(dir, "out", "clover-plugin-bun.exe"));
+      const checked = await pluginBunZip("windows-x64", async () => { throw new Error("no download"); }, cache);
+      // A same-user process swaps the file after the check: what unpacks is still what was checked.
+      writeFileSync(file, zipOf({ "bun-windows-x64/bun.exe": "SWAPPED" }));
+      unpackPluginBun(checked, "windows-x64", join(dir, "out", "clover-plugin-bun.exe"));
       expect(readFileSync(join(dir, "out", "clover-plugin-bun.exe"), "utf8")).toBe("the windows bun");
-      unpackPluginBun(target, "linux-x64", join(dir, "out", "clover-plugin-bun"));
+      unpackPluginBun(checked, "linux-x64", join(dir, "out", "clover-plugin-bun"));
       expect(readFileSync(join(dir, "out", "clover-plugin-bun"), "utf8")).toBe("the linux bun");
       if (process.platform !== "win32") expect(statSync(join(dir, "out", "clover-plugin-bun")).mode & 0o777).toBe(0o755);
-      expect(() => unpackPluginBun(target, "darwin-arm64", join(dir, "out", "x"))).toThrow("holds no bun-darwin-aarch64/bun");
+      expect(() => unpackPluginBun(checked, "darwin-arm64", join(dir, "out", "x"))).toThrow("holds no bun-darwin-aarch64/bun");
     } finally {
-      process.chdir(here);
+      pins["windows-x64"]!.sha256 = real;
       process.env.PATH = path;
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("a deflate stream that inflates past its entry's stated size is refused, never allocated", () => {
+    const big = "x".repeat(1 << 20);
+    const z = zipOf({ "a/bun": big });
+    // Both headers say 3 bytes; the stream holds a megabyte.
+    const v = new DataView(z.buffer, z.byteOffset, z.byteLength);
+    v.setUint32(22, 3, true);
+    const cd = z.length - 22 - (46 + "a/bun".length);
+    v.setUint32(cd + 24, 3, true);
+    expect(() => zipEntry(z, "a/bun")).toThrow("doesn't inflate to its stated size (3 bytes)");
   });
 });

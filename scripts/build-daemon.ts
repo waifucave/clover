@@ -307,6 +307,22 @@ export function embeddedHostBundlesLine(binary: string): string {
   }
 }
 
+/** The fd-receiver Worker's probe (`__fd-receiver-probe`, no home, Keychain or daemon) on a built core: it starts
+ *  only if the compiled entry `./fd-receiver-worker.ts` resolves, as the embedded chat Worker's does. Throws when not. */
+export function workerEntryLine(binary: string): string {
+  const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-worker-"));
+  try {
+    const r = spawnSync(binary, ["__fd-receiver-probe"], { env: probeEnv(home), encoding: "utf8", timeout: 60_000 });
+    const out = (r.stdout ?? "").trim().split("\n").at(-1) ?? "";
+    let ok = false;
+    try { ok = (JSON.parse(out) as { ok?: unknown }).ok === true; } catch { ok = false; }
+    if (r.status !== 0 || !ok) throw new Error(`${binary} __fd-receiver-probe: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out.slice(0, 300))}: a compiled Worker entry doesn't resolve (is compile:core's \`--root src\` still there?)`);
+    return "Worker entries resolve (the fd-receiver probe's line came back)";
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 /** How many times `needle` occurs in `binary`: a cross-built core (which this machine can't run) must hold the
  *  manifest's exact bytes once (Bun stores an embedded file as it is). */
 export function occurrences(binary: Uint8Array, needle: Uint8Array): number {
@@ -370,6 +386,9 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
         const line = embeddedManifestLine(output);
         if (line !== expected) throw new Error(`the binary carries ${line}, not the bundled-plugins manifest given (${expected})`);
         console.log(`build:daemon: ${target}: bundled-plugins manifest: ${line}`);
+        // The core's Worker entries resolve inside the binary that ships: an embedded file outside src/ once moved
+        // every entry's name (Bun names entries by their common root; compile:core pins `--root src`).
+        console.log(`build:daemon: ${target}: ${workerEntryLine(output)}`);
       } catch (err) {
         console.error(`build:daemon: ${target}: ${(err as Error).message}`);
         return 1;
