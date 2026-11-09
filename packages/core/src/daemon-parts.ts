@@ -214,14 +214,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     // card), the agents and the bot side all go through these, never a copy of their own.
     const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
     let broker: CloverApprovalBroker | undefined;
-    const lateApprovals: Pick<CloverApprovalBroker, "request" | "get"> = {
-      request: async (r, o) => {
-        if (!broker) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
-        return broker.request(r, o);
-      },
-      // A level raise's card is read back from the broker itself (J's #342): none before the broker is up.
-      get: (id) => broker?.get(id),
-    };
+    const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
@@ -379,5 +372,19 @@ function followMain(node: ComputerNode, main: MainComputer, links: DeviceLinks):
   return () => {
     offLease();
     offReg();
+  };
+}
+
+/** The broker, bound late (the node needs it before it exists: it is made from the node's own registry). Its `request`
+ *  refuses until then, and its `get` finds nothing; once bound, both are the broker's own. A level raise's card is
+ *  read back through `get` (J's #342, which fails closed without it), so both must always forward. */
+export function lateBroker(current: () => CloverApprovalBroker | undefined): Pick<CloverApprovalBroker, "request" | "get"> {
+  return {
+    request: async (r, o) => {
+      const b = current();
+      if (!b) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
+      return b.request(r, o);
+    },
+    get: (id) => current()?.get(id),
   };
 }
