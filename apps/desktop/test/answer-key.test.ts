@@ -2,7 +2,7 @@
 // with the core under the app's signature over lane H's statement, and never written down in the clear. The tests use
 // a vault in memory and a stand-in for safeStorage: never the real Keychain, Credential Manager or Secret Service.
 import { describe, expect, test } from "bun:test";
-import { createPublicKey, verify } from "node:crypto";
+import { createPrivateKey, createPublicKey, verify } from "node:crypto";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -93,19 +93,41 @@ describe("replacing the answer key, against the core's own handler", () => {
     const registry = await FileDeviceRegistry.open({ home: mkdtempSync(join(tmpdir(), "clover-e-akr-")), key: device, clock, self: { name: "Studio", os: "macos" } });
     const broker = new CloverApprovalBroker({ clock });
     const m = devicesMethods({ registry, clock, answerKeyRotation: () => ({ broker, computer: "Studio" }) } as unknown as DevicesMethodsDeps);
-    const client = { request: async <T,>(method: string, params?: unknown): Promise<T> => (await m[method]!(params, { caller: { kind: "user", client: "app" } })) as T };
+    // The app's client: device.answerKey.set through the core's handler, card.get from the broker (lane C's method).
+    const client = {
+      request: async <T,>(method: string, params?: unknown): Promise<T> => {
+        if (method === "card.get") {
+          const r = broker.get((params as { id: string }).id);
+          if (!r) throw new Error(`no card ${(params as { id: string }).id}`);
+          return { card: r.card, ...(r.outcome ? { outcome: r.outcome } : {}) } as T;
+        }
+        return (await m[method]!(params, { caller: { kind: "user", client: "app" } })) as T;
+      },
+    };
     const answer = (card: string, optionId: "approve" | "deny") => {
       const c = broker.get(card)!.card;
       return broker.answer(card, { optionId, hash: c.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card)!, input: "click", at: clock.now() } }, { role: "app" });
     };
-    return { clock, id: device.id, registry, broker, client, answer };
+    const held = () => registry.self().answerKey?.publicKey;
+    const waitHeld = async (key: string) => {
+      for (let i = 0; i < 200 && held() !== key; i++) await Bun.sleep(5);
+      expect(held()).toBe(key);
+    };
+    return { clock, id: device.id, registry, broker, client, answer, held, waitHeld };
   }
+
+  /** A staged key's public half, as the core sees it. */
+  const stagedPublic = (vault: ReturnType<typeof memoryVault>) => {
+    const st = vault.loadStaged()!;
+    const der = createPublicKey(createPrivateKey({ key: Buffer.from(st.secret), format: "der", type: "pkcs8" })).export({ format: "der", type: "spki" });
+    return Buffer.from(der.subarray(der.length - 32)).toString("base64");
+  };
 
   test("the hand-over statement is lane H's, byte for byte", () => {
     expect(Buffer.from(answerKeyRotateStatement("dev", "AAAA", "BBBB", 7))).toEqual(Buffer.from(coreRotateStatement("dev", "AAAA", "BBBB", 7)));
   });
 
-  test("the card's yes swaps the key: the app signs with the new one, which the core holds and keeps", async () => {
+  test("the new key is staged before the ask; the card's yes promotes it, and a restart reads it", async () => {
     const c = await core();
     const vault = memoryVault("app-keychain");
     const key = new AnswerKey(vault);
@@ -114,25 +136,66 @@ describe("replacing the answer key, against the core's own handler", () => {
     const started = await key.rotate(c.client, c.id, c.clock.now());
     expect(started).toEqual({ card: expect.any(String) });
     const card = (started as { card: string }).card;
+    // Staged, naming its card, before any yes; the current key still signs and stays registered.
+    expect(vault.loadStaged()?.card).toBe(card);
     expect(key.pendingCard).toBe(card);
-    // Until the yes, the current key signs and stays registered.
     expect(key.publicKey()).toBe(first);
-    expect(c.registry.self().answerKey?.publicKey).toBe(first);
+    expect(c.held()).toBe(first);
     expect(await c.answer(card, "approve")).toBe("accepted");
     expect(await key.resolved(c.client, c.id, card, "approved")).toBe(true);
     const next = key.publicKey();
     expect(next).not.toBe(first);
-    expect(c.registry.self().answerKey?.publicKey).toBe(next);
-    expect(key.pendingCard).toBeUndefined();
-    // Kept: a new start reads the new key from the vault, and it registers at once.
+    expect(c.held()).toBe(next);
+    expect(vault.loadStaged()).toBeUndefined();
     const again = new AnswerKey(vault);
     expect(again.publicKey()).toBe(next);
     expect(await again.register(c.client, c.id)).toBe(true);
   });
 
-  test("a no, or another card's outcome, keeps the current key", async () => {
+  test("a crash after the yes, or a yes on the phone while the app was away: the next connection adopts the staged key", async () => {
     const c = await core();
-    const key = new AnswerKey(memoryVault("app-keychain"));
+    const vault = memoryVault("app-keychain");
+    const before = new AnswerKey(vault);
+    await before.register(c.client, c.id);
+    const { card } = (await before.rotate(c.client, c.id, c.clock.now())) as { card: string };
+    const staged = stagedPublic(vault);
+    // The yes comes while the app isn't there to see card_resolved (it crashed, or was offline).
+    expect(await c.answer(card, "approve")).toBe("accepted");
+    await c.waitHeld(staged);
+    // A new start (the old instance is gone), on its next connection: the core holds the staged key, which is taken.
+    const after = new AnswerKey(vault);
+    expect(await after.register(c.client, c.id)).toBe(true);
+    expect(after.publicKey()).toBe(staged);
+    expect(vault.loadStaged()).toBeUndefined();
+    // And the same instance, reconnecting after missing the event, adopts it the same way.
+    const c2 = await core();
+    const v2 = memoryVault("app-keychain");
+    const k2 = new AnswerKey(v2);
+    await k2.register(c2.client, c2.id);
+    const r2 = (await k2.rotate(c2.client, c2.id, c2.clock.now())) as { card: string };
+    const s2 = stagedPublic(v2);
+    await c2.answer(r2.card, "approve");
+    await c2.waitHeld(s2);
+    expect(await k2.register(c2.client, c2.id)).toBe(true);
+    expect(k2.publicKey()).toBe(s2);
+  });
+
+  test("a vault that can't store the new key fails the rotation: no card, nothing changes", async () => {
+    const c = await core();
+    const vault = { ...memoryVault("app-keychain"), saveStaged: () => { throw new Error("store unavailable"); } };
+    const key = new AnswerKey(vault);
+    await key.register(c.client, c.id);
+    const first = key.publicKey();
+    expect(await key.rotate(c.client, c.id, c.clock.now())).toEqual({ refused: expect.stringContaining("couldn't be stored") });
+    expect(c.broker.cards()).toEqual([]);
+    expect(c.held()).toBe(first);
+    expect(key.publicKey()).toBe(first);
+  });
+
+  test("a no, or another card's outcome, keeps the current key and discards the staged one", async () => {
+    const c = await core();
+    const vault = memoryVault("app-keychain");
+    const key = new AnswerKey(vault);
     await key.register(c.client, c.id);
     const first = key.publicKey();
     const { card } = (await key.rotate(c.client, c.id, c.clock.now())) as { card: string };
@@ -140,19 +203,52 @@ describe("replacing the answer key, against the core's own handler", () => {
     expect(key.pendingCard).toBe(card);
     expect(await c.answer(card, "deny")).toBe("accepted");
     expect(await key.resolved(c.client, c.id, card, "denied")).toBe(false);
+    expect(vault.loadStaged()).toBeUndefined();
     expect(key.publicKey()).toBe(first);
-    expect(c.registry.self().answerKey?.publicKey).toBe(first);
+    expect(c.held()).toBe(first);
   });
 
-  test("a hand-over the core refuses (a stale one) is said, and nothing changes", async () => {
+  test("an orphaned card expires after 10 minutes; the next connection discards the staged key", async () => {
     const c = await core();
-    const key = new AnswerKey(memoryVault("app-keychain"));
+    const vault = memoryVault("app-keychain");
+    const key = new AnswerKey(vault);
+    await key.register(c.client, c.id);
+    const first = key.publicKey();
+    const { card } = (await key.rotate(c.client, c.id, c.clock.now())) as { card: string };
+    c.clock.advance(10 * 60 * 1000);
+    for (let i = 0; i < 100 && c.broker.get(card)?.outcome === undefined; i++) await Bun.sleep(5);
+    expect(c.broker.get(card)?.outcome).toBe("cancelled");
+    // The app restarts having missed it: its next connection finds the card over and drops the staged key.
+    const after = new AnswerKey(vault);
+    expect(await after.register(c.client, c.id)).toBe(true);
+    expect(vault.loadStaged()).toBeUndefined();
+    expect(after.publicKey()).toBe(first);
+    expect(c.held()).toBe(first);
+  });
+
+  test("a hand-over the core refuses (a stale one) is said, shows no card, and leaves nothing staged", async () => {
+    const c = await core();
+    const vault = memoryVault("app-keychain");
+    const key = new AnswerKey(vault);
     await key.register(c.client, c.id);
     const first = key.publicKey();
     const r = await key.rotate(c.client, c.id, c.clock.now() - 60 * 60 * 1000);
     expect(r).toEqual({ refused: expect.stringContaining("too old") });
-    expect(key.pendingCard).toBeUndefined();
+    expect(vault.loadStaged()).toBeUndefined();
     expect(key.publicKey()).toBe(first);
     expect(c.broker.cards()).toEqual([]);
+  });
+
+  test("the OS store keeps the staged key in its own file, and promotes it by a rename over the key", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clover-e-akr-vault-"));
+    const vault = safeStorageVault(join(dir, "answer-key"), fakeStorage, "darwin");
+    vault.save(new Uint8Array([1, 2, 3]));
+    vault.saveStaged(new Uint8Array([4, 5, 6]), "card_abc");
+    expect(readFileSync(join(dir, "answer-key.staged")).toString()).not.toContain("card_abc");
+    expect(vault.loadStaged()).toEqual({ secret: new Uint8Array([4, 5, 6]), card: "card_abc" });
+    expect(vault.load()).toEqual(new Uint8Array([1, 2, 3]));
+    vault.promoteStaged();
+    expect(vault.load()).toEqual(new Uint8Array([4, 5, 6]));
+    expect(vault.loadStaged()).toBeUndefined();
   });
 });

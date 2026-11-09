@@ -6,8 +6,13 @@
 //
 // Replacing it (`rotate`): other computers trust the key with their cards, so the core takes a new one only with the
 // current key's hand-over (its signature over `clover/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>`) and the user's
-// yes on a sealed change card (lane C's `answer-key-rotate`). The app keeps answering with the current key until that
-// card is approved and the core holds the new one; then it keeps the new one (`resolved`). A no keeps the current key.
+// yes on a sealed change card (lane C's `answer-key-rotate`), which the core cancels after 10 minutes. The core adopts
+// the new key on that yes, wherever it is answered and whether or not the app is there to see it, so the new key is
+// stored first, in the vault's second slot (`staged`), before the app asks; a rotation whose key can't be stored never
+// starts. The app keeps answering with the current key until the core holds the staged one, then promotes it (write
+// then rename): on the card's yes, or on any later connection or start where the core turns out to hold it (a yes the
+// app missed, or one before a crash). A no, an expiry or a withdrawal discards it. Other computers take the new key
+// from the peer update that follows; until it reaches one, that computer still trusts the old key.
 //
 // Where it is kept: the OS's own store, with no user-presence or biometric gate on any OS — no Touch ID, Windows Hello
 // or passcode prompt, ever (the owner's decision, folded at E-M2). A packaged app keeps it through Electron's
@@ -20,16 +25,23 @@
 // from memory and never prompts. The one place an OS auth check may appear at all is pairing or revoking a device,
 // and only if it is asked for later.
 import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { answerKeyHolderFor, type AnswerKeyHolder } from "@waifucave/clover-protocol";
 
-/** Where the key's private half is kept. */
+/** Where the key's private half is kept: the current key, and a replacement staged while its card waits. */
 export interface KeyVault {
   readonly held: AnswerKeyHolder;
   load(): Uint8Array | undefined;
   save(secret: Uint8Array): void;
   clear(): void;
+  /** The staged replacement and the card it waits on, when one is staged. */
+  loadStaged(): { secret: Uint8Array; card?: string } | undefined;
+  /** Stores a replacement before it is asked for; throws when it can't, and the rotation doesn't start. */
+  saveStaged(secret: Uint8Array, card?: string): void;
+  clearStaged(): void;
+  /** The staged key becomes the current one, in one step (a rename over it). */
+  promoteStaged(): void;
 }
 
 /** What safeStorage offers (Electron's), so the vault is testable without it. */
@@ -39,26 +51,61 @@ export interface SafeStorageLike {
   decryptString(encrypted: Buffer): string;
 }
 
-/** The OS's store, through safeStorage: the file holds only what the OS's own key encrypted. Held through the
- *  protocol's own choice (macOS's Keychain limited to the signed app; nothing elsewhere this app can prove). */
+/** The OS's store, through safeStorage: the files hold only what the OS's own key encrypted. Held through the
+ *  protocol's own choice (macOS's Keychain limited to the signed app; nothing elsewhere this app can prove). The staged
+ *  replacement is a second file beside the key, written to a temporary name and renamed into place. */
 export function safeStorageVault(file: string, storage: SafeStorageLike, platform: NodeJS.Platform = process.platform): KeyVault {
+  const staged = `${file}.staged`;
+  const read = (path: string): string | undefined => {
+    if (!existsSync(path) || !storage.isEncryptionAvailable()) return undefined;
+    try {
+      return storage.decryptString(readFileSync(path));
+    } catch {
+      return undefined;
+    }
+  };
+  const write = (path: string, text: string) => {
+    if (!storage.isEncryptionAvailable()) throw new Error("this computer's protected store isn't available");
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, storage.encryptString(text), { mode: 0o600 });
+    renameSync(tmp, path);
+  };
   return {
     held: answerKeyHolderFor(platform === "darwin" ? "macos" : platform === "win32" ? "windows" : "linux", { appKeychain: platform === "darwin" }),
     load() {
-      if (!existsSync(file) || !storage.isEncryptionAvailable()) return undefined;
+      const text = read(file);
+      return text === undefined ? undefined : new Uint8Array(Buffer.from(text, "base64"));
+    },
+    save(secret) {
+      write(file, Buffer.from(secret).toString("base64"));
+    },
+    clear() {
+      rmSync(file, { force: true });
+    },
+    loadStaged() {
+      const text = read(staged);
+      if (text === undefined) return undefined;
       try {
-        return new Uint8Array(Buffer.from(storage.decryptString(readFileSync(file)), "base64"));
+        const v = JSON.parse(text) as { secret?: unknown; card?: unknown };
+        if (typeof v.secret !== "string") return undefined;
+        return { secret: new Uint8Array(Buffer.from(v.secret, "base64")), ...(typeof v.card === "string" ? { card: v.card } : {}) };
       } catch {
         return undefined;
       }
     },
-    save(secret) {
-      if (!storage.isEncryptionAvailable()) throw new Error("this computer's protected store isn't available");
-      mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, storage.encryptString(Buffer.from(secret).toString("base64")), { mode: 0o600 });
+    saveStaged(secret, card) {
+      write(staged, JSON.stringify({ secret: Buffer.from(secret).toString("base64"), ...(card === undefined ? {} : { card }) }));
     },
-    clear() {
-      rmSync(file, { force: true });
+    clearStaged() {
+      rmSync(staged, { force: true });
+    },
+    promoteStaged() {
+      const v = this.loadStaged();
+      if (!v) throw new Error("no staged key");
+      // The current key's file is replaced by a rename (write then rename), then the staged slot goes.
+      write(file, Buffer.from(v.secret).toString("base64"));
+      rmSync(staged, { force: true });
     },
   };
 }
@@ -66,7 +113,21 @@ export function safeStorageVault(file: string, storage: SafeStorageLike, platfor
 /** A vault in memory: a headless run's and the tests'. */
 export function memoryVault(held: AnswerKeyHolder = "none"): KeyVault {
   let secret: Uint8Array | undefined;
-  return { held, load: () => secret, save: (s) => void (secret = new Uint8Array(s)), clear: () => void (secret = undefined) };
+  let staged: { secret: Uint8Array; card?: string } | undefined;
+  return {
+    held,
+    load: () => secret,
+    save: (s) => void (secret = new Uint8Array(s)),
+    clear: () => void (secret = undefined),
+    loadStaged: () => staged,
+    saveStaged: (s, card) => void (staged = { secret: new Uint8Array(s), ...(card === undefined ? {} : { card }) }),
+    clearStaged: () => void (staged = undefined),
+    promoteStaged: () => {
+      if (!staged) throw new Error("no staged key");
+      secret = staged.secret;
+      staged = undefined;
+    },
+  };
 }
 
 /** What the app signs to show the core it holds the key (lane H's `answerKeyStatement`). */
@@ -93,8 +154,6 @@ export interface AnswerKeyClient {
 
 export class AnswerKey {
   private key: KeyObject | undefined;
-  /** A replacement waiting on its card: the new key, kept in memory alone until the core holds it. */
-  private pending: { card: string; key: KeyObject } | undefined;
 
   constructor(private readonly vault: KeyVault, private readonly log: (line: string) => void = () => {}) {}
 
@@ -116,14 +175,26 @@ export class AnswerKey {
     return privateKey;
   }
 
+  /** The staged replacement, if one is kept and reads. */
+  private staged(): { key: KeyObject; card?: string } | undefined {
+    const v = this.vault.loadStaged();
+    if (!v) return undefined;
+    try {
+      return { key: createPrivateKey({ key: Buffer.from(v.secret), format: "der", type: "pkcs8" }), ...(v.card === undefined ? {} : { card: v.card }) };
+    } catch {
+      this.vault.clearStaged();
+      return undefined;
+    }
+  }
+
   /** The public half, raw (32 bytes), base64. */
   publicKey(): string {
     return rawPublic(this.private());
   }
 
-  /** The card a replacement waits on, if one does. */
+  /** The card a staged replacement waits on, if one does. */
   get pendingCard(): string | undefined {
-    return this.pending?.card;
+    return this.vault.loadStaged()?.card;
   }
 
   get held(): AnswerKeyHolder {
@@ -134,13 +205,24 @@ export class AnswerKey {
     return new Uint8Array(sign(null, Buffer.from(message), this.private()));
   }
 
-  /** Starts replacing the key: a new one, registered under its own signature with the current key's hand-over. The
-   *  current key stays until the core holds the new one (`resolved`, on the card's yes). */
+  /** Starts replacing the key: a new one, stored in the staged slot first (a rotation whose key can't be stored doesn't
+   *  start), then registered under its own signature with the current key's hand-over. The core withdraws any card an
+   *  earlier replacement still waits on. The current key stays until the core holds the new one. */
   async rotate(client: AnswerKeyClient, deviceId: string, now: number = Date.now()): Promise<RotationStart> {
-    if (this.pending) return { card: this.pending.card };
+    // A staged key the core already holds (an earlier card's yes) becomes the key first: the new hand-over is from it.
+    const before = this.staged();
+    if (before) await this.adoptIfHeld(client, deviceId, before.key);
     const current = this.private();
     const from = rawPublic(current);
     const { privateKey: next } = generateKeyPairSync("ed25519");
+    const secret = new Uint8Array(next.export({ format: "der", type: "pkcs8" }));
+    try {
+      this.vault.saveStaged(secret);
+    } catch (err) {
+      const why = `the new key couldn't be stored (${err instanceof Error ? err.message.slice(0, 120) : "refused"})`;
+      this.log(`answer key: not replaced: ${why}`);
+      return { refused: why };
+    }
     const to = rawPublic(next);
     const params = {
       publicKey: to, held: this.held,
@@ -150,68 +232,102 @@ export class AnswerKey {
     try {
       const r = await client.request<{ applied: boolean; card?: string }>("device.answerKey.set", params, 15_000);
       if (r.applied) {
-        this.adopt(next);
+        this.promote();
         return { applied: true };
       }
-      if (typeof r.card !== "string") return { refused: "the core didn't say which card" };
-      this.pending = { card: r.card, key: next };
+      if (typeof r.card !== "string") throw new Error("the core didn't say which card");
+      // The staged key now names its card, so a start after a crash knows what it waits on.
+      try {
+        this.vault.saveStaged(secret, r.card);
+      } catch {
+        // The key itself is stored; only the card's id isn't, and the next connection still adopts it if it's held.
+      }
       this.log("answer key: replacing it waits on its card");
       return { card: r.card };
     } catch (err) {
+      this.vault.clearStaged();
       const why = err instanceof Error ? err.message.slice(0, 200) : "refused";
       this.log(`answer key: not replaced (${why})`);
       return { refused: why };
     }
   }
 
-  /** A card resolved. On the pending replacement's yes, the app keeps the new key once the core holds it (registering it
-   *  again applies at once then); on anything else it keeps the current key. True when the key changed. */
+  /** A card resolved. On the staged replacement's yes, the app promotes the staged key once the core holds it; on its
+   *  no, expiry, withdrawal or cancellation the staged key is discarded. True when the key changed. */
   async resolved(client: AnswerKeyClient, deviceId: string, cardId: string, outcome: string): Promise<boolean> {
-    const p = this.pending;
-    if (!p || p.card !== cardId) return false;
-    this.pending = undefined;
+    const st = this.staged();
+    if (!st || st.card !== cardId) return false;
     if (outcome !== "approved") {
+      this.vault.clearStaged();
       this.log(`answer key: kept (the replacement was ${outcome})`);
       return false;
     }
-    const to = rawPublic(p.key);
-    const signature = b64(sign(null, Buffer.from(answerKeyStatement(deviceId, to, this.held)), p.key));
     for (let i = 0; i < ADOPT_TRIES; i++) {
-      try {
-        await client.request("device.answerKey.set", { publicKey: to, held: this.held, signature }, 10_000);
-        this.adopt(p.key);
-        this.log("answer key: replaced");
-        return true;
-      } catch {
-        await new Promise((r) => setTimeout(r, ADOPT_GAP_MS));
-      }
+      if (await this.adoptIfHeld(client, deviceId, st.key)) return true;
+      await new Promise((r) => setTimeout(r, ADOPT_GAP_MS));
     }
-    this.log("answer key: the core didn't take the new key; the current one stays");
+    // Kept staged: the next connection adopts it if the core holds it by then.
+    this.log("answer key: the core doesn't hold the new key yet; it stays staged");
     return false;
   }
 
-  /** Keeps `next` as the key: in the vault (when it can), and for signing from now on. */
-  private adopt(next: KeyObject): void {
-    try {
-      this.vault.save(new Uint8Array(next.export({ format: "der", type: "pkcs8" })));
-    } catch {
-      this.log("answer key: the new key couldn't be kept in this computer's store; it stays in memory");
-    }
-    this.key = next;
-  }
-
-  /** Registers the key with the core, for this device; the core takes it only from a desktop, with this signature. */
+  /** Registers the key with the core, for this device, on every connection; the core takes it only from a desktop,
+   *  with this signature. A staged replacement the core already holds (a yes the app missed, or one before a crash) is
+   *  promoted first; one whose card is over is discarded. */
   async register(client: AnswerKeyClient, deviceId: string): Promise<boolean> {
+    const st = this.staged();
+    if (st && (await this.adoptIfHeld(client, deviceId, st.key))) return true;
     try {
       const publicKey = this.publicKey();
       const signature = Buffer.from(this.sign(answerKeyStatement(deviceId, publicKey, this.held))).toString("base64");
       await client.request("device.answerKey.set", { publicKey, held: this.held, signature }, 10_000);
       this.log(`answer key: registered (${this.held})`);
-      return true;
     } catch (err) {
       // An older daemon, a device that isn't a desktop, or one whose key was removed (pair again): said, not fatal.
       this.log(`answer key: not registered (${err instanceof Error ? err.message.slice(0, 200) : "refused"})`);
       return false;
+    }
+    // The core holds the current key: a staged one waits on its card, or its card is over.
+    if (st?.card !== undefined) {
+      const card: { outcome?: string } | Error = await client.request<{ outcome?: string }>("card.get", { id: st.card }, 10_000)
+        .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
+      if (card instanceof Error) {
+        // The core doesn't know the card (it restarted): nothing can approve it now.
+        if (/no card|not found/i.test(card.message)) this.vault.clearStaged();
+      } else if (card.outcome !== undefined) {
+        this.vault.clearStaged();
+        this.log(`answer key: kept (the replacement was ${card.outcome})`);
+      }
+    }
+    return true;
+  }
+
+  /** Whether the core holds `key`: registering it again applies at once only then. If it does, it becomes the key. */
+  private async adoptIfHeld(client: AnswerKeyClient, deviceId: string, key: KeyObject): Promise<boolean> {
+    const to = rawPublic(key);
+    const signature = b64(sign(null, Buffer.from(answerKeyStatement(deviceId, to, this.held)), key));
+    try {
+      const r = await client.request<{ applied?: boolean }>("device.answerKey.set", { publicKey: to, held: this.held, signature }, 10_000);
+      if (r?.applied !== true) return false;
+    } catch {
+      return false;
+    }
+    this.promote();
+    this.log("answer key: replaced");
+    return true;
+  }
+
+  /** The staged key becomes the current one, in the vault and for signing. */
+  private promote(): void {
+    const st = this.vault.loadStaged();
+    if (!st) return;
+    // Signing moves to the new key at once: the core holds it. If the vault can't promote it now, it stays staged and
+    // the next start promotes it (the core holds it then too).
+    this.key = createPrivateKey({ key: Buffer.from(st.secret), format: "der", type: "pkcs8" });
+    try {
+      this.vault.promoteStaged();
+    } catch {
+      this.log("answer key: the new key stays staged in this computer's store until the next start");
     }
   }
 }

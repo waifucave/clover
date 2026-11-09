@@ -14,7 +14,7 @@ import { toBase64 } from "../../identity/bytes";
 import { generateEd25519 } from "../../identity/keys";
 import { CloverApprovalBroker } from "../../approvals/broker";
 import { answerKeyRotateStatement, answerKeyStatement, FileDeviceRegistry } from "../registry";
-import { devicesMethods, type DevicesMethodsDeps } from "../rpc";
+import { ANSWER_KEY_ROTATION_CARD_MS, devicesMethods, type DevicesMethodsDeps } from "../rpc";
 
 const app: Caller = { kind: "user", client: "app" };
 
@@ -119,6 +119,44 @@ describe("device.answerKey.set", () => {
     // Signed long ago.
     expect(await code(replace(first, next, { at: clock.now() - 60 * 60 * 1000 }))).toBe(ERR.INVALID_REQUEST);
     expect(broker.cards()).toEqual([]);
+    expect(registry.self().answerKey?.publicKey).toBe(toBase64(first.publicKey));
+  });
+
+  test("one card at a time: a new hand-over withdraws the card before; each hand-over counts once", async () => {
+    const { registry, set, replace, answer, broker, code, m, clock } = await make();
+    const first = generateEd25519();
+    await set(first);
+    const a = (await replace(first, generateEd25519())) as { card: string };
+    const next = generateEd25519();
+    const b = (await replace(first, next)) as { card: string };
+    expect(b.card).not.toBe(a.card);
+    await waitFor(() => broker.get(a.card)?.outcome !== undefined);
+    expect(broker.get(a.card)?.outcome).toBe("cancelled");
+    expect(broker.cards().map((c) => c.id)).toEqual([b.card]);
+    // The same hand-over again (a replay of b's call, byte for byte: Ed25519 signs deterministically) is refused.
+    const publicKey = toBase64(next.publicKey);
+    const at = clock.now();
+    const params = {
+      publicKey, held: "app-keychain", signature: toBase64(next.sign(answerKeyStatement(registry.self().id, publicKey, "app-keychain"))),
+      rotation: { from: toBase64(first.publicKey), at, signature: toBase64(first.sign(answerKeyRotateStatement(registry.self().id, toBase64(first.publicKey), publicKey, at))) },
+    };
+    expect(await code(m["device.answerKey.set"]!(params, { caller: app }) as Promise<unknown>)).toBe(ERR.INVALID_REQUEST);
+    // b's card still waits: the replay withdrew nothing.
+    expect(broker.cards().map((c) => c.id)).toEqual([b.card]);
+    void answer;
+  });
+
+  test("a card nobody answers is cancelled after 10 minutes, and the key stays", async () => {
+    const { registry, set, replace, broker, clock } = await make();
+    const first = generateEd25519();
+    await set(first);
+    const r = (await replace(first, generateEd25519())) as { card: string };
+    clock.advance(ANSWER_KEY_ROTATION_CARD_MS - 1);
+    await Bun.sleep(5);
+    expect(broker.get(r.card)?.outcome).toBeUndefined();
+    clock.advance(1);
+    await waitFor(() => broker.get(r.card)?.outcome !== undefined);
+    expect(broker.get(r.card)?.outcome).toBe("cancelled");
     expect(registry.self().answerKey?.publicKey).toBe(toBase64(first.publicKey));
   });
 

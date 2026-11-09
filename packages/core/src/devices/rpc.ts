@@ -25,7 +25,7 @@ import type { AccountClient } from "../identity/account";
 import type { PairingService, PairingState } from "../links/pairing";
 import { type RevokeOptions, revokeDevice } from "./account-devices";
 import type { FileDeviceRegistry } from "./registry";
-import { type AnswerKeyRotationRefusal, rotateOwnAnswerKey } from "../approvals/answer-key-rotation";
+import { ANSWER_KEY_ROTATE_MAX_SKEW_MS, type AnswerKeyRotationRefusal, rotateOwnAnswerKey } from "../approvals/answer-key-rotation";
 
 /** A JSON-RPC failure with the code a client branches on (lane D's shape). Its message never holds a secret. */
 export class MethodError extends Error {
@@ -128,6 +128,10 @@ export interface DevicesMethodsDeps {
   answerKeyRotation?: () => { broker: Pick<ApprovalBroker, "request" | "get" | "watch">; computer: string } | undefined;
 }
 
+/** How long a replacement's card waits for the user: then it is cancelled, and the app asks again with a new hand-over.
+ *  With the hand-over's own bound (`ANSWER_KEY_ROTATE_MAX_SKEW_MS`), a yes never applies one older than both. */
+export const ANSWER_KEY_ROTATION_CARD_MS = 10 * 60 * 1000;
+
 /** Why a replacement of this desktop's answer key wasn't taken, for the app. */
 const ROTATION_REFUSED: Record<AnswerKeyRotationRefusal, string> = {
   "no-current-key": "this desktop has no answer key to replace",
@@ -147,6 +151,11 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
     kind: "change", origin: "user", computers: [], effect: "other", change,
     fields: { title: { type: "text", text: what }, detail: { type: "list", items: [device] } },
   });
+
+  // Replacing the answer key: at most one card at a time (a new hand-over withdraws the one before), and each hand-over
+  // used once while it could still be taken (its signature, for the skew window).
+  let rotating: AbortController | undefined;
+  const usedHandOvers = new Map<string, number>();
 
   return {
     [M.deviceList.name]: handler(M.deviceList, () => {
@@ -282,7 +291,10 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
     // place of a held one is a sensitive change: it takes the current key's hand-over (`rotation`, checked before any
     // card shows) and the user's yes on a sealed change card bound to exactly that hand-over, answered by anything but
     // the key it replaces (lane C's `rotateOwnAnswerKey`). The call answers `{ applied: false, card }` once the card
-    // shows; the key changes when the card is approved.
+    // shows; the key changes when the card is approved. One card at a time, cancelled after 10 minutes; each hand-over
+    // counts once. Other computers take the new key from the peer update that follows (the hand-over travels with it):
+    // until it reaches one, that computer still trusts the old key, which this desktop's app keeps until it has the
+    // new one stored.
     [M.deviceAnswerKeySet.name]: handler(M.deviceAnswerKeySet, async (p, ctx): Promise<ChangeResult> => {
       requireUser(ctx, "set this desktop's answer key");
       if (ctx.caller.kind === "user" && ctx.caller.client !== "app") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only this desktop's app holds its answer key");
@@ -295,6 +307,10 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
         if (rotationSignature === null) throw new MethodError(ERR.INVALID_PARAMS, "device.answerKey.set: the hand-over's signature isn't base64");
         const r = deps.answerKeyRotation?.();
         if (!r) throw new MethodError(ERR.RETRY, "replacing the answer key takes the approvals, which aren't running on this computer yet: try again in a moment");
+        const now = deps.clock.now();
+        for (const [sig, at] of usedHandOvers) if (Math.abs(now - at) > ANSWER_KEY_ROTATE_MAX_SKEW_MS) usedHandOvers.delete(sig);
+        if (usedHandOvers.has(p.rotation.signature)) throw new MethodError(ERR.INVALID_REQUEST, "this hand-over was already used: sign a new one", { code: "used" });
+        usedHandOvers.set(p.rotation.signature, p.rotation.at);
         return rotate(r, {
           publicKey: p.publicKey, held: p.held, ...(p.alg ? { alg: p.alg } : {}), registration: signature,
           rotation: { from: p.rotation.from, at: p.rotation.at, signature: rotationSignature }, origin: "user",
@@ -307,20 +323,34 @@ export function devicesMethods(deps: DevicesMethodsDeps): Record<string, MethodH
 
   /** Runs the replacement: answers with its card once the card shows, or with the refusal its checks gave before one. */
   function rotate(r: NonNullable<ReturnType<NonNullable<DevicesMethodsDeps["answerKeyRotation"]>>>, ask: Parameters<typeof rotateOwnAnswerKey>[1]): Promise<ChangeResult> {
+    // The card before, if one waits, is withdrawn: one replacement at a time. This one's card is cancelled after
+    // `ANSWER_KEY_ROTATION_CARD_MS`, so an orphaned card (an app that went away) never applies a key later.
+    rotating?.abort();
+    const ctl = new AbortController();
+    rotating = ctl;
+    const timer = deps.clock.setTimeout(() => ctl.abort(), ANSWER_KEY_ROTATION_CARD_MS);
+    const done = () => {
+      deps.clock.clearTimeout(timer);
+      if (rotating === ctl) rotating = undefined;
+    };
     return new Promise<ChangeResult>((resolve, reject) => {
       let shown = false;
       rotateOwnAnswerKey({
-        broker: r.broker, devices: registry, computer: r.computer, now: () => deps.clock.now(),
+        broker: r.broker, devices: registry, computer: r.computer, now: () => deps.clock.now(), signal: ctl.signal,
         onCard: (card) => {
           shown = true;
           resolve({ applied: false, card });
         },
       }, ask).then((out) => {
+        done();
         // Once the card shows, its outcome reaches the app through the card and the device record, not this call.
         if (shown) return;
         if (out.ok) resolve({ applied: true });
         else reject(new MethodError(ERR.INVALID_REQUEST, ROTATION_REFUSED[out.why], { code: out.why }));
-      }, (err: unknown) => { if (!shown) reject(err); });
+      }, (err: unknown) => {
+        done();
+        if (!shown) reject(err);
+      });
     });
   }
 }
