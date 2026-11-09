@@ -14,10 +14,10 @@ const Transcript: EntryComponent = ({ props }) => <p data-testid="transcript">{J
 
 async function mount(params: { session?: string } = {}) {
   const core = fakeCore({
-    "archive.list": ({ query, before }) => {
+    "archive.list": ({ query, cursor }) => {
       const matching = ARCHIVED.filter((s) => !query || (s.title ?? "").toLowerCase().includes(query.toLowerCase()));
-      const page = before ? matching.filter((s) => s.updatedAt < before) : matching.slice(0, 3);
-      return { sessions: page, more: !before && matching.length > 3 };
+      const page = cursor ? matching.slice(Number(cursor)) : matching.slice(0, 3);
+      return { sessions: page, more: !cursor && matching.length > 3, ...(!cursor && matching.length > 3 ? { cursor: "3" } : {}) };
     },
   });
   const runtime = runtimeWith({
@@ -54,7 +54,7 @@ describe("the archive", () => {
     expect(screen.getByText("Pick a session to read it.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Trip to Kyoto/ }));
     expect(JSON.parse(screen.getByTestId("transcript").textContent!)).toEqual({ bot: OLD_APP, session: "w-2", archived: true });
-    expect(screen.getByRole("region", { name: "Trip to Kyoto: what to book first" }).textContent).toContain("Chat · Oct 30 · anthropic/claude-sonnet-5 · 18 messages");
+    expect(screen.getByRole("region", { name: "Trip to Kyoto: what to book first" }).textContent).toContain("Chat · Oct 30 · anthropic/claude-sonnet-5 · 18 entries");
   });
 
   test("opens on the session its route names", async () => {

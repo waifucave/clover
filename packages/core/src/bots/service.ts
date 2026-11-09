@@ -51,6 +51,7 @@ import { readJson, writeJsonAtomic } from "../sessions/atomic-file";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { seedMemory } from "./memory";
+import { sweepOwnTempFiles } from "../fence/own-files";
 import { botPaths, botStateFile, homeTreePath, sessionScratchDir, type BotPaths } from "./paths";
 import { botEntries, loadPluginBot, type PluginBot } from "./plugin-bot";
 import { parseUserLayerPatch, userLayerFields, UserLayerStore, type UserLayer, type UserLayerField } from "./user-layer";
@@ -576,6 +577,14 @@ export class BotService {
   async #add(bot: PluginBot): Promise<void> {
     const live: Live = { plugin: bot, mainSession: mainSessionIdFor(bot.id) };
     this.#folders(bot);
+    // Leftover temp files from a crash cut off mid-write (`writeOwnFile` renames over the target, so only a crash
+    // between the temp file's create and its rename leaves one): swept at bot start, nothing else may reuse the name.
+    try {
+      const paths = botPaths(this.#o.home, bot.id);
+      sweepOwnTempFiles([paths.memory, paths.agents, paths.scratch]);
+    } catch (err) {
+      this.#warn(`the bot ${bot.id}'s leftover temp files weren't swept: ${err instanceof Error ? err.message : String(err)}`);
+    }
     // Only the computer running the bot writes its memory (§6.5); the others get copies.
     if (this.#o.gate.main.runsHere()) this.#seed(bot);
     const host = this.#o.host;
