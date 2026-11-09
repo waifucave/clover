@@ -1,5 +1,6 @@
 // Every sidebar state the gallery shows.
 import { useState, type ReactNode } from "react";
+import { CloverMark } from "../client/icons";
 import { Sidebar } from "../client/Sidebar";
 import type { SidebarProps, SidebarRoute, SidebarSide } from "../client/types";
 import { ACCOUNT, APPS, BOTS, BUNDLED_APPS, PROJECTS } from "./fixtures";
@@ -85,5 +86,25 @@ export const stories: Story[] = [
     width: 80,
     height: TALL,
     render: () => <Framed><SidebarDemo collapsed side="code" /></Framed>,
+  },
+  {
+    id: "sidebar/brand-mark",
+    title: "Clover's mark",
+    notes: "The brand mark (docs/clover-brand.md) at the sidebar's 16 px and larger, on the sidebar's ground and on the card's: green on the light theme, white on the dark one.",
+    width: 520,
+    height: 220,
+    render: () => (
+      <div className="story-marks">
+        {(["story-marks__row", "story-marks__row story-marks__row--card"] as const).map((row) => (
+          <div key={row} className={row}>
+            {[16, 24, 48, 96].map((size) => (
+              <span key={size} className="cl-sidebar__brand story-marks__cell">
+                <CloverMark size={size} />
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    ),
   },
 ];
