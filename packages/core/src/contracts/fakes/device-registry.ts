@@ -122,12 +122,8 @@ export class FakeDeviceRegistry implements DeviceRegistry {
   async verify(id: string, data: Uint8Array, signature: Uint8Array): Promise<boolean> {
     const d = this.#devices.get(id);
     if (!d || d.revokedAt !== undefined) return false;
-    try {
-      const key = await crypto.subtle.importKey("raw", unb64(d.publicKey), { name: "Ed25519" }, false, ["verify"]);
-      return await crypto.subtle.verify({ name: "Ed25519" }, key, signature as Uint8Array<ArrayBuffer>, data as Uint8Array<ArrayBuffer>);
-    } catch {
-      return false;
-    }
+    // Through the contract's own verifier, strict as the real registry's (identity/ed25519-strict.ts).
+    return verifyKeySignature("ed25519", unb64(d.publicKey), data, signature);
   }
 
   watch(fn: (change: DeviceChange) => void): Unsubscribe {
