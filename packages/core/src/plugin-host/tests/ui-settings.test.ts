@@ -24,5 +24,9 @@ describe("ui.settings and ui.set", () => {
     // CSS overrides need the theme cleaner: refused, nothing written.
     expect((await m["ui.set"]!({ patch: { overrides: { css: "body { background: url(https://x) }" } } }, APP).catch((e: Error) => e.message)) as string).toContain("theme cleaner");
     expect(((await m["ui.settings"]!({}, APP)) as { overrides?: unknown }).overrides).toBeUndefined();
+    // overrides merge by part (#333's review): a tokens-only patch keeps the stored css.
+    expect(await m["ui.set"]!({ patch: { overrides: { css: "" } } }, APP)).toEqual({ applied: true });
+    expect(await m["ui.set"]!({ patch: { overrides: { tokens: {} } } }, APP)).toEqual({ applied: true });
+    expect(((await m["ui.settings"]!({}, APP)) as { overrides?: unknown }).overrides).toEqual({ css: "", tokens: {} });
   });
 });

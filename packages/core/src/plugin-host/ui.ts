@@ -111,7 +111,10 @@ export function pluginUi(o: PluginUiOptions): { methods: Record<string, MethodHa
       // A failure names the plugin and the call (never a mount: the app maps them to its own parts).
       [M.pluginLayerApi.name]: handler(M.pluginLayerApi, async (p) => {
         try {
-          return { result: await o.router({ pluginId: p.pluginId, process: "ui", path: p.call, args: p.args, caller: { kind: "user", client: "app" }, ...(p.session !== undefined ? { session: p.session } : {}) }) };
+          // A component acts as its plugin, never as the user (the coordinator's ruling on #333): `commands.run`,
+          // `host.call` and every area see the plugin. The user's own gesture counts only on the app's explicit path
+          // (`pill.send` inside a real key press or click, carried by the app's main process).
+          return { result: await o.router({ pluginId: p.pluginId, process: "ui", path: p.call, args: p.args, caller: { kind: "plugin", pluginId: p.pluginId }, ...(p.session !== undefined ? { session: p.session } : {}) }) };
         } catch (err) {
           const e = toMethodError(err instanceof ContractError || err instanceof MethodError ? err : new ContractError("failed", err instanceof Error ? err.message : String(err)));
           throw new MethodError(e.code, e.message, { ...(typeof e.data === "object" && e.data !== null ? e.data : {}), pluginId: p.pluginId, call: p.call });

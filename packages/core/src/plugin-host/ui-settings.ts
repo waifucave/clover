@@ -6,6 +6,7 @@
 //   (§5.5), which waits for the approval broker (C-M3): refused with why.
 // * Token overrides pass the same check as any theme's (`isValueForToken`). CSS overrides need the theme cleaner,
 //   which isn't on main: refused with why, so nothing uncleaned reaches the user's layer.
+import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isValueForToken } from "@waifucave/clover-plugin-sdk";
@@ -44,10 +45,13 @@ export function uiSettingsMethods(o: { home: string; emit?: (event: { type: stri
       if (patch.overrides?.css !== undefined && patch.overrides.css.trim() !== "") {
         throw new ContractError("refused", "CSS overrides aren't served on this computer yet: the theme cleaner isn't on main");
       }
-      const next = UiSettings.parse({ ...readUiSettings(o.home), ...patch });
+      // `overrides` merges by part (#333's review): a patch of `tokens` keeps the stored `css`, and the reverse.
+      const current = readUiSettings(o.home);
+      const overrides = patch.overrides === undefined ? current.overrides : { ...(current.overrides ?? {}), ...patch.overrides };
+      const next = UiSettings.parse({ ...current, ...patch, ...(overrides !== undefined ? { overrides } : {}) });
       const file = uiSettingsFile(o.home);
       mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-      const tmp = `${file}.tmp-${process.pid}`;
+      const tmp = `${file}.tmp-${process.pid}-${randomUUID()}`;
       writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
       renameSync(tmp, file);
       o.emit?.({ type: APP_EVENTS.uiSettingsChanged.type, settings: next });
