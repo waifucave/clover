@@ -178,6 +178,7 @@ import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection } from "./usage/wiring";
 import { rowForTag } from "./runtime-sdk/provider-selection";
+import { botKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
 import { BROWSER_HOST_SOCKET_NAME } from "./computer-use/browser/extension/protocol";
@@ -3593,6 +3594,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
+      // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
+      // key (§6.1), the routines' secrets and the user's time zone, and the app's URL for a plugin's file.
+      hasKeyFor: await botKeyPresence(secrets, cloverHome),
+      routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
+      assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
@@ -3897,3 +3903,4 @@ if (import.meta.main) {
   const daemon = await startDaemon();
   stopOnSignals(daemon);
 }
+
