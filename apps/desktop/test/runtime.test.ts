@@ -219,7 +219,7 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
   function themed(id: string, files: Record<string, string>, view: Record<string, unknown>): UiPlugin {
     const dir = mkdtempSync(join(tmpdir(), "clover-sheet-"));
     for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
-    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"1".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...view }] as never)[0]!;
+    return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"1".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...view }] as never)[0]!;
   }
   const lunaBot = () => themed("luna", {
     "theme.json": JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "#123456" }, css: "tab.css", fonts: [{ family: "Luna Sans", src: "luna.woff2" }], icons: { "app.send": "send.svg" } }),
@@ -293,7 +293,7 @@ describe("a bot's layout (§5.5)", () => {
     const dir = mkdtempSync(join(tmpdir(), "clover-layout-"));
     writeFileSync(join(dir, "layout.json"), JSON.stringify(layout));
     for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
-    return readUiPlugins([{ pluginId: "luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...extra }] as never, { luna: { isBot: true, name: "Luna", botLayout: "layout.json" } })[0]!;
+    return readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...extra }] as never, { luna: { isBot: true, name: "Luna", botLayout: "layout.json" } })[0]!;
   }
   const LAYOUT = {
     layout: 1,
@@ -399,7 +399,7 @@ describe("each document's strings (§5.5's translations)", () => {
 
 describe("lane B's #179 hooks in the runtime", () => {
   function tabbed(id: string, title: string, enabledAt: number, extra: Record<string, unknown> = {}): UiPlugin {
-    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;
+    return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;
   }
 
   test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
