@@ -190,6 +190,13 @@ export class ComputerUseService {
     return (this.sessions.get(sessionId)?.leases.size ?? 0) > 0;
   }
 
+  /** True if any session currently holds a lease: computer use is driving this desktop now.
+   *  Lane E's B3 answer gate reads this. */
+  anyActing(): boolean {
+    for (const s of this.sessions.values()) if (s.leases.size > 0) return true;
+    return false;
+  }
+
   private getOrCreate(sessionId: string): SessionState {
     let s = this.sessions.get(sessionId);
     if (!s) {

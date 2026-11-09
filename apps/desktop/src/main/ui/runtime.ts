@@ -21,6 +21,9 @@ import { cleanCss } from "./css";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
+import { fieldPage, buttonPage, ownCardPage, labelOf } from "../sealed-pages";
+import { sealHeaders } from "./documents";
+import type { SealedFrames, SealedValue } from "../sealed";
 
 /** A frame as Electron describes it. */
 export interface FrameRef {
@@ -99,6 +102,8 @@ export interface RuntimeOptions {
   onGone?: (mount: string) => void;
   /** The system's language, until the user picks one in Settings. */
   systemLanguage?: string;
+  /** The sealed frames' store (E-M3): the cards' own book, its mint and its serves. */
+  sealed?: SealedFrames;
   /** The core's own string tables, by language (`core-strings.ts` by default). */
   builtInStrings?: Readonly<Record<string, Readonly<Record<string, LocaleValue>>>>;
   /** Whether a plugin's tree hash matches the official index's, for the strings of sealed cards (lane B's registry). */
@@ -151,6 +156,7 @@ export class UiRuntime {
     this.themes = opts.themes ?? new ThemeStore(this.log);
     this.strings = new StringStore(this.log);
     this.layouts = new LayoutStore(this.log);
+    this.sealed = opts.sealed;
   }
 
   get safeMode(): boolean {
@@ -850,17 +856,24 @@ export class UiRuntime {
 
   /** Checks that a part is in the document `frame` (throws otherwise) and gives its plugin's id. A part whose
    *  document isn't its own plugin's layer — a layout part drawn inline in another plugin's document — acts in no
-   *  plugin's name: rat calls, open and the terminal hand-over all refused for it (the review's S1). */
+   *  plugin's name: api, open and the terminal hand-over all refused for it (the review's S1). */
   partOf(frame: FrameRef, mountId: string): string {
+    return this.actInThisLayer(frame, mountId).plugin?.id ?? "core";
+  }
+
+  /** The capabilities of a part's plugin, the part being in the document `frame` (throws otherwise). A layout part in
+   *  another plugin's document doesn't act for its plugin, so its capabilities count for nothing (the review's S1). */
+  capabilitiesOf(frame: FrameRef, mountId: string): ReadonlySet<string> {
+    return this.actInThisLayer(frame, mountId).plugin?.capabilities ?? new Set();
+  }
+
+  /** A part whose document isn't its own plugin's layer acts in no plugin's name (the review's S1): every door that
+   *  would run as the plugin refuses it. Data-only reads stay on `partIn`. */
+  private actInThisLayer(frame: FrameRef, mountId: string): Mount {
     const part = this.partIn(frame, mountId);
     const doc = this.docOf(part);
     if (part.kind === "inline" && part.plugin !== undefined && doc !== undefined && part.plugin.layer !== doc.layer) throw new LayerError("a layout part acts only in its own layer's document");
-    return part.plugin?.id ?? "core";
-  }
-
-  /** The capabilities of a part's plugin, the part being in the document `frame` (throws otherwise). */
-  capabilitiesOf(frame: FrameRef, mountId: string): ReadonlySet<string> {
-    return this.partIn(frame, mountId).plugin?.capabilities ?? new Set();
+    return part;
   }
 
   /** A web page part placed by the document `frame` (throws otherwise): its plugin, its page and its window. */
@@ -883,7 +896,7 @@ export class UiRuntime {
 
   /** A part offers data for a drag: a single-use token for the drag's data, or the reason it can't. */
   dragOffer(frame: FrameRef, mountId: string, raw: unknown): { token: string } | { error: string } {
-    const part = this.partIn(frame, mountId);
+    const part = this.actInThisLayer(frame, mountId);
     const offer = checkDragOffer(raw, part.plugin?.capabilities ?? new Set());
     if ("error" in offer) return offer;
     for (const [t, g] of this.grants) if (this.now() - g.at > DRAG_GRANT_TTL_MS) this.grants.delete(t);
@@ -894,12 +907,67 @@ export class UiRuntime {
 
   /** The part a drag was dropped on claims its data: once, within a minute, in the same window, if its plugin may. */
   dragClaim(frame: FrameRef, mountId: string, token: string): DragOffer | { error: string } {
-    const part = this.partIn(frame, mountId);
+    const part = this.actInThisLayer(frame, mountId);
     const grant = this.grants.get(token);
     this.grants.delete(token);
     if (grant === undefined || this.now() - grant.at > DRAG_GRANT_TTL_MS || grant.windowId !== part.windowId) return { error: "no such drag" };
     if (!mayClaim(grant.offer.type, part.plugin?.capabilities ?? new Set())) return { error: "this part's plugin may not hold that" };
     return grant.offer;
+  }
+
+  // ----------------------------------------------------------------------------------------------
+  // Sealed frames (spec §5.5; E-M3): the parts' holes for a card's fields and buttons, one frame each, from the
+  // app's own scheme. A part with the `approvals` capability places and positions them, and sees nothing of them.
+  // ----------------------------------------------------------------------------------------------
+
+  /** A seal frame is private (the puzzle's own promise), kept by the app's own store rather than this one; the
+   *  `sealed(seed)` handler fills it at boot. */
+  sealed?: SealedFrames;
+
+  /** A part asks for one sealed element's frame: `field:<name>` or `button:<option>`. Refused for a part whose
+   *  plugin lacks `approvals` (§5.5: a component gets sealed frames only then; the OK carries it), and for a draft
+   *  asked outside the plugin's own layer's document. Returns the single-use URL the part puts in the iframe's src. */
+  sealedFrameOf(frame: FrameRef, mountId: string, cardId: string, element: string): string | undefined {
+    const part = this.actInThisLayer(frame, mountId);
+    if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("placing a sealed frame takes the approvals capability");
+    if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
+    // The card tokens go in alone (§5.5): the part's resolved ones, clipped to `card.*` names.
+    const tokens: Record<string, TokenValue> = {};
+    for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
+    // The binding: the frame whose sender's sealed page may answer is this document's own (B4's parent rule).
+    const doc = this.docOf(part);
+    const bind = doc?.frame !== undefined ? { parent: { processId: doc.frame.processId, routingId: doc.frame.routingId } } : undefined;
+    const made = this.sealed.mint(cardId, element, bind, doc?.windowId, tokens);
+    if (made === undefined) return undefined;
+    const url = `clover-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
+    return url;
+  }
+
+  /** Who a sealed token's channel belongs to, for the sender's binding check (E-M3 check 3). */
+  boundOf(token: string): string | undefined {
+    return this.sealed?.boundOf(token);
+  }
+
+  /** The scheme's serving: the page's own HTML for one token, once (the store marks it), with its own headers. */
+  serveSeal(token: string): { html: string; headers: Readonly<Record<string, string>> } | undefined {
+    if (this.sealed === undefined) return undefined;
+    const serving = this.sealed.serve(token);
+    if (serving === undefined) return undefined;
+    const { card, element, tokens } = serving;
+    if (element.startsWith("field:")) {
+      const value = card.fields[element.slice("field:".length)];
+      if (value === undefined || typeof value !== "object") return undefined;
+      return { html: fieldPage({ cardId: card.id, token, field: element.slice("field:".length), tokens, value: value as { type: "text"; text: string } }), headers: sealHeaders() };
+    }
+    if (element.startsWith("button:")) {
+      const option = card.options.find((o) => o.id === element.slice("button:".length));
+      if (option === undefined) return undefined;
+      return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, tokens }), headers: sealHeaders() };
+    }
+    if (element === "own") {
+      return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}) }), headers: sealHeaders() };
+    }
+    return undefined;
   }
 
   // ----------------------------------------------------------------------------------------------
