@@ -169,6 +169,7 @@ export function botApprovalCheck(
     const why = decision.by === "level" ? "this computer's level doesn't allow it"
       : decision.by === "expired" ? "no one answered its card in time"
       : decision.by === "withdrawn" || decision.by === "cancelled" ? "the turn was stopped"
+      : decision.by === "fence" ? "a file written there runs or applies later outside any sandbox (shell start files, login items, coding agents' settings), so no bot writes there"
       : "the person declined it";
     return { behavior: "deny", message: `${isBuiltinTool(tool, hostTools) ? tool : "The tool"} was refused: ${why}.` };
   };

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_NAME_SCAN_EXCLUSIONS, countFiles, nameGuardPath, runNameScan } from "./name-scan";
+import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
+import { CLOVER_NAME_SCAN_EXCLUSIONS, countFiles, DMG_ROOT_LINKS, nameGuardPath, runNameScan, walkTree } from "./name-scan";
 
 // A stand-in guard with the real one's interface (`<guard> artifacts <paths…>`, non-zero on a hit), looking for a
 // planted word that is nobody's name.
@@ -98,6 +99,41 @@ describe("the release's identity scan", () => {
       rmSync(out, { recursive: true, force: true });
     }
   });
+
+  // A dmg's drag-to-install link (electron-builder's): `Applications` → `/Applications` at the image's root. The first
+  // signed build's scan refused it as an absolute link.
+  test("a disk image's root Applications link to /Applications is allowed; any other absolute link still isn't", () => {
+    const root = mkdtempSync(join(tmpdir(), "clover-name-scan-links-"));
+    try {
+      symlinkSync("/Applications", join(root, "Applications"));
+      mkdirSync(join(root, "sub"));
+      symlinkSync("/Applications", join(root, "sub", "Applications"));
+      symlinkSync("/etc", join(root, "etc"));
+      expect(walkTree(root, DMG_ROOT_LINKS).problems).toEqual(["etc links to an absolute path (/etc)", "sub/Applications links to an absolute path (/Applications)"]);
+      expect(walkTree(root).problems).toContain("Applications links to an absolute path (/Applications)");
+      expect(DMG_ROOT_LINKS).toEqual({ Applications: "/Applications" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  darwinTest("a real dmg with its Applications link scans clean, and a planted hit inside it still fails", () => {
+    for (const planted of [false, true]) {
+      const out = mkdtempSync(join(tmpdir(), "clover-name-scan-dmg-"));
+      const src = mkdtempSync(join(tmpdir(), "clover-name-scan-dmg-src-"));
+      try {
+        writeFileSync(join(src, "readme.txt"), planted ? PLANTED : "app bytes");
+        symlinkSync("/Applications", join(src, "Applications"));
+        const made = Bun.spawnSync(["hdiutil", "create", "-quiet", "-srcfolder", src, "-format", "UDZO", "-volname", "Clover", join(out, "Clover-1.0.0.dmg")]);
+        if (made.exitCode !== 0) throw new Error(`hdiutil create: ${made.stderr.toString()}`);
+        if (planted) expect(() => runNameScan(out, { required: true, guard, quiet: true })).toThrow("the identity scan found a hit");
+        else expect(runNameScan(out, { required: true, guard, quiet: true }).ran).toBe(true);
+      } finally {
+        rmSync(src, { recursive: true, force: true });
+        rmSync(out, { recursive: true, force: true });
+      }
+    }
+  }, 120_000);
 
   test("no exclusion ships yet, and the guard lives outside the repo", () => {
     expect(CLOVER_NAME_SCAN_EXCLUSIONS).toEqual([]);
