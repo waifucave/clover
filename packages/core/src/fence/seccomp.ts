@@ -1,6 +1,6 @@
-// The seccomp filter Clover's Linux fences load into bubblewrap (`--seccomp <fd>`): the same filter C-M2 part 2's
-// command fence (linux-bwrap.ts, on lane/c-m2b) carries, here for the link sidecar (C-M3 item 4), which keeps the host
-// network for QUIC and so can't take `--unshare-net`. When part 2 merges, its copy imports this one.
+// The seccomp filter Clover's Linux fences load into bubblewrap (`--seccomp <fd>`), one copy for all of them: the
+// command fence (`linux-bwrap.ts`, through `fenced-process.ts`) and, with C-M3 item 4 (#282), the link sidecar, which
+// keeps the host network for QUIC and so can't take `--unshare-net`.
 
 /** The seccomp filter (classic BPF, `struct sock_filter[]`): `socket(AF_UNIX, …)` and `io_uring_setup` fail with EPERM,
  *  and so does every call of another architecture (a 32-bit binary's) or with the x32 bit (>= 0x40000000, which

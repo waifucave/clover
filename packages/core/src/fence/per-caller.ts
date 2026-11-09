@@ -1,90 +1,54 @@
-// The fence's per-caller rules (the owner's decision on bots' memory; B's `Fence.forCaller`): matched by pattern and
-// denied by default, never built from a list of known bots or sessions, so a bot not made yet, one synced from
-// another computer before any list refreshes, or a removed bot's leftover folder is covered the same.
-//
-//   <home>/bots/<x>/memory/**   read and written only by the bot whose id folds equal to <x>, from its own main
-//                               conversation or side threads; everyone else (other bots, the user's coding sessions,
-//                               ACP and delegated agents, that bot's own agents) is denied both
-//   <home>/bots/<x>/memory      itself: never deleted, moved or replaced, by its own bot either
-//   <home>/bots, <home>/bots/<x>, and the rest of <home>/bots/<x>/**   write-denied to all; reads allowed
-//   <home>/sessions-runtime/**  write-denied to all; read only by the session whose state file it is
+// The fence's per-caller rules (B's contract `contracts/fence.ts`: the Clover home is default-deny for every tool
+// runner; only the core and the user's own surfaces reach it. The only allows, each per caller and matched by
+// pattern):
+// 1. a session's own `outputs/<session>/**`, read and write;
+// 2. a bot's own `scratch/<bot>/**` and `routines/<bot>/**`, read and write, for that bot's main conversation and its
+//    side threads;
+// 3. the owning bot's own `bots/<x>/**`, read only, and its `bots/<x>/memory/**`, read and write (`ownMemory`). It
+//    still can't delete or move the memory folder;
+// 4. a plugin's own `plugin-data/<id>/**`, read and write, for that plugin's own code alone.
+// Everything else under the Clover home is denied: projects, sdk, sessions, transcripts, diffs, cache, logs and other
+// bots' folders. The verdict itself is B's shared `judge`; this module only names the caller's places for the OS
+// sandboxes, which can't nest an allow inside the home deny.
 import { lstatSync, mkdirSync } from "node:fs";
-import { join as hostJoin, posix, win32 } from "node:path";
+import { join as hostJoin, posix } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
+import { ownFoldersOf, type FenceContext } from "../contracts/fence";
 import { botSegment } from "../sessions/ids";
-import { foldName, foldPath } from "./fold";
 
-export interface FenceCaller {
-  readonly sessionId?: string;
-  readonly bot?: string;
-  /** The bot's own main conversation or one of its side threads: the only caller its memory opens to. */
-  readonly botsOwnSession?: boolean;
-}
-
-export type CallerReason = "bot-memory" | "sessions-runtime";
-
-/** The bot driver's state file for a session (A-M3's driver names it so). */
-export function runtimeStateName(sessionId: string): string {
-  return `${sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}.json`;
-}
-
+/** The caller's places under the Clover home, for one sandboxed command: the folders the sandbox denies outright
+ *  (`bots`, `sessions-runtime`) and the caller's own ways back in (B's `ownFoldersOf`). */
 export interface CallerPlaces {
+  /** `<home>/bots`: never listed by a runner; only the owning bot's folder reads. */
   readonly bots: string;
+  /** `<home>/sessions-runtime`: hidden from every runner. */
   readonly runtime: string;
-  /** The caller's own memory folder, when it is a bot's own session. */
+  /** `<home>/bots/<x>`, read only, for the owning bot's own conversation and side threads; else null. */
+  readonly ownBot: string | null;
+  /** `<home>/bots/<x>/memory`, read and write, for the same runners; else null. */
   readonly ownMemory: string | null;
-  /** The caller's own state file in `runtime`, when it has a session. */
-  readonly ownRuntime: string | null;
+  /** `<home>/outputs/<session>`, read and write, for the session whose it is; else null. */
+  readonly ownOutputs: string | null;
+  /** `<home>/scratch/<bot>`, read and write, for the owning bot's own conversation and side threads; else null. */
+  readonly ownScratch: string | null;
+  /** `<home>/routines/<bot>`, read and write, for the same runners; else null. */
+  readonly ownRoutines: string | null;
+  /** `<home>/plugin-data/<id>`, read and write, for that plugin's own code alone; else null. */
+  readonly ownPluginData: string | null;
 }
 
-export function callerPlaces(cloverHome: string, os: Os, caller: FenceCaller): CallerPlaces {
-  const p = os === "windows" && !cloverHome.startsWith("/") ? win32 : posix;
-  const bots = p.join(cloverHome, "bots"), runtime = p.join(cloverHome, "sessions-runtime");
-  const own = caller.botsOwnSession && caller.bot !== undefined ? botSegment(caller.bot) : null;
+export function callerPlaces(cloverHome: string, _os: Os, ctx?: FenceContext): CallerPlaces {
+  const own = ownFoldersOf(ctx, cloverHome);
   return {
-    bots, runtime,
-    ownMemory: own === null ? null : p.join(bots, own, "memory"),
-    ownRuntime: caller.sessionId === undefined ? null : p.join(runtime, runtimeStateName(caller.sessionId)),
+    bots: posix.join(cloverHome, "bots"),
+    runtime: posix.join(cloverHome, "sessions-runtime"),
+    ownBot: own.ownBot ?? null,
+    ownMemory: own.ownMemory ?? null,
+    ownOutputs: own.ownOutputs ?? null,
+    ownScratch: own.ownScratch ?? null,
+    ownRoutines: own.ownRoutines ?? null,
+    ownPluginData: own.ownPluginData ?? null,
   };
-}
-
-/** The verdict of the per-caller rules for one access to a canonical path, or null where none applies. */
-export function callerVerdict(o: { cloverHome: string; os: Os; caller: FenceCaller; path: string; write: boolean }): { reason: CallerReason; path: string } | null {
-  const places = callerPlaces(o.cloverHome, o.os, o.caller);
-  const f = foldPath(o.path, o.os);
-  const under = (root: string): string[] | null => {
-    const r = foldPath(root, o.os);
-    if (f === r) return [];
-    return f.startsWith(`${r}/`) ? f.slice(r.length + 1).split("/") : null;
-  };
-  const inBots = under(places.bots);
-  if (inBots !== null) {
-    const [x, second] = inBots;
-    if (x === undefined || second === undefined) return o.write ? { reason: "bot-memory", path: places.bots } : null;
-    const isMemory = foldName(second) === "memory";
-    const own = places.ownMemory !== null && foldName(x) === foldName(posixBase(places.ownMemory, 1));
-    // The memory folder itself is never removed, renamed or replaced, by its own bot either; inside it, only its bot.
-    if (isMemory && o.write && inBots.length === 2) return { reason: "bot-memory", path: join(o.os, places.bots, x, "memory") };
-    if (isMemory) return own ? null : { reason: "bot-memory", path: join(o.os, places.bots, x, "memory") };
-    return o.write ? { reason: "bot-memory", path: join(o.os, places.bots, x) } : null;
-  }
-  const inRuntime = under(places.runtime);
-  if (inRuntime !== null) {
-    if (o.write) return { reason: "sessions-runtime", path: places.runtime };
-    const mine = places.ownRuntime !== null && inRuntime.length === 1 && inRuntime[0] === foldName(posixBase(places.ownRuntime, 0));
-    return mine ? null : { reason: "sessions-runtime", path: places.runtime };
-  }
-  return null;
-}
-
-/** The `n`th-from-last component of a path, either separator. */
-function posixBase(path: string, n: number): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1 - n] ?? "";
-}
-
-function join(os: Os, ...parts: string[]): string {
-  return (os === "windows" && !parts[0]!.startsWith("/") ? win32 : posix).join(...parts);
 }
 
 /** Makes a bot's folders when the bot is made (#205's S6), `bots/<bot>/memory` included, refusing any part of the way
