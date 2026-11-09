@@ -64,8 +64,8 @@ class SessionConfigs {
   readonly #places = new Map<string, { home: string; cwd: string; writable: readonly string[] }>();
   /** A watched path that is a link: what it led to when last looked at (a dotfile manager's `~/.gitconfig`). */
   readonly #through = new Map<string, Map<string, string | null>>();
-  /** Sessions already told the repo walk stopped at its budget (once each). */
-  readonly #told = new Set<string>();
+  /** Sessions already told this turn that the repo walk stopped at its budget: `<session>` and its turn. */
+  readonly #told = new Map<string, string>();
   constructor(private readonly scan: (home: string, cwd: string, writable: readonly string[]) => { files: string[]; stopped: boolean } = sessionConfigFiles) {}
   /** After a run: what each watched file holds now is what the next look compares against. */
   settled(sessionId: string | undefined, paths: Iterable<string>): void {
@@ -85,7 +85,7 @@ class SessionConfigs {
     const was = this.#places.get(sessionId);
     this.#places.set(sessionId, { home, cwd, writable: [...new Set([...(was?.writable ?? []), ...writable])] });
   }
-  recheck(sessionId: string, opts: { end?: boolean } = {}): string | null {
+  recheck(sessionId: string, opts: { end?: boolean; turn?: string } = {}): string | null {
     const m = this.#by.get(sessionId);
     if (m === undefined) return null;
     // A watched session's places looked over again: a repo made since (a `git init` or a clone in a scratch folder)
@@ -118,11 +118,12 @@ class SessionConfigs {
     this.#through.set(sessionId, t);
     const reverted = revertPlantedGitKeys(m);
     const linked = links.length === 0 ? null : `clover: a git config was a link to risky git keys; ${links.join("; ")}\n`;
-    // The walk's stop is said once a session: a repo past it isn't watched.
-    const budget = stopped && !this.#told.has(sessionId)
+    // The walk's stop is said once a turn (`turn`; without one, once a session): a repo past it isn't watched.
+    const turn = opts.turn ?? "";
+    const budget = stopped && this.#told.get(sessionId) !== turn
       ? `clover: the repo watch stopped after ${WATCH_REPO_BUDGET} folders in this session's writable folders; a repo past them isn't checked for risky git keys\n`
       : null;
-    if (budget !== null) this.#told.add(sessionId);
+    if (budget !== null) this.#told.set(sessionId, turn);
     const note = reverted === null && linked === null && budget === null ? null : `${reverted ?? ""}${linked ?? ""}${budget ?? ""}`;
     if (opts.end) { this.#by.delete(sessionId); this.#places.delete(sessionId); this.#through.delete(sessionId); this.#told.delete(sessionId); }
     else for (const p of m.keys()) m.set(p, readIfFile(p));
@@ -311,7 +312,7 @@ export const isTooBig = (text: string | null): boolean => text !== null && text.
 function readCapped(path: string, follow: boolean): string | null {
   let fd = -1;
   try {
-    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | (follow ? 0 : fsConstants.O_NOFOLLOW));
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | fsConstants.O_NOCTTY | (follow ? 0 : fsConstants.O_NOFOLLOW));
     const st = fstatSync(fd);
     if (!st.isFile()) return null;
     const stamp = `${TOO_BIG}${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}`;
@@ -566,10 +567,14 @@ export function repoConfigFiles(repoRoot: string): string[] {
  *  every tool call, and a planted hook is the supervisor's and the belt's). */
 export const WATCH_REPO_BUDGET = 20_000;
 
-/** A bare repo's own folder: `config` and `HEAD` files and an `objects` folder (`git init --bare`, `clone --bare`). */
+/** A bare repo's own folder, as far as watching goes: a `config` that is a regular file beside a `HEAD` in any form (a
+ *  file, a link, a folder): git still takes a repo whose `HEAD` is a link or whose `objects/` is reached through one
+ *  (#366's review), so neither is required to look plain. */
 function isBareRepo(dir: string): boolean {
   try {
-    return lstatSync(join(dir, "config")).isFile() && lstatSync(join(dir, "HEAD")).isFile() && lstatSync(join(dir, "objects")).isDirectory();
+    if (!lstatSync(join(dir, "config")).isFile()) return false;
+    lstatSync(join(dir, "HEAD"));
+    return true;
   } catch { return false; }
 }
 
