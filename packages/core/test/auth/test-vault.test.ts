@@ -15,6 +15,7 @@ import {
 } from "../../src/auth/test-isolation";
 import { startDaemon, type RunningDaemon } from "../../src/daemon";
 import { bunVault, openCloverSecretStore } from "../../src/secrets/clover-secret-store";
+import { onDarwin } from "../helpers/darwin-only"; // the macOS-only checks are its branches, and the file runs on both jobs
 
 type Call = { op: string; service: string; name: string };
 
@@ -100,7 +101,7 @@ describe("every default path lands in an isolated store", () => {
   /** On macOS: the keychain openers record which keychain was opened; the login keychain is refused outright. */
   function recordKeychains(): { files: string[]; login: number } {
     const seen = { files: [] as string[], login: 0 };
-    if (process.platform !== "darwin") return seen;
+    if (!onDarwin) return seen;
     setKeychainOpenersForTests({
       openFile: (p) => { seen.files.push(p); return openKeychainFile(p, TEST_KEYCHAIN_PASSWORD); },
       openPath: () => { seen.login++; throw new Error("the login keychain was opened in a test"); },
@@ -122,7 +123,7 @@ describe("every default path lands in an isolated store", () => {
     expect(await bunVault(`${SERVICE}.items`).delete("lane-c-probe")).toBe(true);
     await defaultSecretsBackend().get({ service: SERVICE, name: "anything" });
     expect(calls.calls.filter((c) => !osStoreIsolated(c.service))).toEqual([]);
-    if (process.platform === "darwin") {
+    if (onDarwin) {
       expect(calls.calls).toEqual([]);
       expect(keychains.login).toBe(0);
       expect(keychains.files.length).toBeGreaterThan(0);
@@ -141,7 +142,7 @@ describe("every default path lands in an isolated store", () => {
       await daemon?.stop();
     }
     expect(calls.calls.filter((c) => !osStoreIsolated(c.service))).toEqual([]);
-    if (process.platform === "darwin") {
+    if (onDarwin) {
       expect(calls.calls).toEqual([]);
       expect(keychains.login).toBe(0);
     }
