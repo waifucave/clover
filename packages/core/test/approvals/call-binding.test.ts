@@ -18,8 +18,10 @@ const rejection = async (p: Promise<unknown>) => p.then(() => undefined, (e: unk
 function world() {
   const clock = new FakeClock();
   const broker = new CloverApprovalBroker({ clock, levels: () => "ask-risky", localComputer: "Studio" });
-  const studio = new CoreComputerRegistry({ clock, self: { name: "Studio", device: "studio00000000000000" } });
-  const laptop = new CoreComputerRegistry({ clock, self: { name: "Laptop1", device: "laptop00000000000000" } });
+  // Each registry judges a card raise on the broker's own record (#342: without the lookup, no card raises a level).
+  const cardRecord = (id: string) => broker.get(id);
+  const studio = new CoreComputerRegistry({ clock, self: { name: "Studio", device: "studio00000000000000" }, cardRecord });
+  const laptop = new CoreComputerRegistry({ clock, self: { name: "Laptop1", device: "laptop00000000000000" }, cardRecord });
   /** Raises a change card and answers it through the app's sealed frame; the record it hands over, if any. */
   const answered = async (over: Partial<ApprovalRequest>, option = "approve"): Promise<CardRecord | undefined> => {
     const req: ApprovalRequest = {
