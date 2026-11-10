@@ -27,6 +27,7 @@ afterEach(async () => {
 });
 
 test("one broker and one fence: the node's paste card asks on the daemon's broker, and its fenced folders are made", async () => {
+  let driversFence: { home: string; cloverHome: string } | undefined;
   const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-int-broker-")));
   const home = join(root, "clover-home");
   const userHome = join(root, "home");
@@ -42,7 +43,7 @@ test("one broker and one fence: the node's paste card asks on the daemon's broke
       userHome,
       // A shell that only echoes what it's given, so nothing of the user's runs.
       node: { terminals: { launch: () => ({ cmd: ["/bin/cat"], env: {} }) } },
-      bots: { registry: new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] }), drivers: () => new Drivers().factory, defaultModel: () => ({ model: "winter-test/calls" }) },
+      bots: { registry: new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] }), drivers: (p) => { driversFence = p.fence; return new Drivers().factory; }, defaultModel: () => ({ model: "winter-test/calls" }) },
       agents: false,
     },
   });
@@ -51,6 +52,9 @@ test("one broker and one fence: the node's paste card asks on the daemon's broke
   // The broker runs with the node, agents or not.
   expect(broker).toBeDefined();
   const node = daemon.cloverParts.node()!;
+  // The bots' drivers get the parts' one fence, over the parts' user home (never a second fence over the real home).
+  expect(driversFence?.home).toBe(userHome);
+  expect(driversFence?.cloverHome).toBe(home);
   // The node holds the daemon's fence: its fenced folders under the Clover home are there.
   expect(existsSync(join(home, "connectors"))).toBe(true);
   // A folder kind's files stay files: settings.json and trust.json are never made as folders.
