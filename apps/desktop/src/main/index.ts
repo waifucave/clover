@@ -30,7 +30,7 @@ import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protoco
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
-import { LayerLinks } from "./layer-links";
+import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
@@ -218,7 +218,18 @@ async function ready(): Promise<void> {
     // A part's word that the person used its view counts only after main saw their mouse-down there.
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
-    api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
+    api: (pluginId, method, params) => layerLinks.call(pluginId, method, params).catch((err: unknown) => {
+      // A refusal is a line in the app log (the method, never its params), so a dead button leaves a trace.
+      if (err instanceof Error && /^a layer doesn't call /.test(err.message)) log(`layer: ${pluginId}: ${err.message}`);
+      throw err;
+    }),
+    takeGesture: (windowId) => sends.take(windowId),
+    treeRequest: async (method, params) => {
+      if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
+      const client = pair.client;
+      if (client === undefined) throw new LayerError("Clover isn't running");
+      return client.request(method, params ?? {}, 30_000);
+    },
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
     // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,
     // the hour it stood visible), and here the app signs with the answer key over the card's id and hash and takes the

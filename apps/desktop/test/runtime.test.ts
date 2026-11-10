@@ -435,10 +435,20 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(to).not.toContain(`${child.processId}:${child.routingId}`);
   });
 
-  test("only a clover surface's part sends the user's words", () => {
-    const s = setup();
+  test("only a part of the bundled clover tree sends the user's words, and is a tree part", () => {
+    const s = setup(composerFixture());
     const shell = mountShell(s);
-    expect(() => s.rt.userSender(shell.shellFrame, shell.info.mount)).toThrow("only the app's own surfaces");
+    expect(s.rt.treePart(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    expect(s.rt.userSender(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    // A third-party part in its own layer's document is neither.
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+    const token = new URL(composer.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(composer.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    expect(s.rt.treePart(child, composer.mount)).toBeUndefined();
+    expect(() => s.rt.userSender(child, composer.mount)).toThrow("only the app's own parts");
   });
 });
 

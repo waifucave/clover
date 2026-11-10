@@ -705,6 +705,19 @@ export function usePluginApi(): PluginApi {
         list: (filter?: { bot?: string; kinds?: string[] }) => call<{ sessions: unknown[] }>("session.list", filter ?? {}).then((r) => r.sessions),
         get: (session: string) => call<{ session: unknown }>("session.get", { id: session }).then((r) => r.session),
         answer: (session: string, callId: string, answers: Record<string, string>) => call<unknown>("session.answer", { id: session, callId, answers }).then(() => undefined),
+        history: (session: string, page: { before?: number; limit: number }) => call<{ events: Record<string, unknown>[]; hasMore: boolean }>("session.history", { id: session, ...page }),
+        follow: (session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe => {
+          // The session's live events arrive as `event` notifications on this plugin's connection once it attaches.
+          const off = onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as Record<string, unknown> | undefined;
+            if (method === "event" && e?.sessionId === session) listener(e);
+          });
+          void call<unknown>("session.attach", { id: session, ...(opts?.since !== undefined ? { since: opts.since } : {}) }).catch(() => undefined);
+          return () => {
+            off();
+            void call<unknown>("session.detach", { id: session }).catch(() => undefined);
+          };
+        },
       } as unknown as PluginApi["conversation"],
       bots: {
         list: () => call<{ bots: unknown[] }>("bot.list", {}).then((r) => r.bots),
@@ -727,7 +740,20 @@ export function usePluginApi(): PluginApi {
       ui: { send: () => {} } as unknown as PluginApi["ui"],
       storage: {} as PluginApi["storage"],
       net: { fetch: unavailable("net.fetch") } as unknown as PluginApi["net"],
-      settings: {} as PluginApi["settings"],
+      settings: {
+        get: async <T,>(key: string, opts?: { bot?: string }) => {
+          const r = await call<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: part.entry.pluginId, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) });
+          return r.settings.find((x) => x.key === key)?.value as T | undefined;
+        },
+        set: (key: string, value: unknown, opts?: { bot?: string }) => call<unknown>("plugin.settings.set", { id: part.entry.pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) }).then(() => undefined),
+        watch: (_key: string | null, listener: (key: string) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          return onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as Record<string, unknown> | undefined;
+            if (method === "core.event" && e?.type === "plugin_changed") listener(_key ?? "");
+          });
+        },
+      } as PluginApi["settings"],
       confirm: unavailable("confirm") as unknown as PluginApi["confirm"],
       t,
     } as PluginApi;
@@ -877,12 +903,13 @@ export function useQuestions(): { readonly questions: readonly PendingQuestion[]
 }
 
 /** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the
- *  Dispatch pill's). Only the bundled `clover` tree's surfaces have it; elsewhere it is undefined. The runtime counts
+ *  Dispatch pill's). Only the bundled `clover` tree's parts have it (the composer, the pill); elsewhere it is undefined. The runtime counts
  *  a send only within the frame's transient user activation, and the core only after it saw that input come to the
  *  window, one send for one press or click; any other is refused and sends nothing. */
 export function useUserSend(): ((to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => Promise<void>) | undefined {
   const part = usePart();
-  const allowed = part.entry.pluginId.split("/")[0] === "clover" && part.context.surface !== undefined;
+  // The core decides again (the part's plugin is bundled, in the `clover` layer): this only hides it from the rest.
+  const allowed = part.entry.pluginId.split("/")[0] === "clover";
   const send = useCallback(async (to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => {
     const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
     if (activation !== undefined && !activation.isActive) throw new Error("the user's words go only from inside their key press or click");

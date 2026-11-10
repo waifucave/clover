@@ -17,7 +17,7 @@ const ALPHA_VIEW: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6",
 async function mount(view: BotView = ALPHA_VIEW, setUserLayer: () => { applied: true } | { applied: false; card: string } = () => ({ applied: true })) {
   const core = fakeCore({
     "bot.setUserLayer": setUserLayer,
-    "models.catalog": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI", efforts: ["low", "medium"] }, { id: "xai/grok-5", label: "Grok 5" }] as never }),
+    "models.list": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI", efforts: ["low", "medium"] }, { id: "xai/grok-5", label: "Grok 5" }] as never }),
     "plugin.ui": () => ({ plugins: [uiPluginView("clover/base-theme", [{ id: "base", file: "base.css" }], []), uiPluginView("alpha", [{ id: "alpha-tab", file: "tab.css" }], [])] }),
     "plugin.list": () => ({ plugins: [{ id: "chibi-pack", name: "Chibi pack" } as never, { id: "alpha", name: "Alpha" } as never] }),
   });

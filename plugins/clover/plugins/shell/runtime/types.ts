@@ -153,8 +153,8 @@ export interface CoreMethods {
   "session.context": { params: { id: string }; result: { used: number; tokens?: number; window?: number } | null };
   /** The MCP connectors a session has, and how many need signing in again (lane A). */
   "session.connectors": { params: { id: string }; result: { total: number; needSignIn: number } };
-  /** The inherited model catalog; its Clover shape is lane A's and B's to settle. */
-  "models.catalog": { params: Record<string, never>; result: { models: { id: string; label?: string; name?: string; provider?: string }[] } };
+  /** The models a session can switch to (`models.list`, the core's; the old `models.catalog` isn't served). */
+  "models.list": { params: { session?: string }; result: { models: { id: string; label?: string; name?: string; provider?: string; providerName?: string; efforts?: string[] }[] } };
 }
 
 export type CoreMethod = keyof CoreMethods;

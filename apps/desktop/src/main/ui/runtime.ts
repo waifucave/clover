@@ -1026,11 +1026,22 @@ export class UiRuntime {
     return doc.plugin?.capabilities.has("conversation.read") === true;
   }
 
-  /** The part sending the user's own words: in the document `frame`, a `clover` tree surface's (throws otherwise). */
+  /** The bundled `clover` tree's part in the document `frame`, or undefined for any other (throws if it isn't in the
+   *  document). Decided here from what the main process holds, never from what the page says: the plugin came from the
+   *  app's own bundle, renders in the `clover` layer, and its top-level id is `clover`. */
+  treePart(frame: FrameRef, mountId: string): { windowId: number; pluginId: string } | undefined {
+    const part = this.actInThisLayer(frame, mountId);
+    const p = part.plugin;
+    if (p === undefined || p.topId !== "clover" || p.layer !== "clover" || p.source !== "bundled") return undefined;
+    return { windowId: part.windowId, pluginId: p.id };
+  }
+
+  /** The part sending the user's own words: in the document `frame`, a part of the bundled `clover` tree (throws
+   *  otherwise). The main window's composer is one; the gate on the user's key press or click is the core's. */
   userSender(frame: FrameRef, mountId: string): { windowId: number; pluginId: string } {
-    const part = this.partIn(frame, mountId);
-    if (part.plugin?.topId !== "clover" || part.ctx.surface === undefined) throw new LayerError("only the app's own surfaces send the user's words");
-    return { windowId: part.windowId, pluginId: part.plugin.id };
+    const part = this.treePart(frame, mountId);
+    if (part === undefined) throw new LayerError("only the app's own parts send the user's words");
+    return part;
   }
 
   /** A message to every document that holds a part of this plugin (its connection's events). An inline part whose

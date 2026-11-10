@@ -10,6 +10,7 @@ import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonH
 import { checkMenu, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
 import { isInside, mediaType, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
+import { routeCall } from "./tree-calls";
 import type { UiPlugin } from "./model";
 
 /** Registers the app's schemes as standard and secure origins, before the app is ready. Service workers and
@@ -266,6 +267,10 @@ export interface IpcHooks {
   viewFrame(windowId: number, mount: string, name: string, bounds: Rect | undefined, used: boolean): void;
   /** A part's plugin-API call, on its plugin's own connection to the core. */
   api(pluginId: string, method: string, params: unknown): Promise<unknown>;
+  /** One key press or click of the user's the main process saw come to the window, spent (the SendGate). */
+  takeGesture(windowId: number): boolean;
+  /** The bundled tree's call, already checked against the table (`tree-calls.ts`), on the app's own connection. */
+  treeRequest(method: string, params: unknown): Promise<unknown>;
   /** A key press or paste in a terminal part's element, to write what the main process derives from its own input;
    *  `frameId` names the focused frame (the review's S2: the record the main process keeps is per frame). */
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
@@ -471,7 +476,17 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const mount = str(a.mount, 32);
     const method = str(a.method, 128);
     if (mount === undefined || method === undefined) throw new LayerError("bad request");
-    return hooks.api(runtime.partOf(s.frame, mount), method, a.params);
+    const pluginId = runtime.partOf(s.frame, mount);
+    return routeCall({
+      tree: runtime.treePart(s.frame, mount),
+      method,
+      params: a.params,
+      takeGesture: hooks.takeGesture,
+      request: hooks.treeRequest,
+      layer: () => hooks.api(pluginId, method, a.params),
+      log,
+      refuse: (why) => new LayerError(why),
+    });
   });
   handle("clover:terminal-input", (event, a) => {
     const s = sender(event);

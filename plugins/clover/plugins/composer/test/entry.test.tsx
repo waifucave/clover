@@ -20,7 +20,7 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     "session.setModel": () => ({ ok: true }),
     "bot.setUserLayer": () => ({ applied: true }),
     "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }),
-    "models.catalog": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI" }, { id: "xai/grok-5", label: "Grok 5", provider: "xAI" }] }),
+    "models.list": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI" }, { id: "xai/grok-5", label: "Grok 5", provider: "xAI" }] }),
   });
   const approvals = fakeApprovals();
   const api = fakeApi({

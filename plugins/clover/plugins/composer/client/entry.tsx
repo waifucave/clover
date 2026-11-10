@@ -1,5 +1,5 @@
 // The composer on the runtime: the `composer` entry, for a bot's tab or an agent's live tab. It sends the user's
-// message through the core (`session.send`, as the user's: the composer's send is a real key press or click, §5.5),
+// message through `useUserSend` (the app counts it as the user's only from a real key press or click, §5.5),
 // stops the turn (`session.interrupt`), switches the model (a bot's is its user layer, `bot.setUserLayer`; an agent's
 // or a coding session's is `session.setModel`), and asks for a level change on the computer it runs on
 // (`computer.setLevel`), which is always a sealed card: the pill keeps the old level and shows the one asked for until
@@ -11,7 +11,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { CLOVER_LEVELS } from "./levels";
 import type { Level } from "../../shell/runtime/types";
-import { Spot, useApprovals, useCore, usePluginApi } from "./sdk";
+import { Spot, useApprovals, useCore, usePluginApi, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
@@ -40,24 +40,24 @@ function modelsOf(catalog: unknown): ComposerModel[] {
   const list = (catalog as { models?: unknown[] } | undefined)?.models;
   if (!Array.isArray(list)) return [];
   return list.flatMap((m) => {
-    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown };
+    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; providerName?: unknown };
     if (typeof o.id !== "string") return [];
     const label = typeof o.label === "string" ? o.label : typeof o.name === "string" ? o.name : o.id;
-    return [{ id: o.id, label, ...(typeof o.provider === "string" ? { detail: o.provider } : {}) }];
+    const detail = typeof o.providerName === "string" ? o.providerName : typeof o.provider === "string" ? o.provider : undefined;
+    return [{ id: o.id, label, ...(detail !== undefined ? { detail } : {}) }];
   });
 }
-
-const newId = () => (globalThis.crypto?.randomUUID?.() ?? `m${Date.now()}${Math.random().toString(36).slice(2)}`);
 
 export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const api = usePluginApi();
   const core = useCore();
+  const send = useUserSend();
   const { cards } = useApprovals();
   const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session]);
   const kind = session?.kind ?? props.sessionKind;
   const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind]);
   const computers = useLoad(() => api.computers?.list?.(), [api]);
-  const catalog = useLoad(() => core?.call("models.catalog", {}), [core]);
+  const catalog = useLoad(() => core?.call("models.list", { session: props.session }), [core]);
   const [draft, setDraft] = useState("");
   // A level change asked for, and the card it waits on.
   const [asked, setAsked] = useState<{ level: string; card: string } | undefined>(undefined);
@@ -80,8 +80,8 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
           ...(effort ? { effort } : {}),
           models: models.some((m) => m.id === current) ? models : [{ id: current, label: current }, ...models],
           onChange: ({ model: next, effort: nextEffort }) => {
-            if (kind === "bot") void core.call("bot.setUserLayer", { id: props.bot.id, patch: { model: next, ...(nextEffort ? { effort: nextEffort } : {}) } });
-            else void core.call("session.setModel", { id: props.session, model: next, ...(nextEffort ? { effort: nextEffort } : {}) });
+            if (kind === "bot") void core.call("bot.setUserLayer", { id: props.bot.id, patch: { model: next, ...(nextEffort ? { effort: nextEffort } : {}) } }).catch(() => undefined);
+            else void core.call("session.setModel", { id: props.session, model: next, ...(nextEffort ? { effort: nextEffort } : {}) }).catch(() => undefined);
           },
         }
       : undefined;
@@ -92,12 +92,12 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
       value={draft}
       onChange={setDraft}
       onSend={(message) => {
-        if (!core) return;
-        void core.call("session.send", { id: props.session, message: { text: message.text, clientMessageId: newId(), sentAt: Date.now() } });
-        setDraft("");
+        // The user's own words, from inside this key press or click: the app's one door for them (`pill.send`).
+        if (!send) return;
+        void send({ session: props.session }, { text: message.text }).then(() => setDraft(""), () => undefined);
       }}
       running={running}
-      onStop={core ? () => void core.call("session.interrupt", { id: props.session }) : undefined}
+      onStop={core ? () => void core.call("session.interrupt", { id: props.session }).catch(() => undefined) : undefined}
       cardPending={cardPending}
       {...(model ? { model } : {})}
       {...(computer && core
@@ -110,7 +110,7 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
               onRequest: (level: string) =>
                 void core.call("computer.setLevel", { name: computer.name, level: level as Level }).then((r) => {
                   if (!r.applied) setAsked({ level, card: r.card });
-                }),
+                }, () => undefined),
             },
           }
         : {})}
