@@ -81,9 +81,24 @@ describe("the answer key", () => {
   test("a core that refuses (an older one, a device that isn't a desktop) is said and not fatal; nothing secret in the line", async () => {
     const lines: string[] = [];
     const key = new AnswerKey(memoryVault(), (l) => lines.push(l));
-    expect(await key.register({ request: async () => { throw new Error("no device.answerKey.set"); } }, "dev_x")).toBe(false);
-    expect(lines).toEqual(["answer key: not registered (no device.answerKey.set)"]);
+    expect(await key.register({ request: async () => { throw new RpcCallError(-32600, "this device isn't a desktop"); } }, "dev_x")).toBe(false);
+    expect(lines).toEqual(["answer key: not registered (this device isn't a desktop)"]);
     expect(lines.join("\n")).not.toContain(key.publicKey().slice(0, 12));
+  });
+
+  test("the log says waiting for a try that may take later, and not registered only for the core's no (even on a quiet retry)", async () => {
+    const lines: string[] = [];
+    const key = new AnswerKey(memoryVault(), (l) => lines.push(l));
+    const answer = (err: Error) => ({ request: async <T>(): Promise<T> => { throw err; } });
+    await key.registerOnce(answer(new RpcCallError(-32007, "device registry isn't open yet")), "dev_x");
+    await key.registerOnce(answer(new Error("no code")), "dev_x");
+    await key.registerOnce(answer(new RpcCallError(-32007, "device registry isn't open yet")), "dev_x", { quiet: true });
+    await key.registerOnce(answer(new RpcCallError(-32600, "a different key is held")), "dev_x", { quiet: true });
+    expect(lines).toEqual([
+      "answer key: waiting for the core to take it (device registry isn't open yet)",
+      "answer key: waiting: the core's answer said nothing about it (no code)",
+      "answer key: not registered (a different key is held)",
+    ]);
   });
 });
 

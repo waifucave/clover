@@ -781,11 +781,18 @@ async function main(): Promise<void> {
     // The DevTools connection first: step 3 presses its card whether or not this step passes.
     try { pressCdp = await Cdp.connect(pressPort); } catch (err) { fail(`the first app's DevTools port didn't answer (${why(err)}): the run can't press a card`); }
     const appLog = join(logs, "app.log");
-    const registered = await until("the app's answer key registered (app.log)", 15_000, () => (/answer key: registered/.test(readLog(appLog)) ? true : undefined), 300).catch(() => false);
-    const notRegistered = firstLine(appLog, /answer key: not registered/);
-    if (notRegistered !== undefined) fail(`${notRegistered.trim()} [apps/desktop/src/main/answer-key.ts KeyRegistration → device.answerKey.set, packages/core/src/devices/rpc.ts answerKeyMethods]`);
-    if (registered !== true) fail('the app never logged "answer key: registered" [apps/desktop/src/main/index.ts onConnected]');
-    record(1, "PASS", "the app paired (protocol.hello, onConnected's setup), registered its answer key and drew the shell, headless");
+    // Registered within 10 s of the shell, before any card could be pressed. A wait on the way (a device registry still
+    // opening, under load) is the retry working and reads "answer key: waiting…"; "not registered" is the core's no or
+    // the give-up, and fails at once.
+    const registered = await until("the app's answer key registered (app.log)", 10_000, () => {
+      const refused = firstLine(appLog, /answer key: not registered/);
+      if (refused !== undefined) return refused;
+      return /answer key: registered/.test(readLog(appLog)) ? true : undefined;
+    }, 300).catch(() => false);
+    if (typeof registered === "string") fail(`${registered.trim()} [apps/desktop/src/main/answer-key.ts KeyRegistration → device.answerKey.set, packages/core/src/devices/rpc.ts answerKeyMethods]`);
+    const waited = readLog(appLog).split("\n").filter((l) => /answer key: (waiting|trying again)/.test(l)).length;
+    if (registered !== true) fail(`the app's answer key wasn't registered within 10 s of the shell (its last line: ${(readLog(appLog).split("\n").filter((l) => /answer key: /.test(l)).at(-1) ?? "none").trim()}) [apps/desktop/src/main/index.ts onConnected]`);
+    record(1, "PASS", `the app paired (protocol.hello, onConnected's setup), registered its answer key${waited > 0 ? " (after waiting for the core to take it)" : ""} and drew the shell, headless`);
   } catch (err) {
     record(1, statusOf(err), why(err));
   }
@@ -1050,6 +1057,17 @@ function launchStandIn(): { arm(): void; settle(): Promise<void>; stop(): void; 
   };
 }
 
+/** Whether this run's daemon holds a stopping daemon on CLOVER_TEST_STOP_HOLD_FILE: the source daemon (this tree's
+ *  scripts/acceptance/daemon.ts) or the packaged test-marked core says the name. */
+let takesStopHold: boolean | undefined;
+function daemonTakesStopHold(): boolean {
+  if (takesStopHold === undefined) {
+    const file = target === "source" ? join(REPO, "scripts", "acceptance", "daemon.ts") : packagedCore();
+    try { takesStopHold = readFileSync(file).includes("CLOVER_TEST_STOP_HOLD_FILE"); } catch { takesStopHold = false; }
+  }
+  return takesStopHold;
+}
+
 /** The reopened app's first dial came back (its log says what came of it after `pair: connecting`): the held daemon
  *  may go from then on. */
 async function firstDialOutcome(app: { proc: ChildProcess; log: string }, ms: number): Promise<string> {
@@ -1112,6 +1130,8 @@ async function reopenSteps(app: { exe: string; args: string[] }): Promise<void> 
         // A daemon of this step's own (the held step's slow to go), and the app on it.
         if (lastDaemon !== undefined && alive(lastDaemon.proc)) { stoppingDaemon = true; await endChild(lastDaemon.proc, 20_000); }
         stoppingDaemon = false;
+        // A daemon of an earlier build (an upgrade pair's old half) has no such hold: the step can't test what it names.
+        if (holdFile !== undefined && !daemonTakesStopHold()) block("this build's daemon has no stop hold (CLOVER_TEST_STOP_HOLD_FILE, an earlier build): the old daemon can't be held until the app has dialled");
         if (holdFile !== undefined) rmSync(holdFile, { force: true });
         await startDaemonProc(holdFile !== undefined ? { CLOVER_TEST_STOP_HOLD_FILE: holdFile } : {});
         const old = lastDaemon!;
