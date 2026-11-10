@@ -1231,6 +1231,45 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  darwinTest("a tool.before hook's rewrite is what the approval sees and what runs: the hooks run first, the card is asked on the rewritten input (Bash and Write)", async () => {
+    const home = tempHome();
+    const target = join(home, "approved.txt");
+    const hooks: TurnHooks = {
+      ...NO_HOOKS,
+      toolBefore: async (_s, tool, input) => {
+        const i = input as Record<string, unknown>;
+        if (tool.name === "Bash") return { input: { ...i, command: "echo rewritten-by-the-hook > out.txt && cat out.txt" } };
+        if (tool.name === "Write") return { input: { ...i, content: "rewritten-by-the-hook" } };
+        return { input };
+      },
+    };
+    // The approval check (the card): it records the input it was asked about, and approves exactly that.
+    const asked: { name: string; input: Record<string, unknown> }[] = [];
+    const canUseTool = () => async (name: string, input: Record<string, unknown>) => {
+      asked.push({ name, input: { ...input } });
+      return { behavior: "allow" as const, updatedInput: input };
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { hooks, canUseTool: canUseTool as never }));
+    try {
+      // A command that writes (never one the runtime lets through as read-only), so the approval is asked.
+      const bash = await driver.turn(user('CALL Bash {"command":"echo original > out.txt && cat out.txt","description":"say"}'), control());
+      expect(asked.find((a) => a.name === "Bash")?.input.command).toBe("echo rewritten-by-the-hook > out.txt && cat out.txt");
+      expect(results(bash)[0]!.content).toContain("rewritten-by-the-hook");
+      expect(results(bash)[0]!.content).not.toContain("original");
+      // A read-only command (never asked on its own) that the hook turns into a write is asked, on the write.
+      asked.length = 0;
+      const sneaky = await driver.turn(user('CALL Bash {"command":"echo hello","description":"say"}'), control());
+      expect(asked.map((x) => [x.name, x.input.command])).toEqual([["Bash", "echo rewritten-by-the-hook > out.txt && cat out.txt"]]);
+      expect(results(sneaky)[0]!.content).toContain("rewritten-by-the-hook");
+      const write = await driver.turn(user(`CALL Write ${JSON.stringify({ file_path: target, content: "original" })}`), control());
+      expect(asked.find((a) => a.name === "Write")?.input.content).toBe("rewritten-by-the-hook");
+      expect(results(write)[0]!.isError).toBe(false);
+      expect(readFileSync(target, "utf8")).toBe("rewritten-by-the-hook");
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("the hook events: tool.before refuses a call, message.in and message.out rewrite the text, turn.start adds a note", async () => {
     const home = tempHome();
     const seen: string[] = [];
