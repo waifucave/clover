@@ -16,6 +16,60 @@
     "computers.read",
     "devices.read"
   ],
+  "settings": {
+    "appearance.theme": {
+      "type": "enum",
+      "title": {
+        "en": "Theme"
+      },
+      "options": [
+        "light",
+        "dark",
+        "system"
+      ],
+      "default": "system"
+    },
+    "appearance.textSize": {
+      "type": "enum",
+      "title": {
+        "en": "Text size"
+      },
+      "options": [
+        "small",
+        "default",
+        "large"
+      ],
+      "default": "default"
+    },
+    "notifications.needsYou": {
+      "type": "boolean",
+      "title": {
+        "en": "Notify when a bot needs you"
+      },
+      "default": true
+    },
+    "notifications.agentDone": {
+      "type": "boolean",
+      "title": {
+        "en": "Notify when an agent finishes"
+      },
+      "default": true
+    },
+    "notifications.routineFailed": {
+      "type": "boolean",
+      "title": {
+        "en": "Notify when a routine fails"
+      },
+      "default": true
+    },
+    "notifications.sounds": {
+      "type": "boolean",
+      "title": {
+        "en": "Play sounds"
+      },
+      "default": false
+    }
+  },
   "contributes": {
     "ui": [
       {

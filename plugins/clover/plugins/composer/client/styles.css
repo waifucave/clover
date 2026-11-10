@@ -173,7 +173,12 @@
   cursor: pointer;
 }
 
-.cl-composer__pill:hover,
+/* A level that can't be asked for from here yet: a label, not a control. */
+.cl-composer__pill--static {
+  cursor: default;
+}
+
+.cl-composer__pill:not(.cl-composer__pill--static):hover,
 .cl-composer__pill[aria-expanded="true"] {
   background: var(--clover-color-hover);
   color: var(--clover-color-text);

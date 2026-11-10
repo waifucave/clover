@@ -317,7 +317,7 @@ describe("the UI API in a layer", () => {
     expect(part.querySelector('[data-clover-part="m21"] nav')).not.toBeNull();
   });
 
-  test("a spot's entries for its declaring part, and one entry shown by its ref; questions; no user sends outside a surface", async () => {
+  test("a spot's entries for its declaring part, and one entry shown by its ref; questions; the clover tree's parts have useUserSend", async () => {
     await tick();
     expect(hooks.entries!().map((e) => e.ref)).toEqual(["clover/island#usage", "vn#tab"]);
     expect(fake.calls).toContainEqual({ op: "entries", args: ["m2", "island.tab", undefined] });
@@ -326,8 +326,9 @@ describe("the UI API in a layer", () => {
     const q = { session: "s_alpha", callId: "c1", at: 1, questions: [{ question: "Which one?", options: [{ label: "A" }, { label: "B" }] }] };
     await act(async () => fake.emit({ type: "questions", questions: [q] }));
     expect(hooks.questions!()).toEqual([q]);
-    // The sidebar isn't a surface's part: it has no way to send as the user.
-    expect(hooks.userSend).toBeUndefined();
+    // A part of the bundled clover tree has the hook (the main process decides again, and gates the key press or
+    // click); the runtime test covers a part of any other layer being refused there.
+    expect(hooks.userSend).toBeDefined();
   });
 
   test("the plugin API in a layer: the terminal on the part's own connection, written only from trusted input", async () => {

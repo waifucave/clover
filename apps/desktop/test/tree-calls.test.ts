@@ -106,6 +106,16 @@ describe("routing a part's call", () => {
     }
   });
 
+  test("switching a plugin on or off is the settings part's and needs the user's click", async () => {
+    const t = { windowId: 1, pluginId: "clover/settings" };
+    const none = route({ tree: t, method: "plugin.setEnabled", gesture: false });
+    await expect(routeCall(none.r)).rejects.toThrow("only right after the user's own key press or click");
+    expect(none.calls).toEqual([]);
+    expect(await routeCall(route({ tree: t, method: "plugin.setEnabled", gesture: true }).r)).toBe("app");
+    const other = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "plugin.setEnabled", gesture: true });
+    await expect(routeCall(other.r)).rejects.toThrow("only from clover/settings");
+  });
+
   test("a bare session.send, a card answer and a trust-changing call never reach the core from the tree", async () => {
     for (const method of ["session.send", "card.answer", "card.confirm", "computer.setLevel", "device.revoke", "main.set"]) {
       const { r, calls } = route({ method, gesture: true });

@@ -21,6 +21,8 @@ export interface TreeCall {
   disposition: Disposition;
   /** The only part whose frame may make the call (a `settings` call always names one). */
   part?: string;
+  /** Also only inside the user's own key press or click: what it changes is what code runs. */
+  gesture?: boolean;
 }
 
 const READ: Disposition = "read";
@@ -42,7 +44,8 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "plugin.settings.get": { disposition: READ, part: "clover/settings" },
   // The user's own preferences: the settings part only.
   "ui.set": { disposition: "settings", part: "clover/settings" },
-  "plugin.setEnabled": { disposition: "settings", part: "clover/settings" },
+  // Switching a plugin on or off changes what code runs: the user's click too, like the session controls.
+  "plugin.setEnabled": { disposition: "settings", part: "clover/settings", gesture: true },
   "plugin.settings.set": { disposition: "settings", part: "clover/settings" },
   // Session control: with the user's gesture.
   "session.setModel": { disposition: "gesture" },
@@ -117,7 +120,7 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (${verdict.why})`);
     throw r.refuse(verdict.why);
   }
-  if (verdict.call.disposition === "gesture" && !r.takeGesture(r.tree.windowId)) {
+  if ((verdict.call.disposition === "gesture" || verdict.call.gesture === true) && !r.takeGesture(r.tree.windowId)) {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }

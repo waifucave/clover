@@ -1,16 +1,14 @@
 // The composer on the runtime: the `composer` entry, for a bot's tab or an agent's live tab. It sends the user's
 // message through `useUserSend` (the app counts it as the user's only from a real key press or click, §5.5),
 // stops the turn (`session.interrupt`), switches the model (a bot's is its user layer, `bot.setUserLayer`; an agent's
-// or a coding session's is `session.setModel`), and asks for a level change on the computer it runs on
-// (`computer.setLevel`), which is always a sealed card: the pill keeps the old level and shows the one asked for until
-// that card is answered. Each button draws through `composer.action`, keyed by action id, falling back to its own.
+// or a coding session's is `session.setModel`), and shows the level of the computer it runs on
+// (the computer's level shows as a label: a change is a sealed card, which the core can't raise for the app yet).
+// Each button draws through `composer.action`, keyed by action id, falling back to its own.
 //
-// The model list comes from the core's model catalog (`models.catalog`, the inherited method): its Clover shape is a
-// question for lanes A and B.
+// The model list comes from the core's `models.list` (the models a session can switch to).
 import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { CLOVER_LEVELS } from "./levels";
-import type { Level } from "../../shell/runtime/types";
 import { Spot, useApprovals, useCore, usePluginApi, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice } from "./types";
 
@@ -59,12 +57,6 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const computers = useLoad(() => api.computers?.list?.(), [api]);
   const catalog = useLoad(() => core?.call("models.list", { session: props.session }), [core]);
   const [draft, setDraft] = useState("");
-  // A level change asked for, and the card it waits on.
-  const [asked, setAsked] = useState<{ level: string; card: string } | undefined>(undefined);
-  useEffect(() => {
-    if (asked && !cards.some((c) => c.id === asked.card)) setAsked(undefined);
-  }, [asked, cards]);
-
   const where = session?.computer ?? bot?.computer;
   const computer = computers?.find((c) => c.name === where);
   const running = session?.status === "prompting" || session?.status === "starting" || session?.status === "cancelling";
@@ -106,11 +98,8 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
               computer: computer.name,
               level: computer.level,
               levels: CLOVER_LEVELS,
-              ...(asked ? { requested: asked.level } : {}),
-              onRequest: (level: string) =>
-                void core.call("computer.setLevel", { name: computer.name, level: level as Level }).then((r) => {
-                  if (!r.applied) setAsked({ level, card: r.card });
-                }, () => undefined),
+              // No onRequest: the core's way to ask for a level change through a sealed card isn't there yet, so the
+              // level is a label (computer.setLevel is never called around a card).
             },
           }
         : {})}

@@ -116,7 +116,7 @@ describe("settings on the runtime", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }]);
-    expect(api.stored.get("appearance")).toEqual({ theme: "dark", textSize: "default" });
+    expect(api.stored.get("appearance.theme")).toBe("dark");
     expect(screen.getByText("English (United States)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     const chooser = screen.getByRole("dialog", { name: "Language" });

@@ -63,8 +63,9 @@ export interface ComposerLevel {
   levels: ComposerLevelOption[];
   /** A change asked for, waiting for its card. */
   requested?: string;
-  /** Ask for a change: the host raises the sealed card, and passes the pick back as `requested`. */
-  onRequest: (level: string) => void;
+  /** Ask for a change: the host raises the sealed card, and passes the pick back as `requested`. Without it the
+   *  host has no way to ask yet, and the level shows as a plain label: no menu, no chevron. */
+  onRequest?: (level: string) => void;
 }
 
 export interface ComposerProps {

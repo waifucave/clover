@@ -11,11 +11,15 @@
 import { useEffect, useState } from "react";
 import type { CoreClient, PairingChanged, PluginDetail, PluginSummary } from "../../shell/runtime/types";
 import { deviceKind, plain } from "../../shell/runtime/views";
+import { APPEARANCE_KEYS, NOTIFICATION_KEYS, OWN_SETTING_KEYS, settingKey } from "./keys";
 import { LanguageChooser } from "./LanguageChooser";
 import { Spot, useCore, usePluginApi, useSpotEntries } from "./sdk";
 import { SettingsModal } from "./SettingsModal";
 import { S } from "./strings";
 import type { ExtraSection, Language, SettingsSection, SettingsValues } from "./types";
+
+const DEFAULT_APPEARANCE: SettingsValues["appearance"] = { theme: "system", textSize: "default" };
+const DEFAULT_NOTIFICATIONS: SettingsValues["notifications"] = { needsYou: true, agentDone: true, routineFailed: true, sounds: false };
 
 export interface SettingsEntryProps {
   route?: string;
@@ -163,8 +167,22 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     api.computers?.list?.().then((c) => live && setComputers(c), () => undefined);
     api.devices?.list().then((d) => live && setDevices(d), () => undefined);
     api.bots?.list().then((b) => live && setBots(b.map((x) => ({ id: x.id, name: plain(x.name) }))), () => undefined);
-    void Promise.all([api.settings.get<SettingsValues["appearance"]>("appearance"), api.settings.get<SettingsValues["notifications"]>("notifications")]).then(
-      ([appearance, notifications]) => live && setOwn({ ...(appearance ? { appearance } : {}), ...(notifications ? { notifications } : {}) }),
+    void Promise.all(OWN_SETTING_KEYS.map(async (k) => [k, await api.settings.get(k)] as const)).then(
+      (pairs) => {
+        if (!live) return;
+        const got = new Map(pairs);
+        const pick = <G extends "appearance" | "notifications">(group: G, fields: readonly string[]) => {
+          const out: Record<string, unknown> = {};
+          for (const f of fields) {
+            const v = got.get(settingKey(group, f));
+            if (v !== undefined) out[f] = v;
+          }
+          return Object.keys(out).length > 0 ? out : undefined;
+        };
+        const appearance = pick("appearance", APPEARANCE_KEYS);
+        const notifications = pick("notifications", NOTIFICATION_KEYS);
+        setOwn((o) => ({ appearance: { ...(o.appearance ?? DEFAULT_APPEARANCE), ...appearance } as SettingsValues["appearance"], notifications: { ...(o.notifications ?? DEFAULT_NOTIFICATIONS), ...notifications } as SettingsValues["notifications"] }));
+      },
       () => undefined,
     );
     return () => {
@@ -180,9 +198,9 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
   const main = computers.find((c) => c.isMain)?.name ?? "";
   const values: SettingsValues = {
     account: { name: loaded?.account ?? "", main },
-    appearance: own.appearance ?? { theme: "system", textSize: "default" },
+    appearance: own.appearance ?? DEFAULT_APPEARANCE,
     language: { id: loaded?.language ?? "en-US", name: languageOf(loaded?.language ?? "en-US").native },
-    notifications: own.notifications ?? { needsYou: true, agentDone: true, routineFailed: true, sounds: false },
+    notifications: own.notifications ?? DEFAULT_NOTIFICATIONS,
     plugins: (loaded?.plugins ?? []).map((p) => ({
       id: p.id,
       name: plain(p.name),
@@ -211,11 +229,11 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
     if (head === "appearance" && key) {
       const next = { ...values.appearance, [key]: value } as SettingsValues["appearance"];
       setOwn((o) => ({ ...o, appearance: next }));
-      void api.settings.set("appearance", next);
+      void api.settings.set(settingKey("appearance", key), value).catch(() => undefined);
     } else if (head === "notifications" && key) {
       const next = { ...values.notifications, [key]: value } as SettingsValues["notifications"];
       setOwn((o) => ({ ...o, notifications: next }));
-      void api.settings.set("notifications", next);
+      void api.settings.set(settingKey("notifications", key), value).catch(() => undefined);
     } else if (head === "theme" && typeof value === "string" && core) {
       // A theme is `<plugin-id>#<theme-id>` (B's `ThemeRef`).
       if (value.includes("#")) void core.call("ui.set", { patch: { globalTheme: value } }).then(() => setRevision((r) => r + 1));

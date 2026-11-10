@@ -23,6 +23,7 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     "models.list": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI" }, { id: "xai/grok-5", label: "Grok 5", provider: "xAI" }] }),
   });
   const approvals = fakeApprovals();
+  const sends: { to: unknown; message: unknown }[] = [];
   const api = fakeApi({
     bots: { list: async () => [ALPHA], get: async () => ALPHA, watch: () => () => undefined },
     conversation: { get: async () => s },
@@ -31,6 +32,9 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
   const runtime = runtimeWith({
     api: () => api,
     core: () => core,
+    userSend: () => async (to, message) => {
+      sends.push({ to, message });
+    },
     approvals,
     spot: (name) => (name === "composer.action" ? { shape: "keyed" } : undefined),
     entries: opts.entries ?? [],
@@ -42,19 +46,17 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     </UiRuntimeProvider>,
   );
   await act(() => settle());
-  return { core, approvals };
+  return { core, approvals, sends };
 }
 
 describe("the composer entry", () => {
-  test("sends the draft as the user's message, with an id and the time, and clears it", async () => {
-    const { core } = await mount();
+  test("sends the draft as the user's words through useUserSend (never a bare session.send), and clears it", async () => {
+    const { core, sends } = await mount();
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "Hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    const sent = core.calls.find((c) => c.method === "session.send")!.params as { id: string; message: { text: string; clientMessageId: string; sentAt: number } };
-    expect(sent.id).toBe("s_alpha");
-    expect(sent.message.text).toBe("Hello");
-    expect(sent.message.clientMessageId.length).toBeGreaterThan(8);
-    expect(typeof sent.message.sentAt).toBe("number");
+    await act(() => settle());
+    expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "Hello" } }]);
+    expect(core.calls.some((c) => c.method === "session.send")).toBe(false);
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
   });
 
@@ -76,17 +78,13 @@ describe("the composer entry", () => {
     expect(agent.core.calls.filter((c) => c.method === "session.setModel").map((c) => c.params)).toEqual([{ id: "agent-1", model: "xai/grok-5" }]);
   });
 
-  test("a level change raises a card: the pill shows it asked for until the card goes", async () => {
-    const { core, approvals } = await mount();
-    approvals.set([card("card-level")]);
-    fireEvent.click(screen.getByRole("button", { name: "Approval level on Studio: Ask when risky" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /Fully automatic/ }));
-    await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "computer.setLevel").map((c) => c.params)).toEqual([{ name: "Studio", level: "automatic" }]);
-    expect(screen.getByRole("button", { name: "Approval level on Studio: Ask when risky, Fully automatic asked for" })).toBeTruthy();
-    act(() => approvals.set([]));
-    await act(() => settle());
-    expect(screen.getByRole("button", { name: "Approval level on Studio: Ask when risky" })).toBeTruthy();
+  test("the computer's level is a label, not a control: no menu, and computer.setLevel is never called", async () => {
+    const { core } = await mount();
+    const label = screen.getByLabelText("Approval level on Studio: Ask when risky");
+    expect(label.tagName).not.toBe("BUTTON");
+    fireEvent.click(label);
+    expect(screen.queryByRole("menuitemradio")).toBeNull();
+    expect(core.calls.some((c) => c.method === "computer.setLevel")).toBe(false);
   });
 
   test("a card in this session holds the pills", async () => {

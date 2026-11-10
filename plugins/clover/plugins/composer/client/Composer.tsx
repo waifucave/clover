@@ -295,7 +295,16 @@ export function Composer(props: ComposerProps) {
   const levelName = (id: string) => level?.levels.find((l) => l.id === id)?.label ?? id;
   const levelLabel = level ? levelName(level.level) : "";
   const requestedLabel = level?.requested && level.requested !== level.level ? levelName(level.requested) : undefined;
-  const levelButton = level
+  const levelButton = level && level.onRequest === undefined
+    ? action(
+        "level",
+        <span key="level" className="cl-composer__pill cl-composer__pill--static" data-level={level.level} aria-label={S.level(level.computer, levelLabel, undefined)}>
+          <IconShield />
+          <span className="cl-composer__pill-label">{levelLabel}</span>
+          <span className="cl-composer__pill-detail">{level.computer}</span>
+        </span>,
+      )
+    : level
     ? action(
         "level",
         <button
@@ -441,7 +450,7 @@ export function Composer(props: ComposerProps) {
               checked: l.id === level.level,
               // A pick only asks: the level stays until the card is answered.
               onPick: () => {
-                if (l.id !== level.level) level.onRequest(l.id);
+                if (l.id !== level.level) level.onRequest?.(l.id);
               },
             })),
           },
