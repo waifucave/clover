@@ -177,14 +177,26 @@ describe("the daemon's safety reviewer for another computer's calls", () => {
     expect(readFileSync(join(userHome, "from-laptop.md"), "utf8")).toBe("hello");
     expect(seen.at(-1)).toMatchObject({ class: "fs", precis: expect.stringContaining("tree.write path: home/Studio/from-laptop.md, 5 characters") });
     expect(JSON.stringify(seen.at(-1))).not.toContain("hello\"");
-    // Unsafe: the user's answer is needed, and the laptop can't ask it yet: refused, nothing written.
+    // Unsafe: the user's answer is needed. The laptop asks it (askUser, lane J's #373): Studio's own card, opening with
+    // Clover's line naming Studio, raised on the laptop's broker for the asking session. The user interrupts that
+    // session (its pending cards are withdrawn): refused, nothing written.
     next = "unsafe";
-    const unsafe = await tree.write("home/Studio/risky.md", { encoding: "utf8", text: "x" }, coding).catch((e: { code?: string; detail?: { needsAnswer?: boolean } }) => e);
-    expect(unsafe).toMatchObject({ code: "refused" });
+    const broker = laptop.parts.broker!;
+    const unsafe = tree.write("home/Studio/risky.md", { encoding: "utf8", text: "x" }, coding).catch((e: { code?: string; detail?: { needsAnswer?: boolean } }) => e);
+    await waitFor("Studio's card on the laptop", () => broker.pending().length > 0);
+    const card = broker.get(broker.pending()[0]!.id)?.card;
+    expect(card?.fields.title).toEqual({ type: "text", text: "Studio asks you to approve this" });
+    expect(card?.binds).toMatchObject({ computer: "Studio", method: "tree.write" });
+    expect(broker.withdrawSession("s_code")).toBe(1);
+    expect(await unsafe).toMatchObject({ code: "refused" });
     expect(existsSync(join(userHome, "risky.md"))).toBe(false);
-    // A reviewer that fails: closed, the same.
+    // A reviewer that fails: closed, the same (its card withdrawn the same way).
     next = "fail";
-    const failed = await tree.write("home/Studio/failed.md", { encoding: "utf8", text: "x" }, coding).catch((e: { code?: string }) => e);
+    let settled = false;
+    const failing = tree.write("home/Studio/failed.md", { encoding: "utf8", text: "x" }, coding).catch((e: { code?: string }) => e).finally(() => { settled = true; });
+    await waitFor("the failed review's refusal, or its card on the laptop", () => settled || broker.pending().length > 0);
+    broker.withdrawSession("s_code");
+    const failed = await failing;
     expect(failed).toMatchObject({ code: "refused" });
     expect(existsSync(join(userHome, "failed.md"))).toBe(false);
     expect(seen).toHaveLength(3);
