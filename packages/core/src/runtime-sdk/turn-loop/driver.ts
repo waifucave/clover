@@ -898,7 +898,20 @@ export class BotSessionDriver implements SessionDriver {
         }
       } catch { modelChanged = true; }
     }
-    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !this.#serversChanged()) return this.#inc!;
+    // The session's MCP servers now, as the sandbox: a set that can't be read fails the turn, and the runtime open under
+    // the old set is closed first, so no tool of a server that went keeps answering.
+    let serversChanged = false;
+    try {
+      serversChanged = open && this.#serversChanged();
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: its MCP servers could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      if (this.#inc !== undefined) {
+        await this.#closeIncarnation(this.#inc);
+        this.#inc = undefined;
+      }
+      throw err;
+    }
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged && !serversChanged) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
     if (modelChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: model changed`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
@@ -908,15 +921,11 @@ export class BotSessionDriver implements SessionDriver {
   }
 
   /** Whether the session's MCP servers differ from the set the open runtime got (an install, an enable, a removal):
-   *  the agent SDK takes `mcpServers` only when a runtime opens, so it then reopens before the turn. */
+   *  the agent SDK takes `mcpServers` only when a runtime opens, so it then reopens before the turn. A set that can't be
+   *  read throws (`#ensureOpen` fails the turn), never "unchanged". */
   #serversChanged(): boolean {
     if (this.#d.mcp === undefined || this.#builtServers === undefined) return false;
-    let now: string;
-    try {
-      now = ["clover_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "clover_core")].sort().join("\u0000");
-    } catch {
-      return false;
-    }
+    const now = ["clover_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "clover_core")].sort().join("\u0000");
     if (now === this.#builtServers) return false;
     this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
     return true;

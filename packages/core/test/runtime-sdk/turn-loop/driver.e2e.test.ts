@@ -428,6 +428,50 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  test("a server set that can't be read fails the turn and closes the runtime open under the old set, as the sandbox read does; a readable set opens it again", async () => {
+    const home = tempHome();
+    const runner: McpRunner = { async run(_s, tool) { return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" }; } };
+    const good: BotMcpServer = { server: "web", plugin: "clover/web", tools: [{ name: "WebSearch", inputSchema: { type: "object", properties: {} }, load: "preload" }] };
+    // A listing the driver can't read: a server with no name makes the server-set check throw.
+    const unreadable = { server: undefined, plugin: "clover/broken", tools: [] } as unknown as BotMcpServer;
+    let servers: BotMcpServer[] = [good];
+    const opened: string[][] = [];
+    let closedRuntimes = 0;
+    const query: typeof sdkQuery = (args) => {
+      opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => ({
+            next: async () => { const r = await it.next(); if (r.done === true) closedRuntimes += 1; return r; },
+            return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+          });
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"]]);
+      servers = [good, unreadable];
+      const failed = await driver.turn(user("again"), control());
+      expect(failed.reason).toBe("failed");
+      expect(opened).toHaveLength(1);
+      expect(lines.some((l) => l.includes("its MCP servers could not be read"))).toBe(true);
+      for (let i = 0; i < 200 && closedRuntimes < 1; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(closedRuntimes).toBe(1);
+      servers = [good];
+      expect((await driver.turn(user("back"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core", "web"], ["clover_core", "web"]]);
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
   test("a plugin server named like the runtime's own (clover, its standing server) is left out, so the real runtime still starts; the rest are served", async () => {
     // The agent runtime refuses a configured server under its brand's name and exits before init (acceptance step 3,
     // 2026-11-10, with the bundled tools offered as mcp__clover__…): the driver must never hand it one.

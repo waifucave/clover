@@ -140,11 +140,14 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
       };
       if (entry.handler === undefined && entry.command === undefined) continue;
       if (entry.handler === undefined && o.commandSpawner === undefined) {
+        // No process door here (the daemon's plugin run files couldn't be set up): reported once, and a hook that can
+        // deny denies, as when its door refuses it. A guard hook never silently stops guarding.
         const key = `${pluginId}/${entry.id}`;
         if (!reportedCommand.has(key)) {
           reportedCommand.add(key);
-          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason("a command hook has no process door on this computer yet") });
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason("a command hook has no process door on this computer") });
         }
+        if (failClosed("couldn't run (a command hook has no process door on this computer)")) break;
         continue;
       }
       const args: HookInput = {

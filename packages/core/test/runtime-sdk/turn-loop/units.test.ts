@@ -334,6 +334,21 @@ describe("command hooks, through the process door (Claude Code's protocol)", () 
     await hooks.messageIn(session, "hi");
     expect(skipped).toHaveLength(1);
   });
+
+  test("with no process door at all, a command hook that can deny denies (fails closed), every time; one that can't is only skipped", async () => {
+    const { hooks, skipped } = hooksOver([
+      hookEntry("cmd", { id: "guard", on: ["tool.before"], command: "./guard.sh" }),
+      hookEntry("cmd", { id: "note", on: ["turn.start"], command: "./note.sh" }),
+    ], () => ({}));
+    for (let i = 0; i < 2; i++) {
+      const r = await hooks.toolBefore(session, { name: "Bash", callId: `c${i}` }, { command: "rm -rf /" });
+      expect(r.deny).toContain('"guard"');
+      expect(r.deny).toContain("no process door");
+    }
+    expect(await hooks.turnStart(session)).toEqual([]);
+    // Reported once each, not at every call.
+    expect(skipped.filter((s) => s.reason.includes("no process door"))).toHaveLength(2);
+  });
 });
 
 describe("hook failures", () => {
