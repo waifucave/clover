@@ -120,7 +120,7 @@
     },
     {
       "name": "network:public",
-      "lets": "Reach any public host through the core's fetch, with its web floors: public addresses only, the dangerous-domain list, a card before a private address, and the audit log; its components reach no host from it",
+      "lets": "Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, size and time caps, no key, and the audit log; its components reach no host from it",
       "ok": "connects to any public website, through Clover's web safeguards",
       "warns": true,
       "bundledOnly": true
