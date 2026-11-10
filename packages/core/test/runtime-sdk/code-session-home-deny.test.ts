@@ -38,12 +38,15 @@ describe("a coding session's Bash sandbox (childSandboxConfigFor)", () => {
     }
   });
 
-  test("another session's transcript, run folder and outputs are refused (S1), made before or after the spawn", () => {
-    const { h, list } = setup();
-    for (const p of ["sdk/projects/-other-project/s.jsonl", "sdk/projects/-later-project/s.jsonl", "cache/runs/run-other/settings.json", "cache/runs/run-later/x",
-      "outputs/s_2/r.md", "outputs/s_9/r.md", "work/other/x"]) {
+  test("another session's transcript, run folder and outputs are refused (S1); one made after the spawn at the next spawn", () => {
+    const { h, cwd, list } = setup();
+    for (const p of ["sdk/projects/-other-project/s.jsonl", "cache/runs/run-other/settings.json", "outputs/s_2/r.md", "work/other/x"]) {
       expect([p, deniedBy(list, join(h, p))]).toEqual([p, true]);
     }
+    // Made after this spawn's list was built: readable until the next spawn, whose list has them (S1, S2: per spawn).
+    for (const d of ["sdk/projects/-later-project", "cache/runs/run-later", "outputs/s_9"]) mkdirSync(join(h, d), { recursive: true });
+    const next = childSandboxConfigFor(h, cwd, [join(h, "work", "project")], { outputsDir: join(h, "outputs", "s_1"), runDir: join(h, "cache", "runs", "run-own") }).filesystem!.denyRead ?? [];
+    for (const p of ["sdk/projects/-later-project/s.jsonl", "cache/runs/run-later/x", "outputs/s_9/r.md"]) expect([p, deniedBy(next, join(h, p))]).toEqual([p, true]);
   });
 
   test("the config copies that carry keys are refused, its own run folder's and a staging root's included (the blocker)", () => {
@@ -86,16 +89,22 @@ describe("a coding session's Bash sandbox (childSandboxConfigFor)", () => {
     expect(deniedBy(list, join(h, "cache", "views", "v", "SKILL.md"))).toBe(false);
   });
 
-  test("bounded: a thousand other sessions add nothing to the list", () => {
+  test("cheap for the runtime: the home's denials are literal paths, never per-letter globs (each glob is a Seatbelt regex)", () => {
     const { h, cwd } = setup();
     const own = { outputsDir: join(h, "outputs", "s_1"), runDir: join(h, "cache", "runs", "run-own") };
-    const before = childSandboxConfigFor(h, cwd, [], own).filesystem!.denyRead!.length;
     for (let i = 0; i < 1000; i++) {
       mkdirSync(join(h, "outputs", `s_${i.toString(16).padStart(12, "0")}`));
       mkdirSync(join(h, "cache", "runs", `r-${i}`));
       mkdirSync(join(h, "sdk", "projects", `-p-${i}`));
     }
-    expect(childSandboxConfigFor(h, cwd, [], own).filesystem!.denyRead!.length).toBe(before);
+    const list = childSandboxConfigFor(h, cwd, [], own).filesystem!.denyRead!;
+    // Only the fixed config-copy globs (staging roots, run folders) and the any-depth project fence's: none per session or
+    // per letter, whatever the home holds (#347's merge-queue failure: hundreds of them made `session.setPolicy` slow).
+    const globsInHome = list.filter((e) => e.startsWith(`${h}/`) && /[[]/.test(e.slice(h.length)));
+    expect(globsInHome).toEqual([]);
+    expect(list.filter((e) => /[*?[]/.test(e)).length).toBeLessThan(40);
+    // Every one of those sessions' folders is refused.
+    for (const p of ["outputs/s_0000000003e7/r.md", "cache/runs/r-999/x", "sdk/projects/-p-999/s.jsonl"]) expect([p, deniedBy(list, join(h, p))]).toEqual([p, true]);
   });
 
   test("the session's project keys: its transcripts' and its memory's, and the shared buckets", () => {
