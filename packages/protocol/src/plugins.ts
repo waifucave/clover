@@ -41,6 +41,9 @@ export const PluginProvenance = z.object({
    *  reach any host, fenced for files as any plugin, until its manifest declares `network:` hosts, when it is held to
    *  them like any other. The OK says so, `plugin.get` shows it, and the fence reads it: one fact. */
   wrapped: z.object({ from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional(), network: z.literal("any").optional() }).optional(),
+  /** Installed from a plugin index (§5.1): which one, and the version. That index's own revocation list applies to it
+   *  (the controller's ruling B), as do its updates. */
+  index: z.object({ url: z.string().url(), version: SemverVersion }).optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 
@@ -248,6 +251,11 @@ export const IndexView = z.object({
   stale: z.boolean().optional(),
   /** Why the last fetch failed; its last good copy is still used. */
   error: utf16(300).optional(),
+  /** Its revocation list, when it has one: checked at start and every 6 hours (§5.1), stale past 7 days. */
+  revocations: z.object({
+    url: z.string().url(), lastCheckedAt: Timestamp.optional(), issued: utf16(40).optional(), stale: z.boolean().optional(),
+    error: utf16(300).optional(), entries: z.number().int().nonnegative().optional(),
+  }).optional(),
 });
 
 export const IndexEntryView = z.object({

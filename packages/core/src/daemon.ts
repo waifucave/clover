@@ -153,7 +153,6 @@ import { HookRegistry, HookFacade } from "./plugins/hook-registry";
 import { HookRunner } from "./plugins/hook-runner";
 import { ensurePluginRunFiles, isTestKeychainService, type PluginRunGuard } from "./registry/plugin-run";
 import { wrapperOpensNetwork } from "./registry/wrap";
-import { IndexClient } from "./registry/indexes/client";
 import { BashReviewer } from "./agent/reviewer";
 import { AuditLog } from "./peripheral/audit";
 import { PeripheralBroker, type PeripheralClass } from "./peripheral/broker";
@@ -3747,12 +3746,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       broker: pluginsBroker,
       log: (line) => console.error(`[plugins] ${line}`),
       onOkApproved: (id) => okTicks.approved(id),
+      indexes: { cacheDir: join(cloverHome, "plugins-state", "index-cache") },
     });
     partsRegistry = opened;
-    // The plugin indexes (§5.1): their last good copies now, a fresh fetch in the background (a failure keeps them).
-    const pluginIndexes = new IndexClient({ store: opened.store, cacheDir: join(cloverHome, "plugins-state", "index-cache"), log: (line) => console.error(`[plugins] ${line}`) });
-    pluginIndexes.loadCached();
-    void pluginIndexes.refresh();
+    // The plugin indexes and their revocation lists (§5.1): read from their last good copies before the first scan
+    // (`indexes` above), then checked now and every 6 hours; a failure keeps the copies.
+    const pluginIndexes = opened.indexes;
+    opened.revocations?.start();
     wrapperOpen = (id) => wrapperOpensNetwork(opened.registry, id);
     projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
@@ -3774,7 +3774,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
       // `openCard` (the app's development-folder card) and the registry's own OK cards wait for the daemon's broker (#353).
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), indexes: pluginIndexes }),
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs(), ...(pluginIndexes ? { indexes: pluginIndexes } : {}), ...(opened.revocations ? { revocations: opened.revocations } : {}) }),
       ...pluginUiParts.methods,
     };
     const host = pluginHost;

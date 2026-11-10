@@ -12,6 +12,9 @@ export interface IndexTrust {
   readonly keys: readonly string[];
   /** Where to report a plugin (the index's issue page); the app fills in the plugin's id and tree hash. */
   readonly issues?: string;
+  /** Its revocation list (signed with the same keys), when it isn't named by the index file itself. The official
+   *  one is the safety net: it can block a tree hash from any source (the controller's ruling B). */
+  readonly revocations?: string;
 }
 
 export const OFFICIAL_INDEX: IndexTrust | undefined = undefined;

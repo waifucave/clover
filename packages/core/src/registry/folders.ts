@@ -19,6 +19,7 @@ export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalog
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
 import { wrapperNetworkOpen } from "./wrap";
+import type { RevocationSubject } from "./indexes/revocations";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
@@ -194,6 +195,14 @@ export class PluginFolders {
     this.#now = opts.now ?? Date.now;
   }
 
+  #blocker: ((p: RevocationSubject) => string | undefined) | undefined;
+
+  /** Revocation (§5.1): a tree it names is read as `blocked`, with the reason; set before the first scan, so a revoked
+   *  plugin never starts. */
+  setBlocker(fn: (p: RevocationSubject) => string | undefined): void {
+    this.#blocker = fn;
+  }
+
   /** The OK for a tree was given: keep what it held (`oks/<id>.json`). */
   okGiven(id: string, treeHash: string): void {
     const top = parentOf(id) ?? id;
@@ -238,8 +247,8 @@ export class PluginFolders {
   /** A folder `plugin.install` just copied into the plugins folder: read now, with who installed it as its provenance
    *  (the OK card's "from" line). A plugin the core generated around a bare item is `wrapped`: its source says so, and
    *  its provenance keeps what it was made from and the parts left unused (§5.1). */
-  async installed(id: string, by: "user-app" | "user-terminal", wrapped?: NonNullable<PluginProvenance["wrapped"]>): Promise<void> {
-    this.#installedBy.set(id, { by, at: this.#now(), ...(wrapped !== undefined ? { wrapped } : {}) });
+  async installed(id: string, by: "user-app" | "user-terminal", from: { wrapped?: NonNullable<PluginProvenance["wrapped"]>; index?: NonNullable<PluginProvenance["index"]> } = {}): Promise<void> {
+    this.#installedBy.set(id, { by, at: this.#now(), ...(from.wrapped !== undefined ? { wrapped: from.wrapped } : {}), ...(from.index !== undefined ? { index: from.index } : {}) });
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
@@ -371,8 +380,8 @@ export class PluginFolders {
     for (const name of listDirs(this.#o.pluginsDir)) {
       if (name.startsWith(".")) continue;
       const stored = this.#o.store.load().plugins[name];
-      const wrapped = (stored?.provenance ?? this.#installedBy.get(name))?.wrapped !== undefined;
-      out.push({ folder: join(this.#o.pluginsDir, name), source: stored?.source ?? (wrapped ? "wrapped" : "local") });
+      const prov = stored?.provenance ?? this.#installedBy.get(name);
+      out.push({ folder: join(this.#o.pluginsDir, name), source: stored?.source ?? (prov?.wrapped !== undefined ? "wrapped" : prov?.index !== undefined ? "index" : "local") });
     }
     return out;
   }
@@ -396,9 +405,13 @@ export class PluginFolders {
     const known = stored?.okHash !== undefined || stored?.refusedHash !== undefined;
     const approved = s.bundled || s.dev ? true : known ? undefined : false;
     const change = ok && r.snapshot ? classifyChange(ok, r.snapshot) : undefined;
+    // A revoked tree is blocked whole: the top plugin and its children, its files, data and secrets left as they are.
+    const top = r.inputs.find((i) => i.id === r.id);
+    const blocked = top === undefined ? undefined : this.#blocker?.({ id: r.id, treeHash: top.treeHash, version: (top.manifest as { version?: string } | undefined)?.version, provenance });
     for (const input of r.inputs) {
       if (approved !== undefined) input.approved = approved;
       if (change !== undefined) input.change = change;
+      if (blocked !== undefined) input.blocked = blocked;
     }
     this.#byFolder.set(r.id, resolve(s.folder));
     if (r.tree) this.#reports.set(r.id, { tree: r.tree, source: s.source, provenance, folder: s.folder });

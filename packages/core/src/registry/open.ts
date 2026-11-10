@@ -14,6 +14,9 @@ import { PluginFolders } from "./folders";
 import { brokerOkCards, type OkCardBroker } from "./ok-cards";
 import { pluginFenceAvailable } from "./plugin-fence";
 import { fileRegistryStore, type RegistryStore } from "./state";
+import { IndexClient, type SignedFetch } from "./indexes/client";
+import type { IndexTrust } from "./indexes/official";
+import { Revocations } from "./indexes/revocations";
 
 export interface OpenRegistryOptions {
   cloverHome: string;
@@ -36,11 +39,24 @@ export interface OpenRegistryOptions {
   /** Whether plugin processes here run in the plugin fence, which the OK says when they don't (#406's review). Default:
    *  the fence is there (`pluginFenceAvailable`). */
   sandboxed?: boolean;
+  /** The plugin indexes and their revocation lists (§5.1): their last good copies are read before the first scan, so a
+   *  revoked plugin never starts, even offline. Absent: no index, nothing revoked. */
+  indexes?: {
+    cacheDir: string;
+    fetch?: SignedFetch;
+    /** Default `OFFICIAL_INDEX`; tests name their own, or none. */
+    official?: IndexTrust;
+    /** The owner's switch (`REVOKED_OVERRIDE`); tests set it. */
+    revokedOverride?: boolean;
+  };
 }
 
 export interface OpenedRegistry {
   registry: RegistryCore;
   folders: PluginFolders;
+  /** The index client and the revocation lists, when `indexes` was given. */
+  indexes?: IndexClient;
+  revocations?: Revocations;
   /** The registry's MAC'd records (the index client keeps its own in them, `indexes.json`). */
   store: RegistryStore;
   close(): void;
@@ -106,10 +122,31 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     ...(o.now ? { now: o.now } : {}),
     ...(o.log ? { log: o.log } : {}),
   });
+  let indexes: IndexClient | undefined;
+  let revocations: Revocations | undefined;
+  if (o.indexes !== undefined) {
+    const io = o.indexes;
+    indexes = new IndexClient({
+      store, cacheDir: io.cacheDir, ...(io.fetch ? { fetch: io.fetch } : {}), ...("official" in io ? { official: io.official } : {}),
+      ...(o.now ? { now: o.now } : {}), ...(o.log ? { log: o.log } : {}),
+    });
+    indexes.loadCached();
+    revocations = new Revocations({
+      client: indexes, ...(o.log ? { log: o.log } : {}), ...("revokedOverride" in io ? { override: io.revokedOverride } : {}),
+      // A list changed: every folder is read again, each tree checked against the lists.
+      onChange: () => folders!.scan(),
+    });
+    revocations.loadCached();
+    const r = revocations;
+    folders.setBlocker((p) => r.blockedOf(p));
+  }
   // Where plugin code loads from, for the fence's `node_modules` denies (#234's check 5, K3): the development folders,
   // read live, and the bundled plugins.
   const unregisterLoadFolders = registerPluginLoadFolders(o.cloverHome, () => [...(o.bundledDirs ?? []), ...folders!.devFolderPaths()]);
   folders.start();
   await folders.scan();
-  return { registry, folders, store, close: () => { unregisterLoadFolders(); folders!.stop(); } };
+  return {
+    registry, folders, store, ...(indexes ? { indexes } : {}), ...(revocations ? { revocations } : {}),
+    close: () => { unregisterLoadFolders(); revocations?.stop(); folders!.stop(); },
+  };
 }

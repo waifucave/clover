@@ -371,6 +371,25 @@
                       "from"
                     ],
                     "additionalProperties": false
+                  },
+                  "index": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 256,
+                        "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+                      }
+                    },
+                    "required": [
+                      "url",
+                      "version"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -2047,6 +2066,40 @@
                 "error": {
                   "type": "string",
                   "maxLength": 300
+                },
+                "revocations": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "lastCheckedAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "issued": {
+                      "type": "string",
+                      "maxLength": 40
+                    },
+                    "stale": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string",
+                      "maxLength": 300
+                    },
+                    "entries": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

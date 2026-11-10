@@ -309,6 +309,20 @@ export class IndexClient {
     return url;
   }
 
+  /** The overrides the user made for revoked trees (read only when `REVOKED_OVERRIDE` is on). */
+  overrides(): Readonly<Record<string, string>> {
+    return this.#state.overrides ?? {};
+  }
+
+  /** Records the user's choice to run a revoked tree anyway (`REVOKED_OVERRIDE` on), or takes it back. */
+  setOverride(id: string, treeHash: string | undefined): void {
+    const overrides = { ...(this.#state.overrides ?? {}) };
+    if (treeHash === undefined) delete overrides[id];
+    else overrides[id] = treeHash;
+    this.#state = { ...this.#state, overrides };
+    this.#o.store.saveIndexes?.(this.#state);
+  }
+
   /** Removes an index the user added; its high-water marks stay (adding it again takes no older copy). */
   remove(rawUrl: string): void {
     const url = httpsUrl(rawUrl);

@@ -13,6 +13,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { PLUGINS_METHODS, PluginDetail, PluginSummary } from "@waifucave/clover-protocol";
+import { parentOf } from "../contracts/plugin-registry-rules";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord } from "../contracts/plugin-registry";
@@ -22,6 +23,7 @@ import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
 import { httpsUrl, type IndexClient } from "../registry/indexes/client";
+import type { Revocations } from "../registry/indexes/revocations";
 import { installWrapped } from "../registry/wrap";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
@@ -111,6 +113,8 @@ export function pluginRegistryMethods(o: {
   os?: "macos" | "windows" | "linux";
   /** The plugin indexes (§5.1); absent, there are none (the lists are empty and adding one is refused). */
   indexes?: IndexClient;
+  /** Their revocation lists: their state in the index list, and the override switch (`REVOKED_OVERRIDE`). */
+  revocations?: Revocations;
 }): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   const { registry, folders } = o.opened;
@@ -129,7 +133,18 @@ export function pluginRegistryMethods(o: {
     [M.pluginSetEnabled.name]: handler(M.pluginSetEnabled, async ({ id, enabled, bots }, ctx) => {
       requireUser(ctx, "switch a plugin on or off");
       if (bots !== undefined) notServed("choosing the bots a plugin dresses", "a plugin's `when.bot` override isn't kept yet");
-      must(id);
+      const r = must(id);
+      if (r.state === "blocked" && enabled) {
+        // A revoked tree: whether the user may run it anyway is the owner's question (`REVOKED_OVERRIDE`). Off, it stays
+        // blocked; on, the user's switch keeps an override for this exact tree, which a changed tree doesn't keep.
+        const top = parentOf(r.id) ?? r.id;
+        const record = must(top);
+        if (o.revocations?.overrideAllowed !== true || o.indexes === undefined || record.treeHash === undefined) {
+          throw new ContractError("refused", `${id} is blocked: ${r.reason ?? "a revocation list names it"}. Its files, data and keys stay on this computer.`);
+        }
+        o.indexes.setOverride(top, record.treeHash);
+        await folders.refresh(record.folder);
+      }
       return registry.setEnabled(id, enabled);
     }),
     [M.pluginRestart.name]: handler(M.pluginRestart, async ({ id }, ctx) => {
@@ -224,7 +239,7 @@ export function pluginRegistryMethods(o: {
         });
         const results = [];
         for (const w of made) {
-          await folders.installed(w.id, by, { from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}), ...(w.network !== undefined ? { network: w.network } : {}) });
+          await folders.installed(w.id, by, { wrapped: { from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}), ...(w.network !== undefined ? { network: w.network } : {}) } });
           results.push(await raise(w.id, w.treeHash));
         }
         const [first, ...more] = results;
@@ -235,7 +250,12 @@ export function pluginRegistryMethods(o: {
       return raise(id, treeHash);
     }),
     [M.pluginUpdate.name]: handler(M.pluginUpdate, () => notServed("plugin.update", "the index client isn't on main")),
-    [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({ indexes: o.indexes?.list() ?? [] })),
+    [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({
+      indexes: (o.indexes?.list() ?? []).map((i) => {
+        const rev = o.revocations?.status(i.url);
+        return { ...i, ...(rev !== undefined ? { revocations: rev } : {}) };
+      }),
+    })),
     [M.pluginIndexSearch.name]: handler(M.pluginIndexSearch, ({ query, limit }) => {
       if (o.indexes === undefined) return { entries: [] };
       const entries = o.indexes.search({ ...(query !== undefined ? { query } : {}), ...(limit !== undefined ? { limit } : {}), adultConfirmed: registry.adultConfirmed });
@@ -263,6 +283,8 @@ export function pluginRegistryMethods(o: {
       const add = async () => {
         indexes!.add(checked, keys);
         await indexes!.refresh(checked);
+        // Its revocation list, for the plugins installed from it.
+        void o.revocations?.check();
       };
       if (user.client === "cli") {
         await add();
@@ -289,6 +311,7 @@ export function pluginRegistryMethods(o: {
       requireUser(ctx, "remove a plugin index");
       if (o.indexes === undefined) throw new ContractError("not_found", `${url} isn't one of your indexes`);
       o.indexes.remove(url);
+      void o.revocations?.check();
       return { ok: true as const };
     }),
     [M.pluginPin.name]: handler(M.pluginPin, () => notServed("plugin.pin", "the synced plugin list isn't on main")),
