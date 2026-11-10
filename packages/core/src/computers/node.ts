@@ -308,8 +308,10 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
       tree, holder, directory, transport: o.transport, deviceOf: (name) => registry.get(name)?.device,
       // A local server runs on the computers ticked for it, wherever they are, once the host lists its local servers
       // (`localServers`): then the host's placement says only its kind. A host that doesn't list them places its own.
-      placement: (server) => {
-        const p = o.mcp!.placement(server);
+      // Asked per tool (lane A: servers can share a name); the ticks are per server, so every tool of a local server
+      // runs on the same computers.
+      placement: (server, tool) => {
+        const p = o.mcp!.placement(server, tool);
         return p?.kind === "local" && o.mcp!.localServers !== undefined ? { ...p, computers: mcpComputers(server) } : p;
       },
       fields: o.mcp.fields, call: o.mcp.call, scratch: o.mcp.scratch,
