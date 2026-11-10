@@ -721,6 +721,7 @@ const pageDeps = {
     corePage = null;
   },
   registryReady: () => registryReady,
+  daemonDown: () => pair.stuck !== undefined,
 };
 
 /** Shows one of the core's pages in the main window (opening it if need be). */
@@ -753,6 +754,9 @@ function stateChanged(s: PairState): void {
     openingRetryMs = 250;
   }
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
+  // The root draws "Starting Clover…" until the shell comes; once the pair has gone a long time with no daemon (and
+  // again when one comes), it is asked to draw again, so it says so instead.
+  if (mainWindow !== undefined && !mainWindow.isDestroyed()) runtime.rootMessage(mainWindow.id, { type: "respot" });
   const status = s.kind === "reconnecting" ? "Reconnecting to Clover…" : s.kind === "unavailable" ? "Clover isn't running" : s.kind === "starting-daemon" ? "Starting Clover…" : s.kind === "unverified" ? "Can't verify the Clover daemon" : undefined;
   tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
 }

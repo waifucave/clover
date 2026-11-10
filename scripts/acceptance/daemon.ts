@@ -8,7 +8,7 @@
 //   - its links run on an in-memory wire with a stand-in for public time (below), where a packaged daemon has its link
 //     sidecar and SNTP.
 // Never run it by hand: run.ts starts it on a temp home with a throwaway keychain file.
-import { startDaemon } from "../../packages/core/src/daemon";
+import { startDaemon, stopWithin } from "../../packages/core/src/daemon";
 import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 import { MemoryNetwork } from "../../packages/core/src/links/memory-wire";
 import { USAGE_INERT } from "../../packages/core/src/usage/wiring";
@@ -58,9 +58,20 @@ let stopping = false;
 const stop = async (): Promise<void> => {
   if (stopping) return;
   stopping = true;
-  await daemon.stop();
+  await stopWithin(daemon);
   process.exit(0);
 };
 process.on("SIGTERM", () => void stop());
 process.on("SIGINT", () => void stop());
-void daemon.pairStopped.then((why) => { console.error(`acceptance daemon: the pair stopped (${why})`); void stop(); });
+// A daemon slow to go (CLOVER_ACCEPTANCE_STOP_HOLD_MS, the reopen step's): once the pair stopped (the listener already
+// closed by the core), it holds the process, its lock and its runtime that long before it stops, as a daemon finishing
+// a turn's teardown does.
+const hold = Number(process.env.CLOVER_ACCEPTANCE_STOP_HOLD_MS);
+void daemon.pairStopped.then(async (why) => {
+  console.error(`acceptance daemon: the pair stopped (${why})`);
+  if (Number.isFinite(hold) && hold > 0) {
+    console.error(`acceptance daemon: holding ${hold} ms before stopping (a daemon slow to go)`);
+    await new Promise((r) => setTimeout(r, hold));
+  }
+  void stop();
+});
