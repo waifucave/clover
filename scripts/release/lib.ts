@@ -334,7 +334,7 @@ export function identityTeam(identity: string): string {
  * Seatbelt rule stops that without crashing Bun; with it the kernel hands such a reader no environment. The daemon and
  * the plugin Bun carry what they're started with in their environment (CLOVER_PLUGIN_TOKEN, the socket, a plugin's
  * own variables), so both are restricted (scripts/verify-fd-receiver-compiled.ts, step 4, measures it on a build).
- * dyld already ignores DYLD_ variables for both under the hardened runtime; `restrict` keeps that.
+ * dyld already ignores DYLD_ variables for both under the hardened runtime with SIP on; `restrict` keeps that.
  */
 export const RESOURCE_BINARIES = [
   { file: "clover-core", identifier: "com.waifucave.clover.core", entitlements: "scripts/clover-core.entitlements", restrict: true },
