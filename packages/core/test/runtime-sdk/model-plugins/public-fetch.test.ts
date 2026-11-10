@@ -8,7 +8,7 @@ import { createApiRouter } from "../../../src/plugin-host/api/router";
 import { pluginNetworkAllowed } from "../../../src/plugin-host/daemon-host";
 import { pinnedFetch } from "../../../src/plugin-host/pinned-fetch";
 import { modelPluginApiHandlers } from "../../../src/runtime-sdk/model-plugins/plugin-api";
-import { PUBLIC_BODY_MAX_BYTES } from "../../../src/runtime-sdk/model-plugins/public-fetch";
+import { PUBLIC_BODY_MAX_BYTES, publicFetch } from "../../../src/runtime-sdk/model-plugins/public-fetch";
 
 const KEY = "sk-public-test-0123456789abcdef";
 
@@ -23,6 +23,7 @@ function world(capabilities: string[]) {
   });
   const seen: { host: string; url: string; headers: Headers }[] = [];
   const audit: Record<string, unknown>[] = [];
+  const log: string[] = [];
   const pages: Record<string, (path: string) => Response> = {
     "news.example.com": (path) => (path.startsWith("/moved") ? new Response(null, { status: 302, headers: { location: "https://intranet.example.com/secret" } }) : path.startsWith("/to-http") ? new Response(null, { status: 301, headers: { location: "http://news.example.com/plain" } }) : path.startsWith("/huge") ? new Response(new ReadableStream({ pull(c) { c.enqueue(new Uint8Array(1024 * 1024)); } })) : new Response(`the article at ${path}`)),
     "api.webby.example": () => new Response("keyed"),
@@ -44,11 +45,12 @@ function world(capabilities: string[]) {
     fetch,
     audit: (l) => void audit.push(l),
     dangerousAdded: () => ["blocked-by-user.example"],
+    log: (l) => void log.push(l),
   });
   const router = createApiRouter({ registry, handlers: [handlers], allowNetwork: pluginNetworkAllowed });
   const call = (url: string, init: RequestInit = {}, options: Record<string, unknown> = {}) =>
     router({ pluginId: "clover/webby", process: "clover", path: "net.fetch", args: [url, init, options], caller: { kind: "plugin", pluginId: "clover/webby" } as never }) as Promise<Response>;
-  return { call, seen, audit };
+  return { call, seen, audit, log };
 }
 
 const refusal = (p: Promise<unknown>) => p.then(() => "sent", (e: unknown) => (e as Error).message);
@@ -76,8 +78,11 @@ describe("network:public", () => {
   test("a redirect from a public page to a private address is refused; one to plain http too", async () => {
     const w = world(["network:public"]);
     const msg = await refusal(w.call("https://news.example.com/moved"));
-    expect(msg).toContain("10.0.0.5");
+    // The model reads only that the name resolves to a private address; the address goes to the daemon's log.
+    expect(msg).toContain("intranet.example.com resolves to a private address");
     expect(msg).toContain("asking first isn't available");
+    expect(msg).not.toContain("10.0.0.5");
+    expect(w.log.join("\n")).toContain("10.0.0.5");
     expect(w.seen.map((s) => s.host)).toEqual(["news.example.com"]);
     expect(await refusal(w.call("https://news.example.com/to-http"))).toContain("https only");
   });
@@ -108,5 +113,16 @@ describe("network:public", () => {
     const w = world(["network:public"]);
     const r = await w.call("https://news.example.com/huge");
     expect(await r.arrayBuffer().then(() => "read", (e: unknown) => (e as Error).message)).toContain(`${PUBLIC_BODY_MAX_BYTES} bytes`);
+  });
+
+  test("an overall deadline: a page that drips just inside the idle limit still ends at the total", async () => {
+    const drip = publicFetch({
+      fetch: async () => new Response(new ReadableStream({ async pull(c) { await Bun.sleep(40); c.enqueue(new Uint8Array(1)); } })),
+      limits: { idleMs: 200, totalMs: 400 },
+    });
+    const t0 = Date.now();
+    const r = await drip("clover/webby", "https://slow.example.com/", {}, undefined);
+    expect(await r.arrayBuffer().then(() => "read", (e: unknown) => (e as Error).message)).toContain("took more than 0.4 s");
+    expect(Date.now() - t0).toBeLessThan(2_000);
   });
 });

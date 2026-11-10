@@ -77,6 +77,7 @@ export async function startModelPlugins(opts: StartModelPluginsOptions): Promise
   const removeHandlers = opts.addApiHandlers?.(modelPluginApiHandlers({
     registry: opts.registry, tokens: credentials.tokens, secret: credentials.secret, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}),
     ...(opts.audit !== undefined ? { audit: opts.audit } : {}), ...(opts.dangerousAdded !== undefined ? { dangerousAdded: opts.dangerousAdded } : {}),
+    ...(opts.log !== undefined ? { log: opts.log } : {}),
   }));
   if (removeHandlers === undefined || opts.serveCodeAdapters !== true) opts.log?.("[model-plugins] the plugin host can't carry a keyed fetch yet: code providers stay on the compiled path");
   const plugins = new ModelPlugins({

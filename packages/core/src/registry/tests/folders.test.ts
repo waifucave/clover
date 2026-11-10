@@ -180,6 +180,26 @@ describe("PluginFolders", () => {
     expect(core.get("tarot")?.state).toBe("running");
   });
 
+  test("an upgrade that adds a capability to a bundled plugin grants it at once, with no new OK (network:public on clover/web)", async () => {
+    // The home an earlier build made: Clover's own tree OK'd with the web plugin on its declared host only.
+    const w = world();
+    const own = join(w.bundledDir, "clover");
+    const web = (capabilities: string[]) => JSON.stringify({ manifest: 1, name: "Web", capabilities });
+    w.write(own, { "clover.json": manifest("clover"), "plugins/web/clover.json": web(["network:mcp.exa.ai"]) });
+    await w.folders.scan();
+    const before = w.core.get("clover")!.okHash;
+    expect(before).toBeDefined();
+    expect(w.core.get("clover/web")?.granted).toEqual(["network:mcp.exa.ai"]);
+    // The new build's tree adds network:public; the core starts again on the same records.
+    w.write(own, { "plugins/web/clover.json": web(["network:mcp.exa.ai", "network:public"]) });
+    const core = new RegistryCore({ catalog: catalogPointDecl, store: w.store });
+    await new PluginFolders({ core, store: w.store, pluginsDir: w.pluginsDir, bundledDirs: [w.bundledDir] }).scan();
+    const rec = core.get("clover/web")!;
+    expect([rec.state, rec.source]).toEqual(["running", "bundled"]);
+    expect(rec.granted).toEqual(["network:mcp.exa.ai", "network:public"]);
+    expect(core.get("clover")!.okHash).not.toBe(before);
+  });
+
   test("a manifest that doesn't parse yet leaves the plugin as it was; a removed folder goes away", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");
