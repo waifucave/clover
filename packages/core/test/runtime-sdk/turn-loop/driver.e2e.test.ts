@@ -15,7 +15,7 @@ import { CloverFence } from "../../../src/fence/fence";
 import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
 import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
-import type { CoreToolDef, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
+import type { CoreToolDef, BotMcpServer, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
 import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 import { darwinTest } from "../../helpers/darwin-only";
@@ -234,7 +234,7 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" };
       },
     };
-    const servers: { server: string; plugin: string; tools: { name: string; inputSchema: Record<string, unknown>; load: "preload" }[] }[] = [];
+    const servers: BotMcpServer[] = [];
     const opened: string[][] = [];
     const query: typeof sdkQuery = (args) => {
       opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
