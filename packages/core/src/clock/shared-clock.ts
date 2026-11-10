@@ -209,7 +209,10 @@ export class SharedClock implements Clock {
     const keep = this.#o.keep ?? 8;
     if (this.#samples.length > keep) this.#samples.splice(0, this.#samples.length - keep);
     const best = this.#samples.reduce((a, b) => (b.rttMs < a.rttMs ? b : a));
-    this.#offset = best.offsetMs;
+    // Whole milliseconds: SNTP's and the link's samples are fractional, and shared time is what every stamp reads (an
+    // event's `ts` is an integer; a fractional one failed `core.event`'s schema, so a packaged daemon, which has
+    // public time, sent no card to the app while a source run, local-only, did).
+    this.#offset = Math.round(best.offsetMs);
     this.#accuracy = best.rttMs / 2;
     this.#synced = true;
     return s;

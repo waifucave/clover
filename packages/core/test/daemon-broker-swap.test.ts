@@ -52,7 +52,9 @@ async function rpc(path: string) {
 const eventsOf = (notes: Array<{ method: string; params: Record<string, unknown> }>, type: string) =>
   notes.filter((n) => n.method === "core.event" && (n.params["type"] === type || (n.params["event"] as { type?: string } | undefined)?.type === type));
 
-test("the broker's cards reach the app as core events: a card raised on the daemon's broker is card_requested, and its end card_resolved", async () => {
+/** A daemon with links (a packaged daemon has public time beside them; a source run is local-only), the app connected,
+ *  and a card raised on its broker: the app hears card_requested, then card_resolved. */
+async function cardsReachTheApp(publicTime: { sample(): Promise<{ offsetMs: number; rttMs: number }> } | null): Promise<void> {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "clover-int-swap-")));
   const home = join(root, "clover-home");
   const userHome = join(root, "home");
@@ -61,7 +63,7 @@ test("the broker's cards reach the app as core events: a card raised on the daem
   daemon = await startDaemon({
     home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: "none",
     links: {
-      wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null,
+      wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime,
       mainComputer: { watchSleep: false, monotonic: () => performance.now() }, watch: () => () => {}, self: { name: "Studio", os: "macos" },
     },
     parts: {
@@ -72,6 +74,10 @@ test("the broker's cards reach the app as core events: a card raised on the daem
     },
   });
   await daemon.cloverParts.ready;
+  // With public time, the shared clock has taken its (fractional) offset before the card is raised.
+  const shared = daemon.cloverParts.links()!.clock as unknown as { status?: () => { synced?: boolean } };
+  for (let i = 0; publicTime !== null && i < 300 && shared.status?.().synced !== true; i++) await Bun.sleep(10);
+  if (publicTime !== null) expect(shared.status?.().synced).toBe(true);
   const app = await rpc(daemon.socketPath);
   const hello = await app.request(METHODS.hello, { protocolVersion: CLOVER_PROTOCOL_VERSION, role: "app", token: readFileSync(join(home, "run", "app.token"), "utf8"), clientName: "test-app", features: ["app.quit"] });
   expect(hello["error"]).toBeUndefined();
@@ -95,4 +101,16 @@ test("the broker's cards reach the app as core events: a card raised on the daem
   expect(JSON.stringify(eventsOf(app.notes, "card_resolved")[0]?.params)).toContain(card.id);
   expect(await pasted).toBeInstanceOf(Error);
   app.close();
+}
+
+test("the broker's cards reach the app as core events: a card raised on the daemon's broker is card_requested, and its end card_resolved", async () => {
+  await cardsReachTheApp(null);
+});
+
+// The first packaged acceptance run: its daemon (which has the link sidecar, so public time) logged "a card_requested
+// event didn't parse; not sent" for every card, and the app never heard of one. SNTP's offset is a fraction, so every
+// event's `ts` was; `core.event`'s schema takes whole milliseconds. A source run is local-only (no public time), so it
+// never showed. Here the daemon has a public time source whose offset is a fraction, as SNTP's is.
+test("with public time whose offset is a fraction (a packaged daemon's), the cards still reach the app", async () => {
+  await cardsReachTheApp({ sample: async () => ({ offsetMs: 1234.567, rttMs: 12.3 }) });
 });

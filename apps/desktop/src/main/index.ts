@@ -472,6 +472,8 @@ function makePair(): Pair {
       if (parsed.success) {
         sealed.fromCore(parsed.data.card);
         armFallback(parsed.data.card.id);
+        // Its id and kind only (no text): the acceptance run checks the app was told of each card it answers.
+        log(`card: a ${parsed.data.card.kind} card ${parsed.data.card.id} arrived`);
       } else log("pair: ignored a card_requested event that isn't one");
     }
     if (type === "card_resolved") {
@@ -556,7 +558,9 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   runtime.setRegistry(plugins);
   runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
-  await client.request("events.subscribe", { areas: ["plugins", "app"] }).catch(() => undefined);
+  // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
+  // was never told of a card (the acceptance run's first card-arrival check found it).
+  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals"] }).catch(() => undefined);
   log(`layers: ${plugins.length} plugin(s) with UI`);
   void maybeWelcome(client);
 }
