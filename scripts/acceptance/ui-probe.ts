@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   const exe = join(pkgDir, "dist", readFileSync(join(pkgDir, "path.txt"), "utf8").trim());
   const port = 9300 + Math.floor(Math.random() * 500);
   start("app", exe, [DESKTOP, "--clover-headless", `--clover-capture=${join(root, "cap.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], {
-    ...env(), CLOVER_DAEMON_BIN: stubBin, CLOVER_DEV_DEBUG: "1",
+    ...env(), CLOVER_DAEMON_BIN: stubBin, CLOVER_DEV_DEBUG: "1", ...(JSON.parse(process.env.PROBE_APP_ENV ?? "{}") as Record<string, string>),
   });
   let cdp: Cdp | undefined;
   for (let i = 0; i < 120 && cdp === undefined; i++) {

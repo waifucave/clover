@@ -41,6 +41,8 @@ interface CardBase {
 
 export interface ApprovalCard extends CardBase {
   kind: "approval";
+  /** A tool call (not a plugin's OK or a provider's): the app says it in a line and a preview, which the card places. */
+  tool?: boolean;
   /** Its answers' ids and kinds; absent, one approve and one deny. */
   options?: readonly CardOptionMeta[];
 }

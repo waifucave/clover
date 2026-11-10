@@ -221,6 +221,7 @@ async function ready(): Promise<void> {
     },
     systemLanguage: app.getPreferredSystemLanguages()[0] ?? app.getLocale(),
   });
+  runtime.botName = (id) => botNames.get(id);
   // The UI test's positive control for the DNS probe: never in a packaged app.
   const unguarded = !app.isPackaged && headless ? (process.env.CLOVER_TEST_UNGUARDED_LAYERS ?? "").split(",").filter((l) => l !== "") : [];
   installUiSession(ui, runtime, dirs, log, { unguardedLayers: new Set(unguarded) });
@@ -302,6 +303,14 @@ async function ready(): Promise<void> {
         if (own?.win === undefined || (own.win !== undefined && own.win.isDestroyed())) {
           if (sealed.get(cardId) !== undefined) void armFallback(cardId);
         }
+      }
+    },
+    // The app's own card page says how tall it is: its window fits it, within a sane range, from the top where it stands.
+    sealedSize: (token: string, height: number) => {
+      for (const own of fallbacks.values()) {
+        if (own.token !== token || own.win === undefined || own.win.isDestroyed()) continue;
+        const [width] = own.win.getContentSize();
+        own.win.setContentSize(width ?? FALLBACK_WIDTH, Math.min(FALLBACK_MAX_HEIGHT, Math.max(FALLBACK_MIN_HEIGHT, height)));
       }
     },
     userSend: async (windowId, to, message, active) => {
@@ -387,11 +396,25 @@ async function ready(): Promise<void> {
 // The sealed frames' store (spec §5.5; E-M3): cards in through the app's role events, frame channels and answers out,
 // signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
 const sealed = new SealedFrames();
+/** The bots' names by id, as the daemon lists them (`bot.list`), so a card says "Alpha wants to…" and not an id. Refilled
+ *  on each connection and when a card's bot isn't known yet; a name never decides anything, it only fills a sentence. */
+const botNames = new Map<string, string>();
+async function refreshBotNames(client: { request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T> }): Promise<void> {
+  try {
+    const r = await client.request<{ bots?: { id?: unknown; name?: unknown }[] }>("bot.list", {}, 4_000);
+    for (const b of r.bots ?? []) if (typeof b.id === "string" && typeof b.name === "string" && b.name !== "") botNames.set(b.id, b.name.slice(0, 60));
+  } catch { /* the id stands in */ }
+}
 let signedDevice: string | undefined;
 // The app's own fallback card (§5.5): whose 2-second timers run, which window stands before the user, and the card's
 // own page answers on its own channel.
 const fallbacks = new Map<string, { timer: ReturnType<typeof setTimeout>; win?: Electron.BrowserWindow; token?: string }>();
 const FALLBACK_DELAY_MS = 2_000;
+/** The fallback card's window: a card's own width, a height that fits what it says up to a sane most (it scrolls inside
+ *  beyond that, its buttons staying in view). */
+const FALLBACK_WIDTH = 440;
+const FALLBACK_MIN_HEIGHT = 190;
+const FALLBACK_MAX_HEIGHT = 560;
 
 /** A card's own 2-second timer: once it runs, the app's own card page stands before the user (shown, never brought in
  *  front). A part's own button disarms its card's: its own `sealedAnswer` burns the store's channel and calls here. */
@@ -426,36 +449,38 @@ async function showFallbackCard(cardId: string): Promise<void> {
     log(`card: the fallback card for ${cardId} was not shown (headless)`);
     return;
   }
+  // The names a card says come from the daemon's own list; a bot not listed yet is asked for once, briefly.
+  if (card.bot !== undefined && !botNames.has(card.bot) && pair?.client !== undefined) await refreshBotNames(pair.client);
   const mint = sealed.mint(cardId, "own");
   if (mint === undefined) return;
   const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
-  const plan = mainWindowPlan({
-    platform: process.platform,
-    acrylic: false,
-    title: "Clover",
-    dark: nativeTheme.shouldUseDarkColors,
-    solid: nativeTheme.shouldUseDarkColors ? "#202020" : "#FFFFFF",
-    symbol: nativeTheme.shouldUseDarkColors ? "#F2F2F2" : "#1F1F1F",
+  const dark = nativeTheme.shouldUseDarkColors;
+  // A plain window of its own size (never the main window's plan: that one's minimum size is a whole app's, which is
+  // what made this card a giant at the corner of the screen). It is sized by its page, within a range, and shown
+  // without taking the focus.
+  const win = new BrowserWindow({
+    width: FALLBACK_WIDTH, height: 280, useContentSize: true,
+    minWidth: FALLBACK_WIDTH, maxWidth: FALLBACK_WIDTH, minHeight: FALLBACK_MIN_HEIGHT, maxHeight: FALLBACK_MAX_HEIGHT,
+    title: identity.productName, show: false, resizable: false, minimizable: false, maximizable: false, fullscreenable: false,
+    skipTaskbar: true, backgroundColor: dark ? "#202020" : "#FFFFFF",
     webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: offscreenPress }),
   });
-  const win = new BrowserWindow({ ...plan.options, width: 460, height: 360, useContentSize: true, skipTaskbar: true, ...(offscreenPress ? { show: false } : {}) });
   watchWindow(win);
   win.on("closed", () => {
     const own = fallbacks.get(cardId);
     if (own?.win === win) fallbacks.delete(cardId);
   });
-  // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3, check 3): place it within
-  // the cursor's display's work area before showing it, never after, so it never appears first in its default place.
+  // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3, check 3): place it within the
+  // cursor's display's work area, at the top on the side the cursor is not on (the top is where a notification stands, and
+  // where the page grows from as it fits), before showing it, never after, so it never appears first in its default place.
   try {
     const cursor = screen.getCursorScreenPoint();
     const display = screen.getDisplayNearestPoint(cursor);
     const area = display.workArea;
     const bounds = win.getBounds();
-    const awayX = cursor.x < area.x + area.width / 2 ? area.x + area.width - bounds.width - 16 : area.x + 16;
-    const awayY = Math.min(Math.max(cursor.y - bounds.height - 32, area.y + 16), area.y + area.height - bounds.height - 16);
-    const placedX = Math.min(Math.max(awayX, area.x), area.x + Math.max(0, area.width - bounds.width));
-    const placedY = Math.min(Math.max(awayY, area.y), area.y + Math.max(0, area.height - bounds.height));
-    win.setBounds({ x: Math.round(placedX), y: Math.round(placedY), width: bounds.width, height: bounds.height });
+    const x = cursor.x < area.x + area.width / 2 ? area.x + area.width - bounds.width - 16 : area.x + 16;
+    const y = area.y + 12;
+    win.setBounds({ x: Math.round(x), y: Math.round(y), width: bounds.width, height: bounds.height });
   } catch { /* best effort */ }
   // Bind the fallback's channel to its window's main frame once the page loads (B3): a plugin can't guess the
   // window's frame ids, and a frame from another window can't answer with this token.
@@ -501,6 +526,7 @@ function makePair(): Pair {
       signedDevice = hello.device;
       // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones, and the
       // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
+      void refreshBotNames(client);
       void client.request<unknown>("card.list").catch(() => undefined).then((r) => {
         for (const c of (r as { cards?: unknown[] })?.cards ?? []) { sealed.fromCore(c); armFallback(String((c as { id?: unknown }).id ?? "")); }
       });
@@ -947,7 +973,9 @@ function syncSurfaces(): void {
     const win = new BrowserWindow(surfaceWindowPlan({
       surface: { ...w.window, alwaysOnTop: floats && w.window.alwaysOnTop === true },
       title: `${identity.productName} ${w.id}`,
-      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: false }),
+      // A capture run (`--clover-capture`, headless) draws every window offscreen, the surfaces too: a hidden window gets no
+      // animation frames, so nothing that moves on frames (the island's morph, the pill's spring) would run under test.
+      webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: headless && args.capture !== undefined }),
       wayland,
     }));
     watchWindow(win);

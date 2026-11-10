@@ -18,6 +18,10 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 export type SealedField =
   /** The card's heading. */
   | "title"
+  /** A tool call in one line ("Alpha wants to edit story.md in Downloads"), composed by the app from the card's own fields. */
+  | "summary"
+  /** A short preview of what it does (a small diff, a command, a file's start), shortened only where it says so. */
+  | "preview"
   /** What it asks, in a sentence. */
   | "what"
   /** The command, the edit or the call's input, as code. */
@@ -44,6 +48,9 @@ export interface SealedCardProps {
   /** `card.*` token values handed to the frames: style goes in, nothing comes out. */
   tokens?: Readonly<Record<string, string>>;
   className?: string;
+  /** Told whether the card's frames are all in place (each has its page and has said its size). A kit that holds a card
+   *  back until it is whole (`holdsUntilWhole`) reports it here; the island shows nothing of a card until it is. */
+  onReady?: (ready: boolean) => void;
   children?: ReactNode;
 }
 
@@ -65,6 +72,9 @@ export interface SealedButtonProps {
 }
 
 export interface SealedCardKit {
+  /** The kit's frames arrive after the card does (the app's real kit): the island holds a card back until they are all
+   *  in place, rather than draw an empty one. The stand-ins draw at once and leave it unset. */
+  holdsUntilWhole?: boolean;
   Card(props: SealedCardProps): ReactElement;
   /** A field the card lacks draws nothing. */
   Field(props: SealedFieldProps): ReactElement | null;

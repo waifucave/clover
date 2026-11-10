@@ -21,7 +21,9 @@ import { cleanCss } from "./css";
 import { StringStore, stringTable } from "./strings";
 import { LayoutStore } from "./layout";
 import { CORE_STRINGS } from "./core-strings";
-import { fieldPage, buttonPage, ownCardPage, labelOf } from "../sealed-pages";
+import { isSealedLookAllowed } from "@waifucave/clover-plugin-sdk";
+import { fieldPage, buttonPage, ownCardPage, summaryFieldPage, labelOf } from "../sealed-pages";
+import { summarize } from "../card-summary";
 import { sealHeaders } from "./documents";
 import type { SealedFrames, SealedValue } from "../sealed";
 
@@ -924,23 +926,48 @@ export class UiRuntime {
    *  `sealed(seed)` handler fills it at boot. */
   sealed?: SealedFrames;
 
-  /** A part asks for one sealed element's frame: `field:<name>` or `button:<option>`. Refused for a part whose
-   *  plugin lacks `approvals` (§5.5: a component gets sealed frames only then; the OK carries it), and for a draft
-   *  asked outside the plugin's own layer's document. Returns the single-use URL the part puts in the iframe's src. */
-  sealedFrameOf(frame: FrameRef, mountId: string, cardId: string, element: string): string | undefined {
+  /** The name a bot goes by on a card ("Alpha"), from its id; the app fills it in. */
+  botName?: (id: string) => string | undefined;
+
+  /** A part asks for one sealed element's frame: `field:<name>` or `button:<option>` (with the look it asks the button
+   *  to wear). Refused for a part whose plugin lacks `approvals` (§5.5: a component gets sealed frames only then; the OK
+   *  carries it), and for a draft asked outside the plugin's own layer's document. Returns the single-use URL the part
+   *  puts in the iframe's src; `""` for a field the card doesn't have (nothing to draw, so nothing is placed); and
+   *  undefined while the app has not yet heard of the card (the part asks again). */
+  sealedFrameOf(frame: FrameRef, mountId: string, cardId: string, element: string, look?: string, given?: Readonly<Record<string, string>>): string | undefined {
     const part = this.actInThisLayer(frame, mountId);
     if (!part.plugin?.capabilities.has("approvals")) throw new LayerError("placing a sealed frame takes the approvals capability");
     if (this.sealed === undefined) throw new LayerError("the sealed frames aren't there");
+    const card = this.sealed.get(cardId);
+    if (card === undefined) return undefined;
+    // A field the card lacks draws nothing: the part's holder stays empty and takes no room.
+    if (element.startsWith("field:") && !this.hasField(card, element.slice("field:".length))) return "";
+    // A glyph only on the button it fits (✓ approves, ✕ denies, ↗ opens a link); any other pairing is the label.
+    let wears: "label" | "check" | "cross" | "open" | undefined;
+    if (element.startsWith("button:") && (look === "label" || look === "check" || look === "cross" || look === "open")) {
+      const option = card.options.find((o) => o.id === element.slice("button:".length));
+      wears = option !== undefined && isSealedLookAllowed(look, option, card.kind) ? look : "label";
+    }
     // The card tokens go in alone (§5.5): the part's resolved ones, clipped to `card.*` names.
     const tokens: Record<string, TokenValue> = {};
     for (const [name, value] of Object.entries(part.tokens)) if (name.startsWith("card.")) tokens[name] = value;
+    // What the part resolved for this card itself (the island's own tokens, say) goes over the part's: style in, nothing out.
+    if (given !== undefined) for (const [name, value] of Object.entries(given)) if (name.startsWith("card.")) tokens[name] = value;
     // The binding: the frame whose sender's sealed page may answer is this document's own (B4's parent rule).
     const doc = this.docOf(part);
     const bind = doc?.frame !== undefined ? { parent: { processId: doc.frame.processId, routingId: doc.frame.routingId } } : undefined;
-    const made = this.sealed.mint(cardId, element, bind, doc?.windowId, tokens);
+    const made = this.sealed.mint(cardId, element, bind, doc?.windowId, tokens, wears);
     if (made === undefined) return undefined;
     const url = `clover-sealed://card/${encodeURIComponent(cardId)}/${encodeURIComponent(element)}?token=${encodeURIComponent(made.token)}`;
     return url;
+  }
+
+  /** Whether the card has a field of that name: one the core sealed into it, or the two the app composes from them. */
+  private hasField(card: { kind: string; fields: Readonly<Record<string, unknown>>; bot?: string }, name: string): boolean {
+    if (name === "summary") return summarize(card) !== undefined;
+    if (name === "preview") return summarize(card)?.preview !== undefined;
+    const v = card.fields[name];
+    return v !== undefined && v !== null && typeof v === "object";
   }
 
   /** Who a sealed token's channel belongs to, for the sender's binding check (E-M3 check 3). */
@@ -953,7 +980,12 @@ export class UiRuntime {
     if (this.sealed === undefined) return undefined;
     const serving = this.sealed.serve(token);
     if (serving === undefined) return undefined;
-    const { card, element, tokens } = serving;
+    const { card, element, tokens, look } = serving;
+    if (element === "field:summary" || element === "field:preview") {
+      const summary = summarize(card, card.bot !== undefined ? this.botName?.(card.bot) : undefined);
+      if (summary === undefined || (element === "field:preview" && summary.preview === undefined)) return undefined;
+      return { html: summaryFieldPage({ cardId: card.id, token, field: element === "field:summary" ? "summary" : "preview", summary, tokens }), headers: sealHeaders() };
+    }
     if (element.startsWith("field:")) {
       const value = card.fields[element.slice("field:".length)];
       if (value === undefined || typeof value !== "object") return undefined;
@@ -962,10 +994,11 @@ export class UiRuntime {
     if (element.startsWith("button:")) {
       const option = card.options.find((o) => o.id === element.slice("button:".length));
       if (option === undefined) return undefined;
-      return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, tokens }), headers: sealHeaders() };
+      return { html: buttonPage({ cardId: card.id, token, option: option.id, label: labelOf(option.label), kind: option.kind, ...(look !== undefined ? { look } : {}), ...(option.remember === "always" ? { remember: "always" as const } : {}), tokens }), headers: sealHeaders() };
     }
     if (element === "own") {
-      return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}) }), headers: sealHeaders() };
+      const summary = summarize(card, card.bot !== undefined ? this.botName?.(card.bot) : undefined);
+      return { html: ownCardPage({ cardId: card.id, token, origin: card.origin, issuedAt: card.issuedAt, expiresAt: card.expiresAt, fields: card.fields, tokens, options: card.options, computer: card.computer, ...(summary !== undefined ? { summary } : {}), ...(card.pluginId !== undefined ? { who: { pluginId: card.pluginId } } : {}) }), headers: sealHeaders() };
     }
     return undefined;
   }

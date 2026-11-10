@@ -42,7 +42,7 @@ describe("a sealed field's page", () => {
     expect(sealedEscape("a\nb")).toBe("a\nb");
     const tricky = fieldPage({ cardId: "card_x", token: TOKEN, field: "title", value: { type: "text", text: "x" }, tokens: { "card.font.family": "a); b { color: red }", "card.radius": "12px" } });
     // The token's value goes in only when it parses as its grammar's own run: a `;`'s own injection is dropped (S1).
-    expect(tricky).not.toContain("card-font-family");
+    expect(tricky).not.toContain("--clover-card-font-family:");
     expect(tricky).toContain("--clover-card-radius: 12px;");
     expect(tricky).not.toContain("{ color: red }");
   });

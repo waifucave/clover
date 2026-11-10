@@ -28,6 +28,28 @@ const doc: { processId: number; routingId: number } = { processId: 100, routingI
 const parent = { parent: doc };
 const main0 = { main: { processId: 1, routingId: 2 } };
 
+describe("two documents placing the same card's button", () => {
+  test("each keeps its own token: a mint for one document's frame doesn't kill the other's (the island and the conversation both place a card)", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const island = store.mint(CARD.id, "button:allow_once", parent)!.token;
+    const conversation = store.mint(CARD.id, "button:allow_once", { parent: { processId: 100, routingId: 300 } })!.token;
+    // A token answers only for the frame it was minted for.
+    expect(store.buildAnswer(island, "allow_once", undefined, "p:100:300", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(store.buildAnswer(conversation, "allow_once", undefined, "p:100:300", signer, "dev_a")).not.toMatchObject({ error: expect.anything() });
+    // And the same document asking again still replaces its own older token.
+    const again = store.mint(CARD.id, "button:allow_once", parent)!.token;
+    expect(store.buildAnswer(island, "allow_once", undefined, "p:100:200", signer, "dev_a")).toMatchObject({ error: "no such sealed button" });
+    expect(again).not.toBe(island);
+  });
+  test("a button's look rides its channel, to its page", () => {
+    const store = new SealedFrames();
+    store.fromCore(CARD);
+    const made = store.mint(CARD.id, "button:allow_once", parent, undefined, undefined, "check")!;
+    expect(store.serve(made.token)).toMatchObject({ look: "check" });
+  });
+});
+
 describe("the sealed frames' store", () => {
   test("a card in, its elements' channels minted and looked up, one each; a mint replaces the element's older token", () => {
     const store = new SealedFrames();

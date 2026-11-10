@@ -198,6 +198,45 @@
   display: block;
 }
 
+/* A tool call: its one line, its preview and its buttons, laid out in the island's own measure. A field the card lacks
+   draws nothing and takes no room. */
+.clv-summary,
+.clv-preview,
+.clv-more-field {
+  display: block;
+  min-width: 0;
+}
+
+.clv-summary:empty,
+.clv-preview:empty,
+.clv-more-field:empty,
+.clv-risk:empty,
+.clv-command:empty {
+  display: none;
+}
+
+.clv-tool-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.clv-show-all {
+  margin-right: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--clover-island-muted, #8B8B8B);
+  font: inherit;
+  font-size: var(--clover-font-size-caption, 12px);
+  cursor: pointer;
+}
+
+.clv-show-all:hover {
+  color: var(--clover-island-text, #FFFFFF);
+}
+
 .clv-risk {
   font-size: var(--clover-font-size-label, 13px);
   line-height: 1.38;
@@ -272,6 +311,17 @@
   border-radius: inherit;
   padding: 0 8px;
   white-space: nowrap;
+}
+
+/* The app's real sealed buttons draw themselves (the circle, the glyph, the capsule and its label are the core's own
+   page); the slot only holds the place. */
+.clv-sealed-slot:has(> iframe[data-clover-sealed]) {
+  background: transparent;
+  padding: 0;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  border-radius: 0;
 }
 
 .clv-circle[data-role="refuse"]:hover::before,

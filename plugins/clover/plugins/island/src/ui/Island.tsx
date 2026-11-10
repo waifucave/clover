@@ -36,6 +36,7 @@ import { QuestionCardContent, SealedCardContent } from "./CardContent";
 import { LiquidCard } from "./Liquid";
 import { NeedsYou, OpenIsland } from "./OpenIsland";
 import { Strip } from "./Strip";
+import { useSealedKit } from "./sealed";
 import { useIslandStyles } from "./styles";
 import { WaitingPill } from "./WaitingPill";
 import type { Rect, ScreenShape } from "../model/geometry";
@@ -90,6 +91,8 @@ export interface IslandProps {
 
 const ESTIMATED_CARD_HEIGHT = 132;
 const NO_TABS: readonly IslandTabEntry[] = [];
+/** A card still arriving: laid out (so its height is known) but not drawn and not clickable. */
+const HELD_BACK = { visibility: "hidden", pointerEvents: "none" } as const;
 
 export function Island(props: IslandProps): ReactElement {
   useIslandStyles();
@@ -105,6 +108,10 @@ export function Island(props: IslandProps): ReactElement {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<Set<string>>(new Set());
   const [morph, setMorph] = useState<MorphClock>({ openedAt: null, closing: null });
+  // A kit whose frames arrive after the card (the app's real one) holds a sealed card back until every frame is in place:
+  // an empty or half-drawn card is never shown, and the window is not sized for one.
+  const gated = useSealedKit().holdsUntilWhole === true;
+  const [whole, setWhole] = useState<Record<string, boolean>>({});
   const [stripHovered, setStripHovered] = useState(false);
   const [waitingHovered, setWaitingHovered] = useState(false);
 
@@ -159,14 +166,22 @@ export function Island(props: IslandProps): ReactElement {
   const isOpen = alwaysOpen || morph.openedAt !== null;
   const now = timers.now();
   const current = queue.current ? byId.get(queue.current.id) : undefined;
+  const showCurrent = current !== undefined && (!gated || !isSealed(current) || whole[current.id] === true);
   const waiting = queue.waiting ? byId.get(queue.waiting.id) : undefined;
-  const bornAt = current ? births.current.get(current.id) : undefined;
+  const bornAt = current && showCurrent ? births.current.get(current.id) : undefined;
   const birthSeconds = bornAt === undefined ? FLUID.settle : (now - bornAt) / 1000;
   const morphMoving = !alwaysOpen && isOpen && (morph.closing !== null || morphSeconds(morph, now) < MORPH.settle);
   const back = leaving.current;
   const backSeconds = back ? fluidSeconds(now, back.bornAt, back.returningAt) : 0;
   const returning = back !== null && backSeconds > 0 && !isOpen && !reducedMotion;
-  const moving = (!isOpen && current !== undefined && birthSeconds < FLUID.settle && !reducedMotion) || (morphMoving && !reducedMotion) || returning;
+  const moving = (!isOpen && showCurrent && birthSeconds < FLUID.settle && !reducedMotion) || (morphMoving && !reducedMotion) || returning;
+
+  // A card held back is born when it is shown, not when it arrived.
+  useEffect(() => {
+    if (!gated || !current || !showCurrent) return;
+    births.current.set(current.id, timers.now());
+    bump();
+  }, [gated, showCurrent, current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A return that has played out (or that the island opened over) is done; one that began after this render
   // is the next render's to judge.
@@ -278,6 +293,15 @@ export function Island(props: IslandProps): ReactElement {
     }
   });
 
+  // The frames inside a card say their size after it is laid out: measure again when it changes.
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => bump());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [current?.id]);
+
   const tabBody = (() => {
     const tab = selectedTab(tabs);
     if (!tab || tab.id === NEEDS_YOU.id) {
@@ -306,7 +330,7 @@ export function Island(props: IslandProps): ReactElement {
   const regions: Rect[] = [];
   if (strip) regions.push(grow(strip, ISLAND.stripGlowMargin));
   if (isOpen) regions.push(islandRect(shape));
-  else if (current && geometry) {
+  else if (current && geometry && showCurrent) {
     const left = -geometry.panelSize.width / 2;
     regions.push({ ...geometry.card, x: left + geometry.card.x });
     if (waiting) {
@@ -356,6 +380,7 @@ export function Island(props: IslandProps): ReactElement {
         </OpenIsland>
       ) : current && geometry ? (
         <div
+          style={showCurrent ? undefined : HELD_BACK}
           onMouseEnter={() => {
             queue.hoverCurrent(true, nowS());
             bump();
@@ -404,7 +429,7 @@ export function Island(props: IslandProps): ReactElement {
           >
             <div ref={contentRef}>
               {isSealed(current) ? (
-                <SealedCardContent card={current} />
+                <SealedCardContent card={current} onReady={(ready) => setWhole((w) => (w[current.id] === ready ? w : { ...w, [current.id]: ready }))} />
               ) : (
                 <QuestionCardContent card={current} draft={draftOf(current)} error={errors[current.id]} sending={sending.has(current.id)} {...questionHandlers(current)} />
               )}

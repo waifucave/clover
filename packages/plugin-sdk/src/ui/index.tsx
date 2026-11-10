@@ -7,8 +7,8 @@
 // E-M3), MCP Apps (`<AppView>`, E-M3) and the plugin API in layers (`usePluginApi`, with lane B's host side) are
 // placeholders that draw nothing and never fail, so components written against the declarations already run.
 import {
-  Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState,
-  type ErrorInfo, type ReactNode,
+  Component, createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
+  type CSSProperties, type ErrorInfo, type ReactNode,
 } from "react";
 import type { CardMeta } from "@waifucave/clover-protocol";
 import type { TokenValue } from "../catalogs/tokens";
@@ -1046,21 +1046,86 @@ export function useApprovals(): { readonly cards: readonly CardMeta[]; subscribe
 // words and its buttons' own, one frame each, from the app's sealed scheme. The part positions and styles the
 // element; the frames' contents are the core's, and the plugin never reads them. `<Card id>`'s place requests the
 // frames by id and element; a card answered elsewhere draws nothing, so its place is the part's own.
-/** The sealed element's own frame: the part's size holds the frame's scroll (a field never cut unseen), with the
- *  frame's identity in the URL and the element's own place marked on the element itself. */
-function SealedFrame({ mount, cardId, kind, name }: { mount: string; cardId: string; kind: "field" | "button"; name?: string }) {
+/** The sealed element's own frame, sized by what the core's page says about itself and nothing else. The page tells its
+ *  frame a number (`postMessage`: its height, a button's width and height), never a word; until it has, the frame takes
+ *  no room, so a card that is still arriving shows nothing rather than an empty box. A field's height is the page's, up
+ *  to `lines` lines when the part asks for fewer (the frame then scrolls inside, so nothing sealed is cut unseen). The
+ *  part's own layout still decides where the frame goes and how wide it is. */
+function SealedFrame({ mount, cardId, kind, name, look, lines, size, tokens, fontPx, onReady }: { mount: string; cardId: string; kind: "field" | "button"; name?: string; look?: "label" | "check" | "cross" | "open"; lines?: number; size?: number; tokens: Readonly<Record<string, TokenValue>>; fontPx: number; onReady?: (ready: boolean) => void }) {
   const [src, setSrc] = useState<string | undefined>(undefined);
+  const [absent, setAbsent] = useState(false);
+  const [box, setBox] = useState<{ width?: number; height?: number }>({});
+  const [loaded, setLoaded] = useState(false);
+  const frame = useRef<HTMLIFrameElement | null>(null);
+  // The card's own style values (`card.*`, §5.5), by value so a new object each render doesn't ask for a new frame.
+  const tokenKey = JSON.stringify(tokens);
   useEffect(() => {
     let live = true;
-    void rt().bridge.sealedFrame?.(mount, cardId, kind === "field" ? `field:${name}` : `button:${name}`).then((u) => {
-      if (live && u !== undefined) setSrc(u);
-    }).catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    // The app may not have heard of the card the moment this part does (two connections, two events): ask again for a
+    // moment, rather than leave an empty place for good.
+    const ask = () => {
+      void rt().bridge.sealedFrame?.(mount, cardId, kind === "field" ? `field:${name}` : `button:${name}`, look, JSON.parse(tokenKey) as Record<string, TokenValue>).then((u) => {
+        if (!live) return;
+        if (u === "") setAbsent(true);
+        else if (u !== undefined) setSrc(u);
+        else if (++tries < 12) timer = setTimeout(ask, 150 * Math.min(tries, 5));
+      }).catch(() => undefined);
+    };
+    ask();
     return () => {
       live = false;
+      if (timer !== undefined) clearTimeout(timer);
     };
-  }, [mount, cardId, kind, name]);
-  if (src === undefined) return null;
-  return <iframe src={src} data-clover-sealed={`${kind}:${name}`} style={{ border: "none", display: "block", width: "100%", height: "100%" }} title={kind === "field" ? `card field ${name}` : `card button ${name}`} referrerPolicy="no-referrer" sandbox={undefined} />;
+  }, [mount, cardId, kind, name, look, tokenKey]);
+  useEffect(() => {
+    const on = (event: MessageEvent) => {
+      if (frame.current === null || event.source !== frame.current.contentWindow) return;
+      const said = (event.data as { cloverSealedSize?: { width?: unknown; height?: unknown } } | null)?.cloverSealedSize;
+      if (said === null || typeof said !== "object" || said === undefined) return;
+      const n = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.min(Math.ceil(v), max) : undefined);
+      const width = n(said.width, 1200);
+      const height = n(said.height, 4000);
+      setBox((b) => (b.width === width && b.height === height ? b : { ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) }));
+    };
+    window.addEventListener("message", on);
+    return () => window.removeEventListener("message", on);
+  }, []);
+  // A page that never says its size (a script blocked, a slow start) is given a few lines after a moment, so it is never
+  // a frame of no height for good.
+  useEffect(() => {
+    if (src === undefined || !loaded || box.height !== undefined) return;
+    const t = setTimeout(() => setBox((b) => (b.height !== undefined ? b : { ...b, height: Math.ceil(fontPx * 1.4 * (kind === "field" ? Math.min(lines ?? 3, 3) : 2)) })), 1200);
+    return () => clearTimeout(t);
+  }, [src, loaded, box.height, kind, lines, fontPx]);
+  const ready = src !== undefined && loaded && box.height !== undefined;
+  useEffect(() => {
+    onReady?.(absent || ready);
+    return () => onReady?.(true);
+  }, [absent, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (absent || src === undefined) return null;
+  const cap = kind === "field" && lines !== undefined ? Math.ceil(lines * fontPx * 1.38) + 2 : undefined;
+  const style: CSSProperties = { border: "none", display: "block", colorScheme: "light dark" };
+  if (kind === "field") {
+    style.width = "100%";
+    style.height = box.height === undefined ? 0 : cap === undefined ? box.height : Math.min(box.height, cap);
+  } else if (look !== undefined && look !== "label") {
+    const side = Math.max(24, size ?? 30);
+    style.width = side;
+    style.height = side;
+  } else {
+    style.width = box.width ?? 0;
+    style.height = box.height ?? 0;
+  }
+  return <iframe ref={frame} src={src} onLoad={() => setLoaded(true)} data-clover-sealed={`${kind}:${name}`} style={style} title={kind === "field" ? `card field ${name}` : `card button ${name}`} referrerPolicy="no-referrer" sandbox={undefined} />;
+}
+
+/** A pixel size from a `card.font.size` token ("15px"), or the stylesheet's own 14. */
+function fontPxOf(tokens: Readonly<Record<string, TokenValue>>): number {
+  const raw = tokens["card.font.size"];
+  const m = typeof raw === "string" ? /^(\d+(?:\.\d+)?)px$/.exec(raw.trim()) : null;
+  return m !== null ? Number(m[1]) : 14;
 }
 
 export function Card({ id, tokens, className, children }: CardElementProps) {
@@ -1081,24 +1146,50 @@ export function Card({ id, tokens, className, children }: CardElementProps) {
 
 const CardOwner = createContext<{ mount: string; cardId: string; tokens: Readonly<Record<string, TokenValue>> } | null>(null);
 
-export function CardField({ name }: CardFieldProps) {
-  const owner = useContext(CardOwner);
-  if (owner === null) return null;
-  return <SealedFrame mount={owner.mount} cardId={owner.cardId} kind="field" name={name} />;
+/** Told when a card's frames are all in place (each has its page, its size said), by the part that wants to hold a card
+ *  back until it is whole: a card still arriving is not shown half empty. It is only a flag: no word of a frame is
+ *  ever read. */
+export const CardReadiness = createContext<{ report(key: string, ready: boolean): void } | null>(null);
+
+function useReadyKey(prefix: string): ((ready: boolean) => void) | undefined {
+  const readiness = useContext(CardReadiness);
+  const key = useId();
+  return useMemo(() => (readiness === null ? undefined : (ready: boolean) => readiness.report(`${prefix}${key}`, ready)), [readiness, prefix, key]);
 }
 
-export function CardButton({ option }: CardButtonProps) {
+export function CardField({ name, lines }: CardFieldProps) {
   const owner = useContext(CardOwner);
+  const onReady = useReadyKey("f");
   if (owner === null) return null;
-  return <SealedFrame mount={owner.mount} cardId={owner.cardId} kind="button" name={option} />;
+  return <SealedFrame mount={owner.mount} cardId={owner.cardId} kind="field" name={name} lines={lines} tokens={owner.tokens} fontPx={fontPxOf(owner.tokens)} onReady={onReady} />;
 }
 
-export const Cards = { Root: Card, Field: CardField, Approve: CardButton, Deny: CardButton };
+/** One sealed button: the option named, else the first of its kind from the card's options (`useApprovals()`), which a
+ *  button with no option to answer for draws nothing. */
+function CardOption({ kind, option, look, size }: CardButtonProps & { kind: "approve" | "deny" }) {
+  const owner = useContext(CardOwner);
+  const meta = useApprovals().cards.find((c) => c.id === owner?.cardId);
+  const onReady = useReadyKey("b");
+  if (owner === null) return null;
+  const pick = option ?? meta?.options.find((o) => o.kind === kind)?.id;
+  if (pick === undefined) return null;
+  return <SealedFrame mount={owner.mount} cardId={owner.cardId} kind="button" name={pick} look={look} size={size} tokens={owner.tokens} fontPx={fontPxOf(owner.tokens)} onReady={onReady} />;
+}
+
+export function CardApprove(props: CardButtonProps) {
+  return <CardOption kind="approve" {...props} />;
+}
+
+export function CardDeny(props: CardButtonProps) {
+  return <CardOption kind="deny" {...props} />;
+}
+
+export const Cards = { Root: Card, Field: CardField, Approve: CardApprove, Deny: CardDeny };
 
 /** MCP Apps views (E-M3): until then the tool's result shows as text, as for a page no component places. */
 export const AppView = (_props: AppViewProps) => null;
 
 /** The UI API as lane B declared it. */
-export const CardKit: CardComponents = Object.assign(Card, { Field: CardField, Approve: CardButton, Deny: CardButton });
+export const CardKit: CardComponents = Object.assign(Card, { Field: CardField, Approve: CardApprove, Deny: CardDeny });
 // The UI API as lane B declared it.
 export const ui: UiApi = { Spot: Spot as unknown as UiComponent<SpotElementProps>, Card: CardKit, AppView, usePluginApi, useTokens, useT, useApprovals };

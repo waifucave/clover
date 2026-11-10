@@ -7,7 +7,7 @@
 // The answer line always comes first after the header, so the buttons sit where the card's top shows:
 // an approval's risk and, in Needs you, its command follow below them.
 
-import type { ReactElement } from "react";
+import { useEffect, useState, type ReactElement } from "react";
 import {
   answerLabels,
   questionAnswered,
@@ -32,44 +32,73 @@ export interface SealedCardContentProps {
   withCommand?: boolean;
   /** Draw a button as if under the pointer (gallery). */
   hover?: "accept" | "refuse";
+  /** Whether the card's frames are all in place (always, for a kit that draws at once). */
+  onReady?: (ready: boolean) => void;
 }
 
-export function SealedCardContent({ card, lines = 4, withCommand = false, hover }: SealedCardContentProps): ReactElement {
+export function SealedCardContent({ card, lines = 4, withCommand = false, hover, onReady }: SealedCardContentProps): ReactElement {
   const kit = useSealedKit();
+  const gated = kit.holdsUntilWhole === true;
+  useEffect(() => {
+    if (!gated) onReady?.(true);
+  }, [gated]); // eslint-disable-line react-hooks/exhaustive-deps
   // The frames take the island's own tokens, resolved where this card sits.
   const { ref, tokens } = useCardTokens(ISLAND_CARD_SOURCES);
+  const [all, setAll] = useState(false);
+  const tool = card.kind === "approval" && card.tool === true;
+  const buttons = sealedButtons(card).map((button) => (
+    <SealedSlot
+      key={button.option ?? (button.approve ? "approve" : "deny")}
+      approve={button.approve}
+      option={button.option}
+      look={button.look}
+      hover={button.look !== "label" && hover === (button.approve ? "accept" : "refuse")}
+    />
+  ));
   return (
     <div ref={ref} className="clv-card-frame">
-      <kit.Card id={card.id} tokens={tokens} className="clv-card-parts">
+      <kit.Card id={card.id} tokens={tokens} className="clv-card-parts" onReady={gated ? onReady : undefined}>
         <div className="clv-card-header">
           <Glyph name={kindGlyph(card.kind)} />
-          <span className="clv-card-header-line">
-            <kit.Field name="source" />
-          </span>
+          <span className="clv-card-header-line">{tool ? <kit.Field name="title" lines={1} /> : <kit.Field name="source" lines={1} />}</span>
           {card.computer ? <span className="clv-card-header-trailing">{card.computer}</span> : null}
         </div>
-        <div className="clv-answer-line">
-          <div className="clv-answer-words">
-            <kit.Field name="what" lines={lines} />
-            {card.kind === "link" ? (
-              <span className="clv-host-line">
-                <Glyph name="lock" />
-                <kit.Field name="host" />
-              </span>
+        {tool ? (
+          <>
+            <kit.Field name="summary" lines={3} className="clv-summary" />
+            <kit.Field name="preview" lines={all ? 10 : lines + 2} className="clv-preview" />
+            {all ? (
+              <>
+                <kit.Field name="paths" lines={3} className="clv-more-field" />
+                <kit.Field name="command" lines={8} className="clv-more-field" />
+                <kit.Field name="detail" lines={10} className="clv-more-field" />
+              </>
             ) : null}
-          </div>
-          {sealedButtons(card).map((button) => (
-            <SealedSlot
-              key={button.option ?? (button.approve ? "approve" : "deny")}
-              approve={button.approve}
-              option={button.option}
-              look={button.look}
-              hover={button.look !== "label" && hover === (button.approve ? "accept" : "refuse")}
-            />
-          ))}
-        </div>
-        {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clv-risk" /> : null}
-        {withCommand && card.kind === "approval" ? <kit.Field name="command" className="clv-command" lines={6} /> : null}
+            <div className="clv-tool-actions">
+              <button type="button" className="clv-show-all" aria-expanded={all} onClick={() => setAll((v) => !v)}>
+                {all ? t("clover.island.showLess") : t("clover.island.showEverything")}
+              </button>
+              {buttons}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="clv-answer-line">
+              <div className="clv-answer-words">
+                <kit.Field name="what" lines={lines} />
+                {card.kind === "link" ? (
+                  <span className="clv-host-line">
+                    <Glyph name="lock" />
+                    <kit.Field name="host" lines={1} />
+                  </span>
+                ) : null}
+              </div>
+              {buttons}
+            </div>
+            {card.kind === "approval" ? <kit.Field name="risk" lines={2} className="clv-risk" /> : null}
+            {withCommand && card.kind === "approval" ? <kit.Field name="command" className="clv-command" lines={6} /> : null}
+          </>
+        )}
       </kit.Card>
     </div>
   );

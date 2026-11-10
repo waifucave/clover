@@ -50,7 +50,7 @@ if (isRoot || isLayer) {
     terminalInput: (mount, terminalId, input) => ipcRenderer.invoke("clover:terminal-input", { mount, terminalId, input }),
     dragOffer: (mount, offer) => ipcRenderer.invoke("clover:drag-offer", { mount, offer }),
     dragClaim: (mount, token) => ipcRenderer.invoke("clover:drag-claim", { mount, token }),
-    sealedFrame: (mount, cardId, element) => ipcRenderer.invoke("clover:sealed-frame", { mount, cardId, element }),
+    sealedFrame: (mount, cardId, element, look, tokens) => ipcRenderer.invoke("clover:sealed-frame", { mount, cardId, element, ...(look !== undefined ? { look } : {}), ...(tokens !== undefined ? { tokens } : {}) }),
     onMessage: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -72,5 +72,6 @@ if (isRoot || isLayer) {
   contextBridge.exposeInMainWorld("cloverSealed", {
     answer: (option: string, children?: readonly string[]) => ipcRenderer.invoke("clover:sealed-answer", { token, option, children }),
     visible: (visible: boolean) => void ipcRenderer.send("clover:sealed-visible", { token, visible }),
+    size: (height: number) => void ipcRenderer.send("clover:sealed-size", { token, height }),
   });
 }

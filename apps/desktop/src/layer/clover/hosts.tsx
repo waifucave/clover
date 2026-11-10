@@ -6,9 +6,9 @@
 // The avatars (the VRM child, the 2D-model child) have no host context; their entries get a wrapper whose only job is
 // to install the plugin's own translator with the app's `useT()` (lane G's ask, G-M3's `setTranslator`), so their
 // words come in the user's language with English beneath.
-import { useEffect, useMemo, useState, type ReactElement } from "react";
-import { useApprovals, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
-import { IslandApp, IslandHostContext, type IslandHost, type SurfaceHostApi } from "@clover-child/island";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { Card as SdkCard, CardApprove, CardDeny, CardField, CardReadiness, useApprovals, useMountContext, usePluginApi, useSurface, useSurfaceEnvironment, useT, useUserSend, type EntryProps } from "@waifucave/clover-plugin-sdk/ui";
+import { IslandApp, IslandHostContext, SealedKitContext, type IslandHost, type SealedCardKit, type SurfaceHostApi } from "@clover-child/island";
 import { islandCards } from "./cards";
 import { usePillBots } from "./pill-bots";
 import { PillApp, PillHostContext, type PillHost } from "@clover-child/pill";
@@ -29,6 +29,49 @@ function environNow(os: string | undefined): IslandHost["environment"] | undefin
   if (os !== "macos" && os !== "windows" && os !== "linux") return undefined;
   return { os, display: { bounds: { x: 0, y: 0, width: 0, height: 0 }, workArea: { x: 0, y: 0, width: 0, height: 0 }, notch: null } };
 }
+
+/* The sealed kit: the island places a card's frames with the app's own runtime (`<Card>`, `<Card.Field>`, `<Card.Approve>`,
+ * `<Card.Deny>` from the SDK's UI API), the same ones every part with the `approvals` capability gets. Each frame is a page
+ * of the app's sealed scheme; the island positions it and never reads it. A card whose frames are still arriving reports
+ * that it is not whole, and the island holds it back (`holdsUntilWhole`) instead of drawing it empty. */
+
+function WholeCard({ id, tokens, className, onReady, children }: { id: string; tokens?: Readonly<Record<string, string>>; className?: string; onReady?: (ready: boolean) => void; children?: ReactNode }): ReactElement {
+  const states = useRef(new Map<string, boolean>());
+  const told = useRef(onReady);
+  told.current = onReady;
+  const last = useRef<boolean | null>(null);
+  const settle = useCallback(() => {
+    const all = [...states.current.values()];
+    const ready = all.length > 0 && all.every(Boolean);
+    if (last.current !== ready) {
+      last.current = ready;
+      told.current?.(ready);
+    }
+  }, []);
+  const readiness = useMemo(() => ({
+    report: (key: string, ready: boolean) => {
+      states.current.set(key, ready);
+      queueMicrotask(settle);
+    },
+  }), [settle]);
+  return (
+    <CardReadiness.Provider value={readiness}>
+      <SdkCard id={id} tokens={tokens as never} className={className}>{children}</SdkCard>
+    </CardReadiness.Provider>
+  );
+}
+
+const APP_KIT: SealedCardKit = {
+  holdsUntilWhole: true,
+  Card: (props) => <WholeCard {...props} />,
+  Field: ({ name, lines, className }) => (
+    <span className={className} data-sealed-slot={name} style={{ display: "block" }}>
+      <CardField name={name as never} lines={lines} />
+    </span>
+  ),
+  Approve: ({ option, look, size }) => <CardApprove option={option} look={look} size={size} />,
+  Deny: ({ option, look, size }) => <CardDeny option={option} look={look} size={size} />,
+};
 
 export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknown>>): ReactElement | null {
   const ctx = useMountContext();
@@ -51,7 +94,11 @@ export function IslandHosted({ props, tokens }: EntryProps<Record<string, unknow
     t,
   };
   if (host === undefined) return null;
-  return <IslandHostContext.Provider value={host}><IslandApp props={props as never} tokens={tokens} /></IslandHostContext.Provider>;
+  return (
+    <SealedKitContext.Provider value={APP_KIT}>
+      <IslandHostContext.Provider value={host}><IslandApp props={props as never} tokens={tokens} /></IslandHostContext.Provider>
+    </SealedKitContext.Provider>
+  );
 }
 
 /* The pill's host ---------------------------------------------------------------------------------------------------
