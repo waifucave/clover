@@ -333,7 +333,7 @@ function sourceApp(): { exe: string; args: string[] } {
   {
     console.error(`acceptance: building apps/desktop from this checkout (always, for the source target)${existsSync(join(DESKTOP, "out", "main", "index.js")) ? "; the earlier build in apps/desktop/out is replaced" : ""}`);
     const heavy = join(REPO, "scripts", "heavy");
-    const r = spawnSync(existsSync(heavy) ? heavy : process.execPath, existsSync(heavy) ? [process.execPath, "run", "build"] : ["run", "build"], { cwd: DESKTOP, encoding: "utf8", timeout: 900_000 });
+    const r = spawnSync(existsSync(heavy) ? heavy : process.execPath, existsSync(heavy) ? [process.execPath, "run", "build", "--acceptance"] : ["run", "build", "--acceptance"], { cwd: DESKTOP, encoding: "utf8", timeout: 900_000 });
     writeFileSync(join(logs, "desktop-build.log"), `${r.stdout ?? ""}${r.stderr ?? ""}`);
     if (r.status !== 0) throw new Error("building apps/desktop failed (logs/desktop-build.log)");
   }

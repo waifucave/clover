@@ -23,6 +23,18 @@ export const TEST_BUILD_SENTINEL = "test-marked build";
 /** The define's name. */
 export const TEST_BUILD_DEFINE_NAME = "__CLOVER_TEST_BUILD__";
 
+/** The source acceptance's own build of the app (apps/desktop/scripts/build.ts --acceptance): its define and label,
+ *  `false` in every other build, a release's and the test twin's included. */
+export const ACCEPTANCE_BUILD_DEFINE_NAME = "__CLOVER_ACCEPTANCE_BUILD__";
+export const ACCEPTANCE_BUILD_LABEL = "CLOVER-ACCEPTANCE-BUILD";
+export function acceptanceBuildDefine(acceptance: boolean): Record<string, string> {
+  return { [ACCEPTANCE_BUILD_DEFINE_NAME]: acceptance ? JSON.stringify(ACCEPTANCE_BUILD_LABEL) : "false" };
+}
+
+/** What only the test-only code of the app reads: the environment variables that pick the kept test answer key and
+ *  allow the offscreen press. A real build's app code carries none of them (nor the acceptance label). */
+export const TEST_ONLY_APP_STRINGS = ["CLOVER_TEST_ANSWER_KEY", "CLOVER_TEST_SEALED_PRESS"] as const;
+
 /** The `bun build --define` argument for a shell line: `false` in a real build (no quotes, so cmd.exe takes it), the
  *  label as a JSON string in a test build (macOS only, /bin/sh). */
 export function testBuildDefineArg(test: boolean): string {
@@ -101,8 +113,11 @@ export function asarMarkerProblems(what: string, bytes: Uint8Array, test: boolea
       ...(sentinel ? [] : [`${what} is a test build but its code doesn't carry the test-only branch ("${TEST_BUILD_SENTINEL}")`]),
     ];
   }
+  const testOnly = TEST_ONLY_APP_STRINGS.filter((t) => code.some(([, b]) => contains(b, t)));
   return [
     ...(label ? [`${what} carries the test-build label ${TEST_BUILD_LABEL}: a real build never does`] : []),
     ...(sentinel ? [`${what}'s code carries the test-only branch ("${TEST_BUILD_SENTINEL}"): a real build's must be compiled out`] : []),
+    ...(contains(bytes, ACCEPTANCE_BUILD_LABEL) ? [`${what} carries the acceptance build's label ${ACCEPTANCE_BUILD_LABEL}: a real build never does`] : []),
+    ...testOnly.map((t) => `${what}'s code reads ${t}: a real build's test-only path must be compiled out`),
   ];
 }
