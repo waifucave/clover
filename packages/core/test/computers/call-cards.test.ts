@@ -59,7 +59,7 @@ describe("the call cards", () => {
 
   test("a level raise is a computer-level change; a move between computers binds both; a Bash call shows its command", () => {
     const raise = render({ computer: "Studio", method: "computer.setLevel", params: { name: "Studio", level: "automatic" } })!;
-    expect(raise).toMatchObject({ kind: "change", change: "computer-level", fields: { what: { type: "text", text: 'Set this computer to "Automatic"?' } } });
+    expect(raise).toMatchObject({ kind: "change", change: "computer-level", fields: { title: { type: "text", text: "Studio asks you to approve this" }, what: { type: "text", text: 'Change a computer\'s level. Set this computer to "Automatic"?' } } });
     const move = { operation: "move", from: "home/Laptop1/p", to: "home/Studio/p", source: "Laptop1", destination: "Studio" };
     expect(render({ computer: "Laptop1", method: "tree.transfer", params: move })!.binds).toEqual({ computer: "Studio", source: "Laptop1", method: "tree.transfer", params: sha256(callBindingInput("tree.transfer", move)) });
     const bash = render({ computer: "Studio", method: "tool.run", params: { tool: "Bash", input: { command: "make test", cwd: "home/Studio/p" } } })!;
@@ -138,7 +138,7 @@ describe("through two computers on the real tables", () => {
     await studio.node.tree.write("home/Laptop1/x.txt", utf8("hello"), { as: BOT });
     expect(readFileSync(join(laptop.home, "x.txt"), "utf8")).toBe("hello");
     expect(phone.shown).toHaveLength(1);
-    expect(phone.shown[0]!.card?.fields.title).toEqual({ type: "text", text: "Write a file from another computer" });
+    expect(phone.shown[0]!.card?.fields.title).toEqual({ type: "text", text: "Laptop1 asks you to approve this" });
     expect(phone.shown[0]!.card?.fields.command).toEqual({ type: "code", code: "hello" });
     // The same signed answer again, as a replay: the ledger on disk refuses it, also as a new ledger on the same file.
     const replay = answered[0]!;

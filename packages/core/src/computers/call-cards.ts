@@ -160,14 +160,28 @@ function fieldsFor(computer: string, method: string, params: unknown): { kind: C
   }
 }
 
-/** This computer's card tables for calls from another computer. */
+/** A call card's first line, in Clover's words, naming the computer whose card it is (the one that holds the call):
+ *  the card's `title`, first in every surface's order. The computer that shows the card for it (askUser) requires
+ *  exactly this line, so a paired computer can word the rest of its card but never its first line (the stage 1
+ *  review). */
+export function callCardTitle(computer: string): string {
+  return `${named(computer, "Another computer")} asks you to approve this`;
+}
+
+/** This computer's card tables for calls from another computer: the fixed first line, then what the call does. */
 export function callCardRenderer(sha256: (text: string) => string): CallCardRenderer {
   return ({ computer, method, params }) => {
     const f = fieldsFor(computer, method, params);
     if (f === undefined) return undefined;
+    const { title, what, ...rest } = f.fields;
+    // The table's own title leads the question: "Write a file from another computer. Write this file?"
+    const lead = title?.type === "text" ? title.text : undefined;
+    const question = what?.type === "text" ? what.text : undefined;
+    const said = [lead, question].filter((t): t is string => t !== undefined).join(". ");
     return {
       kind: f.kind, ...(f.change === undefined ? {} : { change: f.change }),
-      fields: f.fields, options: ALLOW.map((o) => ({ ...o })), binds: bindingOf(computer, method, params, sha256),
+      fields: { title: text(callCardTitle(computer)), ...(said === "" ? {} : { what: text(said) }), ...rest },
+      options: ALLOW.map((o) => ({ ...o })), binds: bindingOf(computer, method, params, sha256),
     };
   };
 }
