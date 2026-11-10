@@ -132,8 +132,9 @@ export class HookRunner {
     try {
       // Under the fence (2f): its plugin's tree, its data and temp folders, the package managers' folders.
       const guard = this.guardFor();
+      const proxy = guard.proxyFor?.(spec.pluginId);
       const fenced = guard.fence !== false && pluginFenceAvailable()
-        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}` })
+        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) })
         : undefined;
       proc = Bun.spawn(fencedCommand(["sh", "-c", spec.command], fenced?.fence), {
         cwd: spec.cwd,
@@ -142,7 +143,7 @@ export class HookRunner {
         env: guardedPluginEnv(
           {
             ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
-            ...(fenced !== undefined ? fenced.env : {}),
+            ...(fenced !== undefined ? { ...fenced.env, ...(proxy?.env ?? {}) } : {}),
             PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
           },
           { pluginRoot: spec.cwd, ...this.guardFor() },

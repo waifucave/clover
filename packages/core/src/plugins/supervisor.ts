@@ -793,7 +793,9 @@ export class PluginSupervisor {
       let cmd = bunCmd;
       const env = launch.env;
       if (guard.fence !== false && pluginFenceAvailable()) {
-        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}` });
+        const proxy = guard.proxyFor?.(config.id);
+        const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}`, ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
+        Object.assign(env, proxy?.env ?? {});
         cmd = fencedCommand(bunCmd, { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, fork: false, sockets: [this.deps.socketPath] });
         env.TMPDIR = tmp;
       }
