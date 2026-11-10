@@ -13,6 +13,7 @@
 //   record), and only for a secret its own `auth` entries name.
 import type { ApiHandlers } from "../../plugin-host/api/router";
 import { isBundledClover } from "./load";
+import { pinnedFetch } from "../../plugin-host/pinned-fetch";
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { secretTokenSource, type SecretStore } from "../../contracts/secret-store";
@@ -24,7 +25,8 @@ export interface ModelPluginApiOptions {
   tokens(pluginId: string, authName: string): KeyedTokenSource;
   /** A plugin's own secret's value, for a process of its own. */
   secret(pluginId: string, name: string): Promise<string | undefined>;
-  /** The platform fetch (a test seam). */
+  /** The platform fetch under the keyed fetch: the pinned fetch (`plugin-host/pinned-fetch.ts`), which reaches only
+   *  public addresses, unless a test passes its own. */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
   /** The keyed fetch's idle limit (a test seam), held to the keyed fetch's own bounds (`clampKeyedIdleTimeoutMs`). */
   idleTimeoutMs?: number;
@@ -89,7 +91,7 @@ export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers
     if (held !== undefined && held.key === key) return held.fetch;
     const auth: Record<string, { source: KeyedTokenSource; placement?: KeyPlacement }> = {};
     for (const [name, a] of authEntriesOf(record)) auth[name] = { source: opts.tokens(record.id, name), ...(a.placement !== undefined ? { placement: a.placement } : {}) };
-    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
+    const fetch = createKeyedFetch({ hosts: networkHostsOf(record), auth, fetch: opts.fetch ?? pinnedFetch(), ...(opts.idleTimeoutMs !== undefined ? { idleTimeoutMs: clampKeyedIdleTimeoutMs(opts.idleTimeoutMs) } : {}) });
     fetches.set(record.id, { key, fetch });
     return fetch;
   };
