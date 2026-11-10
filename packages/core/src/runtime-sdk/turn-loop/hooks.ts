@@ -10,8 +10,11 @@
 // * **What each may return** (`HOOK_RETURNS`): `tool.before` may deny, ask or replace the input, never allow;
 //   `tool.after` may replace the result; `message.in` and `message.out` the text; `turn.start` a labelled note; the
 //   rest only observe. Anything else a hook returns is ignored. A deny stops the hooks after it.
-// * **A hook that throws or runs past its `timeoutMs`** (10 seconds by default) is skipped and reported
-//   (`onSkipped`, which Settings shows).
+// * **A hook that throws or runs past its `timeoutMs`** (10 seconds by default, never more than 30 seconds: inline
+//   hooks sit on the turn's path) is skipped and reported (`onSkipped`, which Settings shows), except a BLOCKING hook:
+//   one on an event whose result can deny (`HOOK_RETURNS` lists "deny": today only `tool.before`) fails CLOSED, so the
+//   call is denied with a reason naming the plugin, the hook and why (crashed or timed out). `message.in`,
+//   `message.out`, `tool.after`, `turn.start` and the rest can't deny anything, so they fail open.
 // * **Scope** (§5.1): an entry whose `scope` (or its plugin's) leaves bots out never runs on a bot's session.
 // * **Tool filter:** `tools` takes exact names or patterns with `*` (`hookMatchesTool`).
 // * **Who it runs as:** the session that made the call (R7), so the API calls the hook makes act for that session.
@@ -79,6 +82,21 @@ export interface PluginHooksOptions {
   onSkipped?(skip: { pluginId: string; hook: string; event: HookEvent; reason: string }): void;
 }
 
+/** The most an inline hook may run: a hook holds the turn (or the message) up while it runs. The catalog's larger
+ *  maximum stays for a `command` hook, which runs in a sandbox of its own once lane C lands. */
+export const INLINE_HOOK_MAX_TIMEOUT_MS = 30_000;
+/** The events whose hooks can deny the action; a crash or timeout there fails closed. */
+const BLOCKING_EVENTS: ReadonlySet<HookEvent> = new Set((Object.keys(HOOK_RETURNS) as HookEvent[]).filter((e) => HOOK_RETURNS[e].includes("deny")));
+/** Longest reason that reaches a log line, Settings or a denial. */
+const REASON_MAX = 300;
+
+/** One line, no control characters, at most `REASON_MAX` characters. */
+export function sanitizeReason(reason: string): string {
+  // eslint-disable-next-line no-control-regex
+  const one = reason.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/ {2,}/g, " ").trim();
+  return one.length > REASON_MAX ? `${one.slice(0, REASON_MAX - 1)}…` : one;
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 function scopeOf(c: Contribution, registry: PluginHooksOptions["registry"]): "bots" | "agents" | "both" {
@@ -114,7 +132,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
         const key = `${pluginId}/${entry.id}`;
         if (entry.command !== undefined && !reportedCommand.has(key)) {
           reportedCommand.add(key);
-          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "a command hook needs lane C's sandbox, which doesn't run hooks yet" });
+          o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason("a command hook needs lane C's sandbox, which doesn't run hooks yet") });
         }
         continue;
       }
@@ -132,12 +150,22 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
       try {
         out = await o.host.invoke({
           pluginId, handler: entry.handler, args, caller: s.caller, session: s.id,
-          timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, 600_000), ownLimit: true,
+          timeoutMs: Math.min(entry.timeoutMs ?? HOOK_DEFAULT_TIMEOUT_MS, INLINE_HOOK_MAX_TIMEOUT_MS), ownLimit: true,
           ...(signal === undefined ? {} : { signal }),
         });
       } catch (err) {
         if (signal?.aborted === true) throw err;
-        o.onSkipped?.({ pluginId, hook: entry.id, event, reason: err instanceof Error ? err.message : String(err) });
+        const timedOut = (err as { code?: unknown } | null)?.code === "timeout";
+        const detail = err instanceof Error ? err.message : String(err);
+        o.onSkipped?.({ pluginId, hook: entry.id, event, reason: sanitizeReason(detail) });
+        if (BLOCKING_EVENTS.has(event)) {
+          // Fail closed: the reason carries no stack and none of the error's text, which might hold a secret.
+          const why = timedOut ? "timed out" : "crashed";
+          const reason = sanitizeReason(`the hook "${entry.id}" of plugin "${pluginId}" ${why}, so the action was refused`);
+          const next = step(acc, { deny: { reason } }, { pluginId, id: entry.id });
+          acc = next.value;
+          if (next.stop === true) break;
+        }
         continue;
       }
       if (!isObject(out)) continue;

@@ -110,7 +110,7 @@ export interface DaemonPartsInput {
   /** The Clover server's lane handlers: the bot side's methods join them. */
   handlers: Record<string, CloverHandler>;
   /** The computer node's options the daemon decides (its tree folder, Bash, the fence…); false for no node. */
-  node?: false | Partial<Pick<ComputerNodeOptions, "treeRoot" | "executor" | "fence" | "reviewer" | "askUser" | "terminals" | "answers">>;
+  node?: false | Partial<Pick<ComputerNodeOptions, "treeRoot" | "executor" | "fence" | "reviewer" | "askUser" | "terminals" | "answers" | "mcp">>;
   /** The bot side; false for none. */
   bots?: false | DaemonBotsInput;
   /** The daemon's safety reviewer (`BashReviewer`, on the internal-jobs model): the computer node judges another
