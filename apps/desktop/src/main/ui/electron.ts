@@ -8,7 +8,7 @@ import { app, ipcMain, protocol, webFrameMain, BrowserWindow, type IpcMainEvent,
 import type { LayerMessage, OpenTarget, SurfaceEnvironment } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { CORE_CSP, CORE_SCHEME, LAYER_SCHEME, SEALED_SCHEME, WEB_SCHEME, commonHeaders, layerDocument, layerHeaders } from "./documents";
 import { checkMenu, frameGesture, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem, type Rect } from "./brokers";
-import { isInside, mediaType, pluginFile } from "./files";
+import { isInside, mediaType, modelResponse, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { routeCall } from "./tree-calls";
 import { routeComposer } from "./composer-calls";
@@ -179,6 +179,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       // A bot's avatar model (a VRM or glb, a Live2D `.moc3`) is the bot plugin's own file: inert data its stage's avatar entry reads.
       const model = (type === "model/gltf-binary" || type === "application/octet-stream") && plugin.isBot;
       if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/") || model)) return forbidden();
+      if (model) return modelResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
       return fileResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
     }
     return notFound();

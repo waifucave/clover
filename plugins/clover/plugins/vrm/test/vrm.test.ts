@@ -141,6 +141,31 @@ describe("the structural check", () => {
     expect(validateVrm(cut).ok).toBe(false);
   });
 
+  test("a model that names an outside URL is refused before the loader runs: nothing is fetched (a third party's avatar is no beacon)", async () => {
+    const asked: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = ((input: unknown) => { asked.push(String(input)); return Promise.reject(new Error("no network in a test")); }) as typeof fetch;
+    const parsed: unknown[] = [];
+    const parseAsync = GLTFLoader.prototype.parseAsync;
+    GLTFLoader.prototype.parseAsync = function (data, path) { parsed.push(path); return parseAsync.call(this, data, path); };
+    try {
+      for (const bytes of [
+        tiny(true, (b) => (b.json.images = [{ uri: "https://beacon.example/x.png" }])),
+        tiny(true, (b) => (b.json.images = [{ uri: "//beacon.example/x.png" }])),
+        tiny(true, (b) => (b.json.images = [{ uri: "data:image/png;base64,AAAA" }])),
+      ]) {
+        const scene = new AvatarScene(document.createElement("canvas"), { createRenderer: fakeRenderer().create });
+        await expect(scene.load(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer)).rejects.toThrow();
+        scene.dispose();
+      }
+    } finally {
+      globalThis.fetch = realFetch;
+      GLTFLoader.prototype.parseAsync = parseAsync;
+    }
+    expect(asked).toEqual([]);
+    expect(parsed).toEqual([]);
+  });
+
   test("refuses an extension it can't draw", () => {
     const check = validateVrm(tiny(true, (b) => (b.json.extensionsRequired = ["KHR_draco_mesh_compression"])));
     expect(!check.ok && check.reason).toBe("unsupported-extension");
