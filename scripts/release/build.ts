@@ -68,7 +68,7 @@ import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { asarMarkerProblems, testBuildMarkerProblems } from "../test-build";
+import { asarFiles, asarMarkerProblems, testBuildMarkerProblems } from "../test-build";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
@@ -323,6 +323,13 @@ export function machOFiles(dir: string): string[] {
   }).sort();
 }
 
+/** The Mach-O files packed INSIDE an app.asar (by their bytes, whatever their names): each would be loaded from a
+ *  temporary copy with its build-time signature, which the hardened runtime's library validation refuses. A release
+ *  has none (electron-builder.yml's asarUnpack keeps the app's native add-ons out of the asar, where they're signed). */
+export function packedMachO(files: ReadonlyMap<string, Uint8Array>): string[] {
+  return [...files].filter(([, bytes]) => isMachO(bytes)).map(([path]) => path).sort();
+}
+
 /** A bundled plugin's native file's signing identifier: Clover's prefix and its path, as letters, digits and dots. */
 export function nativeIdentifier(rel: string): string {
   return `com.waifucave.clover.plugin.${rel.replace(/[^A-Za-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "")}`;
@@ -357,6 +364,16 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
         if (dr !== teamRequirement(nativeIdentifier(rel), teamId)) problems.push(`${label}'s plugins/${rel}'s designated requirement is ${dr ?? "(none)"}, not Clover's team's`);
       }
     }
+  }
+  // The app's own native add-ons: none packed inside app.asar, and each one in app.asar.unpacked signed by the team
+  // (library validation loads only code of the app's own team into it).
+  const resources = join(app, "Contents", "Resources");
+  for (const rel of packedMachO(asarFiles(new Uint8Array(readFileSync(join(resources, "app.asar")))))) {
+    problems.push(`${label}'s app.asar packs native code (${rel}): it would load from an unsigned temporary copy, which library validation refuses; list it in electron-builder.yml's asarUnpack`);
+  }
+  const unpacked = join(resources, "app.asar.unpacked");
+  if (existsSync(unpacked)) {
+    for (const rel of machOFiles(unpacked)) problems.push(...signatureProblems(`${label}'s app.asar.unpacked/${rel}`, display(join(unpacked, rel)), teamId, undefined, { dev }));
   }
   const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${dev ? CLOVER_APP_DEV_SIGNED_REQUIREMENT : CLOVER_APP_REQUIREMENT}`, app], cwd);
   if (deep.status !== 0) problems.push(`codesign --verify --deep --strict against Clover's requirement refuses ${label}: ${deep.out.trim().slice(0, 400)}`);

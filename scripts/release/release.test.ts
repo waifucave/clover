@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import { darwinTest } from "../../packages/core/test/helpers/darwin-only";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, NOTARIZE_ENV, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
+import { builderEnv, builderIdentity, buildOsFor, devSigningIdentity, NOTARIZE_ENV, TEST_BUILD_OUT, testBuildArtifacts, isMachO, machOFiles, nativeIdentifier, packedMachO, parseReleaseBuildArgs, releaseBuilderArgs, signingInputs, CLOVER_APP_REQUIREMENT, CLOVER_APP_DEV_SIGNED_REQUIREMENT } from "./build";
 import { checkoutCommit, dirtyEntries, pluginBunArtifacts, pluginsArtifacts, writePluginsAssets, tarballFilesOf,
   channelsServed, checkCoreFeed, checkUpdateInfo, codesignArgs, coreArtifacts, CORE_TARGET, expectedArtifacts, FEED, feedFile, formatUpdateInfo, identityTeam, installers,
   notarizeArgs, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, sha512Base64, signatureProblems, codesignDevArgs, teamRequirement,
@@ -425,6 +425,18 @@ describe("the bundled plugins' native code on a signed Mac build", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("the app's own native code: a Mach-O packed inside app.asar is named (by its bytes), and electron-builder.yml unpacks the add-ons", () => {
+    const files = new Map<string, Uint8Array>([
+      ["out/main/index.js", new TextEncoder().encode("export {};\n")],
+      ["out/main/native/screen.node", new Uint8Array([0xcf, 0xfa, 0xed, 0xfe, 0, 0])],
+      ["out/main/native/renamed.bin", new Uint8Array([0xca, 0xfe, 0xba, 0xbe, 1])],
+    ]);
+    expect(packedMachO(files)).toEqual(["out/main/native/renamed.bin", "out/main/native/screen.node"]);
+    expect(packedMachO(new Map([["out/main/index.js", new TextEncoder().encode("x")]]))).toEqual([]);
+    const builder = Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", "..", "apps", "desktop", "electron-builder.yml"), "utf8")) as { asarUnpack?: string[] };
+    expect(builder.asarUnpack).toContain("out/main/native/*.node");
   });
 
   test("each signs under its own identifier, from its path", () => {
