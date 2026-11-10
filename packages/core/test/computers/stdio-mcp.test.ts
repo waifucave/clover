@@ -496,3 +496,72 @@ describe("pluginStdioPrepare", () => {
     }
   });
 });
+
+/** A stdio server whose one tool, Reach, tries 127.0.0.1:<REACH_PORT> straight (no proxy) and says what happened. */
+const REACH_SERVER = `
+const { connect } = require("node:net");
+let buf = "";
+const out = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (c) => {
+  buf += c;
+  let i;
+  while ((i = buf.indexOf("\\n")) >= 0) {
+    const line = buf.slice(0, i); buf = buf.slice(i + 1);
+    if (!line.trim()) continue;
+    const m = JSON.parse(line);
+    if (m.method === "initialize") out({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "r", version: "1" } } });
+    else if (m.method === "tools/call") {
+      const s = connect({ host: "127.0.0.1", port: Number(process.env.REACH_PORT) });
+      const done = (v) => { s.destroy(); out({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: v }] } }); };
+      s.setTimeout(2000, () => done("denied"));
+      s.once("connect", () => done("reached"));
+      s.once("error", () => done("denied"));
+    }
+  }
+});
+`;
+
+describe("a wrapped plugin's stdio server (the owner's ruling of 2026-11-10: lane B's grant on its install record)", () => {
+  test("with the grant it reaches a host straight; a Clover-native plugin's, under the same fence, doesn't", async () => {
+    // The fence is macOS's sandbox here; elsewhere this test has nothing to show.
+    if (process.platform !== "darwin") return;
+    const home = temp("lane-j-stdio-wrap-");
+    const hits: number[] = [];
+    const listener = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { open(s) { hits.push(1); s.end(); }, data() {} } });
+    const entries: { point: string; pluginId: string; ref: string; entryId: string; value: unknown; state: "active" }[] = [];
+    const folders: Record<string, string> = {};
+    for (const id of ["wrapped", "native"]) {
+      const root = join(home, "plugins", id);
+      mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, "server.js"), REACH_SERVER);
+      folders[id] = root;
+      entries.push({ point: "mcpServers", pluginId: id, ref: "mcpServers/reach", entryId: "reach", value: { type: "stdio", name: "reach", command: process.execPath, args: [join(root, "server.js")], env: { REACH_PORT: String(listener.port) } }, state: "active" });
+    }
+    const registry = { entries: () => entries, get: (id: string) => (folders[id] === undefined ? undefined : ({ folder: folders[id] } as never)) };
+    // B's guard as the daemon builds it: the fence on, no tree proxy here (a native plugin then reaches no host at all),
+    // and the grant read by plugin id (B's `openNetwork`, from the install record).
+    const guard = { files: ensurePluginRunFiles(join(home, "run", "plugin-host"), { cloverHome: home }), shared: [], fence: { userHome: temp("lane-j-stdio-wrap-user-") }, openNetwork: (id: string) => id === "wrapped" };
+    const prepare = pluginStdioPrepare({
+      registry, guard, secretFiles: new PluginSecretFiles(home), dataDir: (id) => join(home, "plugin-data", id),
+      settings: () => ({ account: {}, device: {} }), secrets: () => ({ get: async () => null }),
+    });
+    const launcher = new StdioMcpLauncher({ prepare, stopGraceMs: 500, sleep: async () => {} });
+    const reach = async (id: string): Promise<string> => {
+      const ch = await launcher.openMcp(id, "reach");
+      await request(ch, 1, "initialize");
+      const r = await request(ch, 2, "tools/call", { name: "Reach", arguments: {} });
+      return (r.result as { content: { text: string }[] }).content[0]!.text;
+    };
+    try {
+      expect(await reach("native")).toBe("denied");
+      expect(hits).toHaveLength(0);
+      expect(await reach("wrapped")).toBe("reached");
+      expect(hits).toHaveLength(1);
+    } finally {
+      await launcher.close();
+      listener.stop(true);
+    }
+  }, 30_000);
+});
+
