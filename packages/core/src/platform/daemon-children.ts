@@ -11,7 +11,9 @@
 //            place (same pid) with responsibility disclaimed (`becomeOwnResponsible`) before it starts anything. Then a
 //            child that double-forks, calls `setsid` and is reparented to launchd is still the daemon's (A's #416 gap).
 // `spawnedByDaemon` (caller-probe.ts) then reads the result.
+import { responsiblePid } from "./caller-probe";
 import { ffiLib, ffiPtr as ptr } from "./ffi";
+import type { DaemonPlatform } from "./transport";
 import { enterDaemonJob } from "./win-job";
 
 const PR_SET_CHILD_SUBREAPER = 36;
@@ -191,4 +193,20 @@ function watchExit(pid: number, onExit: () => void): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * `clover doctor`'s caller-check line (macOS): whether the running daemon (`pid`, null when none runs) is its own
+ * responsible process, which `becomeOwnResponsible` makes it at start. When it isn't, a process the daemon's children
+ * start and reparent away is told from the user by the parent chain and the floor alone (the daemon logs the same
+ * line at start). Undefined off macOS, where the subreaper (Linux) and the job (Windows) hold the lineage instead.
+ */
+export function responsibilityDoctorLine(pid: number | null, os: DaemonPlatform, responsibleOf: (pid: number) => number | null = (p) => responsiblePid(p, os)): string | undefined {
+  if (os !== "darwin") return undefined;
+  if (pid === null) return "caller check: the daemon isn't running (its responsible process is read once it runs)";
+  const r = responsibleOf(pid);
+  if (r === pid) return "caller check: the daemon is its own responsible process";
+  return r === null
+    ? "caller check: responsible-process check unavailable: the daemon's responsible process can't be read"
+    : "caller check: responsible-process check unavailable: the daemon isn't its own responsible process, so a process its children start and reparent away is told from the user by the parent chain and the floor alone";
 }

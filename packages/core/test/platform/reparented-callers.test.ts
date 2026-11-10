@@ -3,13 +3,14 @@
 // daemon never started, still passes. Every process here is the test's own dummy: a Perl one-liner that connects to
 // the test's own socket and sleeps; nothing reads another process's environment or arguments.
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLOVER_ERR } from "@waifucave/clover-protocol";
 import { resolveCloverCaller, SessionProcesses } from "../../src/auth/clover-caller";
 import { descendsFrom, probePeer, responsiblePid, type PeerFacts } from "../../src/platform/caller-probe";
-import { selfArgv, spawnDisclaimed } from "../../src/platform/daemon-children";
+import { responsibilityDoctorLine, selfArgv, spawnDisclaimed } from "../../src/platform/daemon-children";
+import { runningDaemonPid } from "../../src/runtime-state/doctor";
 import { darwinDescribe } from "../helpers/darwin-only";
 
 const PERL = "/usr/bin/perl";
@@ -183,5 +184,33 @@ describe("the responsible process in the caller check", () => {
     expect(selfArgv(["bun", "/$bunfs/root/clover", "daemon", "run"], "/opt/clover/clover", [])).toEqual(["/opt/clover/clover", "daemon", "run"]);
     expect(selfArgv(["/usr/local/bin/bun", "/repo/packages/cli/src/main.ts", "daemon", "run"], "/usr/local/bin/bun", [])).toEqual(["/usr/local/bin/bun", "/repo/packages/cli/src/main.ts", "daemon", "run"]);
     expect(selfArgv(["/usr/local/bin/bun", "/repo/main.ts", "daemon", "run"], "/usr/local/bin/bun", ["--smol", "--preload", "/p.ts"])).toEqual(["/usr/local/bin/bun", "--smol", "--preload", "/p.ts", "/repo/main.ts", "daemon", "run"]);
+  });
+});
+
+describe("clover doctor's line: is the running daemon its own responsible process (#418)", () => {
+  test("macOS: own, not own, unreadable, not running; nothing off macOS", () => {
+    expect(responsibilityDoctorLine(500, "darwin", () => 500)).toBe("caller check: the daemon is its own responsible process");
+    expect(responsibilityDoctorLine(500, "darwin", () => 77)).toStartWith("caller check: responsible-process check unavailable: the daemon isn't its own responsible process");
+    expect(responsibilityDoctorLine(500, "darwin", () => null)).toStartWith("caller check: responsible-process check unavailable: the daemon's responsible process can't be read");
+    expect(responsibilityDoctorLine(null, "darwin", () => { throw new Error("not asked"); })).toStartWith("caller check: the daemon isn't running");
+    expect(responsibilityDoctorLine(500, "linux", () => 500)).toBeUndefined();
+    expect(responsibilityDoctorLine(500, "win32", () => 500)).toBeUndefined();
+  });
+
+  test("the daemon's pid is the lock holder's, only while it lives", () => {
+    const home = mkdtempSync(join(tmpdir(), "lane-c-doctor-"));
+    try {
+      expect(runningDaemonPid(home)).toBeNull();
+      mkdirSync(join(home, "run"));
+      writeFileSync(join(home, "run", "core.lock"), JSON.stringify({ pid: process.pid }));
+      expect(runningDaemonPid(home)).toBe(process.pid);
+      const gone = Bun.spawnSync([process.execPath, "-e", "0"]).pid;
+      writeFileSync(join(home, "run", "core.lock"), JSON.stringify({ pid: gone }));
+      expect(runningDaemonPid(home)).toBeNull();
+      for (const bad of ["{", JSON.stringify({ pid: "1" }), JSON.stringify({ pid: -1 })]) {
+        writeFileSync(join(home, "run", "core.lock"), bad);
+        expect(runningDaemonPid(home)).toBeNull();
+      }
+    } finally { rmSync(home, { recursive: true, force: true }); }
   });
 });
