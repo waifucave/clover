@@ -25,6 +25,11 @@ export class WindowDrag {
     return { x: Math.round(d.window.x + (mouse.x - d.mouse.x)), y: Math.round(d.window.y + (mouse.y - d.mouse.y)) };
   }
 
+  /** Where the window was when the drag began (undefined: none going). */
+  origin(windowId: number): { x: number; y: number } | undefined {
+    return this.drags.get(windowId)?.window;
+  }
+
   end(windowId: number): void {
     this.drags.delete(windowId);
   }

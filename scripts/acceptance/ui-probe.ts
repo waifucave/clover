@@ -81,7 +81,7 @@ async function main(): Promise<void> {
   }
   if (cdp === undefined) throw new Error("no devtools endpoint");
   const rpc = (await hello(join(home, "run", "core.sock"), "app", readFileSync(join(home, "run", "app.token"), "utf8").trim(), "clover-ui-probe", CLOVER_PROTOCOL_VERSION)).client;
-  const script = process.argv[2];
+  const script = process.argv[2]!;
   const mod = await import(resolve(script)) as { run(ctx: { cdp: Cdp; rpc: CloverClient; home: string; fake: typeof fake; root: string; logs: string; dummyKey: string; daemon: ChildProcess }): Promise<void> };
   try { await mod.run({ cdp, rpc, home, fake, root, logs, dummyKey, daemon }); } finally { cdp.close(); }
   void before;

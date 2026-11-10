@@ -30,6 +30,7 @@ import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protoco
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
+import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
 import { WindowDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
@@ -104,8 +105,10 @@ app.commandLine.appendSwitch("no-proxy-server");
 const session_ = linuxSession(process.env);
 registerSchemes();
 
+const appLog = new AppLog(appLogPath(home));
 function log(line: string): void {
   process.stdout.write(`[clover-app] ${line}\n`);
+  appLog.write(line);
 }
 
 // The dev overrides (the daemon binary, the app token) count only in a dev or unpackaged run.
@@ -287,8 +290,16 @@ async function ready(): Promise<void> {
       return client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
     },
     windowDrag: (windowId, phase, point) => {
-      if (phase === "end") return windowDrags.end(windowId);
       const win = BrowserWindow.fromId(windowId);
+      if (phase === "end") {
+        const from = windowDrags.origin(windowId);
+        windowDrags.end(windowId);
+        if (from !== undefined && win !== null && !win.isDestroyed()) {
+          const [x, y] = win.getPosition();
+          if (x !== from.x || y !== from.y) log(`window: moved by its title area, from (${from.x}, ${from.y}) to (${x}, ${y})`);
+        }
+        return;
+      }
       if (win === null || win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return;
       if (phase === "start") {
         const [x, y] = win.getPosition();

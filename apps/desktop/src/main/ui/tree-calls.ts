@@ -20,7 +20,7 @@ export type Disposition = "read" | "settings" | "gesture" | "card" | "unserved";
 export interface TreeCall {
   disposition: Disposition;
   /** The only part whose frame may make the call (a `settings` call always names one). */
-  part?: string;
+  part?: string | readonly string[];
   /** Also only inside the user's own key press or click: what it changes is what code runs. */
   gesture?: boolean;
 }
@@ -51,6 +51,9 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "session.setModel": { disposition: "gesture" },
   "session.interrupt": { disposition: "gesture" },
   "session.stop": { disposition: "gesture" },
+  // A bot's user layer (its model and effort from the composer, its instructions from the editor): the layer door
+  // would raise a card for the user's own words; from the tree it is the user's, with the click.
+  "bot.setUserLayer": { disposition: "gesture", part: ["clover/composer", "clover/bot-editor"] },
   // Needs a card.
   "computer.setLevel": { disposition: "card" },
   "device.pair.begin": { disposition: "card" },
@@ -90,7 +93,7 @@ export function treeVerdict(partId: string, method: string): TreeVerdict {
     case "card": return { ok: false, owned: true, why: `${method} changes what the app may do: it needs a card` };
     case "unserved": return { ok: false, owned: true, why: `${method} isn't served by the core` };
     default:
-      if (call.part !== undefined && call.part !== partId) return { ok: false, owned: true, why: `${method} is made only from ${call.part}` };
+      if (call.part !== undefined && ![call.part].flat().includes(partId)) return { ok: false, owned: true, why: `${method} is made only from ${[call.part].flat().join(" or ")}` };
       return { ok: true, call };
   }
 }
@@ -120,9 +123,21 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (${verdict.why})`);
     throw r.refuse(verdict.why);
   }
+  // The composer changes a bot's model and effort, and nothing else of its user layer.
+  if (r.method === "bot.setUserLayer" && r.tree.pluginId === "clover/composer" && !onlyModel(r.params)) {
+    r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (the composer changes a bot's model and effort only)`);
+    throw r.refuse("the composer changes a bot's model and effort only");
+  }
   if ((verdict.call.disposition === "gesture" || verdict.call.gesture === true) && !r.takeGesture(r.tree.windowId)) {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }
   return r.request(r.method, r.params);
+}
+
+/** A `bot.setUserLayer` call whose patch holds only a model and an effort. */
+function onlyModel(params: unknown): boolean {
+  const patch = (params as { patch?: unknown } | null)?.patch;
+  if (patch === null || typeof patch !== "object") return false;
+  return Object.keys(patch).every((k) => k === "model" || k === "effort");
 }

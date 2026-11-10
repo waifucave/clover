@@ -9,7 +9,7 @@ describe("the bundled tree's calls on the app's connection", () => {
     for (const m of ["models.list", "account.status", "archive.history", "archive.list", "plugin.list", "plugin.get", "plugin.ui", "ui.settings"]) {
       expect(verdict("clover/conversation", m)).toMatchObject({ ok: true });
     }
-    expect(verdict("clover/composer", "bot.setUserLayer")).toMatchObject({ ok: false, owned: false });
+    expect(verdict("clover/composer", "plugin.logs")).toMatchObject({ ok: false, owned: false });
     expect(verdict("clover/composer", "nonsense.method")).toMatchObject({ ok: false, owned: false });
   });
 
@@ -125,8 +125,22 @@ describe("routing a part's call", () => {
   });
 
   test("a method the table doesn't name falls to the layer door, which keeps its own list", async () => {
-    const { r, calls } = route({ method: "bot.setUserLayer" });
+    const { r, calls } = route({ method: "plugin.logs" });
     expect(await routeCall(r)).toBe("layer");
     expect(calls).toEqual(["layer"]);
+  });
+
+  test("a bot's user layer is the composer's (model and effort only) or the editor's, with the user's click", async () => {
+    const model = { id: "alpha", patch: { model: "a/b", effort: "high" } };
+    const some = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "bot.setUserLayer", params: model, gesture: true });
+    expect(await routeCall(some.r)).toBe("app");
+    const none = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "bot.setUserLayer", params: model, gesture: false });
+    await expect(routeCall(none.r)).rejects.toThrow("only right after");
+    const wide = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "bot.setUserLayer", params: { id: "alpha", patch: { instructions: "x" } }, gesture: true });
+    await expect(routeCall(wide.r)).rejects.toThrow("model and effort only");
+    const editor = route({ tree: { windowId: 1, pluginId: "clover/bot-editor" }, method: "bot.setUserLayer", params: { id: "alpha", patch: { instructions: "x" } }, gesture: true });
+    expect(await routeCall(editor.r)).toBe("app");
+    const other = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "bot.setUserLayer", params: model, gesture: true });
+    await expect(routeCall(other.r)).rejects.toThrow("only from");
   });
 });
