@@ -43,6 +43,9 @@ describe("scripts/try", () => {
     // --twin-only skips the release-shaped build and its checks (the twins and their runs only).
     expect(run).toMatch(/--twin-only\) TWINONLY=true/);
     expect(run).toMatch(/if \[ "\$TWINONLY" = false \]; then\n  timed "real build/);
+    // --runs 0 runs none (BSD seq counts down: `seq 1 0` is "1 0").
+    expect(run).not.toMatch(/seq 1 "\$RUNS"/);
+    expect(run).toContain("for ((k = 1; k <= RUNS; k++))");
     expect(run).toContain("--test-build");
     expect(run).toContain("check the try's commit out first");
     expect(run).toContain("git status --porcelain");

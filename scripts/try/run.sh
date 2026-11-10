@@ -129,7 +129,8 @@ accept() {
   [ "$rc" = 4 ] && PROMPT=true
   return 0
 }
-for k in $(seq 1 "$RUNS"); do [ "$PROMPT" = false ] && accept "run$k"; done
+# Counted in bash, not with seq: BSD seq counts down (`seq 1 0` is 1 0), so --runs 0 would still run two.
+for ((k = 1; k <= RUNS; k++)); do [ "$PROMPT" = false ] && accept "run$k"; done
 [ "$COLD" -gt 0 ] && [ "$PROMPT" = false ] && accept "cold-start-x$COLD" --cold-start "$COLD"
 [ "$PROMPT" = false ] || echo "try: A KEYCHAIN PROMPT APPEARED: the run was killed and no further run started"
 
