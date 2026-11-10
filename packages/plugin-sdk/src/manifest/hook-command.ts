@@ -28,6 +28,8 @@ const programName = (token: string): string => token.split(/[\\/]/).pop()!.repla
 /** Why an argv would run its stdin as a script, or undefined. */
 function argvReadsStdin(argv: readonly string[]): string | undefined {
   let i = 0;
+  // `command -v x` (and `-V`) only looks a program up.
+  if (argv.length > 1 && programName(argv[0]!) === "command" && (argv[1] === "-v" || argv[1] === "-V")) return undefined;
   // Past `env`, `exec` and the like, and `NAME=value` assignments, to the program they run.
   while (i < argv.length && (WRAPPERS.has(programName(argv[i]!)) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]!) || (i > 0 && WRAPPERS.has(programName(argv[i - 1]!)) && argv[i]!.startsWith("-")))) i++;
   const program = argv[i];

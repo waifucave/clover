@@ -594,7 +594,7 @@ describe("a hook's command never runs its stdin (its input) as a script", () => 
   test("allowed: a script file, -c or -e, a program that isn't an interpreter, a pipe's later command", () => {
     for (const [command, args] of [
       ["sh ${plugin}/hook.sh"], ["python3 ${plugin}/x.py --flag"], ["node -e 'console.log(1)'"], ["jq .tool_input"], ["cat | jq ."],
-      ["${plugin}/bin/hook"], ["sh", ["-c", "echo hi"]], ["python3", ["-m", "tool"]], ["${plugin}/hook.sh", ["${setting:label}"]], ["bun", ["run", "x.ts"]],
+      ["${plugin}/bin/hook"], ["sh", ["-c", "echo hi"]], ["python3", ["-m", "tool"]], ["${plugin}/hook.sh", ["${setting:label}"]], ["bun", ["run", "x.ts"]], ["command -v bun"],
     ] as [string, string[]?][]) {
       const r = hook(command, args);
       expect([command, args, has(r, "hook_reads_stdin")]).toEqual([command, args, false]);
