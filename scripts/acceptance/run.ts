@@ -31,7 +31,8 @@
 //      The source app takes the DevTools port behind CLOVER_DEV_DEBUG=1; a packaged one only if it is test-marked
 //      (CLOVER_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
 //   then: each boot lists the bundled web tools; the bot's WebSearch reaches the fake search backend; the bot's
-//      WebFetch reads a fake public page and is refused a private address; and last, the cold start
+//      WebFetch reads a fake public page and is refused a private address; the installed plugin's command hook fires on
+//      turn.start under its fence (no write outside its folders, no undeclared host); and last, the cold start
 // It ends with a table, and exits 1 on any FAIL or BLOCKED.
 //
 // What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
@@ -126,6 +127,7 @@ const FULL_STEPS = [
   "each boot lists the bundled web tools within 5 s and offers them; an installed plugin's server lists too",
   "the bot's WebSearch reaches the fake search backend; nothing leaves the machine",
   "the bot's WebFetch reads a public page (network:public) and is refused a private address",
+  "a folder-installed plugin's command hook fires on its event, fenced: no write outside its folders, no undeclared host",
   "cold start: the app opens first, the daemon after, and the shell fills the window",
 ] as const;
 /** The upgrade run's steps (--upgrade-from), in the order they run. */
@@ -247,6 +249,7 @@ async function cleanup(): Promise<void> {
   // The app first (so the daemon never sees it go and starts another), then the daemon.
   for (const c of [...children].reverse().sort((a, b) => Number(b.name === "app") - Number(a.name === "app"))) await endChild(c.proc);
   fake?.close();
+  hookTarget?.stop();
   if (keepLogs !== undefined) {
     try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
     // The app's own log (<home>/logs/app.log and its .1) lives in the run's temp home, which is deleted below.
@@ -471,6 +474,12 @@ function watchBundledListing(run: number, log: string, graceMs = 0): void {
  *  mcp__clover__… waits on the agent runtime, which keeps `clover` for its standing server). */
 const WEB_SEARCH_TOOL = "mcp__web__WebSearch";
 const WEB_FETCH_TOOL = "mcp__web__WebFetch";
+/** The command hook step's outcome, from the plugin's turn on the first daemon. */
+let hookOutcome: { status: Status; detail: string } | undefined;
+/** A listener on 127.0.0.1 the fixture's hook must never reach (directly, or through its proxy as an undeclared host). */
+let hookTarget: { port: number; connections: number; stop(): void } | undefined;
+/** Where the fixture's hook tries to write outside its allowed folders: in the run's user home. */
+const hookEscape = (): string => join(userHome, "acceptance-hook-escape");
 /** Step 15's outcome, from its two turns on the first daemon. */
 let fetchOutcome: { status: Status; detail: string } | undefined;
 /** Step 14's outcome, from its turn on the first daemon. */
@@ -480,7 +489,7 @@ const NETWORK_REFUSED = /acceptance daemon: net\.fetch to [^\n]* refused[^\n]*/;
 
 /** Step 14: the search turn's outcome, and no daemon of the run reached for any other host. */
 function searchStep(): void {
-  const n = TOTAL - 2; // the WebSearch step: two before the cold start
+  const n = TOTAL - 3; // the WebSearch step: three before the cold start
   try {
     for (const b of bundledBoots) {
       const refused = readLog(b.log).match(NETWORK_REFUSED)?.[0];
@@ -496,7 +505,7 @@ function searchStep(): void {
 
 /** Three before the last step: every boot settled the web server in time (listed, or not served with its reason), none logged a
  *  bundled server's failed listing, and each boot's first turn offered the web tools exactly when they were listed. */
-async function bundledMcpStep(n = TOTAL - 3 /* the bundled-tools step: three before the cold start */): Promise<void> {
+async function bundledMcpStep(n = TOTAL - 4 /* the bundled-tools step: four before the cold start */): Promise<void> {
   try {
     await Promise.all(bundledBoots.map((b) => b.waited));
     if (bundledBoots.length === 0) fail("no daemon started");
@@ -843,6 +852,16 @@ async function main(): Promise<void> {
     // A kept run's plugin folder stays with its user home, as a user's own folder would.
     const folder = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-echo");
     cpSync(join(import.meta.dir, "fixtures", "acceptance-echo"), folder, { recursive: true });
+    // The command hook's targets, written before the install so its OK covers them: a listener it must not reach and
+    // a path outside its folders it must not write.
+    if (hookTarget === undefined) {
+      const t = { port: 0, connections: 0, stop: () => {} };
+      const l = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { open(s) { t.connections += 1; s.end(); }, data() {} } });
+      t.port = l.port;
+      t.stop = () => l.stop(true);
+      hookTarget = t;
+    }
+    writeFileSync(join(folder, "hooks", "targets"), `${hookTarget.port}\n${hookEscape()}\n`);
     const installed = await c.request<{ id: string; state: string; card?: string }>("plugin.install", { source: { from: "folder", path: folder } }, 60_000);
     pluginId = installed.id;
     say(`plugin.install → ${installed.id} ${installed.state}${installed.card ? ` card ${installed.card}` : " (no card named)"}`);
@@ -887,6 +906,35 @@ async function main(): Promise<void> {
       record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"${carded.length ? ` (${carded.join("; ")})` : " (no card)"}`);
     } catch (err) {
       record(5, statusOf(err), why(err));
+    }
+  }
+
+  // The command hook step (recorded at the end): step 5's turn started with the fixture's `turn.start` command hook,
+  // which runs under its plugin's fence (pluginHookSpawner): it writes what it saw to its own data folder; the run checks
+  // that, the disk and its own listener.
+  if (session === undefined || !turnsWork) hookOutcome = { status: "BLOCKED", detail: "no bot turn reaches the fake provider (step 3)" };
+  else if (pluginId === undefined || !pluginOk) hookOutcome = { status: "BLOCKED", detail: "the plugin isn't installed and approved (step 4)" };
+  else {
+    try {
+      const probe = await until("the command hook's note in its data folder", 30_000, async () => {
+        const dir = join(home, "plugin-data");
+        for (const name of existsSync(dir) ? readdirSync(dir) : []) {
+          const f = join(dir, name, "hook-probe.txt");
+          if (existsSync(f)) return { file: f, text: readFileSync(f, "utf8") };
+        }
+        return undefined;
+      });
+      const seen = Object.fromEntries(probe.text.trim().split("\n").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+      if (seen.event !== "turn.start") fail(`the hook ran, but on ${JSON.stringify(seen.event)}, not turn.start (${probe.text.trim()})`);
+      if (seen.outside !== "denied" || existsSync(hookEscape())) fail(`the hook wrote outside its folders (${hookEscape()}): ${probe.text.trim()}`);
+      const tree = join(stateDir !== undefined ? userHome : root, "plugin-src", "acceptance-echo", "escaped");
+      if (seen.tree !== "denied" || existsSync(tree)) fail(`the hook wrote into its plugin's folder: ${probe.text.trim()}`);
+      if (seen.direct !== "denied") fail(`the hook reached 127.0.0.1:${hookTarget?.port} directly: ${probe.text.trim()}`);
+      if (seen.proxied === "200") fail(`the hook's proxy let it reach an undeclared host: ${probe.text.trim()}`);
+      if ((hookTarget?.connections ?? 0) > 0) fail(`the run's listener was reached ${hookTarget!.connections} time(s) from the hook`);
+      hookOutcome = { status: "PASS", detail: `acceptance-echo's probe hook fired on turn.start (its note in ${probe.file.slice(home.length + 1)}); a write outside its folders and into its tree was refused, 127.0.0.1:${hookTarget?.port} wasn't reached directly, and its proxy answered ${seen.proxied} for the undeclared host; the listener saw 0 connections` };
+    } catch (err) {
+      hookOutcome = { status: statusOf(err), detail: why(err) };
     }
   }
 
@@ -973,7 +1021,8 @@ async function main(): Promise<void> {
   if (keepState !== undefined) await keepFacts(session, pluginOk ? pluginId : undefined);
   await bundledMcpStep();
   searchStep();
-  record(TOTAL - 1, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
+  record(TOTAL - 2, fetchOutcome?.status ?? "BLOCKED", fetchOutcome?.detail ?? "the fetch turns didn't run");
+  record(TOTAL - 1, hookOutcome?.status ?? "BLOCKED", hookOutcome?.detail ?? "the hook's turn didn't run");
   await coldStartStep(app, 1);
 }
 

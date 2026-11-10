@@ -117,4 +117,32 @@ describe("a plugin hook's door", () => {
     entries[0] = { ...entries[0]!, value: { id: "g", on: ["tool.before"], command: small } };
     expect((await hooks.toolBefore(session, { name: "Bash", callId: "c1" }, { command: "ls" })).input).toEqual({ command: "a".repeat(1000) });
   }, 60_000);
+
+  darwinTest("the network only through its plugin tree's proxy (lane B's 2g): the proxy's port and env with one, nothing without", async () => {
+    const w = world();
+    const listen = () => Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {}, open(s) { s.end(); } } });
+    const proxy = listen();
+    const other = listen();
+    try {
+      const probe = [
+        `/usr/bin/nc -z -w 2 127.0.0.1 ${proxy.port} >/dev/null 2>&1 && echo proxy=ok || echo proxy=denied`,
+        `/usr/bin/nc -z -w 2 127.0.0.1 ${other.port} >/dev/null 2>&1 && echo other=ok || echo other=denied`,
+        `[ "$HTTPS_PROXY" = "http://127.0.0.1:${proxy.port}" ] && echo env=ok || echo env=missing`,
+      ].join("; ");
+      const lines = async (withProxy: boolean) => {
+        const guard = { ...w.guard, ...(withProxy ? { proxyFor: (id: string) => (id === "acme/guard" ? { port: proxy.port, env: { HTTPS_PROXY: `http://127.0.0.1:${proxy.port}` } } : undefined) } : {}) };
+        const r = await pluginHookSpawner({ guard, pluginRoot: () => w.root }).run(run(probe));
+        expect(r.kind).toBe("exited");
+        return Object.fromEntries((r as { stdout: string }).stdout.trim().split("\n").map((l) => l.split("=") as [string, string]));
+      };
+      // Control: unfenced, both ports answer, so the denials below are the fence's.
+      const plain = Bun.spawn(["/bin/sh", "-c", `/usr/bin/nc -z -w 2 127.0.0.1 ${other.port} && echo other=ok`], { stdout: "pipe" });
+      expect((await new Response(plain.stdout).text()).trim()).toBe("other=ok");
+      expect(await lines(true)).toEqual({ proxy: "ok", other: "denied", env: "ok" });
+      expect(await lines(false)).toEqual({ proxy: "denied", other: "denied", env: "missing" });
+    } finally {
+      proxy.stop(true);
+      other.stop(true);
+    }
+  }, 60_000);
 });

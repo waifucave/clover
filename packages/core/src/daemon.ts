@@ -174,6 +174,7 @@ import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sd
 import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
 import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
+import { pluginHookSpawner } from "./runtime-sdk/turn-loop/plugin-hook-spawn";
 import { MCP_FIRST_LISTING_WAIT_MS, PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
 import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
 import { pinnedFetch, type PinnedFetchSeam } from "./plugin-host/pinned-fetch";
@@ -3878,7 +3879,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         }),
         // A-M3 on B-M2's host: the plugins' hooks, and their host MCP servers, run where J's router places them (this
         // computer, without a node).
-        hooks: pluginHooks({ registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`) }),
+        hooks: pluginHooks({
+          registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`),
+          // A plugin's `command` hooks run through its own fence (#415, `pluginHookSpawner`, every OS: the fence where
+          // the OS has one, macOS's sandbox-exec, refused there without it): its tree and Clover's run files to read,
+          // its data and temp folders to write, the network only through its tree's proxy (B's 2g). With no run files
+          // (an unusable run folder) they're skipped and reported, and a hook that can deny denies: never unfenced.
+          ...(pluginRun !== undefined ? { commandSpawner: pluginHookSpawner({ guard: pluginRun, pluginRoot: (id) => registry.get(id)?.folder }) } : {}),
+        }),
         mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
         // Bots' Bash sandbox comes from the same fence through lane C's `sandboxSettingsOf` (#356).
