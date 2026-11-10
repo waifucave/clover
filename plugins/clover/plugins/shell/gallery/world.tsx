@@ -317,7 +317,7 @@ const coreHandlers: Handlers = {
       : { items: SESSION_COLUMN.outputs?.items ?? [], more: SESSION_COLUMN.outputs?.more ?? 0 },
   "session.context": ({ id }) => (id === "s_alpha" ? { used: 0.31, tokens: 62_000, window: 200_000 } : { used: 0.14, tokens: 28_000, window: 200_000 }),
   "session.connectors": () => ({ total: 7, needSignIn: 2 }),
-  "models.catalog": () => ({ models: MODELS.models.map((m) => ({ id: m.id, label: m.label, ...(m.detail ? { provider: m.detail } : {}), efforts: MODELS.efforts ?? [] })) as never }),
+  "models.list": () => ({ models: MODELS.models.map((m) => ({ id: m.id, label: m.label, ...(m.detail ? { provider: m.detail } : {}), efforts: MODELS.efforts ?? [] })) as never }),
   "archive.list": ({ query }) => {
     const matching = ARCHIVED.filter((s) => !query || (s.title ?? "").toLowerCase().includes(query.toLowerCase()));
     return { sessions: matching, more: false };

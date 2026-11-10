@@ -13,16 +13,18 @@ const ALPHA: BotView = { id: "alpha", name: "Alpha", model: "openai/gpt-6", effo
 const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-risky", link: "self", isMain: true });
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
-async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
-  const core = fakeCore({
-    "session.send": () => ({ seq: 9 }),
-    "session.interrupt": () => ({ ok: true }),
-    "session.setModel": () => ({ ok: true }),
-    "bot.setUserLayer": () => ({ applied: true }),
-    "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }),
-    "models.catalog": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI" }, { id: "xai/grok-5", label: "Grok 5", provider: "xAI" }] }),
-  });
+async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent; models?: { id: string; name: string; providerName: string; signedIn?: boolean }[] } = {}) {
+  const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
+  // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
+  const host: string[][] = [];
+  const composerHost = {
+    models: async () => ({ models: opts.models ?? [{ id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI" }, { id: "xai/grok-5", name: "Grok 5", providerName: "xAI" }] }),
+    setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); },
+    interrupt: async () => { host.push(["interrupt"]); },
+    stop: async () => { host.push(["stop"]); },
+  };
   const approvals = fakeApprovals();
+  const sends: { to: unknown; message: unknown }[] = [];
   const api = fakeApi({
     bots: { list: async () => [ALPHA], get: async () => ALPHA, watch: () => () => undefined },
     conversation: { get: async () => s },
@@ -31,6 +33,10 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
   const runtime = runtimeWith({
     api: () => api,
     core: () => core,
+    composerHost: () => composerHost,
+    userSend: () => async (to, message) => {
+      sends.push({ to, message });
+    },
     approvals,
     spot: (name) => (name === "composer.action" ? { shape: "keyed" } : undefined),
     entries: opts.entries ?? [],
@@ -42,51 +48,47 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     </UiRuntimeProvider>,
   );
   await act(() => settle());
-  return { core, approvals };
+  return { core, approvals, sends, host };
 }
 
 describe("the composer entry", () => {
-  test("sends the draft as the user's message, with an id and the time, and clears it", async () => {
-    const { core } = await mount();
+  test("sends the draft as the user's words through useUserSend (never a bare session.send), and clears it", async () => {
+    const { core, sends } = await mount();
     fireEvent.change(screen.getByRole("textbox", { name: "Message to Alpha" }), { target: { value: "Hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    const sent = core.calls.find((c) => c.method === "session.send")!.params as { id: string; message: { text: string; clientMessageId: string; sentAt: number } };
-    expect(sent.id).toBe("s_alpha");
-    expect(sent.message.text).toBe("Hello");
-    expect(sent.message.clientMessageId.length).toBeGreaterThan(8);
-    expect(typeof sent.message.sentAt).toBe("number");
+    await act(() => settle());
+    expect(sends).toEqual([{ to: { session: "s_alpha" }, message: { text: "Hello" } }]);
+    expect(core.calls.some((c) => c.method === "session.send")).toBe(false);
     expect((screen.getByRole("textbox", { name: "Message to Alpha" }) as HTMLTextAreaElement).value).toBe("");
   });
 
   test("a running turn shows Stop, which interrupts it", async () => {
-    const { core } = await mount(session({ status: "prompting" }));
+    const { core, host } = await mount(session({ status: "prompting" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(core.calls.filter((c) => c.method === "session.interrupt").map((c) => c.params)).toEqual([{ id: "s_alpha" }]);
+    expect(host).toEqual([["interrupt"]]);
+    expect(core.calls.some((c) => c.method === "session.interrupt")).toBe(false);
   });
 
-  test("a bot's model is its user layer; an agent's is the session's", async () => {
+  test("a model pick goes through the composer spot's host callback, never a bare core call", async () => {
     const bot = await mount();
     fireEvent.click(screen.getByRole("button", { name: "Model: GPT-6, medium" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
-    expect(bot.core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params)).toEqual([{ id: "alpha", patch: { model: "xai/grok-5", effort: "medium" } }]);
+    expect(bot.host).toEqual([["setModel", "xai/grok-5", "medium"]]);
+    expect(bot.core.calls.some((c) => c.method === "bot.setUserLayer")).toBe(false);
     cleanup();
     const agent = await mount(session({ id: "agent-1", kind: "agent", parent: "s_alpha", backend: "Codex", model: "openai/gpt-6" }));
     fireEvent.click(screen.getByRole("button", { name: /^Model: GPT-6/ }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
-    expect(agent.core.calls.filter((c) => c.method === "session.setModel").map((c) => c.params)).toEqual([{ id: "agent-1", model: "xai/grok-5" }]);
+    expect(agent.host).toEqual([["setModel", "xai/grok-5", ""]]);
   });
 
-  test("a level change raises a card: the pill shows it asked for until the card goes", async () => {
-    const { core, approvals } = await mount();
-    approvals.set([card("card-level")]);
-    fireEvent.click(screen.getByRole("button", { name: "Approval level on Studio: Ask when risky" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /Fully automatic/ }));
-    await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "computer.setLevel").map((c) => c.params)).toEqual([{ name: "Studio", level: "automatic" }]);
-    expect(screen.getByRole("button", { name: "Approval level on Studio: Ask when risky, Fully automatic asked for" })).toBeTruthy();
-    act(() => approvals.set([]));
-    await act(() => settle());
-    expect(screen.getByRole("button", { name: "Approval level on Studio: Ask when risky" })).toBeTruthy();
+  test("the computer's level is a label, not a control: no menu, and computer.setLevel is never called", async () => {
+    const { core } = await mount();
+    const label = screen.getByLabelText("Approval level on Studio: Ask when risky");
+    expect(label.tagName).not.toBe("BUTTON");
+    fireEvent.click(label);
+    expect(screen.queryByRole("menuitemradio")).toBeNull();
+    expect(core.calls.some((c) => c.method === "computer.setLevel")).toBe(false);
   });
 
   test("a card in this session holds the pills", async () => {
@@ -100,5 +102,22 @@ describe("the composer entry", () => {
     await mount(session({}), { component: Suggest, entries: [{ pluginId: "suggest", id: "send", spot: "composer.action", key: "send", component: "Suggest", source: "installed", enabledAt: 1 }] });
     expect(screen.getByRole("button", { name: "Suggest for Alpha" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+
+  test("the model menu lists the signed-in providers' models first; the rest are one press away", async () => {
+    const { host } = await mount(session({}), {
+      models: [
+        { id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI", signedIn: true },
+        { id: "openai/gpt-6-mini", name: "GPT-6 mini", providerName: "OpenAI", signedIn: true },
+        { id: "xai/grok-5", name: "Grok 5", providerName: "xAI", signedIn: false },
+        { id: "other/x", name: "Other X", providerName: "Other", signedIn: false },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    expect(screen.getAllByRole("menuitemradio").map((e) => e.textContent)).toEqual([expect.stringContaining("GPT-6"), expect.stringContaining("GPT-6 mini")]);
+    fireEvent.click(screen.getByRole("menuitem", { name: /Show all models \(2 more\)/ }));
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(4);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
+    expect(host).toEqual([["setModel", "xai/grok-5", "medium"]]);
   });
 });

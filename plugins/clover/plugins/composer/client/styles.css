@@ -173,7 +173,12 @@
   cursor: pointer;
 }
 
-.cl-composer__pill:hover,
+/* A level that can't be asked for from here yet: a label, not a control. */
+.cl-composer__pill--static {
+  cursor: default;
+}
+
+.cl-composer__pill:not(.cl-composer__pill--static):hover,
 .cl-composer__pill[aria-expanded="true"] {
   background: var(--clover-color-hover);
   color: var(--clover-color-text);
@@ -211,6 +216,9 @@
   flex-direction: column;
   gap: var(--clover-space-xs);
   width: min(100%, 320px);
+  /* The catalog is more than a thousand models: the list scrolls inside the menu instead of growing the window. */
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
   padding: var(--clover-space-xs);
   border: 1px solid var(--clover-color-hairline-raised);
   border-radius: var(--clover-radius-large);

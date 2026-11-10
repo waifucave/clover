@@ -30,13 +30,15 @@ import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protoco
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
-import { LayerLinks } from "./layer-links";
+import { AppLog, appLogPath } from "./app-log";
+import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
+import { TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
-import { appShortcut, sealedInputAllowed } from "./shortcuts";
+import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
@@ -52,7 +54,9 @@ import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webP
 // First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
 // around the daemon's check of who connects (debug-guard.ts).
 {
-  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)) });
+  // A test-marked build (the define, folded out of a real one) may open its DevTools port on loopback for the UI run.
+  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)), testDebug: typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_DEBUG === "1" });
+  if (typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_DEBUG === "1") process.stdout.write("[clover-app] test-marked build: the DevTools port is open on loopback for the UI run\n");
   if (refused.length > 0) {
     process.stderr.write(`clover: refusing to start with ${refused.map((n) => `--${n}`).join(", ")} (a debugging or secret-logging switch)\n`);
     app.exit(2);
@@ -100,8 +104,10 @@ app.commandLine.appendSwitch("no-proxy-server");
 const session_ = linuxSession(process.env);
 registerSchemes();
 
+const appLog = new AppLog(appLogPath(home));
 function log(line: string): void {
   process.stdout.write(`[clover-app] ${line}\n`);
+  appLog.write(line);
 }
 
 // The dev overrides (the daemon binary, the app token) count only in a dev or unpackaged run.
@@ -169,9 +175,17 @@ if (!app.requestSingleInstanceLock()) {
     void requestQuit("os");
   });
   void app.whenReady().then(ready).catch((err) => {
-    log(`start failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+    log(`start failed: ${why(err)}`);
     if (args.smoke) report({ ok: false, reason: `start failed: ${String(err)}` });
   });
+}
+
+/** What an error is called in a log line: its name and a short code, never its message or stack (those can carry words,
+ *  a key, a token or a URL). */
+function why(err: unknown): string {
+  if (!(err instanceof Error)) return "error";
+  const code = (err as { code?: unknown }).code;
+  return typeof code === "string" || typeof code === "number" ? `${err.name} ${String(code).replace(/[^\w.-]/g, "").slice(0, 40)}` : err.name;
 }
 
 async function ready(): Promise<void> {
@@ -218,7 +232,18 @@ async function ready(): Promise<void> {
     // A part's word that the person used its view counts only after main saw their mouse-down there.
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
-    api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
+    api: (pluginId, method, params) => layerLinks.call(pluginId, method, params).catch((err: unknown) => {
+      // A refusal is a line in the app log (the method, never its params), so a dead button leaves a trace.
+      if (err instanceof Error && /^a layer doesn't call /.test(err.message)) log(`layer: ${pluginId}: ${err.message.replace(/[^\w. -]/g, "").slice(0, 80)}`);
+      throw err;
+    }),
+    takeGesture: (windowId) => sends.take(windowId),
+    treeRequest: async (method, params) => {
+      if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
+      const client = pair.client;
+      if (client === undefined) throw new LayerError("Clover isn't running");
+      return client.request(method, params ?? {}, 30_000);
+    },
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
     // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,
     // the hour it stood visible), and here the app signs with the answer key over the card's id and hash and takes the
@@ -260,16 +285,30 @@ async function ready(): Promise<void> {
         }
       }
     },
-    userSend: async (windowId, to, message) => {
-      // One key press or click the main process saw come to the window covers one send (§5.5).
-      if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
+    userSend: async (windowId, to, message, active) => {
+      // Everything that can be refused is refused first, so a refused call spends nobody's gesture.
       const target = sendTarget(to);
       if (target === undefined) throw new LayerError("not a place the user's words go");
       const images = sendImages(message.images);
       if ("error" in images) throw new LayerError(images.error);
       const client = pair.client;
       if (client === undefined) throw new LayerError("Clover isn't running");
-      return client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+      // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
+      // window covers one send (§5.5).
+      if (!active || !sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
+      try {
+        return await client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+      } catch (err) {
+        log(`send: the core refused pill.send (${why(err)})`);
+        throw err;
+      }
+    },
+    windowDrag: (windowId, shell) => {
+      const win = BrowserWindow.fromId(windowId);
+      if (win === null || win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return;
+      const [x, y] = win.getPosition();
+      const r = windowDrags.start(windowId, { shell, titleHeight: TITLE_BAR_HEIGHT, cardPending: sealed.anyPending(), window: { x: x ?? 0, y: y ?? 0 }, cursor: cursorPoint(windowId) });
+      if (!r.ok) log(`window: a drag was refused (${r.why})`);
     },
     activeSession: (windowId, session) => {
       activeSessions.set(windowId, session);
@@ -280,7 +319,7 @@ async function ready(): Promise<void> {
         log(`web: ${web.plugin.id}'s page isn't one the app shows (a URL or a page in its folder, and a partition)`);
         return;
       }
-      void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${err instanceof Error ? err.message : String(err)}`));
+      void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${why(err)}`));
     },
   }, log);
   startCensus(runtime);
@@ -306,7 +345,7 @@ async function ready(): Promise<void> {
         new Notification({ title: t("title"), body: t("body") }).show();
         void installs.downloaded(version);
       },
-    }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
+    }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
     tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
@@ -351,6 +390,11 @@ function disarmFallback(cardId: string): void {
 async function showFallbackCard(cardId: string): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
+  const smokeFallback = process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+  if (!fallbackMayShow({ headless, smokeFallback, testInput: (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
+    log(`card: the fallback card for ${cardId} was not shown (headless)`);
+    return;
+  }
   const mint = sealed.mint(cardId, "own");
   if (mint === undefined) return;
   const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
@@ -388,7 +432,11 @@ async function showFallbackCard(cardId: string): Promise<void> {
     if (win.isDestroyed()) return;
     const main = win.webContents.mainFrame;
     sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
-    if (!win.isDestroyed()) win.showInactive();
+    if (!win.isDestroyed()) {
+      log(`card: the fallback card for ${cardId} (${card.kind}) is shown`);
+      if (headless) log(`window: shown while headless (the sealed smoke's fallback card ${cardId})`);
+      win.showInactive();
+    }
   }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
@@ -515,7 +563,7 @@ function scheduleReload(): void {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     const c = pair.client;
-    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${err instanceof Error ? err.message : String(err)}`));
+    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${why(err)}`));
   }, 200);
 }
 
@@ -537,7 +585,7 @@ async function loadRegistry(client: DaemonClient): Promise<void> {
   if (ui === undefined || settingsRaw === undefined) {
     registryRetry = setTimeout(() => {
       const c = pair.client;
-      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${err instanceof Error ? err.message : String(err)}`));
+      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${why(err)}`));
     }, registryRetryMs);
     registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
   } else registryRetryMs = 2_000;
@@ -585,7 +633,7 @@ const pageDeps = {
       mkdirSync(dirname(welcomeFlag()), { recursive: true });
       writeFileSync(welcomeFlag(), `${new Date().toISOString()}\n`);
     } catch (err) {
-      log(`welcome: couldn't note it's done: ${err instanceof Error ? err.message : String(err)}`);
+      log(`welcome: couldn't note it's done: ${why(err)}`);
     }
   },
   page: () => corePage,
@@ -695,7 +743,7 @@ function leaveApp(): void {
   try {
     browser?.shutdown();
   } catch (err) {
-    log(`browser: shutdown failed: ${err instanceof Error ? err.message : String(err)}`);
+    log(`browser: shutdown failed: ${why(err)}`);
   }
   pair?.stop();
   tray?.destroy();
@@ -976,6 +1024,30 @@ async function okToPaste(windowId: number, lines: number): Promise<boolean> {
 
 /** Sends counted as the user's: one key press or click per send (the user-send gate). */
 const sends = new SendGate();
+const windowDrags = new TitleDrag();
+/** Where the main process last saw the cursor over a window, on the screen (from its own mouse events). */
+const cursors = new Map<number, { x: number; y: number }>();
+function cursorPoint(windowId: number): { x: number; y: number } | undefined {
+  return cursors.get(windowId);
+}
+/** The window moves with the cursor the main process reads itself; a card appearing ends the drag. */
+function dragMove(windowId: number, cursor: { x: number; y: number }): void {
+  const win = BrowserWindow.fromId(windowId);
+  if (win === null || win.isDestroyed()) return windowDrags.forget(windowId);
+  // The cursor left the window (past a small lag the window's own move leaves behind): the drag is over.
+  const b = win.getBounds();
+  const slack = 60;
+  if (cursor.x < b.x - slack || cursor.x > b.x + b.width + slack || cursor.y < b.y - slack || cursor.y > b.y + b.height + slack) return dragEnd(windowId);
+  const to = windowDrags.move(windowId, cursor, sealed.anyPending());
+  if (to !== undefined) win.setPosition(to.x, to.y);
+}
+function dragEnd(windowId: number): void {
+  const from = windowDrags.end(windowId);
+  const win = BrowserWindow.fromId(windowId);
+  if (from === undefined || win === null || win.isDestroyed()) return;
+  const [x, y] = win.getPosition();
+  if (x !== from.x || y !== from.y) log(`window: moved by its title area, from (${from.x}, ${from.y}) to (${x}, ${y})`);
+}
 
 /** The person's mouse-downs, by window (the view-frame gate). */
 const pointers = new PointerLog();
@@ -1015,7 +1087,7 @@ async function diagnoseHang(win: BrowserWindow): Promise<void> {
     try {
       process.kill(pid, "SIGKILL");
     } catch (err) {
-      log(`layers: could not stop process ${pid}: ${err instanceof Error ? err.message : String(err)}`);
+      log(`layers: could not stop process ${pid}: ${why(err)}`);
     }
   }
   if (verdict.restart) hangs.unresponsive(win.id);
@@ -1074,15 +1146,16 @@ const webViews = new WebViews((windowId) => {
 function startBrowser(): void {
   const send = (method: string, params: unknown) => {
     const c = pair?.client;
-    if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${err instanceof Error ? err.message : String(err)}`));
+    if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${why(err)}`));
   };
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
+    headless,
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
   });
-  void browser.start().catch((err) => log(`browser: start failed: ${err instanceof Error ? err.message : String(err)}`));
+  void browser.start().catch((err) => log(`browser: start failed: ${why(err)}`));
 }
 
 function browserHost(): BrowserHost {
@@ -1112,7 +1185,16 @@ function watchWindow(win: BrowserWindow): void {
     }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
+    const at = { x: mouse.globalX ?? 0, y: mouse.globalY ?? 0 };
+    if (mouse.type === "mouseUp") return dragEnd(id);
+    if (mouse.type === "mouseMove") {
+      cursors.set(id, at);
+      if (windowDrags.isGoing(id)) dragMove(id, at);
+      return;
+    }
     if (mouse.type !== "mouseDown") return;
+    cursors.set(id, at);
+    windowDrags.down(id, { button: mouse.button, x: mouse.x, y: mouse.y });
     menus.input(id);
     sends.input(id);
     pointers.down(id, mouse.x, mouse.y);
@@ -1131,9 +1213,13 @@ function watchWindow(win: BrowserWindow): void {
   });
   win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
+  // A drag ends when the window loses focus too, not only on the release (which may go to another window).
+  win.on("blur", () => dragEnd(id));
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
+    windowDrags.forget(id);
+    cursors.delete(id);
     pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);
@@ -1243,6 +1329,7 @@ async function smoke(): Promise<void> {
   // touched.
   if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
     win.showInactive();
+    log(`window: shown while headless (the sealed smoke's input routing)`);
     log(`sealed-click: main window shown for input routing`);
   }
   const probe = `(() => ({

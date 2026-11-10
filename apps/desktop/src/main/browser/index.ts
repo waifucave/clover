@@ -53,6 +53,8 @@ export interface TabMenuActions {
 export interface BrowserHostOptions {
   /** This computer's name, for the tabs' views. */
   computer: string;
+  /** A headless run: no tab opens a real window. */
+  headless?: boolean;
   /** To the daemon (`browser.report`), batched. */
   report(events: AppTabEvent[]): void;
   /** To the daemon (`browser.hold`): the person took a tab in the view. */
@@ -359,7 +361,8 @@ export class BrowserHost {
   private windowOpen(tab: BrowserTab, details: { url: string }): ReturnType<Parameters<Electron.WebContents["setWindowOpenHandler"]>[0]> {
     // A window opens in its opener's session, which must already take the filter's path (it does: the opener does).
     if (!isBrowserUrlAllowed(details.url) || !isSessionReady(tab.contents.session)) return { action: "deny" };
-    const choice = choosePopup(tab.contents.getURL(), details.url, tab.place === "shown");
+    // A headless run opens no real window, whatever place the tab is in.
+    const choice = choosePopup(tab.contents.getURL(), details.url, tab.place === "shown" && this.opts.headless !== true);
     if (choice === "offscreen-tab") {
       return { action: "allow", overrideBrowserWindowOptions: { show: false, width: AGENT_VIEWPORT.width, height: AGENT_VIEWPORT.height, useContentSize: true, skipTaskbar: true, webPreferences: tabWebPreferences(tab.partition, true) } };
     }

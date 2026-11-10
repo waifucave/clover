@@ -33,3 +33,10 @@ export function appShortcut(input: KeyInput, platform: NodeJS.Platform): AppShor
   if (key === ",") return "settings";
   return undefined;
 }
+
+/** Whether the app's own fallback card window may show. A headless run never shows a window on the owner's screen, except the
+ *  sealed smoke run that asks for it (`CLOVER_SMOKE_SEALED_FALLBACK=1`, an unpackaged or test-marked run) because it has to press
+ *  the card's button; that one logs that it showed a window while headless. */
+export function fallbackMayShow(input: { headless: boolean; smokeFallback: boolean; testInput: boolean }): boolean {
+  return !input.headless || (input.smokeFallback && input.testInput);
+}

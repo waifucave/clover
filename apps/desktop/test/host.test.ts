@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
-import { appShortcut, sealedInputAllowed } from "../src/main/shortcuts";
+import { appShortcut, fallbackMayShow, sealedInputAllowed } from "../src/main/shortcuts";
 import { islandCards } from "../src/layer/clover/cards";
 import type { CardMeta } from "@waifucave/clover-protocol";
 import { mediaType, pluginFile } from "../src/main/ui/files";
@@ -186,5 +186,17 @@ describe("surface windows", () => {
     expect(linuxSession({ XDG_SESSION_TYPE: "wayland" }, "linux")).toBe("wayland");
     expect(linuxSession({ DISPLAY: ":99" }, "linux")).toBe("x11");
     expect(linuxSession({ WAYLAND_DISPLAY: "wayland-0" }, "darwin")).toBeUndefined();
+  });
+});
+
+describe("the fallback card window", () => {
+  test("a headless run never shows it, except the sealed smoke that asks for it in a test run", () => {
+    expect(fallbackMayShow({ headless: true, smokeFallback: false, testInput: false })).toBe(false);
+    expect(fallbackMayShow({ headless: true, smokeFallback: false, testInput: true })).toBe(false);
+    expect(fallbackMayShow({ headless: true, smokeFallback: true, testInput: false })).toBe(false);
+    expect(fallbackMayShow({ headless: true, smokeFallback: true, testInput: true })).toBe(true);
+  });
+  test("a normal run shows it", () => {
+    expect(fallbackMayShow({ headless: false, smokeFallback: false, testInput: false })).toBe(true);
   });
 });

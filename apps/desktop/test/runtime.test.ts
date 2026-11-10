@@ -435,10 +435,41 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(to).not.toContain(`${child.processId}:${child.routingId}`);
   });
 
-  test("only a clover surface's part sends the user's words", () => {
-    const s = setup();
+  test("only a part of the bundled clover tree sends the user's words, and is a tree part", () => {
+    const s = setup(composerFixture());
     const shell = mountShell(s);
-    expect(() => s.rt.userSender(shell.shellFrame, shell.info.mount)).toThrow("only the app's own surfaces");
+    expect(s.rt.treePart(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    expect(s.rt.userSender(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    // A third-party part in its own layer's document is neither.
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+    const token = new URL(composer.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(composer.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    expect(s.rt.treePart(child, composer.mount)).toBeUndefined();
+    expect(() => s.rt.userSender(child, composer.mount)).toThrow("only the composer's entry and the app's own parts");
+  });
+});
+
+describe("the composer spot's mount record", () => {
+  test("composerOf knows only an entry the core mounted in the composer spot, for the session the declaring document gave", () => {
+    const s = setup(composerFixture());
+    const shell = mountShell(s);
+    expect(s.rt.composerOf(shell.shellFrame, shell.info.mount)).toBeUndefined();
+    expect(s.rt.mainShell(shell.shellFrame, shell.info.mount)).toMatchObject({ windowId: WIN });
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const comp = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+    const token = new URL(comp.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(comp.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    // A third party's composer entry in its own layer is a composer-spot entry too, for the session its declaring document says.
+    expect(s.rt.composerOf(child, comp.mount)).toBeUndefined();
+    s.rt.setProps(shell.shellFrame, comp.mount, { bot: { id: "alpha", name: "Alpha" }, session: "alpha:main" });
+    expect(s.rt.composerOf(child, comp.mount)).toMatchObject({ pluginId: "fixture-composer", session: "alpha:main", bot: "alpha", windowId: WIN, tree: false });
+    s.rt.setProps(shell.shellFrame, comp.mount, { session: "../etc" });
+    expect(s.rt.composerOf(child, comp.mount)).toBeUndefined();
   });
 });
 

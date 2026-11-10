@@ -105,9 +105,9 @@ export const SPOTS: readonly SpotInfo[] = [
     props: z.object({ bot: BotRef }), doc: "The tab's side area." },
   { name: "conversation", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], needs: ["conversation.read"], fields: none,
     props: z.object({ bot: BotRef, session: z.string() }), doc: "The conversation view." },
-  { name: "composer", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], fields: none,
+  { name: "composer", shape: "single", declaredBy: "bot-tab", inBotTab: true, context: ["bot"], needs: ["conversation.post"], fields: none,
     props: z.object({ bot: BotRef, session: z.string() }),
-    doc: "The composer; a send counts as the user's only on a real key press or click (§5.5)." },
+    doc: "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's." },
   // Inside the tab's parts.
   { name: "avatar", shape: "keyed", declaredBy: "bot-stage", inBotTab: true, keys: ["vrm", "live2d"], context: ["bot"], fields: none,
     props: z.object({ bot: BotRef, file: z.string(), format: z.string(), speaking: z.boolean(), speech: z.looseObject({}).optional() }),

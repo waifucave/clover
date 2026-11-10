@@ -59,6 +59,10 @@ export interface UiRuntime {
   sessionKind?(session: string): SessionKind | undefined;
   api(pluginId: string): PluginApi;
   core?(pluginId: string): CoreClient | undefined;
+  /** The user's own words, from a key press or click (the app's `useUserSend`); the gallery and the tests may fake it. */
+  userSend?(pluginId: string): UserSend | undefined;
+  /** The composer spot's host callbacks (the gallery and the tests may fake them). */
+  composerHost?(pluginId: string): ComposerHost | undefined;
   tokens?(): Readonly<Record<string, TokenValue>>;
   t?(pluginId: string, key: string, params?: Record<string, string | number>): string;
   approvals?: { cards(): readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
@@ -85,6 +89,17 @@ export const isCloverTree = (pluginId: string) => pluginId === "clover" || plugi
 
 const fill = (text: string, params?: Record<string, string | number>) => (params ? text.replace(/\{(\w+)\}/g, (m, k) => (k in params ? String(params[k]) : m)) : text);
 
+/** Sends the user's own words to a session, a bot or a target. */
+export type UserSend = (to: { session: string } | { bot: string } | { target: string }, message: string | { text: string }) => Promise<void>;
+
+/** What the `composer` spot hands its entry (the SDK's `ComposerHost`). */
+export interface ComposerHost {
+  models(): Promise<{ models: { id: string; name?: string; providerName?: string; efforts?: string[] }[]; default?: string }>;
+  setModel(model: string, effort?: string): Promise<unknown>;
+  interrupt(): Promise<void>;
+  stop(): Promise<void>;
+}
+
 export interface Ui {
   Spot(props: SpotElementProps): ReactNode;
   Card: ((props: CardElementProps) => ReactNode) & {
@@ -95,6 +110,8 @@ export interface Ui {
   AppView(props: { call: { session: string; callId: string }; className?: string }): ReactNode;
   usePluginApi(): PluginApi;
   useCore(): CoreClient | undefined;
+  useUserSend(): UserSend | undefined;
+  useComposerHost(): ComposerHost | undefined;
   useTokens(): Readonly<Record<string, TokenValue>>;
   useT(): (key: string, params?: Record<string, string | number>) => string;
   useApprovals(): { readonly cards: readonly CardMeta[]; subscribe(listener: () => void): Unsubscribe };
@@ -200,6 +217,18 @@ export function uiFor(react: ReactLike): Ui {
     return runtime && isCloverTree(id) ? runtime.core?.(id) : undefined;
   }
 
+  function useUserSend(): UserSend | undefined {
+    const runtime = useRuntime();
+    const id = pluginOf(useScope());
+    return runtime && isCloverTree(id) ? runtime.userSend?.(id) : undefined;
+  }
+
+  function useComposerHost(): ComposerHost | undefined {
+    const runtime = useRuntime();
+    const id = pluginOf(useScope());
+    return runtime?.composerHost?.(id);
+  }
+
   function useTokens(): Readonly<Record<string, TokenValue>> {
     return useRuntime()?.tokens?.() ?? {};
   }
@@ -226,7 +255,7 @@ export function uiFor(react: ReactLike): Ui {
     return createElement(RuntimeContext.Provider, { value: runtime }, children);
   }
 
-  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
+  const ui: Ui = { Spot, Card, AppView, usePluginApi, useCore, useUserSend, useComposerHost, useTokens, useT, useApprovals, useEntry, UiRuntimeProvider, useSpotEntries };
   built.set(react, ui);
   return ui;
 }

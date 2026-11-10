@@ -17,6 +17,10 @@
 //   5. the bot calls that plugin's MCP tool
 //   6. a fenced file write raises an approval card, the app answers, and the write lands
 //   7. the daemon restarts on the same home and boots
+//   8-12. the window itself, over the DevTools protocol, on the restarted daemon (ui-steps.ts): drag the title area,
+//      type in the composer and send and read the reply, pick a model, open Settings, change a setting and reopen it.
+//      The source app takes the DevTools port behind CLOVER_DEV_DEBUG=1; a packaged one only if it is test-marked
+//      (CLOVER_TEST_DEBUG=1, loopback), and any other build refuses it (debug-guard.ts), so those steps are BLOCKED.
 // It ends with a table, and exits 1 on any FAIL or BLOCKED.
 //
 // What it never does: no window, no Dock icon, no TCC prompt (the app runs `--clover-headless`, Chromium on its mock
@@ -36,6 +40,8 @@ import { HARNESS_TOKEN_FILE } from "../../packages/core/src/platform/pair/run-fi
 import { USAGE_INERT_ENV } from "../../packages/core/src/usage/wiring";
 import { CloverClient, RpcError, hello } from "./client";
 import { startFakeAnthropic, type FakeProvider } from "./fake-anthropic";
+import { Cdp } from "./cdp";
+import { UI_STEPS, uiSteps } from "./ui-steps";
 
 const REPO = resolve(import.meta.dir, "..", "..");
 const DESKTOP = join(REPO, "apps", "desktop");
@@ -72,7 +78,9 @@ const STEPS = [
   "the bot calls the plugin's MCP tool",
   "a fenced write raises an approval card, then lands",
   "the daemon restarts on the same home and boots",
+  ...UI_STEPS.map((s) => `window: ${s}`),
 ] as const;
+const TOTAL = STEPS.length;
 const rows: Row[] = [];
 const say = (line: string): void => { if (verbose) console.error(`acceptance: ${line}`); };
 const record = (n: number, status: Status, detail: string): void => {
@@ -173,6 +181,10 @@ async function cleanup(): Promise<void> {
   fake?.close();
   if (keepLogs !== undefined) {
     try { mkdirSync(keepLogs, { recursive: true }); cpSync(logs, keepLogs, { recursive: true }); } catch { /* best effort */ }
+    // The app's own log (<home>/logs/app.log and its .1) lives in the run's temp home, which is deleted below.
+    for (const f of ["app.log", "app.log.1"]) {
+      try { cpSync(join(home, "logs", f), join(keepLogs, f)); } catch { /* not written, or best effort */ }
+    }
   }
   if (keychainMade) spawnSync("security", ["delete-keychain", keychain], { stdio: "ignore" });
   rmSync(root, { recursive: true, force: true });
@@ -443,7 +455,7 @@ async function main(): Promise<void> {
     const refused = checkTestBuild();
     if (refused !== "") {
       console.error(`acceptance: not running ${appBundle}: ${refused}`);
-      for (let n = 1; n <= 7; n++) record(n, "BLOCKED", n === 1 ? `not a test build: ${refused}` : "not a test build");
+      for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `not a test build: ${refused}` : "not a test build");
       return;
     }
   }
@@ -455,7 +467,7 @@ async function main(): Promise<void> {
     if (target === "source") { say("building the dev bundled plugins"); await buildBundledPlugins(); }
     app = target === "source" ? sourceApp() : packagedApp(appBundle!);
   } catch (err) {
-    for (let n = 1; n <= 7; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
+    for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `setup: ${why(err)}` : "setup failed");
     return;
   }
 
@@ -464,7 +476,7 @@ async function main(): Promise<void> {
   try {
     daemon = await startDaemonProc();
   } catch (err) {
-    for (let n = 1; n <= 7; n++) record(n, "BLOCKED", n === 1 ? `the daemon didn't start: ${why(err)}` : "no daemon");
+    for (let n = 1; n <= TOTAL; n++) record(n, "BLOCKED", n === 1 ? `the daemon didn't start: ${why(err)}` : "no daemon");
     return;
   }
   const smokeOut = join(root, "smoke.json");
@@ -503,7 +515,8 @@ async function main(): Promise<void> {
   } catch (err) {
     const detail = `the run's ${target === "source" ? "app" : "cli"} hello was refused: ${why(err)}`;
     for (let n = 2; n <= 6; n++) record(n, "BLOCKED", detail);
-    await restartStep(daemon, appProc.proc, undefined);
+    const up = await restartStep(daemon, appProc.proc, undefined);
+    await uiPhase(app, up);
     return;
   }
 
@@ -640,11 +653,36 @@ async function main(): Promise<void> {
   }
 
   c.close();
-  await restartStep(daemon, appProc.proc, session);
+  const restarted = await restartStep(daemon, appProc.proc, session);
+  await uiPhase(app, restarted);
+}
+
+/** Steps 8 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 7 restarted. */
+async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean): Promise<void> {
+  const first = 8;
+  const blockAll = (why: string) => { for (let i = 0; i < UI_STEPS.length; i++) record(first + i, "BLOCKED", why); };
+  if (!daemonUp) return blockAll("the daemon didn't come back (step 7)");
+  const port = 9300 + Math.floor(Math.random() * 500);
+  const env = { ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, ...(target === "source" ? { CLOVER_DEV_DEBUG: "1" } : { CLOVER_TEST_DEBUG: "1" }) };
+  const proc = startChild("ui-app", app.exe, [...app.args, "--clover-headless", `--clover-capture=${join(root, "capture.png")}`, "--use-mock-keychain", `--remote-debugging-port=${port}`], env);
+  let cdp: Cdp | undefined;
+  try {
+    await until("the window's DevTools port", 120_000, async () => {
+      if (!alive(proc.proc)) fail(`the app exited (${proc.proc.exitCode ?? proc.proc.signalCode}): ${firstLine(proc.log, /refusing|refused|failed|error/i) ?? lastLines(proc.log)}`);
+      try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
+    }, 500);
+    const rpc = (await appDriver()).client;
+    await uiSteps({ cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", appLog: () => readLog(join(home, "logs", "app.log")) }, (i, status, detail) => record(first + i, status, detail));
+  } catch (err) {
+    for (let i = 0; i < UI_STEPS.length; i++) if (!rows.some((r) => r.n === first + i)) record(first + i, "BLOCKED", `the window couldn't be driven: ${why(err)}`);
+  } finally {
+    cdp?.close();
+    await endChild(proc.proc);
+  }
 }
 
 /** Step 7: the app and the daemon stop; the daemon starts again on the same home, and answers. */
-async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc: ChildProcess, session: string | undefined): Promise<void> {
+async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc: ChildProcess, session: string | undefined): Promise<boolean> {
   try {
     await endChild(appProc);
     stoppingDaemon = true;
@@ -667,8 +705,10 @@ async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc:
       record(7, "PASS", "the daemon booted again on the same home and serves its socket");
     }
     void again;
+    return true;
   } catch (err) {
     record(7, statusOf(err), why(err));
+    return false;
   }
 }
 
@@ -679,6 +719,11 @@ try {
   console.error(`acceptance: the run itself failed: ${why(err)}`);
   code = 2;
 } finally {
+  // A run is headless: no window may reach the owner's screen. The app logs "window: shown while headless" whenever one would.
+  for (const f of ["app.log.1", "app.log"]) {
+    const shown = readLog(join(home, "logs", f)).split("\n").find((l) => /window: shown while headless/.test(l));
+    if (shown !== undefined) { console.error(`acceptance: FAIL: a window was shown during a headless run (${f}): ${shown.slice(0, 300)}`); code = code === 0 ? 1 : code; break; }
+  }
   await cleanup();
   const after = listKeychains();
   if (keychainsBefore !== "" && after !== keychainsBefore) {
@@ -686,7 +731,7 @@ try {
     code = 2;
   }
 }
-for (let n = 1; n <= 7; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
+for (let n = 1; n <= TOTAL; n++) if (!rows.some((r) => r.n === n)) rows.push({ n, name: STEPS[n - 1]!, status: "BLOCKED", detail: "not reached" });
 rows.sort((a, b) => a.n - b.n);
 const w = Math.max(...rows.map((r) => r.name.length));
 console.log(`\nClover acceptance (${target}${appBundle ? `: ${appBundle}` : ""})\n`);

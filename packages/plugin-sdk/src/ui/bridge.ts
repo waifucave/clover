@@ -311,6 +311,13 @@ export interface LayerBridge {
   /** The `clover` layer only: the session the window shows now (null: none), so a desktop notification for it is held
    *  back while the app is in front. */
   activeSession(mount: string, session: string | null): void;
+  /** The shell only: the press that just came to the window was on an element that declares `-webkit-app-region: drag`.
+   *  Chromium honors the CSS only in the main frame, and the shell is a frame; the core moves the window itself, from its
+   *  own sight of the press and the cursor, and only for the shell it mounted in `app.root`. */
+  windowDrag(mount: string): void;
+  /** The `composer` spot's host callbacks (spec §5.5), for the entry the core mounted there: `models`, and the acting
+   *  `setModel`, `interrupt` and `stop`, each of which counts only inside the user's own key press or click. */
+  composer(mount: string, op: "models" | "setModel" | "interrupt" | "stop", args?: unknown): Promise<unknown>;
   /** A plugin-API call to the core, on this part's own plugin's connection (the daemon checks it as that plugin). */
   api(mount: string, method: string, params?: unknown): Promise<unknown>;
   /** A key press or paste in a terminal's own element (`TerminalApi.input`): the core writes only what it derives
