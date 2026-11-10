@@ -314,6 +314,10 @@ export class BotSessionDriver implements SessionDriver {
   /** The sandbox the open runtime was given (canonical JSON): the agent SDK takes `sandbox` only when a runtime opens,
    *  so each turn start compares the host's sandbox now with it and reopens on a difference (`#sandboxChanged`). */
   #builtSandbox: string | undefined;
+  /** The MCP servers the open runtime was given, by name: the agent SDK takes `mcpServers` only when a runtime opens,
+   *  so a server a plugin adds (an install, an enable) or takes away since reopens it at the next turn start
+   *  (`#serversChanged`). A server whose tools change keeps the runtime and is told in the turn (`mcpChangesSince`). */
+  #builtServers: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   #turn: RunningTurn | undefined;
   #origin: TurnOrigin | undefined;
@@ -645,6 +649,7 @@ export class BotSessionDriver implements SessionDriver {
         });
       }
     }
+    this.#builtServers = Object.keys(mcpServers).sort().join("\u0000");
     const cwd = ctx.paths.scratch;
     mkdirSync(cwd, { recursive: true });
     const queue = createHostPromptQueue();
@@ -834,7 +839,7 @@ export class BotSessionDriver implements SessionDriver {
         return false;
       }
     })();
-    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache && !this.#sandboxChanged()) return this.#inc;
+    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache && !this.#sandboxChanged() && !this.#serversChanged()) return this.#inc;
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open();
@@ -844,6 +849,19 @@ export class BotSessionDriver implements SessionDriver {
   /** Whether the host's sandbox for this session differs from what the open runtime got (a folder the fence names was
    *  made or went, a policy changed): the runtime then reopens before the turn, resuming its transcript. A host whose
    *  sandbox can't be read now reopens too, so the open surfaces the error rather than a stale sandbox running on. */
+  #serversChanged(): boolean {
+    if (this.#d.mcp === undefined || this.#builtServers === undefined) return false;
+    let now: string;
+    try {
+      now = ["clover_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "clover_core")].sort().join("\u0000");
+    } catch {
+      return false;
+    }
+    if (now === this.#builtServers) return false;
+    this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
+    return true;
+  }
+
   #sandboxChanged(): boolean {
     if (this.#d.sandbox === undefined) return false;
     try {

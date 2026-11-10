@@ -225,6 +225,46 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("a plugin MCP server added after the runtime opened (an install) reopens it at the next turn, and its tool is there; the same set never reopens", async () => {
+    const home = tempHome();
+    const ran: string[] = [];
+    const runner: McpRunner = {
+      async run(_server, tool) {
+        ran.push(tool);
+        return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" };
+      },
+    };
+    const servers: { server: string; plugin: string; tools: { name: string; inputSchema: Record<string, unknown>; load: "preload" }[] }[] = [];
+    const opened: string[][] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("again"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core"]]);
+      // A plugin is installed between turns: its server reaches the runtime at the next turn.
+      servers.push({ server: "acceptance-echo-echo", plugin: "acceptance-echo", tools: [{ name: "Echo", inputSchema: { type: "object", properties: {} }, load: "preload" }] });
+      const end = await driver.turn(user('CALL mcp__acceptance-echo-echo__Echo {}'), control());
+      expect(end.reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core"], ["acceptance-echo-echo", "clover_core"]]);
+      expect(ran).toEqual(["Echo"]);
+      expect(lines.filter((l) => l.includes("reopening: its MCP servers changed"))).toHaveLength(1);
+      // Nothing changed: no reopen.
+      await driver.turn(user("once more"), control());
+      expect(opened).toHaveLength(2);
+      // The plugin goes away: the runtime reopens without it.
+      servers.length = 0;
+      await driver.turn(user("bye"), control());
+      expect(opened.at(-1)).toEqual(["clover_core"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   test("the pause holds a tool call until the user resumes; a computer that stops running the bots refuses it", async () => {
     const home = tempHome();
     let may = false;
