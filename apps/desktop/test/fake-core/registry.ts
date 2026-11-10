@@ -6,6 +6,8 @@ import { basename, join } from "node:path";
 
 export interface FakeView {
   pluginId: string;
+  /** The manifest's name (`UiPluginView.name`). */
+  name: string;
   treeHash: string;
   layer: string;
   assetBase: string;
@@ -20,7 +22,6 @@ export interface FakeView {
   capabilities?: string[];
   isBot?: boolean;
   botTheme?: string;
-  name?: string;
   css?: string[];
 }
 
@@ -58,6 +59,7 @@ export function cloverChildren(root = join(REPO, "plugins", "clover"), depth = 0
 export function cloverViews(): FakeView[] {
   return cloverChildren().map(({ name, dir, manifest }, i) => ({
     pluginId: `clover/${name}`,
+    name: manifest.name ?? name,
     treeHash: ZERO,
     layer: "clover",
     assetBase: dir,
@@ -86,6 +88,7 @@ export function folderView(dir: string, enabledAt = 1000): FakeView {
   const id = m.id ?? basename(dir);
   return {
     pluginId: id,
+    name: m.name ?? id,
     treeHash: ZERO,
     layer: id.replace(/\//g, "--"),
     assetBase: dir,

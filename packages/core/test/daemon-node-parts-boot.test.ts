@@ -28,7 +28,6 @@ import { MemoryNetwork } from "../src/links/memory-wire";
 import type { DeviceLinks } from "../src/links/node";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../src/secrets/clover-secret-store";
 import { mainSessionIdFor } from "../src/sessions/ids";
-import { PASTE_CANT_ASK } from "../src/tree/terminals";
 
 const clock = new SystemClock();
 const posix = process.platform !== "win32";
@@ -69,7 +68,7 @@ async function boot(o: { pairApp?: boolean; approvals?: { request(r: ApprovalReq
   const home = temp("clover-int-home-");
   const userHome = temp("clover-int-user-");
   daemon = await startDaemon({
-    home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, ...(o.pairApp ? {} : { pair: false as const }),
+    home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, ...(o.pairApp ? { appPeer: "none" as const } : { pair: false as const }),
     links: {
       wire: (k) => net.endpoint(k.publicKey), handshake: o.hs ? new HandshakeClient({ baseUrl: o.hs.url, clock }) : null, publicTime: null,
       mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" },
@@ -87,17 +86,25 @@ async function boot(o: { pairApp?: boolean; approvals?: { request(r: ApprovalReq
 const LUNA = { kind: "session", sessionId: mainSessionIdFor("luna"), sessionKind: "bot", bot: "luna" } as const;
 
 describe("a bot's terminal on a real daemon", () => {
-  test("opens and runs; a paste of several lines is refused with a reason while there's no broker, never dropped silently", async () => {
+  test("opens and runs; a paste of several lines waits on the daemon's own broker's card, never dropped silently", async () => {
     if (!posix || typeof Bun.Terminal !== "function") return;
     const { node } = await boot();
+    const broker = daemon!.cloverParts.broker()!;
     let seen = "";
     node.terminals.onOutput((out) => { seen += out.data; });
     const t = await node.terminals.open({ computer: "Studio", cols: 80, rows: 24, session: LUNA.sessionId }, LUNA);
     await waitFor("the shell", () => seen.includes("ready"));
     await node.terminals.write(t.terminalId, "hello from luna\n");
     await waitFor("the echo", () => seen.includes("hello from luna"));
-    const refused = await node.terminals.write(t.terminalId, "one\ntwo\n", { paste: true }).catch((e: Error) => e);
-    expect((refused as Error).message).toBe(PASTE_CANT_ASK);
+    // The daemon's one broker (INT, #292) asks: a card shows, and the paste waits for it.
+    const pasted = node.terminals.write(t.terminalId, "one\ntwo\n", { paste: true }).catch((e: Error) => e);
+    await waitFor("the paste's card", () => broker.cards().length === 1);
+    let settled = false;
+    void pasted.then(() => (settled = true));
+    await Bun.sleep(50);
+    // Nothing went in while the card is open (a no or a yes is the next test's, with a broker of its own).
+    expect(settled).toBe(false);
+    expect(seen.includes("two")).toBe(false);
     await node.terminals.close(t.terminalId);
   }, 30_000);
 
@@ -212,7 +219,7 @@ async function connection(path: string) {
 }
 
 describe("the app's terminal panel on a real daemon (K's audit)", () => {
-  test("terminal.open, write, resize and close for the app, the output to its connection alone, the paste refused with its reason", async () => {
+  test("terminal.open, write, resize and close for the app, the output to its connection alone, the paste waiting on the broker's card", async () => {
     if (!posix || typeof Bun.Terminal !== "function") return;
     const { node, home } = await boot({ pairApp: true });
     const hello = async () => {
@@ -232,9 +239,15 @@ describe("the app's terminal panel on a real daemon (K's audit)", () => {
     expect((await app.request("terminal.write", { terminalId: id, data: "typed by the user\n" })).result).toEqual({ ok: true });
     await waitFor("the echo", () => output(app).includes("typed by the user"));
     expect((await app.request("terminal.resize", { terminalId: id, cols: 100, rows: 30 })).result).toEqual({ ok: true });
-    // A paste of several lines, with no card path yet: refused with the reason, which the panel shows.
-    const paste = await app.request("terminal.write", { terminalId: id, data: "one\ntwo\n", paste: true });
-    expect(paste.error?.message).toBe(PASTE_CANT_ASK);
+    // A paste of several lines asks on the daemon's one broker (INT, #292): a card shows, and nothing goes in until
+    // it's answered.
+    const broker = daemon!.cloverParts.broker()!;
+    let pasteSettled = false;
+    void app.request("terminal.write", { terminalId: id, data: "one\ntwo\n", paste: true }).then(() => { pasteSettled = true; });
+    await waitFor("the paste's card", () => broker.cards().length === 1);
+    await Bun.sleep(50);
+    expect(pasteSettled).toBe(false);
+    expect(output(app).includes("two")).toBe(false);
     // Another connection doesn't see it, can't write to it or close it.
     expect(output(other)).toBe("");
     expect((await other.request("terminal.write", { terminalId: id, data: "x" })).error?.message).toContain(`no terminal ${id}`);

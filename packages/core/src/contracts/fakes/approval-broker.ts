@@ -69,11 +69,11 @@ export class FakeApprovalBroker implements ApprovalBroker {
     this.#verify = opts.verify ?? (() => false);
   }
 
-  async request(req: ApprovalRequest, opts: { signal?: AbortSignal } = {}): Promise<ApprovalDecision> {
+  async request(req: ApprovalRequest, opts: { signal?: AbortSignal; onCard?: (cardId: string) => void } = {}): Promise<ApprovalDecision> {
     if (opts.signal?.aborted) return { allowed: false, by: "cancelled" };
     const auto = await this.#decide(req);
     if (auto) return auto;
-    return this.#showCard(req, opts.signal);
+    return this.#showCard(req, opts.signal, opts.onCard);
   }
 
   cards(): Card[] {
@@ -177,7 +177,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
     return undefined;
   }
 
-  #showCard(req: ApprovalRequest, signal: AbortSignal | undefined): Promise<ApprovalDecision> {
+  #showCard(req: ApprovalRequest, signal: AbortSignal | undefined, onCard?: (cardId: string) => void): Promise<ApprovalDecision> {
     const issuedAt = this.#clock.now();
     const expires = cardExpires(req.kind, req.origin);
     // Rules 1 and 9: an always-card kind, or a bound call, is answered on its own, so it never offers "always".
@@ -220,6 +220,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
         p.timer = this.#clock.setTimeout(() => this.#settle(p, "expired", { allowed: false, by: "expired", cardId: card.id }), UNATTENDED_CARD_TIMEOUT_MS);
       }
       signal?.addEventListener("abort", () => this.#settle(p, "cancelled", { allowed: false, by: "cancelled", cardId: card.id }), { once: true });
+      try { onCard?.(card.id); } catch { /* the requester's own */ }
       this.#listeners.emit({ type: "requested", card: structuredClone(card) });
     });
   }

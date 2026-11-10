@@ -2,6 +2,7 @@
 // provider keychain slots (`keychain-tokens.ts`). Fakes only: lane B's registry and host fakes, an in-memory daemon
 // secret store, a recorded Codex fake. No network, no account, no real key, no real Keychain.
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadCatalog } from "@waifucave/clover-provider-catalog";
 import type { ProviderEvent } from "@waifucave/clover-provider-runtime";
@@ -20,6 +21,7 @@ import { activeCatalog, installedModelPlugins } from "../../../src/runtime-sdk/m
 import { bundledModelProviderOf, keychainModelPluginCredentials, modelPluginSlotFor } from "../../../src/runtime-sdk/model-plugins/keychain-tokens";
 import { secretStoreCredentials } from "../../../src/runtime-sdk/model-plugins/plugin-api";
 import { startModelPlugins, type StartedModelPlugins } from "../../../src/runtime-sdk/model-plugins/start";
+import { serveApiHandlers } from "./api-handlers-host";
 
 /** The daemon's store, in memory. */
 class DaemonStore implements SecretStore {
@@ -146,6 +148,52 @@ async function text(events: AsyncIterable<ProviderEvent>): Promise<string> {
 }
 
 describe("startModelPlugins", () => {
+  test("a first load that fails rolls back (no handlers, nothing installed); a clean stop leaves the router as it was", async () => {
+    const registry = registryOf();
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    const api = serveApiHandlers(host, registry);
+    let serveApiCalls = 0;
+    const serveApi = host.serveApi.bind(host);
+    host.serveApi = (r) => { serveApiCalls += 1; serveApi(r); };
+    // A home whose catalog folder can't be made: the first load fails.
+    const blocker = join(tempDir("clover-a2-start-bad-"), "a-file");
+    writeFileSync(blocker, "x");
+    await expect(startModelPlugins({ registry, host, home: blocker, secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h) })).rejects.toThrow();
+    expect(api.served()).toBe(0);
+    expect(installedModelPlugins()).toBeUndefined();
+    // A clean start and stop: the handlers come and go; the host's router is never replaced.
+    const ok = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-ok-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h) });
+    expect(api.served()).toBe(1);
+    ok.stop();
+    ok.stop();
+    expect(api.served()).toBe(0);
+    expect(installedModelPlugins()).toBeUndefined();
+    expect(serveApiCalls).toBe(0);
+  });
+
+  test("by default no code adapter is served through the plugin host: every code provider stays on this build's compiled adapter, and sessions get no host adapters", async () => {
+    const registry = registryOf();
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    for (const id of Object.keys(CODE_PLUGINS)) {
+      const record = registry.get(modelPluginId(id))!;
+      host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
+    }
+    const api = serveApiHandlers(host, registry);
+    const lines: string[] = [];
+    started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-off-"), secrets: new DaemonStore(), addApiHandlers: (h) => api.addApiHandlers(h), log: (l) => lines.push(l) });
+    expect(started.plugins.snapshot!.served.size).toBe(0);
+    expect(lines.some((l) => l.includes("code providers stay on the compiled path"))).toBe(true);
+    const option = started.plugins.sessionOption({ caller: { kind: "core" } });
+    expect(option === undefined || (option.hostAdapters ?? []).length === 0).toBe(true);
+    const compiled = new Map(loadCatalog().providers.map((p) => [p.id, p.adapterId]));
+    for (const id of Object.keys(CODE_PLUGINS)) {
+      const row = activeCatalog().providers.find((p) => p.id === id);
+      expect(row?.adapterId).toBe(compiled.get(id));
+    }
+    started.stop();
+    started = undefined;
+  }, 30_000);
+
   test("installs the plugins: the catalog readers read theirs, the internal jobs run Codex on its plugin with the keychain's sign-in; stop puts the compiled catalog back", async () => {
     const fake: FakeServer & { bearers: string[]; requests: Array<{ path: string; headers: Record<string, string> }> } = (await codexFake.startCodexFake({
       scenarios: { "gpt-5.6-luna": [openaiResponsesFake.responsesStream({ text: ["hello from ", "codex"] })] },
@@ -164,7 +212,9 @@ describe("startModelPlugins", () => {
         if (u.host !== "chatgpt.com") throw new Error(`no fake for ${u.host}`);
         return globalThis.fetch(`${fake.url}${u.pathname}${u.search}`, init);
       };
-      started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-home-"), secrets: store, fetch });
+      const api = serveApiHandlers(host, registry);
+      // The fake host carries live objects in process, so the code adapters may be served through it.
+      started = await startModelPlugins({ registry, host, home: tempDir("clover-a2-start-home-"), secrets: store, fetch, addApiHandlers: (h) => api.addApiHandlers(h), serveCodeAdapters: true });
       expect(installedModelPlugins()).toBe(started.plugins);
       expect(activeCatalog()).not.toBe(loadCatalog());
       expect(activeCatalog().providers.length).toBe(loadCatalog().providers.length);

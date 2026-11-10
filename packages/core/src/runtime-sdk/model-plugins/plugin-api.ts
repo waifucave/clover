@@ -1,12 +1,8 @@
 // The plugin API a model plugin's host half calls, as far as an adapter needs it: `net.fetch` (the keyed fetch,
-// spec §5.4) and `secrets.get` (only in a process of the plugin's own, §5.2). Owner: lane A, as an INTERIM: lane B's
-// router (B-M2, `ApiRouter` in the plugin host contract) serves the whole plugin API and replaces this; until then
-// the core serves these two calls to model plugins with lane A's reference keyed fetch (`createKeyedFetch`), which
-// lane B's `net.fetch` matches case for case (the conformance kit's `runKeyedFetchConformance`).
-//
-// It RELIES ON `guardApiRouter` (the plugin host contract) in front of it: the guard refuses a call whose plugin
-// doesn't run in the process it came from, which is what makes `call.pluginId` and `call.process` trustworthy here.
-// Never serve it to a host without the guard.
+// spec §5.4) and `secrets.get` (only in a process of the plugin's own, §5.2). Owner: lane A. These are HANDLERS in
+// lane B's router (`DaemonPluginHost.addApiHandlers`), never a router of their own (#302's review B1): B's gate runs
+// first (the call exists in the process it came from, the plugin is on and running, the capability is granted, and a
+// fetch's host is among its granted `network:` entries), so `ctx.record` is the calling plugin's own install record.
 //
 // * The fetch is built per plugin from its install record's manifest, never from anything the call says: its hosts
 //   are its `network:` capabilities; its keys are its `auth` entries (top-level and each model's), each placed where
@@ -15,7 +11,8 @@
 //   plugin never sees it: it exists only in the request the core sends, and every response header echoing it is gone.
 // * `secrets.get` answers only a plugin the core put in a process of its own (`hostProcessFor` from the install
 //   record), and only for a secret its own `auth` entries name.
-import { hostProcessFor, type ApiRouter } from "../../contracts/plugin-host";
+import type { ApiHandlers } from "../../plugin-host/api/router";
+import { isBundledClover } from "./load";
 import { ContractError } from "../../contracts/common";
 import type { PluginRecord, PluginRegistry } from "../../contracts/plugin-registry";
 import { secretTokenSource, type SecretStore } from "../../contracts/secret-store";
@@ -75,7 +72,14 @@ function keyedInit(init: RequestInit | undefined): KeyedFetchInit {
 }
 
 /** The interim router for a model plugin's `net.fetch` and `secrets.get` (see this file's header). */
-export function modelPluginApiRouter(opts: ModelPluginApiOptions): ApiRouter {
+/**
+ * The model plugins' two calls of the plugin API, `net.fetch` (keyed) and `secrets.get`, as handlers in B's router
+ * (`DaemonPluginHost.addApiHandlers`, #302's review B1): B's gate runs first (the call exists where it was made, the
+ * plugin is on and running, the capability is granted, and `net.fetch`'s host is in its GRANTED `network:` entries).
+ * Until B's fence and network rules land (2f, 2g), a third-party plugin is refused here with the reason: only the
+ * bundled tree's plugins get a keyed fetch or a secret.
+ */
+export function modelPluginApiHandlers(opts: ModelPluginApiOptions): ApiHandlers {
   const fetches = new Map<string, { key: string; fetch: KeyedFetch }>();
   const fetchFor = (record: PluginRecord): KeyedFetch => {
     // Keyed on everything the fetch is built from (the A-M2 review): a changed grant or `auth` entry builds a new
@@ -89,23 +93,24 @@ export function modelPluginApiRouter(opts: ModelPluginApiOptions): ApiRouter {
     fetches.set(record.id, { key, fetch });
     return fetch;
   };
-  return async (call) => {
-    const record = opts.registry.get(call.pluginId);
-    if (record === undefined || record.manifest === undefined) throw new ContractError("refused", `${call.pluginId} isn't running`);
-    if (call.path === "net.fetch") {
-      const [url, init, fetchOpts] = call.args as [string, RequestInit | undefined, KeyedFetchOptions | undefined];
-      return fetchFor(record)(url, keyedInit(init), fetchOpts);
-    }
-    if (call.path === "secrets.get") {
-      if (call.process !== "own" || hostProcessFor({ id: record.id, source: record.source, ...(record.manifest.host?.runtime ? { runtime: record.manifest.host.runtime } : {}) }) !== "own") {
-        throw new ContractError("refused", "secrets.get exists only in a process of the plugin's own (spec §5.2)");
-      }
-      const [name] = call.args as [string];
-      const entry = authEntriesOf(record).get(name);
-      if (entry === undefined || entry.secret !== name) throw new ContractError("refused", `${record.id} has no secret ${JSON.stringify(name)}`);
-      return opts.secret(record.id, name);
-    }
-    throw new ContractError("refused", `${call.path} isn't served to model plugins until lane B's plugin API (B-M2)`);
+  const bundledOnly = (record: PluginRecord, what: string): void => {
+    if (!isBundledClover(record)) throw new ContractError("refused", `${what} is served to Clover's own bundled plugins only until the plugin API's fence and network rules land; ${record.id} is a third-party plugin`);
+  };
+  return {
+    "net.fetch": async (ctx, args) => {
+      bundledOnly(ctx.record, "a keyed net.fetch");
+      const [url, init, fetchOpts] = args as [string, RequestInit | undefined, KeyedFetchOptions | undefined];
+      return fetchFor(ctx.record)(url, keyedInit(init), fetchOpts);
+    },
+    "secrets.get": async (ctx, args) => {
+      bundledOnly(ctx.record, "secrets.get");
+      // B's gate already holds it to a process of the plugin's own; said again here, where the secret is read.
+      if (ctx.process !== "own") throw new ContractError("refused", "secrets.get exists only in a process of the plugin's own (spec §5.2)");
+      const [name] = args as [string];
+      const entry = authEntriesOf(ctx.record).get(name);
+      if (entry === undefined || entry.secret !== name) throw new ContractError("refused", `${ctx.record.id} has no secret ${JSON.stringify(name)}`);
+      return opts.secret(ctx.record.id, name);
+    },
   };
 }
 

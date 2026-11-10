@@ -12,11 +12,22 @@
 //
 // The `clover` tree's children are found by their manifests under plugins/clover (wherever lane M's layout puts them),
 // so no script names a child's path. `bun run dev:app` runs the result unpackaged.
+//
+// `--test-build` (scripts/release/build.ts --test-build only): the main process is compiled with the test-build label
+// (scripts/test-build.ts) in place of `false`, so it uses Chromium's mock keychain and an answer key in memory. The
+// define is compile-time only: nothing at run time can set it.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { BunPlugin } from "bun";
+import { testBuildDefine } from "../../../scripts/test-build";
 
+const unknown = process.argv.slice(2).filter((a) => a !== "--test-build");
+if (unknown.length > 0) {
+  console.error(`build: unknown argument ${unknown[0]} (usage: build [--test-build])`);
+  process.exit(2);
+}
+const testBuild = process.argv.includes("--test-build");
 const root = join(import.meta.dir, "..");
 const repo = join(root, "..", "..");
 const out = join(root, "out");
@@ -40,7 +51,7 @@ const browser = { target: "browser" as const, format: "esm" as const, minify: tr
 const LAYER_EXTERNALS = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom", "react-dom/client", "@waifucave/clover-plugin-sdk/ui"];
 
 // ---- The main process and the preload ----
-await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked" }, "the main process");
+await build({ entrypoints: [join(root, "src", "main", "index.ts")], outdir: join(out, "main"), target: "node", format: "esm", external: ["electron"], sourcemap: "linked", define: testBuildDefine(testBuild) }, "the main process");
 await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: join(out, "main"), target: "node", format: "cjs", external: ["electron"], naming: "[name].cjs" }, "the preload");
 
 // ---- The Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`) ----

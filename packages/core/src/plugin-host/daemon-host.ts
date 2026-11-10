@@ -26,7 +26,7 @@ import { commandOwner, commandsApi } from "../commands/views";
 import type { ApprovalBroker } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
-import { guardApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
+import { guardApiRouter, type ApiRouter, type InstallRecord, type PluginHost } from "../contracts/plugin-host";
 import type { PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { SecretStore, SecretValue } from "../contracts/secret-store";
 import { confirmApi } from "./api/confirm";
@@ -52,6 +52,8 @@ export interface DaemonPluginHost {
   readonly pluginSecrets: PluginSecrets;
   /** The user's side of plugin settings (`plugin.settings.get`/`set`). */
   readonly settings: PluginSettings;
+  /** The capability gate without the process check, for a component's call (`plugin.layer.api`, process `ui`). */
+  readonly gate: ApiRouter;
   /** Serves more of the API after start (a core area that starts later, like the model plugins' keyed `net.fetch` and
    *  `secrets.get`). The router's gate (the call exists there, the plugin is on and running, its OK granted the call's
    *  capability) runs before any of them. A path another handler already serves is refused, never silently replaced.
@@ -95,6 +97,8 @@ export interface StartPluginHostOptions {
   assetUrl?: (pluginId: string, path: string) => string;
   /** The daemon's log, for a process's own output. */
   log?: (line: string) => void;
+  /** Sends a core event to the app (a host half's `ui.send` becomes `plugin_ui_message`). */
+  emit?: (event: { type: string; [key: string]: unknown }) => void;
   clock?: Clock;
   /** The bundled plugins' files as staging verified them (`stageBundledPlugins`' `digests`): a bundled plugin's entry
    *  runs only from bytes matching its digest, and not at all without one. */
@@ -108,10 +112,21 @@ export interface StartPluginHostOptions {
   env?: Readonly<Record<string, string | undefined>>;
 }
 
+/** `ui.send`'s limits: the serialized value's size, and messages per plugin per second. */
+export const UI_SEND_MAX_BYTES = 64 * 1024;
+export const UI_SEND_PER_SECOND = 50;
+
 /** Where a plugin's files are served from until lane E names it: the layer of its top-level plugin. */
-export function defaultAssetUrl(pluginId: string, path: string): string {
-  const safe = assetPath(path);
-  if (safe === undefined) throw new ContractError("invalid", `${JSON.stringify(path.slice(0, 200))} isn't a path inside ${pluginId}'s folder`);
+export function defaultAssetUrl(pluginId: string, encodedPath: string): string {
+  // Given encoded (`assetPath`'s form); anything that isn't exactly that form is refused.
+  let decoded: string | undefined;
+  try {
+    decoded = encodedPath.split("/").map((p) => decodeURIComponent(p)).join("/");
+  } catch {
+    decoded = undefined;
+  }
+  const safe = decoded === undefined ? undefined : assetPath(decoded);
+  if (safe === undefined || safe !== encodedPath) throw new ContractError("invalid", `${JSON.stringify(encodedPath.slice(0, 200))} isn't a path inside ${pluginId}'s folder`);
   const top = pluginId.split("/")[0]!;
   const rest = pluginId.includes("/") ? `${pluginId.slice(top.length + 1)}/` : "";
   return `clover-plugin://${top}/${rest}${safe}`;
@@ -287,18 +302,50 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   });
 
   const settings = new PluginSettings({ registry: o.registry, backend: filePluginSettings(o.home), secrets: o.secrets });
+  const uiSendWindows = new Map<string, { start: number; n: number }>();
   const handlers: ApiHandlers[] = [
     pointsApi({ registry: o.registry, host, assetUrl: o.assetUrl ?? defaultAssetUrl }),
     storageApi(new SyncedStores(fileSyncedStores(o.home))),
     settingsApi(settings),
     commandsApi(o.registry),
     ...(o.approvals !== undefined ? [confirmApi(o.approvals)] : []),
+    {
+      // A component runs one of its plugin's host handlers, as the user, for the session it shows.
+      // Its arguments are `HostApi.call`'s, in order: the handler's name, its args, and options (`timeoutMs`).
+      "host.call": async (ctx, args) => {
+        const [handler, callArgs, opts] = args as [unknown, unknown, { timeoutMs?: unknown } | undefined];
+        if (typeof handler !== "string" || handler === "") throw new ContractError("invalid", "host.call takes the handler's name first");
+        const timeoutMs = typeof opts?.timeoutMs === "number" ? opts.timeoutMs : undefined;
+        return host.invoke({ pluginId: ctx.pluginId, handler, args: callArgs ?? null, caller: ctx.caller, ...(ctx.session !== undefined ? { session: ctx.session } : {}), ...(timeoutMs !== undefined ? { timeoutMs } : {}) });
+      },
+      // A host half's message to its components, relayed by the app to their `host.on`.
+      // The value is capped at UI_SEND_MAX_BYTES serialized, and each plugin at UI_SEND_PER_SECOND (#333's review).
+      "ui.send": (ctx, args) => {
+        const event = args[0];
+        if (typeof event !== "string" || event === "" || event.length > 128) throw new ContractError("invalid", "ui.send takes an event name");
+        let text: string | undefined;
+        try {
+          text = JSON.stringify(args[1] ?? null);
+        } catch {
+          text = undefined;
+        }
+        if (text === undefined) throw new ContractError("invalid", "ui.send takes a JSON value");
+        const size = new TextEncoder().encode(text).length;
+        if (size > UI_SEND_MAX_BYTES) throw new ContractError("invalid", `ui.send's value is ${size} bytes; at most ${UI_SEND_MAX_BYTES}`);
+        const now = Date.now();
+        const w = uiSendWindows.get(ctx.pluginId);
+        if (w === undefined || now - w.start >= 1000) uiSendWindows.set(ctx.pluginId, { start: now, n: 1 });
+        else if (++w.n > UI_SEND_PER_SECOND) throw new ContractError("refused", `${ctx.pluginId} sent more than ${UI_SEND_PER_SECOND} UI messages this second`);
+        o.emit?.({ type: "plugin_ui_message", pluginId: ctx.pluginId, event, value: JSON.parse(text) });
+      },
+    },
   ];
   const recordOf = (id: string) => {
     const r = o.registry.get(id);
     return r === undefined ? undefined : installRecordOf(r);
   };
-  host.serveApi(guardApiRouter(createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name) }), recordOf));
+  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name) });
+  host.serveApi(guardApiRouter(gate, recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its
   // calls failing, and starts fresh on its next use; one running from a tree that has since changed reloads.
@@ -321,6 +368,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     registry: o.registry,
     pluginSecrets: pluginSecretsOf(o.secrets),
     settings,
+    gate,
     addApiHandlers(added) {
       const paths = Object.keys(added) as ApiCallPath[];
       for (const p of paths) {

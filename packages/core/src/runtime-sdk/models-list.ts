@@ -13,10 +13,9 @@
 // * **With `session`,** only the models that session's runtime takes: an agent backend lists its own (lane K), a bot or
 //   a coding session on the embedded runtime the whole catalog. An unknown session is `not_found`.
 //
-// Owner: lane A. Until lane B's protocol branch lands, the method's spec is `MODELS_LIST` below, the exact shape B
-// pinned; it is replaced by `SESSIONS_METHODS.modelsList` then.
+// Owner: lane A. The method's spec is the protocol's (`SESSIONS_METHODS.modelsList`).
 import { z } from "zod";
-import { AnyPluginId, defineMethod, SessionId, Text, utf16, type MethodSpec } from "@waifucave/clover-protocol";
+import { ModelListing, SESSIONS_METHODS, Text } from "@waifucave/clover-protocol";
 import type { WinterCatalog, WinterModelDescriptor } from "@waifucave/clover-provider-catalog";
 import { ContractError } from "../contracts/common";
 import { handler, type MethodHandler } from "../rpc/handler";
@@ -25,33 +24,9 @@ import { modelPluginId } from "./model-plugins/bundled";
 import { installedModelPlugins } from "./model-plugins";
 import { effortVocabularyOf, imagesAcceptedBy, toolsRefusedFor } from "./provider-selection";
 
-/** A model as a picker lists it (lane B's `ModelListing`). */
-export const ModelListing = z.object({
-  /** The qualified catalog id `session.setModel` takes. */
-  id: utf16(200, 1),
-  name: Text,
-  /** The provider entry, its name as the plugin's manifest gives it (in the user's locale), and the plugin that
-   *  contributes it. */
-  provider: utf16(128, 1),
-  providerName: Text,
-  plugin: AnyPluginId,
-  /** Its reasoning-effort levels, in order; empty when it has none. */
-  efforts: z.array(utf16(32, 1)).max(16),
-  defaultEffort: utf16(32, 1).optional(),
-  /** Whether it takes images (so a picker can say an attachment won't go). */
-  images: z.boolean(),
-  /** Whether its provider is signed in; a model whose provider isn't can't run a turn yet. */
-  signedIn: z.boolean(),
-});
-export type ModelListing = z.infer<typeof ModelListing>;
-
-/** Lane B's `models.list` spec, as pinned on `lane/b-m1-registry` (dfdecdeae). */
-export const MODELS_LIST = defineMethod({
-  name: "models.list", owner: "A", roles: ["app", "cli", "remote"],
-  params: z.object({ session: SessionId.optional() }),
-  result: z.object({ models: z.array(ModelListing).max(10_000), default: utf16(200).optional() }),
-  doc: "The models a session can switch to (`session.setModel`), read-only, for a model picker (lane I's phone among them): every model of a provider plugin that is on, signed in or not, less blocked rows and the rows of a blocked provider (a picker never offers what `session.setModel` refuses). With `session`, only the ones that session's runtime takes. `default` is the user's default model.",
-}) satisfies MethodSpec;
+/** A model as a picker lists it, and the method: the protocol's own (`SESSIONS_METHODS.modelsList`). */
+export { ModelListing };
+export const MODELS_LIST = SESSIONS_METHODS.modelsList;
 
 export type ModelsListResult = z.infer<typeof MODELS_LIST.result>;
 

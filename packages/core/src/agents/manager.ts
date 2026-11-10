@@ -149,6 +149,9 @@ interface Entry {
   parts?: PluginParts;
   daemon: DaemonAgentRecord;
   session?: AgentSession;
+  /** The level last held against the running session (at its turn, or at a change): `levelsChanged` acts only when
+   *  the level really moved from it (#292 check 2: the registry's watch fires on every computer change). */
+  appliedLevel?: Level;
   /** Holds waiting for the pause switch. */
   held: number;
   /** Aborted when the session ends or the daemon closes: a held call never runs after that. */
@@ -606,19 +609,18 @@ export class AgentManager {
     return entry;
   }
 
-  /** The level the session's permission requests are judged at: a routine's raised level, or its computer's. */
+  /** The level the session's permission requests are judged at: the stricter of its own (a routine's) and its
+   *  computer's level now. A routine started at `automatic` drops with its computer (INT, #292 review S1): another
+   *  computer's routine level, and this computer's own, count only when they aren't above the computer's (remote.ts). */
   #levelOf(e: Entry): Level {
     const own = this.#o.levelOf?.(e.computer) ?? "read-only";
-    // Another computer's routine level counts here only when it isn't above this computer's own (remote.ts).
-    if (e.peer) return peerLevel(e.level, own);
-    return e.level ?? own;
+    return peerLevel(e.level, own);
   }
 
-  /** A routine's level as the broker and the plugin tools see it: for an agent run for another computer, never above
-   *  this computer's own. */
+  /** A routine's level as the broker and the plugin tools see it: never above its computer's level now. */
   #routineLevelOf(e: Entry): Level | undefined {
     if (e.level === undefined) return undefined;
-    return e.peer ? this.#levelOf(e) : e.level;
+    return this.#levelOf(e);
   }
 
   /** While paused (the owner's ruling), waits until the switch is back, or the turn is withdrawn. A held agent isn't
@@ -689,6 +691,7 @@ export class AgentManager {
   async #applyLevel(e: Entry, session: AgentSession): Promise<void> {
     const s = session as { setReadOnly?: (on: boolean) => Promise<void>; setLevel?: (level: Level) => Promise<void> };
     const level = this.#levelOf(e);
+    e.appliedLevel = level;
     if (e.backend.quirks.marks.includes("unasked-actions")) {
       if (s.setReadOnly) await s.setReadOnly(level === "read-only");
       else if (level === "read-only") throw new ContractError("refused", `${e.backend.id} acts without asking and can't be held at read-only, so this turn wasn't sent`);
@@ -699,12 +702,26 @@ export class AgentManager {
 
   /** The computers' levels changed (the daemon's `watchLevels`, or a caller): every running session's mode floor is
    *  held against its level now, a running turn's too (a drop from accept-edits mid-turn switches the agent out of
-   *  acceptEdits under it, or cancels the turn). Read-only itself still follows at the next turn. */
+   *  acceptEdits under it, or cancels the turn). An agent that acts without asking, at a drop to read-only, has its
+   *  running turn cancelled, as the pause does, and goes into its read-only mode at once (INT, #292 review S2). */
   levelsChanged(): void {
+    const warn = (e: Entry) => (err: unknown) => this.#o.log?.(`[agents] ${e.id}: ${err instanceof Error ? err.message : String(err)}`);
     for (const e of this.#entries.values()) {
-      const s = e.session as { setLevel?: (level: Level) => Promise<void> } | undefined;
-      if (!s?.setLevel) continue;
-      void s.setLevel(this.#levelOf(e)).catch((err: unknown) => this.#o.log?.(`[agents] ${e.id}: ${err instanceof Error ? err.message : String(err)}`));
+      if (!e.session) continue;
+      const s = e.session as { setReadOnly?: (on: boolean) => Promise<void>; setLevel?: (level: Level) => Promise<void> };
+      const level = this.#levelOf(e);
+      // Only a real change: a hold, the user's typing or a computer going online fires the same watch.
+      const before = e.appliedLevel;
+      if (level === before) continue;
+      e.appliedLevel = level;
+      if (level === "read-only" && before !== undefined && e.backend.quirks.marks.includes("unasked-actions")) {
+        if (e.driver.busy()) {
+          e.transcript.call({ ts: this.#o.clock.now(), type: "level-dropped", level, cancelled: true });
+          void e.session.cancel().catch(warn(e));
+        }
+        if (s.setReadOnly) void s.setReadOnly(true).catch(warn(e));
+      }
+      if (s.setLevel) void s.setLevel(level).catch(warn(e));
     }
   }
 

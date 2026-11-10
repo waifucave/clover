@@ -119,3 +119,54 @@ test("a compiled macOS core without the process holder beside it names the missi
   expect(missingProcessHolder({ platform: "darwin", compiled: false, execPath: at, exists: () => false })).toBeUndefined();
   expect(missingProcessHolder({ platform: "linux", compiled: true, execPath: "/opt/Clover/resources/daemon/clover-core", exists: () => false })).toBeUndefined();
 });
+
+// A test-marked release build's start (scripts/test-build.ts): a test's keychain file and a temp home, or no start.
+test("a test-marked build starts only with a throwaway keychain file and a HOME and CLOVER_HOME outside this account's home", async () => {
+  const { testBuildStartRefusal } = await import("../src/startup-guard");
+  const { join, sep } = await import("node:path");
+  // Paths in this OS's own form, so the cases hold wherever the suite runs (a test build itself is macOS's).
+  const root = process.platform === "win32" ? "C:\\" : "/";
+  const account = join(root, "Users", "someone");
+  const run = join(root, "tmp", "run");
+  const o = { account: () => account, real: (p: string) => p.replace(/[\\/]+$/, "") };
+  const ok = { CLOVER_TEST_KEYCHAIN: join(run, "t.keychain-db"), HOME: join(run, "home") };
+  expect(testBuildStartRefusal(ok, [], o)).toBeUndefined();
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(run, "clover") }, [], o)).toBeUndefined();
+  // No keychain file, or an empty one, in the environment or in any raw entry.
+  expect(testBuildStartRefusal({ HOME: join(run, "home") }, [], o)).toContain("CLOVER_TEST_KEYCHAIN is not set");
+  expect(testBuildStartRefusal({ ...ok, CLOVER_TEST_KEYCHAIN: "" }, [], o)).toContain("CLOVER_TEST_KEYCHAIN is empty");
+  expect(testBuildStartRefusal(ok, ["CLOVER_TEST_KEYCHAIN="], o)).toContain("CLOVER_TEST_KEYCHAIN is empty");
+  // HOME: unset, this account's (with a trailing separator too), or a duplicate entry naming it.
+  expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: join(run, "k") }, [], o)).toContain("HOME is not set");
+  expect(testBuildStartRefusal({ ...ok, HOME: account }, [], o)).toContain("HOME is this account's home");
+  expect(testBuildStartRefusal({ ...ok, HOME: `${account}${sep}` }, [], o)).toContain("HOME is this account's home");
+  expect(testBuildStartRefusal(ok, [`HOME=${account}`], o)).toContain("HOME is this account's home");
+  expect(testBuildStartRefusal({ ...ok, HOME: "" }, [], o)).toContain("HOME is this account's home");
+  // CLOVER_HOME inside this account's home (the live .clover, or any folder there) or empty; a look-alike prefix is fine.
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(account, ".clover") }, [], o)).toContain("CLOVER_HOME is inside this account's home");
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: account }, [], o)).toContain("CLOVER_HOME is inside");
+  expect(testBuildStartRefusal(ok, [`CLOVER_HOME=${join(account, "x")}`], o)).toContain("CLOVER_HOME is inside");
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: "" }, [], o)).toContain("CLOVER_HOME is inside");
+  expect(testBuildStartRefusal({ ...ok, CLOVER_HOME: join(root, "Users", "someone-other", ".clover") }, [], o)).toBeUndefined();
+  // An account home that can't be read refuses (it can't tell a temp HOME from the real one).
+  expect(testBuildStartRefusal(ok, [], { ...o, account: () => undefined })).toContain("could not be read");
+  // Every refusal names the build and never the login keychain as a fallback.
+  expect(testBuildStartRefusal({}, [], o)).toContain("test-marked build");
+});
+
+darwinTest("a test-marked build's HOME check follows links: a link to this account's home is its home", async () => {
+  const { testBuildStartRefusal, accountHome } = await import("../src/startup-guard");
+  const { mkdtempSync, rmSync, symlinkSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const own = accountHome();
+  if (own === undefined) return;
+  const dir = mkdtempSync(join(tmpdir(), "lane-int-home-link-"));
+  try {
+    symlinkSync(own, join(dir, "home"));
+    expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: join(dir, "k"), HOME: join(dir, "home") }, [])).toContain("HOME is this account's home");
+    expect(testBuildStartRefusal({ CLOVER_TEST_KEYCHAIN: join(dir, "k"), HOME: dir }, [])).toBeUndefined();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

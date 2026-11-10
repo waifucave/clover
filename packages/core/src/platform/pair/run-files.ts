@@ -71,6 +71,16 @@ export async function lockRunDir(runDir: string, deps: RunFileDeps): Promise<voi
   }
 }
 
+/** A test-marked build's copy of the harness token (scripts/test-build.ts), beside app.token: the acceptance script reads
+ *  it here rather than from the run's throwaway keychain file, whose item only the signed test core is trusted to
+ *  read. Written only behind the compile-time define (daemon.ts), so a real build has none of it. */
+export const HARNESS_TOKEN_FILE = "harness.token";
+
+/** Writes the harness token for the user alone (0600, atomically), as app.token is. */
+export async function writeHarnessTokenFile(runDir: string, token: string, deps: RunFileDeps): Promise<void> {
+  await writeOwnerOnly(join(runDir, HARNESS_TOKEN_FILE), token, deps);
+}
+
 /** Mint this run's `app` token and write it for the user alone. Returns the token, which the daemon
  *  keeps in memory to check the app's hello and never logs. */
 export async function mintAppToken(runDir: string, deps: RunFileDeps): Promise<string> {

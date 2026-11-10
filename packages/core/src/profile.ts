@@ -12,6 +12,9 @@ export function resolveCloverProfile(env: NodeJS.ProcessEnv = process.env): Clov
   return env.CLOVER_PROFILE === "dev" ? "dev" : "dist";
 }
 
+/** The overrides `keychainService` has already reported, so each is said once per process. */
+const overrideWarned = new Set<string>();
+
 /**
  * Keychain service for Bun.secrets. `com.waifucave.clover.core` (dev: `.dev`) is a NEW, empty pair —
  * the pre-rename items (`legacy-names.ts`'s `LEGACY_KEYCHAIN_SERVICE[_DEV]`) are copied over
@@ -44,7 +47,13 @@ export function keychainService(
   const override = process.env.CLOVER_KEYCHAIN_SERVICE;
   if (!override || home === undefined) return base;
   if (isDefaultCloverHome(home, profile)) return base;
-  console.warn(`[keychain] CLOVER_KEYCHAIN_SERVICE override honoured for non-default home "${home}": using "${override}" instead of "${base}"`);
+  // Once per process for each home and service: the name is resolved for every credential reference, and a line per
+  // resolve buried the daemon's log (a UI loop once printed it ~900,000 times).
+  const said = `${home}\0${override}\0${base}`;
+  if (!overrideWarned.has(said)) {
+    overrideWarned.add(said);
+    console.warn(`[keychain] CLOVER_KEYCHAIN_SERVICE override honoured for non-default home "${home}": using "${override}" instead of "${base}"`);
+  }
   return override;
 }
 

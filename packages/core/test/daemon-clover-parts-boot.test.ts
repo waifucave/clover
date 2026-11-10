@@ -7,7 +7,9 @@
 // Fakes only where each part's own lane uses them: H's in-memory network and local handshake, D's plugin registry and
 // session drivers. The second computer is built from the same assembly the daemon uses (`startDaemonLinks`,
 // `startDaemonParts`), since one process runs one daemon.
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import * as hooksModule from "../src/runtime-sdk/turn-loop/hooks";
+import * as nodeModule from "../src/computers/node";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +18,10 @@ import { botManifest, Drivers, pluginFromFolder, writePlugin } from "../src/bots
 import { catalogPointDecl } from "../../plugin-sdk/src/catalogs/index";
 import { SystemClock } from "../src/clock/system-clock";
 import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
+import { FakePluginHost } from "../src/contracts/fakes/plugin-host";
+import type { DaemonPluginHost } from "../src/plugin-host/daemon-host";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
+import { installedModelPlugins } from "../src/runtime-sdk/model-plugins/index";
 import { startDaemonParts, type DaemonBotsInput, type DaemonParts } from "../src/daemon-parts";
 import { startDaemonLinks, type DaemonLinks } from "../src/ipc/device-links";
 import { cloverCall } from "../src/ipc/clover-client";
@@ -117,6 +122,13 @@ describe("the daemon's Clover parts, booted", () => {
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
     expect((await call<{ bots: { id: string }[] }>("bot.list")).bots.map((b) => b.id)).toEqual(["luna"]);
     expect(await call("update.status")).toMatchObject({ idle: true }); // lane M's handlers sit beside the lanes'
+    // Lane A's app methods: the model picker and a plugin's sign-ins answer (an unknown plugin is not_found, not an
+    // unknown method).
+    expect(Array.isArray((await call<{ models: unknown[] }>("models.list")).models)).toBe(true);
+    await expect(call("plugin.auth.list", { id: "acme/nope" })).rejects.toThrow(/no plugin acme\/nope/);
+    // Lane K's agent.* methods, read from the parts' agents at each call.
+    expect(daemon.cloverParts.agents()).toBeDefined();
+    expect(await call("agent.definitions")).toEqual({ definitions: [] });
 
     // A second computer pairs; the user makes this one the main computer from the terminal.
     const laptop = await peer(net, hs, "Laptop");
@@ -307,6 +319,166 @@ describe("the daemon's Clover parts at the edges", () => {
     await daemon.cloverParts.ready;
     expect(daemon.cloverParts.bots()?.bots.list()).toEqual([]); // from source: no bundled plugins, none installed
     expect(existsSync(join(home, "plugins"))).toBe(true);
+  }, 30_000);
+
+  test("on the daemon's plugin host (A-M3): the model plugins start, the node's MCP host is the plugins' host servers, and the stop closes them before the host", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const order: string[] = [];
+    let opened = 0;
+    const added: string[][] = [];
+    let removed = 0;
+    const hooksSpy = spyOn(hooksModule, "pluginHooks");
+    let fakeHost: unknown;
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: async (registry) => {
+        const host = new FakePluginHost({ clock });
+        fakeHost = host;
+        const openMcp = host.openMcp.bind(host);
+        host.openMcp = (pluginId, server) => { opened += 1; return openMcp(pluginId, server); };
+        return {
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          addApiHandlers: (h: Record<string, unknown>) => { added.push(Object.keys(h).sort()); return () => { removed += 1; }; },
+          close: async () => { order.push("host"); },
+        } as unknown as DaemonPluginHost;
+      },
+    });
+    await daemon.cloverParts.ready;
+    const node = daemon.cloverParts.node();
+    expect(node?.mcp).toBeDefined();
+    // No host server is installed (from source, none bundled): nothing placed, no channel opened.
+    await expect(node!.mcp!.run("web", "WebSearch", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(opened).toBe(0);
+    // The model plugins start on the daemon's own host (not awaited by the parts): installed, and their two calls added
+    // to B's router as handlers, never a router of their own.
+    // The bots' plugin hooks run on the same host and registry.
+    await waitFor("the bots' plugin hooks wired", () => hooksSpy.mock.calls.length > 0);
+    expect((hooksSpy.mock.calls[0]![0] as { host: unknown }).host).toBe(fakeHost);
+    hooksSpy.mockRestore();
+    await waitFor("the model plugins installed", () => installedModelPlugins() !== undefined);
+    expect(added).toEqual([["net.fetch", "secrets.get"]]);
+    await daemon.stop();
+    daemon = undefined;
+    expect(order).toEqual(["host"]);
+    // The stop takes them away: uninstalled, and their handlers removed.
+    expect(installedModelPlugins()).toBeUndefined();
+    expect(removed).toBe(1);
+  }, 30_000);
+
+  test("a per-computer MCP server this computer doesn't tick never starts: the host's openMcp is never called for it", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const opened: string[] = [];
+    // A third-party plugin with a per-computer server and an ordinary one. No node here ticks the per-computer one (the
+    // node's ticks are lane J's; without them the list is empty and it fails closed).
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
+      id: "acme", source: "local",
+      manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true }, notes: { type: "host" } } } } as never,
+    }] });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: async () => {
+        const host = new FakePluginHost({ clock });
+        const openMcp = host.openMcp.bind(host);
+        host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
+        return {
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          addApiHandlers: () => () => {},
+          close: async () => {},
+        } as unknown as DaemonPluginHost;
+      },
+    });
+    await daemon.cloverParts.ready;
+    // The ordinary server is opened (its listing), so the plugin MCP host did run; the per-computer one never is.
+    await waitFor("the ordinary server listed", () => opened.includes("acme/notes"));
+    expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+    const node = daemon.cloverParts.node();
+    await expect(node!.mcp!.run("acme-blender", "Render", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+  }, 30_000);
+
+  test("a restart with a per-computer MCP server ticked here lists and starts it once the node is up, with no tick change", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const opened: string[] = [];
+    // The node's ticks (lane J's `mcpComputers`) say this computer runs `acme-blender`, as a ticks file read at start
+    // would; no tick changes after (no `onTicksChanged`).
+    const realStart = nodeModule.startComputerNode;
+    const nodeSpy = spyOn(nodeModule, "startComputerNode").mockImplementation((o) => {
+      const n = realStart(o);
+      (n as unknown as { mcpComputers(s: string): string[] }).mcpComputers = (s) => (s === "acme-blender" ? [n.registry.self().name] : []);
+      return n;
+    });
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
+      id: "acme", source: "local",
+      manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true } } } } as never,
+    }] });
+    try {
+      daemon = await startDaemon({
+        home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+        links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+        parts: { userHome: temp("clover-int-user-") },
+        pluginHost: async () => {
+          const host = new FakePluginHost({ clock });
+          const openMcp = host.openMcp.bind(host);
+          host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
+          return {
+            host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+            addApiHandlers: () => () => {},
+            close: async () => {},
+          } as unknown as DaemonPluginHost;
+        },
+      });
+      await daemon.cloverParts.ready;
+      await waitFor("the ticked per-computer server started", () => opened.includes("acme/blender"));
+    } finally {
+      nodeSpy.mockRestore();
+    }
+  }, 30_000);
+
+  test("the model plugins' start guard and a stop while they are still starting", async () => {
+    const net = new MemoryNetwork();
+    const fakeHost = (calls: { added: number; removed: number }) => async (registry: unknown) => ({
+      host: new FakePluginHost({ clock }), registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+      addApiHandlers: () => { calls.added += 1; return () => { calls.removed += 1; }; },
+      close: async () => {},
+    }) as unknown as DaemonPluginHost;
+    // A test daemon handed `modelPluginHost` started its own at boot: the plugin host doesn't start a second set.
+    const guarded = { added: 0, removed: 0 };
+    const home = temp("clover-int-home-");
+    const own = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [] });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      modelPluginHost: { registry: own, host: new FakePluginHost({ clock }) },
+      pluginHost: fakeHost(guarded),
+    });
+    await daemon.cloverParts.ready;
+    await Bun.sleep(200);
+    expect(guarded.added).toBe(0);
+    await daemon.stop();
+    daemon = undefined;
+    // Stopped while the plugin host's model plugins are still starting: the late start stops itself.
+    const racing = { added: 0, removed: 0 };
+    const home2 = temp("clover-int-home-");
+    daemon = await startDaemon({
+      home: home2, secrets: new FileSecretStore(join(home2, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: fakeHost(racing),
+    });
+    void daemon.cloverParts.ready;
+    await daemon.stop();
+    daemon = undefined;
+    await Bun.sleep(500);
+    expect(installedModelPlugins()).toBeUndefined();
+    expect(racing.removed).toBe(racing.added);
   }, 30_000);
 
   test("a start that never finishes: the stop waits about 5 s, closes what started, and leaves no socket", async () => {

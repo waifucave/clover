@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Card, TurnOrigin } from "@waifucave/clover-protocol";
+import type { Card, Level, TurnOrigin } from "@waifucave/clover-protocol";
 import { CloverApprovalBroker, RESOLVED_KEEP_MS, UNRESOLVED_PATHS_REASON, type CloverApprovalRequest } from "../../src/approvals/broker";
 import { botApprovalCheck, botToolRequest, effectOf, isBuiltinTool, resolveSessionPath, ruleKeyOf } from "../../src/approvals/bot-check";
 import { fileRuleStore, savedRulesPath } from "../../src/approvals/rule-store";
@@ -12,6 +12,8 @@ import { runApprovalBrokerConformance } from "../../src/contracts/conformance/ap
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import type { ApprovalRequest, Reviewer } from "../../src/contracts/approval-broker";
 import type { BotSessionContext } from "../../src/bots/service";
+import { CloverFence } from "../../src/fence/fence";
+import { brokerCardOpener } from "../../src/devices/rpc";
 
 // B's suite: every rule of the contract, against the real broker.
 runApprovalBrokerConformance((opts) => new CloverApprovalBroker(opts));
@@ -345,5 +347,125 @@ describe("a bot's tool calls through the broker", () => {
     await Bun.sleep(0);
     ac.abort();
     expect(await stopped).toEqual({ behavior: "deny", message: "Bash was refused: the turn was stopped." });
+  });
+});
+
+describe("the broker's close (INT, #292 review: the daemon closes it first at the stop)", () => {
+  test("an open card is cancelled, and a request after the close is refused without a card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const pending = b.request(bash());
+    await Bun.sleep(0);
+    expect(b.cards()).toHaveLength(1);
+    b.close();
+    expect(await pending).toMatchObject({ allowed: false, by: "cancelled" });
+    expect(b.cards()).toEqual([]);
+    expect(await b.request(bash())).toEqual({ allowed: false, by: "cancelled" });
+    expect(b.cards()).toEqual([]);
+  });
+});
+
+describe("a bot's calls on this computer's fence first (INT, the broker swap; #347's review and the owner's ruling)", () => {
+  const userHome = realpathSync(home());
+  const cloverHome = join(userHome, ".clover");
+  mkdirSync(join(cloverHome, "run"), { recursive: true });
+  mkdirSync(join(cloverHome, "bots", "luna", "memory"), { recursive: true });
+  const fence = new CloverFence({ home: userHome, cloverHome });
+  const scratch = join(cloverHome, "scratch", "luna");
+  mkdirSync(scratch, { recursive: true });
+  const ctx = {
+    botId: "luna", sessionId: "s1", computer: "Studio", paths: { scratch },
+    caller: { kind: "session", sessionId: "s1", sessionKind: "bot", bot: "luna" },
+  } as unknown as BotSessionContext;
+  const call = (b: CloverApprovalBroker, tool: string, input: Record<string, unknown>, level: Level = "ask", c: BotSessionContext = ctx) =>
+    botApprovalCheck(b, { home: userHome, localComputer: "Studio", fence, cloverHome, levelOf: () => level, commandsAlwaysCard: true })(c, () => "user")(tool, input, { signal: new AbortController().signal, toolUseID: "t1", requestId: "r1" });
+
+  test("a place the fence refuses the bot (the credentials, run/, the settings) is refused with no card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    for (const [tool, input] of [
+      ["Read", { file_path: join(cloverHome, "credentials", "keys") }],
+      ["Grep", { pattern: "token", path: join(cloverHome, "run") }],
+      ["Write", { file_path: join(cloverHome, "settings.json"), content: "{}" }],
+    ] as const) {
+      const d = await call(b, tool, input);
+      expect(d?.behavior).toBe("deny");
+      expect((d as { message: string }).message).toContain("fenced on this computer");
+    }
+    expect(b.cards()).toEqual([]);
+  });
+
+  test("a file read or write the fence lets the bot make inside the home runs with no card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const memory = join(cloverHome, "bots", "luna", "memory", "MEMORY.md");
+    expect(await call(b, "Read", { file_path: memory })).toEqual({ behavior: "allow", updatedInput: { file_path: memory } });
+    const edit = { file_path: join(scratch, "notes.md"), old_string: "a", new_string: "b" };
+    expect(await call(b, "Edit", edit)).toEqual({ behavior: "allow", updatedInput: edit });
+    expect(b.cards()).toEqual([]);
+  });
+
+  test("#353 blocker: read-only stays absolute, the bot's own folders included: its scratch and memory writes are refused", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "read-only" });
+    const scratchEdit = { file_path: join(scratch, "notes.md"), old_string: "a", new_string: "b" };
+    const memoryWrite = { file_path: join(cloverHome, "bots", "luna", "memory", "MEMORY.md"), content: "x" };
+    for (const [tool, input] of [["Edit", scratchEdit], ["Write", memoryWrite]] as const) {
+      expect(await call(b, tool, input, "read-only")).toEqual({ behavior: "deny", message: `${tool} was refused: this computer's level doesn't allow it.` });
+    }
+    // A routine's own read-only level, the computer's above it: the same.
+    const routine = { ...ctx, level: "read-only" } as unknown as BotSessionContext;
+    expect((await call(b, "Edit", scratchEdit, "automatic", routine))?.behavior).toBe("deny");
+    // Reads still run.
+    expect((await call(b, "Read", { file_path: memoryWrite.file_path }, "read-only"))?.behavior).toBe("allow");
+    expect(b.cards()).toEqual([]);
+  });
+
+  test("#353 S2: the credentials and the runtime's run records are refused to a bot's reads with no card (they must hold under the open-read fence too)", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "automatic" });
+    for (const path of [join(cloverHome, "credentials", "anthropic.json"), join(cloverHome, "sdk", "cache", "runs", "r1", "state.json")]) {
+      expect((await call(b, "Read", { file_path: path }, "automatic"))?.behavior).toBe("deny");
+    }
+    expect(b.cards()).toEqual([]);
+  });
+
+  test("#353 S3: until the bot's Bash sandbox is drawn from the fence, its command always asks on a card, whatever the level: a write to transcripts/ is never run unasked", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "automatic", reviewer: async () => "safe" });
+    const pending = call(b, "Bash", { command: `echo x > ${join(cloverHome, "transcripts", "s1.jsonl")}` }, "automatic");
+    await Bun.sleep(0);
+    const cards = b.cards();
+    expect(cards).toHaveLength(1);
+    // No "always" on it: a saved rule would never be read for it.
+    expect(cards[0]!.options.some((o) => o.remember === "always")).toBe(false);
+    b.close();
+    expect((await pending)?.behavior).toBe("deny");
+    // Read-only's deny still comes first: no card at all.
+    const ro = new CloverApprovalBroker({ clock: clockAt(), levels: () => "read-only" });
+    expect((await call(ro, "Bash", { command: "ls" }, "read-only"))?.behavior).toBe("deny");
+    expect(ro.cards()).toEqual([]);
+  });
+
+  test("outside the home, the broker decides as before: a read at ask runs, a write asks on a card", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    expect(await call(b, "Read", { file_path: join(userHome, "project", "a.txt") })).toMatchObject({ behavior: "allow" });
+    const pending = call(b, "Write", { file_path: join(userHome, "project", "a.txt"), content: "x" });
+    await Bun.sleep(0);
+    expect(b.cards()).toHaveLength(1);
+    b.close();
+    expect((await pending)?.behavior).toBe("deny");
+  });
+});
+
+describe("brokerCardOpener (INT, #353's nit)", () => {
+  test("two changes at the same time each get their own card, never the other's", async () => {
+    const b = new CloverApprovalBroker({ clock: clockAt(), levels: () => "ask" });
+    const open = brokerCardOpener(b);
+    const req = (title: string): ApprovalRequest => ({
+      kind: "change", change: "device-revoke", origin: "user", computers: ["Studio"], effect: "other",
+      fields: { title: { type: "text", text: title } },
+    } as unknown as ApprovalRequest);
+    const [a, z] = await Promise.all([open(req("A")), open(req("Z"))]);
+    expect(a.card).toBeDefined();
+    expect(z.card).toBeDefined();
+    expect(a.card).not.toBe(z.card);
+    expect((b.get(a.card!)!.card.fields["title"] as { text: string }).text).toBe("A");
+    expect((b.get(z.card!)!.card.fields["title"] as { text: string }).text).toBe("Z");
+    b.close();
   });
 });

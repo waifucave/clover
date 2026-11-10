@@ -21,7 +21,8 @@ import { listenerArg, stringArg, type ApiCallContext, type ApiHandlers } from ".
 export interface PointsApiOptions {
   registry: Pick<PluginRegistry, "entries" | "points" | "watch">;
   host: Pick<PluginHost, "invoke">;
-  /** The URL a component or host fetches a plugin's file from (lane E's asset server). */
+  /** The URL a component or host fetches a plugin's file from (lane E's asset server), given the path relative to the
+   *  plugin's folder, checked and with each segment percent-encoded (`assetPath`). */
   assetUrl: (pluginId: string, path: string) => string;
 }
 
@@ -42,10 +43,11 @@ export function declaredPointFor(registry: Pick<PluginRegistry, "points">, point
 /** A contribution as a declarer sees it, its `path` fields as asset URLs. */
 export function pointEntryOf(c: Contribution, decl: RegisteredPoint["decl"], assetUrl: (pluginId: string, path: string) => string): PointEntry {
   // A path that could leave the contributor's folder or name another origin becomes null (#332's review); `assetUrl`
-  // percent-encodes each segment of the rest (`assetPath`).
+  // gets the rest with each segment percent-encoded (`assetPath`), whoever serves it.
   const value = mapFormat(decl?.fields as Schema | undefined, c.value, "path", (v) => {
     if (typeof v !== "string") return v;
-    return assetPath(v) === undefined ? null : assetUrl(c.pluginId, v);
+    const safe = assetPath(v);
+    return safe === undefined ? null : assetUrl(c.pluginId, safe);
   });
   return {
     pluginId: c.pluginId,

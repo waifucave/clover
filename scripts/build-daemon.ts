@@ -12,9 +12,13 @@
 //   bun run build:daemon --plugins-manifest <file>        embed the bundled plugins' manifest (#259: the release
 //                                                         builds measure the staged tree; packages/core/src/
 //                                                         bundled-plugins-dir.ts). Without one the core bundles none
+//   bun run build:daemon --test-build                     a test-marked core (scripts/test-build.ts; macOS only):
+//                                                         scripts/release/build.ts --test-build's
 //
 // Every `bun build` step gets `--define __CLOVER_DIST__=true` (packages/core/src/build-kind.ts: a dist build ignores
-// the environment's choice of programs to run), and the compiled binary is sealed (scripts/seal-bun-doors.ts: Bun's
+// the environment's choice of programs to run) and the test-build define (`__CLOVER_TEST_BUILD__=false`, or the label
+// with --test-build: scripts/test-build.ts); the built core passes the marker gate (a real one carries neither the label
+// nor the test-only code, a test one both), and the compiled binary is sealed (scripts/seal-bun-doors.ts: Bun's
 // BUN_BE_BUN, BUN_OPTIONS, BUN_INSPECT*, BUN_CONFIG_VERBOSE_FETCH and NODE_PATH made unsettable on macOS and Linux,
 // then the byte check; a Windows binary is left unsealed) before anything signs it.
 //
@@ -37,6 +41,7 @@ import { HOST_BUNDLE_FILES } from "../packages/core/src/plugin-host/bundles";
 import { bunPinProblem, thisBunFirst } from "./bun-pin";
 import { bundledFiles, buildHolder, HOLDER_FILE, stagePluginBun } from "./bundled-binaries";
 import { sealFile } from "./seal-bun-doors";
+import { TEST_BUILD_LABEL, testBuildDefineArg, testBuildMarkerProblems } from "./test-build";
 
 export type DaemonTarget = "darwin-arm64" | "linux-x64" | "linux-arm64" | "windows-x64";
 
@@ -81,13 +86,14 @@ export const MANIFEST_EMBED = `.build/${BUNDLED_MANIFEST_FILE}`;
  * same for every target. Throws when the script no longer has the shape this relies on: update this file, don't
  * guess around it.
  */
-export function daemonCompileCommand(compileCoreScript: string, target: DaemonTarget, embedManifest = false): string {
+export function daemonCompileCommand(compileCoreScript: string, target: DaemonTarget, embedManifest = false, testBuild = false): string {
+  if (testBuild && target !== "darwin-arm64") throw new Error("a test-marked core is macOS's (darwin-arm64) only");
   if (compileCoreScript.split(COMPILE).length !== 2) throw new Error(`compile:core no longer has exactly one \`${COMPILE}\` — update scripts/build-daemon.ts`);
   if (compileCoreScript.split(COMPILE_CORE_OUTFILE).length !== 2) throw new Error(`compile:core no longer writes ${COMPILE_CORE_OUTFILE} — update scripts/build-daemon.ts`);
   return compileCoreScript
     .replace(COMPILE, `${COMPILE} --target=${DAEMON_TARGETS[target]} ${DIST_EXEC_ARGV}`)
     .replace(COMPILE_CORE_OUTFILE, `${embedManifest ? `${MANIFEST_EMBED} ` : ""}--outfile ../../${daemonOutput(target)}`)
-    .replaceAll("bun build ", `bun build --define ${DIST_BUILD_DEFINE} `);
+    .replaceAll("bun build ", `bun build --define ${DIST_BUILD_DEFINE} --define ${testBuildDefineArg(testBuild)} `);
 }
 
 export interface BuildDaemonArgs {
@@ -96,6 +102,8 @@ export interface BuildDaemonArgs {
   dryRun: boolean;
   /** The bundled plugins' manifest to embed (a path), when the build ships bundled plugins. */
   pluginsManifest?: string;
+  /** A test-marked core (scripts/test-build.ts): macOS only. */
+  testBuild?: boolean;
 }
 
 /** `host` is this machine's target (`hostTarget()`), passed in so the parse stays pure. */
@@ -104,9 +112,11 @@ export function parseBuildDaemonArgs(argv: readonly string[], host: DaemonTarget
   let smoke = false;
   let dryRun = false;
   let pluginsManifest: string | undefined;
+  let testBuild = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--smoke") smoke = true;
+    else if (a === "--test-build") testBuild = true;
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--plugins-manifest" || a.startsWith("--plugins-manifest=")) {
       pluginsManifest = a === "--plugins-manifest" ? argv[++i] : a.slice("--plugins-manifest=".length);
@@ -118,14 +128,15 @@ export function parseBuildDaemonArgs(argv: readonly string[], host: DaemonTarget
       const unknown = list.filter((t) => !(t in DAEMON_TARGETS));
       if (list.length === 0 || unknown.length > 0) throw new Error(`--target takes some of ${Object.keys(DAEMON_TARGETS).join(", ")}${unknown.length > 0 ? ` (not ${unknown.join(", ")})` : ""}`);
       targets = [...new Set(list as DaemonTarget[])];
-    } else throw new Error(`unknown argument ${a} (usage: build:daemon [--target <t>[,<t>…] | --all] [--smoke] [--dry-run] [--plugins-manifest <file>])`);
+    } else throw new Error(`unknown argument ${a} (usage: build:daemon [--target <t>[,<t>…] | --all] [--smoke] [--dry-run] [--plugins-manifest <file>] [--test-build])`);
   }
   if (targets === undefined) {
     if (host === undefined) throw new Error(`this machine runs none of the targets (${Object.keys(DAEMON_TARGETS).join(", ")}): name one with --target`);
     targets = [host];
   }
   if (smoke && (host === undefined || !targets.includes(host))) throw new Error("--smoke runs the host's own binary: include this machine's target");
-  return { targets, smoke, dryRun, ...(pluginsManifest === undefined ? {} : { pluginsManifest }) };
+  if (testBuild && targets.some((t) => t !== "darwin-arm64")) throw new Error("--test-build makes macOS's core (darwin-arm64) only");
+  return { targets, smoke, dryRun, ...(pluginsManifest === undefined ? {} : { pluginsManifest }), ...(testBuild ? { testBuild } : {}) };
 }
 
 /**
@@ -180,23 +191,30 @@ async function smokeBridge(binary: string, env: NodeJS.ProcessEnv): Promise<stri
 }
 
 /** The environment a built binary's probes run with: a temp home, and none of a test's keychain variables (a release
- *  refuses them at startup, startup-guard.ts). */
-function probeEnv(home: string): NodeJS.ProcessEnv {
+ *  refuses them at startup, startup-guard.ts). A test-marked core refuses to start WITHOUT them, so its probes get
+ *  HOME and CLOVER_HOME in the temp folder and a keychain file named there (never made: no probe opens a keychain). */
+function probeEnv(home: string, testBuild = false): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, CLOVER_HOME: home };
   for (const k of ["CLOVER_PROFILE", "CLOVER_KEYCHAIN_SERVICE", "CLOVER_TEST_KEYCHAIN", "WINTER_TEST_KEYCHAIN"]) delete env[k];
+  if (testBuild) Object.assign(env, { HOME: home, CLOVER_TEST_KEYCHAIN: join(home, "probe.keychain-db") });
   return env;
+}
+
+/** What `--version` prints: `clover <version>`, with the label on a test-marked core. */
+export function versionLine(version: string, testBuild = false): string {
+  return testBuild ? `clover ${version} test build (${TEST_BUILD_LABEL}: a test-marked build, never for release)` : `clover ${version}`;
 }
 
 /** `--version`, `__ffi-probe`, `bridge` and `__verify-feed` from the host binary, on a temp home. None reads a Keychain
  *  item, and a release refuses a test's keychain variables at startup (startup-guard.ts), so none is set. */
-async function smoke(binary: string, version: string): Promise<void> {
+async function smoke(binary: string, version: string, testBuild = false): Promise<void> {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-smoke-"));
   try {
-    const env = probeEnv(home);
+    const env = probeEnv(home, testBuild);
     const r = spawnSync(binary, ["--version"], { env, encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim();
-    if (r.status !== 0 || out !== `clover ${version}`) {
-      throw new Error(`${binary} --version: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out)} (expected "clover ${version}")${r.stderr ? `\n${r.stderr.slice(0, 2000)}` : ""}`);
+    if (r.status !== 0 || out !== versionLine(version, testBuild)) {
+      throw new Error(`${binary} --version: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out)} (expected "${versionLine(version, testBuild)}")${r.stderr ? `\n${r.stderr.slice(0, 2000)}` : ""}`);
     }
     console.log(`build:daemon: smoke: ${out}`);
     // bun:ffi inside the compiled binary (the bridge's peer-pid check, the Keychain): the C library's pid is this one.
@@ -265,10 +283,10 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
 }
 
 /** The bundled-plugins manifest a built core carries, as its `__bundled-manifest` prints it ("<n> files, sha256 <hex>"). */
-export function embeddedManifestLine(binary: string): string {
+export function embeddedManifestLine(binary: string, testBuild = false): string {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-manifest-"));
   try {
-    const r = spawnSync(binary, ["__bundled-manifest"], { env: probeEnv(home), encoding: "utf8", timeout: 60_000 });
+    const r = spawnSync(binary, ["__bundled-manifest"], { env: probeEnv(home, testBuild), encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim();
     const m = /^bundled-manifest: (.*)$/.exec(out);
     if (r.status !== 0 || m === null) throw new Error(`${binary} __bundled-manifest: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out)}${r.stderr ? `\n${r.stderr.slice(0, 2000)}` : ""}`);
@@ -294,10 +312,10 @@ export function hostBundlesBuilt(cliDir: string): { bytes: { host: Uint8Array; w
 }
 
 /** The plugin host's bundles a built core carries, as its `__host-bundles` prints them. */
-export function embeddedHostBundlesLine(binary: string): string {
+export function embeddedHostBundlesLine(binary: string, testBuild = false): string {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-host-bundles-"));
   try {
-    const r = spawnSync(binary, ["__host-bundles"], { env: probeEnv(home), encoding: "utf8", timeout: 60_000 });
+    const r = spawnSync(binary, ["__host-bundles"], { env: probeEnv(home, testBuild), encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim();
     const m = /^host-bundles: (.*)$/.exec(out);
     if (r.status !== 0 || m === null) throw new Error(`${binary} __host-bundles: exit ${r.status ?? r.signal}, printed ${JSON.stringify(out)}${r.stderr ? `\n${r.stderr.slice(0, 2000)}` : ""}`);
@@ -309,10 +327,10 @@ export function embeddedHostBundlesLine(binary: string): string {
 
 /** `__worker-entry-probe` (no home, Keychain or daemon) on a built core: a compiled Worker entry
  *  (`./fd-receiver-worker.ts`, named as `./embedded-worker.ts` is) loads inside the binary, on every OS. Throws when not. */
-export function workerEntryLine(binary: string): string {
+export function workerEntryLine(binary: string, testBuild = false): string {
   const home = mkdtempSync(join(tmpdir(), "clover-build-daemon-worker-"));
   try {
-    const r = spawnSync(binary, ["__worker-entry-probe"], { env: probeEnv(home), encoding: "utf8", timeout: 60_000 });
+    const r = spawnSync(binary, ["__worker-entry-probe"], { env: probeEnv(home, testBuild), encoding: "utf8", timeout: 60_000 });
     const out = (r.stdout ?? "").trim().split("\n").at(-1) ?? "";
     let ok = false;
     try { ok = (JSON.parse(out) as { ok?: unknown }).ok === true; } catch { ok = false; }
@@ -334,7 +352,8 @@ export function occurrences(binary: Uint8Array, needle: Uint8Array): number {
 
 async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string, script: string, version: string, host: DaemonTarget | undefined, expected: string, manifestBytes: Uint8Array | undefined): Promise<number> {
   for (const target of args.targets) {
-    const command = daemonCompileCommand(script, target, args.pluginsManifest !== undefined);
+    const testBuild = args.testBuild === true;
+    const command = daemonCompileCommand(script, target, args.pluginsManifest !== undefined, testBuild);
     const output = join(root, ...daemonOutput(target).split("/"));
     if (args.dryRun) {
       console.log(`build:daemon: ${target}: (in packages/cli) ${command}`);
@@ -348,6 +367,14 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
       console.error(`build:daemon: ${target}: the compile failed (exit ${status})`);
       return 1;
     }
+    // The marker gate (scripts/test-build.ts): a real core carries neither the test-build label nor its test-only code,
+    // a test-marked one both.
+    const marker = testBuildMarkerProblems(`the ${target} core`, new Uint8Array(readFileSync(output)), testBuild);
+    if (marker.length > 0) {
+      for (const m of marker) console.error(`build:daemon: ${target}: ${m}`);
+      return 1;
+    }
+    console.log(`build:daemon: ${target}: ${testBuild ? "a test-marked core (the label and its test-only code are in)" : "no test-build label or test-only code in it"}`);
     // The seal (seal-bun-doors.ts): Bun's own doors to foreign code, closed before anything signs the binary.
     try {
       const sealed = sealFile(output);
@@ -383,12 +410,12 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
     }
     if (target === host) {
       try {
-        const line = embeddedManifestLine(output);
+        const line = embeddedManifestLine(output, testBuild);
         if (line !== expected) throw new Error(`the binary carries ${line}, not the bundled-plugins manifest given (${expected})`);
         console.log(`build:daemon: ${target}: bundled-plugins manifest: ${line}`);
         // The core's Worker entries resolve inside the binary that ships: an embedded file outside src/ once moved
         // every entry's name (Bun names entries by their common root; compile:core pins `--root src`).
-        console.log(`build:daemon: ${target}: ${workerEntryLine(output)}`);
+        console.log(`build:daemon: ${target}: ${workerEntryLine(output, testBuild)}`);
       } catch (err) {
         console.error(`build:daemon: ${target}: ${(err as Error).message}`);
         return 1;
@@ -400,7 +427,7 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
     try {
       const built = hostBundlesBuilt(cliDir);
       if (target === host) {
-        const line = embeddedHostBundlesLine(output);
+        const line = embeddedHostBundlesLine(output, testBuild);
         if (line !== built.line) throw new Error(`the binary carries ${line}, not the plugin host's bundles compile:core built (${built.line})`);
         console.log(`build:daemon: ${target}: plugin-host bundles: ${line}`);
       } else {
@@ -417,7 +444,7 @@ async function buildTargets(args: BuildDaemonArgs, root: string, cliDir: string,
     }
     if (args.smoke && target === host) {
       try {
-        await smoke(output, version);
+        await smoke(output, version, testBuild);
       } catch (err) {
         console.error(`build:daemon: smoke failed: ${(err as Error).message}`);
         return 1;
