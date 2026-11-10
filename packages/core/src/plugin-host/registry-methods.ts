@@ -21,6 +21,7 @@ import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
+import { installWrapped } from "../registry/wrap";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
 import { PluginSecretFiles } from "../registry/secret-files";
@@ -198,14 +199,24 @@ export function pluginRegistryMethods(o: {
     // OK card raised at once (§5.1). The index and npm wait for their clients.
     [M.pluginInstall.name]: handler(M.pluginInstall, async ({ source }, ctx) => {
       const user = requireUser(ctx, "install a plugin");
-      if (source.from !== "folder") notServed(`installing from ${source.from === "index" ? "a plugin index" : source.from === "npm" ? "npm" : "a wrapped item"}`, "only a folder on disk installs for now");
-      const src = source as { from: "folder"; path: string };
-      const { id, treeHash } = await installFromFolder({
-        source: src.path, pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
+      if (source.from !== "folder" && source.from !== "wrap") notServed(`installing from ${source.from === "index" ? "a plugin index" : "npm"}`, "a folder on disk or a wrapped item installs for now");
+      const target = {
+        pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
         ...(o.os ? { os: o.os } : {}),
-        taken: (pluginId) => registry.get(pluginId) !== undefined,
-      });
-      await folders.installed(id, user.client === "cli" ? "user-terminal" : "user-app");
+        taken: (pluginId: string) => registry.get(pluginId) !== undefined,
+      };
+      const by = user.client === "cli" ? "user-terminal" : "user-app";
+      let id: string;
+      let treeHash: string;
+      if (source.from === "wrap") {
+        // A bare item (§5.1): the core generates a plugin around it, and records what it was made from.
+        const w = await installWrapped({ ...target, kind: source.kind, value: source.value, by: "user" });
+        ({ id, treeHash } = w);
+        await folders.installed(id, by, { from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}) });
+      } else {
+        ({ id, treeHash } = await installFromFolder({ ...target, source: (source as { from: "folder"; path: string }).path }));
+        await folders.installed(id, by);
+      }
       const r = registry.get(id);
       if (r === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
       const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");

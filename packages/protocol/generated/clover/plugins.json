@@ -339,6 +339,34 @@
                     "type": "string",
                     "maxLength": 81,
                     "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "wrapped": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "enum": [
+                          "mcp-config",
+                          "mcp-url",
+                          "skill-folder",
+                          "agent-file",
+                          "claude-plugin"
+                        ]
+                      },
+                      "unused": {
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      }
+                    },
+                    "required": [
+                      "from"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [

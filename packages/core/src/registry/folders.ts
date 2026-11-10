@@ -21,6 +21,23 @@ import type { OkText } from "./ok-cards";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
+/** What the core wrapped a plugin around, as the OK says it (§5.1). */
+export const WRAPPED_FROM_TEXT: Readonly<Record<NonNullable<PluginProvenance["wrapped"]>["from"], string>> = {
+  "mcp-config": "an MCP server's config",
+  "mcp-url": "an MCP server's address",
+  "skill-folder": "a skill folder (SKILL.md)",
+  "agent-file": "an agent file",
+  "claude-plugin": "a Claude Code plugin folder",
+};
+
+/** The OK's lines for a wrapped plugin: what Clover made it around, and the parts that stay in its folder unused. */
+export function wrappedLines(wrapped: PluginProvenance["wrapped"]): string[] {
+  if (wrapped === undefined) return [];
+  const out = [`Clover made this plugin around ${WRAPPED_FROM_TEXT[wrapped.from]}; you can open and edit it in the plugins folder.`];
+  if ((wrapped.unused ?? []).length > 0) out.push(`Left in its folder unused, since Clover has no place for them yet: ${wrapped.unused!.join(", ")}.`);
+  return out;
+}
+
 export const PROVENANCE_TEXT: Readonly<Record<PluginProvenance["by"], string>> = {
   "user-app": "You added it in the app.",
   "user-terminal": "You added it in your terminal.",
@@ -218,9 +235,10 @@ export class PluginFolders {
 
   /** Reads one folder now (what a settled change does): it appeared, changed or went away. */
   /** A folder `plugin.install` just copied into the plugins folder: read now, with who installed it as its provenance
-   *  (the OK card's "from" line). */
-  async installed(id: string, by: "user-app" | "user-terminal"): Promise<void> {
-    this.#installedBy.set(id, { by, at: this.#now() });
+   *  (the OK card's "from" line). A plugin the core generated around a bare item is `wrapped`: its source says so, and
+   *  its provenance keeps what it was made from and the parts left unused (§5.1). */
+  async installed(id: string, by: "user-app" | "user-terminal", wrapped?: NonNullable<PluginProvenance["wrapped"]>): Promise<void> {
+    this.#installedBy.set(id, { by, at: this.#now(), ...(wrapped !== undefined ? { wrapped } : {}) });
     try {
       await this.refresh(join(this.#o.pluginsDir, id));
     } finally {
@@ -256,7 +274,11 @@ export class PluginFolders {
     const name = r.tree.top.manifest?.name;
     return {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
-      lines: [...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld, ...(sandboxed !== undefined ? { sandboxed } : {}) }), ...agentEnvLines(r.folder, r.tree)],
+      lines: [
+        ...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld, ...(sandboxed !== undefined ? { sandboxed } : {}) }),
+        ...agentEnvLines(r.folder, r.tree),
+        ...wrappedLines(r.provenance.wrapped),
+      ],
       source: PROVENANCE_TEXT[r.provenance.by],
     };
   }
@@ -341,7 +363,8 @@ export class PluginFolders {
     for (const name of listDirs(this.#o.pluginsDir)) {
       if (name.startsWith(".")) continue;
       const stored = this.#o.store.load().plugins[name];
-      out.push({ folder: join(this.#o.pluginsDir, name), source: stored?.source ?? "local" });
+      const wrapped = (stored?.provenance ?? this.#installedBy.get(name))?.wrapped !== undefined;
+      out.push({ folder: join(this.#o.pluginsDir, name), source: stored?.source ?? (wrapped ? "wrapped" : "local") });
     }
     return out;
   }

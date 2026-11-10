@@ -25,11 +25,19 @@ export type PluginState = z.infer<typeof PluginState>;
 export const PluginSource = z.enum(["bundled", "index", "npm", "local", "wrapped", "dev"]);
 export type PluginSource = z.infer<typeof PluginSource>;
 
+/** What the core wrapped into a plugin (§5.1 "wrapped automatically"). */
+export const WRAP_KINDS = ["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin"] as const;
+export const WrapKind = z.enum(WRAP_KINDS);
+export type WrapKind = z.infer<typeof WrapKind>;
+
 /** Who wrote it, from the core's own record (§5.6); the manifest's `generated.by` is only a hint. */
 export const PluginProvenance = z.object({
   by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled"]),
   at: Timestamp,
   bot: BotId.optional(),
+  /** A plugin the core generated around a bare item: what it was, and the parts of it Clover has no point for yet,
+   *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's. */
+  wrapped: z.object({ from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional() }).optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 
@@ -103,7 +111,7 @@ export const InstallSource = z.discriminatedUnion("from", [
   z.object({ from: z.literal("folder"), path: utf16(4096, 1) }),
   /** A bare item that the core wraps into a plugin (§5.1): a pasted MCP config, an MCP URL, a skill folder, an agent
    *  file or a Claude Code plugin folder. */
-  z.object({ from: z.literal("wrap"), kind: z.enum(["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin"]), value: utf16(1_000_000, 1) }),
+  z.object({ from: z.literal("wrap"), kind: WrapKind, value: utf16(1_000_000, 1) }),
 ]);
 export type InstallSource = z.infer<typeof InstallSource>;
 
