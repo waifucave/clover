@@ -129,6 +129,9 @@ export interface AgentRequest {
 
 interface Entry {
   id: string;
+  /** Admitted with a sandbox Clover counts on, at a tested version (`#admit`): its commands are held by that sandbox
+   *  (no unsandboxed command, its writes to the agent's root), so at ask for risky actions one runs without asking (R5). */
+  sandboxHeld?: boolean;
   backend: AgentBackend;
   bot?: string;
   parent?: string;
@@ -737,6 +740,7 @@ export class AgentManager {
     }
     if (!d.versionOk) why.push(`its version ${d.version ?? "(unknown)"} is outside the versions Clover was tested with`);
     const admitted = { path: d.path ?? "", ...(d.version === undefined ? {} : { version: d.version }) };
+    e.sandboxHeld = why.length === 0;
     if (why.length === 0) return admitted;
     // The OK is for this program: its real path and its file's hash (K-M2 review 5).
     const sha256 = (await programHash(admitted.path)) ?? "";
@@ -890,6 +894,8 @@ export class AgentManager {
       computers: [e.computer],
       ...(this.#routineLevelOf(e) === undefined ? {} : { level: this.#routineLevelOf(e)! }),
       effect: effectOf(ask.toolKind),
+      // R5: a command of an agent whose sandbox Clover admitted runs inside it (never unsandboxed), so it is contained.
+      ...(e.sandboxHeld === true && effectOf(ask.toolKind) === "execute" ? { contained: true } : {}),
       paths: ask.paths,
       ...(ruleKeyOf(e.backend.id, ask) === undefined ? {} : { ruleKey: ruleKeyOf(e.backend.id, ask)! }),
       fields: cardFields(e, ask),

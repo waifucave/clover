@@ -171,7 +171,7 @@ export class FakeApprovalBroker implements ApprovalBroker {
     }
     // Rule 5.
     // The reference has no path check: only a fetch or a tool call can be contained here, never an edit.
-    const verdict = levelDecision(level, req.effect, req.ownTarget, req.contained === true && (req.effect === "fetch" || req.effect === "other"));
+    const verdict = levelDecision(level, req.effect, req.ownTarget, req.contained === true && (req.effect === "fetch" || req.effect === "other" || req.effect === "execute"));
     if (verdict === "allow") return { allowed: true, by: "level", level };
     if (verdict === "deny") return { allowed: false, by: "level", level };
     if (verdict === "review" && (await this.#reviewer(req)) === "safe") return { allowed: true, by: "level", level };

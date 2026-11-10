@@ -130,7 +130,8 @@ export interface ApprovalRequest {
   ownTarget?: boolean;
   /** A fetch or a tool call that stays inside what the fence and the sandbox already confine (§9.1, the owner's
    *  "bots act on their own for what isn't risky"): a page whose address the session already saw, an admitted agent's
-   *  start, a message to another of the user's sessions. Only Clover's own requesters set it; at ask for risky actions
+   *  start, a message to another of the user's sessions, a command its sandbox holds (no network, writes to its roots
+   *  only, never outside it). Only Clover's own requesters set it; at ask for risky actions
    *  it runs without asking (`levelDecision`). For an edit or a move it is never read: the broker decides from the
    *  paths itself (`CloverApprovalBrokerOptions.ordinaryPaths`). */
   contained?: boolean;
@@ -304,8 +305,8 @@ export interface ApprovalBroker {
 }
 
 /** The effects a contained call (`ApprovalRequest.contained`, or an edit of ordinary files only) runs without asking
- *  at ask for risky actions. */
-export const CONTAINED_EFFECTS: readonly ActionEffect[] = ["edit", "move", "fetch", "other"];
+ *  at ask for risky actions: a command contained is one its sandbox holds (no network, writes to its roots only). */
+export const CONTAINED_EFFECTS: readonly ActionEffect[] = ["edit", "move", "fetch", "other", "execute"];
 
 /** What a level does with an effect: `review` means the reviewer judges at "ask for risky actions" (§9.1). Reads
  *  run freely at every level; deleting files, purchases and screen control outside the bot's own windows ask. At ask

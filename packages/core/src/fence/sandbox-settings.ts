@@ -26,6 +26,7 @@
 import { lstatSync, mkdirSync, readdirSync, realpathSync } from "node:fs";
 import { posix, win32 } from "node:path";
 import type { SandboxSettingsConfig } from "@waifucave/clover-agent-sdk";
+import type { Level } from "@waifucave/clover-protocol";
 import { BOT_READ_DENIED, segmentMatches, type SandboxPolicy } from "../contracts/fence";
 import { gitTemplateDir } from "./layout";
 
@@ -145,4 +146,15 @@ export function sandboxSettingsOf(policy: SandboxPolicy, home: string, o: Sandbo
       denyRead: [...new Set(denies(policy.denyRead, readKeep, true))],
     },
   };
+}
+
+/** A bot's Bash sandbox at its level (§9.1, the owner's ruling of November 10): at ask for risky actions (and below)
+ *  its commands write only to its own folders and the temp folder, so one runs without asking; the user's home is a
+ *  write root only at accept edits and fully automatic. Reads, the network (none) and the denies are the fence's,
+ *  whatever the level. */
+export function botSandboxSettings(policy: SandboxPolicy, o: { cloverHome: string; userHome: string; level: Level | undefined; windows?: boolean }): SandboxSettingsConfig {
+  const wide = o.level === "accept-edits" || o.level === "automatic";
+  const fold = (s: string) => (o.windows ? s.toLowerCase() : s).replace(/[\\/]+$/, "");
+  const allowWrite = wide ? policy.allowWrite : policy.allowWrite.filter((a) => fold(a) !== fold(o.userHome));
+  return sandboxSettingsOf({ ...policy, allowWrite }, o.cloverHome, o.windows ? { windows: true } : {});
 }

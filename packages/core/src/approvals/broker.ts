@@ -337,7 +337,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
       const here = this.#localComputer !== undefined && req.computers.length > 0 && req.computers.every((c) => c === this.#localComputer);
       return here && this.#ordinaryPaths !== undefined && req.paths !== undefined && req.paths.length > 0 && this.#ordinaryPaths(req.paths);
     }
-    return req.contained === true && (req.effect === "fetch" || req.effect === "other");
+    return req.contained === true && (req.effect === "fetch" || req.effect === "other" || req.effect === "execute");
   }
 
   /** Whether a request may be remembered or matched: a key that doesn't look like it carries a credential, at least

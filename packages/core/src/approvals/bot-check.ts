@@ -195,6 +195,9 @@ export function botApprovalCheck(
     /** A bot's commands always ask on a card (no level, rule or reviewer answers them) while its Bash sandbox isn't
      *  drawn from this computer's fence (#353's S3; lane C's `sandboxSettingsOf`, #356, wires it). */
     commandsAlwaysCard?: boolean;
+    /** A bot's commands run in a sandbox drawn from this computer's fence (#356, #362: no network, writes only to the
+     *  level's roots, never outside it): each is contained, so at ask for risky actions it runs without asking. */
+    commandsSandboxed?: boolean;
     /** A bundled plugin's tool Clover checked (its staged, digest-checked manifest) and knows: the web search and fetch.
      *  Anything else a plugin serves is judged as a tool, whatever it says of itself. */
     bundledTool?: (ctx: BotSessionContext, tool: string) => BundledToolKind | undefined;
@@ -230,6 +233,8 @@ export function botApprovalCheck(
       }
     }
     if (opts.commandsAlwaysCard && isBuiltinTool(tool, hostTools) && COMMAND_TOOLS.has(tool)) req.cardAlways = true;
+    // A command asking to leave the sandbox (`dangerouslyDisableSandbox`, which a bot's runtime refuses anyway) never is.
+    else if (opts.commandsSandboxed === true && isBuiltinTool(tool, hostTools) && BUILTIN_EFFECTS.get(tool) === "execute" && input.dangerouslyDisableSandbox !== true) req.contained = true;
     const decision = await broker.request(req, { signal: call.signal });
     if (decision.allowed) return { behavior: "allow", updatedInput: input };
     const why = decision.by === "level" ? "this computer's level doesn't allow it"

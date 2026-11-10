@@ -1,6 +1,7 @@
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
 import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir, stagedManifest } from "./registry/bundled-stage";
 import { SeenUrls } from "./approvals/seen-urls";
+import { botSandboxSettings } from "./fence/sandbox-settings";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -3863,8 +3864,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
           hostTools: (ctx) => [...(side()?.tools(ctx.sessionId) ?? []).map((t) => t.name), GLOSSARY_TOOL_NAME],
           home: opts.parts?.userHome ?? homedir(), localComputer: main.self, fence, cloverHome,
           levelOf: (c) => node?.registry.get(c)?.level,
-          // Until bots' Bash sandbox is drawn from the fence (lane C's #356), a bot's command always asks on a card.
-          commandsAlwaysCard: true,
+          // A bot's Bash sandbox is drawn from this computer's fence at its level (lane C's `botSandboxSettings`, below):
+          // no network, writes to its own folders and temp at ask for risky actions, so a command it holds runs.
+          commandsSandboxed: true,
           bundledTool,
           seenUrl: (ctx, url) => seenUrls.seen(ctx.sessionId, url),
         });
@@ -3896,8 +3898,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         hooks: pluginHooks({ registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`) }),
         mcp: { servers: (ctx) => mcp.servers(ctx.kind), runner: node?.mcp ?? localMcpRunner(mcp, thisComputer), settled: () => mcp.settled(MCP_FIRST_LISTING_WAIT_MS) },
         // A's file fence over this computer's ONE CloverFence (the parts', with the parts' user home), never a second one.
-        // Bots' Bash sandbox comes from the same fence through lane C's `sandboxSettingsOf` (#356).
         fileFence: botFileFence(fence, cloverHome, hostOs()),
+        // Bots' Bash sandbox from the same fence (lane C's #356), read at each turn start (A's #362: a change reopens the
+        // runtime; one that can't be built fails the turn), at the session's level: a routine's own, else its computer's.
+        sandbox: (ctx) => botSandboxSettings(fence.forCaller(ctx.caller).policy(), {
+          cloverHome: fence.cloverHome, userHome: fence.home, level: ctx.level ?? node?.registry.get(ctx.computer)?.level,
+          ...(process.platform === "win32" ? { windows: true } : {}),
+        }),
         ...(node ? {
           holds: node.holds, terminals: node.terminals,
           computers: () => node.registry.list().map((c) => ({ name: c.name, os: c.os, online: c.state === "online", main: c.isMain })),
