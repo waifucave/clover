@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { cloverSharedRoots, ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
-import { fencedCommand, pluginFenceAvailable, realOrResolved, toolFence } from "../registry/plugin-fence";
+import { fencedSpawn, pluginFenceAvailable, realOrResolved, toolFence } from "../registry/plugin-fence";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -791,13 +791,20 @@ export class PluginSupervisor {
       // declares); it reaches the daemon through its socket alone.
       const guard = this.pluginRun;
       let cmd = bunCmd;
-      const env = launch.env;
+      let env: Record<string, string> = launch.env;
+      let spawnCwd = cwd;
       if (guard.fence !== false && pluginFenceAvailable()) {
         const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}` });
-        cmd = fencedCommand(bunCmd, { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, fork: false, sockets: [this.deps.socketPath] });
-        env.TMPDIR = tmp;
+        // Through the spawn trampoline: its own TCC-responsible process (the controller's ruling after #345).
+        const spawned = fencedSpawn({
+          cmd: bunCmd, env: { ...launch.env, TMPDIR: tmp }, cwd, files: guard.files,
+          fence: { ...fence, read: [...fence.read, bunCmd[0]!], exec: "plugin", execs: [bunCmd[0]!], tools: false, fork: false, sockets: [this.deps.socketPath] },
+        });
+        cmd = spawned.cmd;
+        env = spawned.env;
+        spawnCwd = spawned.cwd ?? cwd;
       }
-      proc = this.spawnFn(cmd, { cwd, env });
+      proc = this.spawnFn(cmd, { cwd: spawnCwd, env });
     } catch (err) {
       rt.pid = undefined;
       rt.proc = undefined;
