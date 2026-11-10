@@ -41,10 +41,13 @@
 //
 // Linux and Windows: not fenced yet (Linux under bubblewrap comes next; Windows waits, the owner's priority).
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { PluginRunFiles } from "./plugin-run";
+import { agentConfigPaths, autoRunPaths, SHELL_FILES } from "../contracts/fence";
+import { CloverFence } from "../fence/fence";
+import { runLaterExtras } from "../fence/run-later";
 
 /** What the agent runtime's `sandbox.denyLaunchServices` denies (`@waifucave/clover-agent-runtime`'s
  *  `LAUNCH_SERVICES_DENIES`, not exported; a test holds this equal to the installed runtime's). */
@@ -80,6 +83,167 @@ export const CREDENTIAL_FILES: readonly string[] = [
   ".gem/credentials", ".ssh", ".gnupg", ".kube", ".config/gcloud", ".azure", ".terraform.d/credentials.tfrc.json",
   ".bun/install/credentials", ".config/uv/credentials", ".local/share/uv/credentials",
 ];
+
+/** A project folder's entries denied WHOLE to a fenced process's writes, and the folder itself (so it can't be renamed
+ *  away and back, #352's review): Git's folder (its hooks, config, attributes and every submodule's under `modules`),
+ *  the editors' (VS Code's tasks run on folder open; JetBrains' `.idea` the same), and Clover's and Claude Code's own
+ *  settings, MCP servers and hooks. */
+export const PROJECT_WHOLE_DENIES: readonly string[] = [".git", ".vscode", ".idea", ".claude", ".clover"];
+
+/** Inside a project folder, never written by a fenced process, besides `PROJECT_WHOLE_DENIES`: anything else that
+ *  runs on its own without the user running their project (the controller's rulings on #352). A project's MCP servers
+ *  (`.mcp.json`), direnv's `.envrc`, Git's `.gitconfig` and `.gitmodules`, and the shells' start files a dotfiles
+ *  project holds; with the credential files (`CREDENTIAL_FILES`), which are neither read nor written. Relative to the
+ *  project folder. Each folder between the project and one of these is write-denied too, so none can be renamed. */
+export const PROJECT_DENIES: readonly string[] = [".mcp.json", ".envrc", ".gitconfig", ".gitmodules", ...SHELL_FILES, ...CREDENTIAL_FILES];
+
+/** The folders in the user's home a project folder may never contain: where a write runs later, or a tool's settings
+ *  and keys live (#352's review). With every persistence place (`persistencePlaces`) and credential file. */
+export const NEVER_IN_A_PROJECT: readonly string[] = [
+  "Library", ".config", ".local", "bin", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".cargo", ".rustup", ".npm",
+  ".bun", ".deno", ".nvm", ".pyenv", ".rbenv", ".volta", ".asdf", ".claude", ".codex", ".cursor", ".gemini", "Applications",
+];
+
+/** Where a write runs later outside any sandbox, under the user's home (#308's `autoRunPaths` and `agentConfigPaths`),
+ *  and every place the fence keeps from bots outside the Clover home (`CloverFence.fencedSet`): denied to every fenced
+ *  process's writes, last in its profile, in their plain and real spellings (a dotfiles project holds the real file of
+ *  `~/.zshrc`). The Clover home itself is denied whole already, but for the process's own data and temp folders. */
+export function persistencePlaces(userHome: string, cloverHome: string, o: { fenced?: boolean } = {}): string[] {
+  const out = new Set<string>();
+  if (process.platform === "darwin" || process.platform === "linux") {
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    for (const p of [...autoRunPaths(os, userHome, runLaterExtras(os, userHome)), ...agentConfigPaths(os, userHome)]) out.add(p);
+    if (o.fenced === false) return [...out];
+    let fenced: readonly { path: string }[] = [];
+    try {
+      fenced = new CloverFence({ home: userHome, cloverHome, os }).fencedSet();
+    } catch {
+      fenced = [];
+    }
+    const clover = realOrResolved(cloverHome);
+    for (const f of fenced) {
+      const p = f.path;
+      if (p === cloverHome || p.startsWith(cloverHome + sep) || p === clover || p.startsWith(clover + sep)) continue;
+      out.add(p);
+    }
+  }
+  return [...out];
+}
+
+/** A Git config file read the way Git reads it, its `[include]` and `[includeIf …]` files expanded where they stand
+ *  (whatever an `includeIf`'s condition: holding more is the safe side; #336's `gitConfigWalk`, for a repository's own
+ *  config): every file reached, and the last `core.hooksPath` set, as written. A relative include is the including
+ *  file's folder's, `~/` the user's home. At most 10 deep, each file once. */
+export function gitConfigWalk(file: string, userHome: string): { files: string[]; hooksPath?: string } {
+  const files: string[] = [];
+  let hooksPath: string | undefined;
+  const visit = (f: string, depth: number) => {
+    if (depth > 10 || files.includes(f)) return;
+    files.push(f);
+    let text: string;
+    try {
+      text = readFileSync(f, "utf8");
+    } catch {
+      return; // not there (yet): still held, an include may name a file to come
+    }
+    let section = "";
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.replace(/(^|\s)[#;].*$/, "").trim();
+      const head = /^\[\s*([A-Za-z0-9.-]+)(?:\s+"[^"]*")?\s*\]$/.exec(line);
+      if (head !== null) {
+        section = head[1]!.toLowerCase();
+        continue;
+      }
+      const kv = /^([A-Za-z][A-Za-z0-9-]*)\s*=\s*(.*)$/.exec(line);
+      if (kv === null) continue;
+      const key = kv[1]!.toLowerCase();
+      const value = kv[2]!.replace(/^"(.*)"$/, "$1").trim();
+      if (section === "core" && key === "hookspath") hooksPath = value === "" ? undefined : value;
+      if ((section === "include" || section === "includeif") && key === "path" && value !== "") {
+        visit(value.startsWith("~/") ? join(userHome, value.slice(2)) : resolve(dirname(f), value), depth + 1);
+      }
+    }
+  };
+  visit(file, 0);
+  return { files, ...(hooksPath !== undefined ? { hooksPath } : {}) };
+}
+
+/** A project's Git folders when its `.git` is a file (a linked worktree, a submodule): the folder its `gitdir:` names,
+ *  and a worktree's common folder (`commondir`). Denied to writes whole, wherever they are. */
+export function gitFoldersOf(project: string): string[] {
+  const dotGit = join(project, ".git");
+  try {
+    if (statSync(dotGit).isDirectory()) return [];
+    const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    if (gitdir === undefined) return [];
+    const dir = resolve(project, gitdir);
+    const out = [dir];
+    try {
+      out.push(resolve(dir, readFileSync(join(dir, "commondir"), "utf8").trim()));
+    } catch {
+      /* a submodule's, or a plain gitdir */
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/** The project's own Git config file: `.git/config`, or for a linked worktree (`.git` a file) its common folder's. */
+function projectGitConfig(project: string): string | undefined {
+  const dotGit = join(project, ".git");
+  try {
+    if (statSync(dotGit).isDirectory()) return join(dotGit, "config");
+    const gitdir = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+    if (gitdir === undefined) return undefined;
+    const dir = resolve(project, gitdir);
+    let common = dir;
+    try {
+      common = resolve(dir, readFileSync(join(dir, "commondir"), "utf8").trim());
+    } catch {
+      /* a plain gitdir */
+    }
+    return join(common, "config");
+  } catch {
+    return undefined;
+  }
+}
+
+/** The folders Git runs hooks from for a project besides `.git/hooks`: its effective `core.hooksPath`, from the
+ *  project's config or else the user's global config (read here, never written), resolved against the project
+ *  (`~/` against the user's home). Husky's `.husky` and a `.githooks` setup are found this way. */
+export function gitHooksPaths(project: string, userHome: string): string[] {
+  const own = projectGitConfig(project);
+  const value = [own, join(userHome, ".gitconfig"), join(userHome, ".config", "git", "config")]
+    .map((f) => (f === undefined ? undefined : gitConfigWalk(f, userHome).hooksPath)).find((v) => v !== undefined);
+  if (value === undefined) return [];
+  const path = value.startsWith("~/") ? join(userHome, value.slice(2)) : resolve(project, value);
+  return [path];
+}
+
+/** The session's working directories a hook or MCP server is given: absolute folders that are none of the homes, never
+ *  a folder above one (`/`, `/Users`), never inside the Clover home. Real paths. */
+export function projectFolders(dirs: readonly string[], o: { userHome: string; cloverHome: string }): string[] {
+  const homes = [o.userHome, o.cloverHome].map(realOrResolved);
+  const inside = (p: string, root: string) => p === root || p.startsWith(root.endsWith(sep) ? root : root + sep);
+  // The places a project may never hold (#352's review): a working folder of ~/Library or ~/.config would put the
+  // LaunchAgents or a tool's settings in reach. By where they are, never by where a link points: a dotfiles project
+  // holding the real file of ~/.zshrc stays a project, and its profile write-denies that file (`persistencePlaces`).
+  const never = [
+    ...paths([...NEVER_IN_A_PROJECT.map((d) => join(o.userHome, d)), ...CREDENTIAL_FILES.map((f) => join(o.userHome, f))]),
+    ...persistencePlaces(o.userHome, o.cloverHome, { fenced: false }).map((p) => resolve(p)),
+  ];
+  const out: string[] = [];
+  for (const d of dirs) {
+    if (typeof d !== "string" || !d.startsWith("/")) continue;
+    const p = realOrResolved(d);
+    if (homes.some((h) => inside(h, p))) continue; // a home, or a folder above one
+    if (inside(p, homes[1]!)) continue; // inside the Clover home
+    if (never.some((n) => inside(n, p))) continue; // holds a place where a write runs later, or a tool's settings
+    if (!out.includes(p)) out.push(p);
+  }
+  return out;
+}
 
 /** The system's DNS resolver socket: the one Unix socket every fenced process may reach (name lookups go through it). */
 export const DNS_SOCKETS: readonly string[] = ["/private/var/run/mDNSResponder", "/var/run/mDNSResponder"];
@@ -128,6 +292,11 @@ export interface PluginFenceInput {
   /** No native code but its Bun's (`execs`) and the system's (`file-map-executable` denied everywhere else): the
    *  clover process (B3, and #345's review). */
   noNativeCode?: boolean;
+  /** The session's project folders (its working directories), for a hook or MCP server of that session: readable,
+   *  and writable when `projectWrite` (its plugin holds `project.write`). `.git/hooks`, `.git/config` and the credential
+   *  files inside each stay denied. `projectFolders` chooses them. */
+  projects?: readonly string[];
+  projectWrite?: boolean;
   /** The Unix sockets it may connect to (a supervised host's daemon socket) besides the DNS resolver; every other one
    *  is denied (S1). A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
   sockets?: readonly string[];
@@ -174,8 +343,9 @@ function ancestorsWithin(ps: readonly string[], roots: readonly string[]): strin
  *  allowed back, then what no process gets is denied last. */
 export function pluginFenceProfile(i: PluginFenceInput): string {
   const user = i.userHome;
-  const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : [])];
-  const write = [...i.write];
+  const projects = i.projects ?? [];
+  const read = [...i.read, ...(i.execs ?? []), ...(i.tools ? TOOL_READ_DIRS.map((d) => join(user, d)) : []), ...projects];
+  const write = [...i.write, ...(i.projectWrite ? projects : [])];
   const closed = [user, i.cloverHome, ...darwinUserFolders()];
   const lines = [
     "(version 1)",
@@ -196,6 +366,10 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     `(allow file-read* file-write* ${subpaths(write)})`,
     // Never, whatever was allowed above: the Keychain's files, the tools' credential files and every way in to launchd.
     `(deny file-read* file-write* ${subpaths([join(user, "Library", "Keychains"), ...CREDENTIAL_FILES.map((f) => join(user, f))])})`,
+    // In a project folder: what Git runs on its own, and the same credential files (the ruling on project writes).
+    // In a project folder (the rulings on #352): what runs on its own, whole, and every folder that holds one, so none
+    // can be renamed away and back; its credential files unread too.
+    ...(projects.length > 0 ? projectDenyLines(projects, user) : []),
     `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services, ...SCREEN_AND_CLIPBOARD_SERVICES].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
     // Signals only to itself and its own children: never the daemon, the app or another plugin (#345's second review).
     "(deny signal)",
@@ -204,6 +378,14 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     "(deny network-outbound (remote unix-socket))",
     `(allow network-outbound ${paths([...DNS_SOCKETS, ...(i.sockets ?? [])]).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`,
   ];
+  // Last, for every fenced process: no write where a write runs later, nor anywhere the fence keeps from bots, in both
+  // spellings, and in a project folder not the folders that hold one either (#352's review).
+  const places = persistencePlaces(user, i.cloverHome);
+  if (places.length > 0) {
+    lines.push(`(deny file-write* ${subpaths(places)})`);
+    const held = holdersWithin(places, projects);
+    if (held.length > 0) lines.push(`(deny file-write* ${held.map((h) => `(literal "${sbpl(h)}")`).join(" ")})`);
+  }
   if (i.exec === "plugin") {
     const own = i.read[0];
     lines.push("(deny process-exec*)");
@@ -221,6 +403,47 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
 /** The folders of the sockets whose path is too long for a socket address (`sun_path`, 104 bytes on macOS). */
 function longSocketFolders(sockets: readonly string[]): string[] {
   return [...new Set(sockets.filter((p) => Buffer.byteLength(p) >= 104 || Buffer.byteLength(realOrResolved(p)) >= 104).flatMap((p) => paths([dirname(p)])))];
+}
+
+/** The folders between a project folder (itself included) and each of `denied` inside it, real and as given: write-
+ *  denied as literals, so none can be renamed and the denied path planted under a new name (#321's holders, #352's
+ *  review). A file inside them can still be written. */
+function holdersWithin(denied: readonly string[], projects: readonly string[]): string[] {
+  const out = new Set<string>();
+  const roots = paths(projects);
+  for (const d of paths(denied)) {
+    for (const root of roots) {
+      if (!(d === root || d.startsWith(root + sep))) continue;
+      for (let h = dirname(d); h.length >= root.length; h = dirname(h)) {
+        out.add(h);
+        if (h === root) break;
+      }
+    }
+  }
+  return [...out];
+}
+
+/** The files a project's own Git config includes (#352's second review): each one is that repository's config too, so
+ *  one inside the project could set `core.hooksPath`, `core.fsmonitor`, `core.sshCommand` or `core.pager`. */
+export function gitIncludedFiles(project: string, userHome: string): string[] {
+  const own = projectGitConfig(project);
+  return own === undefined ? [] : gitConfigWalk(own, userHome).files.slice(1);
+}
+
+/** A project folder's deny lines: `PROJECT_WHOLE_DENIES` whole, `PROJECT_DENIES`, Git's hooks folder, the files its
+ *  config includes and a `.git` file's folders written by no one, the folders holding any of them, and its credential
+ *  files unread. */
+function projectDenyLines(projects: readonly string[], userHome: string): string[] {
+  const denied = projects.flatMap((p) => [
+    ...PROJECT_WHOLE_DENIES.map((f) => join(p, f)), ...PROJECT_DENIES.map((f) => join(p, f)), ...gitHooksPaths(p, userHome), ...gitFoldersOf(p),
+    ...gitIncludedFiles(p, userHome),
+  ]);
+  const holders = holdersWithin(denied, projects);
+  return [
+    `(deny file-write* ${subpaths(denied)})`,
+    ...(holders.length > 0 ? [`(deny file-write* ${holders.map((h) => `(literal "${sbpl(h)}")`).join(" ")})`] : []),
+    `(deny file-read* ${subpaths(projects.flatMap((p) => CREDENTIAL_FILES.map((f) => join(p, f))))})`,
+  ];
 }
 
 /** The devices a fenced process may write to: the null device, its terminal and its own descriptors (`/dev/stdout`
@@ -252,6 +475,13 @@ export function fenceFolders(cloverHome: string, pluginId: string | undefined, n
   return { data, tmp };
 }
 
+/** A session's project folders for a hook or MCP server of it: its working directories, and whether its plugin holds
+ *  `project.write`. */
+export interface ProjectAccess {
+  dirs: readonly string[];
+  write: boolean;
+}
+
 /** The env a hook or MCP server runs with besides its TMPDIR: every package manager's cache in a folder of its own
  *  temp folder, and npm's user config a file there (`~/.npmrc` is a credential file, denied; S4). */
 export function toolCacheEnv(tmp: string): Record<string, string> {
@@ -271,13 +501,16 @@ export function toolCacheEnv(tmp: string): Record<string, string> {
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
  *  any program, fenced the same. Returns its temp folder and the env it runs with (`toolCacheEnv`). */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
+  const userHome = o.userHome ?? homedir();
+  const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, cloverHome: o.files.cloverHome }) : [];
   return {
     tmp,
     env: toolCacheEnv(tmp),
     fence: {
-      cloverHome: o.files.cloverHome, userHome: o.userHome ?? homedir(),
+      cloverHome: o.files.cloverHome, userHome,
+      ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
       read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun"))],
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
     },

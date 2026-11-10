@@ -195,6 +195,7 @@ import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -1022,6 +1023,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // but ALSO hot-rebuilt on lifecycle changes (unlike MCP servers today), matching Tier-2's
   // hotApplyStart/hotApplyStop precedent for "no restart needed" plugin changes.
   const hookRegistry = new HookRegistry();
+  // The plugin registry once it opens (`startPlugins`, below), for what a hook's plugin was granted.
+  const projectWriteRegistry: { current?: OpenedRegistry } = {};
   // WS-21 (L4 request 2): the store lists the user, self, project and builtin tiers; a plugin's skills are
   // claude-native content now (the runtimes load them, and `skills.list`'s plugin half is lane L4's).
   const skillStore = new SkillStore({ cloverHome, trust: trustStore });
@@ -2120,7 +2123,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const hookFacade = new HookFacade({
     registry: hookRegistry,
-    runner: new HookRunner(pluginRun),
+    // A hook reads its session's project folders, and writes them when its plugin holds `project.write` (the
+    // controller's ruling after #345); bundled plugins the same.
+    runner: new HookRunner(pluginRun, {
+      projectFor: (pluginId, sid) => {
+        let dirs: string[];
+        try { dirs = store.dirs(sid).map((d) => d.path); } catch { return undefined; }
+        const record = projectWriteRegistry.current?.registry.get(topPluginIdOf(pluginId));
+        return { dirs, write: record?.granted.includes("project.write") === true };
+      },
+    }),
     hooksEnabled: cloverHooksEnabled,
     cwdForSession: (sid) => { try { return store.meta(sid).cwd ?? undefined; } catch { return undefined; } },
   });
@@ -3578,6 +3590,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       log: (line) => console.error(`[plugins] ${line}`),
     });
     partsRegistry = opened;
+    projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
