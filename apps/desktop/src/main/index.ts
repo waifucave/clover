@@ -38,7 +38,7 @@ import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
-import { appShortcut, sealedInputAllowed } from "./shortcuts";
+import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
@@ -390,6 +390,11 @@ function disarmFallback(cardId: string): void {
 async function showFallbackCard(cardId: string): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
+  const smokeFallback = process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+  if (!fallbackMayShow({ headless, smokeFallback, testInput: (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
+    log(`card: the fallback card for ${cardId} was not shown (headless)`);
+    return;
+  }
   const mint = sealed.mint(cardId, "own");
   if (mint === undefined) return;
   const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
@@ -427,7 +432,11 @@ async function showFallbackCard(cardId: string): Promise<void> {
     if (win.isDestroyed()) return;
     const main = win.webContents.mainFrame;
     sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
-    if (!win.isDestroyed()) win.showInactive();
+    if (!win.isDestroyed()) {
+      log(`card: the fallback card for ${cardId} (${card.kind}) is shown`);
+      if (headless) log(`window: shown while headless (the sealed smoke's fallback card ${cardId})`);
+      win.showInactive();
+    }
   }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
@@ -1141,6 +1150,7 @@ function startBrowser(): void {
   };
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
+    headless,
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
@@ -1319,6 +1329,7 @@ async function smoke(): Promise<void> {
   // touched.
   if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
     win.showInactive();
+    log(`window: shown while headless (the sealed smoke's input routing)`);
     log(`sealed-click: main window shown for input routing`);
   }
   const probe = `(() => ({

@@ -719,6 +719,11 @@ try {
   console.error(`acceptance: the run itself failed: ${why(err)}`);
   code = 2;
 } finally {
+  // A run is headless: no window may reach the owner's screen. The app logs "window: shown while headless" whenever one would.
+  for (const f of ["app.log.1", "app.log"]) {
+    const shown = readLog(join(home, "logs", f)).split("\n").find((l) => /window: shown while headless/.test(l));
+    if (shown !== undefined) { console.error(`acceptance: FAIL: a window was shown during a headless run (${f}): ${shown.slice(0, 300)}`); code = code === 0 ? 1 : code; break; }
+  }
   await cleanup();
   const after = listKeychains();
   if (keychainsBefore !== "" && after !== keychainsBefore) {
