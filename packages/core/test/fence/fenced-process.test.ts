@@ -287,6 +287,14 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       expect(spawner.recheck!("s-w2")).toMatch(/link planted as a git config.*core\.fsmonitor/);
       expect(existsSync(linked)).toBe(false);
       expect(readFileSync(evil, "utf8")).toContain("fsmonitor");
+      // A bare repo whose `config` is itself a link, to a file with risky keys: found, and the link removed (#384's review).
+      const bare = join(other, "linked-bare.git");
+      mkdirSync(join(bare, "objects"), { recursive: true });
+      writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
+      writeFileSync(join(other, "bare-evil.cfg"), "[core]\n\tbare = true\n\tfsmonitor = /tmp/x\n");
+      symlinkSync(join(other, "bare-evil.cfg"), join(bare, "config"));
+      expect(spawner.recheck!("s-w2")).toMatch(/link planted as a git config.*core\.fsmonitor/);
+      expect(existsSync(join(bare, "config"))).toBe(false);
       // A scratch folder made mid-session (a new bot's) is looked over too.
       const newbot = join(clover, "scratch", "newbot", "r");
       expect(Bun.spawnSync(["git", "init", "-q", newbot]).exitCode).toBe(0);
@@ -315,9 +323,6 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       writeFileSync(at("linked.git", "config"), "[core]\n\tbare = true\n");
       symlinkSync(at("bare.git", "HEAD"), at("linked.git", "HEAD"));
       symlinkSync(at("bare.git", "objects"), at("linked.git", "objects"));
-      // A `config` that isn't a regular file is no repo's.
-      mkdirSync(at("notbare", "config"), { recursive: true });
-      writeFileSync(at("notbare", "HEAD"), "x");
       const r = reposUnder([root]);
       const found = r.files.filter((f) => f.endsWith("/config")).sort(); // each repo's config.worktree is there too
       expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config"),
@@ -326,7 +331,6 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       expect(found).not.toContain(at("link", ".git", "config"));
       // A budget of the top level's folders alone: the walk stops there, and says so.
       const top = readdirSync(root).filter((n) => statSync(join(root, n)).isDirectory() && n !== "link").length;
-      expect(r.files).not.toContain(at("notbare", "config"));
       const cut = reposUnder([root], top);
       expect(cut.stopped).toBe(true);
       expect(cut.files).toContain(at("a", ".git", "config"));

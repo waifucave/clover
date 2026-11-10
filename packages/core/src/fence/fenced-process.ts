@@ -592,12 +592,13 @@ export function repoConfigFiles(repoRoot: string): string[] {
  *  every tool call, and a planted hook is the supervisor's and the belt's). */
 export const WATCH_REPO_BUDGET = 20_000;
 
-/** A bare repo's own folder, as far as watching goes: a `config` that is a regular file beside a `HEAD` in any form (a
- *  file, a link, a folder): git still takes a repo whose `HEAD` is a link or whose `objects/` is reached through one
- *  (#366's review), so neither is required to look plain. */
+/** A bare repo's own folder, as far as watching goes: a `config` and a `HEAD`, each in any form (a file, a link, a
+ *  folder): git still takes a repo whose `HEAD` is a link or whose `objects/` is reached through one (#366's review),
+ *  and a `config` that is a link is the watch's own link handling's to judge (#384's review), so none is required to
+ *  look plain. Watching a `config` that is no git config costs a read that finds nothing. */
 function isBareRepo(dir: string): boolean {
   try {
-    if (!lstatSync(join(dir, "config")).isFile()) return false;
+    lstatSync(join(dir, "config"));
     lstatSync(join(dir, "HEAD"));
     return true;
   } catch { return false; }
