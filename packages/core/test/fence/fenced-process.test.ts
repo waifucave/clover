@@ -162,7 +162,10 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
     try { if (Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0) built.path = out; } catch { /* no compiler */ }
     return built.path;
   };
-  const sleeping = (tag: string) => Bun.spawnSync(["/usr/bin/pgrep", "-f", `sleep 2\\.${tag}`]).exitCode === 0;
+  /** How long the test's job sleeps before it would set the key: longer than any run takes under load. */
+  const JOB_SLEEP_S = 60;
+  /** Whether any process's command line holds the job's tagged sleep (the subshell's and the sleep's own). */
+  const sleeping = (tag: string) => Bun.spawnSync(["/usr/bin/pgrep", "-f", `sleep ${JOB_SLEEP_S}\\.${tag}`]).exitCode === 0;
 
   for (const mode of ["the recorded tree (no holder)", "the process holder"] as const) {
     test(`a \`set -m\` job that sets core.hooksPath after the run: ended, and the key never lands (${mode})`, async () => {
@@ -175,18 +178,23 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
       const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp });
       const spawner = fencedSpawner({ fence, processHolder: holder ?? null });
       const tag = `${Date.now() % 100000}${Math.floor(Math.random() * 10)}`;
+      // The job sleeps far longer than any run takes, even on a loaded CI runner: a run that waited for it would take
+      // all of it, and a job left alive would still be there to see. Nothing below waits a fixed time.
       const started = Date.now();
       const r = await spawner.run({
-        command: `set -m; (sleep 2.${tag}; git config core.hooksPath /tmp/y) > /dev/null 2>&1 & echo started`,
-        cwd: project, env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "s-setm", sessionKind: "coding" } },
+        command: `set -m; (sleep ${JOB_SLEEP_S}.${tag}; git config core.hooksPath /tmp/y) > /dev/null 2>&1 & echo started`,
+        cwd: project, env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 30_000, who: { caller: { kind: "session", sessionId: "s-setm", sessionKind: "coding" } },
       });
       expect(r.kind === "exited" && r.stdout).toBe("started\n");
-      expect(Date.now() - started).toBeLessThan(2_000); // the run didn't wait for the job: it ended it
-      expect(sleeping(tag)).toBe(false); // nothing left behind
-      await Bun.sleep(3_000); // past when the job would have written
-      expect(readFileSync(join(project, ".git", "config"), "utf8")).not.toContain("hooksPath");
+      expect(Date.now() - started).toBeLessThan(JOB_SLEEP_S * 1000); // the run didn't wait for the job: it ended it
+      // Nothing left behind: every process whose command line holds the tag (the job's subshell, which would run
+      // `git config`, and its sleep) is gone. Polled, as the kernel reaps them; gone at once in practice.
+      const until = Date.now() + 20_000;
+      while (sleeping(tag) && Date.now() < until) await Bun.sleep(100);
       expect(sleeping(tag)).toBe(false);
-    }, 30_000);
+      // With the subshell gone, nothing is left to write the key: it never lands.
+      expect(readFileSync(join(project, ".git", "config"), "utf8")).not.toContain("hooksPath");
+    }, 90_000);
   }
 
   test("the second line: a key set after a run ended is reverted when the turn or session ends", async () => {

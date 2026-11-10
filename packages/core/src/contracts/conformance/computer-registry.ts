@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { callBindingInput, cardHashInput, type Card, type Level } from "@waifucave/clover-protocol";
 import type { CardRecord } from "../approval-broker";
 import { isContractError } from "../common";
-import { holdsOverlap, levelRaiseCall, type ComputerChange } from "../computer-registry";
+import { CARD_PROOF_MAX_AGE_MS, holdsOverlap, levelRaiseCall, type ComputerChange } from "../computer-registry";
 import { FakeClock } from "../fakes/clock";
 import { type FakeComputerRegistry } from "../fakes/computer-registry";
 
@@ -30,12 +30,25 @@ export function runComputerRegistryConformance(make: ComputerRegistryFactory): v
     return undefined;
   };
 
-  function setup() {
+  function setup(o: { clock?: FakeClock; cardRecord?: (id: string) => CardRecord | undefined } = {}) {
     return make({
-      clock: new FakeClock(),
+      clock: o.clock ?? new FakeClock(),
       self: { name: "Studio", device: "studio0000000000000" },
       others: [{ name: "Laptop1", device: "laptop000000000000", os: "windows", hasDisplay: true }],
+      ...(o.cardRecord ? { cardRecord: o.cardRecord } : {}),
     });
+  }
+
+  /** An approved level-raise card for `name` at `level`, as the approval broker records it. */
+  function cardRecord(name: string, level: Level, over: Partial<CardRecord> = {}, binds: Record<string, unknown> = {}, tag = ""): CardRecord {
+    const { method, params } = levelRaiseCall(name, level);
+    const unhashed = {
+      id: `card_${name.toLowerCase()}${level.replace(/-/g, "")}${tag}`.padEnd(29, "0").slice(0, 29), kind: "change" as const, change: "computer-level" as const,
+      computer: name, origin: "user" as const, issuedAt: 1, expiresAt: null, fields: {},
+      options: [{ id: "approve", kind: "approve" as const, label: "Raise" }, { id: "deny", kind: "deny" as const, label: "Keep" }],
+      binds: { computer: name, method, params: sha256(callBindingInput(method, params)), ...binds },
+    };
+    return { card: { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card, outcome: "approved", optionId: "approve", ...over };
   }
 
   describe("ComputerRegistry", () => {
@@ -55,26 +68,37 @@ export function runComputerRegistryConformance(make: ComputerRegistryFactory): v
     });
 
     test("a raise takes the approved card binding this computer and level, once; lowering takes nothing", async () => {
-      const reg = setup();
+      const clock = new FakeClock();
+      const broker = new Map<string, CardRecord>();
+      const reg = setup({ clock, cardRecord: (id) => broker.get(id) });
       const refused = async (p: Promise<unknown>) => isContractError(await p.catch((e: unknown) => e), "refused");
-      const record = (name: string, level: Level, over: Partial<CardRecord> = {}): CardRecord => {
-        const { method, params } = levelRaiseCall(name, level);
-        const unhashed = {
-          id: `card_${name.toLowerCase()}${level.replace(/-/g, "")}`.padEnd(29, "0").slice(0, 29), kind: "change" as const, change: "computer-level" as const,
-          computer: name, origin: "user" as const, issuedAt: 1, expiresAt: null, fields: {},
-          options: [{ id: "approve", kind: "approve" as const, label: "Raise" }, { id: "deny", kind: "deny" as const, label: "Keep" }],
-          binds: { computer: name, method, params: sha256(callBindingInput(method, params)) },
-        };
-        return { card: { ...unhashed, hash: sha256(cardHashInput(unhashed as never)) } as Card, outcome: "approved", optionId: "approve", ...over };
+      /** A card the broker holds, answered now (unless `over` says otherwise). */
+      const issued = (name: string, level: Level, over: Partial<CardRecord> = {}, binds: Record<string, unknown> = {}, tag = ""): CardRecord => {
+        const r = cardRecord(name, level, { resolvedAt: clock.now(), ...over }, binds, tag);
+        broker.set(r.card.id, structuredClone(r));
+        return r;
       };
       expect(await refused(reg.setLevel("Studio", "automatic"))).toBe(true);
-      // A card for another computer, another level, or a denied one is no proof.
-      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Laptop1", "automatic") }))).toBe(true);
-      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "accept-edits") }))).toBe(true);
-      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: record("Studio", "automatic", { outcome: "denied", optionId: "deny" }) }))).toBe(true);
-      // A signed answer needs a device registry to check it, which this fake wasn't given.
-      expect(await refused(reg.setLevel("Studio", "automatic", { via: "signed", answer: { card: record("Studio", "automatic").card, option: "approve", device: "phone0000000000000", at: 1, signature: "AAAA" } }))).toBe(true);
-      const good = record("Studio", "automatic");
+      // A card for another computer, another level, a denied one, or one bound to a transfer's source is no proof.
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: issued("Laptop1", "automatic") }))).toBe(true);
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: issued("Studio", "accept-edits") }))).toBe(true);
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: issued("Studio", "automatic", { outcome: "denied", optionId: "deny" }, {}, "d") }))).toBe(true);
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: issued("Studio", "automatic", {}, { source: "Laptop1" }, "s") }))).toBe(true);
+      // One with no answer time, or answered longer ago than the bound, is no proof either.
+      const timeless = issued("Studio", "automatic", {}, {}, "t");
+      delete timeless.resolvedAt;
+      broker.set(timeless.card.id, structuredClone(timeless));
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: timeless }))).toBe(true);
+      const old = issued("Studio", "automatic", {}, {}, "o");
+      clock.correct(clock.now() + CARD_PROOF_MAX_AGE_MS + 1);
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: old }))).toBe(true);
+      // A record the broker doesn't hold is refused, however right it looks; so is one that differs from the broker's.
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: cardRecord("Studio", "automatic", { resolvedAt: clock.now() }, {}, "m") }))).toBe(true);
+      const denied = issued("Studio", "automatic", { outcome: "denied", optionId: "deny" }, {}, "x");
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: { ...denied, outcome: "approved", optionId: "approve" } }))).toBe(true);
+      // A signed answer needs a device registry to check it, which this one wasn't given.
+      expect(await refused(reg.setLevel("Studio", "automatic", { via: "signed", answer: { card: issued("Studio", "automatic").card, option: "approve", device: "phone0000000000000", at: 1, signature: "AAAA" } }))).toBe(true);
+      const good = issued("Studio", "automatic", {}, {}, "g");
       await reg.setLevel("Studio", "automatic", { via: "card", record: good });
       expect(reg.self().level).toBe("automatic");
       await reg.setLevel("Studio", "read-only");
@@ -83,6 +107,14 @@ export function runComputerRegistryConformance(make: ComputerRegistryFactory): v
       expect(await refused(reg.setLevel("Studio", "automatic", { via: "card", record: good }))).toBe(true);
       await reg.setLevel("Studio", "ask", { via: "terminal" });
       expect(reg.self().level).toBe("ask");
+    });
+
+    test("with no way to look a card up in the broker, no card raises a level (fails closed)", async () => {
+      const clock = new FakeClock();
+      const reg = setup({ clock });
+      const e = await reg.setLevel("Studio", "automatic", { via: "card", record: cardRecord("Studio", "automatic", { resolvedAt: clock.now() }) }).catch((x: unknown) => x);
+      expect(isContractError(e, "refused")).toBe(true);
+      expect(reg.self().level).toBe("ask-risky");
     });
 
     test("holds: an app hold and a window hold of it conflict across sessions; two windows don't", () => {

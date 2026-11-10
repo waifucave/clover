@@ -5,12 +5,12 @@ import {
   COMPUTER_NAME_RE, DEFAULT_LEVEL, callBindingInput, levelAbove,
   type CloverWindow, type ComputerView, type HoldView, type Level,
 } from "@waifucave/clover-protocol";
-import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, verifySignedAnswer } from "../approval-broker";
+import { type AnswerDevices, type AnswerLedger, type CallCardRenderer, type CardRecord, verifySignedAnswer } from "../approval-broker";
 import { MemoryAnswerLedger } from "./approval-broker";
 import type { Clock } from "../clock";
 import { ContractError, Listeners, type Unsubscribe } from "../common";
 import {
-  holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
+  cardRaiseProblem, holdsOverlap, levelRaiseCall, type ComputerChange, type ComputerRegistry, type HoldRequest, type LevelRaiseProof,
 } from "../computer-registry";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -30,12 +30,24 @@ export class FakeComputerRegistry implements ComputerRegistry {
 
   readonly #devices: AnswerDevices | undefined;
   readonly #ledger: AnswerLedger;
+  readonly #cardRecord: ((id: string) => CardRecord | undefined) | undefined;
+  readonly #since: number;
+  readonly #cardLedger: AnswerLedger;
   /** This computer's own card for a call, which a signed answer's card must match (review N1). */
   readonly #render: CallCardRenderer;
 
   /** `devices` checks signed answers from elsewhere; `ledger` records the card ids used (a fresh one by default). */
-  constructor(opts: { clock: Pick<Clock, "now">; self: FakeComputerInput; others?: FakeComputerInput[]; devices?: AnswerDevices; ledger?: AnswerLedger; render?: CallCardRenderer }) {
+  constructor(opts: {
+    clock: Pick<Clock, "now">; self: FakeComputerInput; others?: FakeComputerInput[]; devices?: AnswerDevices; ledger?: AnswerLedger; render?: CallCardRenderer;
+    /** The broker's own record of a card, by id: without it, no card raises a level (`cardRaiseProblem`). */
+    cardRecord?: (id: string) => CardRecord | undefined;
+    /** The card ids a raise with a card used (a fresh one by default). */
+    cardLedger?: AnswerLedger;
+  }) {
     this.#clock = opts.clock;
+    this.#cardRecord = opts.cardRecord;
+    this.#since = opts.clock.now();
+    this.#cardLedger = opts.cardLedger ?? new MemoryAnswerLedger();
     this.#devices = opts.devices;
     this.#render = opts.render ?? (() => undefined);
     this.#ledger = opts.ledger ?? new MemoryAnswerLedger();
@@ -226,11 +238,7 @@ export class FakeComputerRegistry implements ComputerRegistry {
       const verdict = await verifySignedAnswer(proof.answer, { self: name, method, params, now: this.#clock.now(), sha256, devices: this.#devices, ledger: this.#ledger, render: this.#render });
       return verdict === "ok" ? null : verdict;
     }
-    const { card, outcome, optionId } = proof.record;
-    if (outcome !== "approved" || card.options.find((o) => o.id === optionId)?.kind !== "approve") return "the card wasn't approved";
-    const b = card.binds;
-    if (card.change !== "computer-level" || !b || b.computer !== name || b.method !== method || b.params !== sha256(callBindingInput(method, params))) return "the card is for another change";
-    return this.#ledger.claim(card.id) ? null : "the card was used already";
+    return cardRaiseProblem(proof.record, { name, level, cardRecord: this.#cardRecord, now: this.#clock.now(), since: this.#since, sha256, ledger: this.#cardLedger });
   }
 
   #must(nameOrAlias: string): ComputerView {
