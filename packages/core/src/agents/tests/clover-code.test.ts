@@ -178,7 +178,7 @@ describeWithEmbeddedRuntime("Clover's coding agent over ACP", (spawn) => {
 
   test("it lists as an ACP backend of this computer, sandboxed, at the SDK's version", async () => {
     const w = make(spawn);
-    const methods = agentMethods({ manager: w.manager, backends: () => [new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), sandboxReady: SANDBOX_READY })], computer: "Studio" });
+    const methods = agentMethods({ manager: w.manager, backends: () => [new CloverCodeBackend({ clock: { now: () => 0 } as never, defaultModel: () => MODEL, baseOptions: baseOptionsFor(w.cloverHome, spawn), sandboxReady: SANDBOX_READY })], computer: "Studio", localDevice: () => "a".repeat(32) });
     const view = (await methods["agent.backends"]!({}, { caller: { kind: "user", client: "app" } })) as { backends: Record<string, unknown>[] };
     expect(view.backends[0]).toMatchObject({ id: CLOVER_CODE_ID, name: "Clover's coding agent", protocol: "acp", placement: "local", computers: [{ installed: true, sandboxed: true, marks: [] }] });
     expect(existsSync(w.cloverHome)).toBe(true);

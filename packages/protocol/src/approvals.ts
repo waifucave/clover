@@ -249,12 +249,12 @@ export type SignedCardAnswer = z.infer<typeof SignedCardAnswer>;
 
 export const APPROVALS_METHODS = {
   cardList: defineMethod({
-    name: "card.list", owner: "C", roles: ["app", "remote"],
+    name: "card.list", owner: "C", roles: ["app", "remote"], noSessions: true,
     params: Empty, result: z.object({ cards: z.array(Card) }),
     doc: "Every pending card with its sealed fields, for the app's main process and the iOS app.",
   }),
   cardGet: defineMethod({
-    name: "card.get", owner: "C", roles: ["app", "remote"],
+    name: "card.get", owner: "C", roles: ["app", "remote"], noSessions: true,
     params: z.object({ id: CardId }),
     result: z.object({
       card: Card,

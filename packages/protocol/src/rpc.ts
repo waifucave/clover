@@ -39,6 +39,10 @@ export interface MethodSpec<P extends z.ZodType = z.ZodType, R extends z.ZodType
    *  own access"). The one exception is a `change` method called from a plugin's layer, which becomes a sealed card
    *  for the user to answer instead (§5.5). */
   readonly userOnly: boolean;
+  /** Never a session's call: a bot's or agent's session here is refused, and so is a paired computer's call for one of
+   *  its sessions (`peer.call` as a session). The user's own clients and a paired computer's own calls (no session)
+   *  may call it. For what only the user may read, such as a card's sealed fields (`card.list`, `card.get`). */
+  readonly noSessions?: true;
   readonly change?: ChangeKind;
   /** One line: what it does. */
   readonly doc: string;
@@ -54,6 +58,7 @@ export interface MethodInput<P extends z.ZodType, R extends z.ZodType> {
   direction?: Direction;
   capability?: string;
   userOnly?: boolean;
+  noSessions?: true;
   change?: ChangeKind;
   doc: string;
 }
@@ -75,6 +80,7 @@ export function defineMethod<P extends z.ZodType, R extends z.ZodType>(m: Method
     direction: m.direction ?? "to-daemon",
     ...(m.capability !== undefined ? { capability: m.capability } : {}),
     userOnly: m.userOnly ?? false,
+    ...(m.noSessions ? { noSessions: true as const } : {}),
     ...(m.change !== undefined ? { change: m.change } : {}),
     doc: m.doc,
   };

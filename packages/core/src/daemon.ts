@@ -40,6 +40,8 @@ import { createCloverServer, laneMethodHandlers, type CloverHandler, type Clover
 import type { AppPeerPolicy } from "./platform/peer-signature";
 import { archiveMethods } from "./sessions/archive-rpc";
 import { usagePlansMethods } from "./usage/rpc";
+import { cardMethods } from "./approvals/card-methods";
+import { lateAgentMethods } from "./agents/rpc";
 import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
@@ -3360,6 +3362,13 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     gate: updateGate, current: CORE_VERSION, self: () => selfUpdate, log: (line) => console.error(line),
     channel: () => readInstallMarker(dirs.home, process.execPath)?.channel ?? "latest",
   }));
+  // Lane C's cards and lane K's agent.* methods: the broker and the agents come up with the parts (below) and go with
+  // them, so each call reads them then; until they are up, and after they stop, a call is told to try again.
+  Object.assign(cloverLaneHandlers, cardMethods(() => daemonParts?.broker), laneMethodHandlers(lateAgentMethods(() => daemonParts?.agents, {
+    // A user's call made on this computer (the app or the terminal here) is this computer's device.
+    localDevice: () => liveDeviceId,
+    definitions: () => daemonParts?.agentDefinitions?.() ?? [],
+  })));
   const cloverTokens = new CloverTokens({ ...(pairSide ? { appToken: pairSide.appToken } : {}), verifyCli: (t) => authority.verify("harness", t) });
   cloverServer = createCloverServer({
     handlers: cloverLaneHandlers,
