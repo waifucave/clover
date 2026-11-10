@@ -590,3 +590,20 @@ describe("review S2-S4: what the prompt and the servers can't be made to do", ()
     if (process.platform === "darwin") expect(lines[0]).toContain(`no process holder at ${gone}`);
   });
 });
+
+describe("the bot driver's sandbox compare (canonicalSandbox)", () => {
+  test("order-free lists compare equal in any order, an ordered list's order counts, keys in any order, an undefined entry is null", async () => {
+    const { canonicalSandbox } = await import("../../../src/runtime-sdk/turn-loop/driver");
+    const a = { enabled: false, filesystem: { denyRead: ["/x", "/y"], allowWrite: ["/s", "/t"] }, network: { allowedDomains: ["b.example", "a.example"] }, ripgrep: { command: "rg", args: ["-a", "-b"] } };
+    const reordered = { ripgrep: { args: ["-a", "-b"], command: "rg" }, network: { allowedDomains: ["a.example", "b.example"] }, filesystem: { allowWrite: ["/t", "/s"], denyRead: ["/y", "/x"] }, enabled: false };
+    expect(canonicalSandbox(reordered)).toBe(canonicalSandbox(a));
+    // `ripgrep.args` keeps its order: swapped is a different sandbox.
+    expect(canonicalSandbox({ ...a, ripgrep: { command: "rg", args: ["-b", "-a"] } })).not.toBe(canonicalSandbox(a));
+    // A removed deny (narrowing) and an added one are both changes.
+    expect(canonicalSandbox({ ...a, filesystem: { ...a.filesystem, denyRead: ["/x"] } })).not.toBe(canonicalSandbox(a));
+    expect(canonicalSandbox({ ...a, filesystem: { ...a.filesystem, denyRead: ["/x", "/y", "/z"] } })).not.toBe(canonicalSandbox(a));
+    // An undefined list entry is null, consistently.
+    expect(canonicalSandbox({ denyRead: ["/x", undefined] })).toBe(canonicalSandbox({ denyRead: ["/x", null] }));
+    expect(canonicalSandbox(undefined)).toBe("null");
+  });
+});
