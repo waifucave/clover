@@ -7,7 +7,7 @@
 //   - the bots' `home/<this computer>` is the run's own user folder, not this user's home.
 // Never run it by hand: run.ts starts it on a temp home with a throwaway keychain file.
 import { startDaemon } from "../../packages/core/src/daemon";
-import type { PeerFacts } from "../../packages/core/src/platform/peer-signature";
+import type { PeerFacts } from "../../packages/core/src/platform/caller-probe";
 
 const runPid = Number(process.env.CLOVER_ACCEPTANCE_RUN_PID);
 const userHome = process.env.CLOVER_ACCEPTANCE_USER_HOME;

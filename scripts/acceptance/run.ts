@@ -76,7 +76,11 @@ const record = (n: number, status: Status, detail: string): void => {
   say(`step ${n}: ${status}: ${detail}`);
 };
 class StepFail extends Error {}
+/** A step the run can't drive on this target (it says what it would need). */
+class StepBlocked extends StepFail {}
 const fail = (detail: string): never => { throw new StepFail(detail); };
+const block = (detail: string): never => { throw new StepBlocked(detail); };
+const statusOf = (err: unknown): Status => (err instanceof StepBlocked ? "BLOCKED" : "FAIL");
 const why = (err: unknown): string => (err instanceof StepFail ? err.message : err instanceof RpcError ? `${err.message}${whereOf(err)}` : err instanceof Error ? err.message : String(err));
 /** The daemon's "not served yet" and similar errors name no file; these point at where each is answered. */
 function whereOf(err: RpcError): string {
@@ -244,6 +248,45 @@ function packagedApp(bundle: string): { exe: string; args: string[] } {
   return { exe: join(bundle, "Contents", "MacOS", name), args: [] };
 }
 
+/** The packaged core, copied out with the bundled plugins beside it as the bundle lays them out
+ *  (`<…>/Resources/daemon/clover-core`, `<…>/Resources/plugins`; packages/core/src/bundled-plugins-dir.ts). Run from
+ *  inside the bundle, a core with no app connected within 2 s starts the bundle through `open -n -g -a`
+ *  (packages/core/src/platform/pair/launch.ts), a second, windowed app on this screen; from the copy it finds no
+ *  bundle and runs alone, and the headless app connects to it. The binary is the bundle's, byte for byte. */
+function packagedCore(): string {
+  const res = join(root, "pkg", "Resources");
+  if (!existsSync(join(res, "daemon"))) {
+    mkdirSync(res, { recursive: true, mode: 0o700 });
+    cpSync(join(appBundle!, "Contents", "Resources", "daemon"), join(res, "daemon"), { recursive: true, verbatimSymlinks: true });
+    const plugins = join(appBundle!, "Contents", "Resources", "plugins");
+    if (existsSync(plugins)) cpSync(plugins, join(res, "plugins"), { recursive: true, verbatimSymlinks: true });
+  }
+  return join(res, "daemon", "clover-core");
+}
+
+/** The ruling for a packaged run: only a test-marked core, which takes the test variables and refuses to start without
+ *  them. A release core is never started: it would want the account's real home and write to the login keychain. */
+function checkTestBuild(): string {
+  const core = join(appBundle!, "Contents", "Resources", "daemon", "clover-core");
+  if (!existsSync(core)) return `${core} isn't there`;
+  const r = spawnSync(core, ["--version"], { env: baseEnv(), encoding: "utf8", timeout: 30_000 });
+  const out = `${r.stdout ?? ""}${r.stderr ?? ""}`.trim().split("\n")[0]?.slice(0, 200) ?? "";
+  return /test build/i.test(out) ? "" : `its core's --version doesn't say "test build" (${out || `exit ${r.status}`}): the packaged run takes only a test-marked try build, never a release`;
+}
+
+/** The packaged driver speaks as the CLI (`cli` role, the harness token the core keeps in the run's own keychain file):
+ *  the caller check takes an `app` hello only from the signed app, and the run doesn't override it. */
+function harnessToken(): string {
+  const r = spawnSync(process.execPath, ["-e", `
+    const { KeychainSecretStore, TOKEN_NAMES } = await import(${JSON.stringify(join(REPO, "packages/core/src/index.ts"))});
+    const t = await new KeychainSecretStore().get(TOKEN_NAMES.harness);
+    process.stdout.write(t ?? "");
+  `], { cwd: REPO, env: baseEnv(), encoding: "utf8", timeout: 60_000 });
+  const token = (r.stdout ?? "").trim();
+  if (r.status !== 0 || token === "") throw new Error(`the harness token isn't in the run's keychain file (exit ${r.status})`);
+  return token;
+}
+
 // ── the daemon ───────────────────────────────────────────────────────────────────────────────────────────────────
 let daemonRun = 0;
 async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
@@ -253,14 +296,10 @@ async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
   if (target === "source") {
     started = startChild(`daemon-${daemonRun}`, process.execPath, [join(REPO, "scripts", "acceptance", "daemon.ts")], env);
   } else {
-    // The bundle's daemon, run from a copy of its folder outside the bundle: run from inside it, a daemon with no app
-    // connected starts the bundle through `open` after 2 s (packages/core/src/platform/pair/launch.ts), which would
-    // show the app on this screen.
-    const src = join(appBundle!, "Contents", "Resources", "daemon");
-    const dst = join(root, "daemon");
-    if (!existsSync(dst)) cpSync(src, dst, { recursive: true });
+    // The bundle's own test-marked core, with no override of its caller check: the same temp home and throwaway
+    // keychain file as the source target, nothing else.
     const { CLOVER_ACCEPTANCE_RUN_PID: _pid, CLOVER_ACCEPTANCE_USER_HOME: _user, ...packagedEnv } = env;
-    started = startChild(`daemon-${daemonRun}`, join(dst, "clover-core"), ["daemon", "run"], packagedEnv);
+    started = startChild(`daemon-${daemonRun}`, packagedCore(), ["daemon", "run"], packagedEnv);
   }
   const socket = join(home, "run", "core.sock");
   const tokenFile = join(home, "run", "app.token");
@@ -273,9 +312,12 @@ async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
 }
 const lastLines = (log: string, n = 3): string => readLog(log).trim().split("\n").slice(-n).join(" | ").slice(0, 500);
 
+/** The run's own connection: the app's role from source (the daemon's test seam takes the run's pid), the CLI's on a
+ *  packaged core. */
 async function appDriver(): Promise<{ client: CloverClient; result: Record<string, unknown> }> {
-  const token = readFileSync(join(home, "run", "app.token"), "utf8").trim();
-  const d = await hello(join(home, "run", "core.sock"), "app", token, "clover-acceptance", CLOVER_PROTOCOL_VERSION);
+  const role = target === "source" ? "app" : "cli";
+  const token = role === "app" ? readFileSync(join(home, "run", "app.token"), "utf8").trim() : harnessToken();
+  const d = await hello(join(home, "run", "core.sock"), role, token, "clover-acceptance", CLOVER_PROTOCOL_VERSION);
   clients.push(d.client);
   return d;
 }
@@ -303,6 +345,7 @@ const stopOf = (events: Ev[]): string => String(events.find((e) => e.type === "t
 type Card = { id: string; hash: string; kind: string; session?: string; pluginId?: string; options: { id: string; kind: string }[]; children?: { id: string; checked: boolean }[]; fields?: Record<string, unknown> };
 /** Approves a card as the app's sealed frame does: a channel minted for the card, then the answer on it. */
 async function approve(c: CloverClient, card: Card): Promise<void> {
+  if (target === "packaged") block(PACKAGED_CARDS);
   const option = card.options.find((o) => o.kind === "approve");
   if (option === undefined) fail(`card ${card.kind} has no approve option`);
   const frame = await c.request<{ channel: string }>("card.frame", { id: card.id });
@@ -314,7 +357,9 @@ async function approve(c: CloverClient, card: Card): Promise<void> {
   });
   if (!r.accepted) fail(`card.answer refused the approval of the ${card.kind} card: ${r.reason ?? "no reason"}`);
 }
+const PACKAGED_CARDS = "a card is answered only by the app's role (card.list, card.frame, card.answer), and a packaged app takes no test press (apps/desktop/src/main/shortcuts.ts sealedInputAllowed: unpackaged only); needs the test-build marker to allow the headless sealed press too";
 async function cards(c: CloverClient): Promise<Card[]> {
+  if (target === "packaged") block(PACKAGED_CARDS);
   return (await c.request<{ cards: Card[] }>("card.list")).cards;
 }
 
@@ -322,6 +367,14 @@ async function cards(c: CloverClient): Promise<Card[]> {
 async function main(): Promise<void> {
   console.error(`acceptance: target ${target}${appBundle ? ` (${appBundle})` : ` (${REPO})`}; temp folder ${root}`);
   makeKeychain();
+  if (target === "packaged") {
+    const refused = checkTestBuild();
+    if (refused !== "") {
+      console.error(`acceptance: not running ${appBundle}: ${refused}`);
+      for (let n = 1; n <= 7; n++) record(n, "BLOCKED", n === 1 ? `not a test build: ${refused}` : "not a test build");
+      return;
+    }
+  }
   fake = startFakeAnthropic({ key: dummyKey, writePath, writeContent });
   writeSettings(fake.url);
   let app: { exe: string; args: string[] };
@@ -364,7 +417,7 @@ async function main(): Promise<void> {
     }
     record(1, "PASS", "the app paired (protocol.hello, onConnected's setup) and drew the shell, headless");
   } catch (err) {
-    record(1, "FAIL", why(err));
+    record(1, statusOf(err), why(err));
   }
 
   // The driver: the app's own methods, as the app's main process calls them.
@@ -372,9 +425,7 @@ async function main(): Promise<void> {
   try {
     c = (await appDriver()).client;
   } catch (err) {
-    const detail = target === "packaged"
-      ? `the run can't speak as the app to a packaged daemon (${why(err)}): its caller check takes only the signed app; see the run's notes for the seam it needs`
-      : `the driver's app hello was refused: ${why(err)}`;
+    const detail = `the run's ${target === "source" ? "app" : "cli"} hello was refused: ${why(err)}`;
     for (let n = 2; n <= 6; n++) record(n, "BLOCKED", detail);
     await restartStep(daemon, appProc.proc, undefined);
     return;
@@ -398,7 +449,7 @@ async function main(): Promise<void> {
     keyAdded = true;
     record(2, "PASS", `plugin.auth.signIn stored the dummy key; models.list: ${signedIn} Anthropic models signed in`);
   } catch (err) {
-    record(2, "FAIL", why(err));
+    record(2, statusOf(err), why(err));
   }
 
   // Step 3: a turn on the bundled bot's main conversation, answered by the fake.
@@ -421,7 +472,25 @@ async function main(): Promise<void> {
     else if (!mine.some((r) => r.keyMatched)) fail(`the fake got the turn without the dummy key (key present: ${mine.some((r) => r.keyPresent)}${keyAdded ? "" : "; step 2 added none"}): ${errorsOf(events)[0] ?? `stop ${stopOf(events)}`}`);
     else fail(`the fake answered, but the reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
   } catch (err) {
-    record(3, "FAIL", why(err));
+    record(3, statusOf(err), why(err));
+    // A key added a moment ago can still be unseen by the bots (their view of the stored keys is re-read lazily,
+    // packages/core/src/bots/key-presence.ts): once its model is the keyed one, a second turn says whether the rest
+    // of the path works, so steps 5 and 6 still run. Step 3 stays a FAIL: a user's first turn went wrong.
+    if (keyAdded && session !== undefined) {
+      try {
+        const model = await until("the bot to take the keyed model", 20_000, async () => {
+          const m = (await c.request<{ bots: { mainSession: string; model?: string }[] }>("bot.list", {})).bots.find((b) => b.mainSession === session)?.model;
+          return m !== undefined && m.startsWith("anthropic/") ? m : undefined;
+        }, 1_000);
+        const events = await turn(c, session, "ACCEPTANCE-REPLY: say hello again");
+        turnsWork = JSON.stringify(events).includes("ACCEPTANCE-REPLY-OK");
+        const row = rows.find((r) => r.n === 3)!;
+        row.detail = `${row.detail} — a second turn, once the bot runs ${model}: ${turnsWork ? "the fake's reply came" : `no reply either (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`}`.slice(0, 700);
+      } catch (again) {
+        const row = rows.find((r) => r.n === 3)!;
+        row.detail = `${row.detail} — and no second turn: ${why(again)}`.slice(0, 700);
+      }
+    }
   }
 
   // Step 4: the fixture plugin from a local folder, and its OK card.
@@ -449,7 +518,7 @@ async function main(): Promise<void> {
     pluginOk = true;
     record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed, read and approved; now ${state}`);
   } catch (err) {
-    record(4, "FAIL", why(err));
+    record(4, statusOf(err), why(err));
   }
 
   // Step 5: the bot calls the plugin's tool.
@@ -468,12 +537,13 @@ async function main(): Promise<void> {
       if (result!.isError || !result!.text.includes("acceptance-echo-pong")) fail(`${called} answered with an error: ${result!.text.slice(0, 200)}`);
       record(5, "PASS", `the bot called ${called} and got "${result!.text.slice(0, 60)}"`);
     } catch (err) {
-      record(5, "FAIL", why(err));
+      record(5, statusOf(err), why(err));
     }
   }
 
   // Step 6: a write outside the bot's own folders: an approval card, the app's yes, then the file.
   if (session === undefined || !turnsWork) record(6, "BLOCKED", "no bot turn reaches the fake provider (step 3)");
+  else if (target === "packaged") record(6, "BLOCKED", PACKAGED_CARDS);
   else {
     try {
       const seen = fake.requests.length;
@@ -496,7 +566,7 @@ async function main(): Promise<void> {
       if (!landed) fail(`the ${answered} card was approved, but the file didn't land; the write's result: ${(result?.text ?? "none").slice(0, 200)}`);
       record(6, "PASS", `${called} raised a ${answered} card; the app approved it; the file landed`);
     } catch (err) {
-      record(6, "FAIL", why(err));
+      record(6, statusOf(err), why(err));
     }
   }
 
@@ -528,7 +598,7 @@ async function restartStep(daemon: { proc: ChildProcess; log: string }, appProc:
     }
     void again;
   } catch (err) {
-    record(7, "FAIL", why(err));
+    record(7, statusOf(err), why(err));
   }
 }
 
