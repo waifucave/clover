@@ -99,8 +99,11 @@ describe("crash row (a) — runtime-state.db missing or corrupt refuses runtime 
       writeFileSync(path, "corrupt");
       // THE SIDE-CAR TRAP: a stale `-wal`/`-shm` beside a restored main file is its own corruption
       // — SQLite would replay a journal that describes a database that no longer exists. The repair
-      // op has to clear them itself; this test leaves them in place so that it must.
-      expect(existsSync(`${path}-wal`)).toBe(true);
+      // op has to clear them itself, so the test puts stale ones in place. Whether the close left any is
+      // the platform's SQLite's choice (macOS's keeps the WAL file, a stock SQLite on Linux removes it at
+      // the last close), so they are written here rather than expected.
+      writeFileSync(`${path}-wal`, "stale journal");
+      writeFileSync(`${path}-shm`, "stale index");
 
       const result = await repairRuntimeState(home, { kind: "restore-backup", backupPath: backup });
       expect(result.applied).toBe(true);

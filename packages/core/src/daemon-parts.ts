@@ -44,6 +44,8 @@ export interface DaemonBotsInput {
   drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
+  /** The plugin host that runs `pill.target` entries' handlers (#323's `pill.send`). */
+  pillTargets?: BotSideOptions["pillTargets"];
 }
 
 export interface DaemonPartsInput {
@@ -52,7 +54,8 @@ export interface DaemonPartsInput {
   /** The user's home folder: `home/<this computer>/` in the tree. */
   userHome: string;
   clock: Clock;
-  /** This device's links; null when it runs without them (no sidecar): no computer node then, and the bot side runs as
+  /** This device's links (local-only when there's no sidecar: no other device on them); null only when a test starts
+   *  none (`links: false`): no computer node then, and the bot side runs as
    *  the only computer. */
   links: DeviceLinks | null;
   /** The Clover server's lane handlers: the bot side's methods join them. */
@@ -64,9 +67,10 @@ export interface DaemonPartsInput {
   /** The daemon's safety reviewer (`BashReviewer`, on the internal-jobs model): the computer node judges another
    *  computer's calls with it at "ask for risky actions", and fails closed without it (lane J's `nodeParts`). */
   reviewer?: SafetyReviewer;
-  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines). The daemon's own broker is bound
-   *  here once it exists; without either, such a paste is refused with a reason, never dropped silently. */
-  approvals?: Pick<ApprovalBroker, "request">;
+  /** TEST SEAM: an approval broker for the node's cards (a paste of several lines) and its own record of a card a
+   *  level raise hands over (`get`, the registry's `cardRecord`). The daemon's own broker is bound here once it
+   *  exists; without either, such a paste is refused with a reason, never dropped silently, and no card raises a level. */
+  approvals?: Pick<ApprovalBroker, "request" | "get">;
   /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
    *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
   coreEvent?: (event: CoreEventInput, opts?: CoreEventOptions) => number;
@@ -120,7 +124,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
-      // such a paste is refused with a reason), and its safety reviewer for another computer's calls at "ask for risky
+      // such a paste is refused with a reason), the broker's own record of a card a level raise hands over
+      // (`cardRecord: (id) => approvals?.get(id)`; no broker, no card raises), and its safety reviewer for another computer's calls at "ask for risky
       // actions" (the daemon's `BashReviewer`; it fails closed). The fence, MCP, the executor and askUser/answers are
       // not here: the node options below carry what the daemon passes. A test's own node options win.
       const own = nodeParts({
@@ -162,6 +167,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         drivers: b.drivers({ side: () => side, node, main: runner }),
         defaultModel: b.defaultModel,
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
+        ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),
         // Lane M's gate (lane D's #246): the bot side's turns are its `bot-turns` source, and none starts while it's closed.

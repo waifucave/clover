@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme, powerMonitor, safeStorage, screen, session, shell, systemPreferences, webFrameMain, type Input, type MenuItemConstructorOptions } from "electron";
-import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
+import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
 import { housingFor, loadScreens } from "./housing";
@@ -29,10 +29,13 @@ import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { LayerLinks } from "./layer-links";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
+import { SealedFrames } from "./sealed";
+import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
-import { appShortcut } from "./shortcuts";
+import { appShortcut, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
+import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
 import { readUiPlugins, type UiPluginExtras } from "./ui/model";
 import { CLICK_THROUGH_POLL_MS, ClickThrough, MenuGate, SendGate, sendImages, sendTarget, PointerLog, ViewFrames, checkRegions, mayOpen, surfaceBounds, surfaceMayFloat, surfacePlacement, surfaceSize, type MenuItem, type Rect } from "./ui/brokers";
@@ -49,6 +52,7 @@ const headless = args.headless;
 const home = daemonHome(process.env);
 const here = dirname(fileURLToPath(import.meta.url));
 const dirs = { core: join(here, "..", "renderer", "core"), layer: join(here, "..", "renderer", "layer") };
+const devIcon = devAppIcon({ profile: identity.profile, packaged: app.isPackaged, platform: process.platform });
 const os: Os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
 
 // Before anything else: no Dock icon until a window is shown, and none at all in a headless run.
@@ -146,6 +150,8 @@ async function ready(): Promise<void> {
   if (process.platform === "darwin") {
     app.setActivationPolicy("accessory");
     if (headless) app.dock?.hide();
+    // Clover Dev, unpackaged, would otherwise wear Electron's icon in the Dock (docs/clover-brand.md).
+    else if (devIcon.dock !== undefined) app.dock?.setIcon(join(here, "icons", devIcon.dock));
   }
   powerMonitor.on("shutdown", () => {
     shuttingDown = true;
@@ -161,6 +167,7 @@ async function ready(): Promise<void> {
 
   runtime = new UiRuntime({
     os, platform: process.platform, safeMode, log,
+    sealed,
     onGone: (mount) => {
       views.drop(mount);
       webViews.drop(mount);
@@ -185,6 +192,46 @@ async function ready(): Promise<void> {
     menu: (id, items, point) => popupMenu(id, items, point),
     api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
+    // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,
+    // the hour it stood visible), and here the app signs with the answer key over the card's id and hash and takes the
+    // core's answer. The computer-use gate runs here in the main process, on both this button path and the fallback
+    // (B3): fail closed — anything the core can't answer about it, the answer is refused.
+    sealedAnswer: async (token, option, senderKey, children) => {
+      const key = answerKeyValue;
+      if (key === undefined) { log(`sealed: answer refused (no answer key)`); return { accepted: false, reason: "the answer key isn't there" }; }
+      const client = pair.client;
+      if (client === undefined) { log(`sealed: answer refused (no client)`); return { accepted: false, reason: "Clover isn't running" }; }
+      // The gate first, before anything else moves: any computer use driving this desktop's computer, no.
+      const acting = await client.request<{ running?: boolean }>("computer.acting", {}, 3_000).catch(() => undefined);
+      if (acting === undefined) { log(`sealed: answer refused (computer-use check failed)`); return { accepted: false, reason: "the computer-use check couldn't run" }; }
+      if (acting.running === true) { log(`sealed: answer refused (computer use acting)`); return { accepted: false, reason: "computer use is acting right now" }; }
+      const option_ = option ?? sealed.optionOf(token);
+      if (option_ === undefined) { log(`sealed: answer refused (no option)`); return { accepted: false, reason: "no option named" }; }
+      const out = sealed.buildAnswer(token, option_, children, senderKey, key, signedDevice ?? "");
+      if ("error" in out) { log(`sealed: answer refused (${out.error})`); return { accepted: false, reason: out.error }; }
+      disarmFallback(out.card.id); // a part's own button answered first: the fallback's timer is gone.
+      const r = await client.request<{ accepted: boolean; reason?: string }>("card.answer", { id: out.card.id, hash: out.card.hash, option: option_, proof: out.proof, ...(children !== undefined ? { children } : {}) }, 15_000).catch((err: unknown) => ({ accepted: false, reason: err instanceof Error ? err.message.slice(0, 200) : "refused" }));
+      if (r.accepted !== true) { sealed.confirmedAnswer(out.card.id, false); log(`sealed: core refused answer (${typeof r.reason === "string" ? r.reason.slice(0, 120) : "no reason"})`); return { accepted: false, ...(typeof r.reason === "string" ? { reason: r.reason.slice(0, 200) } : {}) }; }
+      sealed.confirmedAnswer(out.card.id, true);
+      log(`sealed: answer accepted for ${out.card.id}`);
+      return { accepted: true };
+    },
+    // A sealed frame's page reports its own visibility (IOv2). When a card's approve and deny buttons both show,
+    // the fallback's timer is disarmed (§5.5: only show the fallback when no plugin has both buttons visible within
+    // 2 s). When either stops being visible, the timer starts again.
+    sealedVisible: (token: string, visible: boolean) => {
+      sealed.markVisible(token, visible === true);
+      const cardId = sealed.cardOf(token);
+      if (cardId === undefined) return;
+      if (visible === true) {
+        if (sealed.buttonsVisible(cardId)) disarmFallback(cardId);
+      } else {
+        const own = fallbacks.get(cardId);
+        if (own?.win === undefined || (own.win !== undefined && own.win.isDestroyed())) {
+          if (sealed.get(cardId) !== undefined) void armFallback(cardId);
+        }
+      }
+    },
     userSend: async (windowId, to, message) => {
       // One key press or click the main process saw come to the window covers one send (§5.5).
       if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
@@ -231,7 +278,7 @@ async function ready(): Promise<void> {
         void installs.downloaded(version);
       },
     }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
-    tray = new AppTray(join(here, "tray.png"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
+    tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
   // A start by the user opens the window; a start by the daemon or at login doesn't. A headless run opens it hidden.
@@ -243,6 +290,80 @@ async function ready(): Promise<void> {
 // ------------------------------------------------------------------------------------------------
 // The pair
 // ------------------------------------------------------------------------------------------------
+
+// The sealed frames' store (spec §5.5; E-M3): cards in through the app's role events, frame channels and answers out,
+// signed by the answer key. The store holds them; the sealed scheme serves the frames; nothing logs the fields.
+const sealed = new SealedFrames();
+let signedDevice: string | undefined;
+// The app's own fallback card (§5.5): whose 2-second timers run, which window stands before the user, and the card's
+// own page answers on its own channel.
+const fallbacks = new Map<string, { timer: ReturnType<typeof setTimeout>; win?: Electron.BrowserWindow; token?: string }>();
+const FALLBACK_DELAY_MS = 2_000;
+
+/** A card's own 2-second timer: once it runs, the app's own card page stands before the user (shown, never brought in
+ *  front). A part's own button disarms its card's: its own `sealedAnswer` burns the store's channel and calls here. */
+async function armFallback(cardId: string): Promise<void> {
+  disarmFallback(cardId);
+  const timer = setTimeout(() => void showFallbackCard(cardId), FALLBACK_DELAY_MS);
+  timer.unref?.();
+  fallbacks.set(cardId, { timer });
+}
+
+function disarmFallback(cardId: string): void {
+  const own = fallbacks.get(cardId);
+  if (own === undefined) return;
+  clearTimeout(own.timer);
+  if (own.win !== undefined && !own.win.isDestroyed()) own.win.close();
+  fallbacks.delete(cardId);
+}
+
+/** The app's own card page: the whole card, its fields and buttons, from the app's own scheme (its own single-use
+ *  channel), shown without taking the focus (the user's own app in front stays). */
+async function showFallbackCard(cardId: string): Promise<void> {
+  const card = sealed.get(cardId);
+  if (card === undefined) return;
+  const mint = sealed.mint(cardId, "own");
+  if (mint === undefined) return;
+  const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
+  const plan = mainWindowPlan({
+    platform: process.platform,
+    acrylic: false,
+    title: "Clover",
+    dark: nativeTheme.shouldUseDarkColors,
+    solid: nativeTheme.shouldUseDarkColors ? "#202020" : "#FFFFFF",
+    symbol: nativeTheme.shouldUseDarkColors ? "#F2F2F2" : "#1F1F1F",
+    webPreferences: webPreferences({ preload: join(here, "preload.cjs"), partition: UI_PARTITION, headless, offscreen: false }),
+  });
+  const win = new BrowserWindow({ ...plan.options, width: 460, height: 360, useContentSize: true, skipTaskbar: true });
+  watchWindow(win);
+  win.on("closed", () => {
+    const own = fallbacks.get(cardId);
+    if (own?.win === win) fallbacks.delete(cardId);
+  });
+  // Keep the fallback away from the cursor so a plugin can't time a click onto it (S3, check 3): place it within
+  // the cursor's display's work area before showing it, never after, so it never appears first in its default place.
+  try {
+    const cursor = screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(cursor);
+    const area = display.workArea;
+    const bounds = win.getBounds();
+    const awayX = cursor.x < area.x + area.width / 2 ? area.x + area.width - bounds.width - 16 : area.x + 16;
+    const awayY = Math.min(Math.max(cursor.y - bounds.height - 32, area.y + 16), area.y + area.height - bounds.height - 16);
+    const placedX = Math.min(Math.max(awayX, area.x), area.x + Math.max(0, area.width - bounds.width));
+    const placedY = Math.min(Math.max(awayY, area.y), area.y + Math.max(0, area.height - bounds.height));
+    win.setBounds({ x: Math.round(placedX), y: Math.round(placedY), width: bounds.width, height: bounds.height });
+  } catch { /* best effort */ }
+  // Bind the fallback's channel to its window's main frame once the page loads (B3): a plugin can't guess the
+  // window's frame ids, and a frame from another window can't answer with this token.
+  win.loadURL(url).then(() => {
+    if (win.isDestroyed()) return;
+    const main = win.webContents.mainFrame;
+    sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
+    if (!win.isDestroyed()) win.showInactive();
+  }).catch(() => win.close());
+  const own = fallbacks.get(cardId);
+  if (own !== undefined) { own.win = win; own.token = mint.token; }
+}
 
 function makePair(): Pair {
   const binary = locateDaemonBinary({ env, packaged: app.isPackaged, resourcesPath: process.resourcesPath });
@@ -260,6 +381,12 @@ function makePair(): Pair {
     onConnected: (client, hello) => {
       // This desktop's answer key, registered on every connection (lane H's `device.answerKey.set`).
       void answerKey().register(client, hello.device);
+      signedDevice = hello.device;
+      // The pending cards, and their outcomes as they come: the store's own copy of the sealed ones, and the
+      // fallback's 2-second timers arm on each (a part's own button disarms its card's before the core's fires).
+      void client.request<unknown>("card.list").catch(() => undefined).then((r) => {
+        for (const c of (r as { cards?: unknown[] })?.cards ?? []) { sealed.fromCore(c); armFallback(String((c as { id?: unknown }).id ?? "")); }
+      });
       return loadRegistry(client);
     },
     onState: (s) => stateChanged(s),
@@ -309,6 +436,22 @@ function makePair(): Pair {
       else log("pair: ignored a ui_settings_changed event that isn't one");
     }
     if (type === "plugin_changed" || type === "plugin_removed" || type === "plugin_found") scheduleReload();
+    if (type === "card_requested") {
+      const parsed = CardRequestedEvent.safeParse(params);
+      if (parsed.success) {
+        sealed.fromCore(parsed.data.card);
+        armFallback(parsed.data.card.id);
+      } else log("pair: ignored a card_requested event that isn't one");
+    }
+    if (type === "card_resolved") {
+      const parsed = CardResolvedEvent.safeParse(params);
+      if (parsed.success) {
+        sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
+        disarmFallback(parsed.data.id);
+      }
+    }
+    // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback. A card_pending
+    // goes only to layers; the app hears card_requested. Nothing else here.
   });
   return p;
 }
@@ -736,9 +879,13 @@ const layerLinks = new LayerLinks({
 });
 
 /** The terminals' trusted input: each window's key presses as the main process saw them, and each terminal's paste
- *  mode from its output (terminal-input.ts). */
+ *  mode from its output (terminal-input.ts). The record is per focused frame (the review's S2), and a frame's record
+ *  goes with the frame: each WebContents recent frame ids are kept, so a navigation (the same frame, a new document)
+ *  and a gone renderer both forget them, beside each entry's own second. */
 const keys = new KeyLog();
 const pasteModes = new PasteModes();
+/** The frame ids a WebContents's own pages saw keys in, keyed by the window's id, for forgetting them whole. */
+const keyFrames = new Map<number, Set<string>>();
 
 async function terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void> {
   if (input.kind === "key") {
@@ -891,6 +1038,8 @@ function browserHost(): BrowserHost {
  *  placed in it. (The guards come from `web-contents-created`.) */
 function watchWindow(win: BrowserWindow): void {
   const id = win.id;
+  // Clover Dev wears its own icon on Windows and Linux (docs/clover-brand.md); macOS's is the Dock's, set at ready.
+  if (devIcon.window !== undefined) win.setIcon(join(here, "icons", devIcon.window));
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type === "keyDown" || input.type === "rawKeyDown") {
       menus.input(id);
@@ -899,7 +1048,11 @@ function watchWindow(win: BrowserWindow): void {
       // idents itself from that same frame. No focused frame records nothing.
       const f = win.webContents.focusedFrame;
       if (f === null || f.detached) return;
-      keys.saw(`${f.processId}:${f.routingId}`, { key: input.key, code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta });
+      const frameId = `${f.processId}:${f.routingId}`;
+      let seen = keyFrames.get(id);
+      if (seen === undefined) keyFrames.set(id, (seen = new Set()));
+      seen.add(frameId);
+      keys.saw(frameId, { key: input.key, code: input.code, control: input.control, alt: input.alt, shift: input.shift, meta: input.meta });
     }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
@@ -907,6 +1060,18 @@ function watchWindow(win: BrowserWindow): void {
     menus.input(id);
     sends.input(id);
     pointers.down(id, mouse.x, mouse.y);
+  });
+  win.webContents.on("did-frame-navigate", (_event, _url, _code, _text, _main, frameProcessId, frameRoutingId) => {
+    // A frame that navigated is a document of its own from now on (the review's S2): its old record must not serve it.
+    keys.forget(`${frameProcessId}:${frameRoutingId}`);
+  });
+  win.webContents.on("render-process-gone", () => {
+    // A renderer gone takes its frames' records with it; its new render starts empty.
+    const gone = keyFrames.get(id);
+    if (gone !== undefined) {
+      for (const frameId of gone) keys.forget(frameId);
+      keyFrames.delete(id);
+    }
   });
   win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
@@ -918,6 +1083,7 @@ function watchWindow(win: BrowserWindow): void {
     views.dropWindow(id);
     webViews.dropWindow(id);
     activeSessions.delete(id);
+    keyFrames.delete(id);
     // The keys' and pastes' record is per frame and expires within a second anyway; the window's gone frames are
     // left to that.
   });
@@ -1013,6 +1179,16 @@ async function smoke(): Promise<void> {
   const deadline = Date.now() + Number(process.env.CLOVER_SMOKE_DEADLINE_MS ?? "45000");
   const win = await openMainWindow();
   if (win === undefined) return report({ ok: false, reason: "no window" });
+  // A sealed run delivers real input into out-of-process frames: CDP input routes through the browser's compositor
+  // hit-test, which a hidden window never produces (its views draw nothing to route by) — the press then lands
+  // nowhere, or stops a frame early, depending on the platform. Showing the window inactive (never focusing it)
+  // starts every frame compositing long before the press, so the router can target the sealed frame. Test-only like
+  // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
+  // touched.
+  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && sealedInputAllowed({ packaged: app.isPackaged, headless }) && !win.isVisible()) {
+    win.showInactive();
+    log(`sealed-click: main window shown for input routing`);
+  }
   const probe = `(() => ({
     origin: location.origin,
     node: typeof require !== "undefined" || typeof process !== "undefined",
@@ -1046,6 +1222,7 @@ async function smoke(): Promise<void> {
   };
   let frames: Probed[] = [];
   let surfaceFacts: { id: string; visible: boolean; bounds: Rect; frames: Probed[] }[] = [];
+  let sealedClicked = false;
   type WebFact = { mount: string; url: string; visible: boolean; text: string };
   let webFacts: WebFact[] = [];
   const probeWeb = async (): Promise<WebFact[]> => Promise.all(webViews.list().map(async (v) => {
@@ -1088,7 +1265,11 @@ async function smoke(): Promise<void> {
       win.webContents.emit("unresponsive");
     }
     // Every layer's part has drawn, as many other layers as the run expects are there, and any text it waits for.
-    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v)) break;
+    // A sealed run (E-M3) breaks once its click landed, even if the shell's composer never draws: the click needs
+    // only the fixture layer's sealed frames laid out, not the shell.
+    const sealedWait = process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+    if (sealedWait && sealedClicked) break;
+    if (drawn && waitTexts.every((w) => texts.some((t) => t.includes(w))) && Object.entries(waitMounts).every(([k, v]) => Number((runtime.stats() as Record<string, unknown>)[k] ?? 0) >= v) && (!sealedWait || sealedClicked)) break;
     // The hang test (`CLOVER_SMOKE_HANG=<surface>`): once everything has drawn and the named surface's own layer has
     // rendered (its frames aren't in the main window's, so `drawn` doesn't wait for it), the surface's layer is made
     // to hang (its own mouse-down handler never returns), then the window is told it went unresponsive. Chromium says
@@ -1122,6 +1303,255 @@ async function smoke(): Promise<void> {
           : `(() => { const e = document.querySelector(${sel}); if (!e || e.disabled) return false; e.click(); return true; })()`;
       const done = await win.webContents.mainFrame.executeJavaScript(js, true).catch(() => false);
       if (done === true) steps.shift();
+    }
+    // The sealed UI test's click: click the named sealed frame's button so its answer rides `card.answer` to the
+    // fake daemon (unpackaged runs only). Driven with `webContents.sendInputEvent` at the button's real coordinates,
+    // which produces trusted events (no `trust` knob in production). The sealed iframe sits inside the plugin's layer
+    // frame, not the root document, so offsets are summed up through each frame. Gated on the sealed frames
+    // themselves, not the shell's composer (which a sealed run never needs).
+    if (!sealedClicked) {
+      const spec = process.env.CLOVER_SMOKE_SEALED_CLICK;
+      if (spec !== undefined) {
+        try {
+          const {
+            cardId, element, cover, opacity, doubleClick,
+          } = JSON.parse(spec) as {
+            cardId?: string; element?: string; cover?: boolean; opacity?: number; doubleClick?: boolean;
+          };
+          const frame: Electron.WebFrameMain | undefined = win.webContents.mainFrame.framesInSubtree.find((f) =>
+            f.url.startsWith("clover-sealed://") &&
+            (cardId === undefined || f.url.includes(cardId)) &&
+            (element === undefined || f.url.includes(element) || (element !== undefined && f.url.includes(encodeURIComponent(element)))));
+          if (frame !== undefined) {
+            // URLs carry single-use tokens (?token=, ?mount=): the logs keep origin and path only, never the token.
+            log(`sealed-click: frame found ${frame.url.split("?")[0]!.slice(0, 80)}`);
+            // Optionally cover the button or dim it, to test that covered / semi-transparent presses don't answer.
+            if (cover === true) {
+              await frame.executeJavaScript(`(() => {
+                const b = document.querySelector('.seal-button');
+                if (!b) return;
+                const c = document.createElement('div');
+                c.style.position = 'absolute';
+                c.style.inset = '0';
+                c.style.zIndex = '9999';
+                b.parentElement?.insertBefore(c, b);
+              })()`, true).catch(() => undefined);
+            }
+            if (opacity !== undefined) {
+              await frame.executeJavaScript(`(() => {
+                const b = document.querySelector('.seal-button');
+                if (!b) return;
+                b.style.opacity = ${Number(opacity)};
+              })()`, true).catch(() => undefined);
+            }
+            // Let the layout settle, then wait for the button's own visibility verdict (its IOv2 report through the
+            // sealed-visible channel) before the press: on a slow runner the first verdict lands after any fixed
+            // sleep, and the page refuses presses it hasn't seen yet (its 500 ms visible gate starts at the verdict,
+            // so a seen verdict waits out a further beat). Caps at ~10 s; a button that never reports (covered,
+            // dimmed) still gets its press on timeout, which the page refuses.
+            await new Promise((r) => setTimeout(r, 800));
+            let seenToken: string | null = null;
+            try {
+              seenToken = new URL(frame.url).searchParams.get("token");
+            } catch {
+              seenToken = null;
+            }
+            let seen = false;
+            if (seenToken !== null) {
+              const end = Date.now() + 10_000;
+              while (!seen && Date.now() < end) {
+                if (sealed.isTokenVisible(seenToken)) seen = true;
+                else await new Promise((r) => setTimeout(r, 250));
+              }
+            }
+            log(`sealed-click: button visibility seen=${seen}`);
+            if (seen) await new Promise((r) => setTimeout(r, 750));
+            const buttonRaw = await frame.executeJavaScript(
+              `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
+            const buttonRect = buttonRaw !== null && typeof buttonRaw === "object" && typeof (buttonRaw as { x?: unknown }).x === "number" ? buttonRaw as { x: number; y: number; width: number; height: number } : null;
+            // Sum the iframe offsets from the sealed frame up to the main frame: the sealed iframe lives in the
+            // plugin's layer document, which itself lives in the root document.
+            let offsetX = 0;
+            let offsetY = 0;
+            let chainOk = true;
+            // Build the chain from the live frame tree: sealed frame, then each parent up to the main frame.
+            let cursor: { parent: unknown } | null | undefined = frame as unknown as { parent: unknown } | null;
+            const ordered: Electron.WebFrameMain[] = [frame];
+            while (cursor !== null && cursor !== undefined && (cursor as { parent?: unknown }).parent !== null && (cursor as { parent?: unknown }).parent !== undefined) {
+              const parent = (cursor as { parent: Electron.WebFrameMain }).parent;
+              if ((parent as unknown as { detached?: boolean }).detached === true) break;
+              ordered.push(parent);
+              if (parent === win.webContents.mainFrame) break;
+              cursor = parent as unknown as { parent: unknown } | null;
+              if (ordered.length > 8) break;
+            }
+            ordered.reverse();
+            for (let i = 0; i + 1 < ordered.length; i++) {
+              const parent = ordered[i]!;
+              const child = ordered[i + 1]!;
+              const childUrl: string = child.url;
+              let token = childUrl;
+              try { token = new URL(childUrl).searchParams.get("token") ?? childUrl; } catch { /* use full url */ }
+              const base = (() => { try { return new URL(childUrl).origin + new URL(childUrl).pathname; } catch { return childUrl.split("?")[0] ?? childUrl; } })();
+              const probe = `(() => {
+                const want = ${JSON.stringify(token)};
+                const baseWant = ${JSON.stringify(base)};
+                const frames = [...document.querySelectorAll('iframe')];
+                const all = frames.map((f) => ({ src: f.src.split("?")[0].slice(0, 80), x: Math.round(f.getBoundingClientRect().x), y: Math.round(f.getBoundingClientRect().y) }));
+                let el = frames.find((f) => f.src.includes(want));
+                if (!el && baseWant !== "") el = frames.find((f) => f.src.includes(baseWant));
+                if (!el) return { found: null, all };
+                const r = el.getBoundingClientRect();
+                return { found: { x: r.x, y: r.y }, all };
+              })()`;
+              const rectRaw = await parent.executeJavaScript(probe, true).catch(() => null) as { found: { x: number; y: number } | null; all?: unknown } | null;
+              if (rectRaw !== null && typeof rectRaw === "object" && Array.isArray((rectRaw as { all?: unknown }).all)) log(`sealed-click: iframes in parent: ${JSON.stringify((rectRaw as { all?: unknown }).all).slice(0, 500)}`);
+              if (rectRaw === null || typeof rectRaw !== "object" || (rectRaw as { found?: unknown }).found === null || typeof (rectRaw as { found?: { x?: unknown } | null }).found !== "object" || typeof ((rectRaw as { found: { x?: unknown } }).found as { x?: unknown }).x !== "number") { chainOk = false; break; }
+              const rect = (rectRaw as { found: { x: number; y: number } }).found;
+              offsetX += rect.x;
+              offsetY += rect.y;
+            }
+            if (!chainOk) log(`sealed-click: no offset chain for ${frame.url.split("?")[0]!.slice(0, 80)}`);
+            // Report how the label renders, so the markup case proves text, not HTML (check 3).
+            const labelRaw = await frame.executeJavaScript(
+              `(() => { const s = document.querySelector('.seal-button .label'); if (!s) return null; return { html: s.innerHTML.slice(0, 200), hasBold: s.querySelector('b') !== null, sealed: typeof window.cloverSealed, btn: typeof document.querySelector('.seal-button') }; })()`, true).catch(() => null) as { html: string; hasBold: boolean } | null;
+            if (labelRaw !== null && typeof labelRaw === "object") log(`sealed-click: label html=${String((labelRaw as { html?: unknown }).html ?? "")} hasBold=${String((labelRaw as { hasBold?: unknown }).hasBold ?? "")} sealed=${String((labelRaw as { sealed?: unknown }).sealed ?? "")}`);
+            if (buttonRect !== null && chainOk) {
+              if (buttonRect.width <= 0 || buttonRect.height <= 0) {
+                log(`sealed-click: button has no size yet, retrying`);
+              } else {
+              const centerX = Math.round(offsetX + buttonRect.x + buttonRect.width / 2);
+              const centerY = Math.round(offsetY + buttonRect.y + buttonRect.height / 2);
+              log(`sealed-click: button rect=${buttonRect.x},${buttonRect.y} ${buttonRect.width}x${buttonRect.height} offset=${offsetX},${offsetY}`);
+              log(`sealed-click: press sent at ${centerX},${centerY}`);
+              const hit = await win.webContents.executeJavaScript(
+                `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 5).map((el) => { const tag = el.tagName; const src = el.tagName === "IFRAME" ? el.src.split("?")[0].slice(0, 60) : (el.className !== undefined ? String(el.className).slice(0, 40) : null); const r = el.getBoundingClientRect(); const pe = getComputedStyle(el).pointerEvents; return { tag, src, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), pe }; })); })()`, true).catch(() => null) as string | null;
+              log(`sealed-click: root hit-test: ${String(hit ?? "failed").slice(0, 600)}`);
+              const cloverFrame = win.webContents.mainFrame.framesInSubtree.find((f) => f.url.startsWith("clover-plugin://clover/"));
+              if (cloverFrame !== undefined) {
+                const cloverHit = await cloverFrame.executeJavaScript(
+                  `(() => { const els = document.elementsFromPoint(${Math.round(centerX)}, ${Math.round(centerY)}); return JSON.stringify(els.slice(0, 4).map((el) => ({ tag: el.tagName, src: el.tagName === "IFRAME" ? el.src.split("?")[0].slice(0, 60) : null }))); })()`, true).catch(() => null) as string | null;
+                log(`sealed-click: clover hit-test: ${String(cloverHit ?? "failed").slice(0, 400)}`);
+                await cloverFrame.executeJavaScript(`(() => { window.__cloverPresses = []; document.addEventListener('pointerdown', (e) => window.__cloverPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
+                const cloverPe = await cloverFrame.executeJavaScript(`(() => { const f = document.querySelector('iframe'); return f ? getComputedStyle(f).pointerEvents : "no-iframe"; })()`, true).catch(() => null) as string | null;
+                log(`sealed-click: clover iframe pointer-events: ${String(cloverPe ?? "failed")}`);
+              }
+              await frame.executeJavaScript(`(() => { window.__sealedPresses = []; document.addEventListener('pointerdown', (e) => window.__sealedPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
+              await win.webContents.executeJavaScript(`(() => { window.__rootPresses = []; document.addEventListener('pointerdown', (e) => window.__rootPresses.push([e.clientX, e.clientY, e.isTrusted]), true); })()`, true).catch(() => null);
+              // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
+              // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. Test-only
+              // on every axis (B1): a packaged app never attaches the debugger, whatever env vars it started with.
+              const inputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+              let cdp = false;
+              if (inputAllowed) {
+                try {
+                  if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach("1.1");
+                  cdp = win.webContents.debugger.isAttached();
+                } catch { /* fall back to sendInputEvent */ }
+              }
+              const dispatch = !inputAllowed
+                ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
+                : cdp
+                  ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await win.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+                  : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void win.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+              log(`sealed-click: input via ${!inputAllowed ? "refused" : cdp ? "cdp" : "sendInputEvent"}`);
+              await dispatch("mouseMoved");
+              await new Promise((r) => setTimeout(r, 120));
+              await dispatch("mousePressed");
+              await dispatch("mouseReleased");
+              if (doubleClick === true) {
+                // A second press while the first answer is still in flight must not land (should-fix 3).
+                await new Promise((r) => setTimeout(r, 300));
+                await dispatch("mousePressed");
+                await dispatch("mouseReleased");
+              }
+              if (cdp) {
+                try {
+                  win.webContents.debugger.detach();
+                } catch { /* quitting soon anyway */ }
+              }
+              sealedClicked = true;
+              await new Promise((r) => setTimeout(r, 1000));
+              const after = await frame.executeJavaScript(
+                `(() => { const s = document.querySelector('.state'); return { state: s ? s.textContent : null, answered: document.body.dataset.answered ?? null, presses: (window.__sealedPresses ?? []).slice(0, 4) }; })()`, true).catch(() => null) as { state: string | null; answered: string | null } | null;
+              if (after !== null && typeof after === "object") log(`sealed-click: after press state=${String((after as { state?: unknown }).state ?? "")} answered=${String((after as { answered?: unknown }).answered ?? "")} presses=${JSON.stringify((after as { presses?: unknown }).presses ?? [])}`);
+              const rootAfter = await win.webContents.executeJavaScript(
+                `(() => ({ presses: (window.__rootPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
+              if (rootAfter !== null && typeof rootAfter === "object") log(`sealed-click: root presses=${JSON.stringify((rootAfter as { presses?: unknown }).presses ?? [])}`);
+              if (cloverFrame !== undefined) {
+                const cloverAfter = await cloverFrame.executeJavaScript(
+                  `(() => ({ presses: (window.__cloverPresses ?? []).slice(0, 4) }))()`, true).catch(() => null) as { presses: unknown } | null;
+                if (cloverAfter !== null && typeof cloverAfter === "object") log(`sealed-click: clover presses=${JSON.stringify((cloverAfter as { presses?: unknown }).presses ?? [])}`);
+              }
+              }
+            } else {
+              log(`sealed-click: no button rect (button=${buttonRect === null ? "null" : "ok"} chain=${chainOk ? "ok" : "null"})`);
+            }
+          } else {
+            log(`sealed-click: no sealed frame`);
+          }
+        } catch { /* bad spec: no click */ }
+      }
+    }
+    // The fallback card: if no sealed frame was clicked and the fallback run is enabled, click the fallback window's
+    // Approve button so its answer rides `card.answer` to the fake daemon (unpackaged runs only). Gated on the
+    // fallback window itself, not the shell.
+    if (!sealedClicked && process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (w === win || w.isDestroyed()) continue;
+        if (!w.webContents.getURL().startsWith("clover-sealed://")) continue;
+        log(`sealed-click: fallback frame found ${w.webContents.getURL().split("?")[0]!.slice(0, 80)}`);
+        const frame = w.webContents.mainFrame;
+        const fallbackRaw = await frame.executeJavaScript(
+          `(() => { const b = document.querySelector('.seal-button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`, true).catch(() => null) as { x: number; y: number; width: number; height: number } | null;
+        const buttonRect = fallbackRaw !== null && typeof fallbackRaw === "object" && typeof (fallbackRaw as { x?: unknown }).x === "number" ? fallbackRaw as { x: number; y: number; width: number; height: number } : null;
+        if (buttonRect !== null) {
+          // Viewport coordinates for this window's own webContents (not screen coordinates).
+          const centerX = Math.round(buttonRect.x + buttonRect.width / 2);
+          const centerY = Math.round(buttonRect.y + buttonRect.height / 2);
+          // Record what the fallback page hears, so a silent gate shows up in the log (the part path's presses=).
+          await frame.executeJavaScript(`(() => { window.__fbEvents = []; for (const t of ["pointerover", "pointerdown", "click"]) document.addEventListener(t, (e) => window.__fbEvents.push([t, Math.round(e.clientX), Math.round(e.clientY), e.isTrusted, e.target instanceof Element ? (e.target.closest(".seal-button") !== null ? "button" : e.target.tagName) : "?"]), true); })()`, true).catch(() => null);
+          // The fallback's own gates: the pointer must enter after the window shows, and a second after it shows.
+          // Move there first so pointerover fires, wait out the 1 s, then press. A second move right before the
+          // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
+          // does not reach the page here. Test-only on every axis (B1): a packaged app never attaches the debugger,
+          // whatever env vars it started with.
+          const fbInputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+          let fbCdp = false;
+          if (fbInputAllowed) {
+            try {
+              if (!w.webContents.debugger.isAttached()) w.webContents.debugger.attach("1.1");
+              fbCdp = w.webContents.debugger.isAttached();
+            } catch { /* fall back to sendInputEvent */ }
+          }
+          const fbDispatch = !fbInputAllowed
+            ? async (_kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { /* refused: test input stays in test runs */ }
+            : fbCdp
+              ? async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { await w.webContents.debugger.sendCommand("Input.dispatchMouseEvent", { type: kind, x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left", clickCount: 1 }) }).catch(() => undefined); }
+              : async (kind: "mouseMoved" | "mousePressed" | "mouseReleased") => { void w.webContents.sendInputEvent({ type: kind === "mouseMoved" ? "mouseMove" : kind === "mousePressed" ? "mouseDown" : "mouseUp", x: centerX, y: centerY, ...(kind === "mouseMoved" ? {} : { button: "left" as const }) }); };
+          log(`sealed-click: fallback input via ${!fbInputAllowed ? "refused" : fbCdp ? "cdp" : "sendInputEvent"}`);
+          await fbDispatch("mouseMoved");
+          await new Promise((r) => setTimeout(r, 1300));
+          if (w.isDestroyed()) break;
+          log(`sealed-click: fallback press sent at ${centerX},${centerY}`);
+          await fbDispatch("mouseMoved");
+          await new Promise((r) => setTimeout(r, 120));
+          if (w.isDestroyed()) break;
+          await fbDispatch("mousePressed");
+          await fbDispatch("mouseReleased");
+          if (fbCdp) {
+            try {
+              w.webContents.debugger.detach();
+            } catch { /* quitting soon anyway */ }
+          }
+          sealedClicked = true;
+          await new Promise((r) => setTimeout(r, 1000));
+          const fbAfter = await frame.executeJavaScript(
+            `(() => ({ events: (window.__fbEvents ?? []).slice(0, 8), answered: document.body.dataset.answered ?? null }))()`, true).catch(() => null) as { events: unknown; answered: string | null } | null;
+          if (fbAfter !== null && typeof fbAfter === "object") log(`sealed-click: fallback after press events=${JSON.stringify((fbAfter as { events?: unknown }).events ?? [])} answered=${String((fbAfter as { answered?: unknown }).answered ?? "")}`);
+        }
+        break;
+      }
     }
     // The UI test's user: once everything has drawn (so a part asking for a menu before has been refused), a Shift
     // press in each window, which the menu gate counts as the user's input.

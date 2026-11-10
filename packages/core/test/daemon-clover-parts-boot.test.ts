@@ -25,6 +25,8 @@ import { startFakeHandshake } from "../src/links/handshake-fake";
 import { MemoryNetwork } from "../src/links/memory-wire";
 import type { DeviceLinks } from "../src/links/node";
 import { CloverSecretStore, KeychainValues, memoryVault } from "../src/secrets/clover-secret-store";
+import { ContractError } from "../src/contracts/common";
+import { DEVICE_KEY_REF } from "../src/identity/device-key";
 import { mainSessionIdFor } from "../src/sessions/ids";
 import { SessionGrants, USER_BROWSER_PARTITION_GRANT } from "../src/sessions/grants";
 
@@ -155,6 +157,37 @@ describe("the daemon's Clover parts, booted", () => {
     await waitFor("the laptop's link to go down", () => !laptop.links.transport.links().some((l) => l.peer === links.key.id && l.up));
   }, 60_000);
 
+  test("a Mac on its own with no link sidecar: the links run local-only, and the node, the folder tree and the bot side start", async () => {
+    const home = temp("clover-int-home-");
+    const bots = await fakeBots();
+    const lines: string[] = [];
+    const log = console.error;
+    console.error = (...a: unknown[]) => void lines.push(a.map(String).join(" "));
+    try {
+      daemon = await startDaemon({
+        home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+        // No sidecar and no test wire: what a daemon run from source, or a build without clover-link, has.
+        links: { binary: null, handshake: null, publicTime: null, mainComputer, watch: () => () => {}, self: { name: "Studio", os: "macos" } },
+        parts: { userHome: temp("clover-int-user-"), bots },
+      });
+      await daemon.cloverParts.ready;
+    } finally {
+      console.error = log;
+    }
+    expect(lines.some((l) => /runs local-only, without links to other devices/.test(l))).toBe(true);
+    const links = daemon.cloverParts.links()!;
+    expect(links.sidecarPid()).toBeUndefined();
+    const node = daemon.cloverParts.node()!;
+    expect(node.registry.self()).toMatchObject({ name: "Studio", device: links.key.id });
+    expect(node.tree).toBeDefined();
+    const side = daemon.cloverParts.bots()!;
+    expect(side.bots.list().map((b) => b.id)).toEqual(["luna"]);
+    // Its own main: it runs its bots.
+    await waitFor("this computer running the bots", () => side.bots.botsRunHere().length === 1);
+    const cli = { role: "cli" as const, token: daemon.tokens.harness, clientName: "int-test" };
+    expect((await cloverCall(daemon.socketPath, cli, "device.list", {}) as { devices: { isThis: boolean }[] }).devices).toEqual([expect.objectContaining({ isThis: true })]);
+  }, 30_000);
+
   test("node: false and bots: false start the links alone; links: false starts nothing", async () => {
     const net = new MemoryNetwork();
     const home = temp("clover-int-home-");
@@ -197,6 +230,33 @@ describe("the daemon's Clover parts at the edges", () => {
     expect(daemon.cloverParts.bots()).toBeDefined();
     const listed = await cloverCall(daemon.socketPath, cli, "device.list", {}) as { devices: { id: string; isThis: boolean }[] };
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
+  }, 30_000);
+
+  // #322's review, S1: the device key gates the links alone.
+  test("a device key that can't be read: the plugins start all the same, and the links wait", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    class NoDeviceKey extends CloverSecretStore {
+      override async get(ref: Parameters<CloverSecretStore["get"]>[0]) {
+        if (ref.name === DEVICE_KEY_REF.name) throw new ContractError("failed", "the device key can't be read (test)");
+        return super.get(ref);
+      }
+    }
+    const store = new NoDeviceKey({ home, values: new KeychainValues(memoryVault()), status: { backend: "memory", plaintext: false, state: "unlocked" } });
+    let registryOpened: (r: unknown) => void = () => {};
+    const opened = new Promise((resolve) => { registryOpened = resolve; });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false, contractSecrets: store,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-"), bots: false },
+      pluginHost: async (registry) => {
+        registryOpened(registry);
+        throw new Error("no host in this test");
+      },
+    });
+    const registry = await Promise.race([opened, Bun.sleep(10_000).then(() => "timed out")]);
+    expect(registry).not.toBe("timed out");
+    expect(daemon.cloverParts.links()).toBeUndefined();
   }, 30_000);
 
   test("the daemon's own registry and drivers: the bot side starts over the plugins folder, which is made if missing", async () => {

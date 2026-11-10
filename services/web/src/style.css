@@ -8,7 +8,6 @@
   --line: #e4e4e4;
   --card: #f7f7f7;
   --accent: #1f6feb;
-  --mark: #e0609c;
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,7 +24,13 @@
 body { margin: 0; background: var(--bg); color: var(--fg); }
 .bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .bar h1 { font-size: 16px; margin: 0; font-weight: 600; }
-.mark { width: 14px; height: 14px; border-radius: 50%; background: var(--mark); }
+/* Clover's mark (docs/clover-brand.md): green on a light page, white on a dark one. */
+.mark { width: 18px; height: 18px; }
+.mark--dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  .mark--light { display: none; }
+  .mark--dark { display: inline; }
+}
 .status { margin-left: auto; color: var(--muted); font-size: 13px; }
 main { max-width: 760px; margin: 0 auto; padding: 16px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 12px; }

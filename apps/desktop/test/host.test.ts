@@ -6,7 +6,9 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_CSP, IMPORT_MAP, connectionAllowlist, layerCsp, layerDocument, layerHeaders } from "../src/main/ui/documents";
-import { appShortcut } from "../src/main/shortcuts";
+import { appShortcut, sealedInputAllowed } from "../src/main/shortcuts";
+import { islandCards } from "../src/layer/clover/cards";
+import type { CardMeta } from "@waifucave/clover-protocol";
 import { mediaType, pluginFile } from "../src/main/ui/files";
 import { trayMenu } from "../src/main/tray-menu";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, webPreferences, windowsHasAcrylic } from "../src/main/window";
@@ -25,17 +27,17 @@ describe("documents and headers (S9, decision 94)", () => {
   test("layers reach only their own origin until hosts are declared; frames only from layer origins", () => {
     const csp = layerCsp();
     for (const d of ["default-src 'none'", "connect-src 'self'", "frame-src clover-plugin:", "form-action 'none'", "object-src 'none'", "base-uri 'none'"]) expect(csp).toContain(d);
-    expect(connectionAllowlist()).toBe("(response-origin)");
-    expect(connectionAllowlist(["https://api.example.com"])).toBe('("https://api.example.com/*" response-origin)');
+    expect(connectionAllowlist()).toBe('("clover-sealed://card/*" response-origin)');
+    expect(connectionAllowlist(["https://api.example.com"])).toBe('("https://api.example.com/*" "clover-sealed://card/*" response-origin)');
     // A document names each installed layer by its label, never a `*` host: Chromium matches its DNS lookups against
-    // the list by host alone (the E-M1 review's B1).
-    expect(connectionAllowlist([], ["clover", "fixture-composer"])).toBe('("clover-plugin://clover/*" "clover-plugin://fixture-composer/*" response-origin)');
-    expect(connectionAllowlist([], ["*", "a/b", "x.example", "ok"])).toBe('("clover-plugin://ok/*" response-origin)');
+    // the list by host alone (the E-M1 review's B1). The sealed frames' origin rides along always (E-M3).
+    expect(connectionAllowlist([], ["clover", "fixture-composer"])).toBe('("clover-plugin://clover/*" "clover-plugin://fixture-composer/*" "clover-sealed://card/*" response-origin)');
+    expect(connectionAllowlist([], ["*", "a/b", "x.example", "ok"])).toBe('("clover-plugin://ok/*" "clover-sealed://card/*" response-origin)');
     const doc = layerHeaders("text/html; charset=utf-8", [], ["clover", "alpha"]);
-    expect(doc).toMatchObject({ "Connection-Allowlist": '("clover-plugin://clover/*" "clover-plugin://alpha/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
+    expect(doc).toMatchObject({ "Connection-Allowlist": '("clover-plugin://clover/*" "clover-plugin://alpha/*" "clover-sealed://card/*" response-origin)', "X-Content-Type-Options": "nosniff", "X-DNS-Prefetch-Control": "off" });
     expect(doc["Connection-Allowlist"]).not.toContain("://*");
-    expect(layerHeaders("text/html; charset=utf-8")["Connection-Allowlist"]).toBe("(response-origin)");
-    expect(layerHeaders("text/javascript; charset=utf-8", [], ["clover"])["Connection-Allowlist"]).toBe("(response-origin)");
+    expect(layerHeaders("text/html; charset=utf-8")["Connection-Allowlist"]).toBe('("clover-sealed://card/*" response-origin)');
+    expect(layerHeaders("text/javascript; charset=utf-8", [], ["clover"])["Connection-Allowlist"]).toBe('("clover-sealed://card/*" response-origin)');
     expect(layerHeaders("image/png")["Connection-Allowlist"]).toBeUndefined();
     expect(CORE_CSP).toContain("connect-src 'none'");
     expect(CORE_CSP).toContain("frame-ancestors 'none'");
@@ -142,6 +144,31 @@ describe("the app's shortcuts", () => {
     expect(appShortcut(key("w", { meta: true, shift: true }), "darwin")).toBeUndefined();
     expect(appShortcut(key("q", { meta: true, alt: true }), "darwin")).toBeUndefined();
     expect(appShortcut({ ...key("q", { meta: true }), type: "keyUp" }, "darwin")).toBeUndefined();
+  });
+
+  test("the smoke run's real input is test-only: a packaged app ignores the smoke's presses", () => {
+    // Both click paths ask first: packaged, with or without headless, never attaches the debugger.
+    expect(sealedInputAllowed({ packaged: true, headless: true })).toBe(false);
+    expect(sealedInputAllowed({ packaged: true, headless: false })).toBe(false);
+    // Unpackaged alone isn't enough either: the smoke run is always headless.
+    expect(sealedInputAllowed({ packaged: false, headless: false })).toBe(false);
+    expect(sealedInputAllowed({ packaged: false, headless: true })).toBe(true);
+  });
+  test("the island's strip reads the pending cards' metas: elicitation draws as a link, the rest as approvals", () => {
+    expect(islandCards([])).toEqual([]);
+    const meta: CardMeta = {
+      id: "card_1", kind: "tool", computer: "Laptop", origin: "user", issuedAt: 7, expiresAt: null,
+      options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
+    };
+    expect(islandCards([meta])).toEqual([{
+      id: "card_1", kind: "approval", computer: "Laptop", issuedAt: 7,
+      options: [{ id: "allow_once", kind: "approve" }, { id: "deny", kind: "deny" }],
+    }]);
+    // A link request draws as a link; no computer and no options fall back to the island's own defaults.
+    const link: CardMeta = { ...meta, id: "card_2", kind: "elicitation", computer: null, options: [] };
+    expect(islandCards([link])).toEqual([
+      { id: "card_2", kind: "link", issuedAt: 7 },
+    ]);
   });
 });
 
