@@ -4,7 +4,8 @@
 //
 // * Linux: `/proc/net/tcp` (and `tcp6`) gives the connecting socket's inode, and the allowed processes'
 //   `/proc/<pid>/fd` links say whether one of them holds it. If the kernel won't show those links (a process the
-//   sandbox made non-dumpable), the socket's owner uid is checked instead, and that is said once in the log.
+//   sandbox made non-dumpable), no connection is accepted (fail closed: a uid check would take any process of the
+//   same user, a fenced bot's command included). Which of the two paths a Linux machine takes is logged once.
 // * macOS: `lsof` on the allowed processes alone (libproc underneath), listing their TCP connections.
 // * Windows: `netstat -ano -p TCP` (`GetExtendedTcpTable` underneath), which names each connection's process.
 //
@@ -29,8 +30,6 @@ export interface PeerOwnerOptions {
   allowedPids: () => number[] | Promise<number[]>;
   run: RunCommand;
   fs?: PeerOwnerFs;
-  /** This process's uid, for Linux's fallback (default `process.getuid()`). */
-  uid?: number;
   log?: (line: string) => void;
 }
 
@@ -102,10 +101,7 @@ export class PeerOwner {
       const table = await this.reading();
       const rows = table.rows.filter((r) => r.from === peer.port && r.to === listenerPort);
       if (this.opts.platform === "linux") {
-        if (table.held === "unknown") {
-          const uid = this.opts.uid ?? process.getuid?.() ?? -1;
-          return rows.some((r) => r.uid === uid);
-        }
+        if (table.held === "unknown") return false;
         const held = table.held;
         return rows.some((r) => r.inode !== undefined && held.has(r.inode));
       }
@@ -167,9 +163,13 @@ export class PeerOwner {
       if (!readable) {
         if (!this.warned) {
           this.warned = true;
-          this.opts.log?.("browser network filter: the network process's sockets can't be read here; its connections are told apart by their owner's uid");
+          this.opts.log?.("browser network filter: Linux path: the network process's sockets can't be read here (/proc/<pid>/fd is closed to us); every connection is refused");
         }
         return { rows, pids, held: "unknown" };
+      }
+      if (!this.warned) {
+        this.warned = true;
+        this.opts.log?.(`browser network filter: Linux path: the network process's sockets are read from /proc/<pid>/fd (${pids.size} process(es), ${held.size} sockets)`);
       }
       return { rows, pids, held };
     }

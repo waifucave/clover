@@ -83,9 +83,10 @@ class TestClient {
   close(): void { this.socket.end(); }
 }
 
+// `seq` first, as the store requires of every line (`canonicalSeqLine`); the rest in a non-schema order.
 const TS = 1_753_900_000_000;
 function ev(sessionId: string, seq: number, rest: Record<string, unknown>): Record<string, unknown> {
-  return { sessionId, seq, ts: TS + seq, ...rest };
+  return { seq, ts: TS + seq, sessionId, ...rest };
 }
 function created(sessionId: string): Record<string, unknown> {
   return ev(sessionId, 1, { type: "session_created", scope: "global", mode: "chat" });

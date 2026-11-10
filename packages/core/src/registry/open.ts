@@ -28,6 +28,8 @@ export interface OpenRegistryOptions {
   settleMs?: number;
   now?: () => number;
   log?: (line: string) => void;
+  /** Called on this computer when the user approves a plugin's OK card here (`brokerOkCards`'s `onApproved`). */
+  onOkApproved?: (pluginId: string) => void;
 }
 
 export interface OpenedRegistry {
@@ -82,7 +84,7 @@ export async function openPluginRegistry(o: OpenRegistryOptions): Promise<Opened
     catalog: catalogPointDecl,
     store,
     ...(o.now ? { now: o.now } : {}),
-    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os)) } : {}),
+    ...(o.broker ? { cards: brokerOkCards(o.broker, (id) => folders!.okText(id, o.os), o.onOkApproved) } : {}),
     onOk: (id, hash) => folders?.okGiven(id, hash),
   });
   folders = new PluginFolders({
