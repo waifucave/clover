@@ -196,6 +196,13 @@ export class PluginFolders {
   }
 
   #blocker: ((p: RevocationSubject) => string | undefined) | undefined;
+  #officialIndex: string | undefined;
+
+  /** The official index's URL: only a plugin installed from it is "reviewed" on its OK (§5.6); one from an added index
+   *  is "not reviewed". */
+  setOfficialIndex(url: string | undefined): void {
+    this.#officialIndex = url;
+  }
 
   /** Revocation (§5.1): a tree it names is read as `blocked`, with the reason; set before the first scan, so a revoked
    *  plugin never starts. */
@@ -286,7 +293,7 @@ export class PluginFolders {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
       lines: [
         ...describeOk(r.tree.top, {
-          os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld,
+          os, source: r.source === "index" && this.#officialIndex !== undefined && r.provenance.index?.url === this.#officialIndex ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld,
           ...(sandboxed !== undefined ? { sandboxed } : {}),
           // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
           ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),

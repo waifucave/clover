@@ -249,6 +249,11 @@ export class IndexClient {
     return run;
   }
 
+  /** Downloads a plugin version (https, at most `maxBytes`), through the same fetch as the indexes. */
+  download(url: string, maxBytes: number, signal?: AbortSignal): Promise<Uint8Array> {
+    return this.#fetch(httpsUrl(url), maxBytes, signal);
+  }
+
   /** When a file was last accepted, and whether its copy is stale. */
   acceptedOf(kind: SignedKind, url: string): (AcceptedFile & { stale: boolean }) | undefined {
     const a = this.#state.accepted[`${kind}:${url}`];

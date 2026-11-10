@@ -163,7 +163,7 @@ export function newStage(stagingDir: string): { dir: string; done(): void } {
 
 /** Validates a staged plugin folder, the copy that will be installed, by the same validation the terminal's
  *  `clover plugin validate` runs, and renames it into the plugins folder under its id. */
-export async function installStaged(staged: string, o: InstallTarget): Promise<{ id: string; folder: string; treeHash: string }> {
+export async function installStaged(staged: string, o: InstallTarget, expect: { id?: string; treeHash?: string } = {}): Promise<{ id: string; folder: string; treeHash: string }> {
   chmodSync(staged, 0o755);
   const v = await validatePluginFolder(staged, ...(o.os ? [{ os: o.os }] : []));
   if (!v.ok || v.plugin === undefined || v.treeHash === undefined) {
@@ -171,6 +171,9 @@ export async function installStaged(staged: string, o: InstallTarget): Promise<{
     throw new ContractError("invalid", `the plugin isn't valid${errors.length > 0 ? `: ${errors.join("; ")}` : ""}`);
   }
   const id = v.plugin.id;
+  // A download is installed only as its index names it: the same id, the same tree (§5.1).
+  if (expect.id !== undefined && id !== expect.id) throw new ContractError("invalid", `the download is ${JSON.stringify(id)}, not ${expect.id}`);
+  if (expect.treeHash !== undefined && v.treeHash !== expect.treeHash) throw new ContractError("invalid", `the download's tree hash (${v.treeHash}) isn't the one its index lists (${expect.treeHash})`);
   // A top-level plugin's id, as the protocol takes it (never a child's `a/b`).
   if (!TopPluginId.safeParse(id).success) throw new ContractError("invalid", `${JSON.stringify(id)} isn't a plugin id`);
   const plugins = realpathSync(o.pluginsDir);
