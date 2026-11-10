@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as appContract from "../src/main/browser/contract";
 import { BROWSER_ASSETS } from "../src/main/browser/assets";
+import { OVER_CAP_DROPS, OverCap } from "../src/main/browser/stream-cap";
 import { choosePopup, siteOf } from "../src/main/browser/popups";
 import { parseGdbusBool, parseMacVoiceOver, parseWindowsTasklist, ScreenReaderSwitch, type ScreenReaderProbe } from "../src/main/browser/screen-reader";
 import * as coreContract from "../../../packages/core/src/browser/contract";
@@ -41,6 +42,14 @@ describe("the build carries every browser page", () => {
     expect(Object.keys(BROWSER_ASSETS).sort()).toEqual(["html", "preload", "streamHtml", "streamPreload"]);
     for (const [name, asset] of Object.entries(BROWSER_ASSETS)) {
       expect(existsSync(join(root, asset.out)), name).toBe(true);
+    }
+  });
+
+  test("every BROWSER_ASSETS entry names a source: an `entry` to bundle or a `from` to copy (pinned without a build)", () => {
+    for (const [name, asset] of Object.entries(BROWSER_ASSETS)) {
+      const a = asset as { entry?: string; from?: string; out: string };
+      expect(typeof a.entry === "string" || typeof a.from === "string", `${name} has an entry or a from`).toBe(true);
+      expect(existsSync(join(root, (a.entry ?? a.from)!)), `${name}'s source exists`).toBe(true);
     }
   });
 
@@ -126,5 +135,25 @@ describe("the screen-reader switch", () => {
     await s.start();
     expect(s.on).toBe(true);
     s.stop();
+  });
+});
+
+describe("a keyframe that is always over the wire cap", () => {
+  test("3 drops in a row shrink the stream; 3 more end it; a frame that fits starts over", () => {
+    const c = new OverCap();
+    expect(OVER_CAP_DROPS).toBe(3);
+    expect([c.note(true), c.note(true)]).toEqual(["ok", "ok"]);
+    expect(c.note(false)).toBe("ok");
+    expect([c.note(true), c.note(true), c.note(true)]).toEqual(["ok", "ok", "shrink"]);
+    expect(c.shrunk).toBe(true);
+    expect([c.note(true), c.note(true), c.note(true)]).toEqual(["ok", "ok", "fail"]);
+  });
+
+  test("a shrunk stream whose frames then fit keeps going", () => {
+    const c = new OverCap();
+    for (let i = 0; i < 3; i++) c.note(true);
+    expect(c.shrunk).toBe(true);
+    for (let i = 0; i < 10; i++) expect(c.note(false)).toBe("ok");
+    expect([c.note(true), c.note(true), c.note(true)]).toEqual(["ok", "ok", "fail"]);
   });
 });

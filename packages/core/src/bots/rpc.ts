@@ -4,11 +4,12 @@
 //
 // The server decides who may call what before a handler runs (the allow lists, the capabilities, `userOnly`); the
 // handlers check the caller again where the method changes something, since a bot's or a plugin's call must never
-// count as the user's (§3.1, §9.1). Not here yet: `session.answer` (the runtime's questions, A-M3) and the routines'
-// methods (M3).
+// count as the user's (§3.1, §9.1).
 //
 // `peerSessionMethods` is the receiving side of `peer.session.send` (devices.ts), for a computer that runs a bot the
 // user messaged from another device: the sending device's signature decides whether the turn is the user's (N3).
+import { botSenderCheck, routineSenderCheck } from "../links/bot-relay";
+import type { RoutineEngine } from "../routines/engine";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { z } from "zod";
@@ -28,6 +29,7 @@ import { botPaths } from "./paths";
 import { StagedImages } from "./staged-images";
 import { refuseWhileUpdating, type UpdateGateLike } from "./update-gate";
 import type { BotService } from "./service";
+import type { BotQuestions } from "./questions";
 
 // The handler helpers are shared with every lane's methods (rpc/handler.ts, H-M1's ask).
 export { MethodError, handler, requireUser, toMethodError, type MethodContext, type MethodHandler } from "../rpc/handler";
@@ -47,6 +49,8 @@ export interface SessionsMethodsDeps {
   /** `session.setModel` for a background agent or a coding session (lane K's `AgentManager.setModel`); without it the
    *  new model is recorded in the session's view and its driver reads it at the next turn. */
   setAgentModel?(id: string, model: string, effort?: string): Promise<void>;
+  /** The bot side's questions (questions.ts): `session.answer` resolves the one waiting. Without it, none waits. */
+  questions?: Pick<BotQuestions, "answer">;
 }
 
 /** How far back a bot conversation's messages are read for the staged copies they still name (never pruned). */
@@ -252,6 +256,19 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
       return { seq };
     }),
 
+    // The answer to a session's `AskUserQuestion` (§5.5): the user's, from any of their clients, or a plugin's that
+    // shows the question (`conversation.post`); never a session's, so no bot answers its own or another's.
+    [M.sessionAnswer.name]: handler(M.sessionAnswer, async ({ id, callId, answers, notes }, ctx) => {
+      const caller = ctx.caller;
+      if (caller.kind !== "user" && caller.kind !== "plugin") throw new MethodError(CLOVER_ERR.NOT_THE_USER, "only the user, or a plugin showing the question, answers it");
+      reachable(id);
+      const by = caller.kind === "user" ? "user" : `plugin:${caller.pluginId}`;
+      const outcome = deps.questions?.answer(id, callId, answers, by, notes)
+        ?? { ok: false as const, code: "not_found" as const, message: `no question ${callId} is waiting in ${id}` };
+      if (!outcome.ok) throw new ContractError(outcome.code, outcome.message);
+      return { ok: true as const };
+    }),
+
     [M.sessionInterrupt.name]: handler(M.sessionInterrupt, async ({ id }, ctx) => {
       requireUser(ctx, "interrupt a session");
       view(id);
@@ -303,7 +320,7 @@ export function sessionsMethods(deps: SessionsMethodsDeps): Record<string, Metho
 }
 
 export interface PeerSessionMethodsDeps {
-  bots: Pick<BotService, "has" | "botsRunHere" | "mainSession">;
+  bots: Pick<BotService, "has" | "botsRunHere" | "mainSession" | "computerFor">;
   host: Pick<DurableSessionHost, "get" | "sendUser" | "deliver">;
   clock: Pick<Clock, "now">;
   /** The paired devices (lane H): whose answer key signs a user's message. Without it, no relayed message is signed. */
@@ -313,6 +330,8 @@ export interface PeerSessionMethodsDeps {
   /** A device's computer name (lane H's `DeviceRecord.computer`): `peer.session.deliver` must name the computer the
    *  link authenticated. Without it, the name is taken as given. */
   computerOf?: (device: string) => string | undefined;
+  /** The synced routines: a routine's message must name one of the bot's, from its computer. Without them, none is taken. */
+  routines?: Pick<RoutineEngine, "get">;
 }
 
 /** `peer.session.deliver`'s params (lane D's, until lane B adds the method to the protocol's peer role): another
@@ -361,7 +380,10 @@ export function peerSessionMethods(deps: PeerSessionMethodsDeps): Record<string,
         const { id, computer, input } = parsed.data;
         const linked = deps.computerOf?.(ctx.caller.device);
         if (deps.computerOf !== undefined && linked !== computer) throw new ContractError("refused", `the message names ${computer}, but it came from ${linked ?? "a device that runs no computer"}`);
-        runningBot(id, PEER_SESSION_DELIVER);
+        const target = runningBot(id, PEER_SESSION_DELIVER);
+        // A bot's message only from the computer running that bot (#313's review): a peer can't name a sender it doesn't run.
+        if (input.from === "bot") botSenderCheck(deps.bots, input, computer);
+        if (input.from === "routine") routineSenderCheck(deps.routines, input, target.bot!, computer);
         const { seq } = await deps.host.deliver(id, input);
         return { seq };
       } catch (err) {

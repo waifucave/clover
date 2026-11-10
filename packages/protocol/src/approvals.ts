@@ -52,11 +52,16 @@ export const CardKind = z.enum(CARD_KINDS);
 export type CardKind = z.infer<typeof CardKind>;
 
 /** The sensitive changes (§5.5 "Sensitive changes are approvals too"), plus the cloud computer cards (§9.2), an agent
- *  with no sandbox (§9.3) and a core setting changed from another layer. */
+ *  with no sandbox (§9.3), a core setting changed from another layer, and replacing this desktop's answer key
+ *  (`answer-key-rotate`: the current key's hand-over signature and the user's yes on this card, answered by anything
+ *  but the key it replaces). */
 export const ChangeSubject = z.enum([
   "routine-level", "computer-level", "device-add", "device-revoke", "main-computer", "plugin-load", "dev-folder",
   "repo-trust", "saved-rule", "connector-permission", "computer-create", "computer-resize", "computer-delete",
-  "agent-unsandboxed", "core-setting",
+  "agent-unsandboxed", "core-setting", "answer-key-rotate",
+  /** A bot's first turn on a provider its plugin chose, not the user (the controller's ruling on #298): "<bot> wants
+   *  to use <provider> (<model>) with your stored key". A yes holds for that bot and provider only. */
+  "bot-provider",
 ]);
 export type ChangeSubject = z.infer<typeof ChangeSubject>;
 

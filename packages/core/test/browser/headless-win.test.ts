@@ -12,7 +12,14 @@ const WIN = process.platform === "win32";
 
 describe.skipIf(!WIN)("the headless shell's Windows start", () => {
   const root = mkdtempSync(join(tmpdir(), "clover-winpipe-"));
-  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  afterAll(() => {
+    // Windows keeps a file busy a moment after its process is gone.
+    try {
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      // The temp folder is the system's to clear.
+    }
+  });
 
   const env = (): Record<string, string> => {
     const e = windowsBrowserEnv(root);

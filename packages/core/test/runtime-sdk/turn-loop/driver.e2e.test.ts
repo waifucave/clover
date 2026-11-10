@@ -3,14 +3,17 @@
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
 import type { TurnControl, TurnInput } from "../../../src/contracts/session-host";
 import type { BotSessionContext, EffectiveBot } from "../../../src/bots/service";
 import { botPaths } from "../../../src/bots/paths";
-import { BOT_SANDBOX, BotSessionDriver, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { BOT_SANDBOX, BotSessionDriver, botFileFence, type BotDriverDeps } from "../../../src/runtime-sdk/turn-loop/driver";
+import { CloverFence } from "../../../src/fence/fence";
+import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
+import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
 import type { CoreToolDef, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
 import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
@@ -57,7 +60,7 @@ function control(origin: TurnControl["origin"] = "user"): Ctl {
 }
 
 function context(home: string, model: string, over: Partial<BotSessionContext> = {}): BotSessionContext & { bot: EffectiveBot } {
-  const bot: EffectiveBot = { id: "luna", name: "Luna", instructions: "You are Luna.", model, userLayer: [] };
+  const bot: EffectiveBot = { id: "luna", name: "Luna", instructions: "You are Luna.", model, modelFrom: "user", userLayer: [] };
   return {
     bot,
     botId: "luna", sessionId: "b_luna", kind: "bot", computer: "Studio", paths: botPaths(home, "luna"),
@@ -506,6 +509,100 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
         expect(readFileSync(join(dir, `${tag}.launchctl`), "utf8").trim()).not.toBe("0");
         expect(readFileSync(join(dir, `${tag}.outside`), "utf8").trim()).not.toBe("0");
         expect(existsSync(`${outside}.${tag}`)).toBe(false);
+      }
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  // The fence's hook on a bot's own file tools (`botFileFence`), through the real runtime: refused calls never run, and
+  // a search's hits through a link the bot planted in its scratch (to a file in run/, to run/ itself) never show.
+  test("a bot's file tools: its own memory read; the secrets file never read, the settings never written; no search through a link to run/", async () => {
+    const home = tempHome();
+    const ctx = context(home, "winter-test/calls");
+    mkdirSync(ctx.paths.memory, { recursive: true });
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    mkdirSync(join(home, "run"), { recursive: true });
+    writeFileSync(join(ctx.paths.memory, "MEMORY.md"), "READ-own");
+    writeFileSync(join(home, "secrets.enc"), "SECRET");
+    writeFileSync(join(home, "run", "app.token"), "SECRET-token");
+    writeFileSync(join(home, "settings.json"), "{}");
+    writeFileSync(join(ctx.paths.scratch, "notes.txt"), "SECRET-free notes");
+    symlinkSync(join(home, "run", "app.token"), join(ctx.paths.scratch, "tok"));
+    symlinkSync(join(home, "run"), join(ctx.paths.scratch, "rundir"));
+    const fence = new CloverFence({ home: dirname(home), cloverHome: home });
+    // Any read denial in the sandbox (as lane C's will have) makes the runtime's search walk its folder by hand, and that
+    // walk takes a link to a file as the file: without the hook's filter, Glob lists `tok` and Grep shows the token.
+    const sandbox = () => ({ filesystem: { denyRead: [join(home, "elsewhere")] } });
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { fileFence: botFileFence(fence, home), sandbox }));
+    try {
+      const q = JSON.stringify;
+      const calls = [
+        `CALL Read ${q({ file_path: join(home, "secrets.enc") })}`,
+        `CALL Write ${q({ file_path: join(home, "settings.json"), content: "{\"x\":2}" })}`,
+        `CALL Read ${q({ file_path: join(ctx.paths.memory, "MEMORY.md") })}`,
+        `CALL Glossary ${q({ load: ["Glob", "Grep"] })}`,
+        `CALL Glob ${q({ pattern: "**/*", path: ctx.paths.scratch })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: ctx.paths.scratch, output_mode: "content" })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: ctx.paths.scratch, output_mode: "files_with_matches" })}`,
+        `CALL Grep ${q({ pattern: "SECRET", path: ctx.paths.scratch, glob: "rundir/**", output_mode: "content" })}`,
+      ].join("\n");
+      const end = await driver.turn(user(calls), control());
+      expect(end.reason).toBe("end_turn");
+      expect(readFileSync(join(home, "settings.json"), "utf8")).toBe("{}");
+      const r = results(end);
+      const reads = r.filter((x) => x.name === "Read");
+      // Refused by the fence's hook before they ran: the reason is the result.
+      expect(reads[0]?.content).toContain("Read was not run");
+      expect(reads[0]?.content).not.toContain("SECRET");
+      expect(r.find((x) => x.name === "Write")?.content).toContain("Write was not run");
+      expect(reads[1]?.content).toContain("READ-own");
+      const glob = r.find((x) => x.name === "Glob")?.content ?? "";
+      expect(glob).toContain("notes.txt");
+      expect(glob).not.toContain("tok");
+      expect(glob).not.toContain("app.token");
+      const greps = r.filter((x) => x.name === "Grep");
+      expect(greps.length).toBe(3);
+      expect(greps[0]?.content).toContain("notes.txt");
+      expect(greps[1]?.content).toContain("notes.txt");
+      for (const g of greps) {
+        expect(g.content).not.toContain("SECRET-token");
+        expect(g.content).not.toContain("tok\"");
+        expect(g.content).not.toContain("app.token");
+      }
+    } finally {
+      await driver.stop();
+    }
+  }, 60_000);
+
+  // A coding session's sandbox (`childSandboxConfigFor`), on real Bash through the same runtime: its own outputs, store
+  // entry and run folder read; another session's, a run folder's config copy and the bots' data never (#347's review).
+  test("a coding session's Bash: its own outputs, store entry and run folder; never another session's, a config copy or the bots' data", async () => {
+    const home = tempHome();
+    const ctx = context(home, "winter-test/calls");
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "clover-a3-code-cwd-")));
+    temps.push(cwd);
+    const key = compatibilityKeys(cwd).transcriptProjectKey;
+    const put = (rel: string, text: string) => { mkdirSync(join(home, rel, ".."), { recursive: true }); writeFileSync(join(home, rel), text); };
+    const own = { outputs: "outputs/s_1/r.md", store: `sdk/projects/${key}/memory/MEMORY.md`, run: "cache/runs/run-own/settings.json" };
+    const others = { outputs: "outputs/s_2/r.md", store: "sdk/projects/-other/s.jsonl", run: "cache/runs/run-other/settings.json", config: "cache/runs/run-own/.clover.json",
+      memory: "bots/mira/memory/MEMORY.md", talk: "transcripts/mira/b.ndjson", secrets: "secrets.enc" };
+    for (const [tag, rel] of Object.entries(own)) put(rel, `OWN-${tag}`);
+    for (const [tag, rel] of Object.entries(others)) put(rel, `OTHER-${tag}`);
+    mkdirSync(ctx.paths.scratch, { recursive: true });
+    const out = join(ctx.paths.scratch, "probe");
+    // The harness's folder (the bot's scratch, where the probe writes) is one of the session's working directories here.
+    const sandbox = () => childSandboxConfigFor(home, cwd, [ctx.paths.scratch], { outputsDir: join(home, "outputs", "s_1"), runDir: join(home, "cache", "runs", "run-own") });
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { sandbox }));
+    try {
+      const q = JSON.stringify;
+      const calls = [...Object.entries(own).map(([t, r]) => [`own-${t}`, r] as const), ...Object.entries(others).map(([t, r]) => [`other-${t}`, r] as const)]
+        .map(([tag, rel]) => `CALL Bash ${q({ command: `cat ${q(join(home, rel))} > ${q(`${out}.${tag}`)} 2>/dev/null; echo "$?" >> ${q(`${out}.${tag}`)}`, description: "probe" })}`).join("\n");
+      expect((await driver.turn(user(calls), control())).reason).toBe("end_turn");
+      for (const tag of Object.keys(own)) expect([tag, readFileSync(`${out}.own-${tag}`, "utf8")]).toEqual([tag, `OWN-${tag}0\n`]);
+      for (const tag of Object.keys(others)) {
+        const got = readFileSync(`${out}.other-${tag}`, "utf8");
+        expect([tag, got.includes("OTHER")]).toEqual([tag, false]);
       }
     } finally {
       await driver.stop();

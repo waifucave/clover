@@ -75,7 +75,11 @@ describe("the browser's methods, served", () => {
     expect(await failure(h["browser.hold"]!({ id: "tab_1", held: true }, session))).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
     expect(await h["browser.hold"]!({ id: "tab_1", held: true }, user)).toEqual({ ok: true });
     expect(service.tabs({ kind: "user" })[0]!.heldByUser).toBe(true);
-    expect(await h["browser.report"]!({ events: [{ kind: "closed", id: "tab_1", by: "user" }] }, user)).toEqual({ ok: true });
+    const events = { events: [{ kind: "closed", id: "tab_1", by: "user" }] };
+    expect(await failure(h["browser.report"]!(events, session))).toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+    expect(await failure(h["browser.report"]!(events, as({ kind: "user", client: "web" })))).toMatchObject({ code: CLOVER_ERR.ROLE_REFUSED });
+    expect(service.tabs({ kind: "user" })).toHaveLength(1);
+    expect(await h["browser.report"]!(events, user)).toEqual({ ok: true });
     expect(service.tabs({ kind: "user" })).toEqual([]);
   });
 

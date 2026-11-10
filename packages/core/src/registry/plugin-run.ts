@@ -26,20 +26,21 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { RESERVED_ENV } from "@waifucave/clover-plugin-sdk";
+import { fencedCommand, pluginFenceAvailable, toolFence, type ProjectAccess } from "./plugin-fence";
 import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
-import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
 
 /** Clover's bunfig for plugin processes: nothing installed at run time. */
 export const PLUGIN_BUNFIG = `# Clover's own config for plugin processes; a plugin's bunfig.toml never applies.\n[install]\nauto = "disable"\n`;
 
 /** The guard, preloaded into every plugin process. It reads its plugin's root and the shared roots from the env. */
-export const PLUGIN_GUARD_SOURCE = String.raw`// Clover's load guard for a plugin process (registry/plugin-run.ts). Generated; do not edit.
+const GUARD_TEMPLATE = String.raw`// Clover's load guard for a __CLOVER_GUARD_KIND__ (registry/plugin-run.ts). Generated; do not edit.
 import { realpathSync, statSync } from "node:fs";
 import Module, { createRequire } from "node:module";
-import { dirname, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 // Through require, never an ESM import: the plugin's own ESM imports of it then see the wrapped Worker below (measured
 // on Bun 1.4.4; an ESM import here would fix its named exports before the wrap).
@@ -49,17 +50,45 @@ const fail = (why) => { throw new Error("clover: " + why); };
 // What this thread was started with, pinned before any plugin code runs: a worker gets these, never process.env's.
 // Never Bun's "be Bun" switch in a plugin's process, whatever started it (#234's check 5, K2).
 delete process.env.BUN_BE_BUN;
-const rootEnv = process.env.CLOVER_PLUGIN_ROOT;
-const sharedEnv = process.env.CLOVER_PLUGIN_SHARED ?? "[]";
-if (typeof rootEnv !== "string" || rootEnv === "") fail("a plugin process starts only with its plugin's folder");
-const root = realpathSync(rootEnv);
+// One guard per thread: a second one (the host's guard named in a plugin process's arguments, or the plugin's after the
+// host's) refuses, so the process ends, whichever loads first.
+const GUARDED = Symbol.for("clover.loadGuard");
+if (Object.prototype.hasOwnProperty.call(globalThis, GUARDED)) fail("a thread runs one load guard; a second one was preloaded");
+Object.defineProperty(globalThis, GUARDED, { value: true, writable: false, configurable: false, enumerable: false });
 const guardFile = fileURLToPath(import.meta.url);
+// A plugin-host process's own thread (B-M2) runs Clover's code only, never a plugin's, and starts one worker per plugin,
+// each pinned to that plugin's folder. Host mode is this file's, not an environment variable's (#322's review, B1): the
+// host's guard is a separate file that only the daemon's launch names, and it holds only on a process's main thread
+// whose entry is the host bundle beside it. A worker always gets the plugin guard.
+const hostThread = __CLOVER_HOST_MODE__;
+if (hostThread) {
+  if (!workerThreads.isMainThread) fail("the plugin host's guard runs on its process's own thread only");
+  if (real(Bun.main) !== real(join(dirname(guardFile), "plugin-host.js"))) fail("the plugin host's guard runs only the plugin host (" + Bun.main + " isn't it)");
+}
+const rootEnv = hostThread ? undefined : process.env.CLOVER_PLUGIN_ROOT;
+const sharedEnv = process.env.CLOVER_PLUGIN_SHARED ?? "[]";
+if (!hostThread && (typeof rootEnv !== "string" || rootEnv === "")) fail("a plugin process starts only with its plugin's folder");
+if (hostThread) delete process.env.CLOVER_PLUGIN_ROOT;
+// A process that holds more than one plugin (the bundled clover tree's) runs no native code of a plugin's (#322's
+// review, B3): a worker's bun:ffi or a native addon could read every other worker's memory. The daemon says so to the
+// host process alone, and its guard hands it to each worker.
+const noNatives = process.env.CLOVER_PLUGIN_NO_NATIVES === "1";
+delete process.env.CLOVER_PLUGIN_NO_NATIVES;
+if (noNatives && !hostThread) {
+  // A preload's onResolve never sees a Bun builtin, so the module itself is disarmed: every export a throwing stub,
+  // then frozen (measured on Bun 1.4.4: require and import, static and dynamic, get the stubs, in every thread).
+  const ffi = createRequire(import.meta.url)("bun:ffi");
+  const none = () => fail("bun:ffi isn't available in a process that holds more than one plugin");
+  for (const k of Object.keys(ffi)) Object.defineProperty(ffi, k, { value: typeof ffi[k] === "function" ? none : undefined, writable: false, configurable: false });
+  Object.freeze(ffi);
+}
+const root = hostThread ? undefined : realpathSync(rootEnv);
 // The guard's own folder (its run files) loads too: a worker preloads the guard from there.
 const shared = [...JSON.parse(sharedEnv), dirname(guardFile)].map(real);
 const inside = (p, r) => p === r || p.startsWith(r.endsWith(sep) ? r : r + sep);
 // No Bun macros, in every thread (#289): a macro runs its module's code while the file importing it is transpiled. The
 // process's --no-macros (and a bunfig's) holds its main thread only: a Worker runs a macro whatever the process was
-// started with (measured on Bun 1.4.4), and a plugin's code can start workers. A macro's module resolves from a
+// started with (measured on Bun 1.4.4), and a plugin host's plugins run in workers. A macro's module resolves from a
 // "macro//" importer, which this refuses before it loads. Every other import falls through untouched.
 Bun.plugin({
   name: "clover-no-macros",
@@ -72,6 +101,7 @@ Bun.plugin({
 });
 // The guard stays registered.
 Object.defineProperty(Bun.plugin, "clearAll", { value: () => fail("the load guard stays"), writable: false, configurable: false });
+if (!hostThread) {
 // A node_modules above the plugin's folder is where Bun looks for a dependency the plugin doesn't ship, and a file there
 // without an extension skips onLoad (#234's check 6, L4): this process doesn't start beside one, unless it holds
 // Clover's shared packages.
@@ -107,18 +137,37 @@ Module._resolveFilename = function (request, ...rest) {
 };
 const guardedResolve = Module._resolveFilename;
 Object.defineProperty(Module, "_resolveFilename", { get: () => guardedResolve, set: () => fail("the load guard stays"), enumerable: true, configurable: false });
-// A native addon loads through process.dlopen: held to the same rule.
+// A native addon loads through process.dlopen: held to the same rule; refused outright where natives are off; and a
+// bundled plugin's checked against the digest its staging verified (the worker publishes the check, S2).
 const dlopen = process.dlopen.bind(process);
+const verifiedNative = (filename) => {
+  const check = globalThis[Symbol.for("clover.verifiedFile")];
+  if (typeof check === "function") check(filename);
+};
 Object.defineProperty(process, "dlopen", {
-  value: (module, filename, ...rest) => { if (!allowed(filename)) refuse(filename); return dlopen(module, filename, ...rest); },
+  value: (module, filename, ...rest) => {
+    if (noNatives) fail("refused " + filename + ": a native addon doesn't load in a process that holds more than one plugin");
+    if (!allowed(filename)) refuse(filename);
+    verifiedNative(filename);
+    return dlopen(module, filename, ...rest);
+  },
   writable: false, configurable: false,
 });
-// Every worker runs the guard first, with this thread's plugin folder (never one the plugin set in process.env).
+}
+// Every worker runs the guard first, with this thread's plugin folder (never one the plugin set in process.env). A
+// host thread's worker is one plugin's: the host names its folder (the option cloverPluginRoot), and it is required.
 const guarded = (opts) => {
   const o = opts !== null && typeof opts === "object" ? { ...opts } : {};
+  const named = o.cloverPluginRoot;
+  delete o.cloverPluginRoot;
+  const workerRoot = hostThread ? named : rootEnv;
+  if (typeof workerRoot !== "string" || workerRoot === "") fail("a plugin host's worker starts only with its plugin's folder");
   const own = o.preload === undefined ? [] : [].concat(o.preload);
-  const env = o.env !== null && typeof o.env === "object" ? o.env : process.env;
-  return { ...o, preload: [guardFile, ...own], env: { ...env, CLOVER_PLUGIN_ROOT: rootEnv, CLOVER_PLUGIN_SHARED: sharedEnv } };
+  const env = { ...(o.env !== null && typeof o.env === "object" ? o.env : process.env) };
+  // A host's worker runs the plugin guard (never the host's), and a Bun its plugin starts gets the plugin flags.
+  if (hostThread) env.BUN_OPTIONS = __CLOVER_WORKER_BUN_OPTIONS__;
+  if (hostThread && noNatives) env.CLOVER_PLUGIN_NO_NATIVES = "1";
+  return { ...o, preload: [hostThread ? __CLOVER_WORKER_GUARD__ : guardFile, ...own], env: { ...env, CLOVER_PLUGIN_ROOT: workerRoot, CLOVER_PLUGIN_SHARED: sharedEnv } };
 };
 const wrap = (Original) => {
   // A plain function, not a subclass: the original isn't reachable through the wrapper's prototype chain.
@@ -137,9 +186,30 @@ lock(globalThis, "ShadowRealm", function ShadowRealm() { fail("ShadowRealm isn't
 lock(workerThreads, "Worker", wrap(workerThreads.Worker));
 `;
 
+const fill = (template: string, values: Record<string, string>): string =>
+  Object.entries(values).reduce((text, [k, v]) => text.split(k).join(v), template);
+
+/** The guard preloaded into every plugin process and every plugin's worker. */
+export const PLUGIN_GUARD_SOURCE = fill(GUARD_TEMPLATE, {
+  __CLOVER_GUARD_KIND__: "plugin process", __CLOVER_HOST_MODE__: "false", __CLOVER_WORKER_BUN_OPTIONS__: "undefined", __CLOVER_WORKER_GUARD__: "undefined",
+});
+
+/** The plugin host's guard (B-M2): preloaded by the host process's own arguments only (`hostProcessLaunch`). Its
+ *  workers get the plugin guard (`files.guard`) and the plugin flags. */
+export function pluginHostGuardSource(files: Pick<PluginRunFiles, "guard" | "bunfig">): string {
+  return fill(GUARD_TEMPLATE, {
+    __CLOVER_GUARD_KIND__: "plugin-host process", __CLOVER_HOST_MODE__: "true",
+    __CLOVER_WORKER_BUN_OPTIONS__: JSON.stringify(pluginBunFlags(files).join(" ")), __CLOVER_WORKER_GUARD__: JSON.stringify(files.guard),
+  });
+}
+
 export interface PluginRunFiles {
   bunfig: string;
   guard: string;
+  /** The plugin host's guard (`pluginHostGuardSource`), named only in the host process's arguments. */
+  hostGuard: string;
+  /** The Clover home whose `bin/` holds the dev plugin Bun (`pluginBun`): the daemon's own. */
+  cloverHome: string;
   /** A folder holding `bun`, a link to the plugin Bun (`pluginBun`): first on a hook's and an MCP server's PATH, so
    *  their `bun` is it. */
   bin: string;
@@ -163,10 +233,10 @@ export const PLUGIN_BUN_NAME = PLUGIN_BUN_FILE;
  *    `dev:daemon` makes and whose digest (macOS: its cdhash) it records beside it, inside the home no runner writes.
  *  Every one is checked (`checkPluginBun`) once per process and again whenever the file changes, and a failed check
  *  refuses: plugin code doesn't run. */
-export function pluginBun(): string {
+export function pluginBun(cloverHome: string = resolveCloverHome()): string {
   return pluginBunFor({
     compiled: compiled(), execPath: process.execPath, profile: resolveCloverProfile(), keychainService: process.env.CLOVER_KEYCHAIN_SERVICE,
-    cloverHome: resolveCloverHome(),
+    cloverHome,
   });
 }
 
@@ -283,24 +353,32 @@ export function isBunCommand(command: string): boolean {
 export interface PluginRunGuard {
   files: PluginRunFiles;
   shared?: readonly string[];
+  /** The plugin-process fence (`plugin-fence.ts`, 2f): on by default where the OS has one; false runs unfenced (tests
+   *  of what the load guard alone holds); `userHome` names the home it denies (tests pass a temp one). */
+  fence?: false | { userHome?: string };
 }
 
 /** Writes Clover's bunfig and guard for plugin processes into `dir` (the daemon's run folder), and returns their paths.
- *  `BUN_OPTIONS` splits on spaces and takes no quotes (measured on Bun 1.4.4), so the files live in a folder whose path
- *  has none: the run folder's, else one in the system temp folder; with neither it throws, and no plugin process starts. */
-export function ensurePluginRunFiles(dir: string): PluginRunFiles {
-  const candidates = [join(dir, "plugin-run"), join(tmpdir(), `clover-plugin-run-${createHash("sha256").update(dir).digest("hex").slice(0, 16)}`)];
-  const folder = candidates.find((c) => !/\s/.test(c));
-  if (folder === undefined) throw new Error("no folder without spaces for plugin processes' run files; plugin processes can't start");
+ *  `BUN_OPTIONS` splits on spaces and takes no quotes (measured on Bun 1.4.4), so the run folder's path may have none:
+ *  a Clover home whose path has a space starts no plugin process, and says why. Never a folder in the shared temp
+ *  folder, where one plugin's process could rewrite the guard the others load (#345's review). */
+export function ensurePluginRunFiles(dir: string, o: { cloverHome: string }): PluginRunFiles {
+  const folder = join(dir, "plugin-run");
+  if (/\s/.test(folder)) throw new Error(`plugin processes can't start: the Clover home's run folder (${folder}) has a space in its path, which Bun's options can't carry`);
   mkdirSync(folder, { recursive: true, mode: 0o700 });
-  // The guard is only as good as its file: the folder must be a real one of this user's that no one else can write
-  // (the temp fallback's path is predictable).
+  // The guard is only as good as its file: the folder must be a real one of this user's that no one else can write.
   const st = lstatSync(folder);
   const uid = process.getuid?.();
   if (!st.isDirectory() || (uid !== undefined && st.uid !== uid) || (st.mode & 0o022) !== 0) {
     throw new Error(`${folder} is not a private folder of this user's; plugin processes can't start`);
   }
-  const files = { bunfig: join(folder, "bunfig.toml"), guard: join(folder, "guard.mjs"), bin: join(folder, "bin") };
+  // Always named by the caller, never `~/.clover` by default: a fenced process's temp and data folders are made under
+  // it, so a default would put a test's folders in the real home (#345).
+  const cloverHome = o.cloverHome;
+  // Every run file by its real path (`/var` is `/private/var` on macOS): a fenced process can't resolve a link through
+  // a folder it may only stat, so what it's handed must need no resolving (2f).
+  const real = realpathSync(folder);
+  const files: PluginRunFiles = { bunfig: join(real, "bunfig.toml"), guard: join(real, "guard.mjs"), hostGuard: join(real, "host-guard.mjs"), bin: join(real, "bin"), cloverHome };
   mkdirSync(files.bin, { recursive: true, mode: 0o700 });
   const bunLink = join(files.bin, process.platform === "win32" ? "bun.exe" : "bun");
   let linked: string | undefined;
@@ -309,7 +387,7 @@ export function ensurePluginRunFiles(dir: string): PluginRunFiles {
   } catch {
     linked = undefined;
   }
-  const bun = pluginBun();
+  const bun = pluginBun(cloverHome);
   if (linked !== bun) {
     try {
       unlinkSync(bunLink);
@@ -318,7 +396,7 @@ export function ensurePluginRunFiles(dir: string): PluginRunFiles {
     }
     symlinkSync(bun, bunLink);
   }
-  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE]] as const) {
+  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE], [files.hostGuard, pluginHostGuardSource(files)]] as const) {
     let current: string | undefined;
     try {
       current = readFileSync(path, "utf8");
@@ -331,17 +409,37 @@ export function ensurePluginRunFiles(dir: string): PluginRunFiles {
 }
 
 /** The Bun flags every plugin process runs with. */
-export function pluginBunFlags(files: PluginRunFiles): string[] {
+export function pluginBunFlags(files: Pick<PluginRunFiles, "bunfig" | "guard">): string[] {
   return [`--config=${files.bunfig}`, "--no-env-file", "--no-macros", `--preload=${files.guard}`];
 }
 
-/** Variables a plugin process never inherits: they change what Bun or Node loads. */
-const DROPPED_ENV = /^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+)$/;
+/** The plugin host process's flags: the plugin flags with the host's guard in place of the plugin guard. */
+export function pluginHostBunFlags(files: PluginRunFiles): string[] {
+  return [`--config=${files.bunfig}`, "--no-env-file", "--no-macros", `--preload=${files.hostGuard}`];
+}
+
+/** Variables a plugin process never inherits: they change what Bun or Node loads, or they're what Clover's guard and
+ *  host read, which only Clover sets (#322's review, B1). */
+const DROPPED_ENV_SOURCE = "^(NODE_OPTIONS|BUN_OPTIONS|NODE_PATH|BUN_BE_BUN|BUN_CONFIG_.+|NODE_EXTRA_CA_CERTS_.+|CLOVER_PLUGIN_(HOST|ROOT|SHARED|WORKER|NO_NATIVES))$";
+/** On Windows environment names are case-insensitive (`node_options` is NODE_OPTIONS), so there they match without case. */
+export const droppedEnv = (platform: NodeJS.Platform = process.platform): RegExp => new RegExp(DROPPED_ENV_SOURCE, platform === "win32" ? "i" : "");
+const DROPPED_ENV = droppedEnv();
+
+/** Names a plugin's manifest never sets in a process's environment (#322's review, B1): Clover's own (`CLOVER_*`), and
+ *  what changes how Bun, Node or the dynamic loader loads code. `NODE_ENV` and `NODE_NO_WARNINGS` load nothing. The
+ *  SDK's validation refuses the same (`reserved_env`). */
+export const RESERVED_PLUGIN_ENV = RESERVED_ENV;
+
+/** Throws, naming each one, when `env` (a plugin manifest's) sets a reserved name (`RESERVED_PLUGIN_ENV`). */
+export function refuseReservedPluginEnv(env: Readonly<Record<string, string>> | undefined, what: string): void {
+  const reserved = Object.keys(env ?? {}).filter((k) => RESERVED_PLUGIN_ENV.test(k)).sort();
+  if (reserved.length > 0) throw new Error(`${what} sets ${reserved.join(", ")} in its environment, which only Clover sets; it doesn't start`);
+}
 
 /** How a plugin's Bun process starts (a supervised host): the plugin Bun with `args`, and the guarded environment.
  *  The supervisor and the compiled-core probe (`packages/cli/src/plugin-run-probe.ts`) share it. */
 export function pluginBunLaunch(args: readonly string[], base: Readonly<Record<string, string | undefined>>, o: { pluginRoot: string; files: PluginRunFiles; shared?: readonly string[] }): { cmd: string[]; env: Record<string, string> } {
-  return { cmd: [pluginBun(), ...args], env: guardedPluginEnv(base, o) };
+  return { cmd: [pluginBun(o.files.cloverHome), ...args], env: guardedPluginEnv(base, o) };
 }
 
 /** A plugin's stdio MCP server, as the runtime starts it (#234's checks 4 and 5). Every one, whatever its command, gets
@@ -351,12 +449,21 @@ export function pluginBunLaunch(args: readonly string[], base: Readonly<Record<s
  *  `BUN_OPTIONS` back; `BUN_BE_BUN` it never carries, and the guard deletes it. A Bun command runs on the plugin Bun (`pluginBun`); any other program
  *  is the plugin's own, which the OK covers and Clover doesn't confine. Every plugin-sourced stdio entry goes through
  *  this. */
-export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard): E {
+export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard, pluginId?: string, project?: ProjectAccess): E {
   const own = entry.env ?? {};
+  refuseReservedPluginEnv(own, `the plugin MCP server at ${pluginRoot} (${basename(entry.command)})`);
   const env = guardedPluginEnv({ ...own, PATH: [guard.files.bin, own.PATH ?? process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter) }, { pluginRoot, ...guard });
   // Never `BUN_BE_BUN`, not even empty: Bun may take it as set. The runtime's merge copies six baseline names only.
   for (const k of ["NODE_OPTIONS", "NODE_PATH", ...Object.keys(process.env).filter((k) => DROPPED_ENV.test(k) && k !== "BUN_OPTIONS" && k !== "BUN_BE_BUN")]) env[k] = "";
-  return { ...entry, ...(isBunCommand(entry.command) ? { command: pluginBun() } : {}), env };
+  const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
+  // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
+  if (guard.fence !== false && pluginFenceAvailable()) {
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}) });
+    Object.assign(env, toolEnv);
+    const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
+    return { ...entry, command: cmd!, args, env };
+  }
+  return { ...entry, command, env };
 }
 
 /** The packages a plugin may load from Clover's own install (the plugin SDK and what it imports), as folders. */
@@ -404,11 +511,23 @@ export function refuseNodeModulesAbove(pluginRoot: string, shared: readonly stri
   }
 }
 
+/** `base` without the dropped names. On Windows, where a name's case doesn't matter, each name is written in capitals
+ *  first, so `Path` and `PATH` (or `node_options` and the guard's own names) can't both reach the process and leave which
+ *  one wins to the OS (#322's reviewer); the later one in `base` wins. */
+export function envWithoutDropped(base: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform): Record<string, string> {
+  const env: Record<string, string> = {};
+  const dropped = platform === process.platform ? DROPPED_ENV : droppedEnv(platform);
+  for (const [k, v] of Object.entries(base)) {
+    if (v === undefined || dropped.test(k)) continue;
+    env[platform === "win32" ? k.toUpperCase() : k] = v;
+  }
+  return env;
+}
+
 /** A plugin process's environment: `base` without what changes loading, Clover's flags in `BUN_OPTIONS`, and what the
  *  guard reads. `pluginRoot` is the plugin's top-level folder. */
 export function guardedPluginEnv(base: Readonly<Record<string, string | undefined>>, o: { pluginRoot: string; files: PluginRunFiles; shared?: readonly string[] }): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(base)) if (v !== undefined && !DROPPED_ENV.test(k)) env[k] = v;
+  const env = envWithoutDropped(base);
   env.BUN_OPTIONS = pluginBunFlags(o.files).join(" ");
   let root: string;
   try {

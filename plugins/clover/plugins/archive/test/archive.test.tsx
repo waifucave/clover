@@ -14,10 +14,10 @@ const Transcript: EntryComponent = ({ props }) => <p data-testid="transcript">{J
 
 async function mount(params: { session?: string } = {}) {
   const core = fakeCore({
-    "archive.list": ({ query, before }) => {
+    "archive.list": ({ query, cursor }) => {
       const matching = ARCHIVED.filter((s) => !query || (s.title ?? "").toLowerCase().includes(query.toLowerCase()));
-      const page = before ? matching.filter((s) => s.updatedAt < before) : matching.slice(0, 3);
-      return { sessions: page, more: !before && matching.length > 3 };
+      const page = cursor ? matching.slice(Number(cursor)) : matching.slice(0, 3);
+      return { sessions: page, more: !cursor && matching.length > 3, ...(!cursor && matching.length > 3 ? { cursor: "3" } : {}) };
     },
   });
   const runtime = runtimeWith({

@@ -175,17 +175,21 @@ describe("every mode runs embedded — a Worker per session inside a real daemon
     expect(workerLive(sid)).toBe(true);
     expect(turnKinds(daemon!.sessions.read(sid))).toEqual(TURN);
     expect(daemon!.sessions.read(sid).filter((e) => e.type === "agent_error")).toEqual([]);
-    // Code's whole tool surface is there, the file tools and Bash with it...
+    // Code's whole tool surface is there, the file tools and Bash with it.
     for (const tool of ["Bash", "Read", "Edit", "Write", "Glob", "Grep"]) expect(driver.init?.tools).toContain(tool);
-    // ...and Bash RUNS from the Worker, in the session's own cwd, on the Worker's env.
-    await driver.end();
-    daemon!.sessions.setModel(sid, "winter-test/lanec");
+    // The daemon's own working directory is untouched by a code session (a Worker's chdir would be process-wide).
+    expect(process.cwd()).not.toBe(home);
+    await daemon!.clover.get(sid)?.end();
+  }, E2E_TEST_MS);
+
+  test("a CODE session's Bash RUNS from the Worker, in the session's own cwd, on the Worker's env", async () => {
+    const { sessionId: sid } = await client.call<{ sessionId: string }>(METHODS.sessionCreate, { scope: "e2e", mode: "code", cwd: home, model: "winter-test/lanec" });
+    await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     await sendAndSettle(sid, "run the shell");
     const shellLog = daemon!.sessions.read(sid);
     expect(JSON.stringify(shellLog.filter((e) => e.type === "tool_result").at(-1))).toContain("winter-t8-lanec");
     expect(shellLog.filter((e) => e.type === "agent_error")).toEqual([]);
     expect(workerLive(sid)).toBe(true);
-    // The daemon's own working directory is untouched by a code session (a Worker's chdir would be process-wide).
     expect(process.cwd()).not.toBe(home);
     await daemon!.clover.get(sid)?.end();
   }, E2E_TEST_MS);
@@ -203,11 +207,16 @@ describe("every mode runs embedded — a Worker per session inside a real daemon
     expect(turnKinds(log).slice(-4)).toEqual(["user_message", "turn_started", "assistant_message", "turn_completed"]);
     // Dispatch strips no built-ins: the Worker's session advertises Bash, which runs from the daemon's process.
     expect(daemon!.clover.get(sid)?.init?.tools).toContain("Bash");
-    // ...and it RUNS: the `lanec` double's `echo` goes through the real Bash tool, spawned by the
-    // Worker thread on the Worker's env (what the router laid on `Options.env`) — a PATH-less or
+    await daemon!.clover.get(sid)?.end();
+  }, E2E_TEST_MS);
+
+  test("a DISPATCH session's Bash RUNS: the `lanec` double's echo through the real Bash tool, on the Worker's env", async () => {
+    // Spawned by the Worker thread on the Worker's env (what the router laid on `Options.env`): a PATH-less or
     // home-less Worker env would fail here, not in a unit test.
+    const { sessionId: sid } = await client.call<{ sessionId: string; created: boolean }>(METHODS.sessionDispatch, {});
     await daemon!.clover.get(sid)?.end();
     daemon!.sessions.setModel(sid, "winter-test/lanec");
+    await client.call(METHODS.sessionAttach, { sessionId: sid, fromSeq: 0 });
     await sendAndSettle(sid, "run the shell");
     const shellLog = daemon!.sessions.read(sid);
     const lastResult = shellLog.filter((e) => e.type === "tool_result").at(-1);

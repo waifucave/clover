@@ -1,7 +1,7 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
-import { describeOk, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { describeOk, mcpServerKey, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -257,6 +257,43 @@ describe("servers, tools and interpolation", () => {
     expect(has(s({ type: "stdio", command: "x", perComputer: true }), "server_fields")).toBe(true);
   });
 
+  test("a server's key, as the registry serves it, is a namespace of at most 64 characters (K's ask: seen at author time)", () => {
+    const http = { type: "http", url: "https://mcp.example.com" };
+    const r = (id: string, name: string, opts: Parameters<typeof validateManifest>[1] = {}) =>
+      validateManifest({ ...code, id, contributes: { mcpServers: { [name]: http } } }, opts);
+    const issue = (report: ManifestReport, c: string) => report.issues.find((i) => i.code === c);
+    expect(mcpServerKey("luna", "tools", false)).toBe("luna-tools");
+    expect(mcpServerKey("luna/moon", "tools", false)).toBe("luna-moon-tools");
+    expect(mcpServerKey("clover/web", "web", true)).toBe("web");
+    // `<id>-<name>` at 64 passes; at 65 the server is refused, its key and length named.
+    const id = "a".repeat(40);
+    expect(has(r(id, "b".repeat(23)), "server_key_long")).toBe(false);
+    const long = r(id, "b".repeat(24));
+    expect(issue(long, "server_key_long")?.message).toContain(`"${id}-${"b".repeat(24)}", 65 characters`);
+    expect(issue(long, "server_key_long")?.refuses).toBe("entry");
+    expect(Object.keys(long.manifest?.contributes?.mcpServers ?? {})).toEqual([]);
+    // A child's id is its parent's and its folder's.
+    const child = (name: string) => validateManifest({ manifest: 1, name: "Moon", engines: { clover: "^1.0.0" }, contributes: { mcpServers: { [name]: http } } },
+      { parent: { id: "a".repeat(30), namespace: "aaa" }, folderName: "c".repeat(10) });
+    expect([has(child("d".repeat(22)), "server_key_long"), has(child("d".repeat(23)), "server_key_long")]).toEqual([false, true]);
+    // A bundled plugin's server keeps its name as its key.
+    expect(has(r("clover", "b".repeat(60), { folderName: "clover", bundled: true }), "server_key_long")).toBe(false);
+    // A name that isn't a namespace (so a `__` too) can't be served.
+    for (const bad of ["Blender", "big__server", "big_server", "x-", "-x", "a--b"]) expect(has(r("luna", bad), "server_name")).toBe(true);
+    expect(has(r("luna", "big-server-2"), "server_name")).toBe(false);
+  });
+
+  test("a server's env never sets Clover's names, or what changes how Bun, Node or the loader loads code (#322's review)", () => {
+    const s = (env: Record<string, string>) => validateManifest({ ...code, contributes: { mcpServers: { x: { type: "stdio", command: "bun", env } } } });
+    for (const name of ["CLOVER_PLUGIN_HOST", "CLOVER_PLUGIN_ROOT", "CLOVER_PLUGIN_SHARED", "CLOVER_PLUGIN_WORKER", "BUN_OPTIONS", "NODE_OPTIONS", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"]) {
+      const r = s({ TOKEN: "t", [name]: "1" });
+      expect([has(r, "reserved_env"), r.issues.find((i) => i.code === "reserved_env")?.message.includes(name)]).toEqual([true, true]);
+    }
+    expect(has(s({ NODE_ENV: "production", NODE_NO_WARNINGS: "1", TOKEN: "t" }), "reserved_env")).toBe(false);
+    // Without case: Windows' environment names are case-insensitive.
+    expect([has(s({ clover_plugin_host: "1" }), "reserved_env"), has(s({ Node_Options: "x" }), "reserved_env"), has(s({ node_env: "x" }), "reserved_env")]).toEqual([true, true, false]);
+  });
+
   test("tool names are mcp__<namespace>__<Tool>, unique, never with __ (§6.7)", () => {
     const r = validateManifest({ ...code, contributes: { mcpServers: {
       a: { type: "stdio", command: "a", tools: { Render: "preload", "*": "on-demand" } },
@@ -384,6 +421,15 @@ describe("the OK's text", () => {
     expect(r.restylesCards).toBe(false);
     expect(describeOk(r)).not.toContain("It restyles approval cards.");
     expect(describeOk(r, { restylesCards: true })).toContain("It restyles approval cards.");
+  });
+
+  // The controller's ruling after #345: a plugin whose hooks or MCP servers change project files says so.
+  test("project.write is a capability any plugin may hold, and the OK names it in plain words", () => {
+    const r = validateManifest({ ...min(), capabilities: ["project.write"] });
+    expect(r.ok).toBe(true);
+    expect(r.capabilities).toEqual(["project.write"]);
+    expect(describeOk(r)).toContain("It changes files in your project folders.");
+    expect(describeOk(validateManifest(min()))).not.toContain("It changes files in your project folders.");
   });
 });
 

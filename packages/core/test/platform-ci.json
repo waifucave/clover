@@ -8,22 +8,6 @@
     "test/cowork/peer-inbox-sqlite.test.ts": {
       "owner": "H",
       "cause": "a failing rename of the scrubbed copy reports runtime-state.db corrupt on Linux instead of leaving the raw copy"
-    },
-    "test/runtime-state/crash-matrix.test.ts": {
-      "owner": "A",
-      "cause": "repairRuntimeState doesn't restore the backup over a corrupt runtime-state.db (sidecars and all) on Linux"
-    },
-    "test/e2e/mid-turn-fold-e2e.test.ts": {
-      "owner": "D",
-      "cause": "a steer to a running session folds twice, and TaskStop's cleared steer never closes the stopped turn on Linux"
-    },
-    "test/e2e/per-call-tool-results-e2e.test.ts": {
-      "owner": "A",
-      "cause": "a Write and a sleeping Bash in one round: the Bash's tool_result lands before the Write's on Linux"
-    },
-    "test/e2e/embedded-chat-dispatch-e2e.test.ts": {
-      "owner": "A",
-      "cause": "a CODE and a DISPATCH session's embedded Bash result lacks the command's output on Linux"
     }
   },
   "linuxSkips": {

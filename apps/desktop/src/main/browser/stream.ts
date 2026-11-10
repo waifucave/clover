@@ -16,6 +16,7 @@
 // or headless offscreen tab paints at 10 fps or not at all), and goes back to its own rate after.
 import { ipcMain, WebContentsView, type IpcMainEvent, type NativeImage, type Rectangle } from "electron";
 import { STREAM_FRAME_B64_MAX_LENGTH } from "@waifucave/clover-protocol";
+import { OverCap } from "./stream-cap";
 import type { StreamChunk, StreamCodec } from "./contract";
 import { BROWSER_WEBRTC_POLICY, prepareViewportSession, VIEWPORT_PARTITION } from "./session";
 import { HostTab, OffscreenTab, type BrowserTab } from "./tab";
@@ -80,6 +81,8 @@ interface Stream {
   /** JPEG: the config went out at this size. */
   jpegSize?: { w: number; h: number };
   lastJpegAt: number;
+  /** Frames over the wire cap, dropped in a row (stream-cap.ts). */
+  cap: OverCap;
 }
 
 type PageOut =
@@ -114,7 +117,7 @@ export class TabStreamer {
     const source = this.sourceFor(tab);
     const stream: Stream = {
       id: cmd.stream, source, mode: jpegOnly ? "jpeg" : "video", ...(codecs !== undefined ? { codecs } : {}), kbps,
-      stats: { stream: cmd.stream, tab: tab.id, kbps, frames: 0, keyframes: 0, bytes: 0 }, lastJpegAt: 0,
+      stats: { stream: cmd.stream, tab: tab.id, kbps, frames: 0, keyframes: 0, bytes: 0 }, lastJpegAt: 0, cap: new OverCap(),
     };
     this.streams.set(stream.id, stream);
     source.streams.add(stream.id);
@@ -278,8 +281,11 @@ export class TabStreamer {
 
   /** A JPEG stream (a receiver that decodes no video): the whole picture, each one a keyframe, as often as the
    *  bitrate allows and at most 15 a second. */
-  private jpeg(stream: Stream, image: NativeImage): void {
+  private jpeg(stream: Stream, source: NativeImage): void {
     const now = Date.now();
+    // Over the wire cap three times running: half-size pictures at a low quality (stream-cap.ts).
+    const full = source.getSize();
+    const image = stream.cap.shrunk ? source.resize({ width: Math.max(1, Math.floor(full.width / 2)), height: Math.max(1, Math.floor(full.height / 2)) }) : source;
     const { width, height } = image.getSize();
     if (stream.jpegSize === undefined || stream.jpegSize.w !== width || stream.jpegSize.h !== height) {
       stream.jpegSize = { w: width, h: height };
@@ -291,7 +297,7 @@ export class TabStreamer {
     const fps = Math.max(1, Math.min(JPEG_MAX_FPS, (stream.kbps * 1000) / 8 / last));
     if (stream.lastJpegAt !== 0 && now - stream.lastJpegAt < 1000 / fps) return;
     stream.lastJpegAt = now;
-    const quality = stream.kbps >= 2000 ? 70 : stream.kbps >= 800 ? 55 : 40;
+    const quality = stream.cap.shrunk ? 25 : stream.kbps >= 2000 ? 70 : stream.kbps >= 800 ? 55 : 40;
     const data = image.toJPEG(quality);
     this.emit(stream.id, { kind: "frame", key: true, timestamp: now * 1000, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) });
   }
@@ -342,12 +348,33 @@ export class TabStreamer {
     }
   }
 
+  /** Frames kept coming over the cap: a smaller picture, and a keyframe of it, away from this call's stack. */
+  private shrink(s: Stream): void {
+    queueMicrotask(() => {
+      if (this.streams.get(s.id) !== s) return;
+      if (s.mode === "jpeg") {
+        s.lastJpegAt = 0;
+        s.jpegSize = undefined;
+        if (s.source.latest !== undefined) this.jpeg(s, s.source.latest);
+      } else {
+        const kbps = Math.max(50, Math.floor(s.kbps / 2));
+        s.kbps = kbps;
+        s.stats.kbps = kbps;
+        this.toPage("control", { stream: s.id, keyframe: true, kbps });
+      }
+    });
+  }
+
   private emit(stream: string, chunk: StreamChunk): void {
     const s = this.streams.get(stream);
     if (s !== undefined && chunk.kind === "frame") {
       // Over the wire cap the frame never goes: it is dropped here, before the stats or the send,
       // and the core asks for a keyframe when its backpressure needs one (S3: the next keyframe resyncs).
-      if (Math.ceil(chunk.data.byteLength / 3) * 4 > STREAM_FRAME_B64_MAX_LENGTH) return;
+      const over = Math.ceil(chunk.data.byteLength / 3) * 4 > STREAM_FRAME_B64_MAX_LENGTH;
+      const step = s.cap.note(over);
+      if (step === "shrink") this.shrink(s);
+      else if (step === "fail") queueMicrotask(() => this.stop(s.id, "failed", "the frames stay over the wire cap, even shrunk"));
+      if (over) return;
       s.stats.frames++;
       if (chunk.key) s.stats.keyframes++;
       s.stats.bytes += chunk.data.byteLength;

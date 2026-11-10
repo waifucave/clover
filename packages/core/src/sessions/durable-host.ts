@@ -112,7 +112,7 @@ export const DELIVERED_FROM: ReadonlySet<string> = new Set(["bot", "agent", "tas
 
 /** Records only the core writes (`recordCore`): a driver's event of one of these types is dropped, so a runtime or
  *  an agent can't grant its own session anything (grants.ts). */
-export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant", "session_grant_copied"]);
+export const CORE_ONLY_EVENT_TYPES: ReadonlySet<string> = new Set(["session_grant", "session_grant_copied", "session_grant_declined", "session_grant_lifted"]);
 
 /** What a copied `session_grant` becomes in this computer's log (review N7, H-M3): a record of another computer's grant,
  *  which grants nothing here (`SessionGrants` reads only `session_grant`) and, core-only, is never sent to clients. */
@@ -544,6 +544,14 @@ export class DurableSessionHost implements SessionHost {
   get(id: string): SessionView | undefined {
     const s = this.#sessions.get(id);
     return s ? this.#viewOf(s) : undefined;
+  }
+
+  /** The record a user message with this `clientMessageId` became in this session, when this computer's host has it:
+   *  a resend of it would return that `seq` and record nothing. `pill.send` asks before staging a resend's pictures
+   *  again (they would only be left over). Undefined for a session or an id this host doesn't know. */
+  sentAs(id: string, clientMessageId: string): { seq: number } | undefined {
+    const seen = this.#sessions.get(id)?.clientIds.get(clientMessageId);
+    return seen === undefined ? undefined : { seq: seen.seq };
   }
 
   /** The user's message. Also returns the record's `seq` (`session.send`'s result); a resend with a `clientMessageId`

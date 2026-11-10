@@ -10,8 +10,10 @@
 // pending list.
 //
 // The archive draws an old session (from the app Clover replaces) through this spot too, with `archived`: then the part reads the session
-// from the core's `archive.history` (the `clover` layer's call), follows nothing and answers nothing.
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+// from the core's `archive.history` (the `clover` layer's call), follows nothing and answers nothing. That history runs
+// forward from the session's start, a page at a time by its `cursor`, so an old session opens at its start and the
+// next page comes as the reader nears the end (the view's `onLoadLater`), until the whole session is shown.
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { ConversationView, DEFAULT_RENDERERS, type MessageRenderers } from "./ConversationView";
 import type { MessageSpotProps } from "./context";
 import { project, type CoreEvent } from "./project";
@@ -27,7 +29,7 @@ export interface ConversationEntryProps {
   onOpenFile?: (path: string) => void;
   /** The shared clock's now, for deadlines and day labels; the device's clock when absent. */
   now?: SharedTime;
-  /** An old session from the archive: read once from `archive.history`, read only. */
+  /** An old session from the archive: read from `archive.history`, page by page from its start, read only. */
   archived?: boolean;
 }
 
@@ -56,20 +58,30 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
   const conv = api.conversation;
   const [events, setEvents] = useState<CoreEvent[]>([]);
   const [hasEarlier, setHasEarlier] = useState(false);
+  /** An archived session's next page: the cursor `archive.history` gave, while there is more. */
+  const [later, setLater] = useState<string | undefined>(undefined);
+  /** Which read is current (a new session starts another), and whether a next page is on its way. */
+  const reading = useRef({ session: "", loading: false });
   const archived = props.archived === true;
 
   useEffect(() => {
     let live = true;
     setEvents([]);
+    setLater(undefined);
     if (archived) {
+      const read = { session: props.session, loading: true };
+      reading.current = read;
       core?.call("archive.history", { id: props.session, limit: HISTORY_PAGE }).then(
         (page) => {
           if (!live) return;
           setEvents(page.events as CoreEvent[]);
           setHasEarlier(false);
+          setLater(page.cursor);
         },
         () => undefined,
-      );
+      ).finally(() => {
+        read.loading = false;
+      });
       return () => {
         live = false;
       };
@@ -89,6 +101,23 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
     };
   }, [conv, core, archived, props.session]);
 
+  const loadLater = useCallback(() => {
+    const read = reading.current;
+    if (!archived || !core || later === undefined || read.loading) return;
+    read.loading = true;
+    const session = props.session;
+    core.call("archive.history", { id: session, cursor: later, limit: HISTORY_PAGE }).then(
+      (page) => {
+        if (reading.current !== read) return;
+        setEvents((list) => [...list, ...(page.events as CoreEvent[])]);
+        setLater(page.cursor);
+      },
+      () => undefined,
+    ).finally(() => {
+      read.loading = false;
+    });
+  }, [archived, core, later, props.session]);
+
   const { names, here } = useNames(api);
   const { items, turn } = useMemo(() => project(events, { name: (kind, id) => names[`${kind}:${id}`] }), [events, names]);
   const at = { bot: props.bot, session: props.session };
@@ -101,6 +130,7 @@ export function ConversationEntry({ props }: { props: ConversationEntryProps }) 
       turn={turn}
       now={props.now ?? Date.now()}
       hasEarlier={hasEarlier}
+      {...(archived ? { initialFollow: false, hasLater: later !== undefined, onLoadLater: loadLater } : {})}
       {...(here ? { device: here } : {})}
       renderers={RENDERERS}
       renderToolResult={(call, standard): ReactNode => (

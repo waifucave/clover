@@ -38,6 +38,9 @@ export interface AgentToolOptions {
   /** The runtime's own `TaskStop`, which this one hides (A-M3's `shadowBuiltins`): a task id that names none of the
    *  bot's agents is passed on to it, so the bot's background commands and monitors still stop. */
   stopRuntimeTask?: (taskId: string) => Promise<{ text: string; isError: boolean }>;
+  /** Whether the bot may start an agent on `model` (lane D's provider check, #311 S1): a provider the user didn't
+   *  choose or allow for the bot asks the user first, and a no refuses the call. */
+  checkModel?: (model: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
 export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, opts: AgentToolOptions = {}): CoreToolDef[] {
@@ -74,6 +77,10 @@ export function agentToolDefs(manager: AgentManager, caller: AgentToolCaller, op
         if (!prompt || !backend || !root) return fail(new ContractError("invalid", "Agent needs a prompt, a backend and a root folder"));
         try {
           const model = str(input, "model");
+          if (model !== undefined && opts.checkModel !== undefined) {
+            const verdict = await opts.checkModel(model);
+            if (!verdict.ok) return { text: verdict.reason, isError: true };
+          }
           const effort = str(input, "effort");
           const computer = str(input, "computer");
           const title = str(input, "description");

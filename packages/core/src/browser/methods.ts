@@ -2,7 +2,7 @@
 // `browser.tabs`, `open`, `close`, `navigate`, `show`, `hide`, `hold`, `screenshot`, `cdp`, `stream` and the app's
 // `browser.report`. Each handler acts as the caller the server gives it (`browserCallerOf`) and fails with the JSON-RPC
 // code a client branches on (a refusal carries the browser's own code in `data.code`). The server applies the role and
-// capability lists and `userOnly` before a handler runs (`BROWSER_METHODS`); `hold` and `report` check the caller again.
+// capability lists and `userOnly` before a handler runs (`BROWSER_METHODS`); `hold` (the person) and `report` (the app's own connection) check the caller again.
 //
 //   const handlers = browserMethodHandlers({ service: browser.service });
 //   for (const [name, fn] of Object.entries(handlers)) server.serve(name, fn);   // lane INT
@@ -84,6 +84,9 @@ export function browserMethodHandlers(o: BrowserMethodOptions): Record<string, M
     return run(() => service.stream(caller(ctx), p.id, { on: p.on, ...(p.maxKbps !== undefined ? { maxKbps: p.maxKbps } : {}), ...(p.codecs !== undefined ? { codecs: p.codecs } : {}) }, device));
   }));
   add(M.browserReport.name, handler(M.browserReport, async (p, ctx) => {
+    // Only the app's own connection tells the core what happened to its tabs.
+    const c = ctx.caller as Caller;
+    if (c.kind !== "user" || c.client !== "app") throw new MethodError(CLOVER_ERR.ROLE_REFUSED, "only the app reports on its tabs");
     // A late report from a replaced or hung app connection must not close or adopt tabs.
     if (staleApp(ctx)) return { ok: true as const };
     service.report(p.events as AppTabEvent[]);

@@ -10,6 +10,7 @@ import { hasOpenPanelTabs } from "../panel/store";
 import type { SessionDirs } from "./dirs";
 import { isUnrunnableSessionMode, type RunnableSessionMode } from "./session-mode";
 import { outdirPath } from "./outdir";
+import { readLogRange, type LogRange, type LogRangeOptions } from "./log-range";
 import { BashEditPairer, bashCommandOf } from "./bash-edits";
 import { removeSessionDiffs } from "../diffs/store";
 import { canonicalModelTag, isModelTag, UNSTATED_TAG } from "../runtime-sdk/model-tag";
@@ -154,6 +155,26 @@ export interface SessionRow {
  *  over-long title wedged that session's replication with INVALID_PARAMS on every pass, healing only
  *  if the title changed. A clamp whose output its own schema rejects is a contradiction regardless
  *  of who is reachable today. */
+/** A synced line as the log keeps it: the client's bytes when they already begin `{"seq":<its seq>,`, else the same
+ *  object re-serialised with its seq first (every other key in the client's order). Throws, before anything is
+ *  written, for a line that can't be. */
+export function canonicalSeqLine(raw: string, seq: number, index = 0): string {
+  const head = `{"seq":${seq},`;
+  if (raw.startsWith(head)) return raw;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { throw new Error(`event ${index} can't be re-serialised`); }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`event ${index} can't be re-serialised`);
+  const { seq: _seq, ...rest } = parsed as Record<string, unknown>;
+  const line = JSON.stringify({ seq, ...rest });
+  if (!line.startsWith(head) || line.includes("\n")) throw new Error(`event ${index} can't be re-serialised`);
+  return line;
+}
+
+/** A message the archive counts (`message_count`): the user's and the assistant's, on any thread. */
+function isMessage(event: SessionEvent): boolean {
+  return event.type === "user_message" || event.type === "assistant_message";
+}
+
 function capTitle(title: string): string {
   return title.length <= SESSION_TITLE_MAX_CHARS ? title : `${title.slice(0, SESSION_TITLE_MAX_CHARS - 1)}…`;
 }
@@ -302,6 +323,12 @@ export class SessionStore {
       // only by `dirs()` below, which is where the lazy cwd-migration this column exists to support
       // actually lives — reachable now only via a pre-branch row or a post-rebuild reset.
       "ALTER TABLE sessions ADD COLUMN dirs TEXT",
+      // The archive's message count (`archive.list`, lane D): how many `user_message`s and
+      // `assistant_message`s the log holds, kept as they are appended (`append`, `appendSynced`) and
+      // re-derived from every log by `recoverAll`, which the constructor runs right after this loop —
+      // so a pre-existing row's 0 default is replaced by its real count on the first open (the one-time
+      // backfill, on the parse that pass already does), and a rebuilt index gets it back the same way.
+      "ALTER TABLE sessions ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0",
     ]) {
       try { this.db.run(ddl); }
       catch (e) {
@@ -354,14 +381,16 @@ export class SessionStore {
   /** Derives the index's title/first_message columns from a session's parsed event log:
    *  title = the LAST session_titled event's title (undo-able if a later one is appended);
    *  first_message = the FIRST main-thread user_message's text (first only, never overwritten). */
-  private deriveIndexFields(events: SessionEvent[]): { title: string | null; firstMessage: string | null } {
+  private deriveIndexFields(events: SessionEvent[]): { title: string | null; firstMessage: string | null; messageCount: number } {
     let title: string | null = null;
     let firstMessage: string | null = null;
+    let messageCount = 0;
     for (const e of events) {
       if (e.type === "session_titled") title = e.title;
       if (e.type === "user_message" && e.threadId === "main" && firstMessage === null) firstMessage = e.text;
+      if (isMessage(e)) messageCount++;
     }
-    return { title, firstMessage };
+    return { title, firstMessage, messageCount };
   }
 
   /** Index is disposable (spec §4.4): on open, scan log files on disk to rebuild the index,
@@ -399,11 +428,11 @@ export class SessionStore {
         renameSync(tmp, path); // atomic: a crash never leaves a partial log
       }
       const lastSeq = good.length ? (JSON.parse(good[good.length - 1]!) as SessionEvent).seq : 0;
-      const { title, firstMessage } = this.deriveIndexFields(parsed);
+      const { title, firstMessage, messageCount } = this.deriveIndexFields(parsed);
       fileDiffs.push({ sessionId: r.session_id, events: parsed });
       this.db.run(
-        "UPDATE sessions SET last_seq = ?, title = ?, first_message = ? WHERE session_id = ?",
-        [lastSeq, title, firstMessage, r.session_id],
+        "UPDATE sessions SET last_seq = ?, title = ?, first_message = ?, message_count = ? WHERE session_id = ?",
+        [lastSeq, title, firstMessage, messageCount, r.session_id],
       );
     }
 
@@ -432,7 +461,7 @@ export class SessionStore {
         const firstEvent = JSON.parse(good[0]!) as SessionEvent;
         const createdAt = firstEvent.ts;
         const lastSeq = (JSON.parse(good[good.length - 1]!) as SessionEvent).seq;
-        const { title, firstMessage } = this.deriveIndexFields(parsed);
+        const { title, firstMessage, messageCount } = this.deriveIndexFields(parsed);
         // mode (Phase 7 durability follow-up): unlike cwd/approval_policy (never carried by the
         // event log, so they reset to defaults below), mode rides the session_created event
         // (parsed[0], already validated by readGoodLines above) specifically so the
@@ -442,8 +471,8 @@ export class SessionStore {
         const mode = firstParsed?.type === "session_created" ? (firstParsed.mode ?? null) : null;
         // cwd/approval_policy are index-only metadata: after index loss they reset to defaults.
         this.db.run(
-          "INSERT INTO sessions (session_id, scope, created_at, last_seq, cwd, approval_policy, mode, title, first_message) VALUES (?, ?, ?, ?, NULL, 'ask', ?, ?, ?)",
-          [sessionId, scope, createdAt, lastSeq, mode, title, firstMessage],
+          "INSERT INTO sessions (session_id, scope, created_at, last_seq, cwd, approval_policy, mode, title, first_message, message_count) VALUES (?, ?, ?, ?, NULL, 'ask', ?, ?, ?, ?)",
+          [sessionId, scope, createdAt, lastSeq, mode, title, firstMessage, messageCount],
         );
         known.add(sessionId);
         fileDiffs.push({ sessionId, events: parsed });
@@ -608,7 +637,7 @@ export class SessionStore {
     if (!row) throw new Error(`unknown session: ${sessionId}`);
     const event = SessionEvent.parse({ ...input, seq: row.last_seq + 1, ts: Date.now() });
     appendFileSync(this.logPath(row.scope, sessionId), JSON.stringify(event) + "\n");
-    this.db.run("UPDATE sessions SET last_seq = ? WHERE session_id = ?", [event.seq, sessionId]);
+    this.db.run("UPDATE sessions SET last_seq = ?, message_count = message_count + ? WHERE session_id = ?", [event.seq, isMessage(event) ? 1 : 0, sessionId]);
     if (event.type === "session_titled") {
       this.db.run("UPDATE sessions SET title = ? WHERE session_id = ?", [capTitle(event.title), sessionId]);
     }
@@ -662,7 +691,14 @@ export class SessionStore {
   }
 
   /** `sessionId`'s first main-thread user message as indexed (the title's fallback source), or undefined. */
-  firstMessage(sessionId: string): string | undefined {
+  /** How many `user_message`s and `assistant_message`s the session's log holds, from the index (kept on
+   *  append, re-derived by `recoverAll`); 0 for an unknown session. The archive's count (`archive.list`). */
+  messageCount(sessionId: string): number {
+    const row = this.db.query("SELECT message_count FROM sessions WHERE session_id = ?").get(sessionId) as { message_count: number } | null;
+    return row?.message_count ?? 0;
+  }
+
+    firstMessage(sessionId: string): string | undefined {
     const row = this.db.query("SELECT first_message FROM sessions WHERE session_id = ?").get(sessionId) as { first_message: string | null } | null;
     return row?.first_message ?? undefined;
   }
@@ -770,6 +806,18 @@ export class SessionStore {
       try { out.push(SessionEvent.parse(JSON.parse(line))); } catch { /* skipped, as readGoodLines does */ }
     }
     return out;
+  }
+
+  /** The session's events after `afterSeq`, a page at a time (`log-range.ts`): the page's start is found by bisecting
+   *  the log, so the lines before it are neither read in full nor parsed, and the page stops at `limit` events or
+   *  `maxBytes` of lines. Throws on an unknown session, like `read`. */
+  readRange(sessionId: string, afterSeq: number, opts: LogRangeOptions): LogRange {
+    const row = this.db.query("SELECT scope FROM sessions WHERE session_id = ?").get(sessionId) as
+      | { scope: string } | null;
+    if (!row) throw new Error(`unknown session: ${sessionId}`);
+    const path = this.logPath(row.scope, sessionId);
+    if (!existsSync(path)) return { events: [], more: false };
+    return readLogRange(path, afterSeq, opts);
   }
 
   list(): SessionRow[] {
@@ -1283,13 +1331,22 @@ export class SessionStore {
     );
   }
 
-  /** Appends a syncing client's events VERBATIM, preserving their `seq` and `ts`.
+  /** Appends a syncing client's events VERBATIM, preserving their `seq` and `ts` — except a line that doesn't start
+   *  with its own seq (below).
    *
    *  Writes `entry.raw` — the client's exact line bytes — NOT `JSON.stringify(entry.event)`. Zod
    *  rebuilds a parsed object in SCHEMA key order, so re-serializing would silently rewrite every
    *  line and break the one property this whole surface rests on: that `sync.pull` returns what
    *  `sync.push` sent, byte for byte (see the protocol's SyncPull/SyncPush doc comments). The
    *  parsed `event` is used only to validate and to derive the index columns.
+   *
+   *  The one change (the second exception to byte-for-byte replication, beside `sync.push`'s `siteIcons` strip): a
+   *  line that doesn't begin `{"seq":N,` for its own parsed seq is stored re-serialised so that it does
+   *  (`canonicalSeqLine`), as the core writes its own lines. A log's readers take an over-long line's seq from its head
+   *  (`log-range.ts`), so a line may never name another seq there: not a forged `{"seq":999,…,"seq":4}` (JSON.parse
+   *  keeps the last key, so validation saw 4), and not an honest encoder's `{"type":…,"seq":4,…}` either, which would
+   *  leave its head without one. Lines the core's own encoder wrote, and every Clover client's, already start so and
+   *  stay byte for byte.
    *
    *  Re-validates contiguity and ownership INSIDE the store rather than trusting the IPC layer —
    *  this is the last gate before bytes hit an append-only log that has no undo. Throws before
@@ -1312,9 +1369,11 @@ export class SessionStore {
       if (event.seq !== expectedFirst + i) throw new Error(`event ${i} has seq ${event.seq}, expected ${expectedFirst + i}`);
       if (raw.includes("\n")) throw new Error(`event ${i} raw line contains a newline`); // would forge extra log lines
     }
-    appendFileSync(this.logPath(row.scope, sessionId), entries.map((e) => e.raw + "\n").join(""));
+    const lines = entries.map(({ raw, event }, i) => canonicalSeqLine(raw, event.seq, i));
+    appendFileSync(this.logPath(row.scope, sessionId), lines.map((l) => l + "\n").join(""));
     const lastSeq = expectedFirst + entries.length - 1;
-    this.db.run("UPDATE sessions SET last_seq = ? WHERE session_id = ?", [lastSeq, sessionId]);
+    const messages = entries.filter(({ event }) => isMessage(event)).length;
+    this.db.run("UPDATE sessions SET last_seq = ?, message_count = message_count + ? WHERE session_id = ?", [lastSeq, messages, sessionId]);
     // Mirror append()'s index derivations for the replicated events — otherwise a synced session
     // would show no title in session.list/sync.heads even though its log carries session_titled.
     for (const { event } of entries) {

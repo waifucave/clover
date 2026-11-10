@@ -5,7 +5,7 @@
 //   out/main/browser-viewport-preload.cjs, out/renderer/browser-viewport.html
 //                                the Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`;
 //                                every entry there is built, stream page included)
-//   out/main/tray.png, @2x       the menu-bar and tray icon
+//   out/main/icons/              the tray's and Clover Dev's icons (resources/icons, drawn by scripts/brand-icons.ts)
 //   out/main/native/screen.node  macOS: the screen add-on (native/input/macos/screen.mm), built with clang alone
 //   out/renderer/core/           the window's core root: index.html, root.css, root.js
 //   out/renderer/layer/          what every plugin layer serves under /_clover/: React (vendor/), the UI API
@@ -68,18 +68,9 @@ await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: jo
   }
 }
 
-// ---- The tray icon: a clover leaf, as a template image (macOS draws it in the menu bar's own colour) ----
-const LEAF = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g fill="#000">
-<circle cx="11" cy="11" r="6"/><circle cx="21" cy="11" r="6"/><circle cx="11" cy="21" r="6"/><circle cx="21" cy="21" r="6"/>
-<rect x="15" y="20" width="2.4" height="11" rx="1.2" transform="rotate(-20 16 26)"/></g></svg>`;
-try {
-  const { Resvg } = await import("@resvg/resvg-js");
-  for (const [name, size] of [["tray.png", 16], ["tray@2x.png", 32]] as const) {
-    writeFileSync(join(out, "main", name), new Resvg(LEAF, { fitTo: { mode: "width", value: size } }).render().asPng());
-  }
-} catch (err) {
-  console.error(`build: the tray icon could not be drawn (${String(err)}); the tray will fall back to an empty image`);
-}
+// ---- The app's own icons: the tray's (macOS's template, the Windows and Linux themes') and Clover Dev's ----
+// Drawn from assets/brand/clover/ by scripts/brand-icons.ts and committed; copied as they are.
+cpSync(join(root, "resources", "icons"), join(out, "main", "icons"), { recursive: true });
 
 // ---- The core root ----
 for (const f of ["index.html", "root.css"]) cpSync(join(root, "src", "core", f), join(coreOut, f));

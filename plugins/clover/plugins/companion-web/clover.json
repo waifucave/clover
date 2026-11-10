@@ -5,7 +5,7 @@
     "en": "Chat with your bots from a browser at clover.waifucave.com. The browser pairs once with this computer and then connects to it directly over WebRTC; waifucave only introduces the two, and never sees what they say."
   },
   "engines": { "clover": "^1.0.0" },
-  "host": { "entry": "host/index.ts", "runtime": "bun", "start": "main" },
+  "host": { "entry": "host/index.ts", "runtime": "bun", "start": "main", "process": "own" },
   "capabilities": ["network:handshake.waifucave.com", "network:stun.cloudflare.com", "network:stun.l.google.com"],
   "settings": {
     "handshakeOrigin": {
