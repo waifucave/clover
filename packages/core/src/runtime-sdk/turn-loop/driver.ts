@@ -317,6 +317,9 @@ export class BotSessionDriver implements SessionDriver {
    *  is one turn: what a turn runs, a message folded into it mid-turn included, runs under the sandbox read at the
    *  turn's start; a change made during a turn reaches the next. */
   #builtSandbox: string | undefined;
+  /** The model and effort the open runtime was given: the runtime takes both, and the provider fill computes the bot's
+   *  credential allowlist from the model (#350's ruling), only when it opens, so a switch reopens it (`#ensureOpen`). */
+  #builtModel: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   #turn: RunningTurn | undefined;
   #origin: TurnOrigin | undefined;
@@ -655,6 +658,7 @@ export class BotSessionDriver implements SessionDriver {
     const testProvider = testProviderNameFor(bot.model);
     const sandbox = hostSandbox !== undefined ? hostSandbox.settings : this.#hostSandbox();
     this.#builtSandbox = canonicalSandbox(sandbox);
+    this.#builtModel = modelKey(bot);
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -852,8 +856,15 @@ export class BotSessionDriver implements SessionDriver {
     }
     const open = this.#inc !== undefined && !this.#inc.closed;
     const sandboxChanged = open && canonicalSandbox(settings) !== this.#builtSandbox;
-    if (open && !this.#rebuild && !coldCache && !sandboxChanged) return this.#inc!;
+    // The bot's model now (a model switch, its manifest's or the user's): a new model reopens the runtime, resuming
+    // the transcript, with its own provider and credential allowlist. One that can't be read is taken as changed.
+    let modelChanged = false;
+    if (open) {
+      try { modelChanged = modelKey(this.#ctx.current()) !== this.#builtModel; } catch { modelChanged = true; }
+    }
+    if (open && !this.#rebuild && !coldCache && !sandboxChanged && !modelChanged) return this.#inc!;
     if (sandboxChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: sandbox changed`);
+    if (modelChanged) this.#log(`bot driver ${this.#ctx.sessionId}: reopening: model changed`);
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open({ settings });
@@ -1111,4 +1122,9 @@ export function canonicalSandbox(sandbox: unknown): string {
     return v;
   };
   return JSON.stringify(norm(sandbox ?? null));
+}
+
+/** A bot's model and effort as the runtime was opened with them. */
+function modelKey(bot: { model: string; effort?: string }): string {
+  return `${bot.model}\u0000${bot.effort ?? ""}`;
 }

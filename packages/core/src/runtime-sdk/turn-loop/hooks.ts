@@ -172,7 +172,7 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
         }
         // Clover's input with Claude Code's names beside it, so a wrapped Claude Code hook reads what it expects.
         const stdin = JSON.stringify({ ...args, ...claudeHookInput(event, s, folder, args) });
-        if (stdin.length > COMMAND_HOOK_STDIN_MAX) {
+        if (Buffer.byteLength(stdin, "utf8") > COMMAND_HOOK_STDIN_MAX) {
           o.onSkipped?.({ pluginId, hook: entry.id, event, reason: "its input is too large to hand to a command hook" });
           if (failClosed("couldn't be given its input (too large)")) break;
           continue;
@@ -311,7 +311,8 @@ export function pluginHooks(o: PluginHooksOptions): TurnHooks {
   };
 }
 
-/** The most a command hook's stdin may hold; past it a blocking hook denies, as it couldn't judge the input. */
+/** The most a command hook's stdin may hold, in bytes (UTF-8, as it's written); past it a blocking hook denies, as it
+ *  couldn't judge the input. */
 export const COMMAND_HOOK_STDIN_MAX = 8 * 1024 * 1024;
 
 /** Claude Code's hook input names (its hooks reference): `hook_event_name`, `session_id`, `cwd`, and by event
@@ -351,14 +352,27 @@ export function fromClaudeHookOutput(event: HookEvent, out: Record<string, unkno
 
 /** A command hook's whole environment: nothing of the core's is inherited (no key, no token), only what a hook
  *  written for Claude Code expects to find, under Clover's names and Claude Code's. */
-function commandHookEnv(pluginId: string, folder: string, s: HookSession): Record<string, string> {
+export function commandHookEnv(pluginId: string, folder: string, s: Pick<HookSession, "id">, platform: NodeJS.Platform = process.platform, from: Readonly<Record<string, string | undefined>> = process.env): Record<string, string> {
   const env: Record<string, string> = {
-    PATH: "/usr/bin:/bin:/usr/sbin:/sbin",
     CLOVER_PLUGIN_ID: pluginId,
     CLOVER_SESSION_ID: s.id,
     CLOVER_PLUGIN_ROOT: folder,
     CLAUDE_PLUGIN_ROOT: folder,
   };
-  if (process.env.HOME !== undefined) env.HOME = process.env.HOME;
+  if (platform === "win32") {
+    // What Windows programs need to start at all: the system folder (`SystemRoot`), the command shell (`ComSpec`), a
+    // temp folder, and the system's own PATH, joined with `;` (the plugin's door points TEMP at its own folder).
+    const root = from.SystemRoot ?? from.SYSTEMROOT ?? "C:\\Windows";
+    env.SystemRoot = root;
+    env.ComSpec = from.ComSpec ?? from.COMSPEC ?? `${root}\\System32\\cmd.exe`;
+    env.PATH = [`${root}\\System32`, root, `${root}\\System32\\Wbem`, `${root}\\System32\\WindowsPowerShell\\v1.0`].join(";");
+    const temp = from.TEMP ?? from.TMP;
+    if (temp !== undefined) { env.TEMP = temp; env.TMP = temp; }
+    const profile = from.USERPROFILE ?? from.HOME;
+    if (profile !== undefined) { env.USERPROFILE = profile; env.HOME = profile; }
+    return env;
+  }
+  env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+  if (from.HOME !== undefined) env.HOME = from.HOME;
   return env;
 }

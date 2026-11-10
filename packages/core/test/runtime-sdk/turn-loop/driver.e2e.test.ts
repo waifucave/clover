@@ -189,6 +189,36 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 90_000);
 
+  test("a model switch reopens the runtime on the new model (the provider fill runs again, so the allowlist follows it); the same model never reopens", async () => {
+    const home = tempHome();
+    const opened: unknown[] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { model?: unknown } | undefined)?.model);
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const ctx = context(home, "winter-test/echo");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo"]);
+      // The bot's model changes between turns (its manifest's, or the user's pick): the next turn reopens on it.
+      ctx.bot.model = "winter-test/calls";
+      expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
+      expect(lines.filter((l) => l.includes("reopening: model changed"))).toHaveLength(1);
+      // An effort change is a change too.
+      ctx.bot.effort = "high";
+      await driver.turn(user("four"), control());
+      expect(opened).toHaveLength(3);
+      await driver.turn(user("five"), control());
+      expect(opened).toHaveLength(3);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   test("the sandbox fails closed: a host that throws or gives none fails the turn and leaves no runtime on the old sandbox; a narrowed one reopens", async () => {
     const home = tempHome();
     let mode: "ok" | "throw" | "none" = "ok";
