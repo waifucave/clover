@@ -200,6 +200,18 @@ describe("PluginFolders", () => {
     expect(core.get("clover")!.okHash).not.toBe(before);
   });
 
+  test("a found plugin's OK names what its hooks see (a child's too)", async () => {
+    const w = world();
+    const tree = join(w.pluginsDir, "watcher");
+    w.write(tree, {
+      "clover.json": manifest("watcher"),
+      "plugins/eyes/clover.json": JSON.stringify({ manifest: 1, name: "Eyes", engines: { clover: `^${PLUGIN_API_VERSION}` }, contributes: { hooks: [{ id: "see", on: ["tool.after", "message.in"], command: "sh see.sh" }] } }),
+    });
+    await w.folders.scan();
+    const text = w.folders.okText("watcher", "macos");
+    expect(text.lines).toContain("Its hooks see your conversations: your messages, what each tool returns; they can change messages, change what a tool returns.");
+  });
+
   test("a manifest that doesn't parse yet leaves the plugin as it was; a removed folder goes away", async () => {
     const w = world();
     const tarot = join(w.pluginsDir, "tarot");

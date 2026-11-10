@@ -1034,6 +1034,29 @@ export function localNetworkHosts(capabilities: readonly string[]): string[] {
   return out;
 }
 
+/** What a plugin tree's hooks see and can do, for its OK (§5.3, §5.6): a hook is handed the conversation as it
+ *  happens, so the OK says which part. One line for the whole tree (the plugin and its children), or none. */
+export function hookOkLines(reports: readonly ManifestReport[]): string[] {
+  const events = new Set<string>();
+  for (const r of reports) {
+    const hooks = (r.manifest as { contributes?: { hooks?: unknown } } | undefined)?.contributes?.hooks;
+    if (!Array.isArray(hooks)) continue;
+    for (const h of hooks) for (const e of (h as { on?: unknown }).on instanceof Array ? (h as { on: unknown[] }).on : []) if (typeof e === "string") events.add(e);
+  }
+  if (events.size === 0) return [];
+  const sees: string[] = [];
+  if (events.has("message.in")) sees.push("your messages");
+  if (events.has("message.out")) sees.push("the bots' replies");
+  if (events.has("tool.before")) sees.push("each tool call before it runs");
+  if (events.has("tool.after")) sees.push("what each tool returns");
+  const can: string[] = [];
+  if (events.has("message.in") || events.has("message.out")) can.push("change messages");
+  if (events.has("tool.before")) can.push("change or refuse a tool call (never approve one)");
+  if (events.has("tool.after")) can.push("change what a tool returns");
+  if (sees.length === 0) return ["Its hooks run when a conversation's turns start, end or are compacted."];
+  return [`Its hooks see your conversations: ${sees.join(", ")}${can.length > 0 ? `; they can ${can.join(", ")}` : ""}.`];
+}
+
 /** The OK's text for a plugin, in English (§5.1, §5.6); the app shows it from the built-in tables in the user's
  *  language. One card covers a plugin and its children. */
 export function describeOk(

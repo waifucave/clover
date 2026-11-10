@@ -90,38 +90,39 @@ test("a test model and the unstated sentinel get nothing", async () => {
   expect(allowlists).toHaveLength(0);
 });
 
-test("a bot's allowlist is its own provider, the user's default's and the ones approved for it: never every key the user holds", async () => {
+test("a bot's allowlist is its own model's provider and the ones approved for it: never the default's on its own, never every key the user holds", async () => {
   const home = temp("clover-a3-fill-home-");
   const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
   const slot = (provider: string) => CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === provider)!.secretName;
-  // The user keeps keys for four providers.
+  // The user keeps keys for four providers; their default model is anthropic's.
   for (const p of ["openai", "anthropic", "groq", "mistral"]) await writeCredentialMaterial(secrets, slot(p), { kind: "api-key", key: `key-${p}-not-real` });
   const asked: [string, string][] = [];
   const approved = new Set(["groq"]);
   const { broker, allowlists } = recordingBroker();
   const fill = botProviderFill({
     home, broker, secrets, modelPlugins: () => undefined,
-    defaultModel: () => "anthropic/claude-sonnet-5-5",
     approved: (c, provider) => { asked.push([c.botId, provider]); return approved.has(provider); },
   });
+  const slots = (i: number) => [...allowlists[i]!.accounts].filter((a) => CLOVER_CREDENTIAL_INVENTORY.some((s) => s.secretName === a)).sort();
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "openai/gpt-test-model" });
-  const accounts = allowlists[0]!.accounts;
-  expect(accounts.has(slot("openai"))).toBe(true); // the bot's own
-  expect(accounts.has(slot("anthropic"))).toBe(true); // the user's default
-  expect(accounts.has(slot("groq"))).toBe(true); // approved for this bot
-  expect(accounts.has(slot("mistral"))).toBe(false); // held, never approved
+  expect(slots(0)).toEqual([slot("groq"), slot("openai")].sort()); // its own, and the approved one; never the default's
   expect(asked.every(([bot]) => bot === "alpha")).toBe(true);
 
-  // An approval taken back, and no default: only the bot's own provider is left.
+  // A bot with no model of its own runs on the user's default, which is then its own model: that provider is in.
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "anthropic/claude-sonnet-5-5" });
+  expect(slots(1)).toEqual([slot("anthropic"), slot("groq")].sort());
+
+  // A model switch (the driver reopens, and the fill runs again): the list re-narrows to the new model's provider.
   approved.clear();
-  const narrow = botProviderFill({ home, broker, secrets, modelPlugins: () => undefined, approved: (_c, p) => approved.has(p) });
-  await fillProvider({ provider: (m, o) => narrow(m, o, ctx) }, { model: "openai/gpt-test-model" });
-  const left = [...allowlists[1]!.accounts].filter((a) => CLOVER_CREDENTIAL_INVENTORY.some((s) => s.secretName === a));
-  expect(left).toEqual([slot("openai")]);
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "mistral/mistral-test-model" });
+  expect(slots(2)).toEqual([slot("mistral")]);
+  await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "openai/gpt-test-model" });
+  expect(slots(3)).toEqual([slot("openai")]);
 
   // Without a session context (an in-process agent's fill), approvals can't be read: none count.
-  await narrow("openai/gpt-test-model", { model: "openai/gpt-test-model" });
-  expect([...allowlists[2]!.accounts].filter((a) => a === slot("groq") || a === slot("mistral"))).toEqual([]);
+  approved.add("groq");
+  await fill("openai/gpt-test-model", { model: "openai/gpt-test-model" });
+  expect(slots(4)).toEqual([slot("openai")]);
 });
 
 test("the consent grants this allowlist reads live in the bot's conversation log, never where bots may write (scratch, memory)", async () => {
@@ -199,15 +200,29 @@ test("the daemon's approval check over real SessionGrants: only the user's yes i
   expect(botApprovalsFrom(() => undefined)(alpha, "groq")).toBe(false);
 });
 
-test("the model plugins' code adapters are narrowed to the providers the bot is allowed", async () => {
+test("the model plugins' code adapters are narrowed to the providers the bot is allowed; a third party's or a declarative plugin's model maps to its own provider", async () => {
   const home = temp("clover-a3-fill-home-");
   const secrets = new FileSecretStore(temp("clover-a3-fill-secrets-"));
+  // The user holds keys elsewhere: none of them reaches a plugin model's bot.
+  for (const p of ["openai", "anthropic"]) await writeCredentialMaterial(secrets, CLOVER_CREDENTIAL_INVENTORY.find((s) => s.provider === p)!.secretName, { kind: "api-key", key: `key-${p}-not-real` });
   const asked: { providers?: (p: string) => boolean }[] = [];
   const modelPlugins = { sessionOption: (o: { providers?: (p: string) => boolean }) => { asked.push(o); return { catalog: { path: "x", sha256: "y" } }; } } as unknown as ModelPlugins;
-  const fill = botProviderFill({ home, broker: recordingBroker().broker, secrets, modelPlugins: () => modelPlugins, defaultModel: () => "anthropic/claude-sonnet-5-5", approved: (_c, p) => p === "groq" });
+  const { broker, allowlists } = recordingBroker();
+  const fill = botProviderFill({ home, broker, secrets, modelPlugins: () => modelPlugins, approved: (_c, p) => p === "groq" });
   await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, { model: "google/gemini-test-model" });
   const allows = asked[0]!.providers!;
-  expect(["google", "anthropic", "groq"].every(allows)).toBe(true);
-  expect(allows("bedrock")).toBe(false);
-  expect(allows("vertex")).toBe(false);
+  expect(["google", "groq"].every(allows)).toBe(true);
+  for (const p of ["anthropic", "bedrock", "vertex", "acme"]) expect(allows(p)).toBe(false);
+  // A third party's model plugin (a code adapter) and a declarative one: each model is its own provider's alone.
+  for (const [model, provider] of [["acme/fast-model", "acme"], ["acme-local/llama-test", "acme-local"]] as const) {
+    const options: Options = { model };
+    await fillProvider({ provider: (m, o) => fill(m, o, ctx) }, options);
+    expect((options.provider as { providerId?: string }).providerId).toBe(provider);
+    const a = asked.at(-1)!.providers!;
+    expect(a(provider)).toBe(true);
+    expect(a("groq")).toBe(true); // still approved for this bot
+    for (const p of ["google", "anthropic", "openai", provider === "acme" ? "acme-local" : "acme"]) expect(a(p)).toBe(false);
+    const inventory = [...allowlists.at(-1)!.accounts].filter((x) => CLOVER_CREDENTIAL_INVENTORY.some((s) => s.secretName === x));
+    expect(inventory).toEqual([]); // no slot of the user's: the plugin keeps its own key
+  }
 });

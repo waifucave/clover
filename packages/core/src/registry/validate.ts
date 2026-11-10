@@ -4,7 +4,7 @@
 // older format to the newest one (§5.1 "Formats").
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
-import { describeOk, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
+import { describeOk, hookOkLines, parseJsonc, upgradeDocument, validateTree, type ManifestReport } from "@waifucave/clover-plugin-sdk";
 import type { ValidationIssue } from "@waifucave/clover-protocol";
 import { folderLoaderReach, loaderOutsideIssues } from "./loader-config";
 import { agentEnvLines } from "./folders";
@@ -61,7 +61,7 @@ export async function validatePluginFolder(folder: string, opts: { os?: "macos" 
   // ruling): a plugin built in a development folder, where the registry lets it pass, fails before it ships rather
   // than going invalid on someone else's computer. Only Clover's own trees (`bundled`) share the repository's config.
   if (opts.bundled !== true && hash !== undefined) issues.push(...loaderOutsideIssues(folderLoaderReach(folder, treeEntries(folder, { allowHardLinks: true }).map((e) => e.path))));
-  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), source: "other", restylesCards: tree.restylesCards }), ...agentEnvLines(folder, tree)] : [];
+  const okText = tree.top.manifest ? [...describeOk(tree.top, { ...(opts.os ? { os: opts.os } : {}), source: "other", restylesCards: tree.restylesCards }), ...hookOkLines([tree.top, ...tree.children.map((c) => c.report)]), ...agentEnvLines(folder, tree)] : [];
   return {
     folder,
     ok: hash !== undefined && tree.ok && issues.every((i) => i.severity !== "error"),

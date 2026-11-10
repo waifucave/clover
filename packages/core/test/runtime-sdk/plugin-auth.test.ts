@@ -8,6 +8,7 @@ import { MemorySecretStore } from "../../src/contracts/fakes/secret-store";
 import type { PluginRecord } from "../../src/contracts/plugin-registry";
 import { authEntriesOf, createPluginAuth, pluginAuthMethods, type OAuthRun } from "../../src/runtime-sdk/plugin-auth";
 import { modelPluginSlotFor } from "../../src/runtime-sdk/model-plugins/keychain-tokens";
+import { secretStoreCredentials } from "../../src/runtime-sdk/model-plugins/plugin-api";
 
 class DaemonStore implements SecretStore {
   readonly values = new Map<string, string>();
@@ -23,24 +24,28 @@ const XAI = rec("clover/model-xai-oauth", "bundled", { contributes: { models: [{
 const THIRD = rec("acme/models", "folder", { contributes: { models: [{ provider: "acme", auth: [{ method: "api-key", secret: "key" }] }] }, auth: [{ method: "api-key", secret: "extra" }] });
 
 const LOCAL = rec("acme/local", "folder", { contributes: { models: [{ provider: "acme-local" }] } });
+/** A plugin whose only sign-in is the manifest's own: it covers both providers the plugin serves. */
+const SHARED = rec("acme/shared", "folder", { contributes: { models: [{ provider: "acme-a" }, { provider: "acme-b" }] }, auth: [{ method: "api-key", secret: "account" }] });
 
 function world(o: { oauth?: () => OAuthRun; xaiDevice?: Parameters<typeof createPluginAuth>[0]["xaiDevice"]; invoke?: (req: { handler: string }) => unknown } = {}) {
-  const records = new Map([GROQ, CODEX, XAI, THIRD, LOCAL].map((r) => [r.id, r]));
+  const records = new Map([GROQ, CODEX, XAI, THIRD, LOCAL, SHARED].map((r) => [r.id, r]));
   const secrets = new DaemonStore();
   const pluginSecrets = new MemorySecretStore();
   const events: { id: string; auth: PluginAuthView }[] = [];
   const refreshed: string[] = [];
+  const logs: string[] = [];
   const auth = createPluginAuth({
     registry: { get: (id) => records.get(id) },
     host: { invoke: async (req) => o.invoke?.(req) as never },
     secrets, pluginSecrets,
-    changed: (id, view) => events.push({ id, auth: view }),
+    changed: (id, view) => { events.push({ id, auth: view }); },
     credentialChanged: (p) => { refreshed.push(p); },
     ...(o.oauth ? { oauth: o.oauth } : {}),
     ...(o.xaiDevice ? { xaiDevice: o.xaiDevice } : {}),
-    modelProviders: () => [{ provider: "groq", pluginId: GROQ.id }, { provider: "acme", pluginId: THIRD.id }, { provider: "acme-local", pluginId: LOCAL.id }, { provider: "gone", pluginId: "acme/gone" }],
+    modelProviders: () => [{ provider: "groq", pluginId: GROQ.id }, { provider: "acme", pluginId: THIRD.id }, { provider: "acme-local", pluginId: LOCAL.id }, { provider: "gone", pluginId: "acme/gone" }, { provider: "acme-a", pluginId: SHARED.id }, { provider: "acme-b", pluginId: SHARED.id }],
+    log: (line) => logs.push(line),
   });
-  return { auth, secrets, pluginSecrets, events, refreshed };
+  return { auth, secrets, pluginSecrets, events, refreshed, logs };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -74,7 +79,8 @@ describe("plugin.auth", () => {
     await w.auth.signIn(THIRD.id, 1, "k2");
     expect((await w.pluginSecrets.get({ owner: { kind: "plugin", pluginId: THIRD.id }, name: "extra" }))?.value.reveal()).toBe("k2");
     expect(w.secrets.values.size).toBe(0);
-    expect(w.refreshed).toEqual([]);
+    // The manifest's own sign-in covers every provider the plugin serves: their live sessions are replaced.
+    expect(w.refreshed).toEqual(["acme"]);
     expect((await w.auth.list(THIRD.id)).map((a) => a.state)).toEqual(["signed-out", "signed-in"]);
   });
 
@@ -83,13 +89,23 @@ describe("plugin.auth", () => {
     expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
     await w.auth.signIn(GROQ.id, 0, "gsk");
     expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
-    // The manifest's own sign-in isn't the provider's.
-    await w.auth.signIn(THIRD.id, 1, "extra");
-    expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
     await w.auth.signIn(THIRD.id, 0, "k1");
     expect([...await w.auth.signedInProviders()].sort()).toEqual(["acme", "acme-local"]);
     await w.auth.signOut(THIRD.id, 0);
     expect([...await w.auth.signedInProviders()]).toEqual(["acme-local"]);
+    // The manifest's own sign-in covers the provider too.
+    await w.auth.signIn(THIRD.id, 1, "extra");
+    expect([...await w.auth.signedInProviders()].sort()).toEqual(["acme", "acme-local"]);
+  });
+
+  test("signedInProviders: a plugin whose only sign-in is the manifest's own needs that key for every provider it serves (never \"takes no key\")", async () => {
+    const w = world();
+    expect([...await w.auth.signedInProviders()].filter((p) => p.startsWith("acme-") && p !== "acme-local")).toEqual([]);
+    await w.auth.signIn(SHARED.id, 0, "shared-key");
+    expect([...await w.auth.signedInProviders()].filter((p) => p !== "acme-local").sort()).toEqual(["acme-a", "acme-b"]);
+    expect(w.refreshed.sort()).toEqual(["acme-a", "acme-b"]);
+    await w.auth.signOut(SHARED.id, 0);
+    expect([...await w.auth.signedInProviders()].filter((p) => p !== "acme-local")).toEqual([]);
   });
 
   test("a bad key is refused without echoing it; a key for a flow that takes none is refused", async () => {
@@ -126,8 +142,54 @@ describe("plugin.auth", () => {
     await settle(); await settle();
     const v = (await w.auth.list(CODEX.id))[0]!;
     expect(v.state).toBe("failed");
-    expect(v.reason).toContain("login timed out");
+    // The error's class, never its message.
+    expect(v.reason).toBe("the sign-in didn't finish (Error)");
     expect(w.events.at(-1)?.auth.state).toBe("failed");
+  });
+
+  test("a failed OAuth sign-in's reason never carries the provider's text: the error's class only, in Settings, the event and the log", async () => {
+    const said = "provider says: invalid_client SENTINEL-OAUTH-6b1f";
+    const late = world({ oauth: () => ({ authorizeUrl: Promise.resolve("https://auth.example/a"), tokens: Promise.reject(Object.assign(new TypeError(said), { name: "TypeError" })) }) });
+    await late.auth.signIn(CODEX.id, 0);
+    await settle(); await settle();
+    expect((await late.auth.list(CODEX.id))[0]!.reason).toBe("the sign-in didn't finish (TypeError)");
+    // A forged class name (the error's own `name`, set by whoever threw it) falls back to a fixed word.
+    const forged = world({ oauth: () => ({ authorizeUrl: Promise.resolve("https://auth.example/a"), tokens: Promise.reject(Object.assign(new Error("x"), { name: `bad ${said}` })) }) });
+    await forged.auth.signIn(CODEX.id, 0);
+    await settle(); await settle();
+    expect((await forged.auth.list(CODEX.id))[0]!.reason).toBe("the sign-in didn't finish (Error)");
+    // A flow that can't start: refused with the class only.
+    const early = world({ oauth: () => { const p = Promise.reject(new Error(said)); p.catch(() => {}); return { authorizeUrl: p, tokens: new Promise<never>(() => {}) }; } });
+    const err = (await early.auth.signIn(CODEX.id, 0).catch((e: unknown) => e)) as Error;
+    expect(err.message).toBe("the sign-in couldn't start (Error)");
+    for (const w of [late, forged, early]) expect(JSON.stringify([w.events, w.logs, await w.auth.list(CODEX.id)])).not.toContain("SENTINEL");
+  });
+
+  test("no log line, event, refresh or error carries a key: a bundled one, a third party's, a refused one", async () => {
+    const KEY = "SENTINEL-KEY-plugin-auth-91c2";
+    const w = world();
+    await w.auth.signIn(GROQ.id, 0, KEY);
+    await w.auth.signIn(THIRD.id, 0, `${KEY}-third`);
+    await w.auth.signIn(SHARED.id, 0, `${KEY}-shared`);
+    const refused = (await w.auth.signIn(GROQ.id, 0, `${KEY}\u200bbad`).catch((e: unknown) => e)) as Error;
+    expect(refused).toBeInstanceOf(Error);
+    for (const id of [GROQ.id, THIRD.id, SHARED.id]) { await w.auth.list(id); await w.auth.signOut(id, 0); }
+    const seen = JSON.stringify({ events: w.events, logs: w.logs, refreshed: w.refreshed, refused: refused.message, lists: await Promise.all([GROQ.id, THIRD.id, SHARED.id].map((id) => w.auth.list(id))) });
+    expect(seen).not.toContain("SENTINEL");
+    expect(w.events.length).toBeGreaterThan(0);
+  });
+
+  test("a third party's sign-out stops live sessions using the key: its sessions are replaced, and the keyed fetch finds no key at its next request", async () => {
+    const w = world();
+    const api = secretStoreCredentials(w.pluginSecrets);
+    await w.auth.signIn(THIRD.id, 0, "third-key");
+    expect(await api.secret(THIRD.id, "key")).toBe("third-key");
+    expect((await api.tokens(THIRD.id, "key").current())?.value).toBe("third-key");
+    w.refreshed.length = 0;
+    await w.auth.signOut(THIRD.id, 0);
+    expect(w.refreshed).toEqual(["acme"]);
+    expect(await api.secret(THIRD.id, "key")).toBeUndefined();
+    expect(await api.tokens(THIRD.id, "key").current()).toBeNull();
   });
 
   test("custom: the plugin's handler names the core's xAI device flow, whose URL comes back and whose token lands in the slot", async () => {

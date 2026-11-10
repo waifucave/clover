@@ -54,6 +54,21 @@ interface NumberedEntry {
   provider?: string;
 }
 
+/** The providers a key covers: its `models` entry's own, or, for one of the manifest's own sign-ins, every provider the
+ *  plugin's `models` entries name. */
+function coveredBy(record: Pick<PluginRecord, "manifest">, n: NumberedEntry): string[] {
+  if (n.provider !== undefined) return [n.provider];
+  const models = (record.manifest as { contributes?: { models?: { provider?: unknown }[] } } | undefined)?.contributes?.models ?? [];
+  return [...new Set(models.map((m) => m.provider).filter((p): p is string => typeof p === "string" && p !== ""))];
+}
+
+/** An error's class for a reason the user sees (`TypeError`, `Error`): never its message, which could carry a
+ *  provider's text or a token. */
+function errorClass(err: unknown): string {
+  const name = err instanceof Error ? err.name : "";
+  return /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(name) ? name : "Error";
+}
+
 /** A plugin's sign-ins, numbered: each `models` entry's `auth`, then the manifest's own (32 at most). */
 export function authEntriesOf(record: Pick<PluginRecord, "manifest">): NumberedEntry[] {
   const manifest = record.manifest as { contributes?: { models?: { provider?: string; auth?: AuthEntry[] }[] }; auth?: AuthEntry[] } | undefined;
@@ -80,8 +95,9 @@ export interface PluginAuthDeps {
   secrets: DaemonSecretStore;
   /** The contract store: other plugins' own secrets. */
   pluginSecrets: Pick<ContractSecretStore, "get" | "set" | "delete">;
-  /** After a sign-in or out: the event, to the app and the CLI. */
-  changed?(id: string, auth: PluginAuthView): void;
+  /** After a sign-in or out: the event, to the app and the CLI, and what the daemon refreshes (awaited, so the sign-in's
+   *  call returns once the bots see it). */
+  changed?(id: string, auth: PluginAuthView): Promise<void> | void;
   /** After a provider slot's key changed (a bundled plugin's): what the daemon refreshes. */
   credentialChanged?(provider: string): Promise<void> | void;
   /** The model plugins' providers and the plugin serving each (the installed model plugins by default). */
@@ -149,13 +165,14 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     if (r === undefined) throw new ContractError("not_found", `no plugin ${id}`);
     return r;
   };
-  const numbered = (id: string, index: number): { r: PluginRecord; n: NumberedEntry; provider: string | undefined } => {
+  const numbered = (id: string, index: number): { r: PluginRecord; n: NumberedEntry; provider: string | undefined; covers: string[] } => {
     const r = record(id);
     const n = authEntriesOf(r).find((e) => e.index === index);
     if (n === undefined) throw new ContractError("not_found", `${id} has no sign-in ${index}`);
     // Only a bundled model plugin's own `models` entries map to a provider's slot.
     const bundled = bundledModelProviderOf(r);
-    return { r, n, provider: bundled !== undefined && n.provider === bundled ? bundled : undefined };
+    const provider = bundled !== undefined && n.provider === bundled ? bundled : undefined;
+    return { r, n, provider, covers: provider !== undefined ? [provider] : coveredBy(r, n) };
   };
   const secretName = (entry: AuthEntry): string | undefined =>
     entry.method === "api-key" || entry.method === "oauth-pkce" ? entry.secret : entry.method === "custom" ? entry.handler : undefined;
@@ -182,24 +199,26 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     if (deps.changed === undefined) return;
     try {
       const { n, provider } = numbered(id, index);
-      deps.changed(id, await view(id, n, provider));
+      await deps.changed(id, await view(id, n, provider));
     } catch { /* the plugin went away meanwhile */ }
   };
-  const afterSlotChange = async (provider: string | undefined): Promise<void> => {
-    if (provider === undefined) return;
-    try { await deps.credentialChanged?.(provider); } catch (err) { deps.log?.(`[plugin-auth] refreshing after ${provider}'s sign-in failed (${err instanceof Error ? err.name : typeof err})`); }
+  /** After a key changed: the live sessions on each provider it covers are replaced, a slot's or a plugin's own. */
+  const afterKeyChange = async (providers: readonly string[]): Promise<void> => {
+    for (const provider of providers) {
+      try { await deps.credentialChanged?.(provider); } catch (err) { deps.log?.(`[plugin-auth] refreshing after ${provider}'s sign-in failed (${errorClass(err)})`); }
+    }
   };
   /** Runs a background sign-in to its end: the entry shows `refreshing` meanwhile, `failed` with the reason after. */
-  const background = (id: string, index: number, provider: string | undefined, done: Promise<void>): void => {
+  const background = (id: string, index: number, covers: readonly string[], done: Promise<void>): void => {
     const key = `${id}#${index}`;
     running.set(key, "refreshing");
     void announce(id, index);
     void done.then(
-      async () => { running.delete(key); await afterSlotChange(provider); await announce(id, index); },
+      async () => { running.delete(key); await afterKeyChange(covers); await announce(id, index); },
       async (err: unknown) => {
-        // The class only: a flow's message could carry what the provider sent back.
-        running.set(key, { failed: `the sign-in didn't finish (${err instanceof Error ? err.message.split(/[:\n]/)[0]!.slice(0, 200) : typeof err})` });
-        deps.log?.(`[plugin-auth] ${id} sign-in ${index} failed (${err instanceof Error ? err.name : typeof err})`);
+        // The error's class only, never its message: that could carry what the provider sent back.
+        running.set(key, { failed: `the sign-in didn't finish (${errorClass(err)})` });
+        deps.log?.(`[plugin-auth] ${id} sign-in ${index} failed (${errorClass(err)})`);
         await announce(id, index);
       },
     );
@@ -213,7 +232,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     const run = deps.xaiDevice !== undefined
       ? deps.xaiDevice(store, resolveUrl)
       : startXaiLogin(store, { onAuthStatus: (s) => { const u = urlIn(s.output); if (u !== undefined) resolveUrl(u); } });
-    background(id, index, provider, run.then(() => undefined));
+    background(id, index, [provider], run.then(() => undefined));
     const first = await Promise.race([url, run.then(() => undefined, () => undefined)]);
     return { state: "refreshing", ...(typeof first === "string" ? { authorizeUrl: first } : {}) };
   };
@@ -230,7 +249,9 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
       for (const { provider, pluginId } of servedProviders()) {
         const r = deps.registry.get(pluginId);
         if (r === undefined || bundledModelProviderOf(r) !== undefined) continue;
-        const own = authEntriesOf(r).filter((n) => n.provider === provider);
+        // A `models` entry's own sign-ins, and the manifest's own (which cover every provider the plugin serves). A
+        // provider with none of either takes no key (a local model).
+        const own = authEntriesOf(r).filter((n) => n.provider === provider || n.provider === undefined);
         if (own.length === 0) { out.add(provider); continue; }
         const views = await Promise.all(own.map((n) => view(pluginId, n, undefined)));
         if (views.some((v) => v.state === "signed-in")) out.add(provider);
@@ -245,7 +266,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     },
 
     async signIn(id, index, key) {
-      const { n, provider } = numbered(id, index);
+      const { n, provider, covers } = numbered(id, index);
       const entry = n.entry;
       const runKey = `${id}#${index}`;
       if (running.get(runKey) === "refreshing") throw new ContractError("busy", "this sign-in is already running");
@@ -257,7 +278,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
         if (provider !== undefined) await writeCredentialMaterial(deps.secrets, modelPluginSlotFor(provider).account, { kind: "api-key", key: value });
         else await deps.pluginSecrets.set({ owner: { kind: "plugin", pluginId: id }, name: entry.secret }, value);
         running.delete(runKey);
-        await afterSlotChange(provider);
+        await afterKeyChange(covers);
         await announce(id, index);
         return { state: "signed-in" };
       }
@@ -277,9 +298,9 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
             await deps.pluginSecrets.set({ owner: { kind: "plugin", pluginId: id }, name: entry.secret }, t.accessToken);
           }
         });
-        background(id, index, provider, stored);
+        background(id, index, covers, stored);
         const authorizeUrl = await flow.authorizeUrl.catch((err: unknown) => {
-          throw new ContractError("refused", `the sign-in couldn't start (${err instanceof Error ? err.message.slice(0, 200) : typeof err})`);
+          throw new ContractError("refused", `the sign-in couldn't start (${errorClass(err)})`);
         });
         return { state: "refreshing", authorizeUrl };
       }
@@ -296,7 +317,7 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
     },
 
     async signOut(id, index) {
-      const { n, provider } = numbered(id, index);
+      const { n, provider, covers } = numbered(id, index);
       running.delete(`${id}#${index}`);
       if (provider !== undefined) {
         if (provider === "codex-oauth") {
@@ -305,11 +326,12 @@ export function createPluginAuth(deps: PluginAuthDeps): PluginAuth {
         } else {
           await clearCredentialMaterial(deps.secrets, modelPluginSlotFor(provider).account);
         }
-        await afterSlotChange(provider);
       } else {
         const name = secretName(n.entry);
         if (name !== undefined) await deps.pluginSecrets.delete({ owner: { kind: "plugin", pluginId: id }, name });
       }
+      // The live sessions on what the key covered are replaced: none goes on with a key the user took back.
+      await afterKeyChange(covers);
       await announce(id, index);
     },
   };

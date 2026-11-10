@@ -7,12 +7,20 @@
 //
 // * **The user's choice asks nothing:** a model the user set for the bot (its user layer), or the user's default model
 //   the bot falls back to (with `hasKeyFor`, a plugin's tag the user holds no key for falls back to the default too).
+// * **Nor does Clover's own bundled plugin's** (the owner's ruling, revising #298's and #311's): a model or voice tag
+//   from a bot whose plugin is Clover's own bundled one, as staging verified it (`EffectiveBot.modelBundled` /
+//   `voiceBundled`, decided once per load from the bot side's `bundledChoice`: the record's source is `bundled`, its
+//   folder is the staged copy under `run/`, which no runner can write, its manifest's bytes are the staged digest, and
+//   the tag loaded is the tag those verified bytes name). Not the bot's id or name, nor anything a manifest says: a development folder or an installed plugin named `alpha` is refused at load
+//   (its id is reserved to the bundled tree), and any record not staged as bundled asks. The card protects against a
+//   third party's plugin spending a key.
 // * **A plugin's choice asks once per bot and provider:** the first use of a provider the plugin's tag names shows a
 //   sealed `change` card. A yes is kept for that bot and that provider only, as a grant in the bot's main conversation
 //   (the shared `SessionGrants`, lane C's card path): its side threads and its next turns use it, and a plugin that
 //   moves its tag to a new provider asks again. Only the user's answer on the card counts (`SessionGrants`, review B1).
 // * **The same rule for what else a bot picks:** an agent it starts with a model on another provider than the bot's own
-//   user-chosen one (#311 S1), and a voice provider its plugin chose that uses the user's stored voice key (`bot.voice:`).
+//   user-chosen (or bundled) one (#311 S1), and a voice provider its plugin chose that uses the user's stored voice key
+//   (`bot.voice:`), unless Clover's own bundled plugin chose it.
 // * **A no holds** until the user's next message of their own: until then nothing asks again, not a wake, a routine or
 //   an agent's report (#311 S2); the turn fails with a clear reason, and nothing reaches the provider. The hold is kept
 //   with the grants (`SessionGrants.hold`), in the bot's main conversation's log, so it survives a restart. Only the
@@ -73,7 +81,7 @@ export class BotProviderConsent {
 
   /** Whether `bot` may use its model's provider now, asking the user the first time when its plugin chose it. */
   check(bot: EffectiveBot, mainSession: string, opts: ConsentAsk = {}): Promise<ProviderConsent> {
-    if (bot.modelFrom !== "plugin") return Promise.resolve({ ok: true });
+    if (bot.modelFrom !== "plugin" || bot.modelBundled === true) return Promise.resolve({ ok: true });
     const provider = providerOfModel(bot.model);
     if (provider === undefined) return Promise.resolve({ ok: true });
     return this.#ask(bot, mainSession, providerGrantKey(provider), { what: "model", provider, model: bot.model }, opts);
@@ -84,14 +92,14 @@ export class BotProviderConsent {
   checkAgentModel(bot: EffectiveBot, model: string, mainSession: string, opts: ConsentAsk = {}): Promise<ProviderConsent> {
     const provider = providerOfModel(model);
     if (provider === undefined) return Promise.resolve({ ok: true });
-    if (bot.modelFrom !== "plugin" && providerOfModel(bot.model) === provider) return Promise.resolve({ ok: true });
+    if ((bot.modelFrom !== "plugin" || bot.modelBundled === true) && providerOfModel(bot.model) === provider) return Promise.resolve({ ok: true });
     return this.#ask(bot, mainSession, providerGrantKey(provider), { what: "agent", provider, model }, opts);
   }
 
   /** Whether `bot` may use its voice's provider now (the user's stored voice key), asking when its plugin chose it. */
   checkVoice(bot: EffectiveBot, mainSession: string, opts: ConsentAsk = {}): Promise<ProviderConsent> {
     const voice = bot.voice;
-    if (voice === undefined || bot.voiceFrom !== "plugin") return Promise.resolve({ ok: true });
+    if (voice === undefined || bot.voiceFrom !== "plugin" || bot.voiceBundled === true) return Promise.resolve({ ok: true });
     return this.#ask(bot, mainSession, voiceGrantKey(voice.provider), {
       what: "voice", provider: voice.provider, voice: voice.voice, ...(voice.model === undefined ? {} : { model: voice.model }),
     }, opts);
@@ -99,7 +107,7 @@ export class BotProviderConsent {
 
   /** Whether `bot` may use its model's provider now without asking (a compaction never shows a card). */
   allowedNow(bot: EffectiveBot, mainSession: string): boolean {
-    if (bot.modelFrom !== "plugin") return true;
+    if (bot.modelFrom !== "plugin" || bot.modelBundled === true) return true;
     const provider = providerOfModel(bot.model);
     return provider === undefined || (this.#o.grants?.has(mainSession, providerGrantKey(provider)) ?? false);
   }

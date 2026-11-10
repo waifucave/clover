@@ -102,8 +102,10 @@ function Draw(props: DrawProps): ReactNode {
     case "tabs":
       return <Tabs {...props} node={node} />;
     case "spot":
+      // A spot that asks for no share keeps its own height (the composer under a conversation that fills): the ones that
+      // grow give way instead.
       return (
-        <div className={node.className} data-clover-layout="spot" style={{ ...box, display: "flex", flexDirection: "column" }}>
+        <div className={node.className} data-clover-layout="spot" style={{ ...box, display: "flex", flexDirection: "column", ...(node.size === undefined && node.grow === undefined ? { flexShrink: 0 } : {}) }}>
           {renderSpot(node.spot, node.key)}
         </div>
       );
@@ -123,7 +125,7 @@ export function LayoutRoot({ layout, renderSpot }: { layout: LayoutView; renderS
   const width = useWindowWidth();
   return (
     <div data-clover-layout="root" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      <Draw node={layout} axis="column" width={width} renderSpot={renderSpot} path="0" />
+      <Draw node={layout.grow === undefined && layout.size === undefined ? { ...layout, grow: 1 } : layout} axis="column" width={width} renderSpot={renderSpot} path="0" />
     </div>
   );
 }

@@ -7,7 +7,7 @@
 // children, and what changed since its tree was last OK'd (`classifyChange`), which the state machine applies.
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, watch, type FSWatcher } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
-import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
+import { MANIFEST_FILE, PLUGIN_API_VERSION, catalogPointDecl, describeOk, hookOkLines, parseJsonc, treeHash, validateTree, type TreeReport } from "@waifucave/clover-plugin-sdk";
 import type { PluginProvenance, PluginSource, ValidationIssue } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import { parentOf } from "../contracts/plugin-registry-rules";
@@ -282,6 +282,8 @@ export class PluginFolders {
           // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
           ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),
         }),
+        // What its hooks see of the conversation (the plugin's and its children's), in Clover's words.
+        ...hookOkLines([r.tree.top, ...r.tree.children.map((c) => c.report)]),
         ...agentEnvLines(r.folder, r.tree),
         ...wrappedLines(r.provenance.wrapped),
       ],

@@ -151,10 +151,11 @@ export interface McpRouterOptions {
   directory: TreeDirectory;
   transport: LinkTransport;
   deviceOf: (computer: string) => string | undefined;
-  /** The servers and where they run, live (lanes B and D). */
-  placement: (server: string) => McpServerPlacement | undefined;
-  /** The fields the session's prompt gave a server's tools (`placementFields` at its last refresh). */
-  fields: (server: string, session: string) => McpFields;
+  /** Where a server's tool runs, live (lanes A, B and D), asked per tool: servers can share a name (every bundled
+   *  plugin's tools read `mcp__clover__…`, each from its own server). */
+  placement: (server: string, tool: string) => McpServerPlacement | undefined;
+  /** The fields the session's prompt gave a server's tool (`placementFields` at its last refresh). */
+  fields: (server: string, session: string, tool: string) => McpFields;
   /** This computer's MCP host. */
   call: McpCaller;
   /** A session's scratch folder, a tree folder on this computer (§6.4; lane D). */
@@ -185,9 +186,9 @@ export class McpRouter {
 
   /** Runs `server`'s `tool` where it belongs; answers with the computer that ran it. */
   async run(server: string, tool: string, rawInput: Record<string, unknown>, ctx: McpCallContext): Promise<{ result: McpResult; computer: string }> {
-    const placement = this.#o.placement(server);
-    if (!placement) throw new ContractError("not_installed", `no MCP server ${server}`);
-    const fields = this.#o.fields(server, ctx.session);
+    const placement = this.#o.placement(server, tool);
+    if (!placement) throw new ContractError("not_installed", `no MCP server ${server} with the tool ${tool}`);
+    const fields = this.#o.fields(server, ctx.session, tool);
     const input = { ...rawInput };
     let target: string;
     let saveTo: string | undefined;
@@ -227,7 +228,9 @@ export class McpRouter {
     const device = this.#o.deviceOf(c.name);
     if (!device) throw new ContractError("computer_offline", `${c.name} can't be reached`, { computer: c.name });
     const level = ctx.level ?? c.level;
-    const carried = { ...input, ...(saveTo ? { saveTo } : {}) };
+    // The folder rides under the tool's own field name (`saveTo`, or `cloverSaveTo` when the tool has a `saveTo` of
+    // its own), so the holder never takes a tool's own argument for it.
+    const carried = { ...input, ...(saveTo && fields.saveTo ? { [fields.saveTo]: saveTo } : {}) };
     try {
       const link = await this.#o.transport.connect(device);
       const r = await withAnswer(ctx.answer ? undefined : this.#o.ask, (answer) => link.request<{ output: McpResult; isError: boolean }>("tool.run", {
@@ -245,12 +248,14 @@ export class McpRouter {
   async serveHere(p: { tool: string; input: unknown; as: Caller; session: string; callId: string; signal: AbortSignal }): Promise<{ output: McpResult; isError: boolean }> {
     const name = parseMcpToolName(p.tool);
     if (!name) throw new ContractError("not_installed", `${p.tool} isn't an MCP tool`);
-    const placement = this.#o.placement(name.server);
+    const placement = this.#o.placement(name.server, name.tool);
     const self = this.#o.directory.self();
     if (!placement || (placement.kind === "local" && !placement.computers.includes(self))) throw new ContractError("not_installed", `${name.server} isn't on ${self}`);
     const input = { ...((p.input ?? {}) as Record<string, unknown>) };
-    const saveTo = typeof input.saveTo === "string" && placement.kind === "remote" ? input.saveTo : undefined;
-    delete input.saveTo;
+    // The folder, under the tool's own field name (its fields here, as the caller's router read them there).
+    const field = placement.kind === "remote" ? this.#o.fields(name.server, p.session, name.tool).saveTo : undefined;
+    const saveTo = field !== undefined && typeof input[field] === "string" ? input[field] : undefined;
+    if (field !== undefined) delete input[field];
     if (saveTo && this.#o.tree.resolve(saveTo).computer !== self) throw new ContractError("invalid", `${saveTo} isn't on ${self}`);
     const result = await this.#o.call({ server: name.server, tool: name.tool, input, as: p.as, session: p.session, signal: p.signal });
     const saved = await saveFiles(this.#o.holder, result, () => saveTo ?? this.#o.scratch(p.session), p.callId, p.as);

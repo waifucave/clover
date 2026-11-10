@@ -45,6 +45,15 @@ export interface ShellProps {
 
 const tabKey = (r: ShellRoute | undefined) => (r ? `${r.route}:${r.params.bot ?? r.params.session ?? ""}` : "");
 
+/** The `bot.tab` spot for a bot, with the props every bot tab gets: the bot, and its main session (a bot's own layout draws the
+ *  conversation and the composer from them). */
+function BotTabSpot({ bot, onOpenAgent }: { bot: BotRef; onOpenAgent: (session: string) => void }) {
+  const api = usePluginApi();
+  const full = useLoad(() => api.bots?.get(bot.id) ?? Promise.reject(new Error("no bots.read")), [api, bot.id]);
+  if (!full) return <NothingHere title={S.loading} />;
+  return <Spot name="bot.tab" spotKey={bot.id} props={{ bot, session: full.mainSession, onOpenAgent }} fallback={<NothingHere title={S.nothingHere} />} />;
+}
+
 function NothingHere({ title }: { title: string }) {
   return (
     <div className="cl-shell-empty" role="status">
@@ -157,7 +166,7 @@ export function Shell({ props }: EntryProps<ShellProps>) {
   const main = !shown ? (
     <NothingHere title={S.loading} />
   ) : shown.route === "bot" ? (
-    botRef ? <Spot name="bot.tab" spotKey={botRef.id} props={{ bot: botRef, onOpenAgent: openAgent }} fallback={<NothingHere title={S.nothingHere} />} /> : <NothingHere title={S.loading} />
+    botRef ? <BotTabSpot bot={botRef} onOpenAgent={openAgent} /> : <NothingHere title={S.loading} />
   ) : (
     <Spot name="main" spotKey={shown.route} props={{ route: shown.route, params: shown.params, navigate }} fallback={<NothingHere title={S.nothingHere} />} />
   );

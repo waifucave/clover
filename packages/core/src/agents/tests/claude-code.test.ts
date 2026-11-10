@@ -163,4 +163,23 @@ describe("a delegation to a backend that places parts", () => {
     await w.manager.stop(r.sessionId, { bot: "alpha" });
     expect(existsSync(plugin)).toBe(false);
   });
+
+  test("a plugin's command hooks are never placed in a backend (they run only under their plugin's fence); its skills still are", async () => {
+    const p = parts();
+    expect(p.hooks.length).toBeGreaterThan(0);
+    const logs: string[] = [];
+    const w = (world = new World({
+      script: [[{ wait: true }]],
+      pluginParts: { parts: async () => p },
+      place: (pp, ctx) => placeInClaudeCode(pp, { dir: ctx.dir, shim: hookShimCommand() }),
+      log: (l) => logs.push(l),
+    }));
+    const r = await w.delegate();
+    await waitFor(() => w.report("blocked").length > 0, "the agent to block");
+    const plugin = join(w.cloverHome, "run", "agents", r.sessionId, CLAUDE_PLUGIN_FOLDER);
+    expect(existsSync(join(plugin, "skills", "pdf", "SKILL.md"))).toBe(true);
+    expect(existsSync(join(plugin, "hooks", "hooks.json"))).toBe(false);
+    expect(logs.some((l) => l.includes("plugin command hook(s) not placed"))).toBe(true);
+    await w.manager.stop(r.sessionId, { bot: "alpha" });
+  });
 });
