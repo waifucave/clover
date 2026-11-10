@@ -18,6 +18,7 @@ import { classifyChange, codeFieldsFrom, okSnapshot, type CodeFieldsOf, type OkS
 export const catalogCodeFields: CodeFieldsOf = (point) => codeFieldsFrom(catalogPointDecl(point));
 import type { RegistryCore, RegistryInput } from "./core";
 import type { OkText } from "./ok-cards";
+import { wrapperNetworkOpen } from "./wrap";
 import type { DevFolderState, RegistryStore } from "./state";
 
 /** Who wrote a plugin, from the core's own record (§5.6), as the OK says it. */
@@ -275,7 +276,12 @@ export class PluginFolders {
     return {
       title: typeof name === "string" ? name : (name as { en?: string } | undefined)?.en ?? id,
       lines: [
-        ...describeOk(r.tree.top, { os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld, ...(sandboxed !== undefined ? { sandboxed } : {}) }),
+        ...describeOk(r.tree.top, {
+          os, source: r.source === "index" ? "index" : "other", restylesCards: r.tree.restylesCards, hostNetworkHeld,
+          ...(sandboxed !== undefined ? { sandboxed } : {}),
+          // The fence reads the same fact (`wrapperOpensNetwork`): the record's grant, and no `network:` host in the tree.
+          ...(wrapperNetworkOpen(r.provenance.wrapped, [r.tree.top, ...r.tree.children.map((c) => c.report)].flatMap((m) => m.capabilities)) ? { networkOpen: true } : {}),
+        }),
         ...agentEnvLines(r.folder, r.tree),
         ...wrappedLines(r.provenance.wrapped),
       ],

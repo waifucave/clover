@@ -136,10 +136,12 @@ export class HookRunner {
     try {
       // Under the fence (2f): its plugin's tree, its data and temp folders, the package managers' folders.
       const guard = this.guardFor();
-      const proxy = guard.proxyFor?.(spec.pluginId);
+      // A wrapper the user brought, with the grant on its install record, reaches any host (no proxy); others, its proxy.
+      const open = guard.openNetwork?.(spec.pluginId) === true;
+      const proxy = open ? undefined : guard.proxyFor?.(spec.pluginId);
       const project = guard.fence !== false && pluginFenceAvailable() ? this.projectFor?.(spec.pluginId, payload.sessionId) : undefined;
       const fenced = guard.fence !== false && pluginFenceAvailable()
-        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) })
+        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}), ...(open ? { openNetwork: true } : {}) })
         : undefined;
       // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
       // The hook's `bun` is the plugin Bun (#234's check 5, K1): its folder comes first on the PATH.
