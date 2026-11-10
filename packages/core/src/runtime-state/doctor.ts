@@ -108,20 +108,25 @@ export const DAEMON_RUNNING_REFUSAL = "daemon is running; stop it first";
  * conservative direction for a repair gate is to refuse MORE often, not less.
  */
 export function isDaemonLockHeld(home: string): boolean {
+  return runningDaemonPid(home) !== null;
+}
+
+/** The pid of the daemon that holds `home`'s lock, read as `isDaemonLockHeld` reads it; null when none does. */
+export function runningDaemonPid(home: string): number | null {
   const lockPath = join(home, "run", "core.lock");
-  if (!existsSync(lockPath)) return false;
+  if (!existsSync(lockPath)) return null;
   let pid = -1;
   try {
     pid = JSON.parse(readFileSync(lockPath, "utf8")).pid;
   } catch {
-    return false; // corrupt = stale, exactly as acquireLock reads it
+    return null; // corrupt = stale, exactly as acquireLock reads it
   }
-  if (!(pid > 0)) return false;
+  if (!(typeof pid === "number" && pid > 0)) return null;
   try {
     process.kill(pid, 0);
-    return true;
+    return pid;
   } catch {
-    return false;
+    return null;
   }
 }
 

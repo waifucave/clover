@@ -2759,6 +2759,14 @@ if (import.meta.main) {
       await printMigrationSection();
       await printAnthropicConsoleSection();
       await printCredentialsSection();
+      // #418: whether the daemon made itself its own responsible process at start (macOS), the line it logs when not.
+      try {
+        const { responsibilityDoctorLine, runningDaemonPid } = await import("@waifucave/clover-core");
+        const line = responsibilityDoctorLine(runningDaemonPid(home), process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "win32" : "linux");
+        if (line !== undefined) console.log(`${AQUA}${line}${RESET}`);
+      } catch (err) {
+        console.log(`${AQUA}caller check:${RESET} ${DIM}unavailable (${err instanceof Error ? err.message : "unknown error"})${RESET}`);
+      }
       break;
     }
     const session = flag("--session");
