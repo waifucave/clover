@@ -48,6 +48,9 @@ export interface FencedSpawner {
    *  a session's end. A watched session's writable folders are looked over again first, so a repo made since is
    *  watched as newly appeared. `end` forgets the session. The report line, or null. */
   recheck?(sessionId: string, opts?: { end?: boolean }): string | null;
+  /** Does, off the event loop, what the first run would otherwise do (Linux: the bwrap probe), so no run waits on it
+   *  (INT, #369's review: the daemon warms it at its start). */
+  warm?(): Promise<void>;
   /** For a session whose commands don't come through `run` (a bot's Bash in the runtime's own sandbox), at its
    *  start: watch, from now, the git configs of its `cwd`'s repo, the user's global ones, and every repo's in
    *  `writable`, the folders it can write (a bot: every bot's scratch folder and memory, its own outputs and

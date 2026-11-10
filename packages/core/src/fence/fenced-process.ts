@@ -35,6 +35,8 @@ export interface FencedProcessOptions {
   readonly perUserTemp?: () => string | null;
   /** Linux: bubblewrap's path (default `/usr/bin/bwrap`, never a PATH search). */
   readonly bwrap?: string;
+  /** Linux: how long a failed bwrap probe stands (`BWRAP_PROBE_RETRY_MS` by default; tests). */
+  readonly probeRetryMs?: number;
 }
 
 let tempCache: string | null | undefined;
@@ -49,6 +51,9 @@ function darwinUserTemp(): string | null {
 }
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+
+/** How long a failed bwrap probe stands before the next run tries again (a bwrap installed meanwhile). */
+export const BWRAP_PROBE_RETRY_MS = 60_000;
 
 /** The macOS holder for `o`: the one named, else the one beside the daemon's executable when it is there. */
 function holderFor(o: FencedProcessOptions): string | null {
@@ -177,19 +182,44 @@ export function fencedSpawner(o: FencedProcessOptions): FencedSpawner {
   }
   if (os === "linux") {
     const bwrap = o.bwrap ?? BWRAP;
+    // Whether bwrap can make its namespaces here, probed off the event loop: warmed at the daemon's start (`warm`),
+    // never a blocking spawn on a hook's first run (INT, #369's review). A failure is tried again after
+    // `BWRAP_PROBE_RETRY_MS`, so a bwrap installed meanwhile works without a restart.
     let probed: string | null | undefined; // null: it works; a string: why it doesn't
-    const probe = (): string | null => {
-      if (probed !== undefined) return probed;
-      if (!existsSync(bwrap)) return (probed = "bubblewrap isn't installed (/usr/bin/bwrap)");
-      const r = spawnSync(bwrap, ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-net", "--unshare-pid", "/bin/true"], { encoding: "utf8", timeout: 10_000 });
-      return (probed = r.status === 0 ? null : `bubblewrap can't make its namespaces here (${(r.stderr || r.error?.message || `exit ${r.status}`).trim().slice(0, 200)})`);
+    let probedAt = 0;
+    let probing: Promise<string | null> | undefined;
+    const probe = (): Promise<string | null> => {
+      const now = Date.now();
+      if (probed === null || (probed !== undefined && now - probedAt < (o.probeRetryMs ?? BWRAP_PROBE_RETRY_MS))) return Promise.resolve(probed);
+      probing ??= (async () => {
+        let why: string | null;
+        if (!existsSync(bwrap)) why = "bubblewrap isn't installed (/usr/bin/bwrap)";
+        else {
+          try {
+            const child = Bun.spawn([bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-net", "--unshare-pid", "/bin/true"], { stdout: "ignore", stderr: "pipe" });
+            const timer = setTimeout(() => child.kill(), 10_000);
+            const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+            clearTimeout(timer);
+            why = code === 0 ? null : `bubblewrap can't make its namespaces here (${(stderr || `exit ${code}`).trim().slice(0, 200)})`;
+          } catch (err) {
+            why = `bubblewrap can't make its namespaces here (${(err instanceof Error ? err.message : String(err)).slice(0, 200)})`;
+          }
+        }
+        probed = why;
+        probedAt = Date.now();
+        probing = undefined;
+        return why;
+      })();
+      return probing;
     };
     return {
-      get available() { return probe() === null; },
+      // Before the first probe answers: whether bwrap is there at all; after, the probe's answer.
+      get available() { return probed === undefined ? existsSync(bwrap) : probed === null; },
+      warm: async () => { await probe(); },
       recheck: (sessionId, opts) => configs.recheck(sessionId, opts),
       watch: (sessionId, cwd, writable = []) => configs.watch(sessionId, o.fence.home, cwd, writable),
       run: async (r) => {
-        const why = probe();
+        const why = await probe();
         if (why !== null) return { kind: "refused", reason: `a fenced process can't be started here: ${why}` };
         // The home the view is built from is a plain folder: nothing else gets a tmpfs view.
         try {
