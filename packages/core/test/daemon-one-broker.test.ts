@@ -13,6 +13,10 @@ import { Drivers } from "../src/bots/tests/fixtures";
 import { FakePluginRegistry } from "../src/contracts/fakes/plugin-registry";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 import { MemoryNetwork } from "../src/links/memory-wire";
+import { CloverApprovalBroker } from "../src/approvals/broker";
+import { SystemClock } from "../src/clock/system-clock";
+import type { ApprovalRequest } from "../src/contracts/approval-broker";
+import { lateBroker } from "../src/daemon-parts";
 
 setDefaultTimeout(60_000);
 
@@ -66,4 +70,22 @@ test("one broker and one fence: the node's paste card asks on the daemon's broke
   expect(broker!.cards()).toHaveLength(1);
   expect(settled).toBe(false);
   await node.terminals.close(terminalId);
+});
+
+test("the late-bound broker forwards request and get (a raise's card is read back through get: J's #342 fails closed without it)", async () => {
+  let bound: CloverApprovalBroker | undefined;
+  const late = lateBroker(() => bound);
+  const req = { kind: "change", change: "computer-level", origin: "user", computers: ["Studio"], effect: "other", fields: { title: { type: "text", text: "Raise" } } } as unknown as ApprovalRequest;
+  await expect(late.request(req)).rejects.toThrow(/aren't up on this computer yet/);
+  expect(late.get("card_x")).toBeUndefined();
+  bound = new CloverApprovalBroker({ clock: new SystemClock(), levels: () => "ask" });
+  let cardId: string | undefined;
+  const decided = late.request(req, { onCard: (id) => (cardId = id) });
+  for (let i = 0; i < 100 && cardId === undefined; i++) await Bun.sleep(1);
+  // The record `get` hands back is the broker's own, the one #342's registry compares the raise against.
+  expect(late.get(cardId!)).toEqual(bound.get(cardId!));
+  expect(late.get(cardId!)!.card.id).toBe(cardId!);
+  bound.close();
+  expect((await decided).allowed).toBe(false);
+  expect(late.get(cardId!)).toEqual(bound.get(cardId!));
 });

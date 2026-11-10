@@ -31,6 +31,8 @@ import { fileRuleStore } from "./approvals/rule-store";
 import { deviceProofVerifier } from "./contracts/approval-broker";
 import { ContractError, Listeners } from "./contracts/common";
 import { CloverFence } from "./fence/fence";
+import { approvalCoreEvents } from "./approvals/core-events";
+import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
 import { CloverRpcError, type BridgeGate, type CodeAgentDoor } from "./ipc/clover";
 import { embeddedSessionOptions } from "./runtime-sdk/turn-loop/embedded-session";
 import { ERR } from "@waifucave/clover-protocol";
@@ -44,7 +46,6 @@ import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "
 import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import { appTerminals } from "./computers/app-terminals";
-import type { CoreEventInput, CoreEventOptions } from "./ipc/core-events";
 import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
 import { CloverUsageCounter } from "./usage/counter";
@@ -63,8 +64,9 @@ export interface DaemonBotsInput {
   /** The plugin registry the bots come from (`openPluginRegistry` in the daemon). */
   registry: PluginRegistry;
   /** Each session's driver, given the bot side (for its core tools, read at each build) and the computer node. */
-  /** The bots' drivers, given this computer's one fence (bots' file tools, and their Bash sandbox with lane C's #356). */
-  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; fence: CloverFence }): DriverFactory;
+  /** The bots' drivers, given the daemon's one approval broker (when the node runs): a bot's calls that ask raise a card
+   *  on it (lane C's `botApprovalCheck`). */
+  drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
@@ -116,7 +118,8 @@ export interface DaemonPartsInput {
   reviewer?: SafetyReviewer;
   /** TEST SEAM: an approval broker for the node's cards (a paste of several lines) and its own record of a card a
    *  level raise hands over (`get`, the registry's `cardRecord`). The daemon's own broker is bound here once it
-   *  exists; without either, such a paste is refused with a reason, never dropped silently, and no card raises a level. */
+   *  exists (`lateBroker`, INT #353); without either, such a paste is refused with a reason, never dropped silently, and
+   *  no card raises a level. The broker's cards go out through `coreEvent` too. */
   approvals?: Pick<ApprovalBroker, "request" | "get">;
   /** The Clover server's `core.event` sender: the terminal panel's output (`terminal_output`) goes to the connection
    *  that opened each terminal. Without it, the app's `terminal.*` methods aren't served. */
@@ -248,14 +251,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
     // card), the agents and the bot side all go through these, never a copy of their own.
     const fence = new CloverFence({ home: input.userHome, cloverHome: input.cloverHome });
     let broker: CloverApprovalBroker | undefined;
-    const lateApprovals: Pick<CloverApprovalBroker, "request" | "get"> = {
-      request: async (r, o) => {
-        if (!broker) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
-        return broker.request(r, o);
-      },
-      // A level raise's card is read back from the broker itself (J's #342): none before the broker is up.
-      get: (id) => broker?.get(id),
-    };
+    const lateApprovals = lateBroker(() => broker);
     if (links && nodeLinks && input.node !== false) {
       // ── The computer node's own parts (lane J, `computers/node-parts.ts`) ──
       // Its terminals' card for a paste of several lines (through the approval broker, once there is one; until then
@@ -303,6 +299,12 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         verify: deviceProofVerifier(links.registry), rules: fileRuleStore(input.cloverHome), localComputer: here,
         log: (line) => log(`[approvals] ${line}`),
       });
+      // Its cards as core events (lane C's `approvalCoreEvents`), stamped with the shared clock, from before the bot
+      // side starts, so a card raised while it starts is heard too.
+      if (input.coreEvent) {
+        const send = input.coreEvent;
+        closers.push(approvalCoreEvents(broker, (e) => send(e), () => links.clock.now()));
+      }
     }
 
     let agents: DaemonAgents | undefined;
@@ -340,7 +342,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       const s = createBotSide({
         home: input.cloverHome, computer: runner.self, clock: input.clock, registry: b.registry, main: runner,
-        drivers: b.drivers({ side: () => side, node, main: runner, fence }),
+        drivers: b.drivers({ side: () => side, node, main: runner, broker, fence }),
         defaultModel: b.defaultModel,
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),
@@ -537,5 +539,19 @@ export function pluginOkTicks(node: () => object | undefined, log: (line: string
     get waiting() {
       return waiting.size;
     },
+  };
+}
+
+/** The broker, bound late (the node needs it before it exists: it is made from the node's own registry). Its `request`
+ *  refuses until then, and its `get` finds nothing; once bound, both are the broker's own. A level raise's card is
+ *  read back through `get` (J's #342, which fails closed without it), so both must always forward. */
+export function lateBroker(current: () => CloverApprovalBroker | undefined): Pick<CloverApprovalBroker, "request" | "get"> {
+  return {
+    request: async (r, o) => {
+      const b = current();
+      if (!b) throw new ContractError("refused", "the approval cards aren't up on this computer yet");
+      return b.request(r, o);
+    },
+    get: (id) => current()?.get(id),
   };
 }

@@ -85,18 +85,23 @@ export function brokerCardOpener(broker: Pick<ApprovalBroker, "request" | "watch
     let cardId: string | undefined;
     let gotChecked: (c: readonly string[]) => void = () => undefined;
     const checked = new Promise<readonly string[]>((r) => (gotChecked = r));
-    let off: Unsubscribe = () => undefined;
-    const allowed = broker.request(req).then((d) => d.allowed);
-    off = broker.watch((e) => {
-      if (e.type === "requested" && !settled && e.card.kind === req.kind && e.card.change === req.change) {
-        settled = true;
-        cardId = e.card.id;
-        resolve({ card: e.card.id, allowed, checked });
-      } else if (e.type === "resolved" && cardId !== undefined && e.cardId === cardId) {
+    // The card is this request's own (`onCard`, INT #353's nit): never the first card of the same kind and change,
+    // which a second change at the same time would raise too.
+    const off: Unsubscribe = broker.watch((e) => {
+      if (e.type === "resolved" && cardId !== undefined && e.cardId === cardId) {
         gotChecked(e.children ?? []);
         off();
       }
     });
+    let allowed: Promise<boolean> = Promise.resolve(false);
+    allowed = broker.request(req, {
+      onCard: (id) => {
+        if (settled) return;
+        settled = true;
+        cardId = id;
+        resolve({ card: id, allowed, checked });
+      },
+    }).then((d) => d.allowed);
     void allowed.finally(() => {
       if (!settled) {
         settled = true;

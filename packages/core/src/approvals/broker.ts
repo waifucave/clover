@@ -48,6 +48,9 @@ export interface CloverApprovalRequest extends ApprovalRequest {
   /** The card waits for the person however its turn started: no 10-minute deny (rule 6). Its requester closes it when
    *  what it asks about is gone (the cloud cards: approvals/cloud-cards.ts, the controller's ruling on #290). */
   waitsForUser?: boolean;
+  /** A card every time (after read-only's deny): no level, saved rule or reviewer answers it, and it offers no
+   *  "always". A bot's command while its sandbox isn't drawn from the fence yet (INT, #353's S3). */
+  cardAlways?: boolean;
 }
 
 /** The card's reason for a request whose paths are unresolved, from Clover's own table. */
@@ -123,13 +126,13 @@ export class CloverApprovalBroker implements ApprovalBroker {
 
   #closed = false;
 
-  async request(req: ApprovalRequest, opts: { signal?: AbortSignal } = {}): Promise<ApprovalDecision> {
+  async request(req: ApprovalRequest, opts: { signal?: AbortSignal; onCard?: (cardId: string) => void } = {}): Promise<ApprovalDecision> {
     if (opts.signal?.aborted || this.#closed) return { allowed: false, by: "cancelled" };
     const auto = await this.#decide(req);
     if (auto) return auto;
     // Stopped while the reviewer judged it: no card is raised, so none is left open (#267's review item 3).
     if (opts.signal?.aborted) return { allowed: false, by: "cancelled" };
-    return this.#showCard(req, opts.signal);
+    return this.#showCard(req, opts.signal, opts.onCard);
   }
 
   cards(): Card[] {
@@ -229,6 +232,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     // read-only is absolute: only reads run, and no fenced-path card, saved rule or reviewer changes that.
     if (level === "read-only" && levelDecision(level, req.effect) !== "allow") return { allowed: false, by: "level", level };
     if (this.#unresolved(req)) return undefined; // paths no one resolved: a card every time, whatever rule or level
+    if ((req as CloverApprovalRequest).cardAlways === true) return undefined; // a card every time (#353's S3)
     if (level === "read-only" && !bound) return { allowed: true, by: "level", level };
     if (writesRunLater(req, this.#fence)) return { allowed: false, by: "fence" }; // rule 3: no bot or agent writes there
     if (bound) return undefined; // rule 9: the card is the proof, whatever a rule, the level or the reviewer would say
@@ -247,7 +251,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
     return undefined;
   }
 
-  #showCard(req: ApprovalRequest, signal: AbortSignal | undefined): Promise<ApprovalDecision> {
+  #showCard(req: ApprovalRequest, signal: AbortSignal | undefined, onCard?: (cardId: string) => void): Promise<ApprovalDecision> {
     const issuedAt = this.#clock.now();
     // rule 6; `waitsForUser` holds only for a sensitive change (the cloud cards): a plugin's `confirm` always expires.
     const expires = req.kind === "change" && (req as CloverApprovalRequest).waitsForUser === true ? false : cardExpires(req.kind, req.origin);
@@ -290,6 +294,7 @@ export class CloverApprovalBroker implements ApprovalBroker {
         p.timer = this.#clock.setTimeout(() => this.#settle(p, "expired", { allowed: false, by: "expired", cardId: card.id }), UNATTENDED_CARD_TIMEOUT_MS);
       }
       signal?.addEventListener("abort", () => this.#settle(p, "cancelled", { allowed: false, by: "cancelled", cardId: card.id }), { once: true });
+      try { onCard?.(card.id); } catch { /* the requester's own */ }
       this.#listeners.emit({ type: "requested", card: structuredClone(card) });
       if (signal?.aborted) this.#settle(p, "cancelled", { allowed: false, by: "cancelled", cardId: card.id });
     });
@@ -305,7 +310,8 @@ export class CloverApprovalBroker implements ApprovalBroker {
   /** Whether a request may be remembered or matched: a key that doesn't look like it carries a credential, at least
    *  one computer, paths that were resolved, and no bound call (rule 9). */
   #rememberable(req: ApprovalRequest): boolean {
-    return req.binds === undefined && req.boundCard === undefined && req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey) && req.computers.length > 0 && !this.#unresolved(req);
+    return req.binds === undefined && req.boundCard === undefined && req.ruleKey !== undefined && req.ruleKey !== "" && !looksCredentialBearing(req.ruleKey) && req.computers.length > 0 && !this.#unresolved(req)
+      && (req as CloverApprovalRequest).cardAlways !== true;
   }
 
   #expiredNow(p: Pending): boolean {

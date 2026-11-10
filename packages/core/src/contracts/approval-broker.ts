@@ -269,8 +269,10 @@ export type Reviewer = (req: ApprovalRequest) => Promise<"safe" | "risky" | "una
 export type ProofVerifier = (card: Card, answer: CardAnswer, from: AnswerOrigin) => boolean | Promise<boolean>;
 
 export interface ApprovalBroker {
-  /** Decides by rules 1–5, or shows a card and waits. Never rejects; an aborted signal decides `cancelled`. */
-  request(req: ApprovalRequest, opts?: { signal?: AbortSignal }): Promise<ApprovalDecision>;
+  /** Decides by rules 1–5, or shows a card and waits. Never rejects; an aborted signal decides `cancelled`. `onCard`
+   *  hears this request's own card id when it shows one, before its `requested` event (INT, #353's nit: a requester
+   *  never matches a card by its kind, which two requests at once share). */
+  request(req: ApprovalRequest, opts?: { signal?: AbortSignal; onCard?: (cardId: string) => void }): Promise<ApprovalDecision>;
   /** Pending cards in full, for the app's main process and the native iOS app only (§5.5). */
   cards(): Card[];
   /** One card in full, pending or resolved, for the same two: the conversation keeps a resolved card in place, with
