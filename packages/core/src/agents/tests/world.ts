@@ -51,6 +51,8 @@ export function fakeAdmissions(sandbox: "protected" | "none", modeFloor?: (level
 }
 
 export interface WorldOptions {
+  /** The manager's log lines. */
+  log?: (line: string) => void;
   quirks?: AgentQuirks;
   script?: FakeAcpStep[][];
   history?: AgentEvent[];
@@ -174,6 +176,7 @@ export class World {
       ...(o.pluginTools ? { pluginTools: o.pluginTools } : {}),
       ...(o.oks ? { oks: o.oks } : {}),
       ...(o.pluginParts ? { pluginParts: o.pluginParts } : {}),
+      ...(o.log ? { log: o.log } : {}),
       levelOf: () => this.level,
       watchLevels: (fn) => {
         this.#levelWatchers.add(fn);

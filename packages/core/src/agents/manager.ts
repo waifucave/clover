@@ -746,7 +746,13 @@ export class AgentManager {
 
   async #startAgent(e: Entry, reattach?: { agentSessionId: string }): Promise<AgentSession> {
     const admitted = await this.#admit(e);
-    e.parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
+    const parts = (await this.#o.pluginParts?.parts(e.id).catch(() => NO_PARTS)) ?? NO_PARTS;
+    // A plugin's command hook runs only under its own plugin's fence (#415, `pluginHookSpawner`, through the daemon's
+    // door). Placed in a backend (Claude Code's settings, through the shim) it would run inside the agent's sandbox, with
+    // the agent's reach and none of its plugin's limits, so none is placed until the shim runs it through that door.
+    // Each one left out is logged; the skills and agent definitions are placed as before.
+    if (parts.hooks.length > 0) this.#o.log?.(`[agents] ${e.id}: ${parts.hooks.length} plugin command hook(s) not placed (${parts.hooks.map((h) => `${h.pluginId}/${h.id}`).join(", ")}): a hook runs only under its plugin's fence, which an agent backend can't give it yet`);
+    e.parts = parts.hooks.length > 0 ? { ...parts, hooks: [] } : parts;
     const tools = await (this.#o.pluginTools ?? NO_PLUGIN_TOOLS).tools(e.id).catch(() => []);
     e.bridgeTools = [...bridgeOwnTools(e.bot).map((t) => t.name), ...tools.map((t) => t.name)];
     const spec: AcpStartSpec = {
