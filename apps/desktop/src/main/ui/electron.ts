@@ -520,6 +520,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     });
   });
   handle("clover:user-send", (event, a) => {
+    try {
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
@@ -529,6 +530,11 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const m = (a.message ?? {}) as { text?: unknown; images?: unknown };
     if (typeof m.text !== "string" || m.text.length > 1_000_000) throw new LayerError("the words are text");
     return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) }, a.active === true);
+    } catch (err) {
+      // Refused before the core's own checks (the part, the target, the words): the reason, never the words.
+      if (err instanceof LayerError) log(`send: refused (${err.message})`);
+      throw err;
+    }
   });
   on("clover:window-drag", (event, a) => {
     const s = sender(event);

@@ -18,6 +18,8 @@ export const UI_STEPS = [
   "the model picker lists models and a pick takes",
   "Settings opens with no part stopped",
   "a setting changed in Settings is still there when it is opened again",
+  "the Dispatch pill sends: a message typed in the pill goes to its bot, and the bot's reply is shown",
+  "a send that is refused says so by the composer, and the draft stays",
 ] as const;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -245,5 +247,89 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     const again = await readSwitch();
     if (again.on !== flipped.on) fail(`after opening Settings again the switch shows ${again.on}, not ${flipped.on}`);
     return `"When a bot needs you" went ${first.on} -> ${flipped.on}, the daemon keeps it, and it is ${again.on} after Settings is opened again`;
+  });
+  // 5: the Dispatch pill's own send, apart from the composer's. The pill is its own window with its own text box and its
+  // own Send circle; a person types there and presses the circle. The same fake reply, with this turn's own tag.
+  await step(5, async () => {
+    const tag = `ACCEPTANCE-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const PILL_BOX = "textarea.clp-input";
+    const replies = async () => ((await treeText(cdp)).match(/ACCEPTANCE-REPLY-OK/g) ?? []).length;
+    const box = await until("the pill's text box", 30_000, () => inTree<boolean>(cdp, `!!document.querySelector('${PILL_BOX}')`), () => dumpFrames(cdp));
+    const s = box.session;
+    const before = await replies();
+    await cdp.evaluate(s, `(() => { const t = document.querySelector('${PILL_BOX}'); t.focus(); return true; })()`);
+    await cdp.send("Input.insertText", { text: `${tag} say hello from the pill` }, s);
+    await sleep(400);
+    const typed = await cdp.evaluate(s, `document.querySelector('${PILL_BOX}').value`);
+    if (!String(typed).includes(tag)) fail(`the pill's text box shows "${String(typed).slice(0, 60)}" after typing`);
+    // The pill grows as the first words are typed (a spring), and the Send circle moves with it: it is pressed where it has
+    // come to rest, as a person waits for it.
+    let btn = await until("the pill's Send circle", 10_000, async () => cdp.centerOf(s, "button.clp-circle[data-role=send]").catch(() => undefined), () => dumpFrames(cdp));
+    for (let i = 0; i < 20; i++) {
+      await sleep(300);
+      const now = await cdp.centerOf(s, "button.clp-circle[data-role=send]").catch(() => undefined);
+      if (now !== undefined && Math.abs(now.x - btn.x) < 0.5 && Math.abs(now.y - btn.y) < 0.5) { btn = now; break; }
+      if (now !== undefined) btn = now;
+    }
+    // The pill's window is sized by the pill itself as it grows: until it is wide enough, the circle's point is outside the page
+    // and a press there reaches nothing. Pressed once the point holds the circle.
+    const holdsCircle = async (): Promise<string> => String(await cdp.evaluate(s, `(() => { const c = document.querySelector("button.clp-circle[data-role=send]"); if (!c) return "no circle"; const r = c.getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return e && c.contains(e) ? "circle" : (e ? e.tagName : "outside the page (" + innerWidth + "x" + innerHeight + ")"); })()`).catch(() => "?"));
+    let under = await holdsCircle();
+    // A pill's window is resized by the pill as it grows, which waits for an animation frame; a hidden (headless) window has
+    // none, so it stays at its resting size and the circle lies outside it. The page is given room to lay the circle in (the
+    // press then lands on it, in the frame, as a person's would).
+    if (under !== "circle") {
+      const widen = { width: 720, height: 160, deviceScaleFactor: 1, mobile: false };
+      // The pill's document may be a frame of the surface's own page (the command runs only on a top-level target).
+      await cdp.send("Emulation.setDeviceMetricsOverride", widen, s).catch(async () => {
+        const top = (await cdp.documents()).find((d) => d.url.includes("surface=pill"));
+        if (top === undefined) fail("the pill's window has no page of its own to give room");
+        await cdp.send("Emulation.setDeviceMetricsOverride", widen, top!.session);
+      });
+      await sleep(500);
+      for (let i = 0; i < 20 && under !== "circle"; i++) {
+        under = await holdsCircle();
+        const now = await cdp.centerOf(s, "button.clp-circle[data-role=send]").catch(() => undefined);
+        if (now !== undefined) btn = now;
+        if (under !== "circle") await sleep(300);
+      }
+    }
+    if (under !== "circle") fail(`the pill's Send circle (${btn.x}, ${btn.y}) never came to a point of the page: it holds ${under}`);
+    const route = "the Send circle";
+    const consoleFrom = cdp.console.length;
+    await cdp.click(s, btn.x, btn.y);
+    const sent = () => cdp.console.slice(consoleFrom).filter((e) => e.level === "exception" || e.level === "error" || e.level === "warning").map((e) => e.text.slice(0, 160)).join(" | ");
+    await until("this turn's own reply on screen, from the pill's message", 40_000, async () => ((await treeText(cdp)).includes(`${ctx.reply} ${tag}`) ? true : undefined), async () => `${(await dumpFrames(cdp)).slice(0, 120)}; pill box now "${String(await cdp.evaluate(s, `document.querySelector('${PILL_BOX}').value`).catch(() => "?")).slice(0, 50)}"; console: ${sent()}; click at ${btn.x},${btn.y} over ${String(under)}`);
+    const after = await replies();
+    if (after !== before + 1) fail(`the reply bubbles went from ${before} to ${after}, not by one`);
+    return `the pill sent ${tag} by ${route} and its own reply is on screen (reply bubbles ${before} -> ${after})`;
+  });
+  // 6: a refused send is not silent. A click the page makes itself (no key press or click of a person's behind it) is refused:
+  // the composer keeps the draft and says so in a few words.
+  await step(6, async () => {
+    const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+    const s = box.session;
+    // The frame's own activation from the earlier steps has run out.
+    await until("the composer frame to have no user activation", 15_000, async () => ((await cdp.evaluate(s, "navigator.userActivation.isActive")) === false ? true : undefined));
+    const words = "ACCEPTANCE-REFUSED-DRAFT";
+    await cdp.evaluate(s, `(() => { const t = document.querySelector('${COMPOSER_BOX}'); t.focus(); return true; })()`);
+    await cdp.send("Input.insertText", { text: words }, s);
+    await sleep(300);
+    // Pressed by the page, not by a person.
+    await cdp.evaluate(s, "document.querySelector('button.cl-composer__send').click()");
+    const notice = await until("the composer's notice", 10_000, async () => {
+      const t = await cdp.evaluate(s, "(document.querySelector('.cl-composer [data-notice=send]') || {}).textContent || ''");
+      return String(t) !== "" ? String(t) : undefined;
+    }, () => dumpFrames(cdp));
+    const kept = String(await cdp.evaluate(s, `document.querySelector('${COMPOSER_BOX}').value`));
+    if (!kept.includes(words)) fail(`the draft is "${kept.slice(0, 40)}" after the refused send, not kept`);
+    // Typing again takes the notice away; the draft is cleared so nothing is left to be sent by mistake.
+    await cdp.send("Input.insertText", { text: "!" }, s);
+    await sleep(300);
+    const gone = String(await cdp.evaluate(s, "(document.querySelector('.cl-composer [data-notice=send]') || {}).textContent || ''"));
+    if (gone !== "") fail(`the notice stays after typing ("${gone.slice(0, 40)}")`);
+    await cdp.evaluate(s, `(() => { const t = document.querySelector('${COMPOSER_BOX}'); t.select(); return true; })()`);
+    await cdp.send("Input.insertText", { text: "" }, s);
+    return `a send the page made by itself was refused; the composer said "${notice.slice(0, 80)}", kept the draft, and the notice went on typing`;
   });
 }
