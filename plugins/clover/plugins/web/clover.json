@@ -10,8 +10,21 @@
     "runtime": "bun"
   },
   "capabilities": [
-    "network:mcp.exa.ai"
+    "network:mcp.exa.ai",
+    "network:public"
   ],
+  "settings": {
+    "blockedDomains": {
+      "type": "string",
+      "title": {
+        "en": "Blocked domains"
+      },
+      "description": {
+        "en": "Domains WebSearch leaves out and WebFetch never reads, besides Clover's own list. Separate them with commas or spaces."
+      },
+      "default": ""
+    }
+  },
   "contributes": {
     "mcpServers": {
       "web": {

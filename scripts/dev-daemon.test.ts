@@ -174,7 +174,7 @@ describe("the dev plugin Bun (#234's check 5)", () => {
     expect(DEV_PLUGIN_BUN_IDENTIFIER).toBe("com.waifucave.clover.plugin-bun.dev");
     expect(DEV_PLUGIN_BUN_IDENTIFIER).not.toBe(DEV_DAEMON_IDENTIFIER);
     const args = devPluginBunSignArgs("/tmp/b", "/repo/scripts/bun-jit.entitlements");
-    expect(args).toEqual(["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime", "--timestamp=none", "--entitlements", "/repo/scripts/bun-jit.entitlements", "/tmp/b"]);
+    expect(args).toEqual(["--force", "--sign", "-", "--identifier", DEV_PLUGIN_BUN_IDENTIFIER, "--options", "runtime,restrict", "--timestamp=none", "--entitlements", "/repo/scripts/bun-jit.entitlements", "/tmp/b"]);
   });
 
   test("it is made again when it's missing, the pinned Bun changed, or the copy there was swapped", () => {

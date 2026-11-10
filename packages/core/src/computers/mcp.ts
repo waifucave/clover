@@ -121,9 +121,12 @@ function fileName(callId: string, i: number, c: McpContent): string {
 
 /** Writes a result's files into `folder` (a tree folder on this computer) and puts their tree paths in the result
  *  instead. The writes are part of the call that was approved, so they aren't judged again; the fence still applies. */
-export async function saveFiles(holder: LocalHolder, result: McpResult, folder: string, callId: string, as: Caller): Promise<McpResult> {
+export async function saveFiles(holder: LocalHolder, result: McpResult, folderOf: string | (() => string), callId: string, as: Caller): Promise<McpResult> {
   const out: McpContent[] = [];
   let i = 0;
+  // The folder is named only when there is a file to save (a session's scratch folder may have no folder-tree name,
+  // a Clover home outside the user's home): a result of text alone never needs it.
+  let folder: string | undefined;
   for (const c of result.content ?? []) {
     const file = c.type === "image" ? { data: (c as { data: string }).data, base64: true }
       : c.type === "resource" && (c as { resource: { blob?: string; text?: string } }).resource
@@ -133,6 +136,7 @@ export async function saveFiles(holder: LocalHolder, result: McpResult, folder: 
       out.push(c);
       continue;
     }
+    folder ??= typeof folderOf === "string" ? folderOf : folderOf();
     const path = `${folder.replace(/\/+$/, "")}/${fileName(callId, i++, c)}`;
     await holder.write(path, file.base64 ? { encoding: "base64", data: file.data } : { encoding: "utf8", text: file.data }, { as, approved: true });
     out.push({ type: "text", text: `Saved ${c.type === "image" ? "an image" : "a file"} to ${path}` });
@@ -217,7 +221,7 @@ export class McpRouter {
     if (!c.online) throw new ContractError("computer_offline", `${c.name} is offline`, { computer: c.name });
     if (c.name === self) {
       const result = await this.#o.call({ server, tool, input, as: ctx.as, session: ctx.session, ...(ctx.signal ? { signal: ctx.signal } : {}) });
-      return { result: await saveFiles(this.#o.holder, result, saveTo ?? this.#o.scratch(ctx.session), ctx.callId, ctx.as), computer: c.name };
+      return { result: await saveFiles(this.#o.holder, result, () => saveTo ?? this.#o.scratch(ctx.session), ctx.callId, ctx.as), computer: c.name };
     }
     // Another computer: `tool.run`, at this computer's level for it; it saves the files on its own disk.
     const device = this.#o.deviceOf(c.name);
@@ -249,7 +253,7 @@ export class McpRouter {
     delete input.saveTo;
     if (saveTo && this.#o.tree.resolve(saveTo).computer !== self) throw new ContractError("invalid", `${saveTo} isn't on ${self}`);
     const result = await this.#o.call({ server: name.server, tool: name.tool, input, as: p.as, session: p.session, signal: p.signal });
-    const saved = await saveFiles(this.#o.holder, result, saveTo ?? this.#o.scratch(p.session), p.callId, p.as);
+    const saved = await saveFiles(this.#o.holder, result, () => saveTo ?? this.#o.scratch(p.session), p.callId, p.as);
     return { output: saved, isError: saved.isError === true };
   }
 }

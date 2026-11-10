@@ -23,6 +23,8 @@ export interface ComposerModel {
   label: string;
   /** Where it runs: the provider, or "your subscription". */
   detail?: string;
+  /** The provider holds a key or a sign-in now (`models.list`'s `signedIn`). */
+  signedIn?: boolean;
 }
 
 /** The bot's model and effort, changeable at any time; the next turn uses them (spec §6.3). */
@@ -63,8 +65,9 @@ export interface ComposerLevel {
   levels: ComposerLevelOption[];
   /** A change asked for, waiting for its card. */
   requested?: string;
-  /** Ask for a change: the host raises the sealed card, and passes the pick back as `requested`. */
-  onRequest: (level: string) => void;
+  /** Ask for a change: the host raises the sealed card, and passes the pick back as `requested`. Without it the
+   *  host has no way to ask yet, and the level shows as a plain label: no menu, no chevron. */
+  onRequest?: (level: string) => void;
 }
 
 export interface ComposerProps {
@@ -74,6 +77,8 @@ export interface ComposerProps {
   /** Called inside the key press or click that sent, so the app can count the send as the user's
    *  (spec §5.5: one hardware key press or click covers one send). */
   onSend: (message: ComposerMessage) => void;
+  /** A short line by the composer: why the last send did not go (the draft is still in the box). */
+  notice?: string;
   attachments?: ComposerAttachment[];
   onAttach?: () => void;
   onRemoveAttachment?: (id: string) => void;

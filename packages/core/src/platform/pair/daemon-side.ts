@@ -38,6 +38,9 @@ export interface DaemonPairSide {
   dispose(): void;
 }
 
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+
 const realAfter = (ms: number, fn: () => void): (() => void) => {
   const t = setTimeout(fn, ms);
   return () => clearTimeout(t);
@@ -50,7 +53,8 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
   const files = { os: input.os, run, ...(userSid ? { userSid } : {}) };
   await lockRunDir(input.runDir, files);
   const appToken = await mintAppToken(input.runDir, files);
-  const launcher = input.launcher !== undefined
+  // A test-marked build never starts the app (it would open a window): the daemon runs alone, whoever connects.
+  const launcher = typeof __CLOVER_TEST_BUILD__ === "string" ? null : input.launcher !== undefined
     ? input.launcher
     : await resolveAppLauncher({ os: input.os, profile: input.profile, execPath: input.execPath, env: input.env }, run);
   const now = input.now ?? Date.now;
@@ -66,7 +70,7 @@ export async function startDaemonPairSide(input: DaemonPairSideInput): Promise<D
     stopDaemon: input.stopDaemon,
     ...(input.log ? { log: input.log } : {}),
   }, { ...input.options, desktop: launcher !== null });
-  input.log?.(`[pair] ${launcher === null ? "no app installed: the daemon runs alone" : `the app starts with: ${launcher.how}`}`);
+  input.log?.(`[pair] ${typeof __CLOVER_TEST_BUILD__ === "string" ? "a test-marked build: the daemon never starts the app" : launcher === null ? "no app installed: the daemon runs alone" : `the app starts with: ${launcher.how}`}`);
   pair.start();
   return {
     pair,

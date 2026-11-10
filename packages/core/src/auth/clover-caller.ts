@@ -2,7 +2,8 @@
 // role and its token (clover-tokens.ts), the daemon probes the peer process (platform/caller-probe.ts):
 //   app   the user, only from outside every sandbox and escape floor and not under a process the daemon
 //         started for a bot, an agent or a plugin; otherwise refused (an app inside a sandbox is not
-//         the app)
+//         the app). On macOS the peer must also be the signed Clover app of the profile, checked by its
+//         audit token (`platform/peer-signature.ts`; Linux and Windows have no such check to make)
 //   cli   the user on the same terms; a CLI started under a session's process acts as that session; a
 //         fenced CLI that belongs to no session is refused (fail closed)
 //   layer a plugin (its token names it); plugin-host the plugin its process serves, with each
@@ -21,7 +22,12 @@ import {
   allowedMethods, CLOVER_ERR, CLOVER_METHODS, type Caller, type CloverRole, type SessionKind,
 } from "@waifucave/clover-protocol";
 import { descendsFrom, type PeerFacts } from "../platform/caller-probe";
+import type { AppPeerPolicy } from "../platform/peer-signature";
 import type { CloverBinding, HelloRefusal } from "./clover-tokens";
+
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+
 
 /** The session a process belongs to: the daemon's record of the processes it started for sessions
  *  (a Bash call, an agent, a hook). The executors register them (C-M2's fence and the session host). */
@@ -68,6 +74,9 @@ export interface CallerInput {
   readonly linkPid?: number;
   /** This daemon's pid (`process.pid`). */
   readonly daemonPid?: number;
+  /** Whether an `app` peer is the signed Clover app (`peer-signature.ts`): the OS's check (`defaultAppPeerCheck`), or
+   *  `"none"` where it has none. Required, so leaving it out can't skip the check. */
+  readonly appPeer: AppPeerPolicy;
 }
 
 const notTheUser = (message: string): HelloRefusal => ({ code: CLOVER_ERR.NOT_THE_USER, message });
@@ -83,7 +92,11 @@ export function resolveCloverCaller(input: CallerInput): Caller | HelloRefusal {
   const asUser = peer.floor === "outside-floor" && !underSpawned;
   switch (binding.role) {
     case "app":
-      return asUser ? { kind: "user", client: "app" } : notTheUser("an app connection from inside a sandbox, or from a bot's process, is not the app");
+      if (!asUser) return notTheUser("an app connection from inside a sandbox, or from a bot's process, is not the app");
+      if (input.appPeer !== "none" && !input.appPeer(peer)) {
+        return { code: CLOVER_ERR.PROCESS_REFUSED, message: "this app connection doesn't come from the signed Clover app" };
+      }
+      return { kind: "user", client: "app" };
     case "cli": {
       if (asUser) return { kind: "user", client: "cli" };
       const s = processes.sessionOf(chain);
@@ -119,11 +132,22 @@ export function isFencedCaller(caller: Caller): boolean {
  *  refusal, or null to dispatch. A `change` method from a plugin's layer is let through for the
  *  handler to turn into a sealed card (§5.5). */
 export function gateCloverRequest(role: CloverRole, caller: Caller, method: string): HelloRefusal | null {
-  if (!allowedMethods(role).has(method)) return { code: CLOVER_ERR.ROLE_REFUSED, message: `the ${role} role may not call ${method}` };
+  // A test-marked build (scripts/test-build.ts; a real build compiles this out): the harness's own `cli` connection
+  // (the user's, never a session's) may also list, read, frame and answer cards, as the acceptance run's driver.
+  if (!(typeof __CLOVER_TEST_BUILD__ === "string" && role === "cli" && caller.kind === "user" && ["card.list", "card.get", "card.frame", "card.answer"].includes(method)) && !allowedMethods(role).has(method)) return { code: CLOVER_ERR.ROLE_REFUSED, message: `the ${role} role may not call ${method}` };
   const spec = CLOVER_METHODS.get(method)!;
   if (spec.userOnly && caller.kind !== "user") {
     if (role === "layer" && spec.change !== undefined) return null;
     return notTheUser(`${method} is the user's`);
   }
+  if (spec.noSessions && !isTheUsersOwn(caller)) return notTheUser(`${method} is read for the user alone`);
   return null;
+}
+
+/** The user's own call: a user's client, or a paired computer's call made for its user (`peer.call` as the user, with
+ *  no session). Never a session, a plugin or the core, here or on the calling computer. What only the user may read
+ *  (`noSessions`) is read for this alone. */
+export function isTheUsersOwn(caller: Caller): boolean {
+  if (caller.kind === "user") return true;
+  return caller.kind === "peer" && caller.asKind === "user" && caller.sessionId === undefined;
 }

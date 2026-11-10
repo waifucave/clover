@@ -10,6 +10,7 @@
         "app",
         "remote"
       ],
+      "noSessions": true,
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -334,7 +335,7 @@
                   }
                 },
                 "children": {
-                  "maxItems": 256,
+                  "maxItems": 1024,
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -407,6 +408,7 @@
         "app",
         "remote"
       ],
+      "noSessions": true,
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -737,7 +739,7 @@
                 }
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "object",
@@ -1102,7 +1104,7 @@
             ]
           },
           "children": {
-            "maxItems": 256,
+            "maxItems": 1024,
             "type": "array",
             "items": {
               "type": "string",
@@ -1505,7 +1507,7 @@
                 }
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "object",

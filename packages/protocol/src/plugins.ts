@@ -7,8 +7,8 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, Caller, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
-  Timestamp, TopPluginId, TreeHash,
+  AnyPluginId, BotId, Caller, MAX_CHILD_PLUGINS, CardId, ChangeResult, ComputerName, Empty, HostProcess, Ok, Scope, SemverVersion, Text,
+  SessionId, Timestamp, TopPluginId, TreeHash,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -25,11 +25,19 @@ export type PluginState = z.infer<typeof PluginState>;
 export const PluginSource = z.enum(["bundled", "index", "npm", "local", "wrapped", "dev"]);
 export type PluginSource = z.infer<typeof PluginSource>;
 
+/** What the core wrapped into a plugin (§5.1 "wrapped automatically"). */
+export const WRAP_KINDS = ["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin"] as const;
+export const WrapKind = z.enum(WRAP_KINDS);
+export type WrapKind = z.infer<typeof WrapKind>;
+
 /** Who wrote it, from the core's own record (§5.6); the manifest's `generated.by` is only a hint. */
 export const PluginProvenance = z.object({
   by: z.enum(["user-app", "user-terminal", "bot", "migration", "found", "bundled"]),
   at: Timestamp,
   bot: BotId.optional(),
+  /** A plugin the core generated around a bare item: what it was, and the parts of it Clover has no point for yet,
+   *  which stay in the folder unused and which the OK names (§5.1). The core's own record, never the manifest's. */
+  wrapped: z.object({ from: WrapKind, unused: z.array(utf16(200, 1)).max(64).optional() }).optional(),
 });
 export type PluginProvenance = z.infer<typeof PluginProvenance>;
 
@@ -68,7 +76,7 @@ export const PluginSummary = z.object({
   namespace: utf16(40),
   scope: Scope,
   adult: z.boolean(),
-  children: z.array(AnyPluginId).max(256),
+  children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS),
   /** A development folder (§5.6), on this computer only. */
   dev: z.boolean(),
 });
@@ -103,7 +111,7 @@ export const InstallSource = z.discriminatedUnion("from", [
   z.object({ from: z.literal("folder"), path: utf16(4096, 1) }),
   /** A bare item that the core wraps into a plugin (§5.1): a pasted MCP config, an MCP URL, a skill folder, an agent
    *  file or a Claude Code plugin folder. */
-  z.object({ from: z.literal("wrap"), kind: z.enum(["mcp-config", "mcp-url", "skill-folder", "agent-file", "claude-plugin"]), value: utf16(1_000_000, 1) }),
+  z.object({ from: z.literal("wrap"), kind: WrapKind, value: utf16(1_000_000, 1) }),
 ]);
 export type InstallSource = z.infer<typeof InstallSource>;
 
@@ -182,6 +190,8 @@ export type PluginAuthView = z.infer<typeof PluginAuthView>;
  *  `css` and `networkHosts`; a view without them (an older daemon, a test's fake) means none of each. */
 export const UiPluginView = z.object({
   pluginId: AnyPluginId,
+  /** The manifest's name. */
+  name: Text,
   treeHash: TreeHash,
   /** Where it came from (§5.5 rule 5: a bundled entry yields to none). */
   source: PluginSource.optional(),
@@ -193,8 +203,9 @@ export const UiPluginView = z.object({
   css: z.array(utf16(4096, 1)).max(32).optional(),
   /** The hosts its `network:` capabilities declare, for the layer's CSP and `Connection-Allowlist`. */
   networkHosts: z.array(utf16(300, 1)).max(256).optional(),
-  /** For a bot's plugin: the bot's name and the theme file its tab wears. */
-  bot: z.object({ name: Text, theme: utf16(4096).optional() }).optional(),
+  /** For a bot's plugin: the bot's name, the theme its tab wears (one of `themes`) and the layout file its tab is
+   *  arranged by (a file in its folder). */
+  bot: z.object({ name: Text, theme: utf16(4096).optional(), layout: utf16(4096).optional() }).optional(),
   /** The layer's origin label: the id with `/` written `--` (§5.5). Everything under `clover` shares `clover`. */
   layer: utf16(128),
   assetBase: utf16(2048),
@@ -434,6 +445,23 @@ export const PLUGINS_METHODS = {
     params: Empty, result: z.object({ plugins: z.array(UiPluginView) }),
     doc: "Every running plugin's UI, for the app's plugin runtime to mount in layers (§5.5).",
   }),
+  pluginLayerApi: defineMethod({
+    name: "plugin.layer.api", owner: "B", roles: ["app"],
+    params: z.object({
+      /** The plugin of the mount the app bound the calling component to, never anything the component said. */
+      pluginId: AnyPluginId,
+      /** A plugin API call a component may make (the SDK's `API_CALLS`, `where` "ui" or "both"). */
+      call: utf16(128, 1),
+      /** The method's parameters in order, typed by the SDK's `ApiCallSignatures` (`layerApiCall` builds them):
+       *  `host.call` takes the handler's name, its args and options. A listener can't be one. */
+      args: z.array(z.unknown()).max(64),
+      /** The session the component shows, for calls scoped to it. (No `bot`: nothing scopes a layer call to a bot yet,
+       *  so the core takes none rather than ignore one, #333's review.) */
+      session: SessionId.optional(),
+    }),
+    result: z.object({ result: z.unknown() }),
+    doc: "A plugin component's plugin API call, which the app makes for it: as the user, through the core's capability gate.",
+  }),
   pointList: defineMethod({
     name: "point.list", owner: "B", roles: ["app", "cli"],
     params: Empty, result: z.object({ points: z.array(PointView) }),
@@ -574,6 +602,83 @@ export const PLUGINS_METHODS = {
     result: Ok,
     doc: "The next piece of a stream: a streamed handler's output, or a streamed argument of an API call.",
   }),
+  // A plugin's `net.fetch` (§5.4 "The keyed fetch") across the plugin host: the request's head goes as
+  // `pluginHost.fetch`, which answers the response's head; the bodies go in pieces within credit windows, each way.
+  // The daemon enforces every limit (packages/core/src/plugin-host/fetch-wire.ts `FETCH_LIMITS`).
+  pluginHostFetch: defineMethod({
+    name: "pluginHost.fetch", owner: "B", roles: ["plugin-host"],
+    params: z.object({
+      /** Stamped by the plugin host from its worker table (review S3). */
+      pluginId: AnyPluginId,
+      /** The worker's id for this fetch, which the body messages name. One the daemon has open is refused. */
+      fetchId: utf16(128, 1),
+      url: utf16(16_384, 1),
+      method: utf16(32, 1),
+      /** Name and value pairs (at most 256, 64 KiB together). */
+      headers: z.array(z.tuple([utf16(16_384), utf16(65_536)])).max(256),
+      /** A body given whole (at most 16 MiB). */
+      body: z.instanceof(Uint8Array).optional(),
+      /** The body is a stream: its pieces follow as `pluginHost.fetchSend`, within `pluginHost.fetchSendCredit`. */
+      upload: z.boolean().optional(),
+      /** The keyed fetch's options (`auth`, `idleTimeoutMs`). */
+      options: z.record(z.string(), z.unknown()).optional(),
+      /** As `pluginHost.api`'s: the open call it was made while serving, stamped by the host. */
+      invocation: utf16(128, 1).optional(),
+    }),
+    result: z.object({
+      status: z.number().int().min(200).max(599),
+      statusText: utf16(512),
+      headers: z.array(z.tuple([utf16(16_384), utf16(65_536)])),
+      /** A body follows as `pluginHost.fetchBody`. */
+      body: z.boolean(),
+    }),
+    doc: "A plugin's net.fetch: the request's head; answers the response's head (§5.4).",
+  }),
+  pluginHostFetchSend: defineMethod({
+    name: "pluginHost.fetchSend", owner: "B", roles: ["plugin-host"],
+    params: z.object({
+      pluginId: AnyPluginId, fetchId: utf16(128, 1),
+      /** From 0, one more each piece. */
+      seq: z.number().int().min(0),
+      /** At most 64 KiB, within the credit the daemon gave. */
+      bytes: z.instanceof(Uint8Array).optional(),
+      end: z.boolean().optional(),
+    }),
+    result: Ok,
+    doc: "The next piece of a fetch's streamed request body, or its end.",
+  }),
+  pluginHostFetchSendCredit: defineMethod({
+    name: "pluginHost.fetchSendCredit", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
+    params: z.object({ fetchId: utf16(128, 1), bytes: z.number().int().min(1) }),
+    result: Ok,
+    doc: "More of a fetch's streamed request body the daemon takes.",
+  }),
+  pluginHostFetchBody: defineMethod({
+    name: "pluginHost.fetchBody", owner: "B", roles: ["plugin-host"], direction: "from-daemon",
+    params: z.object({
+      fetchId: utf16(128, 1),
+      seq: z.number().int().min(0),
+      bytes: z.instanceof(Uint8Array).optional(),
+      /** The body ended. */
+      end: z.boolean().optional(),
+      /** The fetch failed (its code, its message, the keyed fetch's code in `detail.fetch`). */
+      error: z.object({ code: utf16(64), message: utf16(2000), detail: z.record(z.string(), z.unknown()).optional() }).optional(),
+    }),
+    result: Ok,
+    doc: "The next piece of a fetch's response body, its end, or its failure: the last message of a fetch.",
+  }),
+  pluginHostFetchCredit: defineMethod({
+    name: "pluginHost.fetchCredit", owner: "B", roles: ["plugin-host"],
+    params: z.object({ pluginId: AnyPluginId, fetchId: utf16(128, 1), bytes: z.number().int().min(1) }),
+    result: Ok,
+    doc: "More of a fetch's response body the worker takes.",
+  }),
+  pluginHostFetchCancel: defineMethod({
+    name: "pluginHost.fetchCancel", owner: "B", roles: ["plugin-host"],
+    params: z.object({ pluginId: AnyPluginId, fetchId: utf16(128, 1) }),
+    result: Ok,
+    doc: "The plugin let go of a fetch (an abort, a cancelled body): the daemon aborts it upstream.",
+  }),
   pluginHostUnwatch: defineMethod({
     name: "pluginHost.unwatch", owner: "B", roles: ["plugin-host"],
     params: z.object({ pluginId: AnyPluginId, subscription: utf16(128, 1) }), result: Ok,
@@ -608,6 +713,9 @@ export const PluginRemovedEvent = coreEvent("plugin_removed", { id: AnyPluginId 
 export const PluginUiChangedEvent = coreEvent("plugin_ui_changed", { pluginIds: z.array(AnyPluginId).max(1000) });
 export const CommandsChangedEvent = coreEvent("commands_changed", {});
 export const PluginLogEvent = coreEvent("plugin_log", { id: AnyPluginId, line: utf16(4000) });
+/** A plugin's host half sent its components a message (`ui.send`): the app gives it to the components that listen
+ *  (`host.on(event)`). */
+export const PluginUiMessageEvent = coreEvent("plugin_ui_message", { pluginId: AnyPluginId, event: utf16(128, 1), value: z.unknown() });
 export const DevFolderReloadedEvent = coreEvent("dev_folder_reloaded", {
   path: utf16(4096), pluginId: AnyPluginId.optional(), ok: z.boolean(), reason: utf16(2000).optional(),
 });
@@ -650,6 +758,11 @@ export const PLUGINS_EVENTS = {
     type: "plugin_log", owner: "B", roles: ["app"], schema: PluginLogEvent, transient: true,
     fixture: { type: "plugin_log", ts: 1781270000000, id: "luna", line: "connected to the tarot service" },
     doc: "A plugin's new log line, for Settings while it is open.",
+  }),
+  pluginUiMessage: defineEvent({
+    type: "plugin_ui_message", owner: "B", roles: ["app"], schema: PluginUiMessageEvent, transient: true,
+    fixture: { type: "plugin_ui_message", ts: 1781270000000, pluginId: "luna", event: "drawn", value: { card: "The Fool" } },
+    doc: "A plugin's host half sent its components a message (`ui.send`); the app relays it to their `host.on`.",
   }),
   devFolderReloaded: defineEvent({
     type: "dev_folder_reloaded", owner: "B", roles: ["app"], schema: DevFolderReloadedEvent,

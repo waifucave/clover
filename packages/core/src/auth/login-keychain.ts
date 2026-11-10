@@ -72,7 +72,13 @@ export function resolveKeychain(r: KeychainResolution): KeychainFile {
     if (login !== undefined && real === login) throw new KeychainFfiError("test keychain (it is the login keychain)", -50);
     return r.openFile(real);
   }
-  if (underTest) throw new KeychainFfiError("login keychain (refused: this process runs under a test; it uses only its throwaway test keychain)", -50);
+  if (underTest) {
+    // Say what to set (J's macOS audit: a throwaway daemon with only `CLOVER_KEYCHAIN_SERVICE` crashed here unexplained).
+    const why = UNDER_TEST_ENV.filter((k) => r.env[k] !== undefined);
+    throw new KeychainFfiError(
+      `login keychain (refused: this process runs under a test${why.length > 0 ? ` (${why.join(", ")} set)` : " (NODE_ENV=test)"}; it uses only a throwaway keychain file: ` +
+      `make one with \`security create-keychain -p ${TEST_KEYCHAIN_PASSWORD} <path>\` and set ${TEST_KEYCHAIN_ENV}=<path>)`, -50);
+  }
   return r.openPath(r.loginPath());
 }
 
@@ -80,10 +86,24 @@ let opened: KeychainFile | undefined;
 let installedTestFile: string | undefined;
 let openers: Pick<KeychainResolution, "openFile" | "openPath"> = { openFile: (p) => openKeychainFile(p, TEST_KEYCHAIN_PASSWORD), openPath: openKeychainPath };
 
+/** A test-marked release build's keychain (scripts/test-build.ts): the throwaway keychain FILE only, named by
+ *  `CLOVER_TEST_KEYCHAIN` as a dev build takes it, never the login keychain, whatever else is set: without the file it
+ *  throws. Called only behind the compile-time `__CLOVER_TEST_BUILD__`, so a real build has none of it. */
+export function resolveTestBuildKeychain(r: Omit<KeychainResolution, "distBuild">): KeychainFile {
+  const named = r.env[TEST_KEYCHAIN_ENV];
+  if (r.testFile === undefined && (named === undefined || named === "")) {
+    throw new KeychainFfiError(`login keychain (refused: this is a test-marked build, which uses only a throwaway keychain file: set ${TEST_KEYCHAIN_ENV}=<path>)`, -50);
+  }
+  return resolveKeychain({ ...r, distBuild: false });
+}
+
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+
 /** The keychain Clover's items live in, opened once per process: the login keychain, or under a test its
- *  throwaway keychain (never the login one). */
+ *  throwaway keychain (never the login one). A test-marked build's is only ever its throwaway file. */
 export function loginKeychain(): KeychainFile {
-  opened ??= resolveKeychain({ env: process.env, distBuild: DIST_BUILD, testFile: installedTestFile, loginPath: () => loginKeychainPath(), ...openers });
+  const r = { env: process.env, testFile: installedTestFile, loginPath: () => loginKeychainPath(), ...openers };
+  opened ??= typeof __CLOVER_TEST_BUILD__ === "string" ? resolveTestBuildKeychain(r) : resolveKeychain({ ...r, distBuild: DIST_BUILD });
   return opened;
 }
 

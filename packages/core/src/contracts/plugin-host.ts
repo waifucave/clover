@@ -170,6 +170,16 @@ export interface HostedStatus {
  *  before the plugin's server sees the request. */
 export const MCP_INVOCATION_META = "clover/invocation";
 
+/** Whether a plugin's host code can use `net.fetch` in this build: yes. A worker's request and the daemon's Response
+ *  cross the plugin host as their own messages (plugin-host/fetch-wire.ts): headers as pairs, bodies streamed both
+ *  ways within credit windows, an abort that reaches the request, every limit the daemon's. It is proven over a REAL
+ *  plugin-host link (plugin-host/tests/net-fetch-link.test.ts, and the web plugin's WebSearch and WebFetch in
+ *  web-net-fetch.test.ts), so the `host` MCP servers of a plugin that declares a `network:` capability are offered.
+ *  Set it back to false only if that stops holding: such servers are then not offered, and say why (`NET_FETCH_GAP`).
+ *  The model plugins' code adapters are a separate switch (`serveCodeAdapters`). */
+export const NET_FETCH_CROSSES_PLUGIN_HOST: boolean = true;
+export const NET_FETCH_GAP = "its tools need net.fetch, which can't cross the plugin host in this build (a fetch's RequestInit and Response don't survive the worker's link)";
+
 /** One `host` MCP server's end of the in-process transport: raw JSON-RPC messages. A `tools/call` the core sends
  *  carries `_meta[MCP_INVOCATION_META]` with the caller it is for (`McpChannel.send`'s `as`); the plugin API calls the
  *  server makes while handling it act as that caller (R7). */
@@ -188,15 +198,19 @@ export interface McpChannel {
  *  plugin's `net.fetch` when it takes the plugin's install record, placing keys by the SDK's `keyPlacementsFor` over
  *  its `auth` entries: a placement off the closed list refuses that build, so the plugin has no fetch at all, rather
  *  than failing a request (lane A's kit, `placement-closed-list`). A request's `idleTimeoutMs` is held to 1 s - 30 min
- *  (`clampKeyedIdleTimeoutMs`). */
+ *  (`clampKeyedIdleTimeoutMs`). `net.fetch` answers a `Response` (it crosses the plugin host as its own messages,
+ *  plugin-host/fetch-wire.ts); anything else fails the call with "net.fetch answered no response". */
 export type ApiRouter = (call: {
   pluginId: string;
-  process: HostProcess;
+  /** The process the host half runs in, or `ui` for a component's call, which the app makes for it. */
+  process: HostProcess | "ui";
   path: string;
   args: unknown[];
   /** Whom the call acts for: the caller of the core's call it was made in, which the core looked up by that call's id
    *  (R7), or the plugin itself; never anything the plugin said. */
   caller: Caller;
+  /** A component's call (`plugin.layer.api`): the session the component shows, for calls scoped to it. */
+  session?: string;
 }) => Promise<unknown>;
 
 export interface PluginHost {
@@ -213,6 +227,8 @@ export interface PluginHost {
   restart(pluginId: string): Promise<void>;
   /** Replaces the worker after a folder change (§5.1 "Live changes"). */
   reload(pluginId: string): Promise<void>;
+  /** A channel to one of the plugin's `host` MCP servers. It closes when the plugin's worker goes (a crash, a stop, a
+   *  reload, its removal): the server is gone with it, and a new channel reaches the next worker. */
   openMcp(pluginId: string, server: string): Promise<McpChannel>;
   status(pluginId: string): HostedStatus;
   serveApi(router: ApiRouter): void;

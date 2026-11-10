@@ -11,6 +11,7 @@ export const S = {
   model: (label: string) => `Model: ${label}`,
   modelMenu: "Model and effort",
   modelSection: "Model",
+  allModels: (n: number) => `Show all models (${n} more)`,
   level: (computer: string, label: string, requested?: string) =>
     requested ? `Approval level on ${computer}: ${label}, ${requested} asked for` : `Approval level on ${computer}: ${label}`,
   levelMenu: (computer: string) => `Approval level on ${computer}`,
@@ -28,5 +29,8 @@ export const S = {
   interruptHint: (bot: string) => `Sending now interrupts ${bot}.`,
   asleep: (bot: string, reason: string) => `${bot} is asleep: ${reason}. Your message waits here until it's back.`,
   tooManyAttachments: (max: number) => `A message can carry at most ${max} attachments.`,
+  sendRefusedGesture: "Your message wasn't sent: press Send, or Enter, again.",
+  sendRefusedStopped: "Clover isn't running, so your message wasn't sent. It is still here.",
+  sendRefused: "Your message wasn't sent. It is still here.",
   dropHere: "Drop files to attach them",
 };

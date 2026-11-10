@@ -2,7 +2,16 @@
 // installers and its update files for a channel, in apps/desktop/out/dist/. Linux's release build is
 // scripts/build-packages.ts with the same --channel.
 //
-//   bun scripts/release/build.ts [--channel latest|beta] [--sign | --sign-dev] [--dry-run]
+//   bun scripts/release/build.ts [--channel latest|beta] [--sign [--no-notarize] | --sign-dev | --test-build] [--dry-run]
+//
+// --sign --no-notarize (macOS only) is the owner's try on this Mac: --sign's Developer ID signing, hardened runtime and
+// checks, with CLOVER_MAC_IDENTITY alone, NEVER notarized or stapled (a locally built app carries no quarantine, so
+// Gatekeeper asks for no ticket, and the daemon's caller check needs the signature, not notarization). It writes no
+// update files at all (no app, core, plugin Bun or plugins feed, no served copies; electron-builder's are removed), so
+// nothing that looks like an update exists for it, and publish refuses it (no stapled dmg, no update files). It goes to
+// apps/desktop/out/sign-only (never out/dist: the build empties its folder first, and an unpublished release sitting in
+// out/dist stays untouched), and its BUILD-COMMIT-mac.txt carries the sign-only mark on its second line
+// (lib.ts's SIGN_ONLY_LABEL), which the release step refuses by name. The dmg keeps the release's name.
 //
 // It runs on the OS it builds for (macOS on Apple silicon, Windows x64):
 //   1. builds the app (apps/desktop's `build`); stages the bundled plugins (the committed files under plugins/) in
@@ -52,15 +61,27 @@
 // identity. The checks are the signed build's but for the timestamp, the staple and Gatekeeper's verdict: it installs
 // on the Mac that built it (a downloaded copy would be stopped by Gatekeeper), and the owner's publish step refuses it
 // (it requires a stapled dmg).
+//
+// --test-build (macOS only) is a test-marked build (scripts/test-build.ts) for the acceptance script: --sign's
+// Developer ID signing (the daemon's caller check needs it), with CLOVER_MAC_IDENTITY alone, NEVER notarized or
+// stapled. Its core and app carry the compile-time marker: the core takes a throwaway keychain file and a temp home and
+// refuses to start without them, and the app uses Chromium's mock keychain and an answer key in memory. It goes to
+// apps/desktop/out/test-build (never out/dist, so a real release there is untouched and publish's `--from` never meets
+// it), writes no update files (no core, plugin Bun or plugins feed, no served copies; electron-builder's are removed),
+// and its BUILD-COMMIT-mac.txt names it a test build, which the release step refuses. Every build checks the marker in
+// the staged core and the app's app.asar: a real build carries neither the label nor the test-only code, a test build
+// both.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { asarFiles, asarMarkerProblems, testBuildMarkerProblems } from "../test-build";
 import { daemonOutput, runScriptLine, type DaemonTarget } from "../build-daemon";
 import { CLOVER_TEAM_ID } from "../../packages/core/src/auth/app-token-acl";
 import { BUNDLED_MANIFEST_FILE, type BundledManifest } from "../../packages/core/src/bundled-plugins-dir";
+import { CLOVER_APP_IDENTIFIER as CLOVER_APP_IDENTIFIERS, appRequirement } from "../../packages/core/src/bundled-identities";
 import { LINK_BUILD, LINK_OUTPUT, linkBuildEnv } from "../build-packages";
 import { bundledBinaryProblems, bundledFiles } from "../bundled-binaries";
 import { sealProblems } from "../seal-bun-doors";
@@ -68,7 +89,7 @@ import { runNameScan } from "./name-scan";
 import { resolveDevSigningIdentity } from "../dev-daemon-lib";
 import { buildBundledPlugins, bundledPluginsProblems, STAGED_PLUGINS, walkTree, writeStagedManifest } from "./bundled-plugins";
 import {
-  authenticodeCommand, authenticodeProblems, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
+  authenticodeCommand, authenticodeProblems, buildCommitFile, channelArgs, checkCoreFeed, checkoutCommit, checkUpdateInfo, codesignArgs, codesignDmgArgs, CORE_TARGET, entitlementsIn,
   expectedArtifacts, feedFile, formatUpdateInfo, identityTeam, parseEntitlementKeys, writeBuildCommit,
   notarizeArgs, parseChannel, parseCodesignDisplay, parseUpdateInfo, refreshEntry, RESOURCE_BINARIES, signatureProblems, codesignDevArgs, teamRequirement,
   checkPluginBunFeed, checkPluginsFeed, writeCoreAssets, writePluginBunAssets, writePluginsAssets, writeServedCopies, type Channel,
@@ -78,9 +99,13 @@ import { coreFeedFile, pluginBunFeedFile, pluginsFeedFile } from "../../packages
 export type BuildOs = "mac" | "win";
 
 /** The app's bundle identifier (apps/desktop/electron-builder.yml's appId). */
-export const CLOVER_APP_IDENTIFIER = "com.waifucave.clover";
-/** The code requirement the signed Clover.app must satisfy: its identifier, Apple's Developer ID chain, Clover's team. */
-export const CLOVER_APP_REQUIREMENT = `identifier "${CLOVER_APP_IDENTIFIER}" and anchor apple generic and certificate leaf[subject.OU] = "${CLOVER_TEAM_ID}"`;
+export const CLOVER_APP_IDENTIFIER = CLOVER_APP_IDENTIFIERS.dist;
+/** The code requirement the signed Clover.app must satisfy: its identifier, Apple's Developer ID chain, Clover's team.
+ *  The same string a Developer ID daemon checks an `app` connection's peer against (`bundled-identities.ts`'s
+ *  `appRequirement`). The owner's --sign-dev alpha is checked without the Developer ID clauses (`CLOVER_APP_DEV_SIGNED_REQUIREMENT`). */
+export const CLOVER_APP_REQUIREMENT = appRequirement("dist", CLOVER_TEAM_ID);
+/** The --sign-dev alpha's app: the dist identifier, Apple's chain and Clover's team (an Apple Development identity). */
+export const CLOVER_APP_DEV_SIGNED_REQUIREMENT = appRequirement("dist", CLOVER_TEAM_ID, false);
 
 export interface ReleaseBuildArgs {
   os: BuildOs;
@@ -88,6 +113,10 @@ export interface ReleaseBuildArgs {
   sign: boolean;
   /** The owner's dev-signed, unnotarized alpha (macOS, beta channel). */
   signDev: boolean;
+  /** A test-marked build (scripts/test-build.ts): Developer ID signed (`sign` is true), never notarized, no feed. */
+  testBuild?: boolean;
+  /** `--sign --no-notarize`: Developer ID signed (`sign` is true), never notarized or stapled, no feed. */
+  signOnly?: boolean;
   dryRun: boolean;
 }
 
@@ -102,11 +131,15 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
   let channel: Channel | undefined;
   let sign = false;
   let signDev = false;
+  let testBuild = false;
+  let noNotarize = false;
   let dryRun = false;
   let os: BuildOs | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--sign") sign = true;
+    else if (a === "--test-build") testBuild = true;
+    else if (a === "--no-notarize") noNotarize = true;
     else if (a === "--sign-dev") signDev = true;
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--channel") channel = parseChannel(argv[++i]);
@@ -116,7 +149,7 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
       const v = a === "--os" ? argv[++i] : a.slice("--os=".length);
       if (v !== "mac" && v !== "win") throw new Error(`--os takes mac or win (not ${String(v)})`);
       os = v;
-    } else throw new Error(`unknown argument ${a} (usage: release/build [--channel latest|beta] [--sign | --sign-dev] [--dry-run])`);
+    } else throw new Error(`unknown argument ${a} (usage: release/build [--channel latest|beta] [--sign [--no-notarize] | --sign-dev | --test-build] [--dry-run])`);
   }
   const host = buildOsFor(platform, arch);
   if (os !== undefined && os !== host && !dryRun) throw new Error(`this machine builds ${host ?? "no release"}: --os ${os} is for a dry run elsewhere`);
@@ -128,6 +161,18 @@ export function parseReleaseBuildArgs(argv: readonly string[], platform: string,
     // An alpha is a beta (the controller's ruling): no third channel, and never latest.
     if (channel === "latest") throw new Error("--sign-dev builds the beta channel (an alpha is a beta), never latest");
     channel = "beta";
+  }
+  if (noNotarize) {
+    if (!sign || signDev || testBuild) throw new Error("--no-notarize goes with --sign alone (the Developer ID build, signed but not notarized)");
+    if (os !== "mac") throw new Error("--no-notarize is for macOS (notarization is Apple's)");
+    // Signed like --sign, never notarized; no feed, so its channel names nothing.
+    return { os, channel: channel ?? "beta", sign: true, signDev: false, signOnly: true, dryRun };
+  }
+  if (testBuild) {
+    if (sign || signDev) throw new Error("--test-build signs with the Developer ID itself and is never notarized: not with --sign or --sign-dev");
+    if (os !== "mac") throw new Error("--test-build is for macOS (the Developer ID signed app the caller check takes)");
+    // Developer ID signed like --sign, never notarized; no feed, so its channel names nothing.
+    return { os, channel: channel ?? "beta", sign: true, signDev: false, testBuild: true, dryRun };
   }
   return { os, channel: channel ?? "latest", sign, signDev, dryRun };
 }
@@ -174,8 +219,9 @@ function liveDevSigningIdentity(): DevIdentity {
 }
 
 /** What --sign needs from the environment, or the names missing (never their values). */
-export function signingInputs(os: BuildOs, env: Record<string, string | undefined>): { missing: string[]; problems: string[] } {
-  const need = os === "mac" ? ["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"] : ["WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"];
+export function signingInputs(os: BuildOs, env: Record<string, string | undefined>, notNotarized = false): { missing: string[]; problems: string[] } {
+  // A test build or a sign-only one is never notarized: it needs no notarytool profile.
+  const need = os === "mac" ? (notNotarized ? ["CLOVER_MAC_IDENTITY"] : ["CLOVER_MAC_IDENTITY", "APPLE_KEYCHAIN_PROFILE"]) : ["WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "CLOVER_WIN_PUBLISHER"];
   const missing = need.filter((k) => !env[k]);
   const problems: string[] = [];
   if (os === "mac" && env.CLOVER_MAC_IDENTITY) {
@@ -219,13 +265,54 @@ export function releaseBuilderArgs(a: ReleaseBuildArgs, env: Record<string, stri
   if (!a.sign) return out;
   // electron-builder takes the identity without its "Developer ID Application: " prefix (it refuses one that has it,
   // and picks the certificate type itself); codesign takes the full name.
+  // A test build: the Developer ID, never notarized, into its own folder.
+  if (a.os === "mac" && a.testBuild) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${TEST_BUILD_OUT}`, ...TEST_BUILD_ARTIFACT_ARGS];
+  // A sign-only build: the Developer ID, never notarized, into its own folder.
+  if (a.os === "mac" && a.signOnly) return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=false", `-c.directories.output=${SIGN_ONLY_OUT}`];
   if (a.os === "mac") return [...out, `-c.mac.identity=${builderIdentity(env.CLOVER_MAC_IDENTITY ?? "")}`, "-c.mac.notarize=true"];
   return [...out, "-c.win.forceCodeSigning=true", `-c.win.signtoolOptions.publisherName=${env.CLOVER_WIN_PUBLISHER}`];
+}
+
+/** What a sign-only build (`--sign --no-notarize`) leaves in `SIGN_ONLY_OUT`: the app's dmg and zip, the checksums and
+ *  the commit (marked sign-only), and no update file of any kind. */
+export function signOnlyOutputs(version: string): string[] {
+  return [`Clover-${version}.dmg`, `Clover-${version}-mac.zip`, "SHA256SUMS-mac.txt", buildCommitFile("mac")];
+}
+
+/** Where a test build goes, relative to apps/desktop: never out/dist, where a real release is built and published from. */
+export const TEST_BUILD_OUT = "out/test-build";
+
+/** Where a sign-only build goes, relative to apps/desktop: never out/dist either (its wipe would take an unpublished
+ *  release sitting there). */
+export const SIGN_ONLY_OUT = "out/sign-only";
+
+/** A test build's dmg and zip carry TEST in their names (electron-builder's artifactName; the zip takes the mac
+ *  section's), so nobody takes one for a release. */
+export const TEST_BUILD_ARTIFACT_ARGS = ["-c.dmg.artifactName=Clover-${version}-TEST.${ext}", "-c.mac.artifactName=Clover-${version}-TEST-mac.${ext}"] as const;
+
+/** A test build's dmg and zip, as `TEST_BUILD_ARTIFACT_ARGS` names them. */
+export function testBuildArtifacts(version: string): { dmg: string; zip: string } {
+  return { dmg: `Clover-${version}-TEST.dmg`, zip: `Clover-${version}-TEST-mac.zip` };
+}
+
+/** What notarization reads from the environment (notarytool's profile, the Apple ID and API key forms). */
+export const NOTARIZE_ENV = ["APPLE_KEYCHAIN_PROFILE", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_TEAM_ID", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"] as const;
+
+/** The app's main process bundle inside a built app (`app.asar`, which carries out/main/index.js uncompressed). */
+export function appAsar(outDir: string, os: BuildOs): string {
+  return os === "mac" ? join(outDir, "mac-arm64", "Clover.app", "Contents", "Resources", "app.asar") : join(outDir, "win-unpacked", "resources", "app.asar");
 }
 
 /** The environment electron-builder runs with: an unsigned build never looks for an identity or a certificate, and a
  *  dev-signed one only for the identity it is named (nor anything notarization or a certificate file would use). */
 export function builderEnv(a: ReleaseBuildArgs, env: Record<string, string | undefined>): Record<string, string | undefined> {
+  // A test build or a sign-only one signs with the Developer ID but never reaches notarization: none of its inputs reach
+  // electron-builder.
+  if (a.testBuild || a.signOnly) {
+    const out: Record<string, string | undefined> = { ...env };
+    for (const k of NOTARIZE_ENV) delete out[k];
+    return out;
+  }
   if (a.sign && !a.signDev) return env;
   const out: Record<string, string | undefined> = { ...env, CSC_IDENTITY_AUTO_DISCOVERY: "false" };
   for (const k of ["CSC_KEYCHAIN", "CLOVER_MAC_DEV_KEYCHAIN", "CLOVER_MAC_IDENTITY", "CLOVER_WIN_PUBLISHER", "CSC_LINK", "CSC_KEY_PASSWORD", "CSC_NAME", "WIN_CSC_LINK", "WIN_CSC_KEY_PASSWORD", "APPLE_KEYCHAIN_PROFILE", "APPLE_ID", "APPLE_APP_SPECIFIC_PASSWORD", "APPLE_API_KEY", "APPLE_API_KEY_ID", "APPLE_API_ISSUER"]) delete out[k];
@@ -268,19 +355,26 @@ export function machOFiles(dir: string): string[] {
   }).sort();
 }
 
+/** The Mach-O files packed INSIDE an app.asar (by their bytes, whatever their names): each would be loaded from a
+ *  temporary copy with its build-time signature, which the hardened runtime's library validation refuses. A release
+ *  has none (electron-builder.yml's asarUnpack keeps the app's native add-ons out of the asar, where they're signed). */
+export function packedMachO(files: ReadonlyMap<string, Uint8Array>): string[] {
+  return [...files].filter(([, bytes]) => isMachO(bytes)).map(([path]) => path).sort();
+}
+
 /** A bundled plugin's native file's signing identifier: Clover's prefix and its path, as letters, digits and dots. */
 export function nativeIdentifier(rel: string): string {
   return `com.waifucave.clover.plugin.${rel.replace(/[^A-Za-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "")}`;
 }
 
 /** One signed app's checks: its signatures, the resources' entitlements, its seal, Gatekeeper's verdict and its staple. */
-function verifyMacApp(label: string, app: string, teamId: string, root: string, cwd: string, dev = false): string[] {
+function verifyMacApp(label: string, app: string, teamId: string, root: string, cwd: string, dev = false, notarized = !dev): string[] {
   const problems: string[] = [];
   const display = (path: string) => parseCodesignDisplay(run(["codesign", "-dvvv", path], cwd).out);
   problems.push(...signatureProblems(label, display(app), teamId, undefined, { dev }));
   for (const b of RESOURCE_BINARIES) {
     const path = join(app, "Contents", "Resources", "daemon", b.file);
-    problems.push(...signatureProblems(`${label}'s ${b.file}`, display(path), teamId, b.identifier, { dev }));
+    problems.push(...signatureProblems(`${label}'s ${b.file}`, display(path), teamId, b.identifier, { dev, restrict: b.restrict }));
     // A dev-signed binary's designated requirement is the team one it was given (lib.ts's codesignDevArgs).
     if (dev) {
       const dr = /^designated => (.+)$/m.exec(run(["codesign", "-d", "-r-", path], cwd).out)?.[1]?.trim();
@@ -303,10 +397,20 @@ function verifyMacApp(label: string, app: string, teamId: string, root: string, 
       }
     }
   }
-  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${CLOVER_APP_REQUIREMENT}`, app], cwd);
+  // The app's own native add-ons: none packed inside app.asar, and each one in app.asar.unpacked signed by the team
+  // (library validation loads only code of the app's own team into it).
+  const resources = join(app, "Contents", "Resources");
+  for (const rel of packedMachO(asarFiles(new Uint8Array(readFileSync(join(resources, "app.asar")))))) {
+    problems.push(`${label}'s app.asar packs native code (${rel}): it would load from an unsigned temporary copy, which library validation refuses; list it in electron-builder.yml's asarUnpack`);
+  }
+  const unpacked = join(resources, "app.asar.unpacked");
+  if (existsSync(unpacked)) {
+    for (const rel of machOFiles(unpacked)) problems.push(...signatureProblems(`${label}'s app.asar.unpacked/${rel}`, display(join(unpacked, rel)), teamId, undefined, { dev }));
+  }
+  const deep = run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", `-R=${dev ? CLOVER_APP_DEV_SIGNED_REQUIREMENT : CLOVER_APP_REQUIREMENT}`, app], cwd);
   if (deep.status !== 0) problems.push(`codesign --verify --deep --strict against Clover's requirement refuses ${label}: ${deep.out.trim().slice(0, 400)}`);
-  // Nothing notarizes a dev-signed alpha: no staple, and Gatekeeper would refuse a downloaded copy.
-  if (dev) return problems;
+  // Nothing notarizes a dev-signed alpha or a test build: no staple, and Gatekeeper would refuse a downloaded copy.
+  if (!notarized) return problems;
   const gate = run(["spctl", "--assess", "--type", "execute", "--verbose=2", app], cwd);
   if (gate.status !== 0 || !/source=Notarized Developer ID/.test(gate.out)) problems.push(`Gatekeeper doesn't accept ${label} as notarized: ${gate.out.trim().slice(0, 400)}`);
   if (run(["xcrun", "stapler", "validate", app], cwd).status !== 0) problems.push(`${label} has no notarization staple`);
@@ -332,6 +436,22 @@ function verifyMac(outDir: string, version: string, teamId: string, root: string
   if (run(["xcrun", "stapler", "validate", dmg], outDir).status !== 0) problems.push("the dmg has no notarization staple");
   const open = run(["spctl", "--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=2", dmg], outDir);
   if (open.status !== 0 || !/source=Notarized Developer ID/.test(open.out)) problems.push(`Gatekeeper doesn't accept the dmg as notarized: ${open.out.trim().slice(0, 400)}`);
+  return problems;
+}
+
+/** A test build's or a sign-only build's checks: the Developer ID app and the app inside the zip, as the release's but
+ *  for notarization (it is never notarized: no Gatekeeper verdict, no staple); a sign-only build's dmg too, by its
+ *  signature. */
+function verifyMacTest(outDir: string, version: string, teamId: string, root: string, signOnly = false): string[] {
+  const problems = verifyMacApp("Clover.app", join(outDir, "mac-arm64", "Clover.app"), teamId, root, outDir, false, false);
+  const unzipped = mkdtempSync(join(tmpdir(), "clover-release-zip-"));
+  try {
+    const zip = signOnly ? `Clover-${version}-mac.zip` : testBuildArtifacts(version).zip;
+    if (run(["ditto", "-x", "-k", join(outDir, zip), unzipped], outDir).status !== 0) problems.push(`${zip} doesn't unpack`);
+    else problems.push(...verifyMacApp("the zip's Clover.app", join(unzipped, "Clover.app"), teamId, root, outDir, false, false));
+  } finally {
+    rmSync(unzipped, { recursive: true, force: true });
+  }
   return problems;
 }
 
@@ -370,7 +490,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     return 2;
   }
   if (a.sign) {
-    const { missing, problems } = signingInputs(a.os, process.env);
+    const { missing, problems } = signingInputs(a.os, process.env, a.testBuild === true || a.signOnly === true);
     for (const m of missing) console.error(`release/build: --sign needs ${m} in the environment`);
     for (const p of problems) console.error(`release/build: ${p}`);
     if (missing.length + problems.length > 0) return 2;
@@ -389,32 +509,42 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   const target = DAEMON_TARGET[a.os];
   const exe = a.os === "win" ? ".exe" : "";
   const builder = ["bun", "x", ...releaseBuilderArgs(a, process.env, dev?.hash)];
-  const kind = a.signDev ? "dev-signed (not notarized: for this Mac)" : a.sign ? "signed" : "unsigned";
+  const kind = a.testBuild ? "a test-marked build (Developer ID signed, never notarized: for the acceptance script)" : a.signOnly ? "signed, not notarized: for this Mac" : a.signDev ? "dev-signed (not notarized: for this Mac)" : a.sign ? "signed" : "unsigned";
+  const appBuild = a.testBuild ? ["bun", "scripts/build.ts", "--test-build"] : ["bun", "run", "build"];
+  const testFlag = a.testBuild ? " --test-build" : "";
   if (a.dryRun) {
     // The identity's name is not a secret, but a dry run has no need to print it.
     const shown = builder.map((c) => (c.startsWith("-c.mac.identity=") ? `-c.mac.identity=<${a.signDev ? "the Apple Development identity's SHA-1" : "CLOVER_MAC_IDENTITY"}>` : c.startsWith("-c.win.signtoolOptions.publisherName=") ? "-c.win.signtoolOptions.publisherName=<CLOVER_WIN_PUBLISHER>" : c));
     console.log(`release/build: ${a.os} ${version} on ${a.channel}, ${kind}`);
-    console.log(`release/build: the app: (in apps/desktop) bun run build`);
+    console.log(`release/build: the app: (in apps/desktop) ${appBuild.join(" ")}`);
     console.log(`release/build: the bundled plugins: plugins/ at HEAD built for ${target} into apps/desktop/${STAGED_PLUGINS.split("\\").join("/")}, measured into out/${BUNDLED_MANIFEST_FILE}`);
-    console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}`);
+    console.log(`release/build: the daemon: bun scripts/build-daemon.ts --target ${target} --plugins-manifest apps/desktop/out/${BUNDLED_MANIFEST_FILE}${testFlag}`);
     console.log(`release/build: the link sidecar: ${LINK_BUILD.join(" ")}`);
     if (a.sign && a.os === "mac") console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignArgs("out/plugins/<file>", "<CLOVER_MAC_IDENTITY>", nativeIdentifier("<file>")).join(" ")}`);
-    if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements).join(" ")}`);
+    if (a.sign && a.os === "mac") for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignArgs(`out/daemon/${b.file}`, "<CLOVER_MAC_IDENTITY>", b.identifier, b.entitlements, { restrict: b.restrict }).join(" ")}`);
     if (a.signDev) console.log(`release/build: sign each Mach-O file of the staged plugins (their native addons) before measuring: ${codesignDevArgs("out/plugins/<file>", dev!.hash, nativeIdentifier("<file>"), CLOVER_TEAM_ID).join(" ").replace(dev!.hash, "<SHA-1>")}`);
-    if (a.signDev) for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignDevArgs(`out/daemon/${b.file}`, dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements).join(" ").replace(dev!.hash, "<SHA-1>")}`);
+    if (a.signDev) for (const b of RESOURCE_BINARIES) console.log(`release/build: sign ${b.file}: ${codesignDevArgs(`out/daemon/${b.file}`, dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements, undefined, { restrict: b.restrict }).join(" ").replace(dev!.hash, "<SHA-1>")}`);
     console.log(`release/build: package: (in apps/desktop) ${shown.join(" ")}`);
+    if (a.testBuild) {
+      console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/${TEST_BUILD_OUT}`);
+      return 0;
+    }
+    if (a.signOnly) {
+      console.log(`release/build: the dmg: sign; never notarized or stapled; no update files (electron-builder's removed); in apps/desktop/${SIGN_ONLY_OUT}`);
+      return 0;
+    }
     if (a.sign && a.os === "mac") console.log(`release/build: the dmg: sign, ${notarizeArgs(`Clover-${version}.dmg`, "<APPLE_KEYCHAIN_PROFILE>").join(" ")}, xcrun stapler staple`);
     console.log(`release/build: the daemon's own update: ${daemonInApp("out/dist", a.os)} as its release file, with its update files`);
     console.log(`release/build: expects ${expectedArtifacts(version, a.os, a.channel).join(", ")}`);
     return 0;
   }
   try {
-    const outDir = join(desktop, "out", "dist");
+    const outDir = a.testBuild ? join(desktop, ...TEST_BUILD_OUT.split("/")) : a.signOnly ? join(desktop, ...SIGN_ONLY_OUT.split("/")) : join(desktop, "out", "dist");
     const staged = join(desktop, "out", "daemon");
     // A release is of one commit, from a fully clean checkout of it (the build reads the whole tree).
     const commit = checkoutCommit(root);
     rmSync(outDir, { recursive: true, force: true });
-    must("the app", ["bun", "run", "build"], desktop);
+    must("the app", appBuild, desktop);
     // The bundled plugins' stage (the committed files only), its manifest, and the daemon's stage, where
     // electron-builder.yml packs them; all removed however the build ends (a stale stage would go into a later plain
     // `bun run dist`). The daemon is built after the plugins are staged: it carries their manifest.
@@ -441,7 +571,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       }
       manifest = writeStagedManifest(stagedPlugins, manifestFile);
       console.log(`release/build: the bundled plugins: ${builtPlugins.files.length} files built (${builtPlugins.natives.length} native addon files), ${Object.keys(manifest.files).length} measured`);
-      if (runScriptLine(`bun scripts/build-daemon.ts --target ${target} --plugins-manifest ${JSON.stringify(manifestFile)}`, root) !== 0) throw new Error("the daemon's build failed");
+      if (runScriptLine(`bun scripts/build-daemon.ts --target ${target} --plugins-manifest ${JSON.stringify(manifestFile)}${testFlag}`, root) !== 0) throw new Error("the daemon's build failed");
       must("the link sidecar", LINK_BUILD, root, linkBuildEnv(process.env, root));
       rmSync(staged, { recursive: true, force: true });
       mkdirSync(staged, { recursive: true });
@@ -452,18 +582,22 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       for (const f of readdirSync(staged)) chmodSync(join(staged, f), 0o755);
       // The seal (scripts/seal-bun-doors.ts) is checked on the very bytes that get signed: a core built some other way
       // never ships unsealed (on Windows, never half-sealed).
-      const seal = sealProblems(new Uint8Array(readFileSync(join(staged, `clover-core${exe}`))));
+      const stagedCore = new Uint8Array(readFileSync(join(staged, `clover-core${exe}`)));
+      const seal = sealProblems(stagedCore);
       if (seal.length > 0) throw new Error(`the staged clover-core fails the seal's byte check: ${seal.join("; ")}`);
+      // The marker gate (scripts/test-build.ts) on the very bytes that get signed.
+      const marker = testBuildMarkerProblems("the staged clover-core", stagedCore, a.testBuild === true);
+      if (marker.length > 0) throw new Error(marker.join("; "));
       if (a.sign && a.os === "mac") {
         for (const b of RESOURCE_BINARIES) {
-          must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements)), root);
+          must(`sign ${b.file}`, codesignArgs(join(staged, b.file), process.env.CLOVER_MAC_IDENTITY!, b.identifier, b.entitlements === undefined ? undefined : join(root, b.entitlements), { restrict: b.restrict }), root);
         }
       }
       if (a.signDev) {
         // By its SHA-1 only: an Apple Development certificate's name is a person's.
         console.log(`release/build: --sign-dev with the team's Apple Development identity (SHA-1 ${dev!.hash})`);
         for (const b of RESOURCE_BINARIES) {
-          must(`sign ${b.file} (dev)`, codesignDevArgs(join(staged, b.file), dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements === undefined ? undefined : join(root, b.entitlements), process.env.CLOVER_MAC_DEV_KEYCHAIN || undefined), root);
+          must(`sign ${b.file} (dev)`, codesignDevArgs(join(staged, b.file), dev!.hash, b.identifier, CLOVER_TEAM_ID, b.entitlements === undefined ? undefined : join(root, b.entitlements), process.env.CLOVER_MAC_DEV_KEYCHAIN || undefined, { restrict: b.restrict }), root);
         }
       }
       // The package gate (scripts/bundled-binaries.ts): plugin Bun beside the core, and on macOS the process holder,
@@ -473,6 +607,12 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       must(`${a.os === "mac" ? "the dmg and the zip" : "the installer"} on ${a.channel}`, builder, desktop, builderEnv(a, process.env));
       const inApp = bundledBinaryProblems(dirname(daemonInApp(outDir, a.os)), target, { kind: "dist" });
       if (inApp.length > 0) throw new Error(`the package gate, in the built app: ${inApp.join("; ")}`);
+      // The marker gate on the app's own code (its app.asar) and on the core as the app carries it.
+      const appMarker = [
+        ...asarMarkerProblems("the app's app.asar", new Uint8Array(readFileSync(appAsar(outDir, a.os))), a.testBuild === true),
+        ...testBuildMarkerProblems("the app's clover-core", new Uint8Array(readFileSync(daemonInApp(outDir, a.os))), a.testBuild === true),
+      ];
+      if (appMarker.length > 0) throw new Error(appMarker.join("; "));
     } finally {
       rmSync(staged, { recursive: true, force: true });
       rmSync(stagedPlugins, { recursive: true, force: true });
@@ -486,6 +626,44 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
       if (plugins.length > 0) return 1;
     }
 
+    if (a.testBuild) {
+      // Signed with the Developer ID, never notarized or stapled, and no update files: nothing here can feed an update.
+      const names = testBuildArtifacts(version);
+      for (const n of [names.dmg, names.zip]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
+      must("sign the dmg", codesignDmgArgs(join(outDir, names.dmg), process.env.CLOVER_MAC_IDENTITY!), outDir);
+      for (const f of readdirSync(outDir).filter((n) => n.endsWith(".yml") || n.endsWith(".blockmap"))) rmSync(join(outDir, f), { force: true });
+      const problems = verifyMacTest(outDir, version, identityTeam(process.env.CLOVER_MAC_IDENTITY!), root);
+      for (const p of problems) console.error(`release/build: ${p}`);
+      if (problems.length > 0) return 1;
+      writeBuildCommit(outDir, a.os, commit, "test");
+      const scan = runNameScan(outDir, { required: true });
+      console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason})`);
+      const shipped = readdirSync(outDir).filter((n) => /\.(dmg|zip)$/.test(n)).sort();
+      writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
+      console.log(`release/build: ${shipped.join(", ")} in ${outDir} (${kind})`);
+      return 0;
+    }
+    if (a.signOnly) {
+      // Signed with the Developer ID, never notarized or stapled, and no update files: nothing here can feed an update,
+      // and publish refuses it (no stapled dmg, no update files).
+      const dmgName = `Clover-${version}.dmg`;
+      for (const n of [dmgName, `Clover-${version}-mac.zip`]) if (!existsSync(join(outDir, n))) throw new Error(`${n} is missing from ${outDir}`);
+      must("sign the dmg", codesignDmgArgs(join(outDir, dmgName), process.env.CLOVER_MAC_IDENTITY!), outDir);
+      for (const f of readdirSync(outDir).filter((n) => n.endsWith(".yml") || n.endsWith(".blockmap"))) rmSync(join(outDir, f), { force: true });
+      const teamId = identityTeam(process.env.CLOVER_MAC_IDENTITY!);
+      const problems = verifyMacTest(outDir, version, teamId, root, true);
+      const dmgSig = parseCodesignDisplay(run(["codesign", "-dvvv", join(outDir, dmgName)], outDir).out);
+      if (dmgSig.adhoc || dmgSig.teamId !== teamId) problems.push(`the dmg is not signed by team ${teamId}`);
+      for (const p of problems) console.error(`release/build: ${p}`);
+      if (problems.length > 0) return 1;
+      writeBuildCommit(outDir, a.os, commit, "sign-only");
+      const scan = runNameScan(outDir, { required: true });
+      console.log(scan.ran ? `release/build: identity scan: ${scan.scanned}/${scan.total} files, no hit` : `release/build: identity scan skipped (${scan.reason})`);
+      const shipped = signOnlyOutputs(version).filter((n) => /\.(dmg|zip)$/.test(n));
+      writeFileSync(join(outDir, `SHA256SUMS-${a.os}.txt`), shipped.map((n) => `${sha256(join(outDir, n))}  ${n}`).join("\n") + "\n");
+      console.log(`release/build: ${shipped.join(", ")} in ${outDir} (${kind})`);
+      return 0;
+    }
     if (a.sign && a.os === "mac") {
       const dmgName = `Clover-${version}.dmg`;
       const dmg = join(outDir, dmgName);

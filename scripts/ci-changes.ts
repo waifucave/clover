@@ -47,8 +47,10 @@ export const CI_AREAS: Readonly<Record<CiArea, readonly Pattern[]>> = {
   // services' shared account-token check and the harness's sign-in stub
   core: [...CORE, "plugins/clover/plugins/model-*/**/*", "services/shared/", "packages/test-harness/src/signin-stub.ts"],
   cli: [...CORE, "packages/cli/"],
-  // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows
-  scripts: ["scripts/", "packages/core/", "packages/cli/", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],
+  // the repo scripts' tests read the core, the CLI, the app, the release inputs and the workflows; its job also runs the
+  // repo-wide source scans (the native channel's anti-wiring test reads every package's src/ and scripts/), so any
+  // package's source runs it: a CLI-only change that imports from the core once got past the core's skipped shards
+  scripts: ["scripts/", "packages/core/", "packages/cli/", "packages/*/src/**/*", "apps/", "apple/", "packaging/", "VERSION", "VERSIONS.json", ".github/"],
   // the scripts' few macOS-only tests (scripts/**/*.darwin.test.ts, on a macOS runner): the scripts themselves only, so
   // a change under apple/ alone takes no macOS runner for them (a push to main still runs every area)
   scriptsmac: ["scripts/"],

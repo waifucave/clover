@@ -152,11 +152,11 @@ describe("the shell", () => {
     expect(document.querySelector('.cl-panel__view[data-view="agent"]')!.hasAttribute("data-used-last")).toBe(true);
   });
 
-  test("the agent tab interrupts and stops through the core", async () => {
+  test("the agent tab has no interrupt or stop button until the host callbacks cover them (no bare core call)", async () => {
     const { core } = await mount({ route: { route: "agent", params: { session: "agent-1" } } });
-    fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
-    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(core.calls.map((c) => [c.method, c.params])).toEqual([["session.interrupt", { id: "agent-1" }], ["session.stop", { id: "agent-1" }]]);
+    expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(core.calls.some((c) => c.method === "session.interrupt" || c.method === "session.stop")).toBe(false);
     expect(toggles()).toEqual(["Session", "Browser"]);
   });
 

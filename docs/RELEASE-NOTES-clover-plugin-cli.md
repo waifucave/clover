@@ -1,0 +1,4 @@
+# `clover plugin` is Clover's plugin list (Clover plugin CLI)
+The next release's notes MUST say, in the user's words:
+- `clover plugin list` now lists Clover's own plugins: what is installed, in development and turned on. The Claude-plugin manager it used to run moved to `clover plugin claude` (`clover plugin claude list`, `install`, `marketplace …`); the old bare verbs (`install`, `uninstall`, `remove`, `enable`, `disable`, `update`, `marketplace`, `restart`) say where they went instead of running.
+- New: `clover plugin new <template>` starts a plugin folder from one of seven templates (bot, theme, tool, ui, model, trigger, point), `clover plugin dev <folder>` turns a development folder on from the terminal, `clover plugin logs <id>` reads a plugin's log, and `clover plugin validate` checks a folder.

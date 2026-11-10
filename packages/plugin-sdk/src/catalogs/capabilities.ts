@@ -18,10 +18,10 @@ export interface CapabilityInfo {
 }
 
 export const CAPABILITIES: readonly CapabilityInfo[] = [
-  { name: "conversation.read", lets: "Read bots' conversations and follow them live; sealed card fields never reach it", ok: "reads your conversations with bots", warns: false },
-  { name: "conversation.post", lets: "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to bots", warns: false },
+  { name: "conversation.read", lets: "Read every bot's conversations and follow them live (there is no per-bot grant yet); sealed card fields never reach it", ok: "reads your conversations with all your bots", warns: false },
+  { name: "conversation.post", lets: "Add a note to any bot's conversation, or send any bot a message (there is no per-bot grant yet); a turn it starts is the plugin's, never the user's", ok: "adds notes and sends messages to any of your bots", warns: false },
   { name: "memory.read", lets: "Read bots' memories", ok: "reads your bots' memories", warns: false },
-  { name: "bots.read", lets: "Read the list of bots and their settings", ok: "sees your bots and their settings", warns: false },
+  { name: "bots.read", lets: "Read the list of every bot and their settings (there is no per-bot grant yet)", ok: "sees all your bots and their settings", warns: false },
   { name: "routines.read", lets: "Read the list of routines and their runs", ok: "sees your routines and their runs", warns: false },
   { name: "computers.read", lets: "Read the computer registry: each computer's folders, level and state", ok: "sees your computers, their folders and levels", warns: false },
   { name: "computers.control", lets: "Take and release holds and the user-working mark, learn where Clover's windows are, and say when an action is running", ok: "controls the screen and input of your computers", warns: true },
@@ -44,9 +44,9 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "audio", lets: "Record and play audio through the app; it records only while push-to-talk is held, unless the user turns listening on", ok: "can hear your microphone", warns: true },
   { name: "call:<plugin-id>", lets: "Run that plugin's commands", ok: "runs commands of {plugin}", warns: false },
   /** Lane A's web plugin (WebFetch): any public host, through the core's fetch with the web floors (public addresses
-   *  only, the dangerous-domain list, a card before a private address, the audit log). Its components get no host from
+   *  only, the dangerous-domain list, a private address refused with no card, the audit log). Its components get no host from
    *  it. The bundled `clover` tree only. */
-  { name: "network:public", lets: "Reach any public host through the core's fetch, with its web floors: public addresses only, the dangerous-domain list, a card before a private address, and the audit log; its components reach no host from it", ok: "connects to any public website, through Clover's web safeguards", warns: true, bundledOnly: true },
+  { name: "network:public", lets: "Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, size and time caps, no key, and the audit log; its components reach no host from it", ok: "connects to any public website, through Clover's web safeguards", warns: true, bundledOnly: true },
   { name: "network:<host>", lets: "Reach that host through the core's fetch, which adds the plugin's own keys and tokens, and from the plugin's components, which reach no other host", ok: "connects to {host}", warns: false },
 ];
 

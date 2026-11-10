@@ -65,12 +65,15 @@ describe("OK cards through the broker", () => {
     expect(reg.get("yes")?.state).toBe("running");
     expect(approved).toEqual(["yes"]);
     // A hook that throws doesn't undo the OK.
-    const throwing = brokerOkCards(broker, (id) => ({ title: id, lines: [], source: "Found on disk" }), () => { throw new Error("boom"); });
+    const logged: string[] = [];
+    const throwing = brokerOkCards(broker, (id) => ({ title: id, lines: [], source: "Found on disk" }), () => { throw new Error("boom"); }, (l) => logged.push(l));
     const reg2 = new RegistryCore({ catalog: catalogPointDecl, store: memoryRegistryStore(), cards: throwing });
     reg2.putAll([{ id: "solo", manifest: m("Solo"), treeHash: "sha256:o", approved: false }]);
     await reg2.installed("solo", "app");
     expect(await click(broker, broker.cards().find((c) => c.pluginId === "solo")!, "approve")).toBe("accepted");
     await flush();
     expect(reg2.get("solo")?.state).toBe("running");
+    // ...and is logged as a warning, with the plugin and the error.
+    expect(logged).toEqual(["plugins: after solo's OK, its approve hook failed: boom"]);
   });
 });

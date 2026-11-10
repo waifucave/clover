@@ -25,12 +25,13 @@
 // neither does with them). The static check (`loaderReach`) stays as `clover plugin validate`'s early error.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, type Stats } from "node:fs";
 import { RESERVED_ENV } from "@waifucave/clover-plugin-sdk";
-import { fencedCommand, pluginFenceAvailable, toolFence, type ProjectAccess } from "./plugin-fence";
+import { fencedCommand, fencedSpawn, pluginFenceAvailable, SPAWN_TRAMPOLINE_FILE, SPAWN_TRAMPOLINE_SOURCE, toolFence, type ProjectAccess } from "./plugin-fence";
 import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
+import { checkRunFiles, sha256Hex, writeRunFile, type RunFileCheck } from "../plugin-host/run-file";
 import { basename, delimiter, dirname, join, resolve, sep } from "node:path";
 
 /** Clover's bunfig for plugin processes: nothing installed at run time. */
@@ -356,6 +357,9 @@ export interface PluginRunGuard {
   /** The plugin-process fence (`plugin-fence.ts`, 2f): on by default where the OS has one; false runs unfenced (tests
    *  of what the load guard alone holds); `userHome` names the home it denies (tests pass a temp one). */
   fence?: false | { userHome?: string };
+  /** A plugin tree's network proxy (2g, `startPluginHost`'s `proxyFor`): a fenced process reaches the network only
+   *  through it; with none, not at all. */
+  proxyFor?: (pluginId: string) => { port: number; env: Record<string, string> } | undefined;
 }
 
 /** Writes Clover's bunfig and guard for plugin processes into `dir` (the daemon's run folder), and returns their paths.
@@ -396,16 +400,25 @@ export function ensurePluginRunFiles(dir: string, o: { cloverHome: string }): Pl
     }
     symlinkSync(bun, bunLink);
   }
-  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE], [files.hostGuard, pluginHostGuardSource(files)]] as const) {
-    let current: string | undefined;
-    try {
-      current = readFileSync(path, "utf8");
-    } catch {
-      current = undefined;
-    }
-    if (current !== text) writeFileSync(path, text, { mode: 0o600 });
+  // Written whole, never through a planted link (plugin-host/run-file.ts); `pluginRunFileChecks` names what each
+  // start then checks.
+  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE], [files.hostGuard, pluginHostGuardSource(files)], [join(real, SPAWN_TRAMPOLINE_FILE), SPAWN_TRAMPOLINE_SOURCE]] as const) {
+    writeRunFile(path, text);
   }
   return files;
+}
+
+/** The run files a plugin process starts from, with the SHA-256 of the text Clover writes into each: the bunfig and
+ *  the plugin guard for every plugin process (and each host worker), the host guard too for a host process. Checked
+ *  (`checkRunFiles`) immediately before the start, so a file a plugin rewrote refuses it (#312's review, S1). */
+export function pluginRunFileChecks(files: PluginRunFiles, o: { host?: boolean } = {}): RunFileCheck[] {
+  return [
+    { path: files.bunfig, sha256: sha256Hex(PLUGIN_BUNFIG) },
+    { path: files.guard, sha256: sha256Hex(PLUGIN_GUARD_SOURCE) },
+    // The spawn trampoline a fenced start runs through (#357), beside the guard.
+    { path: join(dirname(files.guard), SPAWN_TRAMPOLINE_FILE), sha256: sha256Hex(SPAWN_TRAMPOLINE_SOURCE) },
+    ...(o.host === true ? [{ path: files.hostGuard, sha256: sha256Hex(pluginHostGuardSource(files)) }] : []),
+  ];
 }
 
 /** The Bun flags every plugin process runs with. */
@@ -452,16 +465,22 @@ export function pluginBunLaunch(args: readonly string[], base: Readonly<Record<s
 export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard, pluginId?: string, project?: ProjectAccess): E {
   const own = entry.env ?? {};
   refuseReservedPluginEnv(own, `the plugin MCP server at ${pluginRoot} (${basename(entry.command)})`);
+  // The runtime starts the server later; this is the last moment Clover holds it: the bunfig and guard it will preload
+  // are checked here (#312's review, S1), so a rewritten one refuses the hand-off.
+  checkRunFiles(pluginRunFileChecks(guard.files), `the plugin MCP server at ${pluginRoot}`);
   const env = guardedPluginEnv({ ...own, PATH: [guard.files.bin, own.PATH ?? process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter) }, { pluginRoot, ...guard });
   // Never `BUN_BE_BUN`, not even empty: Bun may take it as set. The runtime's merge copies six baseline names only.
   for (const k of ["NODE_OPTIONS", "NODE_PATH", ...Object.keys(process.env).filter((k) => DROPPED_ENV.test(k) && k !== "BUN_OPTIONS" && k !== "BUN_BE_BUN")]) env[k] = "";
   const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
   // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
   if (guard.fence !== false && pluginFenceAvailable()) {
-    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}) });
-    Object.assign(env, toolEnv);
-    const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
-    return { ...entry, command: cmd!, args, env };
+    const proxy = pluginId !== undefined ? guard.proxyFor?.(pluginId) : undefined;
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}), ...(proxy !== undefined ? { proxyPort: proxy.port } : {}) });
+    Object.assign(env, toolEnv, proxy?.env ?? {});
+    // Started by the runtime, in the folder it chooses; the trampoline makes it its own TCC-responsible process.
+    const spawned = fencedSpawn({ cmd: [command, ...(entry.args ?? [])], env, fence, files: guard.files });
+    const [cmd, ...args] = spawned.cmd;
+    return { ...entry, command: cmd!, args, env: spawned.env };
   }
   return { ...entry, command, env };
 }

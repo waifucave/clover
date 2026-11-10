@@ -1,17 +1,16 @@
 // The composer on the runtime: the `composer` entry, for a bot's tab or an agent's live tab. It sends the user's
-// message through the core (`session.send`, as the user's: the composer's send is a real key press or click, §5.5),
-// stops the turn (`session.interrupt`), switches the model (a bot's is its user layer, `bot.setUserLayer`; an agent's
-// or a coding session's is `session.setModel`), and asks for a level change on the computer it runs on
-// (`computer.setLevel`), which is always a sealed card: the pill keeps the old level and shows the one asked for until
-// that card is answered. Each button draws through `composer.action`, keyed by action id, falling back to its own.
+// message through `useUserSend` (the app counts it as the user's only from a real key press or click, §5.5),
+// stops the turn, switches the model (the `composer` spot's host callbacks, `useComposerHost`: what any entry in the
+// spot gets), and shows the level of the computer it runs on
+// (the computer's level shows as a label: a change is a sealed card, which the core can't raise for the app yet).
+// Each button draws through `composer.action`, keyed by action id, falling back to its own.
 //
-// The model list comes from the core's model catalog (`models.catalog`, the inherited method): its Clover shape is a
-// question for lanes A and B.
+// The model list comes from the core's `models.list` (the models a session can switch to).
 import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { CLOVER_LEVELS } from "./levels";
-import type { Level } from "../../shell/runtime/types";
-import { Spot, useApprovals, useCore, usePluginApi } from "./sdk";
+import { S } from "./strings";
+import { Spot, useApprovals, useComposerHost, usePluginApi, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
@@ -40,31 +39,26 @@ function modelsOf(catalog: unknown): ComposerModel[] {
   const list = (catalog as { models?: unknown[] } | undefined)?.models;
   if (!Array.isArray(list)) return [];
   return list.flatMap((m) => {
-    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown };
+    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; providerName?: unknown; signedIn?: unknown };
     if (typeof o.id !== "string") return [];
     const label = typeof o.label === "string" ? o.label : typeof o.name === "string" ? o.name : o.id;
-    return [{ id: o.id, label, ...(typeof o.provider === "string" ? { detail: o.provider } : {}) }];
+    const detail = typeof o.providerName === "string" ? o.providerName : typeof o.provider === "string" ? o.provider : undefined;
+    return [{ id: o.id, label, ...(detail !== undefined ? { detail } : {}), ...(typeof o.signedIn === "boolean" ? { signedIn: o.signedIn } : {}) }];
   });
 }
 
-const newId = () => (globalThis.crypto?.randomUUID?.() ?? `m${Date.now()}${Math.random().toString(36).slice(2)}`);
-
 export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const api = usePluginApi();
-  const core = useCore();
+  const host = useComposerHost();
+  const send = useUserSend();
   const { cards } = useApprovals();
   const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session]);
   const kind = session?.kind ?? props.sessionKind;
   const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind]);
   const computers = useLoad(() => api.computers?.list?.(), [api]);
-  const catalog = useLoad(() => core?.call("models.catalog", {}), [core]);
+  const catalog = useLoad(() => host?.models(), [host]);
   const [draft, setDraft] = useState("");
-  // A level change asked for, and the card it waits on.
-  const [asked, setAsked] = useState<{ level: string; card: string } | undefined>(undefined);
-  useEffect(() => {
-    if (asked && !cards.some((c) => c.id === asked.card)) setAsked(undefined);
-  }, [asked, cards]);
-
+  const [notice, setNotice] = useState<string | undefined>(undefined);
   const where = session?.computer ?? bot?.computer;
   const computer = computers?.find((c) => c.name === where);
   const running = session?.status === "prompting" || session?.status === "starting" || session?.status === "cancelling";
@@ -74,14 +68,14 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const models = modelsOf(catalog);
 
   const model: ComposerModelChoice | undefined =
-    core && current
+    host && current
       ? {
           model: current,
           ...(effort ? { effort } : {}),
           models: models.some((m) => m.id === current) ? models : [{ id: current, label: current }, ...models],
           onChange: ({ model: next, effort: nextEffort }) => {
-            if (kind === "bot") void core.call("bot.setUserLayer", { id: props.bot.id, patch: { model: next, ...(nextEffort ? { effort: nextEffort } : {}) } });
-            else void core.call("session.setModel", { id: props.session, model: next, ...(nextEffort ? { effort: nextEffort } : {}) });
+            // The core's composer spot decides what a switch is (a bot's user layer, or the session's own model).
+            void host.setModel(next, nextEffort).catch(() => undefined);
           },
         }
       : undefined;
@@ -90,27 +84,30 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
     <Composer
       botName={props.bot.name}
       value={draft}
-      onChange={setDraft}
+      onChange={(v) => { setNotice(undefined); setDraft(v); }}
       onSend={(message) => {
-        if (!core) return;
-        void core.call("session.send", { id: props.session, message: { text: message.text, clientMessageId: newId(), sentAt: Date.now() } });
-        setDraft("");
+        // The user's own words, from inside this key press or click: the app's one door for them (`pill.send`).
+        if (!send) return;
+        setNotice(undefined);
+        void send({ session: props.session }, { text: message.text }).then(() => setDraft(""), (err: unknown) => {
+          // The send was refused: the draft stays, and the person is told why in a few words (the reason is in the app's log).
+          const text = err instanceof Error ? err.message : "";
+          setNotice(/isn't running/.test(text) ? S.sendRefusedStopped : /key press or click/.test(text) ? S.sendRefusedGesture : S.sendRefused);
+        });
       }}
+      notice={notice}
       running={running}
-      onStop={core ? () => void core.call("session.interrupt", { id: props.session }) : undefined}
+      onStop={host ? () => void host.interrupt().catch(() => undefined) : undefined}
       cardPending={cardPending}
       {...(model ? { model } : {})}
-      {...(computer && core
+      {...(computer
         ? {
             level: {
               computer: computer.name,
               level: computer.level,
               levels: CLOVER_LEVELS,
-              ...(asked ? { requested: asked.level } : {}),
-              onRequest: (level: string) =>
-                void core.call("computer.setLevel", { name: computer.name, level: level as Level }).then((r) => {
-                  if (!r.applied) setAsked({ level, card: r.card });
-                }),
+              // No onRequest: the core's way to ask for a level change through a sealed card isn't there yet, so the
+              // level is a label (computer.setLevel is never called around a card).
             },
           }
         : {})}

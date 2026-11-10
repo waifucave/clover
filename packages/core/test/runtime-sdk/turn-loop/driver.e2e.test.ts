@@ -3,7 +3,7 @@
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
@@ -15,7 +15,7 @@ import { CloverFence } from "../../../src/fence/fence";
 import { childSandboxConfigFor } from "../../../src/runtime-sdk/mode-options";
 import { compatibilityKeys } from "@waifucave/clover-agent-sdk";
 import { TASK_NOTIFICATION_FRAME } from "../../../src/runtime-sdk/turn-loop/input";
-import type { CoreToolDef, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
+import type { CoreToolDef, BotMcpServer, McpRunner } from "../../../src/runtime-sdk/turn-loop/servers";
 import { NO_HOOKS, type TurnHooks } from "../../../src/runtime-sdk/turn-loop/hooks";
 import { describeWithEmbeddedRuntime } from "../../helpers/embedded-runtime";
 import { darwinTest } from "../../helpers/darwin-only";
@@ -152,6 +152,43 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     }
   }, 60_000);
 
+  test("the sandbox is the host's at each turn start: a bot folder made between two turns is in the second's, and an unchanged one never reopens the runtime", async () => {
+    const home = tempHome();
+    const bots = join(home, "bots");
+    mkdirSync(join(bots, "luna"), { recursive: true });
+    // A host whose sandbox names every bot folder there is now (the fence lists the home's folders at each call).
+    const sandbox = () => ({ enabled: false, filesystem: { denyRead: readdirSync(bots).sort().reverse().map((b) => join(bots, b)) } }) as never;
+    const opened: unknown[] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { sandbox?: unknown } | undefined)?.sandbox);
+      return sdkQuery(args);
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/echo"), deps(home, spawn, { sandbox, query }));
+    const denied = (i: number) => ((opened[i] as { filesystem?: { denyRead?: string[] } }).filesystem?.denyRead ?? []);
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(1);
+      expect(denied(0)).toEqual([join(bots, "luna")]);
+      // Nothing changed: the same runtime runs the next turn.
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(1);
+      // A new bot's folder appears between two turns: the runtime reopens with it, resuming the transcript.
+      mkdirSync(join(bots, "nova"));
+      const third = await driver.turn(user("three"), control());
+      expect(third.reason).toBe("end_turn");
+      expect(third.text).toContain("three");
+      expect(opened).toHaveLength(2);
+      expect([...denied(1)].sort()).toEqual([join(bots, "luna"), join(bots, "nova")]);
+      // The bot's own floor stays over whatever the host gives.
+      expect(opened[1]).toMatchObject(BOT_SANDBOX);
+      // The same list built in another order is the same sandbox: no reopen.
+      expect((await driver.turn(user("four"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(2);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
   test("core tools run under their plain names; MCP calls go through the router as the session; holds go at the turn's end", async () => {
     const home = tempHome();
     const ran: { server: string; tool: string; input: unknown; session: string; callId: string; as: unknown }[] = [];
@@ -187,6 +224,46 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await driver.stop();
     }
   }, 60_000);
+
+  test("a plugin MCP server added after the runtime opened (an install) reopens it at the next turn, and its tool is there; the same set never reopens", async () => {
+    const home = tempHome();
+    const ran: string[] = [];
+    const runner: McpRunner = {
+      async run(_server, tool) {
+        ran.push(tool);
+        return { result: { content: [{ type: "text", text: `${tool}: pong` }] }, computer: "Studio" };
+      },
+    };
+    const servers: BotMcpServer[] = [];
+    const opened: string[][] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push(Object.keys((args.options as { mcpServers?: Record<string, unknown> }).mcpServers ?? {}).sort());
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/calls"), deps(home, spawn, { query, mcp: { servers: () => servers, runner }, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("hello"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("again"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core"]]);
+      // A plugin is installed between turns: its server reaches the runtime at the next turn.
+      servers.push({ server: "acceptance-echo-echo", plugin: "acceptance-echo", tools: [{ name: "Echo", inputSchema: { type: "object", properties: {} }, load: "preload" }] });
+      const end = await driver.turn(user('CALL mcp__acceptance-echo-echo__Echo {}'), control());
+      expect(end.reason).toBe("end_turn");
+      expect(opened).toEqual([["clover_core"], ["acceptance-echo-echo", "clover_core"]]);
+      expect(ran).toEqual(["Echo"]);
+      expect(lines.filter((l) => l.includes("reopening: its MCP servers changed"))).toHaveLength(1);
+      // Nothing changed: no reopen.
+      await driver.turn(user("once more"), control());
+      expect(opened).toHaveLength(2);
+      // The plugin goes away: the runtime reopens without it.
+      servers.length = 0;
+      await driver.turn(user("bye"), control());
+      expect(opened.at(-1)).toEqual(["clover_core"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
 
   test("the pause holds a tool call until the user resumes; a computer that stops running the bots refuses it", async () => {
     const home = tempHome();

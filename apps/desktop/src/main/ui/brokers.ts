@@ -328,6 +328,14 @@ export class SendGate {
   }
 }
 
+/** A gated call's gesture: the call's own frame had transient user activation (`active`, read in the preload, where a
+ *  page's script can't set it), AND the main process saw a key press or click come to the window (`take`, which spends it).
+ *  A call from a frame that was not activated spends nobody's gesture, so a plugin frame polling the bridge can neither
+ *  use a click that went elsewhere nor starve the user's own send. */
+export function frameGesture(active: unknown, take: () => boolean): boolean {
+  return active === true && take();
+}
+
 /** A `pill.send` target, checked: a bot, a session, or a `pill.target` entry by its ref. */
 export function sendTarget(v: unknown): { bot: string } | { session: string } | { target: string } | undefined {
   if (v === null || typeof v !== "object") return undefined;

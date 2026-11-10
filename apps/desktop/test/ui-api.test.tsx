@@ -57,6 +57,8 @@ function fakeBridge(views: Record<string, SpotView>) {
     viewFrame: (mount, name, rect, used) => calls.push({ op: "viewFrame", args: [mount, name, rect, used] }),
     webFrame: (mount, rect) => calls.push({ op: "webFrame", args: [mount, rect] }),
     activeSession: (mount, session) => calls.push({ op: "activeSession", args: [mount, session] }),
+    windowDrag: (mount) => { calls.push({ op: "windowDrag", args: [mount] }); },
+    composer: async (mount, op, args) => { calls.push({ op: "composer", args: [mount, op, args] }); return undefined; },
     entries: async (mount, spot, key) => {
       calls.push({ op: "entries", args: [mount, spot, key] });
       return [{ ref: "clover/island#usage", id: "usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", id: "tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];
@@ -317,7 +319,7 @@ describe("the UI API in a layer", () => {
     expect(part.querySelector('[data-clover-part="m21"] nav')).not.toBeNull();
   });
 
-  test("a spot's entries for its declaring part, and one entry shown by its ref; questions; no user sends outside a surface", async () => {
+  test("a spot's entries for its declaring part, and one entry shown by its ref; questions; the clover tree's parts have useUserSend", async () => {
     await tick();
     expect(hooks.entries!().map((e) => e.ref)).toEqual(["clover/island#usage", "vn#tab"]);
     expect(fake.calls).toContainEqual({ op: "entries", args: ["m2", "island.tab", undefined] });
@@ -326,8 +328,9 @@ describe("the UI API in a layer", () => {
     const q = { session: "s_alpha", callId: "c1", at: 1, questions: [{ question: "Which one?", options: [{ label: "A" }, { label: "B" }] }] };
     await act(async () => fake.emit({ type: "questions", questions: [q] }));
     expect(hooks.questions!()).toEqual([q]);
-    // The sidebar isn't a surface's part: it has no way to send as the user.
-    expect(hooks.userSend).toBeUndefined();
+    // A part of the bundled clover tree has the hook (the main process decides again, and gates the key press or
+    // click); the runtime test covers a part of any other layer being refused there.
+    expect(hooks.userSend).toBeDefined();
   });
 
   test("the plugin API in a layer: the terminal on the part's own connection, written only from trusted input", async () => {
@@ -367,5 +370,25 @@ describe("the UI API in a layer", () => {
     const decoded = ui.decodeProps(encoded, (id, args) => called.push([id, args])) as { nested: { f: (x: unknown) => void } };
     decoded.nested.f(() => "a function never crosses");
     expect(called).toEqual([["1", [undefined]]]);
+  });
+});
+
+describe("the title area's drag region", () => {
+  test("a press counts on the nearest element that says drag; a button in the bar says no-drag", () => {
+    const bar = document.createElement("div");
+    const title = document.createElement("span");
+    const button = document.createElement("button");
+    const icon = document.createElement("i");
+    bar.dataset.region = "drag";
+    button.dataset.region = "no-drag";
+    button.append(icon);
+    bar.append(title, button);
+    const style = (el: Element) => (el as HTMLElement).dataset.region ?? "none";
+    expect(ui.onDragRegion(title, style)).toBe(true);
+    expect(ui.onDragRegion(bar, style)).toBe(true);
+    expect(ui.onDragRegion(button, style)).toBe(false);
+    expect(ui.onDragRegion(icon, style)).toBe(false);
+    expect(ui.onDragRegion(document.createElement("p"), style)).toBe(false);
+    expect(ui.onDragRegion(null, style)).toBe(false);
   });
 });

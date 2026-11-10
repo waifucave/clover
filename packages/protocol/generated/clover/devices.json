@@ -1386,6 +1386,16 @@
                     "type": "string",
                     "maxLength": 81,
                     "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(\\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$"
+                  },
+                  "asKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "session",
+                      "plugin",
+                      "core",
+                      "peer"
+                    ]
                   }
                 },
                 "required": [
@@ -1736,7 +1746,7 @@
                     }
                   },
                   "children": {
-                    "maxItems": 256,
+                    "maxItems": 1024,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -1798,7 +1808,7 @@
                 "pattern": "^[a-z0-9_-]{1,64}$"
               },
               "children": {
-                "maxItems": 256,
+                "maxItems": 1024,
                 "type": "array",
                 "items": {
                   "type": "string",

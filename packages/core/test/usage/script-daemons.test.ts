@@ -43,6 +43,7 @@ const CARRIES_INERT = /\bUSAGE_INERT_ENV\b|\bUSAGE_INERT\b|\busage\s*:\s*\{[^}]*
  *  spawn shape the call scan below does not know is still caught. */
 const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/dev-daemon.ts": "the developer's own dev daemon — real, on purpose",
+  "scripts/acceptance/cdp.ts": "a DevTools client; names the app's `clover-core://app/` page URL, starts no daemon",
   "scripts/dev-daemon-lib.ts": "the dev daemon's helpers (paths, signing, the transition)",
   "scripts/dev-daemon.test.ts": "tests the dev daemon's helpers; boots none",
   "scripts/cu-live/build.ts": "compiles and signs clover-core-live; runs it never",
@@ -61,12 +62,13 @@ const NO_DAEMON_OF_ITS_OWN: Record<string, string> = {
   "scripts/verify-sealed-core.ts": "runs the sealed clover-core with each door: `--version`, `bridge` without a session, `__runtimes-probe` and `__fetch-probe` (each prints and exits, no daemon)",
   "scripts/verify-automation-worker-compiled.ts": "runs only the `__automation-worker` route (a worker, no daemon)",
   "scripts/verify-workflow-compiled.ts": "runs only the `__workflow-worker` route (a worker, no daemon)",
-  "scripts/verify-fd-receiver-compiled.ts": "runs only the `__fd-receiver-probe`, `__host-code-adapter-probe` and `__host-env-lazy-probe` routes of the compiled binary (no daemon)",
+  "scripts/verify-fd-receiver-compiled.ts": "runs only the compiled binary's probe routes (`__fd-receiver-probe`, `__host-code-adapter-probe`, `__host-env-lazy-probe`, `__plugin-run-probe`, `__plugin-host-probe`, `__restrict-probe`): no daemon",
   "scripts/verify-runtimes-compiled.ts": "runs only `__runtimes-probe` (resolves the bundled runtimes, no daemon)",
   "scripts/release.ts": "builds, signs and notarizes clover-core; runs only `__keychain-ffi-probe` (an ffi check, no daemon)",
   "scripts/release.test.ts": "tests the release's helpers; boots none",
   "scripts/release-lib.test.ts": "tests the release's helpers; boots none",
   "scripts/rename/codemod.test.ts": "the rename codemod's fixtures (strings)",
+  "scripts/test-build.test.ts": "the test build's marker gate on byte fixtures; its one clover-core is a text file verify-sealed-core refuses before running anything",
 };
 
 /** Every script file (any language this repo writes them in), tests included. */

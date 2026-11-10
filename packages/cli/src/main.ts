@@ -5,7 +5,7 @@ import { migrateEarlierLayout, parseServerArgs, profileNote, serverBinary, serve
 import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, readFileSync, mkdirSync, realpathSync } from "node:fs";
-import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testKeychainRefusal, loadBundledManifest } from "@waifucave/clover-core";
+import { resolveCloverHome, isDefaultCloverHome, OtherInstallHomeRefused, KeychainSecretStore, startDaemon, TOKEN_NAMES, loadSettings, CORE_VERSION, runWorkflowSubprocess, runAutomationWorker, AUTOMATION_WORKER_ARG, processSatisfiesRequirement, runRuntimeWorkflowWorker, RUNTIME_WORKFLOW_WORKER_ARG, runRuntimeStateProbe, runRuntimesProbe, keychainUnlocked, processStartSecondsViaSysctl, runEmbeddedProbe, runDevKeychainAdopt, DEV_KEYCHAIN_ADOPT_ARG, resolveCloverProfile, splitTag, sdkLocalMcpServers, installCloverProcessIdentity, loginEnable, loginDisable, loginRemove, loginStatus, liveLoginOsDeps, superviseLoop, UPDATE_RESTART_EXIT_CODE, readInstallMarker, writeInstallMarker, removeInstallMarker, updatesItself, startDaemonThroughOs, windowsUserSid, windowsProfilePath, stopDaemonCleanly, stopThroughOs, cloverCall, checkDaemonServer, processImage, spawnDisclaimed, bunRunner, resolveEndpoint, endpointPresent, endpointAnswers, tlsEnvRefusal, TLS_ENV_REFUSAL_EXIT, DIST_BUILD, rawEnvironment, homeRefusal, type LoginSpec, type DaemonRun, type DaemonStartResult, dyldRefusal, testBuildStartRefusal, testKeychainRefusal, loadBundledManifest, loadPrebuiltHostBundles } from "@waifucave/clover-core";
 import type { CredentialRow, SecretStore, Settings } from "@waifucave/clover-core";
 import { METHODS, type ApprovalPolicy, type Task } from "@waifucave/clover-protocol";
 import { POLICY_ORDER } from "./tui/policy-order";
@@ -333,6 +333,7 @@ async function connect(name: string, onEvent: (e: any) => void = () => {}): Prom
     // The login unit serves the profile's default home; a CLI on any other home (a test's temp home)
     // never starts it.
     startThroughOs: async () => {
+      if (typeof __CLOVER_TEST_BUILD__ === "string") return "not-installed";
       const spec = currentLoginSpec();
       return isDefaultCloverHome(spec.home, spec.profile) ? startDaemonThroughOs(spec, bunRunner) : "not-installed";
     },
@@ -1536,6 +1537,8 @@ async function stopRunningDaemon(spec: LoginSpec): Promise<string> {
  *  start the app (spec §3.1). `disable` turns off only the login trigger: the running pair keeps
  *  running and either side can still start the other. `remove` is for an uninstaller. */
 async function runAutostartCommand(sub: string | undefined, rest: readonly string[] = []): Promise<void> {
+  // A test-marked build (scripts/test-build.ts) never registers a login item or starts anything through the OS.
+  if (typeof __CLOVER_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
   // `start` is `clover daemon start` under the name the app calls (E-M1): through the OS, never as
   // the caller's child.
   if (sub === "start") { await runDaemonStart(); return; }
@@ -1614,6 +1617,7 @@ async function runAutostartCommand(sub: string | undefined, rest: readonly strin
 /** `clover daemon start`: start the daemon through the OS (never as this process's child) and wait
  *  until it answers. The app's side runs this when no daemon answers (spec §3.1). */
 async function runDaemonStart(): Promise<void> {
+  if (typeof __CLOVER_TEST_BUILD__ === "string") { console.error(TEST_BUILD_NO_OS_START); process.exitCode = 1; return; }
   const path = socketPath();
   if (await endpointAnswers(path)) { console.log("clover-core is already running"); return; }
   const spec = currentLoginSpec();
@@ -2079,6 +2083,11 @@ async function ownManifestSha256(): Promise<string | undefined> {
   return text === undefined ? undefined : new Bun.CryptoHasher("sha256").update(text).digest("hex");
 }
 
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+/** What a test-marked build says to `autostart` and `daemon start`. */
+const TEST_BUILD_NO_OS_START = "clover-core: a test-marked build never registers a login item or starts through the OS: run `clover-core daemon run` on a temp home";
+
 if (import.meta.main) {
   // Lane M's door audit: a release build takes no TLS trust from its environment (verification off, extra CAs, read from
   // the raw environment too, so a duplicate entry can't hide one) and, on macOS, no keychains from a HOME that isn't the
@@ -2086,7 +2095,10 @@ if (import.meta.main) {
   // startup-guard.ts say why.
   {
     const raw = DIST_BUILD ? rawEnvironment() ?? [] : [];
-    const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? homeRefusal() ?? dyldRefusal(raw) ?? testKeychainRefusal(process.env, raw);
+    // A test-marked build (scripts/test-build.ts, compile-time only) takes a test's keychain file and temp home where a
+    // release refuses them, and refuses to start without them; a real build compiles this branch out.
+    const keychain = typeof __CLOVER_TEST_BUILD__ === "string" ? testBuildStartRefusal(process.env, raw) : homeRefusal() ?? testKeychainRefusal(process.env, raw);
+    const refusal = tlsEnvRefusal(process.env, undefined, raw) ?? keychain ?? dyldRefusal(raw);
     if (refusal !== undefined) {
       process.stderr.write(`${refusal}\n`);
       process.exit(TLS_ENV_REFUSAL_EXIT);
@@ -2256,6 +2268,32 @@ if (import.meta.main) {
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exit(result.ok ? 0 : 1);
   }
+  // Lane M: a plugin-host process started from the bundles this core embeds, answering `pluginHost.ping` (the same
+  // gate's define; never in a release build).
+  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__plugin-host-probe") {
+    const { runPluginHostProbe } = await import("./plugin-run-probe");
+    const result = await runPluginHostProbe(process.argv[3]);
+    process.stdout.write(`${JSON.stringify(result)}\n`);
+    process.exit(result.ok ? 0 : 1);
+  }
+  // Lane M: what a core signed `--options runtime,restrict` still does, while the gate reads its environment from
+  // outside (scripts/verify-fd-receiver-compiled.ts, step 4). The same gate's define; never in a release build.
+  if (typeof CLOVER_PLUGIN_RUN_PROBE !== "undefined" && CLOVER_PLUGIN_RUN_PROBE === true && process.argv[2] === "__restrict-probe") {
+    const { runRestrictProbe } = await import("./restrict-probe");
+    await runRestrictProbe();
+  }
+  // Lane M: the plugin host's bundles this binary carries (scripts/build-daemon.ts checks they are the ones it built).
+  if (process.argv[2] === "__host-bundles") {
+    try {
+      const b = await loadPrebuiltHostBundles();
+      const line = (t: string) => `${Buffer.byteLength(t)} bytes, sha256 ${new Bun.CryptoHasher("sha256").update(t).digest("hex")}`;
+      process.stdout.write(`host-bundles: ${b === undefined ? "none" : `host ${line(b.host)}; worker ${line(b.worker)}`}\n`);
+      process.exit(0);
+    } catch (err) {
+      process.stdout.write(`host-bundles: refused (${(err as Error).message})\n`);
+      process.exit(1);
+    }
+  }
   // M-M2: the update feed's signature, against the key this binary carries (./verify-feed.ts).
   if (process.argv[2] === "__verify-feed") {
     const { runVerifyFeed } = await import("./verify-feed");
@@ -2359,7 +2397,7 @@ if (import.meta.main) {
   case "-v": {
     // Handoff Task 2: thin dispatcher for routeCliInvocation's {kind:"version"} (the pure, tested
     // decision — both spellings land here because cmdKey is just argv[0] for non-daemon commands).
-    console.log(`clover ${CORE_VERSION}`);
+    console.log(typeof __CLOVER_TEST_BUILD__ === "string" ? `clover ${CORE_VERSION} test build (${__CLOVER_TEST_BUILD__}: a test-marked build, never for release)` : `clover ${CORE_VERSION}`);
     process.exit(0);
   }
   case "autostart": {
@@ -3087,14 +3125,42 @@ if (import.meta.main) {
     process.exit(1);
   }
   case "plugin": {
-    // WS-21 (spec §5.2): `clover plugin` mirrors `claude plugin` — install/uninstall/enable/
-    // disable/update/list/marketplace{add,remove,list,update}, over Contract B. Goes through the
-    // daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never
-    // `connect()`'s auto-launch: a plugin write must not launch Clover.app as a side effect,
-    // exactly the `openCredentialDaemonDoor` precedent), and the SDK adapter directly otherwise.
-    const sub = process.argv[3];
+    // `clover plugin` is Clover's plugin registry (spec §5.6, clover-plugin-cli.ts): list, dev, logs, new, validate.
+    // `clover plugin claude …` is WS-21's Claude-plugin manager (spec §5.2), which mirrors `claude plugin` —
+    // install/uninstall/enable/disable/update/list/marketplace{add,remove,list,update}, over Contract B. It goes through
+    // the daemon when it's live (a real socket + a harness token — `openPluginDaemonDoor`, never `connect()`'s
+    // auto-launch: a plugin write must not launch Clover.app as a side effect, exactly the `openCredentialDaemonDoor`
+    // precedent), and the SDK adapter directly otherwise.
+    const claude = process.argv[3] === "claude";
+    const base = claude ? 4 : 3;
+    const sub = process.argv[base];
     const home = resolveCloverHome();
-    const rest = process.argv.slice(4);
+    const rest = process.argv.slice(base + 1);
+
+    if (!claude) {
+      const pcli = await import("./clover-plugin-cli");
+      const emit = (run: { code: number; output: string }): never => {
+        (run.code === 0 ? console.log : console.error)(run.output);
+        process.exit(run.code);
+      };
+      if (sub === "validate") {
+        const { runPluginValidate } = await import("./plugin-validate-cli");
+        const run = await runPluginValidate(rest);
+        (run.code === 2 ? console.error : console.log)(run.output);
+        process.exit(run.code);
+      }
+      if (sub === "new") emit(pcli.runPluginNew(rest));
+      if (sub === "list" || sub === "dev" || sub === "logs") {
+        // The running daemon, as the CLI: never one this command starts.
+        if (!(await endpointAnswers(socketPath()))) emit({ code: 1, output: "Clover isn't running on this computer: start it, then try again" });
+        const token = await new KeychainSecretStore().get(TOKEN_NAMES.harness).catch(() => undefined);
+        if (!token) emit({ code: 1, output: "this terminal can't reach Clover: its token isn't readable" });
+        const call = (method: string, params: unknown) => cloverCall(socketPath(), { role: "cli", token: token!, clientName: "clover-plugin" }, method, params, 15_000);
+        emit(sub === "list" ? await pcli.runPluginList(rest, call) : sub === "dev" ? await pcli.runPluginDev(rest, call) : await pcli.runPluginLogs(rest, call));
+      }
+      const hint = sub === undefined ? undefined : pcli.movedVerbHint(sub);
+      emit({ code: 2, output: hint ?? pcli.PLUGIN_USAGE });
+    }
 
     // `-s`/`--scope <user|project|local>`, may appear anywhere — same convention as mcp-cli.ts's
     // own flag parsing.
@@ -3109,21 +3175,14 @@ if (import.meta.main) {
       return { positionals, scopeRaw };
     }
 
-    if (sub === "validate") {
-      const { runPluginValidate } = await import("./plugin-validate-cli");
-      const run = await runPluginValidate(rest);
-      (run.code === 2 ? console.error : console.log)(run.output);
-      process.exit(run.code);
-    }
-
     if (sub === "marketplace") {
-      const mktSub = process.argv[4];
-      const mktRest = process.argv.slice(5);
+      const mktSub = process.argv[base + 1];
+      const mktRest = process.argv.slice(base + 2);
       const door = await openPluginDaemonDoor();
       const deps = { cwd: process.cwd(), cloverHome: home, door };
       if (mktSub === "add") {
         const source = mktRest[0];
-        if (!source) { console.error("usage: clover plugin marketplace add <source>"); process.exit(1); }
+        if (!source) { console.error("usage: clover plugin claude marketplace add <source>"); process.exit(1); }
         const outcome = await runPluginMarketplaceAddRoute(deps, source);
         console.log(renderPluginMarketplaceAddOutcome(outcome));
         door?.close();
@@ -3131,7 +3190,7 @@ if (import.meta.main) {
       }
       if (mktSub === "remove") {
         const name = mktRest[0];
-        if (!name) { console.error("usage: clover plugin marketplace remove <name>"); process.exit(1); }
+        if (!name) { console.error("usage: clover plugin claude marketplace remove <name>"); process.exit(1); }
         const outcome = await runPluginMarketplaceRemoveRoute(deps, name);
         console.log(renderPluginMarketplaceRemoveOutcome(outcome));
         door?.close();
@@ -3149,7 +3208,7 @@ if (import.meta.main) {
         door?.close();
         process.exit(outcome.ok ? 0 : 1);
       }
-      console.error("usage: clover plugin marketplace add <source> | remove <name> | list | update [name]");
+      console.error("usage: clover plugin claude marketplace add <source> | remove <name> | list | update [name]");
       door?.close();
       process.exit(1);
     }
@@ -3165,7 +3224,7 @@ if (import.meta.main) {
     if (sub === "install") {
       const { positionals, scopeRaw } = extractScope(rest);
       const specOrPath = positionals[0];
-      if (!specOrPath) { console.error("usage: clover plugin install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
+      if (!specOrPath) { console.error("usage: clover plugin claude install <plugin>[@<marketplace>] [--scope user|project|local]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginInstallRoute({ cwd: process.cwd(), cloverHome: home, door }, specOrPath, scopeRaw, process.cwd());
       console.log(renderPluginInstallOutcome(outcome));
@@ -3176,7 +3235,7 @@ if (import.meta.main) {
     if (sub === "uninstall" || sub === "remove") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginUninstallRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, process.cwd());
       console.log(renderPluginUninstallOutcome(outcome));
@@ -3196,7 +3255,7 @@ if (import.meta.main) {
     if (sub === "enable" || sub === "disable") {
       const { positionals, scopeRaw } = extractScope(rest);
       const spec = positionals[0];
-      if (!spec) { console.error(`usage: clover plugin ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
+      if (!spec) { console.error(`usage: clover plugin claude ${sub} <plugin>[@<marketplace>] [--scope user|project|local]`); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginSetEnabledRoute({ cwd: process.cwd(), cloverHome: home, door }, spec, scopeRaw, sub === "enable", process.cwd());
       console.log(renderPluginSetEnabledOutcome(outcome));
@@ -3212,7 +3271,7 @@ if (import.meta.main) {
 
     if (sub === "update") {
       const spec = rest[0];
-      if (!spec) { console.error("usage: clover plugin update <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!spec) { console.error("usage: clover plugin claude update <plugin>[@<marketplace>]"); process.exit(1); }
       const door = await openPluginDaemonDoor();
       const outcome = await runPluginUpdateRoute({ cwd: process.cwd(), cloverHome: home, door }, spec);
       console.log(renderPluginUpdateOutcome(outcome));
@@ -3222,7 +3281,7 @@ if (import.meta.main) {
 
     if (sub === "restart") {
       const name = process.argv[4];
-      if (!name) { console.error("usage: clover plugin restart <plugin>[@<marketplace>]"); process.exit(1); }
+      if (!name) { console.error("usage: clover plugin claude restart <plugin>[@<marketplace>]"); process.exit(1); }
       const c = await connect(`cli-plugin-restart-${name}`);
       try {
         await c.restartPlugin(name);
@@ -3236,7 +3295,7 @@ if (import.meta.main) {
       process.exit(0);
     }
 
-    console.error("usage: clover plugin list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
+    console.error("usage: clover plugin claude list | install <plugin>[@<marketplace>] [-s user|project|local] | uninstall <plugin>[@<marketplace>] [-s ...] | enable <plugin>[@<marketplace>] [-s ...] | disable <plugin>[@<marketplace>] [-s ...] | update <plugin>[@<marketplace>] | marketplace add|remove|list|update | restart <name>");
     process.exit(1);
   }
   case "bg": {

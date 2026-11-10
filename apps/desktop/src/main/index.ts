@@ -9,7 +9,7 @@
 // never takes the focus: on macOS the app is an accessory from its first line, and everything it writes stays in its
 // temporary home.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { hostname, release as osRelease } from "node:os";
+import { hostname, release as osRelease, userInfo } from "node:os";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,8 @@ import { app, BrowserWindow, Menu, Notification, clipboard, dialog, nativeTheme,
 import { APP_METHODS, BROWSER_METHODS, CLOVER_PROTOCOL_VERSION, CORE_EVENT_NOTIFICATION, CardRequestedEvent, CardResolvedEvent, PairStatus, UiSettings, UiSettingsChangedEvent } from "@waifucave/clover-protocol";
 import { systemAccentFromOs } from "@waifucave/clover-plugin-sdk";
 import { BROWSER_ASSETS, createBrowserHost, isBrowserContents, type BrowserHost } from "./browser/index";
+import { refusedLaunchSwitches, TEST_BUILD_MARKER } from "./debug-guard";
+import { testBuildAppRefusal } from "./test-build";
 import { housingFor, loadScreens } from "./housing";
 import { HANG_COMPOSITOR_MS, HANG_PING_MS, HangWatch, hangVerdict, type PingResult } from "./hang";
 import { appIdentity, daemonHome, parseLaunchArgs, resolveAppProfile, SMOKE_PREFIX, UI_PARTITION } from "./identity";
@@ -28,13 +30,16 @@ import { daemonEndpoint, dial as dialDaemon, type DaemonClient } from "./protoco
 import { OptionalCalls } from "./pair/optional-calls";
 import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
-import { LayerLinks } from "./layer-links";
+import { AppLog, appLogPath } from "./app-log";
+import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
+import { TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
 import { translate } from "@waifucave/clover-plugin-sdk/ui/bridge";
 import { Notifications } from "./notify";
-import { appShortcut, sealedInputAllowed } from "./shortcuts";
+import { gateAnswer } from "./registry-gate";
+import { appShortcut, fallbackMayShow, sealedInputAllowed } from "./shortcuts";
 import { InstallGate, installKindOf, startUpdater, writeInstallMarker, type Updater } from "./updater";
 import { devAppIcon } from "./icons";
 import { AppTray } from "./tray";
@@ -47,10 +52,37 @@ import { WebViews, isWebViewContents, webSpec } from "./ui/web-views";
 import type { Os } from "./ui/spots";
 import { linuxSession, mainWindowPlan, surfaceWindowPlan, TITLE_BAR_HEIGHT, webPreferences, windowsHasAcrylic } from "./window";
 
+// First of all, before any window or daemon connection: a debugging switch on the signed app would drive its renderer
+// around the daemon's check of who connects (debug-guard.ts).
+{
+  // A test-marked build (the define, folded out of a real one) may open its DevTools port on loopback for the UI run.
+  const refused = refusedLaunchSwitches({ argv: process.argv, hasSwitch: (n) => app.commandLine.hasSwitch(n), packaged: app.isPackaged, env: process.env, testBuild: app.isPackaged && existsSync(join(process.resourcesPath, TEST_BUILD_MARKER)), testDebug: typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_DEBUG === "1" });
+  if (typeof __CLOVER_TEST_BUILD__ === "string" && process.env.CLOVER_TEST_DEBUG === "1") process.stdout.write("[clover-app] test-marked build: the DevTools port is open on loopback for the UI run\n");
+  if (refused.length > 0) {
+    process.stderr.write(`clover: refusing to start with ${refused.map((n) => `--${n}`).join(", ")} (a debugging or secret-logging switch)\n`);
+    app.exit(2);
+    process.exit(2);
+  }
+}
+
 const identity = appIdentity(resolveAppProfile(process.env));
 const args = parseLaunchArgs(process.argv, process.env);
 const headless = args.headless;
 const home = daemonHome(process.env);
+/** The test-marked build's label (scripts/test-build.ts): `false` in every real build, a string only in a test one. */
+declare const __CLOVER_TEST_BUILD__: string | false | undefined;
+// A test-marked build (compile-time only; a real build compiles this out): Chromium's mock keychain from the start, and
+// a refusal to start where it would still reach the login keychain or the live home (test-build.ts).
+if (typeof __CLOVER_TEST_BUILD__ === "string") {
+  process.stdout.write(`[clover-app] ${__CLOVER_TEST_BUILD__}: a test-marked build, never for release\n`);
+  app.commandLine.appendSwitch("use-mock-keychain");
+  const refused = testBuildAppRefusal({ mockKeychain: app.commandLine.hasSwitch("use-mock-keychain"), home, account: userInfo().homedir });
+  if (refused !== undefined) {
+    process.stderr.write(`${refused}\n`);
+    app.exit(2);
+    process.exit(2);
+  }
+}
 const here = dirname(fileURLToPath(import.meta.url));
 const dirs = { core: join(here, "..", "renderer", "core"), layer: join(here, "..", "renderer", "layer") };
 const devIcon = devAppIcon({ profile: identity.profile, packaged: app.isPackaged, platform: process.platform });
@@ -60,8 +92,8 @@ const os: Os = process.platform === "darwin" ? "macos" : process.platform === "w
 if (process.platform === "darwin") app.setActivationPolicy("accessory");
 app.setName(identity.productName);
 if (process.platform === "win32") app.setAppUserModelId(identity.appId);
-// A headless run keeps everything it writes in its own (temporary) home.
-if (headless) {
+// A headless run keeps everything it writes in its own (temporary) home; so does a test-marked build.
+if (headless || typeof __CLOVER_TEST_BUILD__ === "string") {
   app.setPath("userData", join(home, "app-data", identity.profile));
   app.setPath("sessionData", join(home, "app-data", identity.profile, "session"));
 }
@@ -73,8 +105,10 @@ app.commandLine.appendSwitch("no-proxy-server");
 const session_ = linuxSession(process.env);
 registerSchemes();
 
+const appLog = new AppLog(appLogPath(home));
 function log(line: string): void {
   process.stdout.write(`[clover-app] ${line}\n`);
+  appLog.write(line);
 }
 
 // The dev overrides (the daemon binary, the app token) count only in a dev or unpackaged run.
@@ -142,9 +176,17 @@ if (!app.requestSingleInstanceLock()) {
     void requestQuit("os");
   });
   void app.whenReady().then(ready).catch((err) => {
-    log(`start failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+    log(`start failed: ${why(err)}`);
     if (args.smoke) report({ ok: false, reason: `start failed: ${String(err)}` });
   });
+}
+
+/** What an error is called in a log line: its name and a short code, never its message or stack (those can carry words,
+ *  a key, a token or a URL). */
+function why(err: unknown): string {
+  if (!(err instanceof Error)) return "error";
+  const code = (err as { code?: unknown }).code;
+  return typeof code === "string" || typeof code === "number" ? `${err.name} ${String(code).replace(/[^\w.-]/g, "").slice(0, 40)}` : err.name;
 }
 
 async function ready(): Promise<void> {
@@ -191,7 +233,18 @@ async function ready(): Promise<void> {
     // A part's word that the person used its view counts only after main saw their mouse-down there.
     viewFrame: (windowId, mount, name, bounds, used) => views.report(name, mount, windowId, bounds, used && bounds !== undefined && pointers.pressedIn(windowId, bounds)),
     menu: (id, items, point) => popupMenu(id, items, point),
-    api: (pluginId, method, params) => layerLinks.call(pluginId, method, params),
+    api: (pluginId, method, params) => layerLinks.call(pluginId, method, params).catch((err: unknown) => {
+      // A refusal is a line in the app log (the method, never its params), so a dead button leaves a trace.
+      if (err instanceof Error && /^a layer doesn't call /.test(err.message)) log(`layer: ${pluginId}: ${err.message.replace(/[^\w. -]/g, "").slice(0, 80)}`);
+      throw err;
+    }),
+    takeGesture: (windowId) => sends.take(windowId),
+    treeRequest: async (method, params) => {
+      if (JSON.stringify(params ?? null).length > LAYER_CALL_MAX) throw new LayerError("the call is too large");
+      const client = pair.client;
+      if (client === undefined) throw new LayerError("Clover isn't running");
+      return client.request(method, params ?? {}, 30_000);
+    },
     terminalInput: (windowId, frameId, pluginId, terminalId, input) => terminalInput(windowId, frameId, pluginId, terminalId, input),
     // The sealed path (E-M3): the frame's own channel; the click's are the frame's own gates (IOv2, the trusted press,
     // the hour it stood visible), and here the app signs with the answer key over the card's id and hash and takes the
@@ -233,16 +286,36 @@ async function ready(): Promise<void> {
         }
       }
     },
-    userSend: async (windowId, to, message) => {
-      // One key press or click the main process saw come to the window covers one send (§5.5).
-      if (!sends.take(windowId)) throw new LayerError("the user's words go only right after their own key press or click");
+    userSend: async (windowId, to, message, active) => {
+      // Everything that can be refused is refused first, so a refused call spends nobody's gesture. Each refusal says why in
+      // the app's log (the reason only, never the words) and reaches the person as the error the sender shows.
+      const refuse = (reason: string, say = reason): never => {
+        log(`send: refused (${reason})`);
+        throw new LayerError(say);
+      };
       const target = sendTarget(to);
-      if (target === undefined) throw new LayerError("not a place the user's words go");
+      if (target === undefined) return refuse("not a place the user's words go");
       const images = sendImages(message.images);
-      if ("error" in images) throw new LayerError(images.error);
+      if ("error" in images) return refuse(`images: ${images.error}`, images.error);
       const client = pair.client;
-      if (client === undefined) throw new LayerError("Clover isn't running");
-      return client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+      if (client === undefined) return refuse("Clover isn't running");
+      // One key press or click that came to THIS frame (its own activation) and that the main process saw come to the
+      // window covers one send (§5.5).
+      if (!active) return refuse("the frame reported no user activation", "the user's words go only right after their own key press or click");
+      if (!sends.take(windowId)) return refuse("the main process saw no key press or click come to the window just before", "the user's words go only right after their own key press or click");
+      try {
+        return await client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
+      } catch (err) {
+        log(`send: the core refused pill.send (${why(err)})`);
+        throw err;
+      }
+    },
+    windowDrag: (windowId, shell) => {
+      const win = BrowserWindow.fromId(windowId);
+      if (win === null || win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return;
+      const [x, y] = win.getPosition();
+      const r = windowDrags.start(windowId, { shell, titleHeight: TITLE_BAR_HEIGHT, cardPending: sealed.anyPending(), window: { x: x ?? 0, y: y ?? 0 }, cursor: cursorPoint(windowId) });
+      if (!r.ok) log(`window: a drag was refused (${r.why})`);
     },
     activeSession: (windowId, session) => {
       activeSessions.set(windowId, session);
@@ -253,7 +326,7 @@ async function ready(): Promise<void> {
         log(`web: ${web.plugin.id}'s page isn't one the app shows (a URL or a page in its folder, and a partition)`);
         return;
       }
-      void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${err instanceof Error ? err.message : String(err)}`));
+      void webViews.place(windowId, mount, web.plugin, spec, bounds).catch((err) => log(`web: ${why(err)}`));
     },
   }, log);
   startCensus(runtime);
@@ -267,7 +340,8 @@ async function ready(): Promise<void> {
   setMenu();
   // The install marker: this home's daemon is the app's (or a package's), so it never updates itself (updater.ts).
   if (app.isPackaged) writeInstallMarker(home, installKindOf(process.platform, process.env), log);
-  if (!headless) {
+  // A test-marked build never updates itself: a real release in its place would reach the login keychain.
+  if (!headless && typeof __CLOVER_TEST_BUILD__ !== "string") {
     // The app's own updates (updater.ts): packaged builds only, never a headless or test run (no network from those).
     void startUpdater({
       packaged: app.isPackaged,
@@ -278,7 +352,7 @@ async function ready(): Promise<void> {
         new Notification({ title: t("title"), body: t("body") }).show();
         void installs.downloaded(version);
       },
-    }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${err instanceof Error ? err.message : String(err)}`));
+    }).then((u) => { updater = u; }).catch((err: unknown) => log(`updater: ${why(err)}`));
     tray = new AppTray(join(here, "icons"), { open: () => void openMainWindow(), quit: () => void requestQuit("tray"), restart: (s) => void restart(s), managePlugins: () => void openPage("plugins") }, log);
     tray.show({ safeMode, strings: runtime.coreStrings() });
   }
@@ -323,6 +397,11 @@ function disarmFallback(cardId: string): void {
 async function showFallbackCard(cardId: string): Promise<void> {
   const card = sealed.get(cardId);
   if (card === undefined) return;
+  const smokeFallback = process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1";
+  if (!fallbackMayShow({ headless, smokeFallback, testInput: (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless }) })) {
+    log(`card: the fallback card for ${cardId} was not shown (headless)`);
+    return;
+  }
   const mint = sealed.mint(cardId, "own");
   if (mint === undefined) return;
   const url = `clover-sealed://card/${encodeURIComponent(cardId)}/own?token=${encodeURIComponent(mint.token)}`;
@@ -360,7 +439,11 @@ async function showFallbackCard(cardId: string): Promise<void> {
     if (win.isDestroyed()) return;
     const main = win.webContents.mainFrame;
     sealed.bindChannel(mint.token, `m:${main.processId}:${main.routingId}`);
-    if (!win.isDestroyed()) win.showInactive();
+    if (!win.isDestroyed()) {
+      log(`card: the fallback card for ${cardId} (${card.kind}) is shown`);
+      if (headless) log(`window: shown while headless (the sealed smoke's fallback card ${cardId})`);
+      win.showInactive();
+    }
   }).catch(() => win.close());
   const own = fallbacks.get(cardId);
   if (own !== undefined) { own.win = win; own.token = mint.token; }
@@ -374,7 +457,9 @@ function makePair(): Pair {
       const token = readAppToken(home, env);
       return token === undefined ? undefined : appHello(token, app.getVersion(), CLOVER_PROTOCOL_VERSION);
     },
-    ...(binary !== undefined ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
+    // A test-marked build never registers a login item or starts the daemon through the OS (its core is started by
+    // the test itself): no launcher.
+    ...(binary !== undefined && typeof __CLOVER_TEST_BUILD__ !== "string" ? { launcher: cliLauncher({ binary, home, profile: identity.profile }) } : {}),
     // The token goes only to this user's own daemon, which proves it holds it (lane C's protocol.prove): on Windows a
     // pipe's name is in a namespace every user shares.
     prove: { pid: process.pid },
@@ -442,6 +527,8 @@ function makePair(): Pair {
       if (parsed.success) {
         sealed.fromCore(parsed.data.card);
         armFallback(parsed.data.card.id);
+        // Its id and kind only (no text): the acceptance run checks the app was told of each card it answers.
+        log(`card: a ${parsed.data.card.kind} card ${parsed.data.card.id} arrived`);
       } else log("pair: ignored a card_requested event that isn't one");
     }
     if (type === "card_resolved") {
@@ -468,7 +555,8 @@ function makePair(): Pair {
 let answerKeyValue: AnswerKey | undefined;
 function answerKey(): AnswerKey {
   if (answerKeyValue === undefined) {
-    if (headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
+    // A test-marked build never reaches safeStorage (the login keychain on macOS): its key is in memory.
+    if (typeof __CLOVER_TEST_BUILD__ === "string" || headless || !app.isPackaged) answerKeyValue = new AnswerKey(memoryVault("none"), log);
     else if (process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text") {
       log("answer key: this computer's secret store is plain text (no Secret Service); the key stays in memory");
       answerKeyValue = new AnswerKey(memoryVault("none"), log);
@@ -482,51 +570,86 @@ function scheduleReload(): void {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {
     const c = pair.client;
-    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${err instanceof Error ? err.message : String(err)}`));
+    if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: reloading the registry failed: ${why(err)}`));
   }, 200);
 }
 
 let registryRetry: ReturnType<typeof setTimeout> | undefined;
 let registryRetryMs = 2_000;
+/** The wait before asking again while the registry is still opening: short at first (a cold start opens it in a second or
+ *  two), growing to a few seconds. */
+let openingRetryMs = 250;
+/** True once the registry is known to be open and nothing fills the window: the app is in safe mode, or the daemon's plugin
+ *  list is not the empty one it gives while opening (it always has bundled plugins) and its UI list has stayed empty over
+ *  several asks in a row (a plugin host restarting after an upgrade answers an empty UI list for a moment). The root shows
+ *  "Nothing fills this window" only then. */
+let registryReady = false;
+let emptyAnswers = 0;
+/** Plugins with UI in the registry the runtime holds. */
+let heldUi = 0;
 const optional = new OptionalCalls(log);
 
 /** The registry and the user's choices, on every connection (state is the core's: a reconnect rebuilds from it). A
  *  method the daemon doesn't serve yet leaves its part at the defaults (no plugin layers, default choices) instead of
  *  failing the whole setup: the rest shows, and the call is asked again with a growing wait (up to 30 s), and at once
- *  on `methods_changed` or a plugin event. */
+ *  on `methods_changed` or a plugin event. The events are subscribed to BEFORE the first read, so the nudge the daemon's
+ *  registry sends when it finishes opening can't fall between a read and the subscription; and an empty answer while the
+ *  daemon's own list is empty too (and the app is not in safe mode) means the registry is still opening, so it is asked
+ *  again soon. */
 async function loadRegistry(client: DaemonClient): Promise<void> {
   clearTimeout(registryRetry);
+  // `approvals` too: the cards (`card_requested`, `card_resolved`) are that area's, and an app that didn't subscribe to it
+  // was never told of a card (the acceptance run's first card-arrival check found it).
+  await client.request("events.subscribe", { areas: ["plugins", "app", "approvals"] }).catch(() => undefined);
   const [ui, settingsRaw, statusRaw] = await Promise.all([
     optional.call(client, "plugin.ui"),
     optional.call(client, "ui.settings"),
     client.request<unknown>("pair.status").catch(() => undefined),
   ]);
-  if (ui === undefined || settingsRaw === undefined) {
-    registryRetry = setTimeout(() => {
-      const c = pair.client;
-      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: asking for the registry again failed: ${err instanceof Error ? err.message : String(err)}`));
-    }, registryRetryMs);
-    registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
-  } else registryRetryMs = 2_000;
   const views = ui !== null && typeof ui === "object" && Array.isArray((ui as { plugins?: unknown }).plugins) ? (ui as { plugins: unknown[] }).plugins : [];
   const settings = UiSettings.safeParse(settingsRaw);
   if (!settings.success && settingsRaw !== undefined) log("pair: the daemon's UI settings aren't valid; the defaults apply");
   const status = statusRaw === undefined ? undefined : PairStatus.safeParse(statusRaw);
   let extras: Record<string, UiPluginExtras> = {};
+  let listed = 0;
   try {
     const list = await client.request<{ plugins?: unknown }>("plugin.list");
     const rows = Array.isArray(list?.plugins) ? (list.plugins as { id?: unknown; source?: unknown }[]) : [];
+    listed = rows.length;
     extras = Object.fromEntries(rows.filter((p) => typeof p?.id === "string").map((p) => [p.id as string, { source: p.source === "bundled" ? "bundled" : p.source === "dev" ? "dev" : "installed" } as UiPluginExtras]));
   } catch {
     // An older daemon, or the fake: the view's own fields, else the defaults.
   }
   if (status?.success === true && status.data.safeMode) runtime.setSafeMode(true);
   const plugins = readUiPlugins(views, extras, log);
-  runtime.setRegistry(plugins);
+  const gate = gateAnswer({ ui: plugins.length, listed, safeMode: runtime.safeMode, held: heldUi, emptyBefore: emptyAnswers });
+  emptyAnswers = gate.emptyAnswers;
+  registryReady = gate.ready;
+  // A transient empty answer (plugin hosts restarting) leaves the working shell, and its drafts, as it is.
+  if (gate.apply) {
+    runtime.setRegistry(plugins);
+    heldUi = plugins.length;
+  } else log("pair: an empty UI list while a shell is showing; keeping it until it lasts");
   runtime.setChoices((settings.success ? settings.data : { picks: [], lists: [] }) as never);
   syncSurfaces();
-  await client.request("events.subscribe", { areas: ["plugins", "app"] }).catch(() => undefined);
   log(`layers: ${plugins.length} plugin(s) with UI`);
+  const again = (ms: number, what: string): void => {
+    registryRetry = setTimeout(() => {
+      const c = pair.client;
+      if (c !== undefined) void loadRegistry(c).catch((err) => log(`pair: ${what} failed: ${why(err)}`));
+    }, ms);
+  };
+  if (ui === undefined || settingsRaw === undefined) {
+    again(registryRetryMs, "asking for the registry again");
+    registryRetryMs = Math.min(registryRetryMs * 2, 30_000);
+  } else registryRetryMs = 2_000;
+  // No UI while not in safe mode: the shell isn't there yet (the registry still opening, or its plugins starting), so ask
+  // again with a growing wait, until it is (a nudge from the daemon asks at once).
+  if (plugins.length === 0 && !runtime.safeMode) {
+    log(`pair: no plugin has UI yet; asking again in ${openingRetryMs} ms`);
+    if (ui !== undefined && settingsRaw !== undefined) again(openingRetryMs, "asking for the opening registry again");
+    openingRetryMs = Math.min(openingRetryMs * 2, 4_000);
+  } else openingRetryMs = 250;
   void maybeWelcome(client);
 }
 
@@ -550,13 +673,14 @@ const pageDeps = {
       mkdirSync(dirname(welcomeFlag()), { recursive: true });
       writeFileSync(welcomeFlag(), `${new Date().toISOString()}\n`);
     } catch (err) {
-      log(`welcome: couldn't note it's done: ${err instanceof Error ? err.message : String(err)}`);
+      log(`welcome: couldn't note it's done: ${why(err)}`);
     }
   },
   page: () => corePage,
   closePage: () => {
     corePage = null;
   },
+  registryReady: () => registryReady,
 };
 
 /** Shows one of the core's pages in the main window (opening it if need be). */
@@ -583,6 +707,11 @@ async function maybeWelcome(client: DaemonClient): Promise<void> {
 function stateChanged(s: PairState): void {
   // The layers' connections go with the pair's; each opens again on its plugin's next call.
   if (s.kind !== "connected") layerLinks.closeAll();
+  // A new connection asks the daemon afresh: the earlier run of empty answers and its waits don't carry over.
+  else {
+    emptyAnswers = 0;
+    openingRetryMs = 250;
+  }
   log(`pair: ${s.kind}${s.kind === "unavailable" ? ` (${s.reason})` : ""}`);
   const status = s.kind === "reconnecting" ? "Reconnecting to Clover…" : s.kind === "unavailable" ? "Clover isn't running" : s.kind === "starting-daemon" ? "Starting Clover…" : s.kind === "unverified" ? "Can't verify the Clover daemon" : undefined;
   tray?.show({ safeMode: runtime.safeMode, strings: runtime.coreStrings(), ...(status !== undefined ? { status } : {}) });
@@ -660,7 +789,7 @@ function leaveApp(): void {
   try {
     browser?.shutdown();
   } catch (err) {
-    log(`browser: shutdown failed: ${err instanceof Error ? err.message : String(err)}`);
+    log(`browser: shutdown failed: ${why(err)}`);
   }
   pair?.stop();
   tray?.destroy();
@@ -695,12 +824,21 @@ function syncActivation(): void {
   app.setActivationPolicy(visible ? "regular" : "accessory");
 }
 
+/** Shows the main window as an ordinary window. The app is an accessory (no Dock icon) while nothing shows, and a window
+ *  an accessory app shows can come up over another app's full-screen space; so the app is made a regular one FIRST, then the
+ *  window shows (it takes its own place in a desktop space, and the OS brings that space forward). Only the pill, the island
+ *  and the cards float. */
+function showMainWindow(win: BrowserWindow): void {
+  if (headless) return;
+  if (process.platform === "darwin") app.setActivationPolicy("regular");
+  win.setVisibleOnAllWorkspaces(false);
+  win.show();
+  syncActivation();
+}
+
 async function openMainWindow(): Promise<BrowserWindow | undefined> {
   if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
-    if (!headless) {
-      mainWindow.show();
-      syncActivation();
-    }
+    showMainWindow(mainWindow);
     return mainWindow;
   }
   const dark = nativeTheme.shouldUseDarkColors;
@@ -731,11 +869,7 @@ async function openMainWindow(): Promise<BrowserWindow | undefined> {
   });
   win.on("focus", () => runtime.focusReturned(id));
   win.webContents.on("before-input-event", (event, input) => shortcut(event, input, win));
-  win.once("ready-to-show", () => {
-    if (headless) return;
-    win.show();
-    syncActivation();
-  });
+  win.once("ready-to-show", () => showMainWindow(win));
   await win.loadURL("clover-core://app/");
   return win;
 }
@@ -813,6 +947,7 @@ function place(surface: string, s: Surface, [width, height]: number[]): void {
 }
 
 function steerSurface(windowId: number, request: Record<string, unknown>): void {
+  log(`surface: a request ${Object.keys(request).filter((k) => k !== "ref").join(",")}${typeof request.visible === "boolean" ? ` visible=${request.visible}` : ""}${headless ? " (headless)" : ""}`);
   const entry = [...surfaces].find(([, s]) => !s.win.isDestroyed() && s.win.id === windowId);
   if (entry === undefined) return;
   const [id, s] = entry;
@@ -823,10 +958,12 @@ function steerSurface(windowId: number, request: Record<string, unknown>): void 
   const bounds = request.bounds === undefined ? undefined : surfaceBounds(request.bounds, display, trusted);
   if (bounds !== undefined) {
     s.win.setBounds(bounds);
+    log(`surface: ${id} bounds ${bounds.width}x${bounds.height}`);
   } else if (request.width !== undefined || request.height !== undefined) {
     const [w, h] = s.win.getSize();
     const size = surfaceSize(request, { width: w!, height: h! }, { trusted: surfaceMayFloat(s.pluginId), workArea: screen.getPrimaryDisplay().workArea });
     place(id, s, [size.width, size.height]);
+    log(`surface: ${id} sized to ${size.width}x${size.height}`);
   }
   // On Wayland a surface is a normal window: it takes every click inside it.
   if (request.regions !== undefined && !wayland) {
@@ -941,6 +1078,30 @@ async function okToPaste(windowId: number, lines: number): Promise<boolean> {
 
 /** Sends counted as the user's: one key press or click per send (the user-send gate). */
 const sends = new SendGate();
+const windowDrags = new TitleDrag();
+/** Where the main process last saw the cursor over a window, on the screen (from its own mouse events). */
+const cursors = new Map<number, { x: number; y: number }>();
+function cursorPoint(windowId: number): { x: number; y: number } | undefined {
+  return cursors.get(windowId);
+}
+/** The window moves with the cursor the main process reads itself; a card appearing ends the drag. */
+function dragMove(windowId: number, cursor: { x: number; y: number }): void {
+  const win = BrowserWindow.fromId(windowId);
+  if (win === null || win.isDestroyed()) return windowDrags.forget(windowId);
+  // The cursor left the window (past a small lag the window's own move leaves behind): the drag is over.
+  const b = win.getBounds();
+  const slack = 60;
+  if (cursor.x < b.x - slack || cursor.x > b.x + b.width + slack || cursor.y < b.y - slack || cursor.y > b.y + b.height + slack) return dragEnd(windowId);
+  const to = windowDrags.move(windowId, cursor, sealed.anyPending());
+  if (to !== undefined) win.setPosition(to.x, to.y);
+}
+function dragEnd(windowId: number): void {
+  const from = windowDrags.end(windowId);
+  const win = BrowserWindow.fromId(windowId);
+  if (from === undefined || win === null || win.isDestroyed()) return;
+  const [x, y] = win.getPosition();
+  if (x !== from.x || y !== from.y) log(`window: moved by its title area, from (${from.x}, ${from.y}) to (${x}, ${y})`);
+}
 
 /** The person's mouse-downs, by window (the view-frame gate). */
 const pointers = new PointerLog();
@@ -980,7 +1141,7 @@ async function diagnoseHang(win: BrowserWindow): Promise<void> {
     try {
       process.kill(pid, "SIGKILL");
     } catch (err) {
-      log(`layers: could not stop process ${pid}: ${err instanceof Error ? err.message : String(err)}`);
+      log(`layers: could not stop process ${pid}: ${why(err)}`);
     }
   }
   if (verdict.restart) hangs.unresponsive(win.id);
@@ -1039,15 +1200,16 @@ const webViews = new WebViews((windowId) => {
 function startBrowser(): void {
   const send = (method: string, params: unknown) => {
     const c = pair?.client;
-    if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${err instanceof Error ? err.message : String(err)}`));
+    if (c !== undefined) void c.request(method, params).catch((err) => log(`browser: ${method} failed: ${why(err)}`));
   };
   browser = createBrowserHost({
     computer: hostname().replace(/\.local$/, ""),
+    headless,
     report: (events) => send("browser.report", { events }),
     hold: (id, held) => send("browser.hold", { id, held }),
     assets: { preload: join(here, "..", "..", BROWSER_ASSETS.preload.out), html: join(here, "..", "..", BROWSER_ASSETS.html.out) },
   });
-  void browser.start().catch((err) => log(`browser: start failed: ${err instanceof Error ? err.message : String(err)}`));
+  void browser.start().catch((err) => log(`browser: start failed: ${why(err)}`));
 }
 
 function browserHost(): BrowserHost {
@@ -1077,7 +1239,21 @@ function watchWindow(win: BrowserWindow): void {
     }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
+    const at = { x: mouse.globalX ?? 0, y: mouse.globalY ?? 0 };
+    if (mouse.type === "mouseUp") {
+      // A click sends on its release: the release the main process saw counts as the input too, so a person who holds the
+      // button on Send for a while still sends (the press alone covers only the second after it).
+      if (mouse.button === undefined || mouse.button === "left") sends.input(id);
+      return dragEnd(id);
+    }
+    if (mouse.type === "mouseMove") {
+      cursors.set(id, at);
+      if (windowDrags.isGoing(id)) dragMove(id, at);
+      return;
+    }
     if (mouse.type !== "mouseDown") return;
+    cursors.set(id, at);
+    windowDrags.down(id, { button: mouse.button, x: mouse.x, y: mouse.y });
     menus.input(id);
     sends.input(id);
     pointers.down(id, mouse.x, mouse.y);
@@ -1096,9 +1272,13 @@ function watchWindow(win: BrowserWindow): void {
   });
   win.webContents.on("unresponsive", () => void diagnoseHang(win));
   win.webContents.on("responsive", () => hangs.responsive(id));
+  // A drag ends when the window loses focus too, not only on the release (which may go to another window).
+  win.on("blur", () => dragEnd(id));
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
+    windowDrags.forget(id);
+    cursors.delete(id);
     pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);
@@ -1206,8 +1386,9 @@ async function smoke(): Promise<void> {
   // starts every frame compositing long before the press, so the router can target the sealed frame. Test-only like
   // the presses themselves; headless otherwise stays hidden, and under CI's virtual display no human screen is
   // touched.
-  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && sealedInputAllowed({ packaged: app.isPackaged, headless }) && !win.isVisible()) {
+  if ((process.env.CLOVER_SMOKE_SEALED_CLICK !== undefined || process.env.CLOVER_SMOKE_SEALED_FALLBACK === "1") && ((typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless })) && !win.isVisible()) {
     win.showInactive();
+    log(`window: shown while headless (the sealed smoke's input routing)`);
     log(`sealed-click: main window shown for input routing`);
   }
   const probe = `(() => ({
@@ -1462,7 +1643,7 @@ async function smoke(): Promise<void> {
               // Drive the press over CDP input (unpackaged smoke only): sendInputEvent's mouse path does not reach
               // out-of-process sealed iframes in this Electron, while CDP-dispatched input is still trusted. Test-only
               // on every axis (B1): a packaged app never attaches the debugger, whatever env vars it started with.
-              const inputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+              const inputAllowed = (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
               let cdp = false;
               if (inputAllowed) {
                 try {
@@ -1537,7 +1718,7 @@ async function smoke(): Promise<void> {
           // press covers a first one lost while the page still loaded. CDP input (like the part path): sendInputEvent
           // does not reach the page here. Test-only on every axis (B1): a packaged app never attaches the debugger,
           // whatever env vars it started with.
-          const fbInputAllowed = sealedInputAllowed({ packaged: app.isPackaged, headless });
+          const fbInputAllowed = (typeof __CLOVER_TEST_BUILD__ === "string" && headless) || sealedInputAllowed({ packaged: app.isPackaged, headless });
           let fbCdp = false;
           if (fbInputAllowed) {
             try {

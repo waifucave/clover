@@ -13,7 +13,9 @@
 //       the 30-day keep-alive with no CI run: rewrites only Date and Valid-Until in each suite's Release (nothing else
 //       changes, so every hash it lists still holds) and signs the tree again, as `sign` does
 //   bun scripts/release/linux-repo.ts upload --dir <dir> [--yes]                                  (the owner's Mac)
-//       prints the upload of the signed tree (wrangler r2 object put, one file each); runs it only with --yes
+//       prints the upload of the signed tree (wrangler r2 object put, one file each); runs it only with --yes, and
+//       only when every signature verifies and each Release is current (dated by now, at least MIN_DAYS_LEFT days
+//       left, no more than RELEASE_VALID_DAYS ahead)
 //   bun scripts/release/linux-repo.ts key --generate | --check                                    (the owner's Mac)
 //       makes the key (the private half to the Keychain, the public half into the keyring file) or checks it
 //
@@ -58,7 +60,62 @@ export function releaseConfig(suite: string, now: Date = new Date()): string[] {
 /** apt's date form, as apt-ftparchive writes it (RFC 1123, in UTC). */
 const aptDate = (d: Date): string => d.toUTCString().replace("GMT", "UTC");
 
-const fieldCount = (text: string, field: string): number => (text.match(new RegExp(`^${field}: .*$`, "gm")) ?? []).length;
+/**
+ * A Release's fields, as apt reads them: the first paragraph's `Name: value` lines (names compared without case,
+ * continuation lines skipped), each name's values in order.
+ */
+export function releaseFields(text: string): Map<string, string[]> {
+  const fields = new Map<string, string[]>();
+  for (const line of text.split("\n")) {
+    if (line.trim() === "") break;
+    if (line.startsWith(" ") || line.startsWith("\t")) continue;
+    const m = /^([^:\s][^:]*):[ \t]*(.*)$/.exec(line);
+    if (m === null) continue;
+    const name = m[1]!.toLowerCase();
+    fields.set(name, [...(fields.get(name) ?? []), m[2]!.trimEnd()]);
+  }
+  return fields;
+}
+
+const fieldCount = (text: string, field: string): number => releaseFields(text).get(field.toLowerCase())?.length ?? 0;
+
+/** An apt date (aptDate's form exactly: RFC 1123 in UTC), or undefined for anything else. */
+export function parseAptDate(value: string): Date | undefined {
+  if (!/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun), \d{2} (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}:\d{2} UTC$/.test(value)) return undefined;
+  const d = new Date(value.replace(/ UTC$/, " GMT"));
+  return Number.isNaN(d.getTime()) || aptDate(d) !== value ? undefined : d;
+}
+
+/** The fewest days a Release may have left when it is uploaded: a tree near its Valid-Until is refreshed first. */
+export const MIN_DAYS_LEFT = 7;
+
+/**
+ * A Release's dates, checked as the upload gate needs them: one Date and one Valid-Until, each a real apt date, with
+ * Date ≤ now < Valid-Until, at least MIN_DAYS_LEFT days left, and Valid-Until no further than RELEASE_VALID_DAYS
+ * (and a day's grace) from now. The problems, none when all hold.
+ */
+export function releaseDateProblems(text: string, now: Date = new Date()): string[] {
+  const fields = releaseFields(text);
+  const problems: string[] = [];
+  const dates: Partial<Record<"Date" | "Valid-Until", Date>> = {};
+  for (const field of ["Date", "Valid-Until"] as const) {
+    const values = fields.get(field.toLowerCase()) ?? [];
+    if (values.length !== 1) { problems.push(`has ${values.length} ${field} fields, not one`); continue; }
+    const d = parseAptDate(values[0]!);
+    if (d === undefined) problems.push(`has a ${field} that isn't an apt date (${JSON.stringify(values[0]!.slice(0, 40))})`);
+    else dates[field] = d;
+  }
+  const { Date: date, "Valid-Until": until } = dates;
+  if (date !== undefined && date.getTime() > now.getTime()) problems.push(`is dated ${aptDate(date)}, after now`);
+  if (until !== undefined) {
+    const left = (until.getTime() - now.getTime()) / 86_400_000;
+    if (left <= 0) problems.push(`expired at ${aptDate(until)}`);
+    else if (left < MIN_DAYS_LEFT) problems.push(`has ${left.toFixed(1)} days left (under ${MIN_DAYS_LEFT}): refresh it first`);
+    if (left > RELEASE_VALID_DAYS + 1) problems.push(`is valid until ${aptDate(until)}, more than ${RELEASE_VALID_DAYS} days from now`);
+  }
+  if (date !== undefined && until !== undefined && until.getTime() <= date.getTime()) problems.push("has a Valid-Until that isn't after its Date");
+  return problems;
+}
 
 /**
  * Release dated `now`, valid until `now` + RELEASE_VALID_DAYS: Date replaced, and Valid-Until replaced or, when
@@ -71,10 +128,10 @@ export function stampRelease(text: string, now: Date = new Date()): string {
   const valid = fieldCount(text, "Valid-Until");
   if (dates !== 1) throw new Error(`Release has ${dates} Date fields, not one`);
   if (valid > 1) throw new Error(`Release has ${valid} Valid-Until fields`);
-  const dated = text.replace(/^Date: .*$/m, `Date: ${aptDate(now)}`);
+  const dated = text.replace(/^Date:.*$/im, `Date: ${aptDate(now)}`);
   return valid === 1
-    ? dated.replace(/^Valid-Until: .*$/m, `Valid-Until: ${aptDate(until)}`)
-    : dated.replace(/^Date: .*$/m, (line) => `${line}\nValid-Until: ${aptDate(until)}`);
+    ? dated.replace(/^Valid-Until:.*$/im, `Valid-Until: ${aptDate(until)}`)
+    : dated.replace(/^Date:.*$/im, (line) => `${line}\nValid-Until: ${aptDate(until)}`);
 }
 
 /**
@@ -165,10 +222,11 @@ export const repoKeychain: RepoKeyStore = { get: (i) => Bun.secrets.get(i), set:
 /**
  * A v4 key with Ed25519 as EdDSA (algorithm 22, `ed25519Legacy` in openpgp.js), the form gpgv and sqv on today's
  * Debian and Ubuntu verify. openpgp.js's `curve25519` is RFC 9580's Ed25519 (algorithm 27), which Ubuntu 24.04's
- * gpgv can't check (apt reports the signature as invalid, ERRSIG).
+ * gpgv can't check (apt reports the signature as invalid, ERRSIG). A signing key alone: no encryption subkey, since
+ * nothing is ever encrypted to it.
  */
 export async function generateRepoKey(): Promise<{ privateKey: string; publicKey: string; fingerprint: string }> {
-  const { privateKey, publicKey } = await openpgp.generateKey({ type: "ecc", curve: "ed25519Legacy", userIDs: [{ name: "Clover packages", email: "w@waifucave.com" }], format: "armored" });
+  const { privateKey, publicKey } = await openpgp.generateKey({ type: "ecc", curve: "ed25519Legacy", subkeys: [], userIDs: [{ name: "Clover packages", email: "w@waifucave.com" }], format: "armored" });
   const fingerprint = (await openpgp.readKey({ armoredKey: publicKey })).getFingerprint();
   return { privateKey, publicKey, fingerprint };
 }
@@ -216,18 +274,36 @@ export async function verifyInRelease(inRelease: string, release: Uint8Array, pu
   }
 }
 
-/** Every signature in a signed tree, checked against the committed key; the problems (none means all good). */
-export async function verifyTree(dir: string, publicKey: string): Promise<string[]> {
+/**
+ * Every signature in a signed tree, checked against the committed key, and each Release's dates
+ * (releaseDateProblems, against `now`; `dates: false` checks only that each has one Date and one Valid-Until, for
+ * signing a tree whose dates a test sets in the past). A suite folder that exists must hold Release, InRelease and
+ * Release.gpg. The problems (none means all good).
+ */
+export async function verifyTree(dir: string, publicKey: string, o: { now?: Date; dates?: boolean } = {}): Promise<string[]> {
   const problems: string[] = [];
   let checked = 0;
   for (const suite of ["stable", "beta"]) {
-    const release = join(dir, "apt", "dists", suite, "Release");
+    const folder = join(dir, "apt", "dists", suite);
+    const release = join(folder, "Release");
+    if (existsSync(folder)) {
+      for (const name of ["Release", "InRelease", "Release.gpg"]) {
+        if (!existsSync(join(folder, name))) problems.push(`${relative(dir, join(folder, name))} is missing`);
+      }
+    }
     if (existsSync(release)) {
       const bytes = new Uint8Array(readFileSync(release));
-      const inRelease = join(dirname(release), "InRelease");
-      const gpg = join(dirname(release), "Release.gpg");
-      if (!existsSync(inRelease) || !(await verifyInRelease(readFileSync(inRelease, "utf8"), bytes, publicKey))) problems.push(`${relative(dir, inRelease)} doesn't verify`);
-      if (!existsSync(gpg) || !(await verifyDetached(bytes, readFileSync(gpg, "utf8"), publicKey))) problems.push(`${relative(dir, gpg)} doesn't verify`);
+      // A Release this repository wrote carries one Date and one Valid-Until (stampRelease), and an upload needs
+      // them current: apt refuses a Release dated in the future or past its Valid-Until.
+      const text = new TextDecoder().decode(bytes);
+      const dated = o.dates === false
+        ? (["Date", "Valid-Until"] as const).flatMap((field) => { const n = fieldCount(text, field); return n === 1 ? [] : [`has ${n} ${field} fields, not one`]; })
+        : releaseDateProblems(text, o.now ?? new Date());
+      problems.push(...dated.map((p) => `${relative(dir, release)} ${p}`));
+      const inRelease = join(folder, "InRelease");
+      const gpg = join(folder, "Release.gpg");
+      if (existsSync(inRelease) && !(await verifyInRelease(readFileSync(inRelease, "utf8"), bytes, publicKey))) problems.push(`${relative(dir, inRelease)} doesn't verify`);
+      if (existsSync(gpg) && !(await verifyDetached(bytes, readFileSync(gpg, "utf8"), publicKey))) problems.push(`${relative(dir, gpg)} doesn't verify`);
       checked++;
     }
     for (const arch of ["x86_64", "aarch64"]) {
@@ -283,7 +359,8 @@ export async function signTree(dir: string, key: openpgp.PrivateKey, keyring: st
     }
   }
   writeFileSync(join(dir, "clover-archive-keyring.asc"), keyring);
-  const problems = await verifyTree(dir, keyring);
+  // The signatures only: the upload gate checks the dates (a test signs a tree dated in the past on purpose).
+  const problems = await verifyTree(dir, keyring, { dates: false });
   if (problems.length > 0) throw new Error(`the signatures don't verify: ${problems.join("; ")}`);
 }
 

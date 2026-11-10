@@ -22,6 +22,9 @@ import { EMPTY_STRINGS, translate } from "./strings";
 import { LayoutRoot } from "./layout";
 
 export * from "./bridge";
+// What a component needs of React, from the layer's own copy: a plugin that writes its components with these ships no
+// React of its own (`clover plugin new`'s UI and point templates do).
+export { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
 export type { AppViewProps, CardButtonProps, CardElementProps, CardFieldProps, EntryProps, SpeechFeed, SpeechFrame, UiApi, UiComponent, UiNode } from "../api/ui-api";
 
 // -------------------------------------------------------------------------------------------------
@@ -475,6 +478,12 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
     tokens,
     context: item.context,
   }), [item, tokens, spot, spotKey]);
+  // The `composer` spot's session and bot are the declaring document's own say, told to the core for this mount (as a
+  // frame's props are): the core decides what the composer's callbacks reach from them. Data only; no callbacks go.
+  // A layout effect, so it goes before the entry's own first call (its effects run later).
+  useLayoutEffect(() => {
+    if (spot === "composer") r.bridge.setProps(item.mount, encodeProps(props ?? {}, () => ""));
+  }, [spot, props, item.mount, r]);
   const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
   const marks = { "data-clover-entry": item.ref, "data-clover-part": item.mount, "data-clover-tab": item.tab, "data-clover-styled": item.styled === true ? "" : undefined };
   if (item.layout !== undefined) {
@@ -705,6 +714,19 @@ export function usePluginApi(): PluginApi {
         list: (filter?: { bot?: string; kinds?: string[] }) => call<{ sessions: unknown[] }>("session.list", filter ?? {}).then((r) => r.sessions),
         get: (session: string) => call<{ session: unknown }>("session.get", { id: session }).then((r) => r.session),
         answer: (session: string, callId: string, answers: Record<string, string>) => call<unknown>("session.answer", { id: session, callId, answers }).then(() => undefined),
+        history: (session: string, page: { before?: number; limit: number }) => call<{ events: Record<string, unknown>[]; hasMore: boolean }>("session.history", { id: session, ...page }),
+        follow: (session: string, listener: (event: Record<string, unknown>) => void, opts?: { since?: number }): Unsubscribe => {
+          // The session's live events arrive as `event` notifications on this plugin's connection once it attaches.
+          const off = onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as Record<string, unknown> | undefined;
+            if (method === "event" && e?.sessionId === session) listener(e);
+          });
+          void call<unknown>("session.attach", { id: session, ...(opts?.since !== undefined ? { since: opts.since } : {}) }).catch(() => undefined);
+          return () => {
+            off();
+            void call<unknown>("session.detach", { id: session }).catch(() => undefined);
+          };
+        },
       } as unknown as PluginApi["conversation"],
       bots: {
         list: () => call<{ bots: unknown[] }>("bot.list", {}).then((r) => r.bots),
@@ -727,7 +749,20 @@ export function usePluginApi(): PluginApi {
       ui: { send: () => {} } as unknown as PluginApi["ui"],
       storage: {} as PluginApi["storage"],
       net: { fetch: unavailable("net.fetch") } as unknown as PluginApi["net"],
-      settings: {} as PluginApi["settings"],
+      settings: {
+        get: async <T,>(key: string, opts?: { bot?: string }) => {
+          const r = await call<{ settings: { key: string; value?: unknown }[] }>("plugin.settings.get", { id: part.entry.pluginId, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) });
+          return r.settings.find((x) => x.key === key)?.value as T | undefined;
+        },
+        set: (key: string, value: unknown, opts?: { bot?: string }) => call<unknown>("plugin.settings.set", { id: part.entry.pluginId, key, value: value ?? null, ...(opts?.bot !== undefined ? { bot: opts.bot } : {}) }).then(() => undefined),
+        watch: (_key: string | null, listener: (key: string) => void): Unsubscribe => {
+          subscribe(part.mount, part.entry.pluginId, "plugins");
+          return onApiEvent(part.entry.pluginId, (method, params) => {
+            const e = params as Record<string, unknown> | undefined;
+            if (method === "core.event" && e?.type === "plugin_changed") listener(_key ?? "");
+          });
+        },
+      } as PluginApi["settings"],
       confirm: unavailable("confirm") as unknown as PluginApi["confirm"],
       t,
     } as PluginApi;
@@ -877,12 +912,14 @@ export function useQuestions(): { readonly questions: readonly PendingQuestion[]
 }
 
 /** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the
- *  Dispatch pill's). Only the bundled `clover` tree's surfaces have it; elsewhere it is undefined. The runtime counts
+ *  Dispatch pill's). The entry in the `composer` spot has it (whichever plugin's), and the bundled `clover` tree's surfaces (the pill); elsewhere it is undefined. The runtime counts
  *  a send only within the frame's transient user activation, and the core only after it saw that input come to the
  *  window, one send for one press or click; any other is refused and sends nothing. */
 export function useUserSend(): ((to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => Promise<void>) | undefined {
   const part = usePart();
-  const allowed = part.entry.pluginId.split("/")[0] === "clover" && part.context.surface !== undefined;
+  // The core decides again, from the mount it made: the entry in the `composer` spot (any plugin's), or a part of
+  // the bundled `clover` tree. This only hides the hook from the rest.
+  const allowed = part.entry.spot === "composer" || part.entry.pluginId.split("/")[0] === "clover";
   const send = useCallback(async (to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => {
     const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
     if (activation !== undefined && !activation.isActive) throw new Error("the user's words go only from inside their key press or click");
@@ -890,6 +927,32 @@ export function useUserSend(): ((to: UserSendTarget, message: string | { text: s
     await rt().bridge.userSend(part.mount, to, m);
   }, [part.mount]);
   return allowed ? send : undefined;
+}
+
+/** What the `composer` spot hands the entry the core mounted there (spec §5.5, lane E): the models its session can
+ *  switch to, a model switch, and interrupt and stop. Each acting call counts only inside the user's own key press or
+ *  click. On a bot's main conversation a model switch changes a user layer: the `clover` layer's entry changes it
+ *  directly, any other plugin's ends in the sealed card the core raises for it. Undefined outside that spot. */
+export interface ComposerHost {
+  models(): Promise<{ models: { id: string; name?: string; providerName?: string; efforts?: string[] }[]; default?: string }>;
+  setModel(model: string, effort?: string): Promise<unknown>;
+  interrupt(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+export function useComposerHost(): ComposerHost | undefined {
+  const part = usePart();
+  const inSpot = part.entry.spot === "composer";
+  return useMemo(() => {
+    if (!inSpot) return undefined;
+    const ask = (op: "models" | "setModel" | "interrupt" | "stop", args?: unknown) => rt().bridge.composer(part.mount, op, args);
+    return {
+      models: () => ask("models") as ReturnType<ComposerHost["models"]>,
+      setModel: (model, effort) => ask("setModel", { model, ...(effort !== undefined ? { effort } : {}) }),
+      interrupt: () => ask("interrupt").then(() => undefined),
+      stop: () => ask("stop").then(() => undefined),
+    };
+  }, [inSpot, part.mount]);
 }
 
 /** The core client of the bundled `clover` tree's parts (lane F's `useCore`; not in lane B's declarations): any call
@@ -925,6 +988,34 @@ export function useCore(): CoreClient | undefined {
 /** The entry this component renders as (lane F's `useEntry`). */
 export function useEntry(): EntryProps["entry"] | undefined {
   return useContext(PartContext)?.entry;
+}
+
+/** Whether a mouse press at `target` is on a title-bar area: the nearest element up the tree that declares an app
+ *  region says `drag` (and not `no-drag`, which a button in the bar declares). */
+export function onDragRegion(target: EventTarget | null, style: (el: Element) => string = (el) => getComputedStyle(el).getPropertyValue("-webkit-app-region")): boolean {
+  for (let el = target instanceof Element ? target : null; el !== null; el = el.parentElement) {
+    const v = style(el).trim();
+    if (v === "drag") return true;
+    if (v === "no-drag") return false;
+  }
+  return false;
+}
+
+/** The shell's window moves by its title areas (`-webkit-app-region: drag` in its CSS): Chromium honors the CSS only in
+ *  a window's main frame, and the shell is a frame, so a press on a drag region is told to the core, which moves the
+ *  window itself, from the press and the cursor it saw (window-drag.ts). The core refuses it from any other part.
+ *  Not in lane B's declarations. */
+export function useWindowDrag(): void {
+  const part = usePart();
+  useEffect(() => {
+    const bridge = rt().bridge;
+    const down = (e: MouseEvent) => {
+      if (e.button !== 0 || e.defaultPrevented || !onDragRegion(e.target)) return;
+      bridge.windowDrag(part.mount);
+    };
+    document.addEventListener("mousedown", down, true);
+    return () => document.removeEventListener("mousedown", down, true);
+  }, [part.mount]);
 }
 
 /** The session this window shows (the `clover` layer's shell says so; the core refuses it from any other layer): a

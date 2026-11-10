@@ -9,6 +9,7 @@
 // `startDaemonParts`), since one process runs one daemon.
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as hooksModule from "../src/runtime-sdk/turn-loop/hooks";
+import * as nodeModule from "../src/computers/node";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -125,6 +126,9 @@ describe("the daemon's Clover parts, booted", () => {
     // unknown method).
     expect(Array.isArray((await call<{ models: unknown[] }>("models.list")).models)).toBe(true);
     await expect(call("plugin.auth.list", { id: "acme/nope" })).rejects.toThrow(/no plugin acme\/nope/);
+    // Lane K's agent.* methods, read from the parts' agents at each call.
+    expect(daemon.cloverParts.agents()).toBeDefined();
+    expect(await call("agent.definitions")).toEqual({ definitions: [] });
 
     // A second computer pairs; the user makes this one the main computer from the terminal.
     const laptop = await peer(net, hs, "Laptop");
@@ -362,6 +366,79 @@ describe("the daemon's Clover parts at the edges", () => {
     // The stop takes them away: uninstalled, and their handlers removed.
     expect(installedModelPlugins()).toBeUndefined();
     expect(removed).toBe(1);
+  }, 30_000);
+
+  test("a per-computer MCP server this computer doesn't tick never starts: the host's openMcp is never called for it", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const opened: string[] = [];
+    // A third-party plugin with a per-computer server and an ordinary one. No node here ticks the per-computer one (the
+    // node's ticks are lane J's; without them the list is empty and it fails closed).
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
+      id: "acme", source: "local",
+      manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true }, notes: { type: "host" } } } } as never,
+    }] });
+    daemon = await startDaemon({
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+      links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+      parts: { userHome: temp("clover-int-user-") },
+      pluginHost: async () => {
+        const host = new FakePluginHost({ clock });
+        const openMcp = host.openMcp.bind(host);
+        host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
+        return {
+          host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+          addApiHandlers: () => () => {},
+          close: async () => {},
+        } as unknown as DaemonPluginHost;
+      },
+    });
+    await daemon.cloverParts.ready;
+    // The ordinary server is opened (its listing), so the plugin MCP host did run; the per-computer one never is.
+    await waitFor("the ordinary server listed", () => opened.includes("acme/notes"));
+    expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+    const node = daemon.cloverParts.node();
+    await expect(node!.mcp!.run("acme-blender", "Render", {}, { session: "b_x", as: { kind: "core" } as never, callId: "c1" })).rejects.toMatchObject({ code: "not_installed" });
+    expect(opened.filter((o) => o === "acme/blender")).toEqual([]);
+  }, 30_000);
+
+  test("a restart with a per-computer MCP server ticked here lists and starts it once the node is up, with no tick change", async () => {
+    const net = new MemoryNetwork();
+    const home = temp("clover-int-home-");
+    const opened: string[] = [];
+    // The node's ticks (lane J's `mcpComputers`) say this computer runs `acme-blender`, as a ticks file read at start
+    // would; no tick changes after (no `onTicksChanged`).
+    const realStart = nodeModule.startComputerNode;
+    const nodeSpy = spyOn(nodeModule, "startComputerNode").mockImplementation((o) => {
+      const n = realStart(o);
+      (n as unknown as { mcpComputers(s: string): string[] }).mcpComputers = (s) => (s === "acme-blender" ? [n.registry.self().name] : []);
+      return n;
+    });
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [{
+      id: "acme", source: "local",
+      manifest: { manifest: 1, id: "acme", name: "Acme", contributes: { mcpServers: { blender: { type: "host", perComputer: true } } } } as never,
+    }] });
+    try {
+      daemon = await startDaemon({
+        home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, pair: false,
+        links: { wire: (k) => net.endpoint(k.publicKey), handshake: null, publicTime: null, mainComputer, watch: () => () => {} },
+        parts: { userHome: temp("clover-int-user-") },
+        pluginHost: async () => {
+          const host = new FakePluginHost({ clock });
+          const openMcp = host.openMcp.bind(host);
+          host.openMcp = (pluginId, server) => { opened.push(`${pluginId}/${server}`); return openMcp(pluginId, server); };
+          return {
+            host, registry, pluginSecrets: { forPlugin: () => ({ get: async () => null }) }, settings: {} as never,
+            addApiHandlers: () => () => {},
+            close: async () => {},
+          } as unknown as DaemonPluginHost;
+        },
+      });
+      await daemon.cloverParts.ready;
+      await waitFor("the ticked per-computer server started", () => opened.includes("acme/blender"));
+    } finally {
+      nodeSpy.mockRestore();
+    }
   }, 30_000);
 
   test("the model plugins' start guard and a stop while they are still starting", async () => {

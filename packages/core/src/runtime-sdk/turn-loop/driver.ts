@@ -108,7 +108,9 @@ export interface BotDriverDeps {
   coreTools?(ctx: BotSessionContext, origin: () => TurnOrigin | undefined): readonly CoreToolDef[];
   /** The plugins' MCP servers for this session (lanes B and D's host, J's placement), and lane J's router
    *  (`ComputerNode.mcp`), which runs each call where its server is. */
-  mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner };
+  /** `settled`: waits (briefly) for the first listing of a server just installed or enabled, so the turn that starts
+   *  right after sees its tools (`PluginMcp.settled`). */
+  mcp?: { servers(ctx: BotSessionContext): readonly BotMcpServer[]; runner: McpRunner; settled?(): Promise<void> };
   /** Lane J's holds (`ComputerNode.holds`): the session lets go of them at each turn's end. */
   holds?: { releaseSession(session: string): Promise<number> | number };
   /** Lane J's terminals (`ComputerNode.terminals`): the session's close at its end. */
@@ -311,6 +313,13 @@ export class BotSessionDriver implements SessionDriver {
   #inc: Incarnation | undefined;
   #generation = 0;
   #rebuild = true;
+  /** The sandbox the open runtime was given (canonical JSON): the agent SDK takes `sandbox` only when a runtime opens,
+   *  so each turn start compares the host's sandbox now with it and reopens on a difference (`#sandboxChanged`). */
+  #builtSandbox: string | undefined;
+  /** The MCP servers the open runtime was given, by name: the agent SDK takes `mcpServers` only when a runtime opens,
+   *  so a server a plugin adds (an install, an enable) or takes away since reopens it at the next turn start
+   *  (`#serversChanged`). A server whose tools change keeps the runtime and is told in the turn (`mcpChangesSince`). */
+  #builtServers: string | undefined;
   #builtMcp: Map<string, string> = new Map();
   #turn: RunningTurn | undefined;
   #origin: TurnOrigin | undefined;
@@ -642,12 +651,14 @@ export class BotSessionDriver implements SessionDriver {
         });
       }
     }
+    this.#builtServers = Object.keys(mcpServers).sort().join("\u0000");
     const cwd = ctx.paths.scratch;
     mkdirSync(cwd, { recursive: true });
     const queue = createHostPromptQueue();
     const abort = new AbortController();
     const testProvider = testProviderNameFor(bot.model);
     const sandbox = this.#d.sandbox?.(ctx);
+    this.#builtSandbox = canonicalSandbox(sandbox);
     const base = embeddedSessionOptions(this.#d, { model: bot.model, ...(bot.effort === undefined ? {} : { effort: bot.effort }), cwd });
     const options: Options = {
       ...base,
@@ -830,11 +841,37 @@ export class BotSessionDriver implements SessionDriver {
         return false;
       }
     })();
-    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache) return this.#inc;
+    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache && !this.#sandboxChanged() && !this.#serversChanged()) return this.#inc;
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open();
     return this.#inc;
+  }
+
+  /** Whether the host's sandbox for this session differs from what the open runtime got (a folder the fence names was
+   *  made or went, a policy changed): the runtime then reopens before the turn, resuming its transcript. A host whose
+   *  sandbox can't be read now reopens too, so the open surfaces the error rather than a stale sandbox running on. */
+  #serversChanged(): boolean {
+    if (this.#d.mcp === undefined || this.#builtServers === undefined) return false;
+    let now: string;
+    try {
+      now = ["clover_core", ...mergedServers(this.#mcpServers(), undefined, this.#reservedNames()).map((x) => x.server).filter((n) => n !== "clover_core")].sort().join("\u0000");
+    } catch {
+      return false;
+    }
+    if (now === this.#builtServers) return false;
+    this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
+    return true;
+  }
+
+  #sandboxChanged(): boolean {
+    if (this.#d.sandbox === undefined) return false;
+    try {
+      return canonicalSandbox(this.#d.sandbox(this.#ctx)) !== this.#builtSandbox;
+    } catch (err) {
+      this.#log(`bot driver ${this.#ctx.sessionId}: the sandbox could not be read: ${err instanceof Error ? err.message : String(err)}`);
+      return true;
+    }
   }
 
   async #closeIncarnation(inc: Incarnation): Promise<void> {
@@ -901,6 +938,8 @@ export class BotSessionDriver implements SessionDriver {
     this.#origin = ctl.origin;
     const hs = this.#hookSession;
     let inc: Incarnation;
+    // A server just installed or enabled is listed first (briefly), so the open below gives the runtime its tools.
+    await this.#d.mcp?.settled?.().catch(() => {});
     try {
       inc = await this.#ensureOpen();
     } catch (err) {
@@ -1061,4 +1100,15 @@ export function botDriverFactory(deps: BotDriverDeps): (ctx: BotSessionContext) 
 /** Whether the driver's state for a session exists (a test's check). */
 export function botDriverStateExists(home: string, sessionId: string): boolean {
   return existsSync(join(home, "sessions-runtime", `${sessionId.replace(/[^A-Za-z0-9._-]/g, "_")}.json`));
+}
+
+/** A sandbox as canonical JSON: keys sorted, and each list sorted (its entries are paths and hosts, whose order means
+ *  nothing), so the same settings compare equal however they were built. */
+function canonicalSandbox(sandbox: unknown): string {
+  const norm = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(norm).map((x) => JSON.stringify(x)).sort().map((x) => JSON.parse(x) as unknown);
+    if (v !== null && typeof v === "object") return Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, norm((v as Record<string, unknown>)[k])]));
+    return v;
+  };
+  return JSON.stringify(norm(sandbox ?? null));
 }

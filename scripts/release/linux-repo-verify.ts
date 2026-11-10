@@ -61,6 +61,8 @@ const aptOptions = [
   "-o", `Dir::Etc::trusted=${join(apt, "trusted.gpg")}`, "-o", `Dir::Etc::trustedparts=${join(apt, "trusted.d")}`,
   "-o", `Dir::State=${apt}`, "-o", `Dir::State::Lists=${join(apt, "lists")}`, "-o", `Dir::State::status=${join(apt, "status")}`,
   "-o", `Dir::Cache=${join(apt, "cache")}`, "-o", "Debug::NoLocking=1", "-o", "Acquire::Languages=none", "-o", "APT::Architecture=amd64",
+  // As root (the container legs), apt hands downloads to its _apt user, who can't read this private temp folder.
+  ...(process.getuid?.() === 0 ? ["-o", "APT::Sandbox::User=root"] : []),
 ];
 const aptGet = (): { ok: boolean; out: string } => {
   const r = spawnSync("apt-get", [...aptOptions, "--error-on=any", "update"], { encoding: "utf8" });

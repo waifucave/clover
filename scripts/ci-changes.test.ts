@@ -101,6 +101,15 @@ describe("ci-changes", () => {
     }
   });
 
+  test("any package's source runs the scripts job, whose source scans (the native channel's anti-wiring test) read every src/", () => {
+    for (const f of ["packages/cli/src/worker-entry-probe.ts", "packages/test-harness/src/x.ts", "packages/core/src/daemon.ts", "scripts/build-daemon.ts"]) {
+      expect([f, on([f]).includes("scripts")]).toEqual([f, true]);
+    }
+    const jobs = (Bun.YAML.parse(readFileSync(join(import.meta.dir, "..", ".github", "workflows", "ci.yml"), "utf8")) as { jobs: Record<string, { steps?: Array<{ run?: string; "working-directory"?: string }> }> }).jobs;
+    const scan = jobs.scripts?.steps?.find((s) => (s.run ?? "").includes("anti-wiring.test.ts"));
+    expect([scan?.["working-directory"], scan?.run]).toEqual(["packages/core", "bun test test/cowork/native/anti-wiring.test.ts"]);
+  });
+
   test("the core: its own, the CLI's and the scripts' tests, the daemon, the packages that carry it, the compiled gates and the Swift kits (WinterKit runs its daemon); not the app", () => {
     const core = on(["packages/core/src/daemon.ts"]);
     expect(core).toEqual(["workspaces", "daemon", "packages", "typecheck", "core", "cli", "scripts", "verify"]);

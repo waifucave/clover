@@ -85,10 +85,32 @@ async function render(): Promise<void> {
   const item = view.items.find((i) => i.kind === "frame");
   if (item === undefined || item.kind !== "frame") {
     shown = undefined;
+    syncDrag();
+    // Not yet: the daemon is still opening its registry (a cold start), and a nudge will draw the shell. The fallback is for
+    // a daemon that answered with its registry open and nothing to fill the window.
+    if (!info.context.safeMode && info.context.surface === undefined) {
+      const state = await root.call("registry.state").catch(() => undefined);
+      if ((state as { ready?: unknown } | undefined)?.ready !== true) {
+        note([t("root.starting")]);
+        syncDrag();
+        return;
+      }
+    }
     note(info.context.safeMode ? [t("root.empty-safe")] : [t("root.empty")], info.context.safeMode ? undefined : { label: t("root.restart-safe"), run: () => root.command("restart-safe-mode") });
+    syncDrag();
     return;
   }
   mount(item);
+  syncDrag();
+}
+
+/** The core's own drawing (the note, a page) is in this main frame, which is where Chromium honors a drag region: a strip
+ *  over the title area drags the window. With the shell's frame showing, the strip is off (the shell's own drag goes through
+ *  the main process, which checks it). The banner's buttons stay clickable (they sit above the strip). */
+function syncDrag(): void {
+  const drag = document.getElementById("clover-drag");
+  if (drag === null) return;
+  drag.hidden = info?.context.surface !== undefined || (stage.querySelector("iframe") !== null && page === null);
 }
 
 function onMessage(m: LayerMessage): void {
@@ -156,11 +178,13 @@ async function showPage(which: "welcome" | "plugins" | null): Promise<void> {
   if (which === null || info.context.surface !== undefined) {
     pageHost.hidden = true;
     pageHost.replaceChildren();
+    syncDrag();
     return;
   }
   const close = () => void showPage(null);
   if (which === "welcome") await showWelcome(pageHost, t, root.call, close);
   else await showPlugins(pageHost, t, root.call, close);
+  syncDrag();
 }
 
 async function start(): Promise<void> {

@@ -124,6 +124,18 @@ export class SealedFrames {
     });
   }
 
+  /** Whether any sealed card is pending (known to the app, not answered or cancelled, not past its expiry). Deliberately not
+   *  per window: a card pending anywhere keeps the window still, since moving it under the pointer would defeat "a click
+   *  counts only while the button is visible and uncovered". */
+  anyPending(): boolean {
+    for (const [id, c] of this.cards) {
+      if (this.resolved.has(id) || this.answered.has(id)) continue;
+      if (c.expiresAt !== null && c.expiresAt <= this.now()) continue;
+      return true;
+    }
+    return false;
+  }
+
   /** One card, pending or resolved. */
   get(id: string): SealedCard | undefined {
     return this.cards.get(id);

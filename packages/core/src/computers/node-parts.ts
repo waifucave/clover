@@ -106,15 +106,19 @@ export function peerReviewer(reviewer: SafetyReviewer | undefined, log?: (line: 
   };
 }
 
-/** The node's own parts: its terminals' paste card (when there is a broker) and its safety reviewer. */
+/** The node's own parts: its terminals' paste card (when there is a broker), its safety reviewer, and the broker's
+ *  own record of a card for a level raise (`cardRecord`, #342): always given, so with no broker it finds no card and
+ *  no card raises a level (fails closed); the registry judges the raise on that record, never the caller's copy. */
 export function nodeParts(o: {
   computer: () => string;
-  approvals?: Pick<ApprovalBroker, "request">;
+  approvals?: Pick<ApprovalBroker, "request" | "get">;
   reviewer?: SafetyReviewer;
   log?: (line: string) => void;
-}): Pick<ComputerNodeOptions, "terminals" | "reviewer"> {
+}): Pick<ComputerNodeOptions, "terminals" | "reviewer" | "cardRecord"> {
+  const approvals = o.approvals;
   return {
-    terminals: o.approvals ? { confirmPaste: confirmPasteVia(o.approvals, o.computer) } : {},
+    terminals: approvals ? { confirmPaste: confirmPasteVia(approvals, o.computer) } : {},
     reviewer: peerReviewer(o.reviewer, o.log),
+    cardRecord: (id) => approvals?.get(id),
   };
 }

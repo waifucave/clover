@@ -15,6 +15,28 @@ files:
   - out/renderer/**
   - package.json
 asar: true
+# The app's own native add-ons stay OUT of the asar (in app.asar.unpacked), so electron-builder signs them with the
+# app's Developer ID. One packed inside is loaded from a temporary copy that keeps its build-time ad-hoc signature, and
+# the hardened runtime's library validation refuses it ("different Team IDs"): the screen add-on (housing.ts, the
+# camera housing) never loaded in try 6. Electron loads an unpacked module by its app.asar path. release/build.ts
+# refuses a build with any Mach-O left inside the asar, and checks each unpacked one's signature.
+asarUnpack:
+  - out/main/native/*.node
+# Electron's fuses, flipped in the packaged binary before it is signed (lane C, #419; the caller check, spec §3.1): the
+# daemon takes an `app` hello only from the signed Clover app, which is worth something only while that binary runs
+# nothing but its own sealed code. So: no ELECTRON_RUN_AS_NODE, no NODE_OPTIONS (or NODE_EXTRA_CA_CERTS), no
+# --inspect flags or SIGUSR1 inspector, and only the app.asar beside it, checked against the hash in Info.plist (on
+# Windows, in the executable's resources). The main process never forks Electron as Node (no fork, utilityProcess or
+# ELECTRON_RUN_AS_NODE; its children are other programs, run with execFile).
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  # file:// pages get a browser's rights only (no file:// fetch, service workers or universal access for child
+  # frames): the app's only file:// page is the browser viewport's, one file its session lets nothing else load beside.
+  grantFileProtocolExtraPrivileges: false
 # The daemon, clover-core, in the app's resources/daemon/, where E-M1's app starts it, and its link sidecar,
 # clover-link (native/link), beside it, where the daemon starts that, and the binaries that run code not the core's own
 # (scripts/bundled-binaries.ts): clover-plugin-bun, plain Bun for plugins, and on macOS lane A's clover-process-holder.

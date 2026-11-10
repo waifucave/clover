@@ -5,8 +5,9 @@
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { writeHostBundles } from "./bundles";
-import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags } from "../registry/plugin-run";
-import { fdLink, linesOf, streamPeer, type RpcPeer } from "./link";
+import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags, pluginRunFileChecks, type PluginRunFiles } from "../registry/plugin-run";
+import { checkRunFiles, runCheckArgs, type RunFileCheck } from "./run-file";
+import { fdLink, LINK_LINE_MAX, linesOf, streamPeer, type RpcPeer } from "./link";
 
 export { writeHostBundles } from "./bundles";
 
@@ -28,22 +29,37 @@ export async function hostProcessLaunch(o: { runDir: string; computer: string; b
   delete env.BUN_OPTIONS;
   env.CLOVER_PLUGIN_WORKER = bundles.worker;
   env.CLOVER_COMPUTER = o.computer;
+  // What each start runs from, by the SHA-256 of the text Clover wrote (#312's review, S1): the host process's own
+  // files, checked by `spawnHostProcess` immediately before it starts it, and each worker's, which the host checks
+  // before every Worker (in its arguments, never its environment).
+  const workerChecks: RunFileCheck[] = [{ path: bundles.worker, sha256: bundles.sha256.worker }, ...pluginRunFileChecks(files)];
+  const checks: RunFileCheck[] = [{ path: bundles.host, sha256: bundles.sha256.host }, ...pluginRunFileChecks(files, { host: true })];
   const bun = pluginBun(files.cloverHome);
   const shared = o.shared ?? cloverSharedRoots();
   return {
-    cmd: [bun, ...pluginHostBunFlags(files), bundles.host], env,
+    cmd: [bun, ...pluginHostBunFlags(files), bundles.host, ...runCheckArgs(workerChecks)],
+    env,
+    checks,
     reads: [dirname(files.guard), ...shared, bun],
+    files,
     ...(o.onOutput ? { onOutput: o.onOutput } : {}),
   };
 }
 
 export interface HostProcessLaunch {
-  /** The command: the plugin Bun and its flags, then `HOST_PROCESS_ENTRY`. */
+  /** The command: the plugin Bun and its flags, then the host bundle, then the worker's checks (`--clover-check=`). */
   cmd: readonly string[];
   env: Record<string, string>;
+  /** The files this start runs from (the host bundle, the host guard, the guard, the bunfig) and their SHA-256s:
+   *  `spawnHostProcess` refuses to start when any differs. */
+  checks?: readonly RunFileCheck[];
   /** What every host process reads besides its plugin's tree, under the fence: the run files, the shared packages and
    *  its Bun (`cmd[0]`, the one program it runs). */
   reads?: readonly string[];
+  /** Clover's run files it was made from (the spawn trampoline's Bun and file, under the fence). */
+  files?: Pick<PluginRunFiles, "guard" | "bin" | "bunfig">;
+  /** Where it starts (the run folder, under the fence); the daemon's own folder otherwise. */
+  cwd?: string;
   onOutput?: (line: string) => void;
 }
 
@@ -56,15 +72,18 @@ export const HOST_KILL_GRACE_MS = 2_000;
  *  (a new session, `setsid`) has left the group, and isn't reached. On Windows the process alone is ended. */
 export function spawnHostProcess(o: HostProcessLaunch & { graceMs?: number }): { peer: RpcPeer; pid: number | undefined; kill(): void } {
   const group = process.platform !== "win32";
+  // Last thing before the start: the files it runs from hold what Clover wrote (a plugin can write the run folder).
+  checkRunFiles(o.checks ?? [], "the plugin host");
   // Through Bun.spawn: a node:child_process spawn with a descriptor past 2 is refused in Bun code (lane C's S7 finding,
   // `test/platform/child-process-stdio.test.ts`). `detached` makes the child its group's leader.
-  const child = Bun.spawn([...o.cmd], { env: o.env, stdio: ["ignore", "pipe", "pipe", "pipe"], windowsHide: true, ...(group ? { detached: true } : {}) });
-  const link = fdLink(child.stdio[3] as unknown as number);
+  const child = Bun.spawn([...o.cmd], { env: o.env, stdio: ["ignore", "pipe", "pipe", "pipe"], windowsHide: true, ...(o.cwd !== undefined ? { cwd: o.cwd } : {}), ...(group ? { detached: true } : {}) });
+  // The daemon's end: a line past LINK_LINE_MAX from the process ends the link (its plugins crash), never buffered on.
+  const link = fdLink(child.stdio[3] as unknown as number, LINK_LINE_MAX);
   const peer = streamPeer(link.lines, (line) => link.write(`${line}\n`));
   for (const s of [child.stdout, child.stderr]) {
     void (async () => {
       for await (const line of linesOf(s as unknown as AsyncIterable<Uint8Array>)) o.onOutput?.(line.slice(0, 4000));
-    })();
+    })().catch(() => {}); // a pipe that fails to read ends its output, as its EOF does
   }
   const pid = child.pid;
   const signal = (sig: "SIGTERM" | "SIGKILL"): boolean => {

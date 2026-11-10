@@ -4,14 +4,14 @@
   "capabilities": [
     {
       "name": "conversation.read",
-      "lets": "Read bots' conversations and follow them live; sealed card fields never reach it",
-      "ok": "reads your conversations with bots",
+      "lets": "Read every bot's conversations and follow them live (there is no per-bot grant yet); sealed card fields never reach it",
+      "ok": "reads your conversations with all your bots",
       "warns": false
     },
     {
       "name": "conversation.post",
-      "lets": "Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's",
-      "ok": "adds notes and sends messages to bots",
+      "lets": "Add a note to any bot's conversation, or send any bot a message (there is no per-bot grant yet); a turn it starts is the plugin's, never the user's",
+      "ok": "adds notes and sends messages to any of your bots",
       "warns": false
     },
     {
@@ -22,8 +22,8 @@
     },
     {
       "name": "bots.read",
-      "lets": "Read the list of bots and their settings",
-      "ok": "sees your bots and their settings",
+      "lets": "Read the list of every bot and their settings (there is no per-bot grant yet)",
+      "ok": "sees all your bots and their settings",
       "warns": false
     },
     {
@@ -120,7 +120,7 @@
     },
     {
       "name": "network:public",
-      "lets": "Reach any public host through the core's fetch, with its web floors: public addresses only, the dangerous-domain list, a card before a private address, and the audit log; its components reach no host from it",
+      "lets": "Reach any public host through the core's fetch, with its web floors: public addresses only (a private address is refused, with no card to allow it), the dangerous-domain list, size and time caps, no key, and the audit log; its components reach no host from it",
       "ok": "connects to any public website, through Clover's web safeguards",
       "warns": true,
       "bundledOnly": true
@@ -1364,10 +1364,13 @@
       "shape": "single",
       "declaredBy": "bot-tab",
       "inBotTab": true,
+      "needs": [
+        "conversation.post"
+      ],
       "context": [
         "bot"
       ],
-      "doc": "The composer; a send counts as the user's only on a real key press or click (§5.5).",
+      "doc": "The composer; a send counts as the user's only on a real key press or click (§5.5). Its entry also gets the host callbacks (`useComposerHost`): the models its session can switch to, a model switch, interrupt and stop; each acting one needs the user's own key press or click, and a model switch on a bot's main conversation is a sealed card unless it is the default composer's.",
       "fields": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

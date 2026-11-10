@@ -21,8 +21,10 @@ import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
 import { installFromFolder, installStagingDir } from "../registry/install-folder";
+import { installWrapped } from "../registry/wrap";
 import type { CardOpener } from "../devices/rpc";
 import { realpathSync, statSync } from "node:fs";
+import { PluginSecretFiles } from "../registry/secret-files";
 
 /** The last `n` lines of a plugin's log (`<home>/logs/plugins/<id>.log`). */
 export function pluginLogTail(home: string, pluginId: string, n: number): string[] {
@@ -84,6 +86,8 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
     rmSync(`${pluginPath(join(o.home, "settings", "plugins"), pluginId)}.json`, { force: true });
     rmSync(`${pluginPath(join(o.home, "settings", "plugin-stores"), pluginId)}.json`, { force: true });
   }
+  // Its secrets' files (`${secretFile:…}`) go with it.
+  new PluginSecretFiles(o.home).releasePlugin(o.record.id);
   const data = pluginPath(join(o.home, "plugin-data"), o.record.id);
   if (!existsSync(data)) return {};
   const hash = (o.record.okHash ?? o.record.treeHash ?? "unknown").replace(/^sha256:/, "").slice(0, 16);
@@ -149,9 +153,11 @@ export function pluginRegistryMethods(o: {
       const folder = resolve(r.folder);
       if (!folder.startsWith(pluginsDir + sep) || !existsSync(folder)) throw new ContractError("refused", `${id}'s folder isn't in the plugins directory`);
       const children = registry.list().filter((c) => c.parent === r.id).map((c) => c.id);
+      // What it leaves goes first: a secret that can't be deleted stops the removal, so no later plugin under the same
+      // id finds it (#332's second review).
+      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
       rmSync(folder, { recursive: true, force: true });
       await folders.refresh(folder);
-      await forgetRemovedPlugin({ home: o.home, ...(o.secrets !== undefined ? { secrets: o.secrets } : {}), record: r, children });
       return { ok: true as const };
     }),
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
@@ -193,14 +199,24 @@ export function pluginRegistryMethods(o: {
     // OK card raised at once (§5.1). The index and npm wait for their clients.
     [M.pluginInstall.name]: handler(M.pluginInstall, async ({ source }, ctx) => {
       const user = requireUser(ctx, "install a plugin");
-      if (source.from !== "folder") notServed(`installing from ${source.from === "index" ? "a plugin index" : source.from === "npm" ? "npm" : "a wrapped item"}`, "only a folder on disk installs for now");
-      const src = source as { from: "folder"; path: string };
-      const { id, treeHash } = await installFromFolder({
-        source: src.path, pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
+      if (source.from !== "folder" && source.from !== "wrap") notServed(`installing from ${source.from === "index" ? "a plugin index" : "npm"}`, "a folder on disk or a wrapped item installs for now");
+      const target = {
+        pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
         ...(o.os ? { os: o.os } : {}),
-        taken: (pluginId) => registry.get(pluginId) !== undefined,
-      });
-      await folders.installed(id, user.client === "cli" ? "user-terminal" : "user-app");
+        taken: (pluginId: string) => registry.get(pluginId) !== undefined,
+      };
+      const by = user.client === "cli" ? "user-terminal" : "user-app";
+      let id: string;
+      let treeHash: string;
+      if (source.from === "wrap") {
+        // A bare item (§5.1): the core generates a plugin around it, and records what it was made from.
+        const w = await installWrapped({ ...target, kind: source.kind, value: source.value, by: "user" });
+        ({ id, treeHash } = w);
+        await folders.installed(id, by, { from: source.kind, ...(w.unused.length > 0 ? { unused: w.unused.slice(0, 64) } : {}) });
+      } else {
+        ({ id, treeHash } = await installFromFolder({ ...target, source: (source as { from: "folder"; path: string }).path }));
+        await folders.installed(id, by);
+      }
       const r = registry.get(id);
       if (r === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
       const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");
@@ -225,12 +241,14 @@ export const PLUGIN_METHOD_NAMES: readonly string[] = [
   "plugin.settings.get", "plugin.settings.set", "plugin.install", "plugin.remove", "plugin.update", "plugin.pin",
   "plugin.renameFolder", "plugin.confirmAdult", "plugin.dev.list", "plugin.dev.add", "plugin.dev.remove", "plugin.dev.renew",
   "plugin.index.list", "plugin.index.add", "plugin.index.remove", "plugin.index.search", "point.list", "command.list",
-  "command.run", "glossary.query",
+  "command.run", "glossary.query", "plugin.ui", "plugin.layer.api",
 ];
 
 /** What a method answers before the registry opens. */
 export function beforePluginsOpen(method: string): unknown {
   if (method === "plugin.list") return { plugins: [], adultConfirmed: false };
+  // The app re-reads `plugin.ui` on the nudge the registry's opening sends.
+  if (method === "plugin.ui") return { plugins: [] };
   if (method === "plugin.dev.list") return { folders: [] };
   if (method === "plugin.index.list") return { indexes: [] };
   if (method === "plugin.index.search") return { entries: [] };

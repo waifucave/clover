@@ -4,7 +4,8 @@
 // * **Read before the bots start** (`botKeyPresence` resolves once the store was read), so the first listing and the
 //   first turn after a boot already see a stored key (#313 review S1).
 // * **Then read again when a bot asks, at most every few seconds,** so a key added or removed reaches the next turn
-//   without a restart, and an idle daemon reads nothing.
+//   without a restart, and an idle daemon reads nothing; and **at once on a sign-in or sign-out** (`refresh`, the
+//   daemon's credential-change hook), so the first turn after one already sees it.
 // * **A model plugin's own provider** (A's model plugins, a provider outside the built-in credential slots) counts as
 //   keyed when a model plugin serves it AND it is signed in through that plugin, or takes no sign-in (lane A's
 //   `PluginAuth.signedInProviders`, #328's check): a third party's provider with no key falls back to the default

@@ -18,8 +18,9 @@ const status = (noNewPrivs: string | null, seccomp: string | null) =>
 /** The spawner's pid in the fake probes, and the peer each fake socket descriptor reports. */
 const PARENT = 4100;
 const probe = (s: string | undefined, sock: { fd: number; errno: number } | ((type: number) => { fd: number; errno: number }), fds: readonly string[] | null = ["/dev/null", "pipe:[1]", "anon_inode:[eventpoll]"],
-  peers: Record<number, number | undefined> = {}): LinuxConfinementProbe =>
-  ({ status: () => s, unixSocket: typeof sock === "function" ? sock : () => sock, descriptors: () => fds?.map((target, fd) => ({ fd, target })), peerPid: (fd) => peers[fd], parentPid: () => PARENT });
+  peers: Record<number, number | undefined> = {}, addresses: Record<number, "unnamed" | "named" | undefined> = {}): LinuxConfinementProbe =>
+  ({ status: () => s, unixSocket: typeof sock === "function" ? sock : () => sock, descriptors: () => fds?.map((target, fd) => ({ fd, target })), peerPid: (fd) => peers[fd],
+    peerAddress: (fd) => (fd in addresses ? addresses[fd] : "unnamed"), parentPid: () => PARENT });
 const DENIED = { fd: -1, errno: 1 };
 
 describe("linuxConfinementState with a given probe", () => {
@@ -58,6 +59,10 @@ describe("linuxConfinementState with a given probe", () => {
     // A stdio socket whose peer is another process (the session bus, say), or unreadable, or none (not a Unix socket).
     expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["socket:[11]", "pipe:[1]", "pipe:[2]"], { 0: 777 }))).toEqual({ ok: false, reason: `this process holds a socket it was handed (descriptor 0, its peer 777, not its spawner ${PARENT})` });
     expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["pipe:[1]", "socket:[11]", "pipe:[2]"]))).toEqual({ ok: false, reason: `this process holds a socket it was handed (descriptor 1, its peer unknown, not its spawner ${PARENT})` });
+    // The parent's peer is not enough: a socket connected to a listener the parent owns has a named or abstract
+    // address, and refuses; so does one whose address can't be read.
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["pipe:[1]", "socket:[11]", "pipe:[2]"], { 1: PARENT }, { 1: "named" }))).toEqual({ ok: false, reason: "this process holds a socket it was handed (descriptor 1, connected to a named address, not a pair)" });
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["pipe:[1]", "pipe:[2]", "socket:[11]"], { 2: PARENT }, { 2: undefined }))).toEqual({ ok: false, reason: "this process holds a socket it was handed (descriptor 2, connected to an unreadable address, not a pair)" });
     // At 3 or above (the launcher closes those on exec), a socket refuses even when the spawner made it.
     expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["pipe:[1]", "socket:[11]", "pipe:[2]", "socket:[13]"], { 1: PARENT, 3: PARENT }))).toEqual({ ok: false, reason: "this process holds a socket it was handed (descriptor 3)" });
   });
@@ -66,7 +71,7 @@ describe("linuxConfinementState with a given probe", () => {
     // EMFILE (24): out of descriptors says nothing about the confinement.
     expect(linuxConfinementState(probe(status("1", "2"), { fd: -1, errno: 24 }))).toMatchObject({ ok: false });
     expect(linuxConfinementState(probe(status("1", "2"), { fd: -1, errno: -1 }))).toMatchObject({ ok: false });
-    const throwing: LinuxConfinementProbe = { status: () => status("1", "2"), unixSocket: () => { throw new Error("no libc"); }, descriptors: () => [], peerPid: () => undefined, parentPid: () => PARENT };
+    const throwing: LinuxConfinementProbe = { status: () => status("1", "2"), unixSocket: () => { throw new Error("no libc"); }, descriptors: () => [], peerPid: () => undefined, peerAddress: () => undefined, parentPid: () => PARENT };
     expect(linuxConfinementState(throwing)).toEqual({ ok: false, reason: "the confinement could not be inspected (no libc)" });
   });
 });

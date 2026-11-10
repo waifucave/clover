@@ -8,7 +8,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, type WritableSocket } from "@waifucave/clover-protocol";
+import { CLOVER_PROTOCOL_VERSION, ConnWriter, encodeLine, LineDecoder, METHODS, UiSettings, type WritableSocket } from "@waifucave/clover-protocol";
 import { FileSecretStore } from "../src/auth/secret-store";
 import { startDaemon, type RunningDaemon } from "../src/daemon";
 
@@ -41,10 +41,10 @@ async function connect(path: string) {
 }
 
 describe.skipIf(process.platform === "win32")("the app against a real daemon (lane E's Gap B pins)", () => {
-  test("served methods answer the app; unserved ones fail METHOD_NOT_FOUND; app-start.json stays absent (no app started)", async () => {
+  test("the methods the app calls answer it, plugin.ui, ui.settings and card.list among them; app-start.json stays absent (no app started)", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-interop-"));
     daemon = await startDaemon({
-      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null,
+      home, secrets: new FileSecretStore(join(home, "secrets.json")), agentProvider: null, appPeer: "none",
       links: { binary: null, handshake: null, publicTime: null, mainComputer: { watchSleep: false, monotonic: () => performance.now() }, watch: () => () => {}, self: { name: "Studio", os: "macos" } },
       parts: { userHome: mkdtempSync(join(tmpdir(), "clover-interop-user-")) },
     });
@@ -83,14 +83,13 @@ describe.skipIf(process.platform === "win32")("the app against a real daemon (la
       // B's plugin registry methods (#277, on main).
       expect(Array.isArray((await ok("plugin.list")).plugins)).toBe(true);
 
-      // Still unserved, each with its owner.
-      for (const method of [
-        "plugin.ui", // B
-        "card.list", // C, through INT's broker (#292)
-        "ui.settings", // E
-      ]) {
-        expect((await c.request(method, {})).error?.code, method).toBe(-32601);
-      }
+      // Served since try 6 (#333's plugin.ui and ui.settings, #346's card.* over INT's broker): their answers.
+      expect(Array.isArray((await ok("plugin.ui")).plugins)).toBe(true);
+      const settings = await ok("ui.settings");
+      expect(UiSettings.safeParse(settings).success).toBe(true);
+      expect(await ok("card.list")).toEqual({ cards: [] });
+      // A method nobody serves still fails METHOD_NOT_FOUND, not some other error.
+      expect((await c.request("nothing.here", {})).error?.code).toBe(-32601);
     } finally {
       c.close();
     }

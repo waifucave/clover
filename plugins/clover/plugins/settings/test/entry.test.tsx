@@ -90,21 +90,17 @@ describe("settings on the runtime", () => {
     expect(routes).toEqual([{ route: "plugins", params: {} }]);
   });
 
-  test("levels: each computer's, and a change asks the core (a card)", async () => {
-    const { core } = await mount({ section: "levels" });
+  test("trust-changing controls (a computer's level, removing a device, the main computer, pairing) are not offered, and no bare call is made", async () => {
+    const lv = await mount({ section: "levels" });
     const select = screen.getAllByRole("combobox")[0] as HTMLSelectElement;
     expect(select.value).toBe("ask-risky");
-    fireEvent.change(select, { target: { value: "automatic" } });
-    await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "computer.setLevel").map((c) => c.params)).toEqual([{ name: "Studio", level: "automatic" }]);
-  });
-
-  test("devices: removing one asks the core; this device can't be removed", async () => {
-    const { core } = await mount({ section: "devices" });
-    expect(screen.queryByRole("button", { name: "Remove Studio" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Remove iPhone" }));
-    await act(() => settle());
-    expect(core.calls.filter((c) => c.method === "device.revoke").map((c) => c.params)).toEqual([{ id: "d3" }]);
+    expect(select.disabled).toBe(true);
+    cleanup();
+    const dv = await mount({ section: "devices" });
+    expect(screen.queryByRole("button", { name: "Remove iPhone" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Make Laptop the main computer" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show a code" })).toBeNull();
+    for (const { core } of [lv, dv]) expect(core.calls.some((c) => /^(computer\.setLevel|device\.|main\.set)/.test(c.method))).toBe(false);
   });
 
   test("appearance: the theme plugin through `ui.set`; light or dark and the text size as this plugin's settings; the language", async () => {
@@ -116,38 +112,13 @@ describe("settings on the runtime", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toEqual([{ patch: { globalTheme: "clover/base-theme#base" } }]);
-    expect(api.stored.get("appearance")).toEqual({ theme: "dark", textSize: "default" });
+    expect(api.stored.get("appearance.theme")).toBe("dark");
     expect(screen.getByText("English (United States)")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
     const chooser = screen.getByRole("dialog", { name: "Language" });
     fireEvent.click(within(chooser).getByRole("radio", { name: /Deutsch/ }));
     await act(() => settle());
     expect(core.calls.filter((c) => c.method === "ui.set").map((c) => c.params)).toContainEqual({ patch: { language: "de" } });
-  });
-
-  test("devices: choosing the main computer and pairing go through the core", async () => {
-    const { core } = await mount({ section: "devices" });
-    fireEvent.click(screen.getByRole("button", { name: "Make Laptop the main computer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Show a code" }));
-    await act(() => settle());
-    expect(screen.getByText("KQ7-M2P")).toBeTruthy();
-    // The other device joins: this side hears the words.
-    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "words", words: ["amber", "river", "lantern", "moss"] }));
-    fireEvent.click(screen.getByRole("button", { name: "They match" }));
-    await act(() => settle());
-    expect(screen.getByRole("button", { name: "Waiting for your OK" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Code from another device" }), { target: { value: "ZZ9" } });
-    fireEvent.click(screen.getByRole("button", { name: "Join" }));
-    await act(() => settle());
-    expect(core.calls.filter((c) => c.method.startsWith("device.pair") || c.method === "main.set").map((c) => [c.method, c.params])).toEqual([
-      ["main.set", { device: "d2" }],
-      ["device.pair.begin", {}],
-      ["device.pair.confirm", { pairingId: "p1", words: ["amber", "river", "lantern", "moss"] }],
-      ["device.pair.cancel", { pairingId: "p1" }],
-      ["device.pair.join", { code: "ZZ9" }],
-    ]);
-    expect(screen.getByRole("status").textContent).toContain("amber · river · lantern · moss");
   });
 
   test("opened at an item (lane E's useOpen): the row is brought into view and marked, until the user moves on", async () => {
@@ -173,35 +144,6 @@ describe("settings on the runtime", () => {
     } finally {
       HTMLElement.prototype.scrollIntoView = scroll;
     }
-  });
-
-  test("pairing follows lane H's pairing_changed: a card waits, then the device is added, or it ends with why", async () => {
-    const { core } = await mount({ section: "devices" });
-    const begin = async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Show a code" }));
-      await act(() => settle());
-    };
-    await begin();
-    act(() => core.emit("pairing_changed", { pairingId: "other", step: "words", words: ["a", "b", "c", "d"] }));
-    expect(screen.queryByText("a · b · c · d")).toBeNull();
-    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "words", words: ["amber", "river", "lantern", "moss"] }));
-    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "card" }));
-    expect(screen.getByRole("button", { name: "Waiting for your OK" })).toBeTruthy();
-    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "done" }));
-    expect(screen.queryByRole("status")).toBeNull();
-
-    await begin();
-    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "expired" }));
-    expect(screen.getByRole("status").textContent).toContain("The code expired.");
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    expect(screen.queryByRole("status")).toBeNull();
-
-    await begin();
-    act(() => core.emit("pairing_changed", { pairingId: "p1", step: "failed", reason: { en: "the other device left" } }));
-    expect(screen.getByRole("status").textContent).toContain("The pairing didn't finish: the other device left");
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    // An ended pairing has nothing to cancel.
-    expect(core.calls.filter((c) => c.method === "device.pair.cancel")).toEqual([]);
   });
 
   test("the account and the bots, each opening in the bot editor", async () => {

@@ -78,6 +78,19 @@ describe("the shared clock", () => {
     expect(s.now()).toBeLessThan(before + 1_000);
   });
 
+  // A packaged daemon (which has public time) sent no card to the app: SNTP's fractional offset made every event's `ts`
+  // a fraction, which `core.event`'s schema refuses. Shared time is whole milliseconds, whatever the samples are.
+  test("shared time is whole milliseconds when public time's offset is a fraction", async () => {
+    const c = await makeLinkCluster(["Studio"], { clock: new SystemClock() });
+    stops.push(() => c.close());
+    const studio = c.devices.get("Studio")!;
+    const s = new SharedClock({ self: studio.id, base: offClock(0), transport: studio.transport, reference: () => studio.id, publicTime: { sample: async () => ({ offsetMs: 1234.567, rttMs: 12.3 }) } });
+    stops.push(() => s.close());
+    await s.measure();
+    expect(s.status().offsetMs).toBe(1235);
+    for (let i = 0; i < 20; i++) expect(Number.isInteger(s.now())).toBe(true);
+  });
+
   test("with no reference known it says it isn't synced", async () => {
     const c = await makeLinkCluster(["Studio"], { clock: new SystemClock() });
     stops.push(() => c.close());

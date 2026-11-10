@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import { SIGNATURE_SUFFIX, signFeed, verifyFeed } from "../../packages/update-feed/src/index";
 import { keychain, signingKey } from "./feed-key";
 import { nameScan } from "./name-scan";
-import { buildCommitFile, checkCoreFeed, checkPluginBunFeed, checkPluginsFeed, isPluginsFeed, checkUpdateInfo, CORE_TARGET, expectedArtifacts, isCoreFeed, isPluginBunFeed, parseChannel, parseCodesignDisplay, parseUpdateInfo, type Channel, type ReleaseOs } from "./lib";
+import { buildCommitFile, checkCoreFeed, checkPluginBunFeed, checkPluginsFeed, isPluginsFeed, checkUpdateInfo, CORE_TARGET, expectedArtifacts, isCoreFeed, isPluginBunFeed, parseChannel, parseCodesignDisplay, parseUpdateInfo, signOnlyCommitProblem, testBuildCommitProblem, type Channel, type ReleaseOs } from "./lib";
 import { coreBinaryFile, parseCoreFeed, parsePluginBunFeed, parsePluginsFeed, pluginBunBinaryFile, pluginsTarballFile } from "../../packages/update-feed/src/index";
 import { PLUGIN_BUN } from "../bundled-binaries";
 
@@ -143,7 +143,14 @@ export function planRelease(
     const name = buildCommitFile(os);
     const dir = where.get(name);
     if (dir === undefined) { problems.push(`${name} is missing: the ${os} build doesn't say which commit it is`); continue; }
-    const commit = new TextDecoder().decode(read(dir, name)).trim();
+    const text = new TextDecoder().decode(read(dir, name));
+    // A test-marked build (scripts/test-build.ts) is never published, from any OS.
+    const test = testBuildCommitProblem(name, text);
+    if (test !== undefined) { problems.push(test); continue; }
+    // Nor is a sign-only one (build.ts --sign --no-notarize: never notarized), from any OS.
+    const signOnly = signOnlyCommitProblem(name, text);
+    if (signOnly !== undefined) { problems.push(signOnly); continue; }
+    const commit = text.trim();
     if (!/^[0-9a-f]{40}$/.test(commit)) problems.push(`${name} doesn't hold a commit (${JSON.stringify(commit.slice(0, 50))})`);
     else commits.set(os, commit);
   }

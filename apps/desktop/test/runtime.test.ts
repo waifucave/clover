@@ -219,7 +219,7 @@ describe("the themes' CSS (§5.5's stack, E-M2)", () => {
   function themed(id: string, files: Record<string, string>, view: Record<string, unknown>): UiPlugin {
     const dir = mkdtempSync(join(tmpdir(), "clover-sheet-"));
     for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
-    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"1".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...view }] as never)[0]!;
+    return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"1".repeat(64)}`, layer: id, assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...view }] as never)[0]!;
   }
   const lunaBot = () => themed("luna", {
     "theme.json": JSON.stringify({ theme: 1, name: "Luna", tokens: { "color.accent": "#123456" }, css: "tab.css", fonts: [{ family: "Luna Sans", src: "luna.woff2" }], icons: { "app.send": "send.svg" } }),
@@ -293,7 +293,7 @@ describe("a bot's layout (§5.5)", () => {
     const dir = mkdtempSync(join(tmpdir(), "clover-layout-"));
     writeFileSync(join(dir, "layout.json"), JSON.stringify(layout));
     for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
-    return readUiPlugins([{ pluginId: "luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...extra }] as never, { luna: { isBot: true, name: "Luna", botLayout: "layout.json" } })[0]!;
+    return readUiPlugins([{ pluginId: "luna", name: "Luna", treeHash: `sha256:${"2".repeat(64)}`, layer: "luna", assetBase: dir, ui: [], themes: [], locales: [], bots: "all", ...extra }] as never, { luna: { isBot: true, name: "Luna", botLayout: "layout.json" } })[0]!;
   }
   const LAYOUT = {
     layout: 1,
@@ -399,7 +399,7 @@ describe("each document's strings (§5.5's translations)", () => {
 
 describe("lane B's #179 hooks in the runtime", () => {
   function tabbed(id: string, title: string, enabledAt: number, extra: Record<string, unknown> = {}): UiPlugin {
-    return readUiPlugins([{ pluginId: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;
+    return readUiPlugins([{ pluginId: id, name: id, treeHash: `sha256:${"3".repeat(64)}`, layer: id.replace(/\//g, "--"), assetBase: tmpdir(), clientEntry: "c.js", ui: [{ spot: "bot.header.action", id: "act", component: "Act", title, order: enabledAt }], themes: [], locales: [], bots: "all", ...extra }] as never, { [id]: { enabledAt, source: "installed" } })[0]!;
   }
 
   test("a spot's entries for the part that declares it, in the spot's order, with their fields; one shown by its ref", () => {
@@ -435,10 +435,41 @@ describe("lane B's #179 hooks in the runtime", () => {
     expect(to).not.toContain(`${child.processId}:${child.routingId}`);
   });
 
-  test("only a clover surface's part sends the user's words", () => {
-    const s = setup();
+  test("only a part of the bundled clover tree sends the user's words, and is a tree part", () => {
+    const s = setup(composerFixture());
     const shell = mountShell(s);
-    expect(() => s.rt.userSender(shell.shellFrame, shell.info.mount)).toThrow("only the app's own surfaces");
+    expect(s.rt.treePart(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    expect(s.rt.userSender(shell.shellFrame, shell.info.mount)).toMatchObject({ pluginId: "clover/shell" });
+    // A third-party part in its own layer's document is neither.
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const composer = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+    const token = new URL(composer.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(composer.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    expect(s.rt.treePart(child, composer.mount)).toBeUndefined();
+    expect(() => s.rt.userSender(child, composer.mount)).toThrow("only the composer's entry and the app's own parts");
+  });
+});
+
+describe("the composer spot's mount record", () => {
+  test("composerOf knows only an entry the core mounted in the composer spot, for the session the declaring document gave", () => {
+    const s = setup(composerFixture());
+    const shell = mountShell(s);
+    expect(s.rt.composerOf(shell.shellFrame, shell.info.mount)).toBeUndefined();
+    expect(s.rt.mainShell(shell.shellFrame, shell.info.mount)).toMatchObject({ windowId: WIN });
+    const tab = s.rt.resolve(shell.shellFrame, shell.info.mount, "bot.tab", "alpha").items[0]!;
+    const comp = s.rt.resolve(shell.shellFrame, tab.mount, "composer").items[0] as { url: string; mount: string };
+    const token = new URL(comp.url).searchParams.get("mount")!;
+    s.rt.serveDocument("fixture-composer", token);
+    const child = frame(comp.url, shell.shellFrame);
+    s.rt.describe(child, WIN, token);
+    // A third party's composer entry in its own layer is a composer-spot entry too, for the session its declaring document says.
+    expect(s.rt.composerOf(child, comp.mount)).toBeUndefined();
+    s.rt.setProps(shell.shellFrame, comp.mount, { bot: { id: "alpha", name: "Alpha" }, session: "alpha:main" });
+    expect(s.rt.composerOf(child, comp.mount)).toMatchObject({ pluginId: "fixture-composer", session: "alpha:main", bot: "alpha", windowId: WIN, tree: false });
+    s.rt.setProps(shell.shellFrame, comp.mount, { session: "../etc" });
+    expect(s.rt.composerOf(child, comp.mount)).toBeUndefined();
   });
 });
 

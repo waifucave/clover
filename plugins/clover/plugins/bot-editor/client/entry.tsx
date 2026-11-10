@@ -21,11 +21,11 @@ export function modelsOf(catalog: unknown): BotEditorModel[] {
   const list = (catalog as { models?: unknown[] } | undefined)?.models;
   if (!Array.isArray(list)) return [];
   return list.flatMap((m) => {
-    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; efforts?: unknown };
+    const o = m as { id?: unknown; label?: unknown; name?: unknown; provider?: unknown; providerName?: unknown; efforts?: unknown };
     if (typeof o.id !== "string") return [];
     const label = typeof o.label === "string" ? o.label : typeof o.name === "string" ? o.name : o.id;
     const efforts = Array.isArray(o.efforts) ? o.efforts.filter((x): x is string => typeof x === "string") : [];
-    return [{ id: o.id, label, ...(typeof o.provider === "string" ? { detail: o.provider } : {}), ...(efforts.length ? { efforts } : {}) }];
+    return [{ id: o.id, label, ...(typeof o.providerName === "string" ? { detail: o.providerName } : typeof o.provider === "string" ? { detail: o.provider } : {}), ...(efforts.length ? { efforts } : {}) }];
   });
 }
 
@@ -79,7 +79,7 @@ export function BotEditorEntry({ props }: { props: BotEditorEntryProps }) {
       setAvatars(toChoices(entries, names));
     });
     const stop = api.points.watch<AvatarPackEntry>("avatar.packs", (entries) => setAvatars(toChoices(entries, {})));
-    core?.call("models.catalog", {}).then((c) => live && setModels(modelsOf(c)), () => undefined);
+    core?.call("models.list", {}).then((c) => live && setModels(modelsOf(c)), () => undefined);
     void themesOf(core).then((t) => live && setThemes(t));
     return () => {
       live = false;

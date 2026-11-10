@@ -1,7 +1,7 @@
 // The manifest's schema and validator (spec §5.1, §5.4, §5.9): what refuses a plugin, a contribution or an entry, and
 // what `clover plugin validate` reports.
 import { describe, expect, test } from "bun:test";
-import { describeOk, mcpServerKey, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
+import { describeOk, interpolate, localNetworkHosts, mcpServerKey, parseInterpolation, parseJsonc, validateManifest, type ManifestReport } from "../src/index";
 
 const codes = (r: ManifestReport) => r.issues.map((i) => `${i.severity}:${i.refuses}:${i.code}:${i.path}`);
 const has = (r: ManifestReport, code: string, refuses?: string) =>
@@ -414,6 +414,66 @@ describe("the OK's text", () => {
     expect(lines).toContain("Not reviewed: it isn't from the official index.");
     expect(lines.filter((l) => l === "It restyles approval cards.")).toHaveLength(1);
     expect(r.restylesCards).toBe(true);
+  });
+
+  test("host code: said to be held to the network list only where the fence holds it (#371's review), and a local grant warns", () => {
+    const code = { contributes: { mcpServers: { tarot: { type: "stdio" as const, command: "tarot-mcp" } } } };
+    const listed = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:api.luna.example"], ...code });
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true })).toContain("Its components reach only api.luna.example; so does its host code.");
+    // macOS without the fence on says what's true there.
+    expect(describeOk(listed, { os: "macos" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    expect(describeOk(listed, { os: "windows" })).toContain("Its components reach only api.luna.example; its host code can reach any host.");
+    const none = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, ...code });
+    expect(none.class).toBe("code");
+    expect(describeOk(none, { os: "macos", hostNetworkHeld: true })).toContain("Its code reaches no host.");
+    expect(describeOk(none, { os: "linux" })).toContain("Its components reach no host; its host code can reach any host.");
+    // Grants of this computer or the local network say so.
+    const caps = ["network:localhost:3000", "network:127.0.0.1:8080", "network:*.local" /* not a grant: too wide */, "network:printer.local", "network:10.0.0.5", "network:192.168.1.2:80", "network:[::1]:9000", "network:api.luna.example"];
+    expect(localNetworkHosts(caps)).toEqual(["localhost:3000", "127.0.0.1:8080", "printer.local", "10.0.0.5", "192.168.1.2:80", "[::1]:9000"]);
+    const local = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, capabilities: ["network:localhost:3000", "network:api.luna.example"], ...code });
+    expect(describeOk(local, { os: "macos", hostNetworkHeld: true })).toContain("It can reach services on this computer or your local network: localhost:3000.");
+    expect(describeOk(listed, { os: "macos", hostNetworkHeld: true }).some((l) => l.includes("local network"))).toBe(false);
+  });
+
+  // The controller's ruling on #377: a third-party server's environment is readable by other processes of the user.
+  test("a stdio server given a secret through its environment is disclosed on the OK", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: {
+        keyed: { type: "stdio", command: "luna-mcp", env: { LUNA_API_KEY: "${secret:LUNA_KEY}", MODE: "fast" } },
+        plain: { type: "stdio", command: "luna-tools", env: { MODE: "fast" } },
+      } },
+    });
+    expect(r.envSecrets).toEqual(["keyed"]);
+    expect(describeOk(r, { os: "macos" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this Mac could read.");
+    expect(describeOk(r, { os: "linux" })).toContain("Its server keyed gets your keys in its environment, which other plugins on this computer could read.");
+    expect(validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { plain: { type: "stdio", command: "luna-tools" } } } }).envSecrets).toEqual([]);
+  });
+
+  // The controller's ruling on #377: a key handed over as a 0600 file instead of the environment.
+  test("${secretFile:k} is a stdio server's env or args only, and a server given its key that way shows no env warning", () => {
+    const r = validateManifest({
+      ...min(), engines: { clover: "^1.0.0" }, auth: [{ method: "api-key", secret: "LUNA_KEY" }],
+      contributes: { mcpServers: { filed: { type: "stdio", command: "luna-mcp", args: ["--key-file", "${secretFile:LUNA_KEY}"], env: { LUNA_KEY_FILE: "${secretFile:LUNA_KEY}" } } } },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.envSecrets).toEqual([]);
+    expect(describeOk(r, { os: "macos" }).some((l) => l.includes("environment"))).toBe(false);
+    const http = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { web: { type: "http", url: "https://x.example/mcp", headers: { Authorization: "${secretFile:LUNA_KEY}" } } } } });
+    expect(http.issues.some((i) => i.code === "secret_file_outside_stdio")).toBe(true);
+    expect(parseInterpolation("${secretFile:LUNA_KEY}")).toEqual({ ok: true, parts: [{ kind: "secretFile", key: "LUNA_KEY" }] });
+    expect(interpolate("--key=${secretFile:K}", { plugin: "", data: "", setting: () => undefined, secret: () => "v", secretFile: (k) => `/run/${k}` })).toBe("--key=/run/K");
+  });
+
+  // #406's review: where there's no plugin fence, a plugin's programs run unconfined, and the OK says so.
+  test("without Clover's sandbox on this computer, a code plugin's OK says its programs run without it", () => {
+    const r = validateManifest({ ...min(), engines: { clover: "^1.0.0" }, contributes: { mcpServers: { s: { type: "stdio", command: "luna-mcp" } } } });
+    const line = "Its programs run without Clover's sandbox on this computer.";
+    expect(describeOk(r, { os: "linux", sandboxed: false })).toContain(line);
+    expect(describeOk(r, { os: "macos", sandboxed: true })).not.toContain(line);
+    expect(describeOk(r, { os: "macos" })).not.toContain(line);
+    // A data plugin runs nothing.
+    expect(describeOk(validateManifest(min()), { sandboxed: false })).not.toContain(line);
   });
 
   test("a tree whose theme sets card.* tokens restyles approval cards too (review S7)", () => {

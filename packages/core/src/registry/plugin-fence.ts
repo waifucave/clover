@@ -22,14 +22,14 @@
 // * the per-user folders (`/var/folders/<…>/`: the temp `T`, the cache `C` and the per-user `0` folders), whose
 //   other programs' files it has no business reading (S2, and #345's second review);
 // * the clipboard and the window server (their services), and any signal but to itself and its children;
-// * every Unix socket but the ones it's named (a supervised host's daemon socket) and the system's DNS resolver
-//   (`mDNSResponder`): no ssh-agent, no other program's socket (S1);
+// * the network and every Unix socket but its own proxy's loopback port and the sockets it's named (a supervised
+//   host's daemon socket): no ssh-agent, no other program's socket, and no DNS of its own (S1; 2g);
 // * in the `clover` process, which holds many plugins, any native code but Bun's and the system's (B3; since #345's
 //   review, `file-map-executable` is denied everywhere else, not only in what it reads and writes).
 //
 // What it can: read its plugin's tree (and, for the `clover` process, the verified copy of the bundled plugins), read
-// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, the
-// network, and read everything else outside the homes and those folders that the system leaves readable.
+// Clover's run files and shared packages that the guard loads, read and write its own data and temp folders, reach
+// the hosts it's granted through its proxy, and read everything else outside the homes and those folders that the system leaves readable.
 //
 // Hooks and MCP servers (`tools: true`): a server started with `npx`, `uvx` or `bunx` needs its package manager's
 // installs, so those folders are readable, and any program may run (fenced the same way; measured: denying exec
@@ -48,6 +48,7 @@ import type { PluginRunFiles } from "./plugin-run";
 import { agentConfigPaths, autoRunPaths, SHELL_FILES } from "../contracts/fence";
 import { CloverFence } from "../fence/fence";
 import { runLaterExtras } from "../fence/run-later";
+import { secretFilesFolder } from "./secret-files";
 
 /** What the agent runtime's `sandbox.denyLaunchServices` denies (`@waifucave/clover-agent-runtime`'s
  *  `LAUNCH_SERVICES_DENIES`, not exported; a test holds this equal to the installed runtime's). */
@@ -64,6 +65,9 @@ export const LAUNCH_SERVICES_DENIES = {
     "com.apple.coreservices.quarantine-resolver",
   ],
 } as const;
+
+/** The resolver's services: a plugin resolves no name itself; its proxy does (2g). */
+export const DNS_SERVICES: readonly string[] = ["com.apple.mDNSResponder", "com.apple.mDNSResponderHelper", "com.apple.dnssd.service"];
 
 /** The security daemon's services: the Keychain's way in, for `security` and the Security framework alike. */
 export const KEYCHAIN_SERVICES: readonly string[] = ["com.apple.SecurityServer", "com.apple.securityd", "com.apple.securityd.xpc", "com.apple.security.agent", "com.apple.security.authhost"];
@@ -245,7 +249,8 @@ export function projectFolders(dirs: readonly string[], o: { userHome: string; c
   return out;
 }
 
-/** The system's DNS resolver socket: the one Unix socket every fenced process may reach (name lookups go through it). */
+/** The system's DNS resolver socket. 2f let every fenced process reach it; since 2g name resolution is the proxy's,
+ *  and it's denied with every other socket. */
 export const DNS_SOCKETS: readonly string[] = ["/private/var/run/mDNSResponder", "/var/run/mDNSResponder"];
 
 /** The per-user folders under `/var/folders`, denied whole (S2, and #345's second review): the parent of
@@ -269,6 +274,34 @@ export function darwinUserFolders(): string[] {
 export const SCREEN_AND_CLIPBOARD_SERVICES: readonly string[] = [
   "com.apple.pasteboard.1", "com.apple.pasteboard.2", "com.apple.windowserver", "com.apple.windowserver.active",
 ];
+
+/** The privacy services that aren't files (#357's review): after the spawn disclaims, macOS judges each process by its
+ *  own program, so a grant to one plugin's Bun, `sh` or `node` would be every plugin's. No plugin capability grants any
+ *  of these yet, so every fenced process is denied them outright, before TCC is ever asked: no prompt is raised and no
+ *  grant is shared. Camera, microphone and Apple Events by their operations; location, screen capture, Contacts,
+ *  Calendar, Reminders and Photos by their services (by prefix) and their data folders (under the user's home, and any
+ *  Photos library anywhere). File grants (Documents, Desktop, Downloads, iCloud) stay shared: each process is held to
+ *  its own folders by the fence regardless. */
+export const PRIVACY_DENIES = {
+  operations: ["device-camera", "device-microphone", "appleevent-send"],
+  servicePrefixes: [
+    "com.apple.locationd",
+    "com.apple.replayd", "com.apple.screencapture", "com.apple.ScreenCaptureKit",
+    "com.apple.contactsd", "com.apple.AddressBook",
+    "com.apple.CalendarAgent", "com.apple.calaccessd",
+    "com.apple.remindd",
+    "com.apple.photos.", "com.apple.assetsd", "com.apple.cloudphotosd", "com.apple.photoanalysisd",
+  ],
+  dataFolders: [
+    "Library/Application Support/AddressBook", "Library/Containers/com.apple.AddressBook",
+    "Library/Calendars", "Library/Group Containers/group.com.apple.calendar", "Library/Containers/com.apple.iCal",
+    "Library/Reminders", "Library/Group Containers/group.com.apple.reminders", "Library/Containers/com.apple.reminders",
+    "Library/Containers/com.apple.Photos", "Pictures/Photos Library.photoslibrary",
+  ],
+  /** A Photos library wherever it is (a project folder can hold one), in any case: on a case-insensitive volume
+   *  Seatbelt folds case itself (measured), and the spelled-out classes cover a case-sensitive one too. */
+  photosLibrary: String.raw`\.[Pp][Hh][Oo][Tt][Oo][Ss][Ll][Ii][Bb][Rr][Aa][Rr][Yy](/|$)`,
+} as const;
 
 export interface PluginFenceInput {
   /** The Clover home: denied whole, but what `read` and `write` name. */
@@ -297,8 +330,12 @@ export interface PluginFenceInput {
    *  files inside each stay denied. `projectFolders` chooses them. */
   projects?: readonly string[];
   projectWrite?: boolean;
-  /** The Unix sockets it may connect to (a supervised host's daemon socket) besides the DNS resolver; every other one
-   *  is denied (S1). A file rule doesn't hold a socket's connect, only `network-outbound` does (measured). */
+  /** Its way to the network (2g): its proxy's loopback port, the only address it may reach (`net-proxy.ts`), or
+   *  `none`. Default `none`. Name resolution is the proxy's: no DNS of its own (UDP 53 and mDNS denied). */
+  network?: { proxyPort: number } | "none";
+  /** The Unix sockets it may connect to (a supervised host's daemon socket); every other one is denied, the DNS
+   *  resolver's too (2g: name resolution is the proxy's). A file rule doesn't hold a socket's connect, only
+   *  `network-outbound` does (measured). */
   sockets?: readonly string[];
 }
 
@@ -371,12 +408,21 @@ export function pluginFenceProfile(i: PluginFenceInput): string {
     // can be renamed away and back; its credential files unread too.
     ...(projects.length > 0 ? projectDenyLines(projects, user) : []),
     `(deny mach-lookup ${[...KEYCHAIN_SERVICES, ...LAUNCH_SERVICES_DENIES.services, ...SCREEN_AND_CLIPBOARD_SERVICES].map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
+    // No privacy service that isn't a file, for any plugin (#357's review): no prompt, and no grant one plugin's
+    // program would share with every other's.
+    ...PRIVACY_DENIES.operations.map((op) => `(deny ${op})`),
+    `(deny mach-lookup ${PRIVACY_DENIES.servicePrefixes.map((s) => `(global-name-prefix "${sbpl(s)}")`).join(" ")})`,
+    `(deny file-read* file-write* ${subpaths(PRIVACY_DENIES.dataFolders.map((f) => join(user, f)))} (regex #"${PRIVACY_DENIES.photosLibrary}"))`,
     // Signals only to itself and its own children: never the daemon, the app or another plugin (#345's second review).
     "(deny signal)",
     "(allow signal (target self) (target children))",
-    // No Unix socket but the DNS resolver and the ones it's named (connect isn't a file read; S1).
-    "(deny network-outbound (remote unix-socket))",
-    `(allow network-outbound ${paths([...DNS_SOCKETS, ...(i.sockets ?? [])]).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`,
+    // No network but its proxy (2g): every outbound address and socket denied (the daemon's and the DNS resolver's
+    // among them: connect isn't a file read), the proxy's loopback port allowed back, no DNS of its own, and the Unix
+    // sockets it's named.
+    "(deny network-outbound)",
+    ...(i.network !== undefined && i.network !== "none" ? [`(allow network-outbound (remote ip "localhost:${Math.trunc(i.network.proxyPort)}"))`] : []),
+    `(deny mach-lookup ${DNS_SERVICES.map((s) => `(global-name "${sbpl(s)}")`).join(" ")})`,
+    ...((i.sockets ?? []).length > 0 ? [`(allow network-outbound ${paths(i.sockets!).map((p) => `(remote unix-socket (path-literal "${sbpl(p)}"))`).join(" ")})`] : []),
   ];
   // Last, for every fenced process: no write where a write runs later, nor anywhere the fence keeps from bots, in both
   // spellings, and in a project folder not the folders that hold one either (#352's review).
@@ -500,8 +546,8 @@ export function toolCacheEnv(tmp: string): Record<string, string> {
 
 /** The fence for a plugin's hook command or stdio MCP server: its plugin's tree, Clover's run files and shared
  *  packages and its Bun to read; its data and temp folders to write; the package managers' installs to read (`tools`);
- *  any program, fenced the same. Returns its temp folder and the env it runs with (`toolCacheEnv`). */
-export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
+ *  any program, fenced the same; its proxy's port (2g). Returns its temp folder and the env it runs with (`toolCacheEnv`). */
+export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cloverHome">; shared?: readonly string[]; pluginRoot: string; pluginId?: string; userHome?: string; name: string; project?: ProjectAccess; proxyPort?: number }): { fence: PluginFenceInput; tmp: string; env: Record<string, string> } {
   const { data, tmp } = fenceFolders(o.files.cloverHome, o.pluginId, o.name);
   const userHome = o.userHome ?? homedir();
   const projects = o.project !== undefined ? projectFolders(o.project.dirs, { userHome, cloverHome: o.files.cloverHome }) : [];
@@ -511,8 +557,91 @@ export function toolFence(o: { files: Pick<PluginRunFiles, "guard" | "bin" | "cl
     fence: {
       cloverHome: o.files.cloverHome, userHome,
       ...(projects.length > 0 ? { projects, projectWrite: o.project?.write === true } : {}),
-      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun"))],
+      // Its own plugin's secret files (`${secretFile:…}`, `secret-files.ts`): read, never written, and no other plugin's.
+      read: [o.pluginRoot, dirname(o.files.guard), ...(o.shared ?? []), realOrResolved(join(o.files.bin, process.platform === "win32" ? "bun.exe" : "bun")), ...(data !== undefined && o.pluginId !== undefined ? [secretFilesFolder(o.files.cloverHome, o.pluginId)] : [])],
       write: [...(data !== undefined ? [data] : []), tmp], exec: "any", tools: true,
+      network: o.proxyPort !== undefined ? { proxyPort: o.proxyPort } : "none",
     },
   };
+}
+
+/** The spawn trampoline's file in the run folder (`ensurePluginRunFiles` writes it). */
+export const SPAWN_TRAMPOLINE_FILE = "spawn.mjs";
+
+/** Clover's spawn trampoline (the controller's TCC ruling after #345). The daemon starts it on the plugin Bun with a
+ *  clean environment; it becomes the fenced command in place (`posix_spawn` with `POSIX_SPAWN_SETEXEC`) with its
+ *  responsibility disclaimed, so the plugin process is its own TCC-responsible process: it never inherits a privacy
+ *  permission (Screen Recording, Accessibility, the microphone…) the daemon or the app holds. Same pid, same process
+ *  group, the descriptors it's told to keep (`CLOVER_SPAWN_FDS`, every other one closed), the environment and working
+ *  folder it's handed (`CLOVER_SPAWN_ENV`, `CLOVER_SPAWN_CWD`). It loads nothing but `bun:ffi`. */
+export const SPAWN_TRAMPOLINE_SOURCE = String.raw`// Clover's spawn trampoline (registry/plugin-fence.ts). Generated; do not edit.
+import { dlopen, ptr } from "bun:ffi";
+const fail = (what, code) => { process.stderr.write("clover spawn: " + what + "\n"); process.exit(code); };
+const argv = process.argv.slice(2);
+if (argv.length === 0) fail("nothing to start", 126);
+let env;
+try { env = JSON.parse(process.env.CLOVER_SPAWN_ENV ?? "{}"); } catch { fail("its environment doesn't parse", 126); }
+const fds = (process.env.CLOVER_SPAWN_FDS ?? "0,1,2").split(",").map(Number).filter((n) => Number.isInteger(n) && n >= 0);
+const cwd = process.env.CLOVER_SPAWN_CWD;
+const { symbols: c } = dlopen("/usr/lib/libSystem.B.dylib", {
+  posix_spawnattr_init: { args: ["ptr"], returns: "i32" },
+  posix_spawnattr_setflags: { args: ["ptr", "i16"], returns: "i32" },
+  responsibility_spawnattrs_setdisclaim: { args: ["ptr", "i32"], returns: "i32" },
+  posix_spawn_file_actions_init: { args: ["ptr"], returns: "i32" },
+  posix_spawn_file_actions_addinherit_np: { args: ["ptr", "i32"], returns: "i32" },
+  posix_spawn_file_actions_addchdir_np: { args: ["ptr", "ptr"], returns: "i32" },
+  posix_spawn: { args: ["ptr", "ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
+});
+const keep = [];
+const cstr = (s) => { const b = Buffer.from(s + "\0", "utf8"); keep.push(b); return ptr(b); };
+const list = (xs) => { const a = new BigUint64Array(xs.length + 1); xs.forEach((s, i) => { a[i] = BigInt(cstr(s)); }); keep.push(a); return ptr(a); };
+const POSIX_SPAWN_SETEXEC = 0x40, POSIX_SPAWN_CLOEXEC_DEFAULT = 0x4000;
+const attr = new BigUint64Array(1), actions = new BigUint64Array(1);
+const ok = (r, what) => { if (r !== 0) fail(what + " (" + r + ")", 126); };
+ok(c.posix_spawnattr_init(ptr(attr)), "posix_spawnattr_init");
+ok(c.posix_spawnattr_setflags(ptr(attr), POSIX_SPAWN_SETEXEC | POSIX_SPAWN_CLOEXEC_DEFAULT), "posix_spawnattr_setflags");
+ok(c.responsibility_spawnattrs_setdisclaim(ptr(attr), 1), "responsibility_spawnattrs_setdisclaim");
+ok(c.posix_spawn_file_actions_init(ptr(actions)), "posix_spawn_file_actions_init");
+for (const fd of fds) ok(c.posix_spawn_file_actions_addinherit_np(ptr(actions), fd), "keeping descriptor " + fd);
+if (cwd) ok(c.posix_spawn_file_actions_addchdir_np(ptr(actions), cstr(cwd)), "its working folder");
+const pid = new Int32Array(1);
+const r = c.posix_spawn(ptr(pid), cstr(argv[0]), ptr(actions), ptr(attr), list(argv), list(Object.entries(env).filter(([, v]) => typeof v === "string").map(([k, v]) => k + "=" + v)));
+fail(argv[0] + " didn't start (" + r + ")", 127);
+`;
+
+/** A fenced process as it's spawned (macOS): through the spawn trampoline on the plugin Bun, so it's its own
+ *  TCC-responsible process, then `sandbox-exec` with its profile. `fds` are the descriptors it keeps (a host process's
+ *  link is 3). Elsewhere, or unfenced: the command as it is, in `cwd`. */
+export function fencedSpawn(o: {
+  cmd: readonly string[];
+  env: Readonly<Record<string, string | undefined>>;
+  fence: PluginFenceInput | undefined;
+  files: Pick<PluginRunFiles, "guard" | "bin" | "bunfig">;
+  cwd?: string;
+  fds?: readonly number[];
+}, platform: NodeJS.Platform = process.platform): { cmd: string[]; env: Record<string, string>; cwd?: string } {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(o.env)) if (v !== undefined) env[k] = v;
+  const cmd = fencedCommand(o.cmd, o.fence, platform);
+  if (o.fence === undefined || !pluginFenceAvailable(platform)) return { cmd, env, ...(o.cwd !== undefined ? { cwd: o.cwd } : {}) };
+  const runFolder = dirname(o.files.guard);
+  return {
+    // Clover's own config and no .env, whatever folder it starts in: nothing of the plugin's or the project's loads here.
+    cmd: [realOrResolved(join(o.files.bin, "bun")), `--config=${o.files.bunfig}`, "--no-env-file", "--no-macros", join(runFolder, SPAWN_TRAMPOLINE_FILE), ...cmd],
+    env: {
+      CLOVER_SPAWN_ENV: JSON.stringify(env), CLOVER_SPAWN_FDS: (o.fds ?? [0, 1, 2]).join(","), ...(o.cwd !== undefined ? { CLOVER_SPAWN_CWD: o.cwd } : {}),
+      PATH: "/usr/bin:/bin", ...(env.TMPDIR !== undefined ? { TMPDIR: env.TMPDIR } : {}),
+    },
+    cwd: runFolder,
+  };
+}
+
+/** The environment a spawn hands its command: through the spawn trampoline, the one it carries (`CLOVER_SPAWN_ENV`);
+ *  otherwise `env` itself. */
+export function commandEnvOf(env: Readonly<Record<string, string | undefined>> | undefined): Record<string, string> {
+  const carried = env?.CLOVER_SPAWN_ENV;
+  if (carried !== undefined) return JSON.parse(carried) as Record<string, string>;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env ?? {})) if (v !== undefined) out[k] = v;
+  return out;
 }

@@ -2,7 +2,7 @@
 // window sits and takes clicks.
 import { describe, expect, test } from "bun:test";
 import { HANG_COMPOSITOR_MS, HANG_RESTART_MS, HangWatch, hangVerdict } from "../src/main/hang";
-import { ClickThrough, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
+import { ClickThrough, frameGesture, MENU_INPUT_WINDOW_MS, MenuGate, SEND_INPUT_WINDOW_MS, SendGate, sendImages, sendTarget, PointerLog, VIEW_USE_WINDOW_MS, THIRD_PARTY_SURFACE_MAX, ViewFrames, mayOpen, mayPlaceView, openTarget, surfaceBounds, viewRect, checkDragOffer, checkMenu, checkRegions, inRegions, mayClaim, menuPoint, surfaceMayFloat, surfacePlacement, surfaceSize, MENU_LIMITS } from "../src/main/ui/brokers";
 
 describe("the menu broker", () => {
   test("a menu is data: items with ids and plain labels, separators, checkboxes and submenus", () => {
@@ -209,6 +209,21 @@ describe("sends counted as the user's (§5.5)", () => {
     expect(g.take(1)).toBe(false);
   });
 
+  test("a button held on Send past the window still sends: the release the main process saw is an input too", () => {
+    let now = 0;
+    const g = new SendGate(() => now);
+    g.input(1); // the press
+    now += SEND_INPUT_WINDOW_MS * 3; // held a while
+    g.input(1); // the release (index.ts: before-mouse-event mouseUp), the click's own moment
+    now += 5;
+    expect(g.take(1)).toBe(true);
+    expect(g.take(1)).toBe(false);
+    // With no release seen, the press alone has run out.
+    g.input(1);
+    now += SEND_INPUT_WINDOW_MS * 3;
+    expect(g.take(1)).toBe(false);
+  });
+
   test("where the words may go, and the pictures with them", () => {
     expect(sendTarget({ bot: "alpha" })).toEqual({ bot: "alpha" });
     expect(sendTarget({ session: "s_alpha:main" })).toEqual({ session: "s_alpha:main" });
@@ -294,5 +309,19 @@ describe("a view's use counts only after main saw the mouse-down there", () => {
     expect(p.pressedIn(1, { ...rect, x: 0, width: 100 })).toBe(false);
     now += VIEW_USE_WINDOW_MS + 1;
     expect(p.pressedIn(1, rect)).toBe(false);
+  });
+});
+
+describe("a gesture counts only for the frame it happened in", () => {
+  test("a press in frame A never unlocks a call from frame B; a refused call spends nobody's gesture", () => {
+    const gate = new SendGate(() => 0);
+    gate.input(1); // the user clicked in the window, in frame A (the main process saw it; B's activation stayed false)
+    // The polling plugin frame B: no transient activation of its own, so it gets nothing and takes nothing.
+    for (let i = 0; i < 20; i++) expect(frameGesture(false, () => gate.take(1))).toBe(false);
+    expect(frameGesture(undefined, () => gate.take(1))).toBe(false);
+    expect(frameGesture("true", () => gate.take(1))).toBe(false);
+    // Frame A's own call still has the gesture, once.
+    expect(frameGesture(true, () => gate.take(1))).toBe(true);
+    expect(frameGesture(true, () => gate.take(1))).toBe(false);
   });
 });
