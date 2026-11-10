@@ -32,5 +32,6 @@ export const S = {
   sendRefusedGesture: "Your message wasn't sent: press Send, or Enter, again.",
   sendRefusedStopped: "Clover isn't running, so your message wasn't sent. It is still here.",
   sendRefused: "Your message wasn't sent. It is still here.",
+  modelRefused: "The model wasn't changed.",
   dropHere: "Drop files to attach them",
 };

@@ -944,7 +944,7 @@ async function uiPhase(app: { exe: string; args: string[] }, daemonUp: boolean):
       try { cdp = await Cdp.connect(port); return true; } catch { return undefined; }
     }, 500);
     const rpc = (await appDriver()).client;
-    await uiSteps({ cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", appLog: () => readLog(join(home, "logs", "app.log")) }, (i, status, detail) => record(first + i, status, detail));
+    await uiSteps({ cdp: cdp!, rpc, reply: "ACCEPTANCE-REPLY-OK", requests: () => fake?.requests ?? [], appLog: () => readLog(join(home, "logs", "app.log")) }, (i, status, detail) => record(first + i, status, detail));
   } catch (err) {
     for (let i = 0; i < UI_STEPS.length; i++) if (!rows.some((r) => r.n === first + i)) record(first + i, "BLOCKED", `the window couldn't be driven: ${why(err)}`);
   } finally {
