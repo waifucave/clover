@@ -3740,6 +3740,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         registry: host.registry, host: host.host, pluginSecrets: host.pluginSecrets, home: cloverHome, secrets, refreshers: credentialRefreshers,
         addApiHandlers: (h) => host.addApiHandlers(h),
         fetch: pinnedFetch(opts.pluginFetch),
+        // A `network:public` fetch (the web plugin's WebFetch): one audit line each, the user's dangerous domains.
+        audit: (line) => audit.append(line),
+        dangerousAdded: () => dangerousDomainsAdded() ?? [],
         log: (line) => console.error(line),
       }).then(
         (started) => {

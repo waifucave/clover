@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { fencedCommand, fencedSpawn, pluginFenceAvailable, type PluginFenceInput } from "../registry/plugin-fence";
 import { stagedBundledDir } from "../registry/bundled-stage";
-import { API_CALLS, networkAllows, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
+import { API_CALLS, networkAllows, reachesPublicNetwork, type ApiCallPath } from "@waifucave/clover-plugin-sdk";
 import { dirname, join, sep } from "node:path";
 import type { HostProcess } from "@waifucave/clover-protocol";
 import { SystemClock } from "../clock/system-clock";
@@ -42,6 +42,13 @@ import type { RpcPeer } from "./link";
 
 /** The environment variables a plugin-host process gets from the daemon's. */
 const HOST_ENV_KEYS = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "LC_CTYPE", "TZ", "USER", "LOGNAME", "SYSTEMROOT", "TEMP", "TMP", "USERPROFILE"];
+
+/** B's gate's network rule for `net.fetch`: a host on the plugin's GRANTED `network:` list (`networkAllows`), or, when
+ *  the granted set holds `network:public` (bundled only), any host on its default port (that fetch is keyless, through
+ *  Clover's web safeguards: runtime-sdk/model-plugins/public-fetch.ts). */
+export function pluginNetworkAllowed(caps: readonly string[], host: string, port?: number): boolean {
+  return networkAllows(caps, host, port) || (reachesPublicNetwork(caps) && port === undefined);
+}
 
 export interface DaemonPluginHost {
   /** The one host: processes `clover`, `shared` and `own:<id>`, with the router and API channel inside. */
@@ -349,8 +356,10 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
   // `net.fetch` reaches a host only when the plugin's GRANTED `network:` entries name it (`networkAllows`, the SDK's
   // matcher: a wildcard covers subdomains, a port must match). Without this the gate refused every `net.fetch`. A host
   // named by a setting (`${setting:region}`) counts only with its value, which this check doesn't have yet: it fails
-  // closed (no bundled plugin with host code names one).
-  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: (caps, host, port) => networkAllows(caps, host, port) });
+  // closed (no bundled plugin with host code names one). A host outside the list passes only when the GRANTED set holds
+  // `network:public` (the SDK's catalog: bundled only), on the default port: that fetch is keyless, through Clover's
+  // web safeguards (runtime-sdk/model-plugins/public-fetch.ts).
+  const gate = createApiRouter({ registry: o.registry, handlers, commandOwner: (name) => commandOwner(o.registry, name), allowNetwork: pluginNetworkAllowed });
   host.serveApi(guardApiRouter(gate, recordOf));
 
   // The registry's changes: a plugin removed or no longer startable (off, refused, its host code gone) is dropped, its

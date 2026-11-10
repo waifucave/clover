@@ -9,6 +9,11 @@ import type { PinnedFetchSeam } from "../../packages/core/src/plugin-host/pinned
 export const FAKE_SEARCH_HIT = "ACCEPTANCE-SEARCH-HIT";
 export const FAKE_SEARCH_HOST = "mcp.exa.ai";
 export const FAKE_PAGE_TEXT = "ACCEPTANCE-PAGE-TEXT";
+/** A public website for WebFetch (`network:public`): one article, served by the seam. */
+export const FAKE_PUBLIC_SITE = "news.acceptance-site.com";
+export const FAKE_ARTICLE_TEXT = "ACCEPTANCE-ARTICLE-TEXT";
+/** A name that resolves to a private address: the pinned fetch refuses it before any request. */
+export const FAKE_PRIVATE_SITE = "intranet.acceptance-site.com";
 
 export interface FakeExa {
   /** The tool calls it answered, by tool name. */
@@ -47,14 +52,21 @@ export function fakeExa(): FakeExa {
   };
 }
 
-/** The keyed fetch's test seam for a run: `mcp.exa.ai` answered by `exa`, every other host refused and reported (the
- *  run fails on any). The resolver answers every name with one public address that nothing connects to, so each
- *  request reaches the seam's fetch, which decides by the name. */
+/** The keyed fetch's test seam for a run: `mcp.exa.ai` answered by `exa`, the fake public site's article answered
+ *  here, every other host refused and reported (the run fails on any). The resolver answers every name with one public
+ *  address that nothing connects to, so each request reaches the seam's fetch, which decides by the name; the private
+ *  site's name resolves to a private address, which the pinned fetch refuses before the seam is asked. */
 export function searchOnlySeam(exa: FakeExa, refused: (host: string) => void): PinnedFetchSeam {
   return {
-    resolve: async () => ["93.184.216.34"],
+    resolve: async (name) => (name === FAKE_PRIVATE_SITE ? ["10.0.0.5"] : ["93.184.216.34"]),
     fetch: async (url, init) => {
       const host = (new Headers(init.headers).get("host") ?? new URL(url).host).toLowerCase();
+      if (host === FAKE_PUBLIC_SITE) {
+        const path = new URL(url).pathname;
+        return path === "/article"
+          ? new Response(`<html><head><title>Acceptance article</title></head><body><p>${FAKE_ARTICLE_TEXT}</p></body></html>`, { headers: { "content-type": "text/html; charset=utf-8" } })
+          : new Response("not here", { status: 404 });
+      }
       if (host !== FAKE_SEARCH_HOST) {
         refused(host);
         throw new Error(`the acceptance run reaches no network: ${host}`);

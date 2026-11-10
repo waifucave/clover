@@ -599,7 +599,7 @@ test("each server lists on its own: one installed while another hangs is served 
 test("a worker that goes during the listing (its channel closes): listed again on the next worker at once, never a 30 s wait; one that keeps going says why", async () => {
   const folder = mkdtempSync(join(tmpdir(), "clover-a3-pmcp-"));
   temps.push(folder);
-  const registry = fakeRegistry([entry("clover/web", "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" } })], { "clover/web": folder });
+  const registry = fakeRegistry([entry("clover/web", "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" } })], { "clover/web": folder }, {}, { "clover/web": { granted: ["network:mcp.exa.ai", "network:public"] } });
   const real = fakeHost();
   let crashes = 1;
   let state: { state: string; reason?: string } = { state: "running" };
@@ -688,4 +688,16 @@ test("a host server that can't work in this build (notServed): never started, li
   await mcp.refresh();
   expect(mcp.servers("bot").map((s) => s.server).sort()).toEqual(["acme-files", "web"]);
   mcp.close();
+});
+
+test("the web plugin's WebFetch is offered only while the plugin holds network:public; WebSearch always", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "clover-a3-pmcp-"));
+  temps.push(folder);
+  for (const [granted, expected] of [[["network:mcp.exa.ai"], ["Later", "WebSearch"]], [["network:mcp.exa.ai", "network:public"], ["Later", "WebFetch", "WebSearch"]]] as const) {
+    const registry = fakeRegistry([entry("clover/web", "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" } })], { "clover/web": folder }, {}, { "clover/web": { granted } });
+    const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio" });
+    await mcp.refresh();
+    expect(mcp.servers("bot").flatMap((s) => s.tools.map((t) => t.name)).sort()).toEqual([...expected]);
+    mcp.close();
+  }
 });
