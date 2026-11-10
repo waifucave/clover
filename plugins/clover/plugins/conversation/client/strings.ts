@@ -13,6 +13,7 @@ export const S = {
 
   empty: (bot: string) => `This is the start of your conversation with ${bot}.`,
   showEarlier: "Show earlier messages",
+  showLater: "Show later messages",
   jumpToLatest: "Jump to latest",
   conversationLabel: (bot: string) => `Conversation with ${bot}`,
 

@@ -86,8 +86,7 @@ export const ArchivedSessionView = z.object({
   model: utf16(256).optional(),
   createdAt: Timestamp,
   updatedAt: Timestamp,
-  /** How many records the session's log holds (its last seq), as the store counts them without reading the log; 0
-   *  for one the user never wrote in. */
+  /** How many messages the session holds: the user's and the assistant's, as the store's index counts them. */
   messages: z.number().int().nonnegative(),
 });
 export type ArchivedSessionView = z.infer<typeof ArchivedSessionView>;

@@ -1,11 +1,14 @@
 // The app's and the CLI's plugin methods (`plugin.*`, spec §5.1, §5.6): the registry's records as the protocol's views,
 // the user's switch, restart and logs, the adult confirmation, development folders and removing a plugin.
 //
-// Not served here yet, each refused with why (and listed in the PR): `plugin.install`, `plugin.update` and
-// `plugin.index.*` (no index client or npm installer on main), `plugin.pin`, `plugin.setScope` and
-// `plugin.setComputers` (the synced plugin list that holds them isn't on main), `plugin.renameFolder` (a found folder
-// is named by its manifest's id today), `plugin.setEnabled`'s `bots` (a plugin's `when.bot` override), and
-// `plugin.dev.add` from the app (a sensitive change: it waits for the approval broker's card, C-M3; the CLI's applies).
+// `plugin.install` installs from a folder on disk (`install-folder.ts`), and `plugin.dev.add` from the app raises its
+// sealed card (a sensitive change; in the user's own terminal it applies).
+//
+// Not served here yet, each refused with why (and listed in the PR): `plugin.install` from an index, npm or a wrapped
+// item, `plugin.update` and `plugin.index.*` (no index client or npm installer on main), `plugin.pin`,
+// `plugin.setScope` and `plugin.setComputers` (the synced plugin list that holds them isn't on main),
+// `plugin.renameFolder` (a found folder is named by its manifest's id today), and `plugin.setEnabled`'s `bots` (a
+// plugin's `when.bot` override).
 // `plugin.auth.*` are lane A's.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -17,6 +20,9 @@ import type { SecretStore } from "../contracts/secret-store";
 import type { OpenedRegistry } from "../registry/open";
 import { handler, requireUser, type MethodHandler } from "../rpc/handler";
 import { pluginPath } from "./paths";
+import { installFromFolder, installStagingDir } from "../registry/install-folder";
+import type { CardOpener } from "../devices/rpc";
+import { realpathSync, statSync } from "node:fs";
 
 /** The last `n` lines of a plugin's log (`<home>/logs/plugins/<id>.log`). */
 export function pluginLogTail(home: string, pluginId: string, n: number): string[] {
@@ -50,6 +56,18 @@ function detailOf(r: PluginRecord, home: string): PluginDetail {
   });
 }
 
+/** A development folder's real path, checked before its card is raised: the card names what will load. */
+function devFolderCheck(path: string): string {
+  let real: string;
+  try {
+    real = realpathSync(path);
+  } catch {
+    throw new ContractError("invalid", `${path} doesn't exist`);
+  }
+  if (!statSync(real).isDirectory() || !existsSync(join(real, "clover.json"))) throw new ContractError("invalid", `${real} has no clover.json`);
+  return real;
+}
+
 const notServed = (what: string, why: string): never => {
   throw new ContractError("refused", `${what} isn't served on this computer yet: ${why}`);
 };
@@ -76,7 +94,16 @@ export async function forgetRemovedPlugin(o: { home: string; secrets?: Pick<Secr
   return { dataKeptAt: kept };
 }
 
-export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<PluginHost, "restart">; home: string; secrets?: Pick<SecretStore, "list" | "delete"> }): Record<string, MethodHandler> {
+export function pluginRegistryMethods(o: {
+  opened: OpenedRegistry;
+  host: Pick<PluginHost, "restart">;
+  home: string;
+  secrets?: Pick<SecretStore, "list" | "delete">;
+  /** Raises a sensitive change's sealed card (lane C's broker, `brokerCardOpener`): a development folder added from
+   *  the app waits for it. Absent until the daemon's broker is wired, when adding one from the app is refused. */
+  openCard?: CardOpener;
+  os?: "macos" | "windows" | "linux";
+}): Record<string, MethodHandler> {
   const M = PLUGINS_METHODS;
   const { registry, folders } = o.opened;
   const must = (id: string): PluginRecord => {
@@ -130,9 +157,28 @@ export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<Pl
     [M.pluginDevList.name]: handler(M.pluginDevList, () => ({ folders: folders.devFolders().map(devView) })),
     [M.pluginDevAdd.name]: handler(M.pluginDevAdd, async ({ path }, ctx) => {
       const user = requireUser(ctx, "add a development folder");
-      if (user.client !== "cli") notServed("adding a development folder from the app", "it waits for the approval broker's card (C-M3); `clover plugin dev add` applies it");
-      await folders.addDevFolder(path, "cli");
-      return { applied: true as const };
+      // In the user's own terminal it applies (§5.6); from the app it's a sensitive change, behind its sealed card.
+      if (user.client === "cli") {
+        await folders.addDevFolder(path, "cli");
+        return { applied: true as const };
+      }
+      if (o.openCard === undefined) notServed("adding a development folder from the app", "this computer's approval broker isn't running; `clover plugin dev <folder>` in your terminal adds it");
+      const checked = devFolderCheck(path);
+      const opened = await o.openCard!({
+        kind: "change", origin: "user", computers: [], effect: "other", change: "dev-folder",
+        fields: {
+          title: { type: "text", text: "Load a plugin you're developing?" },
+          detail: { type: "list", items: [checked, "Its code runs on this computer as it is, reloading when it changes, for 24 hours unless you renew it."] },
+        },
+      });
+      void opened.allowed.then(async (yes) => {
+        if (yes) await folders.addDevFolder(checked, "app");
+      }).catch(() => undefined);
+      if (opened.card === undefined) {
+        if (!(await opened.allowed)) throw new ContractError("refused", "the development folder wasn't added");
+        return { applied: true as const };
+      }
+      return { applied: false as const, card: opened.card };
     }),
     [M.pluginDevRemove.name]: handler(M.pluginDevRemove, async ({ path }, ctx) => {
       requireUser(ctx, "remove a development folder");
@@ -143,7 +189,23 @@ export function pluginRegistryMethods(o: { opened: OpenedRegistry; host: Pick<Pl
       requireUser(ctx, "renew a development folder");
       return { expiresAt: await folders.renewDevFolder(path) };
     }),
-    [M.pluginInstall.name]: handler(M.pluginInstall, () => notServed("plugin.install", "the index client and npm installer aren't on main")),
+    // From a folder on disk (the app's "install from folder", the terminal): copied in, validated, found, and its sealed
+    // OK card raised at once (§5.1). The index and npm wait for their clients.
+    [M.pluginInstall.name]: handler(M.pluginInstall, async ({ source }, ctx) => {
+      const user = requireUser(ctx, "install a plugin");
+      if (source.from !== "folder") notServed(`installing from ${source.from === "index" ? "a plugin index" : source.from === "npm" ? "npm" : "a wrapped item"}`, "only a folder on disk installs for now");
+      const src = source as { from: "folder"; path: string };
+      const { id, treeHash } = await installFromFolder({
+        source: src.path, pluginsDir: join(o.home, "plugins"), stagingDir: installStagingDir(o.home),
+        ...(o.os ? { os: o.os } : {}),
+        taken: (pluginId) => registry.get(pluginId) !== undefined,
+      });
+      await folders.installed(id, user.client === "cli" ? "user-terminal" : "user-app");
+      const r = registry.get(id);
+      if (r === undefined) throw new ContractError("failed", `${id} was copied in but isn't found; its folder is ${join(o.home, "plugins", id)}`);
+      const raised = await registry.installed(id, user.client === "cli" ? "cli" : "app");
+      return { id: id as never, state: raised.state, treeHash, ...(raised.card !== undefined ? { card: raised.card } : {}) };
+    }),
     [M.pluginUpdate.name]: handler(M.pluginUpdate, () => notServed("plugin.update", "the index client isn't on main")),
     [M.pluginIndexList.name]: handler(M.pluginIndexList, () => ({ indexes: [] })),
     [M.pluginIndexSearch.name]: handler(M.pluginIndexSearch, () => ({ entries: [] })),

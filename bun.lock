@@ -73,17 +73,17 @@
       "name": "@waifucave/clover-core",
       "version": "0.124.0",
       "dependencies": {
-        "@waifucave/clover-agent-runtime": "0.0.72",
-        "@waifucave/clover-agent-sdk": "0.0.72",
+        "@waifucave/clover-agent-runtime": "0.0.75",
+        "@waifucave/clover-agent-sdk": "0.0.75",
         "@waifucave/clover-plugin-sdk": "workspace:*",
         "@waifucave/clover-protocol": "workspace:*",
-        "@waifucave/clover-provider-catalog": "0.0.72",
-        "@waifucave/clover-provider-runtime": "0.0.72",
+        "@waifucave/clover-provider-catalog": "0.0.75",
+        "@waifucave/clover-provider-runtime": "0.0.75",
         "unpdf": "^1.6.2",
         "zod": "^4.6.7",
       },
       "devDependencies": {
-        "@waifucave/clover-provider-conformance": "0.0.72",
+        "@waifucave/clover-provider-conformance": "0.0.75",
         "@waifucave/clover-service-shared": "workspace:*",
         "@waifucave/clover-test-harness": "workspace:*",
       },
@@ -356,8 +356,8 @@
       "name": "@waifucave/clover-plugin-model-azure-openai",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-provider-catalog": "0.0.72",
-        "@waifucave/clover-provider-runtime": "0.0.72",
+        "@waifucave/clover-provider-catalog": "0.0.75",
+        "@waifucave/clover-provider-runtime": "0.0.75",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -368,8 +368,8 @@
       "name": "@waifucave/clover-plugin-model-bedrock",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-provider-catalog": "0.0.72",
-        "@waifucave/clover-provider-runtime": "0.0.72",
+        "@waifucave/clover-provider-catalog": "0.0.75",
+        "@waifucave/clover-provider-runtime": "0.0.75",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -380,8 +380,8 @@
       "name": "@waifucave/clover-plugin-model-codex-oauth",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-provider-catalog": "0.0.72",
-        "@waifucave/clover-provider-runtime": "0.0.72",
+        "@waifucave/clover-provider-catalog": "0.0.75",
+        "@waifucave/clover-provider-runtime": "0.0.75",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -392,8 +392,8 @@
       "name": "@waifucave/clover-plugin-model-google",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-provider-catalog": "0.0.72",
-        "@waifucave/clover-provider-runtime": "0.0.72",
+        "@waifucave/clover-provider-catalog": "0.0.75",
+        "@waifucave/clover-provider-runtime": "0.0.75",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -404,8 +404,8 @@
       "name": "@waifucave/clover-plugin-model-vertex",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-provider-catalog": "0.0.72",
-        "@waifucave/clover-provider-runtime": "0.0.72",
+        "@waifucave/clover-provider-catalog": "0.0.75",
+        "@waifucave/clover-provider-runtime": "0.0.75",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -416,8 +416,8 @@
       "name": "@waifucave/clover-plugin-model-xai-oauth",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-provider-catalog": "0.0.72",
-        "@waifucave/clover-provider-runtime": "0.0.72",
+        "@waifucave/clover-provider-catalog": "0.0.75",
+        "@waifucave/clover-provider-runtime": "0.0.75",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -707,7 +707,7 @@
       "name": "@waifucave/clover-plugin-web",
       "version": "0.0.0",
       "dependencies": {
-        "@waifucave/clover-web": "0.0.72",
+        "@waifucave/clover-web": "0.0.75",
       },
       "devDependencies": {
         "@types/bun": "1.4.4",
@@ -1223,11 +1223,11 @@
 
     "@vitest/utils": ["@vitest/utils@4.1.12", "", { "dependencies": { "@vitest/pretty-format": "4.1.12", "convert-source-map": "^2.0.0", "tinyrainbow": "^3.1.0" } }, "sha512-Q3awXrwOfEV+qc3WmO5ONyE0yO7Q1gQ9/oyHxGLZ/pl7N3NO/ZztqQwKLuwMkV+CA1JYSIeO3gkHnRDIo4AVaA=="],
 
-    "@waifucave/clover-agent-runtime": ["@waifucave/clover-agent-runtime@0.0.72", "https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.72/e984c8c7ba2f24a429cec1b5323dc19590f8d207", { "dependencies": { "@modelcontextprotocol/client": "^2.1.0", "@waifucave/clover-agent-sdk": "0.0.72", "@waifucave/clover-provider-catalog": "0.0.72", "@waifucave/clover-provider-runtime": "0.0.72", "@waifucave/clover-web": "0.0.72", "ajv": "^8.20.0", "ignore": "7.0.5" } }, "sha512-PQwP/y/b1sdiStv66KpqrglpfmBzpN+OQ7GBoi/hTpUQMffOA3YZ4P2aWf86t+31xzoH0USMWtfOhyqsFI1nEQ=="],
+    "@waifucave/clover-agent-runtime": ["@waifucave/clover-agent-runtime@0.0.75", "https://npm.pkg.github.com/download/@waifucave/clover-agent-runtime/0.0.75/f9c1eb077b7d2b4f1474baf753e217d844d19971", { "dependencies": { "@modelcontextprotocol/client": "^2.1.0", "@waifucave/clover-agent-sdk": "0.0.75", "@waifucave/clover-provider-catalog": "0.0.75", "@waifucave/clover-provider-runtime": "0.0.75", "@waifucave/clover-web": "0.0.75", "ajv": "^8.20.0", "ignore": "7.0.5" } }, "sha512-ULRXtmnme0Na4uotSJQW0DAc0HK0BviZx76WarIUz9mTlg6a/fWMorLyYZOGj+zXkh7QqpxOmUDBRcKwdsC/pg=="],
 
-    "@waifucave/clover-agent-sdk": ["@waifucave/clover-agent-sdk@0.0.72", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.72/b951baea940452bcc8d488c9dccb159f45d0f09f", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.72" }, "optionalDependencies": { "@waifucave/clover-agent-sdk-darwin-arm64": "0.0.72" } }, "sha512-Zt0RKmlq+hu9CFrPjyPfIUA3aY9HlodJLSWT/AheiVe7S3Sh76+4QdCXyo1hNEhauGPUOHexDp9BN2oCiCAzkg=="],
+    "@waifucave/clover-agent-sdk": ["@waifucave/clover-agent-sdk@0.0.75", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk/0.0.75/4cf393c39d13667dec0f06f007220e1fcaae4d92", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.75" }, "optionalDependencies": { "@waifucave/clover-agent-sdk-darwin-arm64": "0.0.75" } }, "sha512-9LK7QbFz+sVj1M1Fe9pvL0vn5TdI9RsvDcNBeKhZibG71fOMCWWUJQjKOjxAYcn8cASi+6Aim3/PUP364PBjAw=="],
 
-    "@waifucave/clover-agent-sdk-darwin-arm64": ["@waifucave/clover-agent-sdk-darwin-arm64@0.0.72", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.72/3c129d673f2097e257bcb60136dc462c284cbf1d", { "os": "darwin", "cpu": "arm64", "bin": { "winter": "bin/winter" } }, "sha512-9va9dsaiqRDOcicLVym/E0yRXZDvSZmGWR1xM+e/iTljf4SgRmDnmnL0oQqmohSF3eBOKSNJl0K/HPxyH/V52Q=="],
+    "@waifucave/clover-agent-sdk-darwin-arm64": ["@waifucave/clover-agent-sdk-darwin-arm64@0.0.75", "https://npm.pkg.github.com/download/@waifucave/clover-agent-sdk-darwin-arm64/0.0.75/6eaecb56153b418d03b071c5f41432a8f55d691f", { "os": "darwin", "cpu": "arm64", "bin": { "winter": "bin/winter" } }, "sha512-RkiCoi2l/OIXQzZF4vUVxE3QaeS9ge5tlU18qucX2wWK04FQMylojDmnqGQuRn8d6xSG3u92N2/BFi+6fv73pQ=="],
 
     "@waifucave/clover-cli": ["@waifucave/clover-cli@workspace:packages/cli"],
 
@@ -1319,11 +1319,11 @@
 
     "@waifucave/clover-protocol": ["@waifucave/clover-protocol@workspace:packages/protocol"],
 
-    "@waifucave/clover-provider-catalog": ["@waifucave/clover-provider-catalog@0.0.72", "https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.72/34192848111aa14b2a413b377bc023a6b1bef7c0", {}, "sha512-c8E9KdjrFCmlXIQrBjmYY3jQK+vatJD8gBwZaUMhZpsMlF481MzYsWeCoiTg5WxDw6b/KWIWdZBTZNJQ/OUQGg=="],
+    "@waifucave/clover-provider-catalog": ["@waifucave/clover-provider-catalog@0.0.75", "https://npm.pkg.github.com/download/@waifucave/clover-provider-catalog/0.0.75/42a8793ca068d377045f2b4514d99bc3c1000a7c", {}, "sha512-54auhqE+w+VhhhW1nZulmAxYdNIsLZioIaQ4xbVo00rMh2kT4LN+1b5u6sQJNJaQkG140oKVCsuwyQq28o3mag=="],
 
-    "@waifucave/clover-provider-conformance": ["@waifucave/clover-provider-conformance@0.0.72", "https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.72/26521871f1372c5bce24e9a63076b64dc12251ba", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.72", "@waifucave/clover-provider-runtime": "0.0.72" } }, "sha512-McqSRF2grcJ+Msa5XJXx4iF6Fy4EN0trSY7Gfp5HNRx4HjRGeaxsWZIJSbu3wyzDbbJo18sZG/bbl1O6/rEI5A=="],
+    "@waifucave/clover-provider-conformance": ["@waifucave/clover-provider-conformance@0.0.75", "https://npm.pkg.github.com/download/@waifucave/clover-provider-conformance/0.0.75/6986b2194f3a89d169b1a760322d6264cf9d44c6", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.75", "@waifucave/clover-provider-runtime": "0.0.75" } }, "sha512-vAhEMCbbncdhLhTibgfUQswP7jwe1XzZkggffV5NsMAg/wp6cy7sTI4xwhVek8HkPUPHZKAr45oBaxFPk/xchw=="],
 
-    "@waifucave/clover-provider-runtime": ["@waifucave/clover-provider-runtime@0.0.72", "https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.72/a2a5f4dad3a7f3bb7b039d335fb2bfa747b1b3b3", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.72" } }, "sha512-YYN/S00MDN41h0YuN8Yl/vUvO+4o55LWc0QWBNLGxIW6Jbe9AqeUf+JuxqjG9dR+OXi7jpM9MyH6JBVtNe+cag=="],
+    "@waifucave/clover-provider-runtime": ["@waifucave/clover-provider-runtime@0.0.75", "https://npm.pkg.github.com/download/@waifucave/clover-provider-runtime/0.0.75/068153bc98c75c5b5f5510638d6c6f5d6ca89c2a", { "dependencies": { "@waifucave/clover-provider-catalog": "0.0.75" } }, "sha512-mHQHyoOVsE/bpn233hiLp21quyN4WOyZquUcLA0/x+sU2Up9z62qUgdTbLhY8ZHuBBz9Ij2v5f0d7s0N1slbIg=="],
 
     "@waifucave/clover-service-accounts": ["@waifucave/clover-service-accounts@workspace:services/accounts"],
 
@@ -1345,7 +1345,7 @@
 
     "@waifucave/clover-update-feed": ["@waifucave/clover-update-feed@workspace:packages/update-feed"],
 
-    "@waifucave/clover-web": ["@waifucave/clover-web@0.0.72", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.72/d192589dc9ca937ebf63ba57c5588cf993160a0c", {}, "sha512-fPQykqtQ6zeEQeRB3g9v6wbN4tdQebg7iuLFdXVQmE7FxI9+6dlrQwu7tto0pa2D2vXoA2cPJfngtnmdcNajYw=="],
+    "@waifucave/clover-web": ["@waifucave/clover-web@0.0.75", "https://npm.pkg.github.com/download/@waifucave/clover-web/0.0.75/c6af4e1f63312181f927b3a756d663335cf5d319", {}, "sha512-oTyPL2nkRQwC1SvzyWyWMGfSkQOlfha3f8ifRK+6bo4yNNx2bLfZG9iWgSUxSzJa20AE3lrhzguLhQAIoUvZjQ=="],
 
     "@waifucave/mochi2d": ["@waifucave/mochi2d@0.13.0", "https://npm.pkg.github.com/download/@waifucave/mochi2d/0.13.0/ea0d786b6ad5f8a5b2f268a836a92e489b6c74e5", { "peerDependencies": { "pixi.js": "^8.12.0", "playwright": ">=1.40.0" }, "bin": { "mochi2d": "dist/tools/mochi2d.js", "mochi2d-mcp": "dist/tools/mochi2d-mcp.js" } }, "sha512-xqE+nfqxkTmgVkwgi9cV+A886choH4xRvZ5V5ZiYqzMk5q5xoz4s7QVPKSH8fNopCCgr26GMzExEl76+vRPNhw=="],
 

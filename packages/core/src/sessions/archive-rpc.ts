@@ -7,7 +7,7 @@
 // * `archive.list`: the top-level sessions, newest activity first (a dispatch session's children are its own), matched
 //   by `query` against the title, the first message and the project folder, paged by a `cursor` naming the last one
 //   shown (its `updatedAt` and id: the list's own order, so a tie is never skipped or shown twice). It reads the
-//   store's index and one stat per session, never a log.
+//   store's index (the message count included) and one stat per session, never a log.
 // * `archive.history`: a session's events as the store keeps them, oldest first, a page at a time (`cursor`: the seq
 //   the next page starts after). The store finds the page by bisecting the log (`readRange`), so a page never parses
 //   the lines before it, and a page stops at a byte budget well under one request line (NDJSON_MAX_LINE_BYTES).
@@ -29,7 +29,7 @@ const SEQ_CURSOR = /^\d{1,15}$/;
 const LIST_CURSOR = /^(\d{1,15}):(.{1,128})$/s;
 
 export interface ArchiveDeps {
-  store: Pick<SessionStore, "list" | "readRange" | "lastEventTs" | "firstMessage">;
+  store: Pick<SessionStore, "list" | "readRange" | "lastEventTs" | "firstMessage" | "messageCount">;
 }
 
 export function archiveMethods(deps: ArchiveDeps): Record<string, MethodHandler> {
@@ -107,7 +107,7 @@ function viewOf(store: ArchiveDeps["store"], r: SessionRow, updatedAt: number): 
     ...(r.model === undefined ? {} : { model: r.model }),
     createdAt: r.createdAt,
     updatedAt,
-    // The index's own counts, never the log: its length, and none for a session nobody wrote in.
-    messages: store.firstMessage(r.sessionId) === undefined ? 0 : r.lastSeq,
+    // The index's own count (kept as messages are appended), never a log read.
+    messages: store.messageCount(r.sessionId),
   };
 }
