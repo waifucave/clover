@@ -71,6 +71,12 @@ const ListedServer = z.object({
   tools: z.array(z.unknown()).max(MCP_LIST_MAX_TOOLS),
   instructions: z.string().max(MCP_LIST_INSTRUCTIONS_MAX).optional(),
   scope: Scope.optional(),
+  // A newer computer's listing (lane A's `PluginMcpListing`) also says the name its own sessions see the server under
+  // and whether it is a bundled plugin's. Both are OPTIONAL, so an older computer's listing without them parses the
+  // same, and neither decides anything here: the key is `server`, checked against this computer's own record, and
+  // whether a plugin is bundled is this computer's registry's word, never another computer's.
+  exposed: utf16(256, 1).optional(),
+  bundled: z.boolean().optional(),
 });
 
 /** One local server as the computer running it lists it: its plugin's tools as they are, without placement fields. */

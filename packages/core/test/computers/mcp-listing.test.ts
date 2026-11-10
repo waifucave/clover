@@ -44,7 +44,18 @@ describe("parseMcpList", () => {
     expect(lines.some((l) => l.includes("Render is listed twice"))).toBe(true);
   });
 
-  test("a key must round-trip through mcp__<server>__<tool> and be the key this computer gives the plugin's server", () => {
+  test("a newer computer's `exposed` and `bundled` are optional: a listing with them parses as one without, and they decide nothing", () => {
+    const older = parseMcpList({ servers: [entry("blender")] }, ["blender"], known);
+    const newer = parseMcpList({ servers: [entry("blender", { exposed: "blender", bundled: false })] }, ["blender"], known);
+    expect(older).toHaveLength(1);
+    expect(newer).toEqual(older);
+    // A claim of being bundled, or another exposed name, changes nothing: the key and the record are this computer's.
+    expect(parseMcpList({ servers: [entry("blender", { exposed: "clover", bundled: true })] }, ["blender"], known)).toEqual(older);
+    // Malformed, they leave the server out, as any malformed field does.
+    expect(parseMcpList({ servers: [entry("blender", { bundled: "yes" })] }, ["blender"], known)).toEqual([]);
+  });
+
+    test("a key must round-trip through mcp__<server>__<tool> and be the key this computer gives the plugin's server", () => {
     const names = ["foo__bar", "_x", "x_", "a_b", "Blender", "a--b", "-a", "../evil", "x".repeat(65)];
     for (const server of names) expect(parseMcpList({ servers: [entry(server, { plugin: "acme/x", name: server })] }, [server], () => ({ server }))).toEqual([]);
     // With a namespace for its server, every tool kept reads back as exactly that server and tool.
