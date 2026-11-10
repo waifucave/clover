@@ -8,7 +8,7 @@ import type { Caller } from "@waifucave/clover-protocol";
 import { Listeners } from "../../../src/contracts/common";
 import type { McpChannel } from "../../../src/contracts/plugin-host";
 import type { Contribution, PluginRecord, RegistryChange } from "../../../src/contracts/plugin-registry";
-import { PluginMcp } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
+import { PluginMcp, RESULT_MAX_CHARS } from "../../../src/runtime-sdk/turn-loop/plugin-mcp";
 
 const temps: string[] = [];
 afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -20,8 +20,11 @@ function fakeHost() {
   const opened: { plugin: string; server: string; channel: McpChannel & { kill(): void } }[] = [];
   const calls: { tool: string; args: unknown; as?: Caller }[] = [];
   let hang = false;
+  let big = 0;
+  let gate: ((plugin: string, server: string) => Promise<void> | undefined) | undefined;
   const host = {
     async openMcp(plugin: string, server: string): Promise<McpChannel> {
+      await gate?.(plugin, server);
       const out = new Listeners<Record<string, unknown>>();
       let closed = false;
       const reply = (m: Record<string, unknown>) => queueMicrotask(() => { if (!closed) out.emit(m); });
@@ -37,7 +40,7 @@ function fakeHost() {
           else if (m.method === "tools/call") {
             const p = m.params as { name: string; arguments: unknown };
             calls.push({ tool: p.name, args: p.arguments, ...(as === undefined ? {} : { as }) });
-            if (!hang) reply({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: `ran ${p.name}` }] } });
+            if (!hang) reply({ jsonrpc: "2.0", id: m.id, result: { content: [{ type: "text", text: big > 0 ? "x".repeat(big) : `ran ${p.name}` }] } });
           }
         },
         onMessage: (fn: (m: Record<string, unknown>) => void) => out.add(fn),
@@ -49,14 +52,14 @@ function fakeHost() {
       return channel;
     },
   };
-  return { host, opened, calls, hang: (on: boolean) => { hang = on; } };
+  return { host, opened, calls, hang: (on: boolean) => { hang = on; }, big: (n: number) => { big = n; }, gate: (fn: typeof gate) => { gate = fn; } };
 }
 
 function fakeRegistry(entries: Contribution[], folders: Record<string, string>, manifests: Record<string, unknown> = {}) {
   const watchers = new Listeners<RegistryChange>();
   return {
     entries: (point: string) => (point === "mcpServers" ? entries : []),
-    get: (id: string) => (folders[id] === undefined ? undefined : { folder: folders[id], manifest: manifests[id] } as unknown as PluginRecord),
+    get: (id: string) => (folders[id] === undefined ? undefined : { id, source: id === "clover" || id.startsWith("clover/") ? "bundled" : "user", folder: folders[id], manifest: manifests[id] } as unknown as PluginRecord),
     watch: (fn: (c: RegistryChange) => void) => watchers.add(fn),
     changed: () => watchers.emit({ type: "entries", point: "mcpServers" }),
   };
@@ -91,8 +94,8 @@ test("a host server's tools are listed with their loading and instructions, plac
     expect(web.tools[0]!.inputSchema.properties).toHaveProperty("saveTo");
     expect(mcp.fields("web").saveTo).toBe("saveTo");
     // An agents-only, per-computer server: placed here, never a bot's.
-    expect(mcp.servers("agent").map((s) => s.server)).toEqual(["web", "blender"]);
-    expect(mcp.placement("blender")).toEqual({ name: "blender", kind: "local", computers: ["Studio"] });
+    expect(mcp.servers("agent").map((s) => s.server)).toEqual(["web", "acme__blender"]);
+    expect(mcp.placement("acme__blender")).toEqual({ name: "acme__blender", kind: "local", computers: ["Studio"] });
     expect(mcp.servers("agent")[1]!.tools.every((t) => t.load === "preload")).toBe(true);
     // stdio and waiting entries aren't served here.
     expect(mcp.placement("files")).toBeUndefined();
@@ -150,6 +153,138 @@ test("the registry's change relists: a server that went away is forgotten and it
     await mcp.refresh();
     expect(mcp.servers("bot")).toEqual([]);
     expect(fake.opened[0]!.channel.closed).toBe(true);
+  } finally {
+    mcp.close();
+  }
+});
+
+const names = (mcp: PluginMcp) => mcp.servers("agent").map((s) => s.server);
+
+test("a third-party server is served under its plugin's key; a bundled one keeps its plain name", async () => {
+  const registry = fakeRegistry([
+    entry("clover", "web", { type: "host" }),
+    entry("acme/tools", "blender", { type: "host" }),
+  ], { clover: "/nonexistent", "acme/tools": "/nonexistent" });
+  const fake = fakeHost();
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio" });
+  try {
+    await mcp.refresh();
+    expect(names(mcp)).toEqual(["web", "acme_tools__blender"]);
+    // The call reaches the plugin under its own server name.
+    await mcp.call({ server: "acme_tools__blender", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" });
+    expect(fake.opened.map((o) => [o.plugin, o.server])).toEqual([["clover", "web"], ["acme/tools", "blender"]]);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("a third-party `web` server can't take mcp__web__*, and a third-party `clover_core` or `clover` is refused", async () => {
+  const registry = fakeRegistry([
+    entry("acme", "web", { type: "host" }),
+    entry("acme", "clover_core", { type: "host" }),
+    entry("acme", "clover", { type: "host" }),
+    entry("acme", "fine", { type: "host" }),
+    entry("clover", "web", { type: "host" }),
+  ], { clover: "/nonexistent", acme: "/nonexistent" });
+  const lines: string[] = [];
+  const fake = fakeHost();
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: (l) => lines.push(l) });
+  try {
+    await mcp.refresh();
+    expect(new Set(names(mcp))).toEqual(new Set(["web", "acme__fine"]));
+    expect(mcp.servers("agent").find((s) => s.server === "web")!.plugin).toBe("clover");
+    expect(lines.filter((l) => l.includes("refused"))).toHaveLength(3);
+    expect(fake.opened.map((o) => o.plugin + "/" + o.server).sort()).toEqual(["acme/fine", "clover/web"]);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("two plugins that come to the same key are both refused, logged, never first wins", async () => {
+  const registry = fakeRegistry([
+    entry("a/b", "x", { type: "host" }),
+    entry("a_b", "x", { type: "host" }),
+    entry("other", "y", { type: "host" }),
+  ], { "a/b": "/nonexistent", a_b: "/nonexistent", other: "/nonexistent" });
+  const lines: string[] = [];
+  const mcp = new PluginMcp({ registry, host: fakeHost().host, self: () => "Studio", log: (l) => lines.push(l) });
+  try {
+    await mcp.refresh();
+    expect(names(mcp)).toEqual(["other__y"]);
+    expect(lines.filter((l) => l.includes("a_b__x"))).toHaveLength(2);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("after close(), refresh does nothing and a channel that opens late is closed at once", async () => {
+  const entries = [entry("clover", "web", { type: "host" })];
+  const registry = fakeRegistry(entries, { clover: "/nonexistent" });
+  const fake = fakeHost();
+  let release!: () => void;
+  const held = new Promise<void>((r) => { release = r; });
+  fake.gate(() => held);
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio" });
+  const pending = mcp.refresh();
+  await Bun.sleep(10);
+  mcp.close();
+  release();
+  await pending;
+  expect(fake.opened).toHaveLength(1);
+  expect(fake.opened[0]!.channel.closed).toBe(true);
+  expect(mcp.servers("bot")).toEqual([]);
+  fake.gate(undefined);
+  await mcp.refresh();
+  registry.changed();
+  await Bun.sleep(10);
+  expect(fake.opened).toHaveLength(1);
+  expect(mcp.servers("bot")).toEqual([]);
+});
+
+test("a call to a tool the server didn't list is refused", async () => {
+  const mcp = new PluginMcp({ registry: fakeRegistry([entry("clover", "web", { type: "host" })], { clover: "/nonexistent" }), host: fakeHost().host, self: () => "Studio" });
+  try {
+    await mcp.refresh();
+    await expect(mcp.call({ server: "web", tool: "Hidden", input: {}, as: BOT, session: "b_alpha" })).rejects.toMatchObject({ code: "not_found" });
+  } finally {
+    mcp.close();
+  }
+});
+
+test("a result over 1 MiB is cut and says so", async () => {
+  const fake = fakeHost();
+  const mcp = new PluginMcp({ registry: fakeRegistry([entry("clover", "web", { type: "host" })], { clover: "/nonexistent" }), host: fake.host, self: () => "Studio" });
+  try {
+    await mcp.refresh();
+    fake.big(3 * 1_048_576);
+    const r = await mcp.call({ server: "web", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" });
+    expect(JSON.stringify(r.content).length).toBeLessThanOrEqual(RESULT_MAX_CHARS);
+    expect(r.content.at(-1)).toEqual({ type: "text", text: expect.stringContaining("truncated") });
+    expect(r.content).toHaveLength(2);
+    fake.big(100);
+    const small = await mcp.call({ server: "web", tool: "WebSearch", input: {}, as: BOT, session: "b_alpha" });
+    expect(small.content).toEqual([{ type: "text", text: "x".repeat(100) }]);
+  } finally {
+    mcp.close();
+  }
+});
+
+test("servers are listed at once; a hung one times out (open included), is reported and not served, the rest are", async () => {
+  const registry = fakeRegistry([
+    entry("clover", "web", { type: "host" }),
+    entry("acme", "stuck", { type: "host" }),
+    entry("acme", "ok", { type: "host" }),
+  ], { clover: "/nonexistent", acme: "/nonexistent" });
+  const fake = fakeHost();
+  fake.gate((_p, server) => (server === "stuck" ? new Promise<void>(() => {}) : undefined));
+  const lines: string[] = [];
+  const mcp = new PluginMcp({ registry, host: fake.host, self: () => "Studio", log: (l) => lines.push(l), listTimeoutMs: 150 });
+  try {
+    const t0 = Date.now();
+    await mcp.refresh();
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(new Set(names(mcp))).toEqual(new Set(["web", "acme__ok"]));
+    expect(lines.some((l) => l.includes("acme/stuck") && l.includes("couldn't be listed"))).toBe(true);
   } finally {
     mcp.close();
   }

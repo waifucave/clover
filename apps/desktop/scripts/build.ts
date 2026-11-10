@@ -4,7 +4,7 @@
 //   out/main/preload.cjs         the one preload (sandboxed preloads are CommonJS)
 //   out/main/browser-viewport-preload.cjs, out/renderer/browser-viewport.html
 //                                the Clover Browser's viewport page and its preload (lane L's `BROWSER_ASSETS`)
-//   out/main/tray.png, @2x       the menu-bar and tray icon
+//   out/main/icons/              the tray's and Clover Dev's icons (resources/icons, drawn by scripts/brand-icons.ts)
 //   out/main/native/screen.node  macOS: the screen add-on (native/input/macos/screen.mm), built with clang alone
 //   out/renderer/core/           the window's core root: index.html, root.css, root.js
 //   out/renderer/layer/          what every plugin layer serves under /_clover/: React (vendor/), the UI API
@@ -60,18 +60,9 @@ await build({ entrypoints: [join(root, "src", "main", "preload.ts")], outdir: jo
   cpSync(join(root, BROWSER_ASSETS.html.from), htmlOut);
 }
 
-// ---- The tray icon: a clover leaf, as a template image (macOS draws it in the menu bar's own colour) ----
-const LEAF = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><g fill="#000">
-<circle cx="11" cy="11" r="6"/><circle cx="21" cy="11" r="6"/><circle cx="11" cy="21" r="6"/><circle cx="21" cy="21" r="6"/>
-<rect x="15" y="20" width="2.4" height="11" rx="1.2" transform="rotate(-20 16 26)"/></g></svg>`;
-try {
-  const { Resvg } = await import("@resvg/resvg-js");
-  for (const [name, size] of [["tray.png", 16], ["tray@2x.png", 32]] as const) {
-    writeFileSync(join(out, "main", name), new Resvg(LEAF, { fitTo: { mode: "width", value: size } }).render().asPng());
-  }
-} catch (err) {
-  console.error(`build: the tray icon could not be drawn (${String(err)}); the tray will fall back to an empty image`);
-}
+// ---- The app's own icons: the tray's (macOS's template, the Windows and Linux themes') and Clover Dev's ----
+// Drawn from assets/brand/clover/ by scripts/brand-icons.ts and committed; copied as they are.
+cpSync(join(root, "resources", "icons"), join(out, "main", "icons"), { recursive: true });
 
 // ---- The core root ----
 for (const f of ["index.html", "root.css"]) cpSync(join(root, "src", "core", f), join(coreOut, f));
@@ -172,12 +163,14 @@ writeFileSync(join(layerOut, "clover.css"), css.join("\n"));
 
 // ---- The screen add-on (macOS; native/input) ----
 // Built with clang alone: the few Node-API calls it makes are declared in its own source. Where it can't be built (no
-// Xcode tools), the app does without it: no housing is known, as on Windows and Linux.
+// Xcode tools), the app does without it: no housing is known, as on Windows and Linux. Its install name is a fixed
+// `@rpath/screen.node`: by default a shared library's is the path it was linked to, which would put this machine's
+// build folder (and the account name in it) into every shipped app (the release's identity scan refuses that).
 if (process.platform === "darwin") {
   const source = join(repo, "native", "input", "macos", "screen.mm");
   const dest = join(out, "main", "native", "screen.node");
   mkdirSync(dirname(dest), { recursive: true });
-  const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-framework", "AppKit", "-o", dest, source], { encoding: "utf8" });
+  const r = spawnSync("xcrun", ["clang++", "-x", "objective-c++", "-std=c++17", "-fobjc-arc", "-O2", "-arch", "arm64", "-mmacosx-version-min=14.0", "-shared", "-undefined", "dynamic_lookup", "-Wl,-install_name,@rpath/screen.node", "-framework", "AppKit", "-o", dest, source], { encoding: "utf8" });
   if (r.status !== 0) console.warn(`build: the screen add-on wasn't built (${(r.stderr || r.error?.message || "clang failed").trim().split("\n")[0]}); the app runs without it`);
 }
 

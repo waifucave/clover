@@ -81,6 +81,32 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     return fileResponse(file, type, { ...commonHeaders(), ...(type.startsWith("text/html") ? { "Content-Security-Policy": CORE_CSP } : {}) });
   });
 
+  // The sealed frames' own scheme (§5.5; E-M3): the frame's page answered once, served once, from the store's own
+  // copy of the card's sealed content. What runs in it is the page's own check (IOv2 in E-M3's next piece); its
+  // answers go over the preload's own channel (`clover:sealed-answer`). Nothing in production relaxes `isTrusted`
+  // or the open-delay: there is no `trust` knob. Serving is single-use per token (the store marks it); the token
+  // itself is 20 crypto-random bytes, so no header gate is needed.
+  ses.protocol.handle(SEALED_SCHEME, (request) => {
+    const url = new URL(request.url);
+    // Minted URLs are `clover-sealed://card/<cardId>/<element>?token=…` (parts and the fallback alike); the token's
+    // single use is the real gate.
+    if (url.host !== "card") {
+      log(`sealed: refusing a sealed load (bad host)`);
+      return notFound();
+    }
+    const token = url.searchParams.get("token");
+    if (token === null || token === "" || token.length > 128) {
+      log(`sealed: refusing a sealed load (bad token)`);
+      return forbidden();
+    }
+    const serving = runtime.serveSeal(token);
+    if (serving === undefined) {
+      log(`sealed: refusing a sealed load (no channel)`);
+      return forbidden();
+    }
+    return new Response(serving.html, { headers: serving.headers });
+  });
+
   ses.protocol.handle(LAYER_SCHEME, (request) => {
     const url = new URL(request.url);
     const layer = url.host;
@@ -127,9 +153,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       return fileResponse(file, type, layerHeaders(type));
     }
     if (url.pathname.startsWith("/_t/")) {
-      // A theme's or a layout's images and fonts, in every layer they reach (§5.5): only a plugin with themes, style
-      // entries or a bot's layout, only images and fonts, inside its folder. Never a document: an SVG opened as a
-      // page gets no origin.
+      // A theme's or a layout's images and fonts, and a bot's portrait (the core's `assetUrl`), in every layer they
+      // reach (§5.5): only a plugin with themes, style entries, a bot's layout or a bot, only images and fonts, inside
+      // its folder. Never a document: an SVG opened as a page gets no origin.
       const [, , encoded, ...rest] = url.pathname.split("/");
       let id: string;
       let path: string;
@@ -139,7 +165,7 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
       } catch {
         return notFound();
       }
-      const plugin = runtime.registry.find((p) => p.id === id && (p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined)));
+      const plugin = runtime.registry.find((p) => p.id === id && (p.isBot || p.themes.length > 0 || p.botLayout !== undefined || p.entries.some((e) => e.style !== undefined)));
       if (plugin === undefined) return forbidden();
       let file: string;
       try {
@@ -154,9 +180,8 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
     return notFound();
   });
 
-  // Sealed card frames are E-M3's.
-  ses.protocol.handle(SEALED_SCHEME, () => forbidden());
-
+  // The sealed frames' scheme: handled above with its own single-use serving (E-M3's own registration). The web
+  // scheme never carries a card (§5.5 "Where cards appear").
   const refused = new Set<string>();
   ses.webRequest.onBeforeRequest((details, callback) => {
     let protocolName = "";
@@ -182,10 +207,16 @@ export function guardContents(wc: WebContents, log: (line: string) => void): voi
   wc.on("will-navigate", (e) => e.preventDefault());
   wc.on("will-frame-navigate", (e) => {
     if (e.isMainFrame) {
-      if (!e.url.startsWith(`${CORE_SCHEME}://app/`)) e.preventDefault();
+      // A fallback card's own window is a main frame on the sealed scheme; every other main frame stays on the core.
+      if (!e.url.startsWith(`${CORE_SCHEME}://app/`) && !e.url.startsWith(`${SEALED_SCHEME}://`)) {
+        log(`layers: a window tried to leave for ${e.url.slice(0, 120)}`);
+        e.preventDefault();
+      }
       return;
     }
-    if (!e.url.startsWith(`${LAYER_SCHEME}://`)) {
+    // A sealed frame is an iframe on the sealed scheme inside a plugin's layer document; every other subframe stays
+    // on the layer scheme.
+    if (!e.url.startsWith(`${LAYER_SCHEME}://`) && !e.url.startsWith(`${SEALED_SCHEME}://`)) {
       log(`layers: a frame tried to leave for ${e.url.slice(0, 120)}`);
       e.preventDefault();
     }
@@ -246,6 +277,14 @@ export interface IpcHooks {
   webFrame(windowId: number, mount: string, web: { plugin: UiPlugin; web: Readonly<Record<string, unknown>> }, bounds: Rect | undefined): void;
   /** Shows a checked menu at a point in the window; the id picked, or null. */
   menu(windowId: number, items: MenuItem[], point: { x: number; y: number }): Promise<string | null>;
+  /** A sealed button's answer: the app signs it with the answer key over the frame's own channel (§5.5; E-M3), the
+   *  computer-use gate first, in the main process (B3). `senderKey` is the sender frame's own key, checked against the
+   *  mint's binding (B4). */
+  sealedAnswer(token: string, option: string | undefined, senderKey: string, children?: readonly string[]): Promise<{ accepted: boolean; reason?: string }>;
+  /** A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
+   *  a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
+   *  token was served to. */
+  sealedVisible(token: string, visible: boolean): void;
 }
 
 function rect(v: unknown): Rect | undefined {
@@ -473,6 +512,61 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (mount === undefined || token === undefined) throw new LayerError("bad request");
     return runtime.dragClaim(sender(event).frame, mount, token);
   });
+  // A sealed frame's own single-use URL: its part asks, the runtime mints (the plugin's `approvals` capability's own
+  // gate), and the scheme's handler serves once from the store's own copy of the card's sealed content.
+  handle("clover:sealed-frame", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    const cardId = str(a.cardId, 64);
+    const element = typeof a.element === "string" && (a.element.startsWith("field:") || a.element.startsWith("button:")) && a.element.length <= 80 ? a.element : undefined;
+    if (mount === undefined || cardId === undefined || element === undefined) throw new LayerError("bad sealed frame");
+    return runtime.sealedFrameOf(s.frame, mount, cardId, element);
+  });
+
+  // The sealed frames' answer: the sender is the sealed page itself (its own scheme), and the sender's key is what the
+  // mint bound (a part's channel, its document's own frame; the fallback's `own`, its window's main frame). The app
+  // signs it out of doors and takes the core's answer, with the gate first (B3, B4).
+  handle("clover:sealed-answer", (event, a) => {
+    try {
+      const f = event.senderFrame;
+      if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+      const token = str(a.token, 128);
+      const option = str(a.option, 64);
+      const ch = Array.isArray(a.children) && a.children.every((c: unknown) => typeof c === "string") ? a.children as readonly string[] : undefined;
+      if (token === undefined) throw new LayerError("bad sealed answer");
+      // The token in the message must be the one in the sender's own URL (B4): a frame holding another frame's token
+      // can't answer with it, and a plugin can't guess a fallback's `own` token and answer from its own page.
+      const urlToken = new URL(f.url).searchParams.get("token");
+      if (urlToken === null || urlToken !== token) throw new LayerError("bad sealed answer");
+      // The sender's own key, the binding the mint held: the page's own parent (a part's channel) or its own main frame
+      // (the fallback's `own`).
+      const key = f.parent !== null && !f.parent.detached
+        ? `p:${f.parent.processId}:${f.parent.routingId}`
+        : `m:${f.processId}:${f.routingId}`;
+      return hooks.sealedAnswer(token, option, key, ch);
+    } catch (err) {
+      if (err instanceof LayerError) log(`sealed: answer refused at handler (${err.message})`);
+      throw err;
+    }
+  });
+  // A sealed frame's page reports its own visibility (IOv2), so the main process can disarm the fallback once all of
+  // a card's buttons show (§5.5's fallback rule). Checked like the answer: the sender must be the sealed frame its
+  // token was served to, on the channel the mint bound (a part's document frame, the fallback's main frame).
+  on("clover:sealed-visible", (event, a) => {
+    const f = event.senderFrame;
+    if (f === null || f.detached || !f.url.startsWith("clover-sealed://")) throw new LayerError("not a sealed frame");
+    const token = str(a.token, 128);
+    const visible = typeof a.visible === "boolean" ? a.visible : undefined;
+    if (token === undefined || visible === undefined) throw new LayerError("bad sealed visibility");
+    const urlToken = new URL(f.url).searchParams.get("token");
+    if (urlToken === null || urlToken !== token) throw new LayerError("bad sealed visibility");
+    const key = f.parent !== null && !f.parent.detached
+      ? `p:${f.parent.processId}:${f.parent.routingId}`
+      : `m:${f.processId}:${f.routingId}`;
+    const bound = runtime.boundOf(token);
+    if (bound === undefined || bound !== key) throw new LayerError("bad sealed visibility");
+    return hooks.sealedVisible(token, visible);
+  });
   // The root's own calls: only from a window's main frame on the core's origin.
   const fromRoot = (event: IpcMainEvent | IpcMainInvokeEvent): number | undefined => {
     const f = event.senderFrame;
@@ -497,7 +591,7 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
     for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
   };
 }

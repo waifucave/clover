@@ -96,6 +96,27 @@ export function electronBuilderArgs(arch: LinuxArch, formats: readonly LinuxForm
 export const LINK_BUILD = ["cargo", "build", "--release", "--locked", "--manifest-path", "native/link/Cargo.toml"] as const;
 export const LINK_OUTPUT = "native/link/target/release/clover-link";
 
+/**
+ * The privacy scrub for the sidecar's build: a Rust binary keeps the absolute paths of the sources it was built from
+ * (for panic messages), which on the owner's Mac name their home folder. They are remapped to fixed names: the
+ * home folder to /home, the cargo home to /cargo, the checkout to /clover. Any RUSTFLAGS already set come first.
+ */
+export function linkBuildEnv(env: Record<string, string | undefined>, root: string): Record<string, string | undefined> {
+  const home = env.HOME ?? env.USERPROFILE;
+  const cargoHome = env.CARGO_HOME ?? (home === undefined ? undefined : join(home, ".cargo"));
+  // rustc takes the last remapping that matches, so the home folder comes first and the paths inside it after.
+  const remaps = [
+    ...(home === undefined ? [] : [`--remap-path-prefix=${home}=/home`]),
+    ...(cargoHome === undefined ? [] : [`--remap-path-prefix=${cargoHome}=/cargo`]),
+    `--remap-path-prefix=${root}=/clover`,
+  ];
+  // CARGO_ENCODED_RUSTFLAGS, one flag per 0x1f: a path with a space (the owner's checkout has one) stays one flag.
+  // Flags already set (either form) come first; RUSTFLAGS is then dropped, as cargo would ignore it.
+  const before = env.CARGO_ENCODED_RUSTFLAGS ? env.CARGO_ENCODED_RUSTFLAGS.split("\x1f") : (env.RUSTFLAGS ?? "").split(" ").filter(Boolean);
+  const { RUSTFLAGS: _dropped, ...rest } = env;
+  return { ...rest, CARGO_ENCODED_RUSTFLAGS: [...before, ...remaps].join("\x1f") };
+}
+
 /** What a package must hold: the daemon, its link sidecar beside it, the AppArmor profile in the app's resources, and
  *  each bundled top-level plugin's manifest in resources/plugins (the registry's `bundledDirs`). */
 export const REQUIRED_FILES = [
@@ -228,6 +249,9 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
     return 1;
   }
   rmSync(outDir, { recursive: true, force: true });
+  // The sidecar's build carries no path of this machine's (linkBuildEnv).
+  process.env.CARGO_ENCODED_RUSTFLAGS = linkBuildEnv(process.env, root).CARGO_ENCODED_RUSTFLAGS;
+  delete process.env.RUSTFLAGS;
   const version = (JSON.parse(readFileSync(join(desktop, "package.json"), "utf8")) as { version: string }).version;
   // The bundled plugins: built per architecture from the committed files only, where electron-builder.yml packs them,
   // and measured into the manifest that architecture's daemon carries; the stages removed however the build ends (a

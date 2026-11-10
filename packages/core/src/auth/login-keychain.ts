@@ -25,12 +25,13 @@ import { accountHome } from "../startup-guard";
 import { ERR_SEC_NO_SUCH_KEYCHAIN, KeychainFfiError, openKeychainFile, openKeychainPath, type KeychainFile } from "./keychain-ffi";
 import { keychainWorkerBackend } from "./keychain-worker";
 
-/** Names a throwaway test keychain file for a test daemon (non-release builds only). */
-export const TEST_KEYCHAIN_ENV = "CLOVER_TEST_KEYCHAIN";
+import { TEST_KEYCHAIN_ENV, UNDER_TEST_ENV } from "./test-isolation";
+
+/** Names a throwaway test keychain file for a test daemon (non-release builds only); any of `UNDER_TEST_ENV` in the
+ *  environment means a test preload set this process up: the real login keychain is refused (test-isolation.ts). */
+export { TEST_KEYCHAIN_ENV, UNDER_TEST_ENV };
 /** Every throwaway test keychain's password (it guards nothing: the file is a test's own, in its temp root). */
 export const TEST_KEYCHAIN_PASSWORD = "clover-throwaway-test-keychain";
-/** Any of these in the environment means a test preload set this process up: the real login keychain is refused. */
-export const UNDER_TEST_ENV = ["CLOVER_KEYCHAIN_SERVICE", "WINTER_TEST_KEYCHAIN", TEST_KEYCHAIN_ENV] as const;
 
 /** `<pw_dir>/Library/Keychains/login.keychain-db`, by real path. Throws when the account's home can't be read. */
 export function loginKeychainPath(account: () => string | undefined = accountHome): string {

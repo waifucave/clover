@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PLUGIN_API_VERSION } from "@waifucave/clover-plugin-sdk";
 import { measureBundledTree } from "../../bundled-plugins-dir";
 import { FakeApprovalBroker } from "../../contracts/fakes/approval-broker";
 import { FakeClock } from "../../contracts/fakes/clock";
@@ -40,6 +41,45 @@ describe("stageBundledPlugins", () => {
   });
 });
 
+describe("a bundled plugin runs only verified bytes", () => {
+  test("every module of its tree is checked at load: a lib rewritten, or a file planted, after staging is refused, and its code never runs (#322's review, S2)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "clover-b2-verified-"));
+    const root = join(home, "resources", "plugins");
+    const tree = join(root, "ledger");
+    mkdirSync(join(tree, "host"), { recursive: true });
+    writeFileSync(join(tree, "clover.json"), JSON.stringify({ manifest: 1, id: "ledger", name: "Ledger", version: "1.0.0", engines: { clover: `^${PLUGIN_API_VERSION}` }, host: { entry: "host/index.js" } }));
+    writeFileSync(join(tree, "package.json"), JSON.stringify({ type: "module" }));
+    writeFileSync(join(tree, "host", "index.js"), `export const total = async () => (await import("./lib.js")).total();\nexport const extra = async () => (await import("./extra.js")).x;\n`);
+    writeFileSync(join(tree, "host", "lib.js"), "export const total = () => 42;\n");
+    const staged = stageBundledPlugins({ root, manifest: measureBundledTree(root), out: stagedBundledDir(home) });
+    expect(staged.staged).toEqual(["ledger"]);
+    const broker = new FakeApprovalBroker({ clock: new FakeClock() });
+    const secrets = new MemorySecretStore();
+    mkdirSync(join(home, "plugins"), { recursive: true });
+    const opened = await openPluginRegistry({ cloverHome: home, os: "macos", broker, secrets, bundledDirs: [staged.dir!], settleMs: 50 });
+    const ph = await startPluginHost({ home, computer: "Studio", registry: opened.registry, secrets, bundledDigests: staged.digests });
+    const mark = join(home, "tampered-ran");
+    const USER = { kind: "user", client: "app" } as const;
+    try {
+      expect(await ph.host.invoke({ pluginId: "ledger", handler: "total", args: null, caller: USER })).toBe(42);
+      // A file planted in the verified copy after staging has no digest: refused.
+      writeFileSync(join(stagedBundledDir(home), "ledger", "host", "extra.js"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\nexport const x = 1;\n`);
+      const planted = await ph.host.invoke({ pluginId: "ledger", handler: "extra", args: null, caller: USER }).then(() => "ran", (e: Error) => e.message);
+      expect(planted).toContain("no verified copy recorded");
+      // A lib rewritten after staging: refused at its load, after a restart.
+      await ph.host.stop("ledger", "test");
+      writeFileSync(join(stagedBundledDir(home), "ledger", "host", "lib.js"), `require("node:fs").writeFileSync(${JSON.stringify(mark)}, "ran");\nexport const total = () => 0;\n`);
+      await Promise.race([ph.host.restart("ledger").catch(() => {}), Bun.sleep(10_000)]);
+      const rewritten = await ph.host.invoke({ pluginId: "ledger", handler: "total", args: null, caller: USER }).then(() => "ran", (e: Error) => e.message);
+      expect(rewritten).toContain("isn't the bundled code Clover verified");
+      expect(existsSync(mark)).toBe(false);
+    } finally {
+      await ph.close();
+      opened.close();
+    }
+  }, 60_000);
+});
+
 describe("the dev stage from the repository's plugins/", () => {
   test("every bundled plugin loads, and each one with Bun host code starts through the plugin host", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-devstage-"));
@@ -73,8 +113,7 @@ describe("the dev stage from the repository's plugins/", () => {
       // registry, `adoptLink` and its `pairs` store, plugins/clover/plugins/companion-web/host/api.ts), which isn't in the
       // plugin API yet. Anything else that fails to start fails this test; fixing that one updates it.
       expect(failed.map((f) => f.split(":")[0])).toEqual(["clover/companion-web"]);
-      // (Until B-M2's API PR serves settings, its first call to fail is `settings.get`; after it, `pairs.list`.)
-      expect(failed[0]).toMatch(/settings\.get is not served on this computer|pairs\.list isn't a call of the plugin API/);
+      expect(failed[0]).toContain("pairs.list isn't a call of the plugin API");
 
       // #322's review, S2: a bundled entry rewritten after staging (run/bundled-plugins/clover/...) is refused at load,
       // and its new code never runs.

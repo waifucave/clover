@@ -11,6 +11,8 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, resolve, sep } from "node:path";
 import type { Contribution, PluginRecord, PluginRegistry } from "../contracts/plugin-registry";
 import type { BotEntry } from "../contracts/sdk-types";
+import { plainOf } from "../approvals/strings";
+import { MODEL_ID_RE } from "./user-layer";
 
 /** The longest `<bot-instructions>` a bot's plugin may give, as the user layer's (protocol `UserLayerPatch`). */
 export const INSTRUCTIONS_MAX_CHARS = 200_000;
@@ -61,6 +63,11 @@ export function loadPluginBot(record: Pick<PluginRecord, "id" | "folder">, entry
   const instructions = readText(record.folder, entry.instructions, INSTRUCTIONS_MAX_CHARS);
   if (!instructions.ok) return { ok: false, id: record.id, reason: `its instructions: ${instructions.reason}` };
   if (instructions.text.trim() === "") return { ok: false, id: record.id, reason: "its instructions are empty" };
+  // A model the plugin names must be a qualified id (`<provider>/<model>`): its provider is what the user is asked
+  // about, and nothing else may ride in the tag (#311 B2).
+  if (entry.model !== undefined && !MODEL_ID_RE.test(entry.model.default)) {
+    return { ok: false, id: record.id, reason: `its model "${plainOf(entry.model.default).slice(0, 200)}" isn't a qualified model id (<provider>/<model>)` };
+  }
   const bot: PluginBot = { id: record.id, folder: record.folder, entry: structuredClone(entry), instructions: instructions.text };
   if (entry.greeting !== undefined) {
     const greeting = readText(record.folder, entry.greeting, GREETING_MAX_CHARS);

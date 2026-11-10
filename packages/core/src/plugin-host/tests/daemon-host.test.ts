@@ -1,6 +1,7 @@
 // The daemon's one plugin host (`startPluginHost`) over a real plugin registry and a real plugin-host process: a
-// plugin's handler runs in its worker, its API calls reach the router, its console reaches its log, and switching it off
-// drops it. Temp homes, the fake approval broker and an in-memory secret store; nothing opens a window.
+// plugin's handler runs in its worker, its API calls reach the router (and handlers added after start, behind its gate),
+// its console reaches its log, and switching it off drops it. Temp homes, the fake approval broker and an in-memory
+// secret store; nothing opens a window.
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,10 +15,16 @@ import { MemorySecretStore } from "../../contracts/fakes/secret-store";
 import { openPluginRegistry } from "../../registry/open";
 import { hostedRecordOf, pluginLogWriter, startPluginHost } from "../daemon-host";
 
+/** Waits for an OK'd plugin to leave "found" (its start runs after the answer), up to 5 s: a fixed sleep lost the race
+ *  under a loaded machine. */
+async function approved(registry: { get(id: string): { state: string } | undefined }, id: string): Promise<void> {
+  for (let i = 0; i < 500 && registry.get(id)?.state === "found"; i++) await Bun.sleep(10);
+}
+
 const USER: Caller = { kind: "user", client: "app" };
 
 describe("startPluginHost", () => {
-  test("a plugin's handler runs in the host process, its API calls reach the gate, its console is its log, and switching it off drops it", async () => {
+  test("a plugin's handler runs in the host process, its API calls are served, its console is its log, and switching it off drops it", async () => {
     const home = mkdtempSync(join(tmpdir(), "clover-b2-daemon-host-"));
     const folder = join(home, "plugins", "tarot");
     mkdirSync(join(folder, "host"), { recursive: true });
@@ -26,10 +33,11 @@ describe("startPluginHost", () => {
     writeFileSync(join(folder, "host", "index.js"), [
       "export const remember = async (args, ctx) => {",
       "  console.log(\"remembering \" + args.card);",
-      "  return { last: args.card, computer: ctx.computer };",
+      "  await ctx.api.storage.synced.set(\"last\", args.card);",
+      "  return { last: await ctx.api.storage.synced.get(\"last\"), computer: ctx.computer };",
       "};",
-      "export const store = async (args, ctx) => ctx.api.storage.synced.set(\"last\", args.card);",
       "export const forbidden = async (args, ctx) => ctx.api.secrets.get(\"key\");",
+      "export const say = async (args, ctx) => ctx.api.t(args.key);",
       "",
     ].join("\n"));
     const broker = new FakeApprovalBroker({ clock: new FakeClock() });
@@ -42,18 +50,34 @@ describe("startPluginHost", () => {
       const { card } = await opened.registry.installed("tarot", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "tarot");
       expect(opened.registry.get("tarot")?.state).toBe("running");
       expect(hostedRecordOf(opened.registry, home, "tarot")).toMatchObject({ id: "tarot", folder, root: folder, entry: "host/index.js" });
 
       expect(await ph.host.invoke({ pluginId: "tarot", handler: "remember", args: { card: "The Fool" }, caller: USER })).toEqual({ last: "The Fool", computer: "Studio" });
-        // No area is served yet (B-M2's API PR adds them): a call the gate lets through answers "not served".
-      const notServed = (await ph.host.invoke({ pluginId: "tarot", handler: "store", args: { card: "x" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
-      expect(notServed.message).toContain("storage.synced.set is not served on this computer");
+      expect(JSON.parse(readFileSync(join(home, "settings", "plugin-stores", "tarot.json"), "utf8"))).toEqual({ last: "The Fool" });
+      // A handler added after start serves at once, behind the same gate; a path a core area already serves is refused,
+      // and taking it away leaves the call unserved again.
+      const notServed = (await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
+      expect(notServed.message).toContain("t is not served on this computer");
+      const seen: unknown[] = [];
+      const offT = ph.addApiHandlers({ t: (ctx, args) => { seen.push([ctx.pluginId, ctx.process, args[0]]); return "Hello"; } });
+      expect(await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER })).toBe("Hello");
+      expect(seen).toEqual([["tarot", "shared", "hello"]]);
+      expect(() => ph.addApiHandlers({ t: () => "other" })).toThrow("already served");
+      expect(() => ph.addApiHandlers({ "storage.synced.set": () => "other" })).toThrow("already served");
+      expect(() => ph.addApiHandlers({ "nope.call": () => 1 } as never)).toThrow("isn't a call of the plugin API");
+      expect(() => ph.addApiHandlers({ "net.fetch": "no" } as never)).toThrow("isn't a function");
+      const offSecrets = ph.addApiHandlers({ "secrets.get": () => "leaked" });
+      offT();
+      offT();
+      const again = (await ph.host.invoke({ pluginId: "tarot", handler: "say", args: { key: "hello" }, caller: USER }).catch((x: unknown) => x)) as ContractError;
+      expect(again.message).toContain("t is not served on this computer");
       // A call the plugin may not make here (`secrets.get` outside a process of its own) is refused by the router.
       const refused = (await ph.host.invoke({ pluginId: "tarot", handler: "forbidden", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(refused).toBeInstanceOf(ContractError);
       expect(refused.message).toContain("secrets.get");
+      offSecrets();
       // The worker's console, in the plugin's own log.
       const logFile = join(home, "logs", "plugins", "tarot.log");
       for (let i = 0; i < 50 && !(existsSync(logFile) && readFileSync(logFile, "utf8").includes("remembering")); i++) await Bun.sleep(20);
@@ -96,7 +120,7 @@ describe("startPluginHost", () => {
       const { card } = await opened.registry.installed("tarot", "app");
       const shown = broker.cards().find((c) => c.id === card)!;
       await broker.answer(card!, { optionId: "approve", hash: shown.hash, proof: { via: "sealed-frame", frame: broker.frameChannel(card!)!, input: "click", at: Date.now() } }, { role: "app" });
-      await Bun.sleep(5);
+      await approved(opened.registry, "tarot");
       const err = (await ph.host.invoke({ pluginId: "tarot", handler: "hi", args: null, caller: USER }).catch((x: unknown) => x)) as ContractError;
       expect(err).toBeInstanceOf(ContractError);
       expect(err.message).toContain("no host bundles in this build");

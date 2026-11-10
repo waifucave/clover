@@ -14,7 +14,7 @@ import { OTHER_INSTALL_KEYCHAIN_SERVICES, pinnedSecretsBackend, TEST_KEYCHAIN_EN
 /** Every throwaway service starts with this; it can never equal a real one. */
 export const TEST_SERVICE_PREFIX = "com.waifucave.clover.core.test.";
 
-/** Set by scripts/with-private-secret-service.sh: the session bus is the wrapper's private one. */
+/** Set by scripts/with-private-secret-service.sh, inside its private bus, to that bus's address. */
 export const PRIVATE_SECRET_SERVICE_ENV = "CLOVER_PRIVATE_SECRET_SERVICE";
 
 /** Services a test must never read or write: Clover's own, and the other installs' (core's `other-installs.ts`). */
@@ -39,7 +39,9 @@ export function assertThrowawayService(service: string): void {
 
 /** Whether a throwaway OS store can be made here: on Linux only inside the private bus wrapper. */
 export function throwawaySecretStoreAvailable(env: Record<string, string | undefined> = process.env, platform: NodeJS.Platform = process.platform): boolean {
-  return secretBackend(platform) !== "secret-service" || env[PRIVATE_SECRET_SERVICE_ENV] === "1";
+  // The session bus must be the wrapper's own: the variable names its address (core's `privateBus`).
+  const named = env[PRIVATE_SECRET_SERVICE_ENV];
+  return secretBackend(platform) !== "secret-service" || (named !== undefined && /^(unix|tcp):/.test(named) && named === env.DBUS_SESSION_BUS_ADDRESS);
 }
 
 export interface ThrowawaySecretStore {

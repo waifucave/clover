@@ -9,13 +9,16 @@
 // absolute form, `//` + the absolute path, built with the daemon's own `fsRootAnchored` (ruling 2).
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   projectWalk, protectedPathsFor, protectedReadDenial, protectedWriteDecision, storeWriteDenial,
 } from "../../src/runtime-sdk/protected-paths";
+import { fsRootAnchored, persistencePaths } from "../../src/runtime-sdk/mode-options";
 
 const real = (p: string): string => realpathSync(mkdtempSync(join(tmpdir(), p)));
+/** The #301 review's persistence places under `userHome`, as the set spells them (persistence.test.ts). */
+const RUN_LATER = (userHome: string = homedir()): string[] => persistencePaths(userHome).map((p) => `${fsRootAnchored(p)}/**`);
 
 describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute spelling", () => {
   test("no trusted project: the sdk tier alone", () => {
@@ -25,6 +28,7 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
       "//Users/x/.clover/sdk/rules/**",
       "//Users/x/.clover/sdk/output-styles/**",
       "//Users/x/.clover/sdk/CLOVER.md",
+      ...RUN_LATER(),
     ]);
   });
 
@@ -36,6 +40,7 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
       "//Users/x/.clover/sdk/rules/**",
       "//Users/x/.clover/sdk/output-styles/**",
       "//Users/x/.clover/sdk/CLOVER.md",
+      ...RUN_LATER(),
       "//Users/x/code/app/.clover/skills/**",
       "//Users/x/code/app/.clover/commands/**",
       "//Users/x/code/app/.clover/rules/**",
@@ -51,6 +56,7 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
       "//Users/x/.clover/sdk/rules/**",
       "//Users/x/.clover/sdk/output-styles/**",
       "//Users/x/.clover/sdk/CLOVER.md",
+      ...RUN_LATER("/Users/x"),
       "//Users/x/code/app/packages/web/.clover/skills/**",
       "//Users/x/code/app/packages/web/.clover/commands/**",
       "//Users/x/code/app/packages/web/.clover/rules/**",
@@ -73,11 +79,14 @@ describe("protectedPathsFor — spec §7.2's literal set, in claude's absolute s
     expect(projectWalk("/elsewhere", "/Users/x/code/app", "/Users/x")).toEqual([]);
     expect(projectWalk("/Users/x/code/app", null, "/Users/x")).toEqual([]);
     // a trusted root at $HOME protects nothing of its own tier
-    expect(protectedPathsFor("/h", "/Users/x", { cwd: "/Users/x", userHome: "/Users/x" })).toHaveLength(5);
+    expect(protectedPathsFor("/h", "/Users/x", { cwd: "/Users/x", userHome: "/Users/x" })).toHaveLength(5 + RUN_LATER("/Users/x").length);
   });
 
   test("as Edit/Write rules it is exactly the router's protectedPathRules output (hand mirror at aa5201e, no walk)", () => {
-    const rules = ["Edit", "Write"].flatMap((t) => protectedPathsFor("/h", "/r").map((p) => `${t}(${p})`));
+    // The router's list, and Clover's own persistence places (the #301 review) on top of it.
+    const clovers = new Set(RUN_LATER());
+    const rules = ["Edit", "Write"].flatMap((t) => protectedPathsFor("/h", "/r").filter((p) => !clovers.has(p)).map((p) => `${t}(${p})`));
+    expect(protectedPathsFor("/h", "/r").filter((p) => clovers.has(p))).toEqual([...clovers]);
     const routerMirror = ["Edit", "Write"].flatMap((t) => [
       "//h/sdk/skills/**", "//h/sdk/commands/**", "//h/sdk/rules/**", "//h/sdk/output-styles/**", "//h/sdk/CLOVER.md",
       "//r/.clover/skills/**", "//r/.clover/commands/**", "//r/.clover/rules/**", "//r/.clover/output-styles/**",

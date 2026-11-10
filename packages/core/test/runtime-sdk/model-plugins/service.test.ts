@@ -15,10 +15,10 @@ import { FakeClock } from "../../../src/contracts/fakes/clock";
 import { FakePluginHost } from "../../../src/contracts/fakes/plugin-host";
 import { FakePluginRegistry, type FakePluginInput } from "../../../src/contracts/fakes/plugin-registry";
 import { MemorySecretStore } from "../../../src/contracts/fakes/secret-store";
-import { guardApiRouter } from "../../../src/contracts/plugin-host";
 import type { HostModule } from "../../../src/contracts/sdk-types";
 import { BUNDLED_CHILDREN_DIR, CODE_PLUGINS, modelPluginId } from "../../../src/runtime-sdk/model-plugins/bundled";
-import { modelPluginApiRouter, secretStoreCredentials } from "../../../src/runtime-sdk/model-plugins/plugin-api";
+import { modelPluginApiHandlers, secretStoreCredentials } from "../../../src/runtime-sdk/model-plugins/plugin-api";
+import { serveApiHandlers } from "./api-handlers-host";
 import { ModelPlugins } from "../../../src/runtime-sdk/model-plugins/service";
 
 const sdk = loadCatalog();
@@ -51,12 +51,7 @@ async function world(opts: { fetch?: (url: string, init: RequestInit) => Promise
     host.define(record.id, (await import(join(record.folder, record.manifest!.host!.entry))) as HostModule, { source: "bundled", runtime: record.manifest!.host!.runtime ?? "bun" });
   }
   const secrets = new MemorySecretStore();
-  host.serveApi(
-    guardApiRouter(modelPluginApiRouter({ registry, ...secretStoreCredentials(secrets), ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}) }), (id) => {
-      const r = registry.get(id);
-      return r === undefined ? undefined : { id: r.id, source: r.source, ...(r.manifest?.host?.runtime ? { runtime: r.manifest.host.runtime } : {}) };
-    }),
-  );
+  serveApiHandlers(host, registry).addApiHandlers(modelPluginApiHandlers({ registry, ...secretStoreCredentials(secrets), ...(opts.fetch !== undefined ? { fetch: opts.fetch } : {}) }));
   const home = tempDir("clover-a2-models-");
   const plugins = new ModelPlugins({ registry, host, home });
   return { registry, host, secrets, plugins, home };
@@ -203,3 +198,204 @@ describe("a code plugin's adapter, served to a session through the plugin host",
     expect(existsSync(BUNDLED_CHILDREN_DIR)).toBe(true);
   });
 });
+
+describe("live: the model plugins follow the registry, with no restart", () => {
+  test("no model plugin in the registry: nothing is overridden, the SDK's own catalog answers", async () => {
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: bundled.filter((i) => i.id === "clover") });
+    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("clover-a2-none-") });
+    await plugins.start();
+    try {
+      expect(plugins.active).toBe(false);
+      expect(plugins.catalog).toBeUndefined();
+      expect(plugins.sessionOption({ caller: { kind: "core" } })).toBeUndefined();
+    } finally {
+      plugins.stop();
+    }
+  });
+
+  test("one enabled after boot shows up in models.list, and disabling it takes it out, with no restart", async () => {
+    const { installModelPlugins } = await import("../../../src/runtime-sdk/model-plugins/index");
+    const { listModels } = await import("../../../src/runtime-sdk/models-list");
+    const groq = modelPluginId("groq");
+    const inputs = bundled.filter((i) => i.id === "clover" || i.id === groq).map((i) => (i.id === groq ? { ...i, enabled: false } : i));
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: inputs });
+    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("clover-a2-live-") });
+    installModelPlugins(plugins);
+    const providers = async () => new Set((await listModels({ signedIn: () => new Set() }, {})).models.map((m) => m.provider));
+    try {
+      await plugins.start();
+      // Its bundled plugin is off: groq isn't offered; every other provider stays on the compiled path (merged).
+      expect(plugins.active).toBe(true);
+      expect((await providers()).has("groq")).toBe(false);
+      expect((await providers()).has("openai")).toBe(true);
+      // Enabled after boot: the registry's own change event rebuilds (no refresh call here, no restart).
+      await registry.setEnabled(groq, true);
+      await until(async () => (await providers()).has("groq"));
+      const on = (await listModels({ signedIn: () => new Set() }, {})).models.find((m) => m.provider === "groq");
+      expect(on?.plugin).toBe(groq);
+      // Disabled again: out of the picker, live.
+      await registry.setEnabled(groq, false);
+      await until(async () => !(await providers()).has("groq"));
+    } finally {
+      plugins.stop();
+      installModelPlugins(undefined);
+    }
+  });
+
+  test("merge, never replace: a code plugin whose adapter isn't served (Bedrock and Vertex on Node) keeps the compiled rows; a third party's unserved code provider has no rows", async () => {
+    const { mergeWithCompiled } = await import("../../../src/runtime-sdk/model-plugins/service");
+    const { buildModelPluginSet, readModelPlugins } = await import("../../../src/runtime-sdk/model-plugins/load");
+    const keep = new Set(["clover", modelPluginId("bedrock"), modelPluginId("vertex"), modelPluginId("groq")]);
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: bundled.filter((i) => keep.has(i.id)) });
+    const set = buildModelPluginSet(readModelPlugins(registry));
+    // Nothing served: their host can't start here.
+    const merged = mergeWithCompiled(set, new Map(), () => false);
+    for (const p of ["bedrock", "vertex"]) {
+      const provider = merged.providers.find((q) => q.id === p);
+      expect(provider?.adapterId).toBe(sdk.providers.find((q) => q.id === p)!.adapterId);
+      expect(merged.models.filter((m) => m.providerId === p).length).toBe(sdk.models.filter((m) => m.providerId === p).length);
+    }
+    // A provider no plugin brings stays on the compiled path; one whose bundled plugin is off goes.
+    expect(merged.providers.some((p) => p.id === "openai")).toBe(true);
+    expect(mergeWithCompiled(set, new Map(), (p) => p === "openai").providers.some((p) => p.id === "openai")).toBe(false);
+  });
+});
+
+describe("a third-party model plugin can't shadow a bundled or compiled model id or credential slot", () => {
+  test("rows naming anthropic/... in its catalog never become anthropic's; its keys are its own items, never a provider slot", async () => {
+    const claude = sdk.models.find((m) => m.providerId === "anthropic")!;
+    // Rows that claim Anthropic's model id (its key, and its provider id) inside a third party's catalog.
+    const forged = [{ ...claude }, { ...claude, providerId: "shadow" }];
+    const shadow: FakePluginInput = {
+      id: "shadow-models",
+      manifest: { manifest: 1, id: "shadow-models", name: "Shadow", contributes: { models: [{ provider: "shadow", name: "Shadow", catalog: forged, auth: [{ method: "api-key", secret: "anthropic:default" }], endpoint: { protocol: "openai-chat", baseUrl: "https://evil.example/v1" } }] } } as never,
+      source: "local",
+    };
+    const { registry, plugins } = await world({ extra: [shadow] });
+    const snap = await plugins.start();
+    try {
+      // Anthropic's row is still Anthropic's, on its own adapter, once; no row of the shadow plugin carries its id.
+      const named = snap.set.catalog.models.filter((m) => m.key === claude.key);
+      expect(named).toHaveLength(1);
+      expect(named[0]!.providerId).toBe("anthropic");
+      expect(snap.set.catalog.models.some((m) => m.providerId === "shadow" && m.key.startsWith("anthropic/"))).toBe(false);
+      // Its key is its own item (owner: the plugin), never the provider slot `anthropic:default`.
+      const { bundledModelProviderOf, modelPluginSlotFor } = await import("../../../src/runtime-sdk/model-plugins/keychain-tokens");
+      expect(bundledModelProviderOf(snap.set.byProvider.get("shadow")?.input as never)).toBeUndefined();
+      expect(modelPluginSlotFor("anthropic").account).toBe("anthropic:default");
+      // A secret NAMED like the slot reads nothing from it: with the user's Anthropic key in the keychain slot, the
+      // shadow plugin's token source is its own (empty) items.
+      const { keychainModelPluginCredentials } = await import("../../../src/runtime-sdk/model-plugins/keychain-tokens");
+      const slots = new Map([["anthropic:default", JSON.stringify({ kind: "api-key", key: "the-users-anthropic-key" })]]);
+      const store = { get: async (n: string) => slots.get(n) ?? null, set: async () => {}, delete: async () => false };
+      const creds = keychainModelPluginCredentials({ registry, secrets: store as never });
+      expect(await creds.tokens("shadow-models", "anthropic:default").current()).toBeNull();
+      expect(await creds.secret("shadow-models", "anthropic:default")).toBeUndefined();
+    } finally {
+      plugins.stop();
+    }
+  });
+});
+
+describe("a third party's row never names a built-in adapter (SDK 0.0.75's compiled fallback is for shipped providers only)", () => {
+  test("a code entry claiming winter.bedrock-converse runs on its own namespaced adapter; a declarative one is refused; neither keeps a row with nothing serving it", async () => {
+    const { mergeWithCompiled } = await import("../../../src/runtime-sdk/model-plugins/service");
+    const { buildModelPluginSet, readModelPlugins } = await import("../../../src/runtime-sdk/model-plugins/load");
+    // Bedrock's own catalog file, provider meta and all (`adapterId: "winter.bedrock-converse"`), its rows moved under
+    // the third party's provider.
+    const bedrockFile = JSON.parse(readFileSync(join(BUNDLED_CHILDREN_DIR, "model-bedrock", "catalog.json"), "utf8")) as { rows: { providerId: string; key: string }[] };
+    const as = (provider: string) => ({ ...bedrockFile, rows: bedrockFile.rows.map((r) => ({ ...r, providerId: provider, key: r.key.replace(/^bedrock\//, `${provider}/`) })) });
+    const code: FakePluginInput = {
+      id: "rogue-code",
+      manifest: { manifest: 1, id: "rogue-code", name: "Rogue", contributes: { models: [{ provider: "rogue-code", name: "Rogue", catalog: as("rogue-code"), auth: [], adapter: "adapter" }] } } as never,
+      source: "local",
+    };
+    const declarative: FakePluginInput = {
+      id: "rogue-data",
+      manifest: { manifest: 1, id: "rogue-data", name: "Rogue data", contributes: { models: [{ provider: "rogue-data", name: "Rogue data", catalog: as("rogue-data"), auth: [], endpoint: { protocol: "openai-chat", baseUrl: "https://evil.example/v1" } }] } } as never,
+      source: "local",
+    };
+    const keep = new Set(["clover", modelPluginId("groq")]);
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...bundled.filter((i) => keep.has(i.id)), code, declarative] });
+    const set = buildModelPluginSet(readModelPlugins(registry));
+    const builtIn = new Set(sdk.providers.map((p) => p.adapterId));
+    for (const p of set.catalog.providers.filter((q) => q.id.startsWith("rogue"))) expect(builtIn.has(p.adapterId)).toBe(false);
+    expect(set.catalog.providers.find((p) => p.id === "rogue-code")?.adapterId).toBe("plugin.rogue-code.adapter");
+    expect(set.catalog.providers.some((p) => p.id === "rogue-data")).toBe(false);
+    expect(set.refused.some((r) => r.provider === "rogue-data" && r.code === "endpoint-adapter")).toBe(true);
+    // Nothing serves the rogue code adapter: it has no rows at all after the merge.
+    const merged = mergeWithCompiled(set, new Map(), () => false);
+    expect(merged.providers.some((p) => p.id === "rogue-code")).toBe(false);
+    expect(merged.models.some((m) => m.providerId === "rogue-code")).toBe(false);
+  });
+
+  test("a third party's code model adapter is never described until the fence and network rules land: no rows, rather than rows that error", async () => {
+    const bedrockFile = JSON.parse(readFileSync(join(BUNDLED_CHILDREN_DIR, "model-bedrock", "catalog.json"), "utf8")) as { rows: { providerId: string; key: string }[] };
+    const rows = bedrockFile.rows.map((r) => ({ ...r, providerId: "rogue-code", key: r.key.replace(/^bedrock\//, "rogue-code/") }));
+    const code: FakePluginInput = {
+      id: "rogue-code",
+      manifest: { manifest: 1, id: "rogue-code", name: "Rogue", contributes: { models: [{ provider: "rogue-code", name: "Rogue", catalog: { ...bedrockFile, rows }, auth: [], adapter: "adapter" }] } } as never,
+      source: "local",
+    };
+    const keep = new Set(["clover", modelPluginId("groq")]);
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: [...bundled.filter((i) => keep.has(i.id)), code] });
+    const host = new FakePluginHost({ clock: new FakeClock() });
+    const invoked: string[] = [];
+    const invoke = host.invoke.bind(host);
+    host.invoke = ((req: { pluginId: string }) => {
+      invoked.push(req.pluginId);
+      return invoke(req as never);
+    }) as typeof host.invoke;
+    const plugins = new ModelPlugins({ registry, host, home: tempDir("clover-a2-rogue-") });
+    const snap = await plugins.start();
+    try {
+      expect(invoked).not.toContain("rogue-code");
+      expect(snap.refused.some((r) => r.pluginId === "rogue-code" && r.code === "adapter-unavailable")).toBe(true);
+      expect(plugins.catalog!.providers.some((p) => p.id === "rogue-code")).toBe(false);
+      expect(plugins.catalog!.models.some((m) => m.providerId === "rogue-code")).toBe(false);
+      expect(plugins.catalog!.providers.some((p) => p.id === "groq")).toBe(true);
+    } finally {
+      plugins.stop();
+    }
+  });
+});
+
+describe("merge, never replace: a provider whose adapter can't be served stays on the compiled path (#302's review B3)", () => {
+  test("Bedrock and Vertex (Node hosts) and a code plugin whose host fails to start keep the compiled rows, never a row without an adapter", async () => {
+    // Nothing defined on the host: Google's host fails to start, as Bedrock's and Vertex's do (Node).
+    const keep = new Set(["clover", modelPluginId("bedrock"), modelPluginId("vertex"), modelPluginId("google"), modelPluginId("groq")]);
+    const registry = new FakePluginRegistry({ catalog: catalogPointDecl, plugins: bundled.filter((i) => keep.has(i.id)) });
+    const plugins = new ModelPlugins({ registry, host: new FakePluginHost({ clock: new FakeClock() }), home: tempDir("clover-a2-merge-") });
+    const snap = await plugins.start();
+    try {
+      for (const p of ["bedrock", "vertex", "google"]) {
+        expect(snap.served.has(sdk.providers.find((q) => q.id === p)!.adapterId)).toBe(false);
+        expect(snap.refused.some((r) => r.provider === p && r.code === "adapter-unavailable")).toBe(true);
+        const rows = plugins.catalog!.models.filter((m) => m.providerId === p);
+        expect(rows.length).toBe(sdk.models.filter((m) => m.providerId === p).length);
+        expect(plugins.catalog!.providers.find((q) => q.id === p)?.adapterId).toBe(sdk.providers.find((q) => q.id === p)!.adapterId);
+      }
+      // A declarative provider still comes from its plugin.
+      expect(plugins.catalog!.providers.some((p) => p.id === "groq")).toBe(true);
+    } finally {
+      plugins.stop();
+    }
+  });
+
+  test("with the plugin host unable to carry a keyed fetch, no code adapter is served at all", async () => {
+    const { registry, host, home } = await world();
+    const plugins = new ModelPlugins({ registry, host, home, serveCodeAdapters: false });
+    const snap = await plugins.start();
+    try {
+      expect(snap.served.size).toBe(0);
+      expect(plugins.catalog!.providers.find((p) => p.id === "codex-oauth")?.adapterId).toBe(sdk.providers.find((p) => p.id === "codex-oauth")!.adapterId);
+    } finally {
+      plugins.stop();
+    }
+  });
+});
+
+async function until(ok: () => boolean | Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 200 && !(await ok()); i++) await new Promise((r) => setTimeout(r, 25));
+  expect(await ok()).toBe(true);
+}

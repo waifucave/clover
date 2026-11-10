@@ -9,6 +9,7 @@
 //   into the handler's `listen` as the call's input, and the last piece's answer is what it heard.
 // * A bot with no voice, or whose provider isn't installed or doesn't speak (or listen), is text-only: refused, with
 //   why, and nothing breaks.
+import type { TurnOrigin } from "@waifucave/clover-protocol";
 import { ContractError } from "../contracts/common";
 import type { PluginHost } from "../contracts/plugin-host";
 import type { PluginRegistry } from "../contracts/plugin-registry";
@@ -40,8 +41,16 @@ export interface VoiceServiceOptions {
   play(p: VoicePlay): Promise<void> | void;
   /** How long a listening utterance may wait for its next piece before it is dropped. */
   listenIdleMs?: number;
+  /** Whether the bot may use its voice's provider now (lane D's provider check: a voice its plugin chose, on the
+   *  user's stored voice key, asks the user once). A no refuses the call, with its reason. `at`: the session that
+   *  speaks (speaking: the check reads that session's own turn origin, never one a caller passes), or the user's own
+   *  origin (the user talking, `listen`). */
+  mayUse?(bot: string, at: VoiceUse): Promise<{ ok: true } | { ok: false; reason: string }>;
   warn?: (message: string) => void;
 }
+
+/** Who is using a bot's voice: a session speaking (its own turn's origin decides), or the user talking to it. */
+export type VoiceUse = { session: string; origin?: undefined } | { origin: "user"; session?: undefined };
 
 interface Entry {
   pluginId: string;
@@ -123,9 +132,17 @@ export class VoiceService {
     return v;
   }
 
+  async #mayUse(bot: string, at: VoiceUse): Promise<void> {
+    const verdict = await this.#o.mayUse?.(bot, at);
+    if (verdict !== undefined && !verdict.ok) throw new ContractError("refused", verdict.reason);
+  }
+
   /** Speaks a bot's text on the app here, piece by piece. Resolves once the last piece was sent. */
   async speak(o: { bot: string; session: string; text: string; format?: VoicePlay["format"]; signal?: AbortSignal }): Promise<{ utterance: string; bytes: number }> {
     const voice = this.#voice(o.bot);
+    // The speaking session's own turn decides: the check reads its origin from the session, and nothing a caller says
+    // can make a routine's speech count as the user talking.
+    await this.#mayUse(o.bot, { session: o.session });
     const entry = this.#entry(voice.provider);
     if (!entry.speak) throw new ContractError("refused", `the voice plugin "${voice.provider}" doesn't speak`);
     const format = o.format ?? "pcm16-24k";
@@ -159,6 +176,8 @@ export class VoiceService {
     if (!l) {
       if (p.seq !== 0) throw new ContractError("invalid", `utterance ${p.utterance} starts at piece 0, not ${p.seq}`);
       const voice = this.#voice(p.bot);
+      // Push-to-talk: the user is talking to the bot.
+      await this.#mayUse(p.bot, { origin: "user" });
       const entry = this.#entry(voice.provider);
       if (!entry.listen) throw new ContractError("refused", `the voice plugin "${voice.provider}" doesn't listen`);
       const pieces = new Pieces();

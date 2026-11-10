@@ -19,13 +19,14 @@ import { mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:
 import { join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
 import type { HostServedAdapter, ModelProvidersOption } from "@waifucave/clover-agent-sdk";
-import { createHostModelAdapterServer, hostServedProviderAdapter, ProviderRequestError, type HostModelAdapter, type ModelAdapterDescription, type ProviderAdapter } from "@waifucave/clover-provider-runtime";
-import type { WinterCatalog } from "@waifucave/clover-provider-catalog";
+import { createHostModelAdapterServer, createShippedAdapters, hostServedProviderAdapter, ProviderRequestError, type HostModelAdapter, type ModelAdapterDescription, type ProviderAdapter } from "@waifucave/clover-provider-runtime";
+import { loadCatalog, type WinterCatalog } from "@waifucave/clover-provider-catalog";
 import type { Unsubscribe } from "../../contracts/common";
 import type { PluginHost } from "../../contracts/plugin-host";
 import type { PluginRegistry } from "../../contracts/plugin-registry";
 import { describeModelAdapter, pluginHostModelAdapter } from "./host-adapter";
 import { buildModelPluginSet, readModelPlugins, type ModelPluginSet } from "./load";
+import { modelPluginId } from "./bundled";
 
 /** A served code adapter: which plugin's handler it is, and who it says it is. */
 export interface ServedModelAdapter {
@@ -52,16 +53,54 @@ export interface ModelPluginsOptions {
   connectionFor?: (pluginId: string, connection: HostModelAdapterContextConnection) => HostModelAdapterContextConnection;
   readFile?: (path: string) => string;
   log?: (line: string) => void;
+  /** False while the plugin API can't carry a code plugin's keyed `net.fetch` (no `addApiHandlers` on the host yet):
+   *  no code adapter is served, so every code provider stays on the compiled path (`mergeWithCompiled`). */
+  serveCodeAdapters?: boolean;
 }
 
 type HostModelAdapterContextConnection = Parameters<HostModelAdapter["validateCredential"]>[0]["connection"];
 
 export interface ModelPluginsSnapshot {
   set: ModelPluginSet;
+  /** Whether the merged catalog overrides the SDK's own (a model plugin is on, or one was turned off). */
+  override: boolean;
   catalogPath: string;
   catalogSha256: string;
   served: Map<string, ServedModelAdapter>;
   refused: ModelPluginRefusalView[];
+}
+
+/** This build's own adapter ids: a provider whose code adapter isn't served stays on one of these (the agent SDK
+ *  registers it for a host-catalog provider, 0.0.75). */
+const COMPILED_ADAPTER_IDS: ReadonlySet<string> = new Set(createShippedAdapters(loadCatalog()).map((a) => a.id));
+
+/**
+ * MERGE, never replace (#302's review, B3): the plugins' catalog, and
+ * - a provider whose code plugin's adapter isn't served (its host can't start here: Bedrock and Vertex run on Node)
+ *   keeps the compiled catalog's provider and rows, on this build's own adapter; a third party's has no compiled
+ *   adapter, so its rows go: never a row without a working adapter;
+ * - a compiled provider no plugin brings (its plugin failed to load, or there is none) stays, unless the user turned
+ *   its bundled plugin off.
+ */
+export function mergeWithCompiled(set: ModelPluginSet, served: ReadonlyMap<string, unknown>, turnedOff: (provider: string) => boolean): WinterCatalog {
+  const sdk = loadCatalog();
+  const unserved = new Set<string>();
+  for (const [provider, a] of set.adapters) if (a.handler !== undefined && !served.has(a.adapterId)) unserved.add(provider);
+  const keepFromPlugins = (provider: string) => !unserved.has(provider);
+  const fromCompiled = (provider: string): boolean => {
+    if (turnedOff(provider) || (!unserved.has(provider) && set.byProvider.has(provider))) return false;
+    const adapter = sdk.providers.find((p) => p.id === provider)?.adapterId;
+    return adapter !== undefined && COMPILED_ADAPTER_IDS.has(adapter);
+  };
+  const providers = [
+    ...set.catalog.providers.filter((p) => keepFromPlugins(p.id)),
+    ...sdk.providers.filter((p) => !set.catalog.providers.some((q) => q.id === p.id && keepFromPlugins(q.id)) && fromCompiled(p.id)),
+  ];
+  const ids = new Set(providers.map((p) => p.id));
+  const pluginRows = set.catalog.models.filter((m) => keepFromPlugins(m.providerId) && ids.has(m.providerId));
+  const fromPlugins = new Set(pluginRows.map((m) => m.providerId));
+  const models = [...pluginRows, ...sdk.models.filter((m) => ids.has(m.providerId) && !fromPlugins.has(m.providerId))];
+  return { ...set.catalog, providers, models };
 }
 
 /** How many catalog files are kept: the current one and the one before it, which a session starting during a rebuild may still be reading. */
@@ -83,9 +122,16 @@ export class ModelPlugins {
     return this.#snapshot;
   }
 
-  /** The catalog the sessions resolve against. */
+  /** Whether the current snapshot carries any model plugin's provider. With none (none installed or every one off),
+   *  nothing is overridden: the sessions resolve on the SDK's own catalog and routing, and they move onto the plugins'
+   *  set live, as the registry gains one (and back as it loses the last). */
+  get active(): boolean {
+    return this.#snapshot?.override === true;
+  }
+
+  /** The catalog the sessions resolve against; undefined (the SDK's own) while no model plugin is active. */
   get catalog(): WinterCatalog | undefined {
-    return this.#snapshot?.set.catalog;
+    return this.active ? this.#snapshot?.set.catalog : undefined;
   }
 
   /** Loads now, then follows the registry: each change rebuilds (one rebuild at a time, the last change always seen). */
@@ -130,19 +176,32 @@ export class ModelPlugins {
     const refused: ModelPluginRefusalView[] = set.refused.map((r) => ({ pluginId: r.pluginId, provider: r.provider, code: r.code, message: r.message }));
     const served = new Map<string, ServedModelAdapter>();
     for (const [provider, a] of set.adapters) {
-      if (a.handler === undefined) continue;
+      if (a.handler === undefined || this.#o.serveCodeAdapters === false) continue;
+      const trusted = set.byProvider.get(provider)?.input.trusted === true;
+      // A third party's code adapter is not even described until the plugin API's fence and network rules (lane B's
+      // 2f and 2g) land: its keyed fetch would be refused, so it gets no rows rather than rows that error.
+      if (!trusted) {
+        refused.push({ pluginId: a.pluginId, provider, code: "adapter-unavailable", message: "a third party's code model adapter waits for the plugin API's fence and network rules" });
+        continue;
+      }
       try {
         const description = await describeModelAdapter(this.#o.host, { pluginId: a.pluginId, handler: a.handler });
-        const trusted = set.byProvider.get(provider)?.input.trusted === true;
-        if (trusted && description.id !== a.adapterId) throw new Error(`its adapter says it is ${description.id}, and its catalog file names ${a.adapterId}`);
+        if (description.id !== a.adapterId) throw new Error(`its adapter says it is ${description.id}, and its catalog file names ${a.adapterId}`);
         served.set(a.adapterId, { adapterId: a.adapterId, pluginId: a.pluginId, provider, handler: a.handler, description });
       } catch (err) {
         refused.push({ pluginId: a.pluginId, provider, code: "adapter-unavailable", message: err instanceof Error ? err.message : String(err) });
       }
     }
     for (const r of refused) this.#o.log?.(`model plugins: ${r.pluginId} (${r.provider}) left out: ${r.code}: ${r.message}`);
-    const { path, sha256 } = this.#writeCatalog(set.catalog);
-    return { set, catalogPath: path, catalogSha256: sha256, served, refused };
+    const turnedOff = (provider: string): boolean => {
+      const r = this.#o.registry.get(modelPluginId(provider));
+      return r !== undefined && r.source === "bundled" && !r.enabled;
+    };
+    const merged = mergeWithCompiled(set, served, turnedOff);
+    // Nothing is overridden while no model plugin is on and none was turned off (a test daemon's own store).
+    const override = set.byProvider.size > 0 || loadCatalog().providers.some((p) => turnedOff(p.id));
+    const { path, sha256 } = this.#writeCatalog(merged);
+    return { set: { ...set, catalog: merged }, catalogPath: path, catalogSha256: sha256, served, refused, override };
   }
 
   #writeCatalog(catalog: WinterCatalog): { path: string; sha256: string } {
@@ -169,7 +228,7 @@ export class ModelPlugins {
    */
   sessionOption(opts: { caller: Caller; session?: string }): ModelProvidersOption | undefined {
     const snap = this.#snapshot;
-    if (snap === undefined) return undefined;
+    if (snap === undefined || !this.active) return undefined;
     const served = snap.served;
     const hostAdapters: HostServedAdapter[] = [...served.values()].map((s) => ({ id: s.adapterId, version: s.description.version, family: s.description.family, protocol: s.description.protocol, ...(s.description.countTokens ? { countTokens: true } : {}) }));
     const connectionFor = this.#o.connectionFor;
