@@ -68,4 +68,47 @@ describe("the daemon's hasKeyFor", () => {
     for (let i = 0; i < 20 && !hasKeyFor("anthropic/claude-sonnet-5-5"); i++) await flush();
     expect(hasKeyFor("anthropic/claude-sonnet-5-5")).toBe(true);
   });
+
+  test("#328's check: a third party's provider counts only while signed in through its plugin (or taking no sign-in)", async () => {
+    const home = tempDir();
+    const store = new FileSecretStore(join(home, "secrets.json"));
+    const served = new Set(["acme-llm", "acme-local"]);
+    // acme-local takes no sign-in; acme-llm needs its key.
+    const signedIn = new Set(["acme-local"]);
+    let reads = 0;
+    const hasKeyFor = await botKeyPresence(store, home, { pluginServes: (p) => served.has(p), pluginSignedIn: async () => (reads++, new Set(signedIn)) });
+    expect(hasKeyFor("acme-llm/acme-1")).toBe(false);
+    expect(hasKeyFor("acme-local/tiny")).toBe(true);
+    // Signed in: keyed once the view is read again (the daemon refreshes at the sign-in's event).
+    signedIn.add("acme-llm");
+    expect(hasKeyFor("acme-llm/acme-1")).toBe(false);
+    await hasKeyFor.refresh();
+    expect(hasKeyFor("acme-llm/acme-1")).toBe(true);
+    // Signed out: not keyed again.
+    signedIn.delete("acme-llm");
+    await hasKeyFor.refresh();
+    expect(hasKeyFor("acme-llm/acme-1")).toBe(false);
+    expect(reads).toBe(3);
+    // A failed read keeps the last view.
+    const failing = await botKeyPresence(store, home, { pluginServes: (p) => served.has(p), pluginSignedIn: () => Promise.reject(new Error("no")) });
+    expect(failing("acme-llm/acme-1")).toBe(false);
+  });
+
+  test("#328's check: a bot whose plugin model is a third party's provider with no key falls back to the default model, and takes it once signed in", async () => {
+    const home = tempDir();
+    const store = new FileSecretStore(join(home, "secrets.json"));
+    const signedIn = new Set<string>();
+    const hasKeyFor = await botKeyPresence(store, home, { pluginServes: (p) => p === "acme-llm", pluginSignedIn: async () => new Set(signedIn) });
+    const root = tempDir();
+    const luna = writePlugin(root, "luna", { "clover.json": botManifest("luna", "Luna", { model: { default: "acme-llm/acme-1" } }), "bot/instructions.md": "You are Luna." });
+    const b = await boot({ home, plugins: (await pluginFromFolder(luna)).inputs, hasKeyFor });
+    expect(b.bots.effective("luna")).toMatchObject({ model: "fireworks/kimi-k3", modelFrom: "default" });
+    signedIn.add("acme-llm");
+    await hasKeyFor.refresh();
+    expect(b.bots.effective("luna")).toMatchObject({ model: "acme-llm/acme-1", modelFrom: "plugin" });
+    signedIn.delete("acme-llm");
+    await hasKeyFor.refresh();
+    expect(b.bots.effective("luna")).toMatchObject({ model: "fireworks/kimi-k3", modelFrom: "default" });
+    await b.shutdown();
+  });
 });

@@ -186,7 +186,7 @@ import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
 import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
 import { rowForTag } from "./runtime-sdk/provider-selection";
-import { botKeyPresence } from "./bots/key-presence";
+import { botKeyPresence, type BotKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
 import { BROWSER_HOST_SOCKET_NAME } from "./computer-use/browser/extension/protocol";
@@ -3287,6 +3287,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
   // `plugin.auth.*`, once the plugin registry is open (`startPlugins`); `models.list` asks it about third parties' keys.
   let pluginAuth: PluginAuth | undefined;
+  // Lane D's bots' `hasKeyFor` (`daemonBots`): read again at a plugin's sign-in or out and at each registry change.
+  let botKeys: BotKeyPresence | undefined;
+  let offBotKeysWatch: (() => void) | undefined;
   // A: the app's model picker (`models.list`), from the model plugins' catalog; signed in = a credential is stored.
   Object.assign(cloverLaneHandlers, laneMethodHandlers(modelsMethods({
     // The providers' keychain slots, and a third party's model plugin signed in through its own secret (or taking none).
@@ -3670,7 +3673,10 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     // re-reads the internal jobs' view, as `credential.set` does.
     Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
       registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets,
-      changed: (id, auth) => { cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth }); },
+      changed: (id, auth) => {
+        cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth });
+        void botKeys?.refresh();
+      },
       credentialChanged: async (provider) => {
         await evictSessionsForCredential({
           list: () => cloverDrivers.list(),
@@ -3707,7 +3713,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // key (§6.1), from the same stored credentials the provider fill reads (`credentialPresenceFrom`), else the bot
       // falls back to the user's default and nothing asks; the routines' secrets and the user's time zone; and the
       // app's URL for a plugin's file.
-      hasKeyFor: await botKeyPresence(secrets, cloverHome),
+      hasKeyFor: await (async () => {
+        // A third party's model plugin provider is keyed only when signed in through it, or taking no sign-in (#328).
+        const keys = await botKeyPresence(secrets, cloverHome, { pluginSignedIn: async () => (await pluginAuth?.signedInProviders()) ?? new Set<string>() });
+        offBotKeysWatch?.();
+        offBotKeysWatch = registry.watch(() => { void keys.refresh(); });
+        botKeys = keys;
+        return keys;
+      })(),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main }) => botDriverFactory({
@@ -3743,6 +3756,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
     const parts = daemonParts;
     daemonParts = undefined;
     await parts?.close();
+    offBotKeysWatch?.();
+    offBotKeysWatch = undefined;
+    botKeys = undefined;
     pluginMcp?.close();
     pluginMcp = undefined;
     if (opts.modelPluginHost === undefined) {
