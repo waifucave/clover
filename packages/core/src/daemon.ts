@@ -1,5 +1,5 @@
 import { bundledManifest, bundledPluginsDir, loadBundledManifest, type BundledManifest } from "./bundled-plugins-dir";
-import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBundledDir, stagedManifestVerified } from "./registry/bundled-stage";
+import { buildDevBundledPlugins, devBundledSource, stageBundledPlugins, stagedBotChoice, stagedBundledDir } from "./registry/bundled-stage";
 import { createCoworkSessionDeletionHook, CoworkWorkspaceEvents } from "./cowork/workspace-events";
 import { createMacCoworkHost } from "./cowork/mac-host";
 import { coworkNativeProductionEnvironment } from "./cowork/native-activation";
@@ -3831,8 +3831,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // record source (a folder under the staged copy, never a manifest's claim), its folder inside this run's staged
       // copy, and its manifest still the bytes staging verified. A dev-folder or installed plugin of a bundled id is
       // refused at load (its id is reserved), and any record that isn't the staged one asks.
-      bundledOrigin: (p) => p.source === "bundled" && bundledStaged !== undefined
-        && stagedManifestVerified({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
+      bundledChoice: (p) => p.source !== "bundled" || bundledStaged === undefined ? undefined
+        : stagedBotChoice({ folder: p.folder, stagedDir: bundledStaged.dir, digests: bundledStaged.digests }),
       routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
       assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main, broker, fence }) => {

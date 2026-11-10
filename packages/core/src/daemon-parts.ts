@@ -71,8 +71,9 @@ export interface DaemonBotsInput {
   drivers(parts: { side(): BotSide | undefined; node: ComputerNode | undefined; main: MainComputer; broker: CloverApprovalBroker | undefined; fence: CloverFence }): DriverFactory;
   defaultModel: BotSideOptions["defaultModel"];
   hasKeyFor?: BotSideOptions["hasKeyFor"];
-  /** Whether a bot's plugin is Clover's own bundled one, as staged (its model and voice then ask nothing). */
-  bundledOrigin?: BotSideOptions["bundledOrigin"];
+  /** What Clover's own bundled plugin chose for a bot, from its verified staged bytes (a loaded tag equal to it asks
+   *  nothing). */
+  bundledChoice?: BotSideOptions["bundledChoice"];
   // Lane D's bot-side inputs: what the daemon holds that the bot side's options are built from (`botSideOptions`).
   /** The URL the app loads a plugin's file from (a bot's portrait). */
   assetUrl?: BotSideOptions["assetUrl"];
@@ -353,7 +354,7 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
         // Lane C's broker (#267): the bot side's one SessionGrants asks through it (the browser's person's partition).
         ...(broker ? { approvals: broker } : {}),
         ...(b.hasKeyFor ? { hasKeyFor: b.hasKeyFor } : {}),
-        ...(b.bundledOrigin ? { bundledOrigin: b.bundledOrigin } : {}),
+        ...(b.bundledChoice ? { bundledChoice: b.bundledChoice } : {}),
         ...(b.pillTargets ? { pillTargets: b.pillTargets } : {}),
         userHome: input.userHome,
         ...(node ? { levelOf: (c: string) => node!.registry.get(c)?.level, onSessionEnded: (id: string) => void node!.terminals.closeSession(id) } : {}),

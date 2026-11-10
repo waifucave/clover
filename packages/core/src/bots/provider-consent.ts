@@ -9,9 +9,9 @@
 //   the bot falls back to (with `hasKeyFor`, a plugin's tag the user holds no key for falls back to the default too).
 // * **Nor does Clover's own bundled plugin's** (the owner's ruling, revising #298's and #311's): a model or voice tag
 //   from a bot whose plugin is Clover's own bundled one, as staging verified it (`EffectiveBot.modelBundled` /
-//   `voiceBundled`, from the bot side's `bundledOrigin`: the record's source is `bundled`, its folder is the staged copy
-//   under `run/`, which no runner can write, and its manifest's bytes are still the staged digest). Not the bot's id or
-//   name, nor anything a manifest says: a development folder or an installed plugin named `alpha` is refused at load
+//   `voiceBundled`, decided once per load from the bot side's `bundledChoice`: the record's source is `bundled`, its
+//   folder is the staged copy under `run/`, which no runner can write, its manifest's bytes are the staged digest, and
+//   the tag loaded is the tag those verified bytes name). Not the bot's id or name, nor anything a manifest says: a development folder or an installed plugin named `alpha` is refused at load
 //   (its id is reserved to the bundled tree), and any record not staged as bundled asks. The card protects against a
 //   third party's plugin spending a key.
 // * **A plugin's choice asks once per bot and provider:** the first use of a provider the plugin's tag names shows a
