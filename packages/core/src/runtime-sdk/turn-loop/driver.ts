@@ -92,7 +92,7 @@ export function botFileFence(fence: Pick<Fence, "forCaller">, home: string, os?:
 }
 
 export interface BotDriverDeps {
-  /** The Clover home: the runtime's own home (`CLOVER_HOME`), its transcripts and this driver's state. */
+  /** The Clover home: this driver's state; the runtime's own home (`CLOVER_HOME`) and its transcripts are its store home under it (`storeHomeFor`). */
   home: string;
   profile?: string;
   /** The embedded runtime's spawn hook (`createEmbeddedSessionHost().spawn`). */

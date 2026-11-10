@@ -22,10 +22,18 @@ export class TreeProblem extends Error {
 
 const isInside = (root: string, real: string) => real === root || real.startsWith(root.endsWith(sep) ? root : root + sep);
 
-/** Every file of the folder, as the tree hash lists it (left-out names skipped). Throws `TreeProblem`. */
-export function treeEntries(folder: string, opts: { allowHardLinks?: boolean } = {}): TreeEntry[] {
+/** Every file of the folder, as the tree hash lists it (left-out names skipped). Throws `TreeProblem`. With `maxFiles` or
+ *  `maxBytes`, the walk stops at the first file past either, before that file is read (#394's review: a home folder or
+ *  a large `node_modules` picked by mistake mustn't be read whole). */
+export function treeEntries(folder: string, opts: { allowHardLinks?: boolean; maxFiles?: number; maxBytes?: number } = {}): TreeEntry[] {
   const root = realpathSync(folder);
   const out: TreeEntry[] = [];
+  let bytes = 0;
+  const count = (rel: string, size: number) => {
+    if (opts.maxFiles !== undefined && out.length + 1 > opts.maxFiles) throw new TreeProblem(rel, `a plugin folder has at most ${opts.maxFiles} files`);
+    bytes += size;
+    if (opts.maxBytes !== undefined && bytes > opts.maxBytes) throw new TreeProblem(rel, `a plugin folder holds at most ${Math.round(opts.maxBytes / (1024 * 1024))} MB`);
+  };
   const walk = (dir: string) => {
     for (const name of readdirSync(dir).sort()) {
       const abs = join(dir, name);
@@ -45,10 +53,12 @@ export function treeEntries(folder: string, opts: { allowHardLinks?: boolean } =
         const target = statSync(real);
         if (!target.isFile()) throw new TreeProblem(rel, `the symlink ${rel} is to a folder; only a file may be linked`);
         if (target.nlink > 1 && !opts.allowHardLinks) throw new TreeProblem(rel, `${rel} links to a hard link, with another name outside the plugin's control`);
+        count(rel, target.size);
         out.push(entry(rel, real, target.mode));
       } else if (st.isDirectory()) walk(abs);
       else if (st.isFile()) {
         if (st.nlink > 1 && !opts.allowHardLinks) throw new TreeProblem(rel, `${rel} is a hard link, with another name outside the plugin's control`);
+        count(rel, st.size);
         out.push(entry(rel, abs, st.mode));
       }
     }

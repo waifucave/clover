@@ -176,7 +176,8 @@
                     "computer-delete",
                     "agent-unsandboxed",
                     "core-setting",
-                    "answer-key-rotate"
+                    "answer-key-rotate",
+                    "bot-provider"
                   ]
                 },
                 "binds": {
@@ -578,7 +579,8 @@
                   "computer-delete",
                   "agent-unsandboxed",
                   "core-setting",
-                  "answer-key-rotate"
+                  "answer-key-rotate",
+                  "bot-provider"
                 ]
               },
               "binds": {
@@ -1351,7 +1353,8 @@
                   "computer-delete",
                   "agent-unsandboxed",
                   "core-setting",
-                  "answer-key-rotate"
+                  "answer-key-rotate",
+                  "bot-provider"
                 ]
               },
               "binds": {

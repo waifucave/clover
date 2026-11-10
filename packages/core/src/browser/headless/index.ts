@@ -10,11 +10,11 @@
 //   // on quit: await headless.shutdown(); await network.close();
 export { HeadlessBrowser, DENIED_PERMISSIONS, screencastSettings, type HeadlessBrowserOptions } from "./browser";
 export { CdpError, PipeConnection, splitFrames, type BrowserProcess, type CdpConnection, type CdpEvent, type PipeTransport } from "./cdp";
-export { DISABLED_FEATURES, browserEnv, headlessArgs, profileDir, profileName } from "./flags";
+export { DISABLED_FEATURES, browserEnv, headlessArgs, profileDir, profileName, windowsBrowserDirs, windowsBrowserEnv } from "./flags";
 export { imageSize } from "./image";
 export {
   CFT_BASE, HEADLESS_PIN, InstallError, pinFrom, archiveUrl, binaryIn, cftPlatform, installDirFor, installHeadlessShell, renameIntoPlace, treeDigestOfArchive,
-  treeDigestOfDir, type HeadlessShellPins, type HeadlessPin, type InstallOptions, type Installed, type PlatformPin,
+  stageForLaunch, tightenTree, treeDigestOfDir, type StagedLaunch, type HeadlessShellPins, type HeadlessPin, type InstallOptions, type Installed, type PlatformPin,
 } from "./install";
 export { launchHeadlessShell, type LaunchSpec, type Launcher } from "./launch";
-export { quoteWindowsArg } from "./winpipe";
+export { quoteWindowsArg, windowsEnvBlock } from "./winpipe";

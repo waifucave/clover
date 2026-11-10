@@ -15,8 +15,11 @@ afterAll(() => { for (const d of temps.splice(0)) rmSync(d, { recursive: true, f
 
 const status = (noNewPrivs: string | null, seccomp: string | null) =>
   ["Name:\tbun", ...(noNewPrivs === null ? [] : [`NoNewPrivs:\t${noNewPrivs}`]), ...(seccomp === null ? [] : [`Seccomp:\t${seccomp}`]), "Seccomp_filters:\t1", ""].join("\n");
-const probe = (s: string | undefined, sock: { fd: number; errno: number } | ((type: number) => { fd: number; errno: number }), fds: readonly string[] | null = ["/dev/null", "pipe:[1]", "anon_inode:[eventpoll]"]): LinuxConfinementProbe =>
-  ({ status: () => s, unixSocket: typeof sock === "function" ? sock : () => sock, descriptors: () => fds ?? undefined });
+/** The spawner's pid in the fake probes, and the peer each fake socket descriptor reports. */
+const PARENT = 4100;
+const probe = (s: string | undefined, sock: { fd: number; errno: number } | ((type: number) => { fd: number; errno: number }), fds: readonly string[] | null = ["/dev/null", "pipe:[1]", "anon_inode:[eventpoll]"],
+  peers: Record<number, number | undefined> = {}): LinuxConfinementProbe =>
+  ({ status: () => s, unixSocket: typeof sock === "function" ? sock : () => sock, descriptors: () => fds?.map((target, fd) => ({ fd, target })), peerPid: (fd) => peers[fd], parentPid: () => PARENT });
 const DENIED = { fd: -1, errno: 1 };
 
 describe("linuxConfinementState with a given probe", () => {
@@ -45,15 +48,25 @@ describe("linuxConfinementState with a given probe", () => {
   });
 
   test("a socket it holds already refuses, and descriptors it can't read do too", () => {
-    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["/dev/null", "socket:[4242]"]))).toEqual({ ok: false, reason: "this process holds a socket it was handed" });
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["/dev/null", "pipe:[1]", "pipe:[2]", "socket:[4242]"], { 3: PARENT }))).toEqual({ ok: false, reason: "this process holds a socket it was handed (descriptor 3)" });
     expect(linuxConfinementState(probe(status("1", "2"), DENIED, null))).toEqual({ ok: false, reason: "the process's descriptors (/proc/self/fd) could not be read" });
+  });
+
+  test("its stdio may be a socketpair its spawner made (the peer is its parent); nothing else is", () => {
+    // Bun's spawn gives a child's stdio as a socketpair on Linux: the spawner's own pair passes.
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["pipe:[1]", "socket:[11]", "socket:[12]"], { 1: PARENT, 2: PARENT }))).toEqual({ ok: true });
+    // A stdio socket whose peer is another process (the session bus, say), or unreadable, or none (not a Unix socket).
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["socket:[11]", "pipe:[1]", "pipe:[2]"], { 0: 777 }))).toEqual({ ok: false, reason: `this process holds a socket it was handed (descriptor 0, its peer 777, not its spawner ${PARENT})` });
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["pipe:[1]", "socket:[11]", "pipe:[2]"]))).toEqual({ ok: false, reason: `this process holds a socket it was handed (descriptor 1, its peer unknown, not its spawner ${PARENT})` });
+    // At 3 or above (the launcher closes those on exec), a socket refuses even when the spawner made it.
+    expect(linuxConfinementState(probe(status("1", "2"), DENIED, ["pipe:[1]", "socket:[11]", "pipe:[2]", "socket:[13]"], { 1: PARENT, 3: PARENT }))).toEqual({ ok: false, reason: "this process holds a socket it was handed (descriptor 3)" });
   });
 
   test("ambiguous answers fail closed: another errno, a probe that throws", () => {
     // EMFILE (24): out of descriptors says nothing about the confinement.
     expect(linuxConfinementState(probe(status("1", "2"), { fd: -1, errno: 24 }))).toMatchObject({ ok: false });
     expect(linuxConfinementState(probe(status("1", "2"), { fd: -1, errno: -1 }))).toMatchObject({ ok: false });
-    const throwing: LinuxConfinementProbe = { status: () => status("1", "2"), unixSocket: () => { throw new Error("no libc"); }, descriptors: () => [] };
+    const throwing: LinuxConfinementProbe = { status: () => status("1", "2"), unixSocket: () => { throw new Error("no libc"); }, descriptors: () => [], peerPid: () => undefined, parentPid: () => PARENT };
     expect(linuxConfinementState(throwing)).toEqual({ ok: false, reason: "the confinement could not be inspected (no libc)" });
   });
 });

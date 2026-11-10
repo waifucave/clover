@@ -29,6 +29,10 @@ export const CAPABILITIES: readonly CapabilityInfo[] = [
   { name: "devices.read", lets: "Read the user's devices: their names, kinds, links, which one is the main, and which are online", ok: "sees your devices", warns: false },
   { name: "approvals", lets: "Hear which cards are pending, never their text, and place their sealed frames", ok: "restyles approval cards", warns: true },
   { name: "files", lets: "Read and write files through the folder tree, inside the fence", ok: "reads and writes files on your computers", warns: false },
+  /** The controller's ruling after #345: the plugin-process fence leaves a session's project folders read-only to a
+   *  plugin's hooks and stdio MCP servers; this lets them write there (never `.git/hooks`, `.git/config` or a
+   *  credential file). Bundled plugins hold it the same way. */
+  { name: "project.write", lets: "Let its hooks and stdio MCP servers change files in the session's project folders (never `.git/hooks`, `.git/config` or a credential file); without it, those folders are read-only to them", ok: "changes files in your project folders", warns: true },
   { name: "browser", lets: "Drive the Clover Browser through its API", ok: "drives the Clover Browser", warns: false },
   /** Not in §5.4's table: lane F's request for the terminal panel. The bundled `clover` tree only (the controller's
    *  ruling, review T1), since the daemon can't check that what a component sends came from the user's keys. */

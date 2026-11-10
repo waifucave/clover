@@ -200,7 +200,7 @@ export const nested = () => new Promise((resolve) => {
 });
 `);
     writeFileSync(join(a, "host", "helper.js"), "export const x = 41 + 1;\n");
-    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [] });
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], cloverHome: base });
     const p = spawnHostProcess(launch);
     processes.push(p);
     const records = new Map<string, HostedRecord>([
@@ -235,7 +235,7 @@ export const nested = () => new Promise((resolve) => {
       "index.js": `export const fine = () => "fine";\nexport const late = async () => (await import("./late.js")).value;\n`,
       "late.js": `import { leak } from "./mac.js" with { type: "macro" };\nexport const value = leak();\n`,
     });
-    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [] });
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], cloverHome: base });
     expect(launch.cmd).toContain("--no-macros");
     const p = spawnHostProcess(launch);
     processes.push(p);
@@ -266,7 +266,7 @@ describe.skipIf(process.platform === "win32")("what a plugin starts ends with it
     writeFileSync(join(folder, "package.json"), JSON.stringify({ type: "module" }));
     // A child that ignores SIGTERM, so only the SIGKILL after the grace ends it.
     writeFileSync(join(folder, "host", "index.js"), `export const spawn = () => Bun.spawn(["/bin/sh", "-c", "trap '' TERM; while :; do sleep 1; done"], { stdio: ["ignore", "ignore", "ignore"] }).pid;\n`);
-    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [] });
+    const launch = await hostProcessLaunch({ runDir: join(base, "run"), computer: "Studio", base: process.env as Record<string, string>, shared: [], cloverHome: base });
     const p = spawnHostProcess({ ...launch, graceMs: 300 });
     processes.push(p);
     const records = new Map<string, HostedRecord>([["spawner", { id: "spawner", source: "local", folder, entry: "host/index.js", dataFolder: join(base, "data") }]]);

@@ -33,6 +33,7 @@ import type { McpServerSettingsEntry, Settings } from "../settings";
 import { extractRawMcpServers, parseProjectMcpServers, projectMcpConfigPath } from "../agent/mcp/project-file";
 import { projectScopeRootFor, projectScopeTrusted } from "./run-home-input";
 import { guardedMcpServer, type PluginRunGuard } from "../registry/plugin-run";
+import type { ProjectAccess } from "../registry/plugin-fence";
 
 // The project `.mcp.json` schema/parser now lives in `../agent/mcp/project-file` — shared with
 // `agent/mcp/manager.ts`'s own reader and the CLI's `mcp add/remove --scope project`/`mcp get`
@@ -95,8 +96,11 @@ export function pluginStdioMcpServer(
   entry: { command: string; args?: string[]; env?: Record<string, string>; versionNegotiation?: VersionNegotiation },
   pluginRoot: string,
   guard: PluginRunGuard,
+  pluginId?: string,
+  /** The session's project folders, and whether the plugin holds `project.write` (readable always, writable with it). */
+  project?: ProjectAccess,
 ): McpServerConfig {
-  return stdio(guardedMcpServer(entry, pluginRoot, guard));
+  return stdio(guardedMcpServer(entry, pluginRoot, guard, pluginId, project));
 }
 
 /** `settings.mcpServers`' own entry shape (already `type`-discriminated by the schema, batch 3 item
