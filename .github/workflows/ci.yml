@@ -905,6 +905,12 @@ jobs:
       - name: Scripts · test
         run: bun scripts/platform-tests.ts --root scripts --not-darwin
 
+      # The repo-wide source scans, which read every package's src/ and scripts/ (the native channel's anti-wiring
+      # test): they run here for any such change, not only when the core's own shards do.
+      - name: Source scans · anti-wiring
+        working-directory: packages/core
+        run: bun test test/cowork/native/anti-wiring.test.ts
+
   # The protocol package generates a JSON schema and the Swift round-trip fixtures. If a schema
   # change landed without re-running the generator, the tree is dirty here — which is exactly the
   # drift the checklist in CONTRIBUTING.md exists to prevent.

@@ -2,8 +2,9 @@ import { noteSpawned } from "../auth/clover-caller";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { cloverSharedRoots, ensurePluginRunFiles, isBunCommand, pluginBunLaunch, type PluginRunGuard } from "../registry/plugin-run";
+import { cloverSharedRoots, ensurePluginRunFiles, isBunCommand, pluginBunLaunch, pluginRunFileChecks, type PluginRunGuard } from "../registry/plugin-run";
 import { fencedSpawn, pluginFenceAvailable, realOrResolved, toolFence } from "../registry/plugin-fence";
+import { checkRunFiles } from "../plugin-host/run-file";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 
 /**
@@ -793,6 +794,9 @@ export class PluginSupervisor {
       let cmd = bunCmd;
       let env: Record<string, string> = launch.env;
       let spawnCwd = cwd;
+      // The bunfig, the guard it preloads and the spawn trampoline are the ones Clover wrote, checked last thing before
+      // the start (a plugin can write the run folder; #312's review, S1).
+      checkRunFiles(pluginRunFileChecks(this.pluginRun.files), `plugin ${config.id}`);
       if (guard.fence !== false && pluginFenceAvailable()) {
         const { fence, tmp } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: dir, pluginId: config.id, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `host-${config.id}` });
         // Through the spawn trampoline: its own TCC-responsible process (the controller's ruling after #345).
