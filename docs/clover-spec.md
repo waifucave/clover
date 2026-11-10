@@ -367,10 +367,10 @@ The network hosts a plugin talks to are listed separately, whatever its class: i
 
   | Capability | Lets the plugin |
   | :- | :- |
-  | `conversation.read` | Read bots' conversations and follow them live; sealed card fields never reach it |
-  | `conversation.post` | Add a note to a conversation, or send a bot a message; a turn it starts is the plugin's, never the user's (§5.5) |
+  | `conversation.read` | Read every bot's conversations and follow them live; sealed card fields never reach it |
+  | `conversation.post` | Add a note to any bot's conversation, or send any bot a message; a turn it starts is the plugin's, never the user's (§5.5) |
   | `memory.read` | Read bots' memories |
-  | `bots.read` | Read the list of bots and their settings |
+  | `bots.read` | Read the list of every bot and their settings |
   | `routines.read` | Read the list of routines and their runs (§7) |
   | `computers.read` | Read the computer registry: each computer's folders, level and state (§9.1) |
   | `computers.control` | Take and release holds and the user-working mark, learn where Clover's windows are, and say when an action is running (§9.2). The OK says it "controls the screen and input of your computers" |
@@ -385,6 +385,8 @@ The network hosts a plugin talks to are listed separately, whatever its class: i
   | `call:<plugin-id>` | Run that plugin's commands (above) |
   | `network:<host>` | Reach that host (a name, with `:port` if needed, or `*.` and a domain for its subdomains): through the core's fetch, which adds the plugin's own keys and tokens (§5.1), and from the plugin's components, which reach no other host (§5.3) |
   | `network:public` | **[P]** Bundled plugins only (today the web plugin's `WebFetch`, which is offered only when it is granted): reach any public https website on its default port through the core's fetch, with no key and no key-carrying header, public addresses only after DNS and on every redirect hop (a private one is refused, with no card to allow it), the dangerous-domain list, size and time caps, and one audit line per fetch with the host and the path's length only. The OK says it "connects to any public website, through Clover's web safeguards" |
+
+  `conversation.*`, `memory.read` and `bots.*` cover every bot: there is no per-bot grant yet, and the OK card says "all your bots".
 
 * **Asking the user:** `confirm(text)` shows a sealed card that says it comes from a plugin, with the plugin's name, id and source and its text, and returns only the user's answer; no plugin can read or answer it. Unanswered, it is denied after 10 minutes.
 * **Limits:** arguments and results are structured-clone data. A plugin-API call times out after 10 seconds unless the caller sets a longer limit, up to 10 minutes (tool calls, hooks, `confirm` and the keyed fetch keep their own limits), and a call to a stopped plugin fails at once with the reason.
