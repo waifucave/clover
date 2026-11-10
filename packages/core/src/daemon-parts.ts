@@ -27,9 +27,13 @@ import type { DriverFactory } from "./bots/service";
 import type { Clock } from "./contracts/clock";
 import type { PluginRegistry } from "./contracts/plugin-registry";
 import { startComputerNode, type ComputerNode, type ComputerNodeOptions } from "./computers/node";
+import { computerMethods } from "./computers/rpc";
 import { nodeParts, type SafetyReviewer } from "./computers/node-parts";
 import type { ApprovalBroker } from "./contracts/approval-broker";
 import { laneMethodHandlers, type CloverHandler } from "./ipc/clover";
+import { CloverUsageCounter } from "./usage/counter";
+import { cloverUsageDbPath, UsageLedger } from "./usage/ledger";
+import { usageMethods } from "./usage/rpc";
 import { computerNodeLinks, type DeviceLinks } from "./links/node";
 import { hostForSync } from "./daemon-session-sync";
 import { SessionRecordSync } from "./sync/session-records";
@@ -143,6 +147,8 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       closers.push(() => n.close());
       node = n;
       if (main) closers.push(followMain(n, main, links));
+      // Lane J's computers methods for the app (`computer.*`, `hold.list`), over the node's registry.
+      Object.assign(input.handlers, laneMethodHandlers(computerMethods({ registry: n.registry })));
     }
 
     if (input.bots) {
@@ -182,6 +188,15 @@ export async function startDaemonParts(input: DaemonPartsInput): Promise<DaemonP
       }
       await s.start();
       Object.assign(input.handlers, laneMethodHandlers(s.methods({ localDevice: links?.key.id ?? "local" })));
+      // Lane D's usage rows (`usage.rows`, `usage.summary`): its ledger, counting the bot side's sessions as they run.
+      const ledger = new UsageLedger({ path: cloverUsageDbPath(input.cloverHome), computer: runner.self });
+      const counter = new CloverUsageCounter({ ledger, host: s.host, warn: (line) => log(`[usage] ${line}`) });
+      counter.start();
+      closers.push(() => {
+        counter.stop();
+        ledger.close();
+      });
+      Object.assign(input.handlers, laneMethodHandlers(usageMethods({ ledger })));
     }
     return { ...(node ? { node } : {}), ...(side ? { bots: side } : {}), ...(main ? { main } : {}), close };
   } catch (err) {
