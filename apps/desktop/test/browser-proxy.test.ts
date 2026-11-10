@@ -301,16 +301,33 @@ describe("the filter, chained to a proxy", () => {
     });
   }
 
-  test("loopback goes direct, never to the proxy; a bypassed host goes direct; the person's LAN goes to the proxy", async () => {
+  test("loopback goes direct, never to the proxy; a bypassed host goes direct; the person's LAN goes direct too", async () => {
     const { echo, proxy, filter, dialed } = await setup("http", { "localhost": ["127.0.0.1"], "skip.test": [PUBLIC], "nas.test": ["192.168.1.9"] }, ["skip.test"]);
     expect(await get(await filter.listenerFor(SESSION_POLICY, "http"), "localhost", echo.port, "/dev")).toEqual({ status: 200, body: "echo /dev" });
     expect(proxy.asked).toEqual([]);
     expect(await get(await filter.listenerFor(BOT_POLICY, "http"), "skip.test", 80)).toEqual({ refused: 5 });
     expect(dialed).toContain(`${PUBLIC}:80`);
     expect(proxy.asked).toEqual([]);
-    // The proxy refuses it (it's not the "public" address), so the tunnel fails: but it was the proxy that was asked.
-    expect(await get(await filter.listenerFor(PERSON_POLICY, "http"), "nas.test", 80)).toEqual({ refused: 4 });
-    expect(proxy.asked).toEqual(["192.168.1.9:80"]);
+    // Private and link-local addresses never go through a proxy either (owner's ruling on the #260 review): this one is
+    // dialled directly (and refused, nothing is there), and the proxy is asked nothing.
+    expect(await get(await filter.listenerFor(PERSON_POLICY, "http"), "nas.test", 80)).toEqual({ refused: 5 });
+    expect(dialed).toContain("192.168.1.9:80");
+    expect(proxy.asked).toEqual([]);
+  });
+
+  test("a name with loopback or private addresses and a public one: each address takes its own way, only the public one through the proxy", async () => {
+    const { proxy, filter, dialed } = await setup("http", { "mixed.test": ["127.0.0.1", PUBLIC], "lan-mixed.test": ["fe80::1", "192.168.1.9", PUBLIC] });
+    // Loopback first, direct (port 443 has nothing, so it's refused there), then the public address through the proxy.
+    expect(await get(await filter.listenerFor(SESSION_POLICY, "https"), "mixed.test", 443, "/m")).toEqual({ status: 200, body: "echo /m" });
+    expect(proxy.asked).toEqual([`${PUBLIC}:443`]);
+    expect(dialed).toContain("127.0.0.1:443");
+    expect(proxy.asked.some((a) => a.startsWith("127."))).toBe(false);
+    proxy.asked.splice(0);
+    dialed.splice(0);
+    expect(await get(await filter.listenerFor(PERSON_POLICY, "https"), "lan-mixed.test", 443, "/l")).toEqual({ status: 200, body: "echo /l" });
+    expect(proxy.asked).toEqual([`${PUBLIC}:443`]);
+    expect(dialed).toContain("192.168.1.9:443");
+    expect(proxy.asked.some((a) => a.startsWith("192.") || a.startsWith("fe80"))).toBe(false);
   });
 
   test("a proxy that refuses, or isn't there, is a failure, never a direct connection", async () => {

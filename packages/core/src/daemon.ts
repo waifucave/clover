@@ -176,8 +176,9 @@ import { createComputerUseRuntime, type ComputerUseInjection } from "./computer-
 import { IslandRegistry, type IslandHost, type IslandSessionFacts } from "./island/registry";
 import { IslandActivity } from "./island/activity";
 import { IslandUsageRegistry } from "./island/usage";
-import { createUsageService, type UsageInjection } from "./usage/wiring";
+import { createUsageService, type UsageInjection, type UsageSources } from "./usage/wiring";
 import { rowForTag } from "./runtime-sdk/provider-selection";
+import { botKeyPresence } from "./bots/key-presence";
 import type { WakeRegistry } from "./computer-use/wakes/registry";
 import { BrowserHostServer, type BrowserHostVerifier } from "./computer-use/browser/extension/host-server";
 import { BROWSER_HOST_SOCKET_NAME } from "./computer-use/browser/extension/protocol";
@@ -194,6 +195,7 @@ import type { McpSdkServerConfigWithInstance } from "@waifucave/clover-agent-sdk
 import { makeDaemonRoutineRunner } from "./routines/runner";
 import { makeRoutineScheduler } from "./routines/scheduler";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
+import { topPluginIdOf } from "@waifucave/clover-protocol";
 import { CORE_VERSION } from "./version";
 import { applyLoginShellPath, describeLoginShellPath, type LoginShellPathDeps } from "./login-shell-path";
 import { describeDeadLegacyFiles, findDeadLegacyFiles } from "./migration/dead-legacy-files";
@@ -223,6 +225,9 @@ const LOCKED_RETRY_MS = 30_000;
 
 export interface RunningDaemon {
   socketPath: string;
+  /** What usage tracking reads (its roots, and the executables it would run): none outside the home for a daemon that
+   *  isn't on its default home (J's audit). Undefined when usage tracking didn't start. */
+  usageSources?: UsageSources;
   /** C-M1: the daemon's side of the always-on pair (`platform/pair`), when it runs one. */
   pair?: DaemonPairSide;
   /** C-M1: resolves when the pair stops on purpose (a Quit, an update, the app leaving for good): the
@@ -1018,6 +1023,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   // but ALSO hot-rebuilt on lifecycle changes (unlike MCP servers today), matching Tier-2's
   // hotApplyStart/hotApplyStop precedent for "no restart needed" plugin changes.
   const hookRegistry = new HookRegistry();
+  // The plugin registry once it opens (`startPlugins`, below), for what a hook's plugin was granted.
+  const projectWriteRegistry: { current?: OpenedRegistry } = {};
   // WS-21 (L4 request 2): the store lists the user, self, project and builtin tiers; a plugin's skills are
   // claude-native content now (the runtimes load them, and `skills.list`'s plugin half is lane L4's).
   const skillStore = new SkillStore({ cloverHome, trust: trustStore });
@@ -1468,6 +1475,9 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   let usageAlarmNotices: (() => void) | undefined;
   const usage = createUsageService({
     home: cloverHome, settings: () => settings, islandUsage, version: CORE_VERSION,
+    // Whose apps it reads: the user's, only for the daemon on its default home (as the tree root and the app launch
+    // are); a temp-home or test daemon reads no app outside its home (J's audit), unless a test names one.
+    userHome: opts.parts?.userHome ?? (isDefaultCloverHome(home, profile) ? homedir() : undefined),
     ...(opts.usage === undefined ? {} : { injection: opts.usage }),
     onAlarmNotices: () => usageAlarmNotices?.(),
   });
@@ -2113,7 +2123,16 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   const hookFacade = new HookFacade({
     registry: hookRegistry,
-    runner: new HookRunner(pluginRun),
+    // A hook reads its session's project folders, and writes them when its plugin holds `project.write` (the
+    // controller's ruling after #345); bundled plugins the same.
+    runner: new HookRunner(pluginRun, {
+      projectFor: (pluginId, sid) => {
+        let dirs: string[];
+        try { dirs = store.dirs(sid).map((d) => d.path); } catch { return undefined; }
+        const record = projectWriteRegistry.current?.registry.get(topPluginIdOf(pluginId));
+        return { dirs, write: record?.granted.includes("project.write") === true };
+      },
+    }),
     hooksEnabled: cloverHooksEnabled,
     cwdForSession: (sid) => { try { return store.meta(sid).cwd ?? undefined; } catch { return undefined; } },
   });
@@ -3571,6 +3590,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       log: (line) => console.error(`[plugins] ${line}`),
     });
     partsRegistry = opened;
+    projectWriteRegistry.current = opened;
     pluginHost = await (opts.pluginHost ?? ((registry) => startPluginHost({
       home: cloverHome, computer: computerNameFor(defaultDeviceName(hostname())) || "Computer", registry, secrets: contractSecrets,
       ...(bundled !== undefined ? { bundledDigests: bundled.digests } : {}),
@@ -3582,7 +3602,8 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       ...commandListMethods(opened.registry),
       ...pluginSettingsMethods(pluginHost.settings),
       ...glossaryMethods(glossary),
-      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets }),
+      // `openCard` (the app's development-folder card) and the registry's own OK cards wait for the daemon's broker (#353).
+      ...pluginRegistryMethods({ opened, host: pluginHost.host, home: cloverHome, secrets: contractSecrets, os: hostOs() }),
     };
     return opened.registry;
   };
@@ -3593,6 +3614,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // #323: `pill.send` to a `pill.target` entry runs its handler on the plugin host.
       ...(pluginHost !== undefined ? { pillTargets: pluginHost.host } : {}),
       defaultModel: () => ({ model: liveModel?.() ?? "", ...(liveEffort?.() ? { effort: liveEffort() } : {}) }),
+      // Lane D's bot-side inputs (daemon-parts.ts `botSideOptions`): a plugin's model only where the user holds its
+      // key (§6.1), the routines' secrets and the user's time zone, and the app's URL for a plugin's file.
+      hasKeyFor: await botKeyPresence(secrets, cloverHome),
+      routines: { secrets: contractSecrets, userTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone },
+      assetUrl: (pluginId, path) => `/_t/${encodeURIComponent(pluginId)}/${path.split("/").map(encodeURIComponent).join("/")}`,
       drivers: ({ side, node, main }) => botDriverFactory({
         home: cloverHome,
         spawn: (options) => embeddedSessions.spawn(options),
@@ -3740,6 +3766,7 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   };
   return {
     socketPath: dirs.socketPath,
+    ...(usage === undefined ? {} : { usageSources: usage.sources }),
     ...(pairSide ? { pair: pairSide } : {}),
     pairStopped,
     quitPair(reason = "quit") {
@@ -3897,3 +3924,4 @@ if (import.meta.main) {
   const daemon = await startDaemon();
   stopOnSignals(daemon);
 }
+

@@ -276,9 +276,15 @@ export const DEVICES_METHODS = {
     /** The first key applies at once. Replacing one is a sensitive change (#179's review, check 2): other computers
      *  trust that key with their cards, so it ends in a sealed card (`{ applied: false, card }`). */
     name: "device.answerKey.set", owner: "H", roles: ["app"], userOnly: true,
-    params: z.object({ publicKey: Base64Key, held: AnswerKeyHolder, alg: AnswerKeyAlg.optional(), signature: Base64Key }),
+    params: z.object({
+      publicKey: Base64Key, held: AnswerKeyHolder, alg: AnswerKeyAlg.optional(), signature: Base64Key,
+      /** Replacing a key this desktop already holds: the current key's hand-over, its signature over
+       *  `clover/answer-key-rotate/1\n<device>\n<from>\n<to>\n<at>` (`answerKeyRotateStatement`). The user's yes on a
+       *  sealed change card bound to exactly this hand-over then applies it (`{ applied: false, card }` until then). */
+      rotation: z.object({ from: Base64Key, at: Timestamp, signature: Base64Key }).optional(),
+    }),
     result: ChangeResult,
-    doc: "Registers this desktop's app-held answer key, proved by the app's own signature.",
+    doc: "Registers this desktop's app-held answer key, proved by the app's own signature; replacing a held one takes the current key's hand-over and the user's yes on a card.",
   }),
 
   // Daemon to daemon, over the link.

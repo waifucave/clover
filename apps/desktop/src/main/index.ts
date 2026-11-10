@@ -449,6 +449,11 @@ function makePair(): Pair {
       if (parsed.success) {
         sealed.resolvedOutcome(parsed.data.id, parsed.data.outcome);
         disarmFallback(parsed.data.id);
+        // A replacement of this desktop's answer key waits on its card: on the yes, the app keeps the new key.
+        const client = pair.client;
+        if (client !== undefined && signedDevice !== undefined && answerKeyValue?.pendingCard === parsed.data.id) {
+          void answerKeyValue.resolved(client, signedDevice, parsed.data.id, parsed.data.outcome);
+        }
       }
     }
     // The app's role sees the cards whole; the store's own copy feeds the sealed frames and the fallback. A card_pending

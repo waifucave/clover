@@ -72,7 +72,7 @@ describe("checkRunFiles", () => {
 });
 
 describe("the run files and the host's start", () => {
-  test("ensurePluginRunFiles writes the bunfig and both guards whole, and each check matches what it wrote", () => {
+  test("ensurePluginRunFiles writes the bunfig, both guards and the spawn trampoline whole, and each check matches what it wrote", () => {
     const home = scratch();
     const files = ensurePluginRunFiles(join(home, "run"), { cloverHome: home });
     expect(() => checkRunFiles(pluginRunFileChecks(files, { host: true }), "run files")).not.toThrow();
@@ -81,6 +81,10 @@ describe("the run files and the host's start", () => {
     // The next ensure writes it back whole.
     ensurePluginRunFiles(join(home, "run"), { cloverHome: home });
     expect(() => checkRunFiles(pluginRunFileChecks(files, { host: true }), "run files")).not.toThrow();
+    // The spawn trampoline a fenced start runs through (#357) is checked too.
+    const trampoline = join(dirname(files.guard), "spawn.mjs");
+    writeFileSync(trampoline, `${readFileSync(trampoline, "utf8")}\n// a plugin was here\n`);
+    expect(() => checkRunFiles(pluginRunFileChecks(files), "run files")).toThrow("changed since Clover wrote it");
   });
 
   test("the host doesn't start from a bundle or guard that changed after the launch was made; its worker checks ride in argv", async () => {
@@ -88,9 +92,9 @@ describe("the run files and the host's start", () => {
     const launch = await hostProcessLaunch({ runDir: join(home, "run"), computer: "c", base: { PATH: process.env.PATH }, cloverHome: home });
     const host = launch.cmd.find((a) => a.endsWith("plugin-host.js"))!;
     const worker = launch.env.CLOVER_PLUGIN_WORKER!;
-    expect(parseRunCheckArgs(launch.cmd).map((c) => c.path).sort()).toEqual([worker, join(dirname(host), "bunfig.toml"), join(dirname(host), "guard.mjs")].sort());
+    expect(parseRunCheckArgs(launch.cmd).map((c) => c.path).sort()).toEqual([worker, join(dirname(host), "bunfig.toml"), join(dirname(host), "guard.mjs"), join(dirname(host), "spawn.mjs")].sort());
     expect(Object.keys(launch.env).some((k) => /check/i.test(k))).toBe(false);
-    expect(launch.checks!.map((c) => c.path).sort()).toEqual([host, join(dirname(host), "bunfig.toml"), join(dirname(host), "guard.mjs"), join(dirname(host), "host-guard.mjs")].sort());
+    expect(launch.checks!.map((c) => c.path).sort()).toEqual([host, join(dirname(host), "bunfig.toml"), join(dirname(host), "guard.mjs"), join(dirname(host), "spawn.mjs"), join(dirname(host), "host-guard.mjs")].sort());
     writeFileSync(host, `${readFileSync(host, "utf8")}\n// swapped\n`);
     expect(() => spawnHostProcess(launch)).toThrow("the plugin host: ");
   });

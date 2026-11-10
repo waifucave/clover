@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, type PluginRunGuard } from "../registry/plugin-run";
-import { fencedCommand, pluginFenceAvailable, toolFence } from "../registry/plugin-fence";
+import { fencedSpawn, pluginFenceAvailable, toolFence, type ProjectAccess } from "../registry/plugin-fence";
 /**
  * HookRunner — pure process mechanics for ONE plugin hook invocation (Phase 4f design §Protocol,
  * plan Task 1). Spawns `sh -c <command>` with the event JSON on stdin, races the exit against a
@@ -111,11 +111,15 @@ async function readCapped(stream: ReadableStream<Uint8Array> | null, cap: number
 
 export class HookRunner {
   private guard: PluginRunGuard | undefined;
+  private readonly projectFor: ((pluginId: string, sessionId: string) => ProjectAccess | undefined) | undefined;
 
   /** `guard`: Clover's run files for plugin processes (the daemon's, in its run folder). Without it the runner writes
-   *  its own into a fresh private temp folder on first use: a hook never runs unguarded (#234, F2). */
-  constructor(guard?: PluginRunGuard) {
+   *  its own into a fresh private temp folder on first use: a hook never runs unguarded (#234, F2).
+   *  `projectFor`: the session's project folders for a hook of a plugin, and whether the plugin holds `project.write`
+   *  (the controller's ruling after #345): readable always, writable with it, under the fence. */
+  constructor(guard?: PluginRunGuard, o: { projectFor?: (pluginId: string, sessionId: string) => ProjectAccess | undefined } = {}) {
     this.guard = guard;
+    this.projectFor = o.projectFor;
   }
 
   private guardFor(): PluginRunGuard {
@@ -132,21 +136,25 @@ export class HookRunner {
     try {
       // Under the fence (2f): its plugin's tree, its data and temp folders, the package managers' folders.
       const guard = this.guardFor();
+      const project = guard.fence !== false && pluginFenceAvailable() ? this.projectFor?.(spec.pluginId, payload.sessionId) : undefined;
       const fenced = guard.fence !== false && pluginFenceAvailable()
-        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}` })
+        ? toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot: spec.cwd, pluginId: spec.pluginId, ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `hook-${spec.pluginId}`, ...(project !== undefined ? { project } : {}) })
         : undefined;
-      proc = Bun.spawn(fencedCommand(["sh", "-c", spec.command], fenced?.fence), {
-        cwd: spec.cwd,
-        // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
-        // The hook's `bun` is the plugin Bun (#234's check 5, K1): its folder comes first on the PATH.
-        env: guardedPluginEnv(
-          {
-            ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
-            ...(fenced !== undefined ? fenced.env : {}),
-            PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
-          },
-          { pluginRoot: spec.cwd, ...this.guardFor() },
-        ),
+      // A `bun` the hook's command starts runs with Clover's config and load guard, held to the plugin's folder.
+      // The hook's `bun` is the plugin Bun (#234's check 5, K1): its folder comes first on the PATH.
+      const hookEnv = guardedPluginEnv(
+        {
+          ...process.env, CLOVER_SESSION_ID: payload.sessionId, CLOVER_PLUGIN_ID: spec.pluginId, CLOVER_HOOK_EVENT: payload.event,
+          ...(fenced !== undefined ? fenced.env : {}),
+          PATH: [this.guardFor().files.bin, process.env.PATH].filter((p) => p !== undefined && p !== "").join(delimiter),
+        },
+        { pluginRoot: spec.cwd, ...this.guardFor() },
+      );
+      // Fenced, through the spawn trampoline: its own TCC-responsible process (the controller's ruling after #345).
+      const spawned = fencedSpawn({ cmd: ["sh", "-c", spec.command], env: hookEnv, fence: fenced?.fence, files: guard.files, cwd: spec.cwd });
+      proc = Bun.spawn(spawned.cmd, {
+        ...(spawned.cwd !== undefined ? { cwd: spawned.cwd } : {}),
+        env: spawned.env,
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",

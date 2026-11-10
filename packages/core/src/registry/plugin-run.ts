@@ -27,7 +27,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, statSync, symlinkSync, unlinkSync, type Stats } from "node:fs";
 import { RESERVED_ENV } from "@waifucave/clover-plugin-sdk";
-import { fencedCommand, pluginFenceAvailable, toolFence } from "./plugin-fence";
+import { fencedCommand, fencedSpawn, pluginFenceAvailable, SPAWN_TRAMPOLINE_FILE, SPAWN_TRAMPOLINE_SOURCE, toolFence, type ProjectAccess } from "./plugin-fence";
 import { PLUGIN_BUN_FILE, pluginBunRequirement } from "../bundled-identities";
 import { resolveCloverHome } from "../clover-dir";
 import { resolveCloverProfile } from "../profile";
@@ -399,7 +399,7 @@ export function ensurePluginRunFiles(dir: string, o: { cloverHome: string }): Pl
   }
   // Written whole, never through a planted link (plugin-host/run-file.ts); `pluginRunFileChecks` names what each
   // start then checks.
-  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE], [files.hostGuard, pluginHostGuardSource(files)]] as const) {
+  for (const [path, text] of [[files.bunfig, PLUGIN_BUNFIG], [files.guard, PLUGIN_GUARD_SOURCE], [files.hostGuard, pluginHostGuardSource(files)], [join(real, SPAWN_TRAMPOLINE_FILE), SPAWN_TRAMPOLINE_SOURCE]] as const) {
     writeRunFile(path, text);
   }
   return files;
@@ -412,6 +412,8 @@ export function pluginRunFileChecks(files: PluginRunFiles, o: { host?: boolean }
   return [
     { path: files.bunfig, sha256: sha256Hex(PLUGIN_BUNFIG) },
     { path: files.guard, sha256: sha256Hex(PLUGIN_GUARD_SOURCE) },
+    // The spawn trampoline a fenced start runs through (#357), beside the guard.
+    { path: join(dirname(files.guard), SPAWN_TRAMPOLINE_FILE), sha256: sha256Hex(SPAWN_TRAMPOLINE_SOURCE) },
     ...(o.host === true ? [{ path: files.hostGuard, sha256: sha256Hex(pluginHostGuardSource(files)) }] : []),
   ];
 }
@@ -457,7 +459,7 @@ export function pluginBunLaunch(args: readonly string[], base: Readonly<Record<s
  *  `BUN_OPTIONS` back; `BUN_BE_BUN` it never carries, and the guard deletes it. A Bun command runs on the plugin Bun (`pluginBun`); any other program
  *  is the plugin's own, which the OK covers and Clover doesn't confine. Every plugin-sourced stdio entry goes through
  *  this. */
-export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard, pluginId?: string): E {
+export function guardedMcpServer<E extends { command: string; args?: string[]; env?: Record<string, string> }>(entry: E, pluginRoot: string, guard: PluginRunGuard, pluginId?: string, project?: ProjectAccess): E {
   const own = entry.env ?? {};
   refuseReservedPluginEnv(own, `the plugin MCP server at ${pluginRoot} (${basename(entry.command)})`);
   // The runtime starts the server later; this is the last moment Clover holds it: the bunfig and guard it will preload
@@ -469,10 +471,12 @@ export function guardedMcpServer<E extends { command: string; args?: string[]; e
   const command = isBunCommand(entry.command) ? pluginBun(guard.files.cloverHome) : entry.command;
   // Under the fence (2f): the command runs through sandbox-exec with a profile for this plugin.
   if (guard.fence !== false && pluginFenceAvailable()) {
-    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}` });
+    const { fence, env: toolEnv } = toolFence({ files: guard.files, shared: guard.shared ?? cloverSharedRoots(), pluginRoot, ...(pluginId !== undefined ? { pluginId } : {}), ...(guard.fence?.userHome ? { userHome: guard.fence.userHome } : {}), name: `mcp-${pluginId ?? basename(pluginRoot)}`, ...(project !== undefined ? { project } : {}) });
     Object.assign(env, toolEnv);
-    const [cmd, ...args] = fencedCommand([command, ...(entry.args ?? [])], fence);
-    return { ...entry, command: cmd!, args, env };
+    // Started by the runtime, in the folder it chooses; the trampoline makes it its own TCC-responsible process.
+    const spawned = fencedSpawn({ cmd: [command, ...(entry.args ?? [])], env, fence, files: guard.files });
+    const [cmd, ...args] = spawned.cmd;
+    return { ...entry, command: cmd!, args, env: spawned.env };
   }
   return { ...entry, command, env };
 }

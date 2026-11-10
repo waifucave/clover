@@ -5,7 +5,7 @@
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { writeHostBundles } from "./bundles";
-import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags, pluginRunFileChecks } from "../registry/plugin-run";
+import { cloverSharedRoots, ensurePluginRunFiles, guardedPluginEnv, pluginBun, pluginHostBunFlags, pluginRunFileChecks, type PluginRunFiles } from "../registry/plugin-run";
 import { checkRunFiles, runCheckArgs, type RunFileCheck } from "./run-file";
 import { fdLink, linesOf, streamPeer, type RpcPeer } from "./link";
 
@@ -41,6 +41,7 @@ export async function hostProcessLaunch(o: { runDir: string; computer: string; b
     env,
     checks,
     reads: [dirname(files.guard), ...shared, bun],
+    files,
     ...(o.onOutput ? { onOutput: o.onOutput } : {}),
   };
 }
@@ -55,6 +56,10 @@ export interface HostProcessLaunch {
   /** What every host process reads besides its plugin's tree, under the fence: the run files, the shared packages and
    *  its Bun (`cmd[0]`, the one program it runs). */
   reads?: readonly string[];
+  /** Clover's run files it was made from (the spawn trampoline's Bun and file, under the fence). */
+  files?: Pick<PluginRunFiles, "guard" | "bin" | "bunfig">;
+  /** Where it starts (the run folder, under the fence); the daemon's own folder otherwise. */
+  cwd?: string;
   onOutput?: (line: string) => void;
 }
 
@@ -71,7 +76,7 @@ export function spawnHostProcess(o: HostProcessLaunch & { graceMs?: number }): {
   checkRunFiles(o.checks ?? [], "the plugin host");
   // Through Bun.spawn: a node:child_process spawn with a descriptor past 2 is refused in Bun code (lane C's S7 finding,
   // `test/platform/child-process-stdio.test.ts`). `detached` makes the child its group's leader.
-  const child = Bun.spawn([...o.cmd], { env: o.env, stdio: ["ignore", "pipe", "pipe", "pipe"], windowsHide: true, ...(group ? { detached: true } : {}) });
+  const child = Bun.spawn([...o.cmd], { env: o.env, stdio: ["ignore", "pipe", "pipe", "pipe"], windowsHide: true, ...(o.cwd !== undefined ? { cwd: o.cwd } : {}), ...(group ? { detached: true } : {}) });
   const link = fdLink(child.stdio[3] as unknown as number);
   const peer = streamPeer(link.lines, (line) => link.write(`${line}\n`));
   for (const s of [child.stdout, child.stderr]) {
