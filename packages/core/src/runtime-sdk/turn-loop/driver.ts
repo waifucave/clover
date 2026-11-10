@@ -324,6 +324,8 @@ export class BotSessionDriver implements SessionDriver {
   /** The sandbox the open runtime was given (canonical JSON): the agent SDK takes `sandbox` only when a runtime opens,
    *  so each turn start compares the host's sandbox now with it and reopens on a difference (`#sandboxChanged`). */
   #builtSandbox: string | undefined;
+  /** The model and effort the open runtime was given: a pick in the bot's user layer reopens it before the next turn. */
+  #builtModel: string | undefined;
   /** The MCP servers the open runtime was given, by name: the agent SDK takes `mcpServers` only when a runtime opens,
    *  so a server a plugin adds (an install, an enable) or takes away since reopens it at the next turn start
    *  (`#serversChanged`). A server whose tools change keeps the runtime and is told in the turn (`mcpChangesSince`). */
@@ -635,6 +637,7 @@ export class BotSessionDriver implements SessionDriver {
   async #open(): Promise<Incarnation> {
     const ctx = this.#ctx;
     const bot = ctx.current();
+    this.#builtModel = `${bot.model}\u0000${bot.effort ?? ""}`;
     const state = this.#readState();
     const resume = await this.#hasTranscript(state.backendSessionId);
     const all = this.#mcpServers();
@@ -860,7 +863,7 @@ export class BotSessionDriver implements SessionDriver {
         return false;
       }
     })();
-    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache && !this.#sandboxChanged() && !this.#serversChanged()) return this.#inc;
+    if (this.#inc !== undefined && !this.#inc.closed && !this.#rebuild && !coldCache && !this.#sandboxChanged() && !this.#serversChanged() && !this.#modelChanged()) return this.#inc;
     // A rebuild resumes the transcript under the new prompt; the old runtime ends first (one engine per transcript).
     if (this.#inc !== undefined) await this.#closeIncarnation(this.#inc);
     this.#inc = await this.#open();
@@ -880,6 +883,22 @@ export class BotSessionDriver implements SessionDriver {
     }
     if (now === this.#builtServers) return false;
     this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its MCP servers changed`);
+    return true;
+  }
+
+  /** Whether the bot's model or effort is not what the open runtime got (the user picked another): the runtime then reopens
+   *  before the turn, resuming its transcript on the picked model. */
+  #modelChanged(): boolean {
+    if (this.#builtModel === undefined) return false;
+    let now: string;
+    try {
+      const bot = this.#ctx.current();
+      now = `${bot.model}\u0000${bot.effort ?? ""}`;
+    } catch {
+      return false;
+    }
+    if (now === this.#builtModel) return false;
+    this.#log(`bot driver ${this.#ctx.sessionId}: reopening: its model or effort changed`);
     return true;
   }
 
