@@ -25,7 +25,7 @@ import { loginKeychain } from "./auth/login-keychain";
 import { CredentialMigrationBusy } from "./auth/credential-migration-lock";
 import { beginKeychainPass, finishCredentialPass, type KeychainPass } from "./auth/keychain-boot";
 import { defaultSecretsBackend, KeychainSecretStore, type SecretStore } from "./auth/secret-store";
-import { guardBunSecrets } from "./auth/test-isolation";
+import { guardBunSecrets, underTest } from "./auth/test-isolation";
 import { migrateLegacyCredentialMaterial } from "./auth/credential-material";
 import { SessionStore } from "./sessions/store";
 import { SessionHub } from "./sessions/hub";
@@ -43,7 +43,7 @@ import { commandMethods } from "./registry/commands";
 import { CloverTokens } from "./auth/clover-tokens";
 import { SessionProcesses } from "./auth/clover-caller";
 import { startDaemonPairSide, type DaemonPairSide } from "./platform/pair/daemon-side";
-import { claimDaemonChildren } from "./platform/daemon-children";
+import { becomeOwnResponsible, claimDaemonChildren } from "./platform/daemon-children";
 import { CloverSecretStore, KeychainValues, memoryVault, openCloverSecretStore, secretStoreWarning } from "./secrets/clover-secret-store";
 import { defaultDeviceName, startDaemonLinks, type DaemonLinks, type DaemonLinksInput } from "./ipc/device-links";
 import { computerNameFor } from "./devices/registry";
@@ -3908,6 +3908,10 @@ export async function startDaemon(opts: Parameters<typeof startDaemonInner>[1] =
   // A test daemon (a test's own, in-process or spawned from source, by the variables it inherits): `Bun.secrets`
   // reaches only an isolated store, and throws for any other (auth/test-isolation.ts). A no-op outside a test.
   guardBunSecrets();
+  // A's #416 gap: on macOS the daemon is its own responsible process before anything is spawned, so a child that
+  // double-forks, calls `setsid` and is reparented to launchd is still known for the daemon's. Under `supervise` it
+  // already is; started any other way it re-executes itself in place (same pid) once. Never in a test's process.
+  if (!underTest() && becomeOwnResponsible() === "failed") console.error("[caller] the daemon couldn't make itself its own responsible process: a child that double-forks is told from the user by the parent chain and the floor alone");
   // C-M1 (review B1): before anything is spawned, so every child stays the daemon's: Linux's subreaper, the
   // daemon's own job on Windows.
   const claimed = claimDaemonChildren();

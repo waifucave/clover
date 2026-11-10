@@ -96,6 +96,15 @@ function responsibility(): Lib | null {
   });
 }
 
+/** macOS: the process `pid` is responsible to (TCC's attribution), or null. A double fork, a `setsid`, a reparent to
+ *  launchd and a cleared environment all keep it; only a process spawned with its responsibility disclaimed starts its
+ *  own (measured with a dummy disclaimed parent and its double-forked, setsid'd grandchild). */
+export function responsiblePid(pid: number, os: DaemonPlatform = currentOs()): number | null {
+  if (os !== "darwin") return null;
+  const r = responsibility()?.responsibility_get_pid_responsible_for_pid?.(pid) as number | undefined;
+  return r !== undefined && r > 0 ? r : null;
+}
+
 function currentOs(): DaemonPlatform {
   return process.platform === "win32" ? "win32" : process.platform === "darwin" ? "darwin" : "linux";
 }
@@ -226,6 +235,10 @@ export interface PeerFacts {
   readonly spawnedByDaemon?: boolean;
   /** The process itself, held for the connection's life (review S5): the kill goes through it, never the pid. */
   readonly handle?: PeerHandle;
+  /** macOS: the process the peer is responsible to (`responsiblePid`). A process the daemon started on its own
+   *  responsibility (the process holder, a disclaimed spawn) is the responsible process of everything under it, after
+   *  a `setsid` and a reparent to launchd too, so the caller check finds it among the daemon's noted pids. */
+  readonly responsible?: number;
 }
 
 /** Whether `pid` (with its parents) was started by this daemon (see `PeerFacts.spawnedByDaemon`). The daemon
@@ -255,9 +268,11 @@ export function probePeer(socketOrFd: unknown, os: DaemonPlatform = currentOs(),
   const probe = handle?.probe() ?? sandboxProbe(pid, os);
   const ancestors = ancestry(pid, os);
   const spawned = spawnedByDaemon(pid, ancestors, os);
+  const resp = responsiblePid(pid, os);
+  const responsible = resp === null ? {} : { responsible: resp };
   // Read last: every fact above is about the connected process only if it is still there.
-  if (handle && !handle.alive()) return { pid, ancestors, probe, floor: "fenced", spawnedByDaemon: spawned, handle };
-  return { pid, ancestors, probe, floor: callerFloorVerdict(os, probe), spawnedByDaemon: spawned, ...(handle ? { handle } : {}) };
+  if (handle && !handle.alive()) return { pid, ancestors, probe, floor: "fenced", spawnedByDaemon: spawned, ...responsible, handle };
+  return { pid, ancestors, probe, floor: callerFloorVerdict(os, probe), spawnedByDaemon: spawned, ...responsible, ...(handle ? { handle } : {}) };
 }
 
 /** One of the daemon's own handles, from NtQueryInformationProcess(ProcessHandleInformation). */
@@ -374,7 +389,10 @@ export class WindowsPipePeers {
 /** The process-tree half: whether any of `pid` and its parents is one the daemon started for a bot,
  *  an agent or a plugin (`spawned`), so the caller is that process's command and never the user. A
  *  double fork escapes this (the parent becomes init or launchd), which is why the floor exists. */
-export function descendsFrom(facts: Pick<PeerFacts, "pid" | "ancestors">, spawned: ReadonlySet<number>): boolean {
+export function descendsFrom(facts: Pick<PeerFacts, "pid" | "ancestors"> & Partial<Pick<PeerFacts, "responsible">>, spawned: ReadonlySet<number>): boolean {
   if (facts.pid !== null && spawned.has(facts.pid)) return true;
+  // macOS: responsible to one the daemon started on its own responsibility (a holder, a disclaimed spawn), however far
+  // it has gone from it (a double fork, `setsid`, launchd as its parent).
+  if (facts.responsible !== undefined && spawned.has(facts.responsible)) return true;
   return facts.ancestors.some((p) => spawned.has(p));
 }

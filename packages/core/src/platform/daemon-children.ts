@@ -7,7 +7,9 @@
 //   macOS    a double fork is re-parented to launchd, but it keeps its responsible process (the one TCC attributes
 //            it to). That is the daemon only when the daemon is its own responsible process, so `supervise` starts
 //            the daemon with responsibility disclaimed (`spawnDisclaimed`); a daemon run straight from a terminal
-//            stays the terminal's, and there a double fork falls back to the parent chain and the floor.
+//            would stay the terminal's, so a daemon that finds it isn't its own responsible process re-executes itself in
+//            place (same pid) with responsibility disclaimed (`becomeOwnResponsible`) before it starts anything. Then a
+//            child that double-forks, calls `setsid` and is reparented to launchd is still the daemon's (A's #416 gap).
 // `spawnedByDaemon` (caller-probe.ts) then reads the result.
 import { ffiLib, ffiPtr as ptr } from "./ffi";
 import { enterDaemonJob } from "./win-job";
@@ -26,11 +28,48 @@ export function claimDaemonChildren(): { subreaper: boolean; job: boolean } {
 function spawnLib() {
   return ffiLib("darwin-spawn", "/usr/lib/libSystem.B.dylib", {
     posix_spawnattr_init: { args: ["ptr"], returns: "i32" },
+    posix_spawnattr_setflags: { args: ["ptr", "i16"], returns: "i32" },
+    responsibility_get_pid_responsible_for_pid: { args: ["i32"], returns: "i32" },
     posix_spawnattr_destroy: { args: ["ptr"], returns: "i32" },
     responsibility_spawnattrs_setdisclaim: { args: ["ptr", "i32"], returns: "i32" },
     posix_spawn: { args: ["ptr", "ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
     waitpid: { args: ["i32", "ptr", "i32"], returns: "i32" },
   });
+}
+
+const POSIX_SPAWN_SETEXEC = 0x40;
+
+/** The argv that runs this process again: the compiled binary with its own arguments, or the runtime with its script. */
+export function selfArgv(argv: readonly string[] = process.argv, execPath: string = process.execPath): string[] {
+  // A compiled Bun binary reports its embedded entry (`/$bunfs/...`) as argv[1]; the binary itself takes the rest.
+  return argv[1]?.startsWith("/$bunfs/") || argv[1]?.startsWith("B:/~BUN/") ? [execPath, ...argv.slice(2)] : [execPath, ...argv.slice(1)];
+}
+
+/** macOS: makes this process its own responsible process, as `supervise` starts the daemon (review B1, A's #416 gap):
+ *  when it isn't, it re-executes itself in place (`POSIX_SPAWN_SETEXEC`: the same pid, descriptors and environment)
+ *  with responsibility disclaimed, and never returns. `"own"` when it already is (or after the re-exec), `"skipped"`
+ *  off macOS, `"failed"` when the re-exec was refused (the parent chain and the floor still stand then). Call it before
+ *  anything is started, so nothing is left behind by the exec. */
+export function becomeOwnResponsible(argv: readonly string[] = selfArgv(), env: Record<string, string | undefined> = process.env): "own" | "skipped" | "failed" {
+  if (process.platform !== "darwin") return "skipped";
+  const lib = spawnLib();
+  if (!lib) return "failed";
+  if ((lib.responsibility_get_pid_responsible_for_pid!(process.pid) as number) === process.pid) return "own";
+  const keep: Buffer[] = [];
+  const cstr = (s: string) => { const b = Buffer.from(`${s}\0`, "utf8"); keep.push(b); return BigInt(ptr(b) as number); };
+  const array = (items: readonly string[]) => { const a = new BigUint64Array(items.length + 1); items.forEach((s, i) => { a[i] = cstr(s); }); return a; };
+  const args = array(argv);
+  const envp = array(Object.entries(env).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}=${v}`));
+  const attr = new BigUint64Array(1);
+  if ((lib.posix_spawnattr_init!(ptr(attr)) as number) !== 0) return "failed";
+  try {
+    if ((lib.responsibility_spawnattrs_setdisclaim!(ptr(attr), 1) as number) !== 0) return "failed";
+    if ((lib.posix_spawnattr_setflags!(ptr(attr), POSIX_SPAWN_SETEXEC) as number) !== 0) return "failed";
+    const pid = new Int32Array(1);
+    // On success this doesn't return: the process image is replaced.
+    lib.posix_spawn!(ptr(pid), ptr(Buffer.from(`${argv[0]}\0`)), null, ptr(attr), ptr(args), ptr(envp));
+    return "failed";
+  } finally { lib.posix_spawnattr_destroy!(ptr(attr)); }
 }
 
 /** A process `spawnDisclaimed` started: its pid and how it ended (a signal as 128 + its number). */
