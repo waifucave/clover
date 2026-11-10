@@ -227,7 +227,7 @@ export async function main(argv: readonly string[], root: string): Promise<numbe
   // before packaging.
   // `plugins`: this architecture's bundled plugins, built and measured into the manifest its daemon carries.
   const steps: Array<{ say: string; cmd: string[]; cwd: string; stage?: LinuxArch; plugins?: LinuxArch }> = [
-    { say: "the app", cmd: ["bun", "run", "build"], cwd: desktop },
+    { say: "the app", cmd: ["bun", "scripts/build.ts", "--release"], cwd: desktop },
     { say: "the link sidecar, clover-link", cmd: [...LINK_BUILD], cwd: root },
   ];
   for (const arch of args.arches) {

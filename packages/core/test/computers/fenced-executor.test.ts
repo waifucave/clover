@@ -211,6 +211,10 @@ describe("through the daemon's parts (startDaemonParts), as the daemon wires it"
     expect(s.runs).toHaveLength(1);
     expect(s.runs[0]).toMatchObject({ command: "echo ok", cwd: realpathSync(userHome), who: { caller: { kind: "session", sessionId: "s_luna", sessionKind: "bot", bot: "luna" } } });
     expect(s.runs[0]!.env.HOME).toBe(userHome);
+    // In production too: a coding session's TMPDIR is the fence's temp folder; the bot's is its own scratch folder.
+    expect(s.runs[0]!.env.TMPDIR).toEndWith("/scratch/luna");
+    await node.tools.run("Bash", { command: "echo ok" }, { session: "s_code", sessionKind: "coding", callId: "c2", cwd: `home/${name}` });
+    expect(s.runs[1]!.env.TMPDIR).toBe(new CloverFence({ home: userHome, cloverHome: join(userHome, ".x") }).temp);
   }, 30_000);
 
   test("without a spawner the node has no executor: Bash on its tree is refused, never run unsandboxed", async () => {

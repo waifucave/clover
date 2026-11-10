@@ -7,6 +7,8 @@
 //   ACCEPTANCE-SEARCH → a `tool_use` of the tool whose name ends in `WebSearch` (the bundled web plugin's), which the
 //                       run's fake search backend answers (fake-exa.ts)
 //   ACCEPTANCE-TAG-<id> → the text `ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-<id>` (a reply only this turn can have caused)
+//   ACCEPTANCE-SLOW   → a turn that keeps running: the stream starts (`ACCEPTANCE-SLOW-PARTIAL`) and doesn't end for two
+//                       minutes, or until the daemon drops the request (the reopen steps quit the app mid-turn)
 //   anything else     → the text `ACCEPTANCE-REPLY-OK`
 // and after a `tool_result`, the text `ACCEPTANCE-DONE: <the result's text>`. A request whose `x-api-key` isn't the
 // run's dummy key gets the 401 the real provider gives; the run reports only whether it matched, never a key.
@@ -175,6 +177,10 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
+      if (record.lastUserText.includes("ACCEPTANCE-SLOW") && result === undefined) {
+        record.answered = "text";
+        return slowTurn(req.signal, id, model, record.stream);
+      }
       let content: Record<string, unknown>[];
       let stop: string;
       if (result !== undefined) {
@@ -260,4 +266,34 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
     },
   });
   return { url: `http://127.0.0.1:${server.port}`, requests, close: () => server.stop(true) };
+}
+
+/** A turn that keeps running (ACCEPTANCE-SLOW): the stream's start and a partial text at once, then nothing for two
+ *  minutes or until the caller drops the request; a non-streaming request waits the same and then answers. */
+function slowTurn(signal: AbortSignal, id: string, model: string, stream: boolean): Response | Promise<Response> {
+  const usage = { input_tokens: 10, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  const hold = (): Promise<void> => new Promise((resolve) => {
+    const t = setTimeout(resolve, 120_000);
+    signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+  if (!stream) {
+    return hold().then(() => Response.json({ id, type: "message", role: "assistant", model, content: [{ type: "text", text: "ACCEPTANCE-SLOW-DONE" }], stop_reason: "end_turn", stop_sequence: null, usage }));
+  }
+  const enc = new TextEncoder();
+  const ev = (event: string, data: unknown): Uint8Array => enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const body = new ReadableStream<Uint8Array>({
+    async start(c) {
+      c.enqueue(ev("message_start", { type: "message_start", message: { id, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage } }));
+      c.enqueue(ev("content_block_start", { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }));
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-SLOW-PARTIAL " } }));
+      await hold();
+      if (signal.aborted) { try { c.close(); } catch { /* gone */ } return; }
+      c.enqueue(ev("content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ACCEPTANCE-SLOW-DONE" } }));
+      c.enqueue(ev("content_block_stop", { type: "content_block_stop", index: 0 }));
+      c.enqueue(ev("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 5 } }));
+      c.enqueue(ev("message_stop", { type: "message_stop" }));
+      c.close();
+    },
+  });
+  return new Response(body, { headers: { "content-type": "text/event-stream", "cache-control": "no-cache" } });
 }

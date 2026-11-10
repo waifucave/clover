@@ -23,6 +23,44 @@ export const TEST_BUILD_SENTINEL = "test-marked build";
 /** The define's name. */
 export const TEST_BUILD_DEFINE_NAME = "__CLOVER_TEST_BUILD__";
 
+/** The source acceptance's own build of the app (apps/desktop/scripts/build.ts --acceptance): its define and label,
+ *  `false` in every other build, a release's and the test twin's included. */
+export const ACCEPTANCE_BUILD_DEFINE_NAME = "__CLOVER_ACCEPTANCE_BUILD__";
+export const ACCEPTANCE_BUILD_LABEL = "CLOVER-ACCEPTANCE-BUILD";
+export function acceptanceBuildDefine(acceptance: boolean): Record<string, string> {
+  return { [ACCEPTANCE_BUILD_DEFINE_NAME]: acceptance ? JSON.stringify(ACCEPTANCE_BUILD_LABEL) : "false" };
+}
+
+/** The release build's own define (apps/desktop/scripts/build.ts --release, which release/build.ts passes for every
+ *  build but the test twin): `__CLOVER_RELEASE_BUILD__`, the label in a release-shaped build (signed, sign-only,
+ *  dev-signed, CI's unsigned), `false` in a test twin, an acceptance build and a dev build. It is for the app's
+ *  "packaged" decision, which must not rest on the executable's name alone (Electron's `app.isPackaged` is false for an
+ *  executable named `electron`); until that helper reads it, the main bundle carries the label in a leading comment
+ *  (`RELEASE_BUILD_BANNER`), so the gate below can see that the release build reached the main process. */
+export const RELEASE_BUILD_DEFINE_NAME = "__CLOVER_RELEASE_BUILD__";
+export const RELEASE_BUILD_LABEL = "CLOVER-RELEASE-BUILD";
+export function releaseBuildDefine(release: boolean): Record<string, string> {
+  return { [RELEASE_BUILD_DEFINE_NAME]: release ? JSON.stringify(RELEASE_BUILD_LABEL) : "false" };
+}
+/** The main bundle's first line in a release build (Bun.build's `banner`). */
+export const RELEASE_BUILD_BANNER = `/* ${RELEASE_BUILD_LABEL}: the main process of a release build (${RELEASE_BUILD_DEFINE_NAME}) */`;
+
+/** The release gate on an app.asar: a release-shaped build's main process (out/main/index.js) carries the release
+ *  label, and nothing in a test twin's or an acceptance build's app.asar does. */
+export function releaseMarkerProblems(what: string, bytes: Uint8Array, release: boolean): string[] {
+  const files = asarFiles(bytes);
+  const main = files.get("out/main/index.js");
+  if (release) {
+    if (main === undefined) return [`${what} has no out/main/index.js to read the release label in`];
+    return contains(main, RELEASE_BUILD_LABEL) ? [] : [`${what}'s main process doesn't carry the release label ${RELEASE_BUILD_LABEL} (apps/desktop/scripts/build.ts --release didn't reach it)`];
+  }
+  return contains(bytes, RELEASE_BUILD_LABEL) ? [`${what} carries the release label ${RELEASE_BUILD_LABEL}: a test twin or an acceptance build never does`] : [];
+}
+
+/** What only the test-only code of the app reads: the environment variables that pick the kept test answer key and
+ *  allow the offscreen press. A real build's app code carries none of them (nor the acceptance label). */
+export const TEST_ONLY_APP_STRINGS = ["CLOVER_TEST_ANSWER_KEY", "CLOVER_TEST_SEALED_PRESS"] as const;
+
 /** The `bun build --define` argument for a shell line: `false` in a real build (no quotes, so cmd.exe takes it), the
  *  label as a JSON string in a test build (macOS only, /bin/sh). */
 export function testBuildDefineArg(test: boolean): string {
@@ -101,8 +139,11 @@ export function asarMarkerProblems(what: string, bytes: Uint8Array, test: boolea
       ...(sentinel ? [] : [`${what} is a test build but its code doesn't carry the test-only branch ("${TEST_BUILD_SENTINEL}")`]),
     ];
   }
+  const testOnly = TEST_ONLY_APP_STRINGS.filter((t) => code.some(([, b]) => contains(b, t)));
   return [
     ...(label ? [`${what} carries the test-build label ${TEST_BUILD_LABEL}: a real build never does`] : []),
     ...(sentinel ? [`${what}'s code carries the test-only branch ("${TEST_BUILD_SENTINEL}"): a real build's must be compiled out`] : []),
+    ...(contains(bytes, ACCEPTANCE_BUILD_LABEL) ? [`${what} carries the acceptance build's label ${ACCEPTANCE_BUILD_LABEL}: a real build never does`] : []),
+    ...testOnly.map((t) => `${what}'s code reads ${t}: a real build's test-only path must be compiled out`),
   ];
 }
