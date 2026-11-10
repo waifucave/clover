@@ -302,7 +302,9 @@ export const DEVICES_METHODS = {
       params: z.unknown(),
       /** Whose call it is on the calling computer, for attribution only. The receiver decides who the caller is from
        *  the link (`from`, the authenticated peer device), never from this: a peer's `user` is the user on another
-       *  device, never the user's own terminal here, and it never waives the fence. */
+       *  device, never the user's own terminal here, and it never waives the fence. A `noSessions` method (a card's
+       *  sealed fields) runs only for `as.kind === "user"`. The sender, when it lands, builds `as` from the caller the
+       *  call started with, never defaulting it to `user`. */
       as: Caller,
       /** The allow list the receiver applies: a remote client's (`remote`) or the web page's shorter one (`web`), never
        *  another role's (`peerCallVerdict`). */
