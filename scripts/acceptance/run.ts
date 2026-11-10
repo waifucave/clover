@@ -481,7 +481,7 @@ interface Turn { events: Ev[]; cards: string[]; changes: string[] }
 /** Sends the user's message and waits for its turn to end; gives back the events after it, and the cards the turn
  *  raised, each answered yes as the app would (a card nobody answers holds the turn until it is withdrawn), with each
  *  change card's subject (`changes`, e.g. `bot-provider`). */
-async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000): Promise<Turn> {
+async function turn(c: CloverClient, session: string, text: string, timeoutMs = 120_000, o: { press?: boolean } = {}): Promise<Turn> {
   const known = new Set([...(await cards(c).catch(() => [])), ...raised].map((k) => k.id));
   const sent = await c.request<{ seq: number }>("session.send", { id: session, message: { text, clientMessageId: randomUUID() } }, 30_000);
   const asked = fake?.requests.length ?? 0;
@@ -498,10 +498,11 @@ async function turn(c: CloverClient, session: string, text: string, timeoutMs = 
         known.add(card.id);
         if (card.change !== undefined) changes.push(card.change);
         try {
-          // The run's first card is pressed in the window, the real way; the rest are answered over RPC.
-          if (pressCdp !== undefined && !pressedOne) {
-            pressedOne = true;
-            await pressApprove(pressCdp, card);
+          // A turn that presses (step 6's write) presses its cards in the window, the real way; the rest are answered
+          // over RPC.
+          if (o.press === true) {
+            if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the card can't be pressed the real way");
+            await pressApprove(pressCdp!, card);
             seenCards.push(`a ${card.kind} card, its Approve pressed in the window (the app signed, the broker checked the proof)`);
             continue;
           }
@@ -564,7 +565,6 @@ async function approve(c: CloverClient, card: Card): Promise<void> {
 }
 /** The first app's DevTools connection (step 1), for the run's one real press. */
 let pressCdp: Cdp | undefined;
-let pressedOne = false;
 /** Presses the card's Approve on its fallback card, drawn offscreen in a headless run (CLOVER_TEST_SEALED_PRESS): the
  *  pointer enters, the page's own second passes, then a trusted DevTools click on the button. The answer goes the
  *  whole real way (the page's gates, the app's signature with its registered answer key, `card.answer` with a device
@@ -631,8 +631,9 @@ async function main(): Promise<void> {
   }
   const smokeOut = join(root, "smoke.json");
   // The first app takes a DevTools port (the source app behind CLOVER_DEV_DEBUG, a test-marked one behind
-  // CLOVER_TEST_DEBUG) and draws a card's fallback offscreen (CLOVER_TEST_SEALED_PRESS), so the run presses the first
-  // card's real Approve button: the app signs with its registered answer key and the core's broker checks the proof.
+  // CLOVER_TEST_DEBUG) and draws a card's fallback offscreen (CLOVER_TEST_SEALED_PRESS), so the run presses the real
+  // Approve of step 4's plugin OK card and step 6's write card: the app signs with its registered answer key and the
+  // core's broker checks the proof (step 3's turn raises no card: Clover's own bot asks nothing).
   const pressPort = 9300 + Math.floor(Math.random() * 500);
   const appEnv = {
     ...baseEnv(), CLOVER_DAEMON_BIN: stubBin, CLOVER_SMOKE_KEEP: "1", CLOVER_SMOKE_OUT: smokeOut, CLOVER_SMOKE_DEADLINE_MS: "45000",
@@ -767,7 +768,9 @@ async function main(): Promise<void> {
     });
     const shown = await c.request<{ card: Card }>("card.get", { id: card.id });
     if (shown.card.hash !== card.hash) fail("card.get's card isn't card.list's");
-    await approve(c, card);
+    // Pressed in the window, the real way: the app signs with its registered key, the broker checks the proof.
+    if (pressCdp === undefined) fail("the first app has no DevTools connection (step 1), so the OK card can't be pressed the real way");
+    await pressApprove(pressCdp!, card);
     const state = await until("the plugin to be enabled after its OK", 60_000, async () => {
       const r = await c.request<{ plugin?: { state?: string } }>("plugin.get", { id: installed.id }).catch(() => undefined);
       const s = r?.plugin?.state;
@@ -775,7 +778,7 @@ async function main(): Promise<void> {
     });
     if (state !== "enabled" && state !== "running") fail(`after its OK the plugin is ${state}`);
     pluginOk = true;
-    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed, read and approved; now ${state}`);
+    record(4, "PASS", `plugin.install (folder) → ${installed.state}; the ${card.kind} card listed and read, its Approve pressed in the window (the app signed, the broker checked the proof); now ${state}`);
   } catch (err) {
     record(4, statusOf(err), why(err));
   }
@@ -858,7 +861,7 @@ async function main(): Promise<void> {
   else {
     try {
       const seen = fake.requests.length;
-      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000);
+      const { events, cards: carded } = await turn(c, session, "ACCEPTANCE-WRITE: write the file", 150_000, { press: true });
       const answered = carded.length ? carded.join("; ") : undefined;
       const mine = fake.requests.slice(seen);
       const called = mine.find((r) => r.toolUse !== undefined)?.toolUse;
