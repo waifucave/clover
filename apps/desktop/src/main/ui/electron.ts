@@ -11,6 +11,7 @@ import { checkMenu, mayPlaceView, menuPoint, openTarget, viewRect, type MenuItem
 import { isInside, mediaType, pluginFile } from "./files";
 import { LayerError, type FrameRef, type UiRuntime } from "./runtime";
 import { routeCall } from "./tree-calls";
+import { routeComposer } from "./composer-calls";
 import type { UiPlugin } from "./model";
 
 /** Registers the app's schemes as standard and secure origins, before the app is ready. Service workers and
@@ -276,8 +277,8 @@ export interface IpcHooks {
   terminalInput(windowId: number, frameId: string, pluginId: string, terminalId: string, input: { kind: "key"; key: string } | { kind: "paste" }): Promise<void>;
   /** The user's own words from a `clover` surface's part (`pill.send`), after the gate. */
   userSend(windowId: number, to: unknown, message: { text: string; images?: unknown }): Promise<{ seq?: number }>;
-  /** The bundled tree's title area moves the window: `start` at the mouse's screen point, `move`, `end`. */
-  windowDrag(windowId: number, phase: "start" | "move" | "end", point: { x: number; y: number }): void;
+  /** The shell's press on a drag region (`shell`: the main process's own record says this is the shell in `app.root`). */
+  windowDrag(windowId: number, shell: boolean): void;
   /** The session a window shows now, as the `clover` layer's shell says (null: none). */
   activeSession(windowId: number, session: string | null): void;
   /** Where a web page part's view goes in the window (undefined: hidden). */
@@ -500,11 +501,29 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     if (checked === undefined) throw new LayerError("not a key press or a paste");
     return hooks.terminalInput(s.windowId, `${s.frame.processId}:${s.frame.routingId}`, runtime.partOf(s.frame, mount), terminalId, checked);
   });
+  handle("clover:composer", (event, a) => {
+    const s = sender(event);
+    const mount = str(a.mount, 32);
+    if (mount === undefined) throw new LayerError("bad request");
+    const pluginId = runtime.partOf(s.frame, mount);
+    return routeComposer({
+      composer: runtime.composerOf(s.frame, mount),
+      op: a.op,
+      args: a.args,
+      takeGesture: hooks.takeGesture,
+      asApp: hooks.treeRequest,
+      asLayer: (id, method, params) => hooks.api(id || pluginId, method, params),
+      log,
+      refuse: (why) => new LayerError(why),
+    });
+  });
   handle("clover:user-send", (event, a) => {
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) throw new LayerError("bad request");
-    const { windowId } = runtime.userSender(s.frame, mount);
+    const { windowId, only } = runtime.userSender(s.frame, mount);
+    // A composer's words go to its own session and nowhere else.
+    if (only !== undefined && !(typeof a.to === "object" && a.to !== null && Object.keys(a.to).length === 1 && (a.to as { session?: unknown }).session === only.session)) throw new LayerError("a composer sends to its own session");
     const m = (a.message ?? {}) as { text?: unknown; images?: unknown };
     if (typeof m.text !== "string" || m.text.length > 1_000_000) throw new LayerError("the words are text");
     return hooks.userSend(windowId, a.to, { text: m.text, ...(m.images !== undefined ? { images: m.images } : {}) });
@@ -513,13 +532,9 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
     const s = sender(event);
     const mount = str(a.mount, 32);
     if (mount === undefined) return;
-    const tree = runtime.treePart(s.frame, mount);
-    if (tree === undefined) return;
-    const phase = a.phase === "start" || a.phase === "move" || a.phase === "end" ? a.phase : undefined;
-    const x = typeof a.x === "number" && Number.isFinite(a.x) ? a.x : undefined;
-    const y = typeof a.y === "number" && Number.isFinite(a.y) ? a.y : undefined;
-    if (phase === undefined || x === undefined || y === undefined) return;
-    hooks.windowDrag(tree.windowId, phase, { x, y });
+    // The mount's own record decides (window-drag.ts); a layer's drag message from any other part is refused.
+    const shell = runtime.mainShell(s.frame, mount);
+    hooks.windowDrag(shell?.windowId ?? s.windowId, shell !== undefined);
   });
   on("clover:active-session", (event, a) => {
     const s = sender(event);
@@ -620,8 +635,8 @@ export function installIpc(runtime: UiRuntime, hooks: IpcHooks, log: (line: stri
   });
 
   return () => {
-    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
-    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session"]) ipcMain.removeAllListeners(c);
+    for (const c of ["clover:describe", "clover:resolve", "clover:reload", "clover:wake", "clover:menu", "clover:drag-offer", "clover:drag-claim", "clover:surface-environment", "clover:open", "clover:root-call", "clover:entries", "clover:user-send", "clover:composer", "clover:api", "clover:terminal-input", "clover:sealed-frame", "clover:sealed-answer", "clover:sealed-visible"]) ipcMain.removeHandler(c);
+    for (const c of ["clover:props", "clover:callback", "clover:size", "clover:release", "clover:sleep", "clover:surface", "clover:rect-reply", "clover:frame-metrics", "clover:root-command", "clover:view-frame", "clover:web-frame", "clover:active-session", "clover:window-drag"]) ipcMain.removeAllListeners(c);
   };
 }
 

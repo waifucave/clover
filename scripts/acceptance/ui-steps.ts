@@ -129,7 +129,10 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
     });
     if (items.length < 2) fail(`the picker lists ${items.length} model(s): ${items.map((i) => i.t).join(", ")}`);
     const other = items.findIndex((i) => i.c !== "true");
-    const pick = await cdp.evaluate(pill.session, `(() => { const e = [...document.querySelectorAll('[role=menuitemradio]')][${other}]; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`) as { x: number; y: number };
+    // The menu scrolls inside its own box (the catalog is more than a thousand models): bring the row into view as a person would.
+    const pick = await cdp.evaluate(pill.session, `(() => { const e = [...document.querySelectorAll('[role=menuitemradio]')][${other}]; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`) as { x: number; y: number };
+    const room = await cdp.evaluate(pill.session, "innerHeight") as number;
+    if (pick.y < 0 || pick.y > room) fail(`the picker's row can't be brought on screen (y ${Math.round(pick.y)} of ${room}): the menu doesn't scroll`);
     await cdp.click(pill.session, pick.x, pick.y);
     const now = await until("the bot's model to change", 15_000, async () => {
       const m = (await rpc.request<{ bots: { model?: string }[] }>("bot.list", {})).bots[0]?.model;

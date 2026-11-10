@@ -239,8 +239,9 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
     const levels = [...frame("settings-levels").querySelectorAll(".cl-window__dialog select")].map((s) => (s as HTMLSelectElement).value);
     expect(levels).toEqual(["ask-risky", "ask", "automatic"]);
     const devices = frame("settings-devices").querySelector(".cl-window__dialog .cl-settings")!;
-    expect(devices.querySelector('[aria-label="Make Laptop the main computer"]')).toBeTruthy();
-    expect(devices.querySelector('[aria-label="Pair a device"]')).toBeTruthy();
+    // Trust-changing controls are not offered from a part (backlog), so the list shows the devices only.
+    expect(devices.querySelector('[aria-label="Make Laptop the main computer"]')).toBeNull();
+    expect(devices.textContent).toContain("Laptop");
     const atItem = frame("settings-device-item").querySelector(".cl-window__dialog .cl-settings")!;
     expect([...atItem.querySelectorAll<HTMLElement>("[data-marked]")].map((el) => el.textContent)).toEqual([expect.stringContaining("Laptop")]);
   });
@@ -260,27 +261,19 @@ describe("F-M2's screens: the pages the runtime adds, and add-ons", () => {
   });
 });
 
-// Last, since they change two screens' state: the real Settings, in the window, raising its cards.
-describe("cards raised from Settings close Settings (review round 3, C)", () => {
-  const note = "Answer the waiting card first, then open it again.";
-
-  test("asking for a level change", async () => {
+// Last: the real Settings, in the window. A level change, removing a device and pairing are a sealed card the door doesn't
+// raise from a part today (backlog), so Settings doesn't offer them; the window's own handling of a card raised from a
+// dialog is covered by window.test.tsx.
+describe("Settings offers no trust-changing control from a part", () => {
+  test("levels are shown, not changed; devices cannot be removed from here", async () => {
     const frame = root!.querySelector('[data-story="screen/settings-1024"]') as HTMLElement;
     expect(frame.querySelector(".cl-window__dialog .cl-settings")).toBeTruthy();
-    // The gallery's own React renders on its own schedule: wait for each step to land.
     fireEvent.click(within(frame).getByRole("button", { name: "Levels" }));
     await until(() => within(frame).queryByRole("combobox", { name: "Studio's level" }) !== null, 2000);
-    fireEvent.change(within(frame).getByRole("combobox", { name: "Studio's level" }), { target: { value: "automatic" } });
-    await until(() => frame.querySelector(".cl-window__note")?.textContent === note, 2000);
-    expect(frame.querySelector(".cl-window__dialog")).toBeNull();
-  });
-
-  test("asking to remove a device", async () => {
-    const frame = root!.querySelector('[data-story="screen/settings-1440"]') as HTMLElement;
-    fireEvent.click(within(frame).getByRole("button", { name: "Devices" }));
-    await until(() => within(frame).queryByRole("button", { name: "Remove Laptop" }) !== null, 2000);
-    fireEvent.click(within(frame).getByRole("button", { name: "Remove Laptop" }));
-    await until(() => frame.querySelector(".cl-window__note")?.textContent === note, 2000);
-    expect(frame.querySelector(".cl-window__dialog")).toBeNull();
+    expect((within(frame).getByRole("combobox", { name: "Studio's level" }) as HTMLSelectElement).disabled).toBe(true);
+    const wide = root!.querySelector('[data-story="screen/settings-1440"]') as HTMLElement;
+    fireEvent.click(within(wide).getByRole("button", { name: "Devices" }));
+    await until(() => within(wide).queryByText(/Laptop/) !== null, 2000);
+    expect(within(wide).queryByRole("button", { name: "Remove Laptop" })).toBeNull();
   });
 });

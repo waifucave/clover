@@ -14,14 +14,15 @@ const STUDIO: ComputerView = computerView("Studio", { device: "d1", level: "ask-
 const session = (extra: Partial<SessionView>): SessionView => ({ id: "s_alpha", kind: "bot", bot: "alpha", computer: "Studio", status: "idle", startedAt: 0, updatedAt: 0, ...extra });
 
 async function mount(s: SessionView = session({}), opts: { level?: "applied" | "card"; entries?: Parameters<typeof runtimeWith>[0]["entries"]; component?: EntryComponent } = {}) {
-  const core = fakeCore({
-    "session.send": () => ({ seq: 9 }),
-    "session.interrupt": () => ({ ok: true }),
-    "session.setModel": () => ({ ok: true }),
-    "bot.setUserLayer": () => ({ applied: true }),
-    "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }),
-    "models.list": () => ({ models: [{ id: "openai/gpt-6", label: "GPT-6", provider: "OpenAI" }, { id: "xai/grok-5", label: "Grok 5", provider: "xAI" }] }),
-  });
+  const core = fakeCore({ "computer.setLevel": () => (opts.level === "applied" ? { applied: true } : { applied: false, card: "card-level" }) });
+  // The composer spot's host callbacks: the core decides what each one is (a bot's user layer, a session's model).
+  const host: string[][] = [];
+  const composerHost = {
+    models: async () => ({ models: [{ id: "openai/gpt-6", name: "GPT-6", providerName: "OpenAI" }, { id: "xai/grok-5", name: "Grok 5", providerName: "xAI" }] }),
+    setModel: async (model: string, effort?: string) => { host.push(["setModel", model, effort ?? ""]); },
+    interrupt: async () => { host.push(["interrupt"]); },
+    stop: async () => { host.push(["stop"]); },
+  };
   const approvals = fakeApprovals();
   const sends: { to: unknown; message: unknown }[] = [];
   const api = fakeApi({
@@ -32,6 +33,7 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
   const runtime = runtimeWith({
     api: () => api,
     core: () => core,
+    composerHost: () => composerHost,
     userSend: () => async (to, message) => {
       sends.push({ to, message });
     },
@@ -46,7 +48,7 @@ async function mount(s: SessionView = session({}), opts: { level?: "applied" | "
     </UiRuntimeProvider>,
   );
   await act(() => settle());
-  return { core, approvals, sends };
+  return { core, approvals, sends, host };
 }
 
 describe("the composer entry", () => {
@@ -61,21 +63,23 @@ describe("the composer entry", () => {
   });
 
   test("a running turn shows Stop, which interrupts it", async () => {
-    const { core } = await mount(session({ status: "prompting" }));
+    const { core, host } = await mount(session({ status: "prompting" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(core.calls.filter((c) => c.method === "session.interrupt").map((c) => c.params)).toEqual([{ id: "s_alpha" }]);
+    expect(host).toEqual([["interrupt"]]);
+    expect(core.calls.some((c) => c.method === "session.interrupt")).toBe(false);
   });
 
-  test("a bot's model is its user layer; an agent's is the session's", async () => {
+  test("a model pick goes through the composer spot's host callback, never a bare core call", async () => {
     const bot = await mount();
     fireEvent.click(screen.getByRole("button", { name: "Model: GPT-6, medium" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
-    expect(bot.core.calls.filter((c) => c.method === "bot.setUserLayer").map((c) => c.params)).toEqual([{ id: "alpha", patch: { model: "xai/grok-5", effort: "medium" } }]);
+    expect(bot.host).toEqual([["setModel", "xai/grok-5", "medium"]]);
+    expect(bot.core.calls.some((c) => c.method === "bot.setUserLayer")).toBe(false);
     cleanup();
     const agent = await mount(session({ id: "agent-1", kind: "agent", parent: "s_alpha", backend: "Codex", model: "openai/gpt-6" }));
     fireEvent.click(screen.getByRole("button", { name: /^Model: GPT-6/ }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: /Grok 5/ }));
-    expect(agent.core.calls.filter((c) => c.method === "session.setModel").map((c) => c.params)).toEqual([{ id: "agent-1", model: "xai/grok-5" }]);
+    expect(agent.host).toEqual([["setModel", "xai/grok-5", ""]]);
   });
 
   test("the computer's level is a label, not a control: no menu, and computer.setLevel is never called", async () => {

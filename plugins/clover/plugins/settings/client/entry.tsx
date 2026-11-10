@@ -274,25 +274,8 @@ export function SettingsEntry({ props }: { props: SettingsEntryProps }) {
         ? {
             onOpenPluginLogs: (id: string) =>
               void core.call("plugin.logs", { id, lines: 200 }).then((r) => setLogs({ name: values.plugins.find((p) => p.id === id)?.name ?? id, lines: r.lines })),
-            onRequestLevel: (computer: string, level: string) => void core.call("computer.setLevel", { name: computer, level: level as never }),
-            onRemoveDevice: (id: string) => void core.call("device.revoke", { id }),
-            onMakeMain: (id: string) => void core.call("main.set", { device: id }),
-            onPairBegin: () =>
-              void core.call("device.pair.begin", {}).then((p) => setPairing({ id: p.pairingId, ...(p.code ? { code: p.code } : {}), ...(p.words ? { words: p.words } : {}) })),
-            onPairJoin: (code: string) =>
-              void core.call("device.pair.join", { code }).then((p) => setPairing({ id: p.pairingId, ...(p.code ? { code: p.code } : {}), ...(p.words ? { words: p.words } : {}) })),
-            onPairConfirm: () => {
-              if (!pairing?.words) return;
-              setPairing({ ...pairing, confirming: true });
-              void core.call("device.pair.confirm", { pairingId: pairing.id, words: pairing.words }).then((r) => {
-                // Applied at once (the user's own terminal) or after its card: either way the list shows the device.
-                if (r.applied) setPairing(undefined);
-              });
-            },
-            onPairCancel: () => {
-              if (pairing && pairing.ended === undefined) void core.call("device.pair.cancel", { pairingId: pairing.id });
-              setPairing(undefined);
-            },
+            // The level, the device list's revoke and make-main and pairing change what the user's computers trust: they
+            // need a sealed card the door doesn't raise from a part today, so they are not offered here (backlog).
           }
         : {})}
       {...(logs ? { logs: { ...logs, onBack: () => setLogs(undefined) } } : {})}

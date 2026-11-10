@@ -32,7 +32,7 @@ import { anyReady, listProviders, pageCall, type CorePage } from "./core-pages";
 import { AnswerKey, memoryVault, safeStorageVault } from "./answer-key";
 import { AppLog, appLogPath } from "./app-log";
 import { LAYER_CALL_MAX, LayerLinks } from "./layer-links";
-import { WindowDrag } from "./ui/window-drag";
+import { TitleDrag } from "./ui/window-drag";
 import { KeyLog, PasteModes, keyBytes, preparePaste } from "./terminal-input";
 import { SealedFrames } from "./sealed";
 import { ownCardPage } from "./sealed-pages";
@@ -289,25 +289,12 @@ async function ready(): Promise<void> {
       if (client === undefined) throw new LayerError("Clover isn't running");
       return client.request<{ seq?: number }>("pill.send", { to: target, text: message.text, ...(images.length > 0 ? { images } : {}), clientMessageId: randomUUID() }, 30_000);
     },
-    windowDrag: (windowId, phase, point) => {
+    windowDrag: (windowId, shell) => {
       const win = BrowserWindow.fromId(windowId);
-      if (phase === "end") {
-        const from = windowDrags.origin(windowId);
-        windowDrags.end(windowId);
-        if (from !== undefined && win !== null && !win.isDestroyed()) {
-          const [x, y] = win.getPosition();
-          if (x !== from.x || y !== from.y) log(`window: moved by its title area, from (${from.x}, ${from.y}) to (${x}, ${y})`);
-        }
-        return;
-      }
       if (win === null || win.isDestroyed() || win.isFullScreen() || win.isMaximized()) return;
-      if (phase === "start") {
-        const [x, y] = win.getPosition();
-        windowDrags.start(windowId, { x: x ?? 0, y: y ?? 0 }, point);
-        return;
-      }
-      const to = windowDrags.move(windowId, point);
-      if (to !== undefined) win.setPosition(to.x, to.y);
+      const [x, y] = win.getPosition();
+      const r = windowDrags.start(windowId, { shell, titleHeight: TITLE_BAR_HEIGHT, cardPending: sealed.anyPending(), window: { x: x ?? 0, y: y ?? 0 }, cursor: cursorPoint(windowId) });
+      if (!r.ok) log(`window: a drag was refused (${r.why})`);
     },
     activeSession: (windowId, session) => {
       activeSessions.set(windowId, session);
@@ -1014,7 +1001,26 @@ async function okToPaste(windowId: number, lines: number): Promise<boolean> {
 
 /** Sends counted as the user's: one key press or click per send (the user-send gate). */
 const sends = new SendGate();
-const windowDrags = new WindowDrag();
+const windowDrags = new TitleDrag();
+/** Where the main process last saw the cursor over a window, on the screen (from its own mouse events). */
+const cursors = new Map<number, { x: number; y: number }>();
+function cursorPoint(windowId: number): { x: number; y: number } | undefined {
+  return cursors.get(windowId);
+}
+/** The window moves with the cursor the main process reads itself; a card appearing ends the drag. */
+function dragMove(windowId: number, cursor: { x: number; y: number }): void {
+  const win = BrowserWindow.fromId(windowId);
+  if (win === null || win.isDestroyed()) return windowDrags.forget(windowId);
+  const to = windowDrags.move(windowId, cursor, sealed.anyPending());
+  if (to !== undefined) win.setPosition(to.x, to.y);
+}
+function dragEnd(windowId: number): void {
+  const from = windowDrags.end(windowId);
+  const win = BrowserWindow.fromId(windowId);
+  if (from === undefined || win === null || win.isDestroyed()) return;
+  const [x, y] = win.getPosition();
+  if (x !== from.x || y !== from.y) log(`window: moved by its title area, from (${from.x}, ${from.y}) to (${x}, ${y})`);
+}
 
 /** The person's mouse-downs, by window (the view-frame gate). */
 const pointers = new PointerLog();
@@ -1151,7 +1157,16 @@ function watchWindow(win: BrowserWindow): void {
     }
   });
   win.webContents.on("before-mouse-event", (_event, mouse) => {
+    const at = { x: mouse.globalX ?? 0, y: mouse.globalY ?? 0 };
+    if (mouse.type === "mouseUp") return dragEnd(id);
+    if (mouse.type === "mouseMove") {
+      cursors.set(id, at);
+      if (windowDrags.isGoing(id)) dragMove(id, at);
+      return;
+    }
     if (mouse.type !== "mouseDown") return;
+    cursors.set(id, at);
+    windowDrags.down(id, { button: mouse.button, x: mouse.x, y: mouse.y });
     menus.input(id);
     sends.input(id);
     pointers.down(id, mouse.x, mouse.y);
@@ -1173,6 +1188,8 @@ function watchWindow(win: BrowserWindow): void {
   win.on("closed", () => {
     menus.forget(id);
     sends.forget(id);
+    windowDrags.forget(id);
+    cursors.delete(id);
     pointers.forget(id);
     hangs.responsive(id);
     views.dropWindow(id);

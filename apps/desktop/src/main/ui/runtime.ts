@@ -1036,12 +1036,36 @@ export class UiRuntime {
     return { windowId: part.windowId, pluginId: p.id };
   }
 
-  /** The part sending the user's own words: in the document `frame`, a part of the bundled `clover` tree (throws
-   *  otherwise). The main window's composer is one; the gate on the user's key press or click is the core's. */
-  userSender(frame: FrameRef, mountId: string): { windowId: number; pluginId: string } {
-    const part = this.treePart(frame, mountId);
-    if (part === undefined) throw new LayerError("only the app's own parts send the user's words");
-    return part;
+  /** The shell the core mounted in `app.root` of the window, when `mountId` in `frame` is it (throws if the mount isn't in
+   *  the document): the bundled `clover/shell` part, from the core's own record. */
+  mainShell(frame: FrameRef, mountId: string): { windowId: number } | undefined {
+    const part = this.actInThisLayer(frame, mountId);
+    if (part.spot !== "app.root" || this.treePart(frame, mountId)?.pluginId !== "clover/shell") return undefined;
+    return { windowId: part.windowId };
+  }
+
+  /** The composer entry the core mounted in the document `frame` (throws if the mount isn't in it), or undefined for a
+   *  mount that isn't in the `composer` spot. The session and bot are the props the declaring document gave the core
+   *  for this mount, never anything the page says. */
+  composerOf(frame: FrameRef, mountId: string): import("./composer-calls").ComposerMount | undefined {
+    const part = this.actInThisLayer(frame, mountId);
+    if (part.spot !== "composer" || part.plugin === undefined) return undefined;
+    const props = (part.props ?? {}) as { session?: unknown; bot?: unknown };
+    const session = typeof props.session === "string" && /^[A-Za-z0-9._:-]{1,128}$/.test(props.session) ? props.session : undefined;
+    if (session === undefined) return undefined;
+    const bot = (props.bot as { id?: unknown } | undefined)?.id;
+    return { windowId: part.windowId, pluginId: part.plugin.id, session, ...(typeof bot === "string" ? { bot } : {}), tree: this.treePart(frame, mountId) !== undefined };
+  }
+
+  /** The part sending the user's own words, in the document `frame` (throws otherwise): the entry the core mounted in
+   *  the `composer` spot, whichever plugin's it is (it sends only to its own session), or a surface part of the bundled
+   *  `clover` tree (the Dispatch pill's). The key press or click is the core's to check. */
+  userSender(frame: FrameRef, mountId: string): { windowId: number; pluginId: string; only?: { session: string } } {
+    const composer = this.composerOf(frame, mountId);
+    if (composer !== undefined) return { windowId: composer.windowId, pluginId: composer.pluginId, only: { session: composer.session } };
+    const tree = this.treePart(frame, mountId);
+    if (tree === undefined) throw new LayerError("only the composer's entry and the app's own parts send the user's words");
+    return tree;
   }
 
   /** A message to every document that holds a part of this plugin (its connection's events). An inline part whose

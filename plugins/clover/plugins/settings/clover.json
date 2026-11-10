@@ -14,7 +14,8 @@
   "capabilities": [
     "bots.read",
     "computers.read",
-    "devices.read"
+    "devices.read",
+    "logs.read"
   ],
   "settings": {
     "appearance.theme": {

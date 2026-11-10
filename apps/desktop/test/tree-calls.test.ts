@@ -6,9 +6,11 @@ const verdict = (part: string, method: string) => treeVerdict(part, method);
 
 describe("the bundled tree's calls on the app's connection", () => {
   test("a read is allowed to any part; a method the table doesn't name isn't its business", () => {
-    for (const m of ["models.list", "account.status", "archive.history", "archive.list", "plugin.list", "plugin.get", "plugin.ui", "ui.settings"]) {
+    for (const m of ["account.status", "archive.history", "archive.list", "plugin.list", "plugin.get", "plugin.ui", "ui.settings"]) {
       expect(verdict("clover/conversation", m)).toMatchObject({ ok: true });
     }
+    expect(verdict("clover/bot-editor", "models.list")).toMatchObject({ ok: true });
+    expect(verdict("clover/composer", "models.list")).toMatchObject({ ok: false, owned: true });
     expect(verdict("clover/composer", "plugin.logs")).toMatchObject({ ok: false, owned: false });
     expect(verdict("clover/composer", "nonsense.method")).toMatchObject({ ok: false, owned: false });
   });
@@ -22,14 +24,14 @@ describe("the bundled tree's calls on the app's connection", () => {
     }
   });
 
-  test("session control is a gesture call", () => {
-    for (const m of ["session.setModel", "session.interrupt", "session.stop"]) expect(verdict("clover/composer", m)).toMatchObject({ ok: true, call: { disposition: "gesture" } });
+  test("the composer's session control is not on the door: it is the composer spot's callbacks", () => {
+    for (const m of ["session.setModel", "session.interrupt", "session.stop"]) expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
   });
 
   test("a send is never a bare call, the cards are never answered, trust-changing calls need a card", () => {
     for (const m of SEND_ONLY) expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
     for (const m of NEVER) expect(verdict("clover/settings", m)).toMatchObject({ ok: false, owned: true });
-    for (const m of ["computer.setLevel", "device.pair.begin", "device.pair.cancel", "device.pair.confirm", "device.pair.join", "device.revoke", "main.set"]) {
+    for (const m of ["computer.setLevel", "device.revoke", "main.set"]) {
       expect(verdict("clover/settings", m)).toMatchObject({ ok: false, owned: true });
       expect(verdict("clover/composer", m)).toMatchObject({ ok: false, owned: true });
     }
@@ -96,16 +98,6 @@ describe("routing a part's call", () => {
     expect(calls).toEqual(["app:ui.set"]);
   });
 
-  test("session control without the user's gesture is refused; with one it goes, once", async () => {
-    for (const method of ["session.setModel", "session.interrupt", "session.stop"]) {
-      const none = route({ method, gesture: false });
-      await expect(routeCall(none.r)).rejects.toThrow("only right after the user's own key press or click");
-      expect(none.calls).toEqual([]);
-      const some = route({ method, gesture: true });
-      expect(await routeCall(some.r)).toBe("app");
-    }
-  });
-
   test("switching a plugin on or off is the settings part's and needs the user's click", async () => {
     const t = { windowId: 1, pluginId: "clover/settings" };
     const none = route({ tree: t, method: "plugin.setEnabled", gesture: false });
@@ -130,17 +122,16 @@ describe("routing a part's call", () => {
     expect(calls).toEqual(["layer"]);
   });
 
-  test("a bot's user layer is the composer's (model and effort only) or the editor's, with the user's click", async () => {
-    const model = { id: "alpha", patch: { model: "a/b", effort: "high" } };
-    const some = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "bot.setUserLayer", params: model, gesture: true });
-    expect(await routeCall(some.r)).toBe("app");
-    const none = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "bot.setUserLayer", params: model, gesture: false });
+  test("a bot's user layer is the bot editor's, with the user's click; no other part's", async () => {
+    const patch = { id: "alpha", patch: { instructions: "x" } };
+    const editor = { windowId: 1, pluginId: "clover/bot-editor" };
+    expect(await routeCall(route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: true }).r)).toBe("app");
+    const none = route({ tree: editor, method: "bot.setUserLayer", params: patch, gesture: false });
     await expect(routeCall(none.r)).rejects.toThrow("only right after");
-    const wide = route({ tree: { windowId: 1, pluginId: "clover/composer" }, method: "bot.setUserLayer", params: { id: "alpha", patch: { instructions: "x" } }, gesture: true });
-    await expect(routeCall(wide.r)).rejects.toThrow("model and effort only");
-    const editor = route({ tree: { windowId: 1, pluginId: "clover/bot-editor" }, method: "bot.setUserLayer", params: { id: "alpha", patch: { instructions: "x" } }, gesture: true });
-    expect(await routeCall(editor.r)).toBe("app");
-    const other = route({ tree: { windowId: 1, pluginId: "clover/settings" }, method: "bot.setUserLayer", params: model, gesture: true });
-    await expect(routeCall(other.r)).rejects.toThrow("only from");
+    expect(none.calls).toEqual([]);
+    for (const part of ["clover/composer", "clover/settings"]) {
+      const other = route({ tree: { windowId: 1, pluginId: part }, method: "bot.setUserLayer", params: patch, gesture: true });
+      await expect(routeCall(other.r)).rejects.toThrow("only from");
+    }
   });
 });

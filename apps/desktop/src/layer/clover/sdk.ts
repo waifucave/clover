@@ -13,7 +13,7 @@ import type { SealedField, SealedRenderers, UiRuntime } from "@clover-child/shel
 import type { ReactNode } from "react";
 
 export const { Spot, Card, AppView } = Ui;
-export const { useApprovals, useCore, useDrag, useEntry, useMenu, useOpen, usePluginApi,
+export const { useApprovals, useComposerHost, useCore, useDrag, useEntry, useMenu, useOpen, usePluginApi,
   useQuestions, useSpotEntries, useSurface, useTokens, useT, useUserSend, useViewFrame,
   useLayerMessage, useMountContext } = Ui;
 export { SEALED_FIELDS };

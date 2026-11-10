@@ -57,7 +57,8 @@ function fakeBridge(views: Record<string, SpotView>) {
     viewFrame: (mount, name, rect, used) => calls.push({ op: "viewFrame", args: [mount, name, rect, used] }),
     webFrame: (mount, rect) => calls.push({ op: "webFrame", args: [mount, rect] }),
     activeSession: (mount, session) => calls.push({ op: "activeSession", args: [mount, session] }),
-    windowDrag: (mount, phase, x, y) => calls.push({ op: "windowDrag", args: [mount, phase, x, y] }),
+    windowDrag: (mount) => { calls.push({ op: "windowDrag", args: [mount] }); },
+    composer: async (mount, op, args) => { calls.push({ op: "composer", args: [mount, op, args] }); return undefined; },
     entries: async (mount, spot, key) => {
       calls.push({ op: "entries", args: [mount, spot, key] });
       return [{ ref: "clover/island#usage", id: "usage", pluginId: "clover/island", pluginName: "Island", bundled: true, fields: { title: "Usage" } }, { ref: "vn#tab", id: "tab", pluginId: "vn", pluginName: "VN", bundled: false, fields: { title: "VN" } }];

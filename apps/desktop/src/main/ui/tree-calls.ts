@@ -1,18 +1,23 @@
-// The bundled `clover` tree's calls to the core (the try-6 ruling). The tree's parts were written against the app
-// role's core (spec §5.5: only the `clover` layer changes core settings and user layers directly), but a part reaches
-// the daemon on its plugin's `layer` connection, which refuses most of what they call. These calls go on the app's own
-// connection instead, and only these: an explicit table, per method and per part, and the default is refuse.
+// The bundled `clover` tree's calls to the core (spec §5.5: "Only the `clover` layer changes the core's settings and the
+// user layers directly"). A part reaches the daemon on its plugin's `layer` connection, which refuses these; they go on
+// the app's own connection instead, and only these: an explicit table, per method and per part, default refuse. Who
+// qualifies is decided here from facts the page can't forge (`treePart`: bundled, in the `clover` layer, top-level
+// `clover`), never from an id or flag the page sends. Every other layer is untouched.
 //
-// Who qualifies is decided here from facts the page can't forge (`treePart`: the mount's plugin is bundled, in the
-// `clover` layer, top-level `clover`), never from an id or flag the page sends. Every other layer is untouched.
-//
+// This door is deliberately small. Everything a replaceable part does (read and follow a conversation, send as the user,
+// pick a model, interrupt) goes through what ANY plugin gets: the plugin API under its capabilities, and the spot's
+// own host callbacks (composer-calls.ts). What is left here is:
+//   class 1  the core's settings and the user layers, from the clover layer (ui.settings, ui.set, bot.setUserLayer from the
+//            bot editor, a plugin's own settings from the settings part);
+//   class 2  the clover shell's own pages, which the spec gives no capability and no replacement path today:
+//            plugin.list/get/ui, plugin.index.*, plugin.setEnabled (with the user's click), account.status,
+//            archive.list/history, and the model catalog for the bot editor.
 // Dispositions:
-//   read      any tree part may read it.
-//   settings  the user's own preference: only the named part writes it.
-//   gesture   session control: only inside the user's own key press or click (the SendGate), one call per gesture.
-//   card      trust-changing (permission levels, devices, the main bot): never on this route. The daemon's sealed
-//             cards are the one way; the call is refused here and the refusal is logged.
-//   unserved  the daemon has no such method: the caller is fixed to a served one or hides the control.
+//   read      a read; `part` limits it to a part, none: any tree part.
+//   settings  a write of the user's own preference: only the named part.
+//   gesture   a call that counts only inside the user's own key press or click (the SendGate).
+//   card      trust-changing (levels, devices, the main computer): never on this route.
+//   unserved  the daemon has no such method.
 // `card.answer` and `card.confirm` are on no list: a card is answered only on the sealed path.
 
 export type Disposition = "read" | "settings" | "gesture" | "card" | "unserved";
@@ -28,38 +33,27 @@ export interface TreeCall {
 const READ: Disposition = "read";
 
 export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
-  // Reads (session.history/list/get/attach stay on the part's own `layer` connection, where the daemon checks its
-  // `conversation.read`)
+  // Class 1: the core's settings and the user layers.
+  "ui.settings": { disposition: READ },
+  "ui.set": { disposition: "settings", part: "clover/settings" },
+  "plugin.settings.get": { disposition: READ, part: "clover/settings" },
+  "plugin.settings.set": { disposition: "settings", part: "clover/settings" },
+  // A bot's user layer from the bot editor, with the user's click (the layer door would raise a card).
+  "bot.setUserLayer": { disposition: "gesture", part: "clover/bot-editor" },
+  // Class 2: the clover shell's own pages.
+  "account.status": { disposition: READ },
   "archive.history": { disposition: READ },
   "archive.list": { disposition: READ },
-  "models.list": { disposition: READ },
   "plugin.list": { disposition: READ },
   "plugin.get": { disposition: READ },
   "plugin.ui": { disposition: READ },
   "plugin.index.list": { disposition: READ },
   "plugin.index.search": { disposition: READ },
-  "ui.settings": { disposition: READ },
-  "account.status": { disposition: READ },
-  // A plugin's own settings may hold what it keeps private: the settings part reads them, no other.
-  "plugin.settings.get": { disposition: READ, part: "clover/settings" },
-  // The user's own preferences: the settings part only.
-  "ui.set": { disposition: "settings", part: "clover/settings" },
-  // Switching a plugin on or off changes what code runs: the user's click too, like the session controls.
+  "models.list": { disposition: READ, part: "clover/bot-editor" },
+  // Switching a plugin on or off changes what code runs: the user's click too.
   "plugin.setEnabled": { disposition: "settings", part: "clover/settings", gesture: true },
-  "plugin.settings.set": { disposition: "settings", part: "clover/settings" },
-  // Session control: with the user's gesture.
-  "session.setModel": { disposition: "gesture" },
-  "session.interrupt": { disposition: "gesture" },
-  "session.stop": { disposition: "gesture" },
-  // A bot's user layer (its model and effort from the composer, its instructions from the editor): the layer door
-  // would raise a card for the user's own words; from the tree it is the user's, with the click.
-  "bot.setUserLayer": { disposition: "gesture", part: ["clover/composer", "clover/bot-editor"] },
-  // Needs a card.
+  // Needs a card (spec §5.5: sensitive changes are a sealed card from every layer).
   "computer.setLevel": { disposition: "card" },
-  "device.pair.begin": { disposition: "card" },
-  "device.pair.cancel": { disposition: "card" },
-  "device.pair.confirm": { disposition: "card" },
-  "device.pair.join": { disposition: "card" },
   "device.revoke": { disposition: "card" },
   "main.set": { disposition: "card" },
   // Not served by the daemon.
@@ -70,6 +64,10 @@ export const TREE_CALLS: Readonly<Record<string, TreeCall>> = {
   "session.createPr": { disposition: "unserved" },
   "session.diff": { disposition: "unserved" },
   "session.outputs": { disposition: "unserved" },
+  // Session control isn't the tree's: it goes through the composer spot's callbacks (composer-calls.ts).
+  "session.setModel": { disposition: "unserved" },
+  "session.interrupt": { disposition: "unserved" },
+  "session.stop": { disposition: "unserved" },
 };
 
 /** Sent only by the user's gesture, through `useUserSend`'s door (`pill.send`); never a bare call. */
@@ -123,21 +121,9 @@ export async function routeCall(r: TreeRoute): Promise<unknown> {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (${verdict.why})`);
     throw r.refuse(verdict.why);
   }
-  // The composer changes a bot's model and effort, and nothing else of its user layer.
-  if (r.method === "bot.setUserLayer" && r.tree.pluginId === "clover/composer" && !onlyModel(r.params)) {
-    r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (the composer changes a bot's model and effort only)`);
-    throw r.refuse("the composer changes a bot's model and effort only");
-  }
   if ((verdict.call.disposition === "gesture" || verdict.call.gesture === true) && !r.takeGesture(r.tree.windowId)) {
     r.log(`tree: ${r.tree.pluginId}: ${r.method} refused (no key press or click of the user's just before)`);
     throw r.refuse(`${r.method} goes only right after the user's own key press or click`);
   }
   return r.request(r.method, r.params);
-}
-
-/** A `bot.setUserLayer` call whose patch holds only a model and an effort. */
-function onlyModel(params: unknown): boolean {
-  const patch = (params as { patch?: unknown } | null)?.patch;
-  if (patch === null || typeof patch !== "object") return false;
-  return Object.keys(patch).every((k) => k === "model" || k === "effort");
 }

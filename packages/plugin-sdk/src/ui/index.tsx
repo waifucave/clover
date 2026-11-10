@@ -475,6 +475,12 @@ function InlineItem({ item, parent, spot, spotKey, props }: { item: Extract<Spot
     tokens,
     context: item.context,
   }), [item, tokens, spot, spotKey]);
+  // The `composer` spot's session and bot are the declaring document's own say, told to the core for this mount (as a
+  // frame's props are): the core decides what the composer's callbacks reach from them. Data only; no callbacks go.
+  // A layout effect, so it goes before the entry's own first call (its effects run later).
+  useLayoutEffect(() => {
+    if (spot === "composer") r.bridge.setProps(item.mount, encodeProps(props ?? {}, () => ""));
+  }, [spot, props, item.mount, r]);
   const own = tokens !== parent.tokens ? tokenStyle(tokens) : undefined;
   const marks = { "data-clover-entry": item.ref, "data-clover-part": item.mount, "data-clover-tab": item.tab, "data-clover-styled": item.styled === true ? "" : undefined };
   if (item.layout !== undefined) {
@@ -903,13 +909,14 @@ export function useQuestions(): { readonly questions: readonly PendingQuestion[]
 }
 
 /** The user's own words, sent from inside the key press or click that sends them (lane B's `useUserSend`; the
- *  Dispatch pill's). Only the bundled `clover` tree's parts have it (the composer, the pill); elsewhere it is undefined. The runtime counts
+ *  Dispatch pill's). The entry in the `composer` spot has it (whichever plugin's), and the bundled `clover` tree's surfaces (the pill); elsewhere it is undefined. The runtime counts
  *  a send only within the frame's transient user activation, and the core only after it saw that input come to the
  *  window, one send for one press or click; any other is refused and sends nothing. */
 export function useUserSend(): ((to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => Promise<void>) | undefined {
   const part = usePart();
-  // The core decides again (the part's plugin is bundled, in the `clover` layer): this only hides it from the rest.
-  const allowed = part.entry.pluginId.split("/")[0] === "clover";
+  // The core decides again, from the mount it made: the entry in the `composer` spot (any plugin's), or a part of
+  // the bundled `clover` tree. This only hides the hook from the rest.
+  const allowed = part.entry.spot === "composer" || part.entry.pluginId.split("/")[0] === "clover";
   const send = useCallback(async (to: UserSendTarget, message: string | { text: string; images?: readonly { mediaType: "image/png" | "image/jpeg" | "image/webp"; data: Uint8Array }[] }) => {
     const activation = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
     if (activation !== undefined && !activation.isActive) throw new Error("the user's words go only from inside their key press or click");
@@ -917,6 +924,32 @@ export function useUserSend(): ((to: UserSendTarget, message: string | { text: s
     await rt().bridge.userSend(part.mount, to, m);
   }, [part.mount]);
   return allowed ? send : undefined;
+}
+
+/** What the `composer` spot hands the entry the core mounted there (spec §5.5, lane E): the models its session can
+ *  switch to, a model switch, and interrupt and stop. Each acting call counts only inside the user's own key press or
+ *  click. On a bot's main conversation a model switch changes a user layer: the `clover` layer's entry changes it
+ *  directly, any other plugin's ends in the sealed card the core raises for it. Undefined outside that spot. */
+export interface ComposerHost {
+  models(): Promise<{ models: { id: string; name?: string; providerName?: string; efforts?: string[] }[]; default?: string }>;
+  setModel(model: string, effort?: string): Promise<unknown>;
+  interrupt(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+export function useComposerHost(): ComposerHost | undefined {
+  const part = usePart();
+  const inSpot = part.entry.spot === "composer";
+  return useMemo(() => {
+    if (!inSpot) return undefined;
+    const ask = (op: "models" | "setModel" | "interrupt" | "stop", args?: unknown) => rt().bridge.composer(part.mount, op, args);
+    return {
+      models: () => ask("models") as ReturnType<ComposerHost["models"]>,
+      setModel: (model, effort) => ask("setModel", { model, ...(effort !== undefined ? { effort } : {}) }),
+      interrupt: () => ask("interrupt").then(() => undefined),
+      stop: () => ask("stop").then(() => undefined),
+    };
+  }, [inSpot, part.mount]);
 }
 
 /** The core client of the bundled `clover` tree's parts (lane F's `useCore`; not in lane B's declarations): any call
@@ -965,38 +998,20 @@ export function onDragRegion(target: EventTarget | null, style: (el: Element) =>
   return false;
 }
 
-/** The `clover` layer's window moves by its title areas (`-webkit-app-region: drag` in its CSS): Chromium honors the
- *  CSS only in a window's main frame, and a layer is a frame, so the press and the mouse's moves go to the core,
- *  which moves the window. The core refuses it from any other layer. Not in lane B's declarations. */
+/** The shell's window moves by its title areas (`-webkit-app-region: drag` in its CSS): Chromium honors the CSS only in
+ *  a window's main frame, and the shell is a frame, so a press on a drag region is told to the core, which moves the
+ *  window itself, from the press and the cursor it saw (window-drag.ts). The core refuses it from any other part.
+ *  Not in lane B's declarations. */
 export function useWindowDrag(): void {
   const part = usePart();
   useEffect(() => {
     const bridge = rt().bridge;
-    let going = false;
-    const move = (e: MouseEvent) => {
-      if (going) bridge.windowDrag(part.mount, "move", e.screenX, e.screenY);
-    };
-    const end = () => {
-      if (!going) return;
-      going = false;
-      bridge.windowDrag(part.mount, "end", 0, 0);
-    };
     const down = (e: MouseEvent) => {
       if (e.button !== 0 || e.defaultPrevented || !onDragRegion(e.target)) return;
-      going = true;
-      bridge.windowDrag(part.mount, "start", e.screenX, e.screenY);
+      bridge.windowDrag(part.mount);
     };
     document.addEventListener("mousedown", down, true);
-    document.addEventListener("mousemove", move, true);
-    document.addEventListener("mouseup", end, true);
-    window.addEventListener("blur", end);
-    return () => {
-      document.removeEventListener("mousedown", down, true);
-      document.removeEventListener("mousemove", move, true);
-      document.removeEventListener("mouseup", end, true);
-      window.removeEventListener("blur", end);
-      end();
-    };
+    return () => document.removeEventListener("mousedown", down, true);
   }, [part.mount]);
 }
 

@@ -1,7 +1,7 @@
 // The composer on the runtime: the `composer` entry, for a bot's tab or an agent's live tab. It sends the user's
 // message through `useUserSend` (the app counts it as the user's only from a real key press or click, §5.5),
-// stops the turn (`session.interrupt`), switches the model (a bot's is its user layer, `bot.setUserLayer`; an agent's
-// or a coding session's is `session.setModel`), and shows the level of the computer it runs on
+// stops the turn, switches the model (the `composer` spot's host callbacks, `useComposerHost`: what any entry in the
+// spot gets), and shows the level of the computer it runs on
 // (the computer's level shows as a label: a change is a sealed card, which the core can't raise for the app yet).
 // Each button draws through `composer.action`, keyed by action id, falling back to its own.
 //
@@ -9,7 +9,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Composer } from "./Composer";
 import { CLOVER_LEVELS } from "./levels";
-import { Spot, useApprovals, useCore, usePluginApi, useUserSend } from "./sdk";
+import { Spot, useApprovals, useComposerHost, usePluginApi, useUserSend } from "./sdk";
 import type { ComposerActionId, ComposerModel, ComposerModelChoice } from "./types";
 
 type SessionKind = "bot" | "side-thread" | "agent" | "coding";
@@ -48,14 +48,14 @@ function modelsOf(catalog: unknown): ComposerModel[] {
 
 export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const api = usePluginApi();
-  const core = useCore();
+  const host = useComposerHost();
   const send = useUserSend();
   const { cards } = useApprovals();
   const session = useLoad(() => api.conversation?.get?.(props.session), [api, props.session]);
   const kind = session?.kind ?? props.sessionKind;
   const bot = useLoad(() => (kind === "bot" ? api.bots?.get(props.bot.id) : undefined), [api, props.bot.id, kind]);
   const computers = useLoad(() => api.computers?.list?.(), [api]);
-  const catalog = useLoad(() => core?.call("models.list", { session: props.session }), [core]);
+  const catalog = useLoad(() => host?.models(), [host]);
   const [draft, setDraft] = useState("");
   const where = session?.computer ?? bot?.computer;
   const computer = computers?.find((c) => c.name === where);
@@ -66,14 +66,14 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
   const models = modelsOf(catalog);
 
   const model: ComposerModelChoice | undefined =
-    core && current
+    host && current
       ? {
           model: current,
           ...(effort ? { effort } : {}),
           models: models.some((m) => m.id === current) ? models : [{ id: current, label: current }, ...models],
           onChange: ({ model: next, effort: nextEffort }) => {
-            if (kind === "bot") void core.call("bot.setUserLayer", { id: props.bot.id, patch: { model: next, ...(nextEffort ? { effort: nextEffort } : {}) } }).catch(() => undefined);
-            else void core.call("session.setModel", { id: props.session, model: next, ...(nextEffort ? { effort: nextEffort } : {}) }).catch(() => undefined);
+            // The core's composer spot decides what a switch is (a bot's user layer, or the session's own model).
+            void host.setModel(next, nextEffort).catch(() => undefined);
           },
         }
       : undefined;
@@ -89,10 +89,10 @@ export function ComposerEntry({ props }: { props: ComposerEntryProps }) {
         void send({ session: props.session }, { text: message.text }).then(() => setDraft(""), () => undefined);
       }}
       running={running}
-      onStop={core ? () => void core.call("session.interrupt", { id: props.session }).catch(() => undefined) : undefined}
+      onStop={host ? () => void host.interrupt().catch(() => undefined) : undefined}
       cardPending={cardPending}
       {...(model ? { model } : {})}
-      {...(computer && core
+      {...(computer
         ? {
             level: {
               computer: computer.name,
