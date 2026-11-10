@@ -29,6 +29,8 @@ function world() {
   for (const d of [root, project, join(home, "scratch", "luna"), join(home, "bots", "luna", "memory"), join(home, "plugin-data", "other")]) mkdirSync(d, { recursive: true });
   writeFileSync(join(root, "guard.sh"), "#!/bin/sh\n");
   writeFileSync(join(home, "secrets.enc"), "sealed");
+  mkdirSync(join(home, "run"), { recursive: true });
+  writeFileSync(join(home, "run", "app.token"), "app-token-not-real", { mode: 0o600 });
   writeFileSync(join(home, "bots", "luna", "memory", "notes.md"), "luna's");
   writeFileSync(join(home, "plugin-data", "other", "x"), "other's");
   writeFileSync(join(project, "a.txt"), "before\n");
@@ -52,6 +54,13 @@ describe("a plugin hook's door", () => {
   darwinTest("its plugin's fence, not the bot's: tree read, own data and temp written, no Clover home, no bot folders, the project read and written only with project.write", async () => {
     const w = world();
     const q = JSON.stringify;
+    // A daemon socket, listening: a hook must not reach it, nor the app's token. The fence denies every connect
+    // (`network*`), wherever the socket is; this one sits in a short folder of its own, since `<home>/run/core.sock`
+    // under the test's temp root would pass macOS's 104-byte socket path limit.
+    const sockDir = realpathSync(mkdtempSync("/private/tmp/hs-"));
+    temps.push(sockDir);
+    const sock = join(sockDir, "core.sock");
+    const listener = Bun.listen({ unix: sock, socket: { data() {}, open(s) { s.end(); } } });
     const probe = [
       `cat ${q(join(w.root, "guard.sh"))} >/dev/null 2>&1 && echo tree=ok || echo tree=denied`,
       `echo x > "$CLOVER_PLUGIN_DATA/f" 2>/dev/null && echo data=ok || echo data=denied`,
@@ -63,6 +72,8 @@ describe("a plugin hook's door", () => {
       `cat ${q(join(w.home, "bots", "luna", "memory", "notes.md"))} >/dev/null 2>&1 && echo botmemory=ok || echo botmemory=denied`,
       `echo x > ${q(join(w.home, "scratch", "luna", "f"))} 2>/dev/null && echo botscratch=ok || echo botscratch=denied`,
       `echo x > ${q(join(w.userHome, ".zshrc"))} 2>/dev/null && echo userhome=ok || echo userhome=denied`,
+      `cat ${q(join(w.home, "run", "app.token"))} >/dev/null 2>&1 && echo apptoken=ok || echo apptoken=denied`,
+      `/usr/bin/nc -U ${q(sock)} </dev/null >/dev/null 2>&1 && echo socket=ok || echo socket=denied`,
       `cat ${q(join(w.project, "a.txt"))} >/dev/null 2>&1 && echo projread=ok || echo projread=denied`,
       `echo after > ${q(join(w.project, "a.txt"))} 2>/dev/null && echo projwrite=ok || echo projwrite=denied`,
     ].join("; ");
@@ -72,7 +83,10 @@ describe("a plugin hook's door", () => {
       expect(r.kind).toBe("exited");
       return Object.fromEntries((r as { stdout: string }).stdout.trim().split("\n").map((l) => l.split("=") as [string, string]));
     };
-    const walls = { secrets: "denied", otherdata: "denied", botmemory: "denied", botscratch: "denied", userhome: "denied" };
+    const walls = { secrets: "denied", otherdata: "denied", botmemory: "denied", botscratch: "denied", userhome: "denied", apptoken: "denied", socket: "denied" };
+    // Control: unfenced, the same reads and the connect work, so the denials below are the fence's.
+    const plain = Bun.spawn(["/bin/sh", "-c", `cat ${q(join(w.home, "run", "app.token"))} >/dev/null && echo apptoken=ok; /usr/bin/nc -U ${q(sock)} </dev/null >/dev/null 2>&1 && echo socket=ok || echo socket=denied`], { stdout: "pipe" });
+    expect((await new Response(plain.stdout).text()).trim().split("\n")).toEqual(["apptoken=ok", "socket=ok"]);
     expect(await lines(false)).toEqual({ tree: "ok", data: "ok", tmp: "ok", datavar: "ok", cwd: "root", ...walls, projread: "ok", projwrite: "denied" });
     expect(readFileSync(join(w.project, "a.txt"), "utf8")).toBe("before\n");
     expect(await lines(true)).toEqual({ tree: "ok", data: "ok", tmp: "ok", datavar: "ok", cwd: "root", ...walls, projread: "ok", projwrite: "ok" });
@@ -80,6 +94,7 @@ describe("a plugin hook's door", () => {
     expect(existsSync(join(w.home, "plugin-data", "acme", "f"))).toBe(true);
     expect(existsSync(join(w.home, "scratch", "luna", "f"))).toBe(false);
     expect(existsSync(join(w.userHome, ".zshrc"))).toBe(false);
+    listener.stop(true);
   }, 60_000);
 
   darwinTest("through the hooks, on the real door: an answer past the 1 MiB stdout cap is cut, isn't JSON, and a tool.before hook denies", async () => {

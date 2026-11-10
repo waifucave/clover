@@ -3,7 +3,7 @@
 // tool call, the user's interrupt stops a turn and what folded in is carried, the turn ends release the holds, the
 // transcript resumes after a rebuild, and compaction runs on the host's word.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { query as sdkQuery, type SpawnClaudeCodeProcess } from "@waifucave/clover-agent-sdk";
@@ -151,6 +151,137 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
       await driver.stop();
     }
   }, 60_000);
+
+  test("the sandbox is the host's at each turn start: a bot folder made between two turns is in the second's, and an unchanged one never reopens the runtime", async () => {
+    const home = tempHome();
+    const bots = join(home, "bots");
+    mkdirSync(join(bots, "luna"), { recursive: true });
+    // A host whose sandbox names every bot folder there is now (the fence lists the home's folders at each call).
+    const sandbox = () => ({ enabled: false, filesystem: { denyRead: readdirSync(bots).sort().reverse().map((b) => join(bots, b)) } }) as never;
+    const opened: unknown[] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { sandbox?: unknown } | undefined)?.sandbox);
+      return sdkQuery(args);
+    };
+    const driver = new BotSessionDriver(context(home, "winter-test/echo"), deps(home, spawn, { sandbox, query }));
+    const denied = (i: number) => ((opened[i] as { filesystem?: { denyRead?: string[] } }).filesystem?.denyRead ?? []);
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(1);
+      expect(denied(0)).toEqual([join(bots, "luna")]);
+      // Nothing changed: the same runtime runs the next turn.
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(1);
+      // A new bot's folder appears between two turns: the runtime reopens with it, resuming the transcript.
+      mkdirSync(join(bots, "nova"));
+      const third = await driver.turn(user("three"), control());
+      expect(third.reason).toBe("end_turn");
+      expect(third.text).toContain("three");
+      expect(opened).toHaveLength(2);
+      expect([...denied(1)].sort()).toEqual([join(bots, "luna"), join(bots, "nova")]);
+      // The bot's own floor stays over whatever the host gives.
+      expect(opened[1]).toMatchObject(BOT_SANDBOX);
+      // The same list built in another order is the same sandbox: no reopen.
+      expect((await driver.turn(user("four"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(2);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  test("a model switch reopens the runtime on the new model (the provider fill runs again, so the allowlist follows it); the same model never reopens", async () => {
+    const home = tempHome();
+    const opened: unknown[] = [];
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { model?: unknown } | undefined)?.model);
+      return sdkQuery(args);
+    };
+    const lines: string[] = [];
+    const ctx = context(home, "winter-test/echo");
+    const driver = new BotSessionDriver(ctx, deps(home, spawn, { query, log: (l) => lines.push(l) }));
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo"]);
+      // The bot's model changes between turns (its manifest's, or the user's pick): the next turn reopens on it.
+      ctx.bot.model = "winter-test/calls";
+      expect((await driver.turn(user("three"), control())).reason).toBe("end_turn");
+      expect(opened).toEqual(["winter-test/echo", "winter-test/calls"]);
+      expect(lines.filter((l) => l.includes("reopening: model changed"))).toHaveLength(1);
+      // An effort change is a change too.
+      ctx.bot.effort = "high";
+      await driver.turn(user("four"), control());
+      expect(opened).toHaveLength(3);
+      await driver.turn(user("five"), control());
+      expect(opened).toHaveLength(3);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
+
+  test("the sandbox fails closed: a host that throws or gives none fails the turn and leaves no runtime on the old sandbox; a narrowed one reopens", async () => {
+    const home = tempHome();
+    let mode: "ok" | "throw" | "none" = "ok";
+    let denied = ["/denied/a", "/denied/b"];
+    const sandbox = () => {
+      if (mode === "throw") throw new Error("the fence is not ready");
+      if (mode === "none") return undefined;
+      return { enabled: false, filesystem: { denyRead: [...denied] } } as never;
+    };
+    const opened: unknown[] = [];
+    let closedRuntimes = 0;
+    const query: typeof sdkQuery = (args) => {
+      opened.push((args.options as { sandbox?: unknown } | undefined)?.sandbox);
+      const q = sdkQuery(args);
+      const it = q[Symbol.asyncIterator]();
+      return new Proxy(q, {
+        get(target, prop) {
+          if (prop === Symbol.asyncIterator) return () => ({
+            next: async () => { const r = await it.next(); if (r.done === true) closedRuntimes += 1; return r; },
+            return: (v?: unknown) => it.return?.(v as never) ?? Promise.resolve({ done: true, value: undefined }),
+          });
+          const v = Reflect.get(target, prop, target) as unknown;
+          return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        },
+      });
+    };
+    const lines: string[] = [];
+    const driver = new BotSessionDriver(context(home, "winter-test/echo"), deps(home, spawn, { sandbox, query, log: (l) => lines.push(l) }));
+    const deniedOf = (i: number) => ((opened[i] as { filesystem?: { denyRead?: string[] } }).filesystem?.denyRead ?? []);
+    try {
+      expect((await driver.turn(user("one"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(1);
+      // A narrowed sandbox (a deny removed) is a change too: the runtime reopens with it.
+      denied = ["/denied/a"];
+      expect((await driver.turn(user("two"), control())).reason).toBe("end_turn");
+      expect(opened).toHaveLength(2);
+      expect(deniedOf(1)).toEqual(["/denied/a"]);
+      expect(lines.filter((l) => l.includes("reopening: sandbox changed"))).toHaveLength(1);
+      // The host can't say what the sandbox is: the turn fails, and the runtime open under the old one is closed.
+      mode = "throw";
+      const failed = await driver.turn(user("three"), control());
+      expect(failed.reason).toBe("failed");
+      expect(failed.text).toContain("the fence is not ready");
+      expect(opened).toHaveLength(2);
+      for (let i = 0; i < 200 && closedRuntimes < 2; i++) await new Promise((r) => setTimeout(r, 25));
+      expect(closedRuntimes).toBe(2);
+      // A host with a sandbox that gives none fails closed too, never "floor only".
+      mode = "none";
+      const none = await driver.turn(user("four"), control());
+      expect(none.reason).toBe("failed");
+      expect(none.text).toContain("gave no sandbox");
+      expect(opened).toHaveLength(2);
+      // Once it answers again, a fresh runtime opens on the current sandbox and resumes the transcript.
+      mode = "ok";
+      const back = await driver.turn(user("five"), control());
+      expect(back.reason).toBe("end_turn");
+      expect(back.text).toContain("five");
+      expect(opened).toHaveLength(3);
+      expect(deniedOf(2)).toEqual(["/denied/a"]);
+    } finally {
+      await driver.stop();
+    }
+  }, 90_000);
 
   test("core tools run under their plain names; MCP calls go through the router as the session; holds go at the turn's end", async () => {
     const home = tempHome();
@@ -446,11 +577,13 @@ describeWithEmbeddedRuntime("the bot driver on the embedded runtime", (spawn) =>
     expect(await until(() => !sleeping(n))).toBe(true);
   }, 60_000);
 
-  test("F8: a bot's session closes the paths to launchd (denyLaunchServices), whatever sandbox the host gives", async () => {
+  test("F8: a bot's session closes the paths to launchd (denyLaunchServices), whatever sandbox the host gives, or with none", async () => {
     const home = tempHome();
     const seen: unknown[] = [];
     const query: typeof sdkQuery = (args) => { seen.push(args.options?.sandbox); return sdkQuery(args); };
-    for (const sandbox of [() => ({ enabled: false }), () => undefined]) {
+    // A host with no sandbox at all (left out) runs on the floor; a host that has one and gives none fails closed (the
+    // test above).
+    for (const sandbox of [() => ({ enabled: false }), undefined]) {
       const driver = new BotSessionDriver(context(home, "winter-test/echo", { sessionId: `b_l${seen.length}` }), deps(home, spawn, { query, sandbox }));
       try {
         expect((await driver.turn(user("hi"), control())).reason).toBe("end_turn");

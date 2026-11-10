@@ -156,10 +156,13 @@ import { resolveAntExecutable } from "./runtime-sdk/bundle-layout";
 import { attachedFacetFor, parkRecoveredSessions } from "./runtime-sdk/messaging";
 import { startModelPlugins, type StartModelPluginsOptions, type StartedModelPlugins } from "./runtime-sdk/model-plugins/start";
 import { createHostCredentialBroker, type ProviderRefresher } from "./runtime-sdk/host-credentials";
-import { botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
+import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provider-fill";
 import { ContractError } from "./contracts/common";
 import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
 import { PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
+import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
+import { evictSessionsForCredential } from "./runtime-sdk/credentials";
+import { modelsMethods } from "./runtime-sdk/models-list";
 import { coldResumeRunHomeFor, createCloverSessionDrivers, sessionPermissionClassFor, type CloverLegDeps, type CloverSessionDrivers } from "./runtime-sdk/session-driver";
 import { linkedRouterSupportsRunHome, linkedRunHomeBuilder, runHomeHandleOf, runHomeReportSummary } from "./runtime-sdk/run-home-support";
 import { recoverRunRoots, rootRecoveryDetail, type RootReconcile } from "./runtime-state/root-recovery";
@@ -3282,6 +3285,17 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
   const storeWarning = secretStoreWarning(contractSecrets.status());
   if (storeWarning) console.error(`[secrets] warning: ${storeWarning}`);
   const cloverLaneHandlers: Record<string, CloverHandler> = {};
+  // `plugin.auth.*`, once the plugin registry is open (`startPlugins`); `models.list` asks it about third parties' keys.
+  let pluginAuth: PluginAuth | undefined;
+  // A: the app's model picker (`models.list`), from the model plugins' catalog; signed in = a credential is stored.
+  Object.assign(cloverLaneHandlers, laneMethodHandlers(modelsMethods({
+    // The providers' keychain slots, and a third party's model plugin signed in through its own secret (or taking none).
+    signedIn: async () => new Set([
+      ...Object.keys((await credentialPresenceFrom(secrets)).byProvider),
+      ...(await pluginAuth?.signedInProviders().catch(() => new Set<string>()) ?? []),
+    ]),
+    defaultModel: () => liveModel?.(),
+  })));
   // B: the plugin methods answer from the daemon's start (K's audit; E's interop): before the registry opens the lists
   // are empty and anything else is refused while it opens; then the registry's handlers serve them.
   let pluginMethods: Record<string, MethodHandler> = {};
@@ -3651,6 +3665,25 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         (err: unknown) => { console.error(`[model-plugins] not started: ${err instanceof Error ? err.name : typeof err}; sessions use the SDK's compiled catalog`); },
       );
     }
+    // A: a plugin's sign-ins (`plugin.auth.*`), for Settings and the welcome guide: a bundled model plugin's in its
+    // provider's slot, another plugin's as its own secret. A change replaces the live sessions on that provider and
+    // re-reads the internal jobs' view, as `credential.set` does.
+    Object.assign(cloverLaneHandlers, laneMethodHandlers(pluginAuthMethods(pluginAuth = createPluginAuth({
+      registry: opened.registry, host: host.host, secrets, pluginSecrets: contractSecrets,
+      changed: (id, auth) => { cloverServer?.coreEvent({ type: "plugin_auth_changed", id, auth }); },
+      credentialChanged: async (provider) => {
+        await evictSessionsForCredential({
+          list: () => cloverDrivers.list(),
+          providerOf: (sessionId) => runtime?.records.get(sessionId)?.providerId,
+          legOf: (sessionId) => cloverDrivers.legOf(sessionId),
+          advisorProviderOf: (sessionId) => cloverDrivers.advisorProviderOf?.(sessionId),
+          evict: (sessionId) => cloverDrivers.evict(sessionId),
+          log: (line) => console.error(line),
+        }, provider).catch((err: unknown) => { console.error(`[plugin-auth] replacing sessions on ${provider} failed (${err instanceof Error ? err.name : typeof err})`); });
+        await internalRouter?.view.refresh().catch((err: unknown) => { console.error(`[plugin-auth] the internal jobs' view kept its set (${err instanceof Error ? err.name : typeof err})`); });
+      },
+      log: (line) => console.error(line),
+    }))));
     // A-M3: the plugins' host MCP servers, for the bots (`daemonBots`).
     pluginMcp = new PluginMcp({ registry: opened.registry, host: host.host, self: thisComputer, log: (line) => console.error(`[plugins] ${line}`) });
     void pluginMcp.refresh();
@@ -3688,7 +3721,11 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
         epoch: () => main.epoch() ?? 0,
         // A-M3: which provider a bot's model runs on and how its credentials reach the runtime, from the user's settings,
         // through the daemon's one broker (as a session's).
-        provider: botProviderFill({ home: cloverHome, broker: hostCredentials, secrets, settings: () => settings }),
+        // Its credential allowlist: its own model's provider and the ones the user approved for it (#350's ruling).
+        provider: botProviderFill({
+          home: cloverHome, broker: hostCredentials, secrets, settings: () => settings,
+          approved: botApprovalsFrom(side),
+        }),
         // A-M3 on B-M2's host: the plugins' hooks, and their host MCP servers, run where J's router places them (this
         // computer, without a node).
         hooks: pluginHooks({ registry, host: host.host, onSkipped: (s) => console.error(`[bots] hook ${s.pluginId}/${s.hook} on ${s.event} skipped: ${s.reason}`) }),

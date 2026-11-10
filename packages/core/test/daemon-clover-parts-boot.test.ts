@@ -121,6 +121,10 @@ describe("the daemon's Clover parts, booted", () => {
     expect(listed.devices).toEqual([expect.objectContaining({ id: links.key.id, isThis: true })]);
     expect((await call<{ bots: { id: string }[] }>("bot.list")).bots.map((b) => b.id)).toEqual(["luna"]);
     expect(await call("update.status")).toMatchObject({ idle: true }); // lane M's handlers sit beside the lanes'
+    // Lane A's app methods: the model picker and a plugin's sign-ins answer (an unknown plugin is not_found, not an
+    // unknown method).
+    expect(Array.isArray((await call<{ models: unknown[] }>("models.list")).models)).toBe(true);
+    await expect(call("plugin.auth.list", { id: "acme/nope" })).rejects.toThrow(/no plugin acme\/nope/);
 
     // A second computer pairs; the user makes this one the main computer from the terminal.
     const laptop = await peer(net, hs, "Laptop");
