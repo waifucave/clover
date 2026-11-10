@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DAEMON_TARGETS, daemonCompileCommand, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs } from "./build-daemon";
+import { DAEMON_TARGETS, daemonCompileCommand, hostBundlesLine, MANIFEST_EMBED, occurrences, daemonFileName, daemonOutput, hostTarget, parseBuildDaemonArgs } from "./build-daemon";
 
 const compileCore = (JSON.parse(readFileSync(join(import.meta.dir, "..", "packages", "cli", "package.json"), "utf8")) as { scripts: Record<string, string> }).scripts["compile:core"]!;
 
@@ -32,25 +32,32 @@ describe("build:daemon", () => {
         .replace("bun build --compile", `bun build --compile --target=${DAEMON_TARGETS[target]} --compile-exec-argv=--use-system-ca`)
         .replace("--outfile ../../dist/clover-core", `--outfile ../../${daemonOutput(target)}`)
         .replaceAll("bun build ", "bun build --define __CLOVER_DIST__=true "));
-      // The pre-bundles stay as they are but for the dist define, and the compile keeps all three entrypoints.
+      // The pre-bundles (the two workers, the plugin host's two bundles) stay as they are but for the dist define, and
+      // the compile keeps all five entrypoints.
       const steps = command.split("&&").map((s) => s.trim());
-      expect(steps.length).toBe(3);
+      expect(steps.length).toBe(5);
       for (const step of steps) expect(step.startsWith("bun build --define __CLOVER_DIST__=true ")).toBe(true);
-      expect(steps.slice(0, 2)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true ")).slice(0, 2));
-      expect(steps[2]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts");
+      expect(steps.slice(0, 4)).toEqual(compileCore.split("&&").map((s) => s.trim().replace("bun build ", "bun build --define __CLOVER_DIST__=true ")).slice(0, 4));
+      expect(steps[4]).toContain("src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle");
     }
   });
 
   test("--plugins-manifest: the compile step embeds the manifest file (a fourth input, beside the worker bundles)", () => {
     const command = daemonCompileCommand(compileCore, "darwin-arm64", true);
     const steps = command.split("&&").map((s) => s.trim());
-    expect(steps[2]).toContain(`src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts ${MANIFEST_EMBED} --outfile ../../dist/daemon/darwin-arm64/clover-core`);
+    expect(steps[4]).toContain(`src/main.ts src/embedded-worker.ts src/fd-receiver-worker.ts .build/clover-plugin-host.bundle .build/clover-plugin-worker.bundle ${MANIFEST_EMBED} --outfile ../../dist/daemon/darwin-arm64/clover-core`);
     expect(MANIFEST_EMBED).toBe(".build/clover-bundled-plugins.manifest");
-    expect(steps.slice(0, 2).join(" ")).not.toContain(MANIFEST_EMBED);
+    expect(steps.slice(0, 4).join(" ")).not.toContain(MANIFEST_EMBED);
     expect(daemonCompileCommand(compileCore, "darwin-arm64")).not.toContain(MANIFEST_EMBED);
     expect(parseBuildDaemonArgs(["--plugins-manifest", "/x/m.manifest"], "darwin-arm64")).toEqual({ targets: ["darwin-arm64"], smoke: false, dryRun: false, pluginsManifest: "/x/m.manifest" });
     expect(parseBuildDaemonArgs(["--plugins-manifest=/y"], "darwin-arm64").pluginsManifest).toBe("/y");
     expect(() => parseBuildDaemonArgs(["--plugins-manifest"], "darwin-arm64")).toThrow("--plugins-manifest takes a file");
+  });
+
+  test("the plugin host's bundles: the line __host-bundles prints is each one's size and SHA-256", () => {
+    const enc = (t: string) => new TextEncoder().encode(t);
+    const sha = (t: string) => new Bun.CryptoHasher("sha256").update(t).digest("hex");
+    expect(hostBundlesLine(enc("ab"), enc("cde"))).toBe(`host 2 bytes, sha256 ${sha("ab")}; worker 3 bytes, sha256 ${sha("cde")}`);
   });
 
   test("a cross-built core is checked by the manifest's bytes in it, exactly once", () => {

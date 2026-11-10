@@ -41,6 +41,31 @@ type SessionKind = "bot" | "side-thread" | "agent" | "coding";
 const session = (bot: string | undefined, sessionKind: SessionKind, sessionId = "s_1"): Caller =>
   ({ kind: "session", sessionId, sessionKind, ...(bot ? { bot } : {}) }) as Caller;
 
+describe("the headless browser's folder, for every runner kind (L's review)", () => {
+  test("<home>/browser/ (its private shell copy, its run copies, its profiles) is never written by any runner", () => {
+    const fence = new CloverFence({ os: "macos", home: "/Users/me", cloverHome: "/Users/me/.clover", temp: "/tmp", canonical: (p) => p });
+    const callers: Caller[] = [
+      { kind: "session", sessionId: "c1", sessionKind: "coding" },
+      { kind: "session", sessionId: "b1", sessionKind: "bot", bot: "luna" },
+      { kind: "session", sessionId: "t1", sessionKind: "side-thread", bot: "luna" },
+      { kind: "session", sessionId: "a1", sessionKind: "agent", bot: "luna" },
+      { kind: "plugin", pluginId: "tarot" } as Caller,
+      { kind: "peer", device: "laptop000000000000" },
+    ];
+    const paths = ["/Users/me/.clover/browser/shell/chrome-headless-shell", "/Users/me/.clover/browser/runs/r1/shell", "/Users/me/.clover/browser/profiles/p1/Default/Cookies", "/Users/me/.clover/browser"];
+    for (const c of callers) {
+      const f = fence.forCaller(c);
+      const policy = f.policy();
+      for (const path of paths) {
+        for (const op of [{ op: "write", path }, { op: "delete", path }, { op: "move", path: "/Users/me/x", to: path }] as const) {
+          expect([c, op, f.check(op).allowed]).toEqual([c, op, false]);
+        }
+        expect([c, path, policyAllows(policy, "write", path, "macos"), policyAllows(policy, "unlink", path, "macos")]).toEqual([c, path, false, false]);
+      }
+    }
+  });
+});
+
 describe("the fence's fold (B-M1's review, J-M1's B1)", () => {
   test("long s, sharp s and the Kelvin sign fold as the disks take them; NFC and NFD are one name", () => {
     expect(foldName("ſettings.json")).toBe("settings.json");
@@ -248,14 +273,18 @@ describe("the real fence on a real disk", () => {
     void clover;
   });
 
-  test("a linked global git config is never followed for the hooks folder", () => {
+  test("a linked global git config is read through, as git reads it: its hooks folder is held (#392's review)", () => {
+    // A dotfiles manager's link. Only the user makes it: the fence denies writing `~/.gitconfig`, so no runner can plant
+    // one, and following it only ever adds denies.
     const { home, clover, fence } = make();
-    mkdirSync(join(home, "evil"), { recursive: true });
-    writeFileSync(join(home, "evil", "config"), "[core]\n\thooksPath = ~/hooked\n");
-    symlinkSync(join(home, "evil", "config"), join(home, ".gitconfig"));
+    mkdirSync(join(home, "dotfiles"), { recursive: true });
+    writeFileSync(join(home, "dotfiles", "config"), "[core]\n\thooksPath = ~/hooked\n");
+    symlinkSync(join(home, "dotfiles", "config"), join(home, ".gitconfig"));
     const kinds = fence.fencedSet().filter((i) => i.kind === "login-start").map((i) => i.path);
-    expect(kinds).not.toContain(join(home, "hooked"));
-    expect(fence.check({ op: "write", path: join(home, "hooked", "pre-commit") })).toEqual({ allowed: true });
+    expect(kinds).toContain(join(home, "hooked"));
+    expect(fence.check({ op: "write", path: join(home, "hooked", "pre-commit") })).toMatchObject({ allowed: false, reason: "login-start" });
+    // The config the link leads to is held where it lands.
+    expect(fence.check({ op: "write", path: join(home, "dotfiles", "config") }).allowed).toBe(false);
     void clover;
   });
 

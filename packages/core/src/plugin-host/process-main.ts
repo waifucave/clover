@@ -3,6 +3,7 @@
 // closes it. Its own console and stdout carry nothing the daemon reads.
 import { HostMux, bunWorker } from "./mux";
 import { fdLink, streamPeer } from "./link";
+import { parseRunCheckArgs } from "./run-file";
 
 const LINK_FD = 3;
 const link = fdLink(LINK_FD);
@@ -11,7 +12,10 @@ const peer = streamPeer(link.lines, (line) => link.write(`${line}\n`));
 // worker load; from source, the module beside this one.
 const workerEntry = process.env.CLOVER_PLUGIN_WORKER;
 delete process.env.CLOVER_PLUGIN_WORKER;
-const mux = new HostMux({ daemon: peer, spawnWorker: bunWorker(process.env.CLOVER_COMPUTER ?? "", workerEntry === undefined || workerEntry === "" ? undefined : workerEntry) });
+// The files each worker starts from and the SHA-256 each must hold, from this process's arguments (never its
+// environment, which a worker inherits): checked before every Worker (#312's review, S1).
+const workerChecks = parseRunCheckArgs(process.argv);
+const mux = new HostMux({ daemon: peer, spawnWorker: bunWorker(process.env.CLOVER_COMPUTER ?? "", workerEntry === undefined || workerEntry === "" ? undefined : workerEntry, workerChecks) });
 peer.onClose(() => {
   mux.close();
   // The daemon is gone (or ended this process): what the plugins started goes with it. The daemon starts this process

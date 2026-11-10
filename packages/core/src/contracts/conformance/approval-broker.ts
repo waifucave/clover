@@ -596,6 +596,33 @@ export function runApprovalBrokerConformance(make: ApprovalBrokerFactory): void 
       expect(broker.cards().map((c) => [c.computer, c.binds?.source])).toEqual([["Studio", "Desk"]]);
     });
 
+    test("the source rules: only a transfer has one, never its own destination, always a computer the request names", async () => {
+      const { broker } = setup({ levels: { Studio: "automatic", Desk: "automatic" } });
+      const both = ["Studio", "Desk"];
+      const change = { kind: "change" as const, change: "computer-level" as const, effect: "other" as const };
+      const transfer = (source: string, computer = "Studio") => ({ computer, source, method: "tree.transfer", params: { source, destination: computer } });
+      const refused = async (req: Partial<ApprovalRequest>) => expect(await broker.request(bash(req))).toEqual({ allowed: false, by: "unbound" });
+      // A level raise with a source: named or not, it binds nothing.
+      await refused({ ...change, computers: both, binds: { ...raise(), source: "Desk" } });
+      await refused({ ...change, computers: ["Studio"], binds: { ...raise(), source: "Desk" } });
+      await refused({ computers: both, binds: { computer: "Studio", source: "Desk", method: "tool.run", params: {} } });
+      // A transfer whose source is its destination, or isn't among the request's computers.
+      await refused({ effect: "move", computers: both, binds: transfer("Studio") });
+      await refused({ effect: "move", computers: ["Studio"], binds: transfer("Desk") });
+      // Names match exactly, as the request gives them: another case is another computer here.
+      await refused({ effect: "move", computers: both, binds: transfer("desk") });
+      await refused({ effect: "move", computers: both, binds: transfer("Desk", "studio") });
+      await refused({ ...change, computers: ["Studio"], binds: raise("studio") });
+      // No computers at all: nothing a binding could name.
+      await refused({ ...change, computers: [], binds: raise() });
+      await refused({ effect: "move", computers: [], binds: transfer("Desk") });
+      expect(broker.cards()).toHaveLength(0);
+      // The one shape that holds: a transfer between two named computers.
+      void broker.request(bash({ effect: "move", computers: both, binds: transfer("Desk") }));
+      await flush();
+      expect(broker.cards().map((c) => [c.computer, c.binds?.source])).toEqual([["Studio", "Desk"]]);
+    });
+
     test("read-only's deny and rule 3's refusal still come first", async () => {
       const { broker } = setup({ levels: { Studio: "read-only", Laptop1: "automatic" } });
       const call = { computer: "Studio", method: "tool.run", params: { tool: "Bash", input: {} } };

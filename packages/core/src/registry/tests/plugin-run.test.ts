@@ -10,7 +10,7 @@ import { HookRunner } from "../../plugins/hook-runner";
 import { PluginSupervisor, isBunCommand } from "../../plugins/supervisor";
 import { pluginStdioMcpServer } from "../../runtime-sdk/external-mcp";
 import { PLUGIN_BUNFIG, PLUGIN_GUARD_SOURCE, checkPluginBun, pluginBun, pluginBunDigest, pluginBunFor, ensurePluginRunFiles, guardedMcpServer, guardedPluginEnv, pluginBunFlags, pluginHostBunFlags, droppedEnv, envWithoutDropped } from "../plugin-run";
-import { fenceFolders, pluginFenceAvailable } from "../plugin-fence";
+import { commandEnvOf, fenceFolders, pluginFenceAvailable } from "../plugin-fence";
 
 function world() {
   const base = mkdtempSync(join(tmpdir(), "clover-b-plugin-run-"));
@@ -379,7 +379,7 @@ describe("a plugin process loads only its own tree", () => {
     const sup = new PluginSupervisor({
       runDir: join(w.base, "sup-run"), socketPath: "/s", mintToken: () => "t",
       pluginRun: { files: w.files, shared: [] },
-      spawn: (_cmd, o) => { seen.push(o.env); return { pid: 999_999, exited: new Promise<number>(() => {}), kill() {} }; },
+      spawn: (_cmd, o) => { seen.push(commandEnvOf(o.env)); return { pid: 999_999, exited: new Promise<number>(() => {}), kill() {} }; },
       isAlivePid: () => false, signalPid: () => {}, processStartedAt: () => null,
     });
     const root = w.plugin("sup", { "host/index.ts": "" });
@@ -440,7 +440,8 @@ describe("a plugin's environment never turns off its guard", () => {
     expect([droppedEnv("win32").test("node_options"), droppedEnv("win32").test("Clover_Plugin_Root"), droppedEnv("darwin").test("node_options"), droppedEnv("darwin").test("NODE_OPTIONS")]).toEqual([true, true, false, true]);
     // What loads nothing stays the plugin's.
     const ok = guardedMcpServer({ command: "bun", args: ["server.ts"], env: { NODE_ENV: "production", NODE_NO_WARNINGS: "1", MY_TOKEN: "t" } }, root, guard);
-    expect([ok.env?.NODE_ENV, ok.env?.NODE_NO_WARNINGS, ok.env?.MY_TOKEN]).toEqual(["production", "1", "t"]);
+    const okEnv = commandEnvOf(ok.env);
+    expect([okEnv.NODE_ENV, okEnv.NODE_NO_WARNINGS, okEnv.MY_TOKEN]).toEqual(["production", "1", "t"]);
   });
 
   test("the reviewer's case: an MCP server with CLOVER_PLUGIN_HOST=1 importing a file outside its folder is refused, and still guarded if its env got through", () => {

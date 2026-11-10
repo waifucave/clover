@@ -8,6 +8,21 @@ const hello = (role: CloverHelloParams["role"], token: string, extra: Partial<Cl
   ({ protocolVersion: CLOVER_PROTOCOL_VERSION, role, token, clientName: "t", ...extra });
 const user: PeerFacts = { pid: 10, ancestors: [1], probe: {}, floor: "outside-floor" };
 
+describe("the app's peer image in the caller check", () => {
+  test("an app hello passes only a check that says yes; \"none\" makes no check; the floor's refusal comes first", () => {
+    const app = { binding: { role: "app" as const }, peer: user, processes: new SessionProcesses() };
+    expect(resolveCloverCaller({ ...app, appPeer: "none" })).toEqual({ kind: "user", client: "app" });
+    expect(resolveCloverCaller({ ...app, appPeer: () => true })).toEqual({ kind: "user", client: "app" });
+    expect(resolveCloverCaller({ ...app, appPeer: () => false })).toMatchObject({ code: CLOVER_ERR.PROCESS_REFUSED });
+    let asked = 0;
+    const fenced: PeerFacts = { ...user, floor: "fenced" };
+    expect(resolveCloverCaller({ ...app, peer: fenced, appPeer: () => { asked++; return true; } })).toMatchObject({ code: CLOVER_ERR.NOT_THE_USER });
+    expect(asked).toBe(0);
+    // Only the app role is checked.
+    expect(resolveCloverCaller({ binding: { role: "cli" }, peer: user, processes: new SessionProcesses(), appPeer: () => false })).toEqual({ kind: "user", client: "cli" });
+  });
+});
+
 describe("Clover roles and tokens", () => {
   test("each minted token is bound to its role and its object, and can be revoked", async () => {
     const t = new CloverTokens({ verifyCli: async () => false });
@@ -42,16 +57,16 @@ describe("the caller check", () => {
     const p = new SessionProcesses();
     p.add(30, { sessionId: "s", sessionKind: "coding" });
     const peer: PeerFacts = { pid: 40, ancestors: [30, 1], probe: {}, floor: "outside-floor" };
-    expect(resolveCloverCaller({ binding: { role: "cli" }, peer, processes: p })).toEqual({ kind: "session", sessionId: "s", sessionKind: "coding" });
-    expect(resolveCloverCaller({ binding: { role: "cli" }, peer: user, processes: p })).toEqual({ kind: "user", client: "cli" });
+    expect(resolveCloverCaller({ appPeer: "none", binding: { role: "cli" }, peer, processes: p })).toEqual({ kind: "session", sessionId: "s", sessionKind: "coding" });
+    expect(resolveCloverCaller({ appPeer: "none", binding: { role: "cli" }, peer: user, processes: p })).toEqual({ kind: "user", client: "cli" });
     p.remove(30);
-    expect(resolveCloverCaller({ binding: { role: "cli" }, peer, processes: p })).toEqual({ kind: "user", client: "cli" });
+    expect(resolveCloverCaller({ appPeer: "none", binding: { role: "cli" }, peer, processes: p })).toEqual({ kind: "user", client: "cli" });
   });
 
   test("a plugin-host connection from a process other than the one the daemon started is refused", () => {
-    const r = resolveCloverCaller({ binding: { role: "plugin-host", hostProcess: "clover" }, peer: user, processes: new SessionProcesses(), hostPid: 99 });
+    const r = resolveCloverCaller({ appPeer: "none", binding: { role: "plugin-host", hostProcess: "clover" }, peer: user, processes: new SessionProcesses(), hostPid: 99 });
     expect(r).toMatchObject({ code: CLOVER_ERR.PROCESS_REFUSED });
-    expect(resolveCloverCaller({ binding: { role: "plugin-host", hostProcess: "clover" }, peer: { ...user, pid: 99 }, processes: new SessionProcesses(), hostPid: 99 })).toEqual({ kind: "plugin", pluginId: "clover" });
+    expect(resolveCloverCaller({ appPeer: "none", binding: { role: "plugin-host", hostProcess: "clover" }, peer: { ...user, pid: 99 }, processes: new SessionProcesses(), hostPid: 99 })).toEqual({ kind: "plugin", pluginId: "clover" });
   });
 
   test("everyone but the user and the core is fenced; a peer always", () => {

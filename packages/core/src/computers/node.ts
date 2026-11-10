@@ -5,7 +5,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Os } from "@waifucave/clover-protocol";
-import type { AnswerDevices, AnswerLedger, CallCardRenderer } from "../contracts/approval-broker";
+import type { AnswerDevices, AnswerLedger, CallCardRenderer, CardRecord } from "../contracts/approval-broker";
 import type { Clock } from "../contracts/clock";
 import { ContractError } from "../contracts/common";
 import type { DeviceRegistry } from "../contracts/device-registry";
@@ -32,7 +32,7 @@ import { HoldRouter, serveHolds } from "./holds";
 import { McpRouter, mirror, serveMirror, type McpCaller, type McpFields, type McpInstaller, type McpServerPlacement } from "./mcp";
 import { ComputerPeers } from "./peers";
 import { CoreComputerRegistry, type SelfStateStore } from "./registry";
-import { FileSelfStateStore, selfStatePath } from "./store";
+import { FileAnswerLedger, FileSelfStateStore, selfStatePath, usedCardsPath } from "./store";
 
 export interface ComputerNodeOptions {
   clock: Pick<Clock, "now">;
@@ -59,6 +59,9 @@ export interface ComputerNodeOptions {
   /** This computer's tree folder (`defaultTreeRoot()`), made and kept: `home/<this computer>` links to the home
    *  folder, `bots/` to the bots' folder. Left out, no folder is made (tests). */
   treeRoot?: string;
+  /** The approval broker's own record of a card, by id (`broker.get`): a level raise with a card counts only when it
+   *  hands over that very record (the registry's `cardRecord`). */
+  cardRecord?: (id: string) => CardRecord | undefined;
   /** The calling computer's side of R1: shows the user another computer's card and gives back their signed answer
    *  (lanes B and C's broker). Without it, a call another computer's level asks about is refused. */
   askUser?: AnswerAsker;
@@ -147,6 +150,10 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     self: { name: o.self.name, device: o.self.device, os, hasDisplay: o.self.hasDisplay ?? true, agents: o.self.agents ?? [] },
     store: o.store ?? new FileSelfStateStore(selfStatePath(o.cloverHome)),
     ...(o.answers ? { devices: o.answers.devices, ledger: o.answers.ledger, render: o.answers.render } : {}),
+    // A card raises a level only through the broker's own record (`cardRecord`; without it, none does), once: the
+    // ids used are kept on disk under the home, so a restart doesn't make a card new again.
+    ...(o.cardRecord ? { cardRecord: o.cardRecord } : {}),
+    cardLedger: new FileAnswerLedger(usedCardsPath(o.cloverHome), o.clock),
   });
   const botsRoot = join(o.cloverHome, "bots");
   const bots = o.bots ?? (() => []);

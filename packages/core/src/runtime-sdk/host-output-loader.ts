@@ -3,13 +3,14 @@ import { execFile } from "node:child_process";
 import { constants, type Stats } from "node:fs";
 import { lstat, open, realpath, type FileHandle } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { CLOVER_TEAM_ID } from "../bundled-identities";
 import type { HostCodeOutputTransportFactory } from "./host-code-broker";
 
 export const HOST_OUTPUT_PROTOCOL_VERSION = 1;
 export const HOST_OUTPUT_IMPLEMENTATION_ID = "winter-host-output/v1";
 export const HOST_OUTPUT_BUNDLE_SUBPATH = "native/host-output";
 const ARTIFACT = "winter-host-output.node";
-const TEAM = "37N77U9RSZ";
+const TEAM = CLOVER_TEAM_ID;
 const SHA = /^[a-f0-9]{64}$/;
 // Retain the handles, not just FD integers: FileHandle's GC must not release a
 // dyld name or an image containing registered process-lifetime atfork callbacks.

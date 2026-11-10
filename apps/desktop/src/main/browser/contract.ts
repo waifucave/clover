@@ -25,6 +25,9 @@ export interface Viewport {
   height: number;
 }
 
+/** The most pixels one viewport may have (8K UHD): one picture of 16384x16384 would be about 1 GiB (the protocol's `MAX_VIEWPORT_PIXELS`). */
+export const MAX_VIEWPORT_PIXELS = 7680 * 4320;
+
 /** The agent's own size, which a tab returns to when it leaves the view (§12.1). */
 export const AGENT_VIEWPORT: Viewport = Object.freeze({ width: 1280, height: 800 });
 
@@ -125,6 +128,9 @@ export const CDP_DENIED_METHODS: readonly string[] = [
   "Network.clearBrowserCache",
   "Network.loadNetworkResource",
   "Input.setInterceptDrags",
+  // The page's own size is the core's to set (the offscreen tab pins it), never a bot's, by either spelling.
+  "Page.setDeviceMetricsOverride",
+  "Page.clearDeviceMetricsOverride",
   "Emulation.setDeviceMetricsOverride",
   "Emulation.clearDeviceMetricsOverride",
   "Emulation.setVisibleSize",

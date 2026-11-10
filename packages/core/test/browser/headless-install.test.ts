@@ -268,16 +268,28 @@ describe("the install, failing closed", () => {
       expect(lstatSync(staged.dir).mode & 0o777).toBe(0o700);
       expect(lstatSync(staged.bin).mode & 0o777).toBe(0o500);
     }
-    // Changing the install afterwards doesn't touch what runs.
+    // Changing the install afterwards doesn't touch what runs, and the next start reuses the checked copy (no new copy).
     tamper(installed.bin, "#!/bin/sh\necho swapped\n");
     expect(readFileSync(staged.bin, "utf8")).toContain("echo browser");
-    // And a copy made from a swapped install is refused and removed, not returned.
-    const before = readdirSync(join(dir, "run")).length;
+    const again = await stageForLaunch(installed, { dir, pin });
+    expect(again.dir).toBe(staged.dir);
+    expect(readdirSync(join(dir, "run"))).toEqual([staged.dir.split(/[\\/]/).pop()!]);
+    // A kept copy that was changed is caught at the next start: remade from the (swapped) install, refused and removed.
+    tamper(staged.bin, "#!/bin/sh\necho swapped in the copy\n");
     expect(await code(stageForLaunch(installed, { dir, pin }))).toBe("tree");
-    expect(readdirSync(join(dir, "run")).length).toBe(before);
+    expect(readdirSync(join(dir, "run"))).toEqual([]);
     staged.release();
-    expect(existsSync(staged.dir)).toBe(false);
     staged.release();
+  });
+
+  test("a start with the copy of a version already kept doesn't copy the browser again", async () => {
+    const dir = home();
+    const pin = pinFor(ZIP);
+    const installed = await installHeadlessShell({ dir, pin, platform: PLAT, fetch: server(ZIP).fetch });
+    const first = await stageForLaunch(installed, { dir, pin });
+    expect(readdirSync(join(dir, "run")).length).toBe(1);
+    const second = await stageForLaunch(installed, { dir, pin });
+    expect(second.bin).toBe(first.bin);
   });
 
   test("copies left by a process that is gone are removed at the next start; a live one's stay", async () => {

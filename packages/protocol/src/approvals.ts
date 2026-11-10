@@ -23,7 +23,7 @@
 import { z } from "zod";
 import { utf16 } from "./strings";
 import {
-  AnyPluginId, BotId, CardId, ComputerName, DeviceId, Empty, SessionId, Sha256Hex, Text, Timestamp, TreePath, TurnOrigin,
+  AnyPluginId, BotId, CardId, MAX_CHILD_PLUGINS, ComputerName, DeviceId, Empty, SessionId, Sha256Hex, Text, Timestamp, TreePath, TurnOrigin,
 } from "./common";
 import { coreEvent, defineEvent, defineMethod } from "./rpc";
 
@@ -156,7 +156,7 @@ export const Card = CardMeta.extend({
   fields: z.partialRecord(CardFieldName, SealedValue),
   options: z.array(CardOption).min(1).max(8),
   /** A plugin OK covers the plugin and its children, with a checkbox per child (§5.1). */
-  children: z.array(z.object({ id: AnyPluginId, label: Text, checked: z.boolean() })).max(256).optional(),
+  children: z.array(z.object({ id: AnyPluginId, label: Text, checked: z.boolean() })).max(MAX_CHILD_PLUGINS).optional(),
 });
 export type Card = z.infer<typeof Card>;
 
@@ -239,7 +239,7 @@ export function callBindingInput(method: string, params: unknown): string {
 export const SignedCardAnswer = z.object({
   card: Card,
   option: CardOptionId,
-  children: z.array(AnyPluginId).max(256).optional(),
+  children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS).optional(),
   device: DeviceId,
   at: Timestamp,
   /** Ed25519 over `cardAnswerSigningInput(...)`, base64. */
@@ -281,7 +281,7 @@ export const APPROVALS_METHODS = {
     params: z.object({
       id: CardId, hash: Sha256Hex, option: CardOptionId, proof: CardAnswerProof,
       /** A plugin OK's checked children; a device signs them too. */
-      children: z.array(AnyPluginId).max(256).optional(),
+      children: z.array(AnyPluginId).max(MAX_CHILD_PLUGINS).optional(),
     }),
     result: z.object({ accepted: z.boolean(), reason: utf16(500).optional() }),
     doc: "Answers a card from a sealed frame, or with a paired device's signature; the first answer wins.",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Caller } from "@waifucave/clover-protocol";
@@ -73,7 +73,7 @@ describe("the macOS profile, as text", () => {
     const denyRunSubpath = '(deny file-read* (subpath "/U/me/.clover/run")';
     // 1. Clover home default-deny (subpath) comes after allowWrite
     expect(at(denyCloverHome)).toBeGreaterThan(at(allowWriteSubpath));
-    // 2. Holder folder denies (literal) come after Clover home deny
+    // 2. Holder folder denies (literal) come after the Clover home deny (and after the naming allows, below)
     expect(at(denyHomeLiteral)).toBeGreaterThan(at(denyCloverHome)); // renaming home moves Clover home
     expect(p).not.toContain('(literal "/U")'); // above writable roots nothing writable
     // 3. No naming handling for folders inside the Clover home: the home deny refuses every new name there.
@@ -83,7 +83,11 @@ describe("the macOS profile, as text", () => {
     const nameLaunchAgentsDeny = '(deny file-write* (regex #"^/U/me/Library/LaunchAgents/[^/]"))';
     const nameLaunchAgentsAllow = '(allow file-write* (regex #"^/U/me/Library/LaunchAgents/[ -.0-~]+(/|$)"))';
     expect(p).toContain(nameLaunchAgentsDeny);
-    expect(at(nameLaunchAgentsAllow)).toBeGreaterThan(at(denyHomeLiteral));
+    // Holder folders' literal denies come after the naming allows (#392's review): a naming folder's ASCII-name allow
+    // (`~` holding a missing `.zshrc`) would otherwise take a holder's own entry (`~/Library`) back, and it could be
+    // renamed away and replaced.
+    expect(at(denyHomeLiteral)).toBeGreaterThan(at(nameLaunchAgentsAllow));
+    expect(at('(deny file-write* (literal "/U/me/Library")')).toBeGreaterThan(at(nameLaunchAgentsAllow));
     // 4. Specific fenced item denies come AFTER naming folder allows so they can't be overridden by them.
     expect(at(denySettingsJson)).toBeGreaterThan(at(nameLaunchAgentsAllow));
     expect(at(denyPluginsStateOks)).toBeGreaterThan(at(nameLaunchAgentsAllow));
@@ -158,7 +162,10 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
     try { if (Bun.spawnSync(["/usr/bin/clang", "-O2", "-o", out, src]).exitCode === 0) built.path = out; } catch { /* no compiler */ }
     return built.path;
   };
-  const sleeping = (tag: string) => Bun.spawnSync(["/usr/bin/pgrep", "-f", `sleep 2\\.${tag}`]).exitCode === 0;
+  /** How long the test's job sleeps before it would set the key: longer than any run takes under load. */
+  const JOB_SLEEP_S = 60;
+  /** Whether any process's command line holds the job's tagged sleep (the subshell's and the sleep's own). */
+  const sleeping = (tag: string) => Bun.spawnSync(["/usr/bin/pgrep", "-f", `sleep ${JOB_SLEEP_S}\\.${tag}`]).exitCode === 0;
 
   for (const mode of ["the recorded tree (no holder)", "the process holder"] as const) {
     test(`a \`set -m\` job that sets core.hooksPath after the run: ended, and the key never lands (${mode})`, async () => {
@@ -171,18 +178,23 @@ darwinDescribe("macOS: everything a command starts ends with its run, before the
       const fence = new CloverFence({ os: "macos", home, cloverHome: clover, temp });
       const spawner = fencedSpawner({ fence, processHolder: holder ?? null });
       const tag = `${Date.now() % 100000}${Math.floor(Math.random() * 10)}`;
+      // The job sleeps far longer than any run takes, even on a loaded CI runner: a run that waited for it would take
+      // all of it, and a job left alive would still be there to see. Nothing below waits a fixed time.
       const started = Date.now();
       const r = await spawner.run({
-        command: `set -m; (sleep 2.${tag}; git config core.hooksPath /tmp/y) > /dev/null 2>&1 & echo started`,
-        cwd: project, env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "s-setm", sessionKind: "coding" } },
+        command: `set -m; (sleep ${JOB_SLEEP_S}.${tag}; git config core.hooksPath /tmp/y) > /dev/null 2>&1 & echo started`,
+        cwd: project, env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 30_000, who: { caller: { kind: "session", sessionId: "s-setm", sessionKind: "coding" } },
       });
       expect(r.kind === "exited" && r.stdout).toBe("started\n");
-      expect(Date.now() - started).toBeLessThan(2_000); // the run didn't wait for the job: it ended it
-      expect(sleeping(tag)).toBe(false); // nothing left behind
-      await Bun.sleep(3_000); // past when the job would have written
-      expect(readFileSync(join(project, ".git", "config"), "utf8")).not.toContain("hooksPath");
+      expect(Date.now() - started).toBeLessThan(JOB_SLEEP_S * 1000); // the run didn't wait for the job: it ended it
+      // Nothing left behind: every process whose command line holds the tag (the job's subshell, which would run
+      // `git config`, and its sleep) is gone. Polled, as the kernel reaps them; gone at once in practice.
+      const until = Date.now() + 20_000;
+      while (sleeping(tag) && Date.now() < until) await Bun.sleep(100);
       expect(sleeping(tag)).toBe(false);
-    }, 30_000);
+      // With the subshell gone, nothing is left to write the key: it never lands.
+      expect(readFileSync(join(project, ".git", "config"), "utf8")).not.toContain("hooksPath");
+    }, 90_000);
   }
 
   test("the second line: a key set after a run ended is reverted when the turn or session ends", async () => {
@@ -283,6 +295,14 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       expect(spawner.recheck!("s-w2")).toMatch(/link planted as a git config.*core\.fsmonitor/);
       expect(existsSync(linked)).toBe(false);
       expect(readFileSync(evil, "utf8")).toContain("fsmonitor");
+      // A bare repo whose `config` is itself a link, to a file with risky keys: found, and the link removed (#384's review).
+      const bare = join(other, "linked-bare.git");
+      mkdirSync(join(bare, "objects"), { recursive: true });
+      writeFileSync(join(bare, "HEAD"), "ref: refs/heads/main\n");
+      writeFileSync(join(other, "bare-evil.cfg"), "[core]\n\tbare = true\n\tfsmonitor = /tmp/x\n");
+      symlinkSync(join(other, "bare-evil.cfg"), join(bare, "config"));
+      expect(spawner.recheck!("s-w2")).toMatch(/link planted as a git config.*core\.fsmonitor/);
+      expect(existsSync(join(bare, "config"))).toBe(false);
       // A scratch folder made mid-session (a new bot's) is looked over too.
       const newbot = join(clover, "scratch", "newbot", "r");
       expect(Bun.spawnSync(["git", "init", "-q", newbot]).exitCode).toBe(0);
@@ -311,9 +331,6 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       writeFileSync(at("linked.git", "config"), "[core]\n\tbare = true\n");
       symlinkSync(at("bare.git", "HEAD"), at("linked.git", "HEAD"));
       symlinkSync(at("bare.git", "objects"), at("linked.git", "objects"));
-      // A `config` that isn't a regular file is no repo's.
-      mkdirSync(at("notbare", "config"), { recursive: true });
-      writeFileSync(at("notbare", "HEAD"), "x");
       const r = reposUnder([root]);
       const found = r.files.filter((f) => f.endsWith("/config")).sort(); // each repo's config.worktree is there too
       expect(found).toEqual([at("a", ".git", "config"), at("a", "sub", ".git", "config"), at("b", "c", "d", ".git", "config"), at("elsewhere", ".git", "config"),
@@ -322,7 +339,6 @@ darwinDescribe("a fenced item outside every writable root, on the real sandbox (
       expect(found).not.toContain(at("link", ".git", "config"));
       // A budget of the top level's folders alone: the walk stops there, and says so.
       const top = readdirSync(root).filter((n) => statSync(join(root, n)).isDirectory() && n !== "link").length;
-      expect(r.files).not.toContain(at("notbare", "config"));
       const cut = reposUnder([root], top);
       expect(cut.stopped).toBe(true);
       expect(cut.files).toContain(at("a", ".git", "config"));
@@ -503,6 +519,45 @@ darwinDescribe("the profile agrees with policyAllows, on the real sandbox", () =
 });
 
 describe("the Linux sandbox's mounts, as arguments", () => {
+  test("a link on the way to a fenced item is held: its folder read-only, its other entries bound back, the link not (#392's review)", () => {
+    const dirs = new Set(["/h", "/h/dotfiles", "/h/dotfiles/sub", "/h/p", "/h/.clover", "/t"]);
+    const files = new Set(["/h/dotfiles/notes.md"]);
+    const links = new Set(["/h/dotfiles/gitconfig"]);
+    const fs = {
+      kind: (p: string) => (dirs.has(p) ? "dir" as const : files.has(p) ? "file" as const : links.has(p) ? "other" as const : null),
+      list: (d: string) => [...dirs, ...files, ...links].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
+    };
+    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/dotfiles2/real", "/h/.clover"], denyRead: ["/h/.clover"], holdLinks: ["/h/dotfiles/gitconfig"],
+      closedDoors: [], blockedAddresses: [], network: "none" as const };
+    const plan = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, policy });
+    const s = plan.args.join(" ");
+    expect(s).toContain("--ro-bind /h/dotfiles /h/dotfiles");
+    expect(s).toContain("--bind /h/dotfiles/notes.md /h/dotfiles/notes.md");
+    expect(s).toContain("--bind /h/dotfiles/sub /h/dotfiles/sub");
+    expect(s).not.toContain("--bind /h/dotfiles/gitconfig");
+    expect(plan.held).toContainEqual({ folder: "/h/dotfiles", because: "/h/dotfiles/gitconfig" });
+  });
+
+  test("the folders above a held link are mount points: a deep ~/a/b/c/gitconfig can't have ~/a/b renamed (#392's review)", () => {
+    const dirs = new Set(["/h", "/h/a", "/h/a/b", "/h/a/b/c", "/h/a/x", "/h/p", "/h/.clover", "/t"]);
+    const links = new Set(["/h/a/b/c/gitconfig"]);
+    const fs = {
+      kind: (p: string) => (dirs.has(p) ? "dir" as const : links.has(p) ? "other" as const : null),
+      list: (d: string) => [...dirs, ...links].filter((p) => p !== d && p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
+    };
+    const policy = { allowWrite: ["/h", "/t"], denyWrite: ["/h/real/deep", "/h/.clover"], denyRead: ["/h/.clover"], holdLinks: ["/h/a/b/c/gitconfig"],
+      closedDoors: [], blockedAddresses: [], network: "none" as const };
+    const s = bwrapPlan({ cloverHome: "/h/.clover", cwd: "/h/p", uid: 1000, fs, policy }).args.join(" ");
+    expect(s).toContain("--bind /h/a/b /h/a/b");
+    expect(s).toContain("--bind /h/a /h/a");
+    expect(s).toContain("--ro-bind /h/a/b/c /h/a/b/c");
+    // Shallowest first (the review's live run): `~` read-only and `~/a` bound back, then the `~/a/b` holder, then the
+    // link's own folder read-only last. A later mount covers what an earlier one put below it.
+    const order = ["--ro-bind /h /h ", "--bind /h/a /h/a ", "--bind /h/a/b /h/a/b ", "--ro-bind /h/a/b/c /h/a/b/c "].map((x) => `${s} `.indexOf(x));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
+  });
+
   test("the Clover home is a tmpfs view holding nothing without a caller; outside items read-only", () => {
     const dirs = new Set(["/h", "/h/.clover", "/h/.clover/settings", "/h/.clover/run", "/h/dev", "/h/dev/luna", "/t", "/run/user/1000"]);
     const files = new Set(["/h/.clover/settings.json", "/h/.clover/notes.txt"]);
@@ -1172,3 +1227,42 @@ describe.skipIf(!mac && !linuxBwrap)(`${here}: a command under the fence, on the
 
 const session = (sessionId: string): Caller => ({ kind: "session", sessionId, sessionKind: "coding" });
 const agent = (bot: string): Caller => ({ kind: "session", sessionId: "a1", sessionKind: "agent", bot });
+
+// Linux: the same holds under bubblewrap, run for real (the VM gate; skipped elsewhere and where bwrap can't run).
+(process.platform === "linux" ? describe : describe.skip)("bubblewrap, live (#392's review)", () => {
+  const coding = { kind: "session" as const, sessionId: "c1", sessionKind: "coding" as const };
+  const runIn = (home: string) => {
+    for (const d of ["project", "tmp", ".clover"]) mkdirSync(join(home, d), { recursive: true });
+    const spawner = fencedSpawner({ fence: new CloverFence({ os: "linux", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") }) });
+    return { spawner, run: (command: string) => spawner.run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 30_000, who: { caller: coding } }) };
+  };
+  const out = (r: Awaited<ReturnType<ReturnType<typeof runIn>["run"]>>) => (r.kind === "exited" ? r.stdout : r.kind === "refused" ? `refused: ${r.reason}` : "timeout");
+
+  test("each folder between the home and a deep held link (~/a/b/c/gitconfig) can't be renamed, nor the link swapped", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-bwrap-deep-")));
+    const at = (...p: string[]) => join(home, ...p);
+    for (const d of [at("a", "b", "c"), at("real")]) mkdirSync(d, { recursive: true });
+    writeFileSync(at("real", "deep"), "[user]\n\tname = me\n");
+    symlinkSync(at("real", "deep"), at("a", "b", "c", "gitconfig"));
+    symlinkSync(at("a", "b", "c", "gitconfig"), at(".gitconfig"));
+    const { spawner, run } = runIn(home);
+    if (!spawner.available) return;
+    for (const f of [at("a"), at("a", "b"), at("a", "b", "c")]) {
+      expect([f, out(await run(`mv '${f}' '${f}.away' && echo moved`))]).toEqual([f, ""]);
+      expect(existsSync(`${f}.away`)).toBe(false);
+    }
+    expect(out(await run(`rm -f '${at("a", "b", "c", "gitconfig")}' && ln -s '${at("project")}' '${at("a", "b", "c", "gitconfig")}' && echo swapped`))).toBe("");
+    expect(readlinkSync(at("a", "b", "c", "gitconfig"))).toBe(at("real", "deep"));
+    expect(out(await run(`printf x > '${at("a", "b", "notes.md")}' && echo wrote`))).toBe("wrote\n");
+  }, 120_000);
+
+  test("a fresh home: a first `mkdir -p ~/.config/gh` works, and ~/.config can't be renamed", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-bwrap-fresh-")));
+    const { spawner, run } = runIn(home);
+    if (!spawner.available) return;
+    expect(out(await run('mkdir -p "$HOME/.config/gh" && echo made'))).toBe("made\n");
+    expect(existsSync(join(home, ".config", "gh"))).toBe(true);
+    expect(out(await run('mv "$HOME/.config" "$HOME/.config.away" && echo moved'))).toBe("");
+    expect(existsSync(join(home, ".config.away"))).toBe(false);
+  }, 120_000);
+});

@@ -2,7 +2,7 @@
 // The app checks again where it can (its own allow list on each tab's debugger, and each partition's session
 // refusing schemes), so a bug on one side never opens the door alone.
 import { createHash } from "node:crypto";
-import { AGENT_VIEWPORT, CDP_ALLOWED_DOMAINS, isCdpMethodAllowed, type TabOwner, type Viewport } from "./contract";
+import { AGENT_VIEWPORT, CDP_ALLOWED_DOMAINS, isCdpMethodAllowed, MAX_VIEWPORT_PIXELS, type TabOwner, type Viewport } from "./contract";
 
 /** The ids a bot may have (its plugin's id, a child's included: `luna`, `pack/luna`). */
 const BOT_ID_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*(\/[a-z][a-z0-9]*(-[a-z0-9]+)*)?$/;
@@ -53,6 +53,9 @@ export const CDP_DENIED_METHODS: readonly string[] = [
   "Network.clearBrowserCache",
   "Network.loadNetworkResource",
   "Input.setInterceptDrags",
+  // The page's own size is the core's to set (the offscreen tab pins it), never a bot's, by either spelling.
+  "Page.setDeviceMetricsOverride",
+  "Page.clearDeviceMetricsOverride",
   "Emulation.setDeviceMetricsOverride",
   "Emulation.clearDeviceMetricsOverride",
   "Emulation.setVisibleSize",
@@ -101,6 +104,7 @@ export function checkPoint(method: string, from: Viewport | undefined, tab: View
 export function checkViewport(v: Viewport): void {
   const ok = (n: number): boolean => Number.isInteger(n) && n > 0 && n <= 16_384;
   if (!ok(v.width) || !ok(v.height)) throw new BrowserError("bad_viewport", `a viewport is whole pixels, 1–16384 each way (got ${v.width}×${v.height})`);
+  if (v.width * v.height > MAX_VIEWPORT_PIXELS) throw new BrowserError("bad_viewport", `a viewport is at most ${MAX_VIEWPORT_PIXELS} pixels, 7680×4320 (got ${v.width}×${v.height})`);
 }
 
 export { AGENT_VIEWPORT };

@@ -6,7 +6,7 @@
 // Bash can't write them).
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
 import { buildMandatoryFloorProfile } from "@waifucave/clover-agent-sdk";
@@ -17,8 +17,13 @@ import type { ApprovalRequest } from "../../src/contracts/approval-broker";
 import { agentConfigPaths, autoRunEntries, autoRunPaths } from "../../src/contracts/fence";
 import { FakeClock } from "../../src/contracts/fakes/clock";
 import { CloverFence } from "../../src/fence/fence";
-import { expandWindowsEnv, gitConfiguredDirs, parseRegValue, runLaterExtrasFrom } from "../../src/fence/run-later";
-import { persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
+import { GIT_CONFIG_READ_CAP, expandWindowsEnv, gitConfiguredDirs, parseRegValue, readGitConfigFile, runLaterExtras, runLaterExtrasFrom, stampOf } from "../../src/fence/run-later";
+import { persistenceLinkHolds, persistencePaths, sandboxConfigFor } from "../../src/runtime-sdk/mode-options";
+import { fenceContextFor } from "../../src/contracts/fence";
+import { fencedSpawner } from "../../src/fence/fenced-process";
+import { makeHolderFolders } from "../../src/fence/holder-folders";
+import { macFenceProfile } from "../../src/fence/macos-profile";
+import { callerPlaces } from "../../src/fence/per-caller";
 import type { NewSessionEvent } from "@waifucave/clover-protocol";
 import { ApprovalBroker } from "../../src/agent/approvals";
 import { PermissionGate } from "../../src/agent/gate";
@@ -243,6 +248,73 @@ describe("git's included config files, on this computer's real fence", () => {
   });
 });
 
+describe("git's includes are read again when the config changes, without a restart", () => {
+  test("an include the user adds later is held from the next look; unchanged, nothing is read again", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-late-")));
+    const os = process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux";
+    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    const local = join(home, ".gitconfig.local");
+    expect(fence.check({ op: "write", path: local })).toEqual({ allowed: true });
+    const first = runLaterExtras(os, home);
+    expect(runLaterExtras(os, home)).toBe(first); // nothing changed: the same answer, nothing read again
+    // The user adds an include: the same fence holds it at its next look.
+    writeFileSync(join(home, ".gitconfig"), "[include]\n\tpath = ~/.gitconfig.local\n");
+    expect(fence.check({ op: "write", path: local })).toMatchObject({ allowed: false, reason: "login-start" });
+    expect(persistencePaths(home)).toContain(local);
+    // A file an include names appears, and itself includes another: followed too.
+    writeFileSync(local, "[include]\n\tpath = ~/deeper.inc\n");
+    expect(fence.check({ op: "write", path: join(home, "deeper.inc") })).toMatchObject({ allowed: false, reason: "login-start" });
+    // And taken out again: free again.
+    writeFileSync(join(home, ".gitconfig"), "[user]\n\tname = me\n");
+    expect(fence.check({ op: "write", path: local })).toEqual({ allowed: true });
+  });
+
+  test("a dotfiles manager's linked ~/.gitconfig and linked include are read through: their hooks folder and includes are held (#392's review)", () => {
+    if (process.platform === "win32") return; // links need privileges there
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-dotfiles-")));
+    const dot = join(home, "dotfiles");
+    mkdirSync(dot);
+    writeFileSync(join(dot, "gitconfig"), "[core]\n\thooksPath = ~/.githooks\n[include]\n\tpath = ~/.gitconfig.local\n");
+    writeFileSync(join(dot, "local.inc"), "[include]\n\tpath = ~/deeper.inc\n");
+    symlinkSync(join(dot, "gitconfig"), join(home, ".gitconfig"));
+    symlinkSync(join(dot, "local.inc"), join(home, ".gitconfig.local"));
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    const fence = new CloverFence({ os, home, cloverHome: join(home, ".clover") });
+    // The hooks folder the linked config names, the file the linked include leads to, and what it includes in turn.
+    for (const p of [join(home, ".githooks", "pre-commit"), join(dot, "local.inc"), join(home, "deeper.inc"), join(dot, "gitconfig")]) {
+      expect([p, fence.check({ op: "write", path: p }).allowed]).toEqual([p, false]);
+    }
+    expect(fence.check({ op: "write", path: join(dot, "notes.md") })).toEqual({ allowed: true });
+    // An edit in the dotfiles folder (the link unchanged) shows at the next look: the stamp follows the link.
+    const before = stampOf(join(home, ".gitconfig"));
+    writeFileSync(join(dot, "gitconfig"), "[core]\n\thooksPath = ~/.githooks\n[include]\n\tpath = ~/.gitconfig.local\n\tpath = ~/added.inc\n");
+    expect(stampOf(join(home, ".gitconfig"))).not.toBe(before);
+    expect(fence.check({ op: "write", path: join(home, "added.inc") }).allowed).toBe(false);
+    // A link whose target goes stamps differently from both.
+    rmSync(join(dot, "gitconfig"));
+    expect(stampOf(join(home, ".gitconfig"))).toBe("l>-");
+  });
+
+  test("the git walk's read never stalls: a FIFO, a link to /dev/zero, a huge file (the same hole as #366's review)", () => {
+    if (process.platform === "win32") return; // no FIFOs or /dev/zero
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-gitinc-fifo-")));
+    expect(spawnSync("mkfifo", [join(home, ".gitconfig")]).status).toBe(0);
+    symlinkSync("/dev/zero", join(home, "zero.inc"));
+    const started = Date.now();
+    expect(readGitConfigFile(join(home, ".gitconfig"))).toBeUndefined();
+    expect(readGitConfigFile(join(home, "zero.inc"))).toBeUndefined(); // through the link: a device, so nothing
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    runLaterExtras(os, home); // the walk itself, over the FIFO
+    expect(Date.now() - started).toBeLessThan(5_000);
+    // A huge config is read up to the cap: an include near its top still counts.
+    const big = join(home, "big.cfg");
+    writeFileSync(big, `[include]\n\tpath = ~/x.inc\n${"#".repeat(GIT_CONFIG_READ_CAP * 2)}\n`);
+    const text = readGitConfigFile(big)!;
+    expect(text.length).toBe(GIT_CONFIG_READ_CAP);
+    expect(text).toContain("path = ~/x.inc");
+  }, 20_000);
+});
+
 // macOS: the list rendered by the agent SDK's Seatbelt profile builder, run for real under sandbox-exec in a temp home.
 darwinDescribe("Seatbelt, live", () => {
   test("a sample of each group can't be written; next to them can", () => {
@@ -272,5 +344,147 @@ darwinDescribe("Seatbelt, live", () => {
     expect(write(join(home, "w", "work.inc"), "[core]\n\tfsmonitor = /tmp/m\n")).toBe(false);
     expect(readFileSync(join(home, "w", "work.inc"), "utf8")).toBe("[user]\n\tname = me\n");
     expect(write(join(home, "w", "notes.md"), "x")).toBe(true);
+  });
+
+  test("a link on the way to a git config, a chain's middle hop or a folder link, can't be swapped: in the fence's Seatbelt and in the runtime's (#392's review)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-chain-")));
+    const at = (...p: string[]) => join(home, ...p);
+    for (const d of [at("dotfiles"), at("dotfiles2"), at("dotfiles", "gitdir"), at(".config"), at("project")]) mkdirSync(d, { recursive: true });
+    writeFileSync(at("dotfiles2", "real"), "[user]\n\tname = me\n");
+    symlinkSync(at("dotfiles2", "real"), at("dotfiles", "gitconfig"));
+    symlinkSync(at("dotfiles", "gitconfig"), at(".gitconfig")); // ~/.gitconfig → dotfiles/gitconfig → dotfiles2/real
+    writeFileSync(at("dotfiles", "gitdir", "config"), "[user]\n\tname = me\n");
+    symlinkSync(at("dotfiles", "gitdir"), at(".config", "git")); // stow-style: ~/.config/git → dotfiles/gitdir
+    writeFileSync(at("project", "evil"), "[core]\n\tfsmonitor = /tmp/m\n");
+    const swaps = [
+      ['rm "$1" && ln -s "$2" "$1"', at("dotfiles", "gitconfig"), at("project", "evil")],
+      ['rm "$1" && ln -s "$2" "$1"', at(".config", "git"), at("project")],
+      ['mv "$1" "$1.away"', at("dotfiles", "gitconfig"), ""],
+    ] as const;
+    const intact = () => {
+      expect(readlinkSync(at("dotfiles", "gitconfig"))).toBe(at("dotfiles2", "real"));
+      expect(readlinkSync(at(".config", "git"))).toBe(at("dotfiles", "gitdir"));
+    };
+    const run = (profile: string, [script, a, b]: readonly [string, string, string]) =>
+      spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", a, b], { encoding: "utf8" }).status === 0;
+    // The fence's own profile, for a coding session.
+    const fence = new CloverFence({ os: "macos", home, cloverHome: at(".clover"), temp: at("tmp") });
+    const ctx = fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" });
+    const policy = fence.policy(ctx);
+    expect(policy.holdLinks).toEqual(expect.arrayContaining([at(".gitconfig"), at("dotfiles", "gitconfig"), at(".config", "git")]));
+    const fenceProfile = macFenceProfile({ policy, cloverHome: at(".clover"), home, perUserTemp: null, caller: callerPlaces(at(".clover"), "macos", ctx) });
+    for (const s of swaps) expect([s[1], run(fenceProfile, s)]).toEqual([s[1], false]);
+    intact();
+    expect(run(fenceProfile, ['printf x > "$1"', at("dotfiles", "notes.md"), ""])).toBe(true);
+    // The runtime's: it resolves every plain deny before judging it (modelled here with realpath), and takes each
+    // link hold as a glob whose folder alone it resolves.
+    const resolved = [...new Set(persistencePaths(home, "darwin").map((p) => { try { return realpathSync(p); } catch { return p; } }))];
+    const holds = persistenceLinkHolds(home);
+    expect(holds).toEqual(expect.arrayContaining([`${at("dotfiles", "gitconfi")}?`, `${at(".config", "gi")}?`, `${at(".gitconfi")}?`]));
+    const sdkProfile = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: resolved, denyWriteGlobs: holds });
+    for (const s of swaps) expect([s[1], run(sdkProfile, s)]).toEqual([s[1], false]);
+    intact();
+    // Without the holds, the resolved denies alone let the middle hop go (the hole the review found).
+    const bare = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: resolved });
+    expect(run(bare, ['ln -sf "$2" "$1.probe" && rm "$1.probe"', at("dotfiles", "gitconfig"), at("project", "evil")])).toBe(true);
+  });
+
+  test("the folders above a held link can't be renamed away and replaced, in the fence's Seatbelt: ~/dotfiles, and a deep ~/a/b/c (#392's review)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-above-")));
+    const at = (...p: string[]) => join(home, ...p);
+    for (const d of [at("dotfiles"), at("a", "b", "c"), at("a", "x"), at("real"), at("project")]) mkdirSync(d, { recursive: true });
+    writeFileSync(at("real", "gitconfig"), "[user]\n\tname = me\n");
+    writeFileSync(at("real", "deep"), "[user]\n\tname = me\n");
+    symlinkSync(at("real", "gitconfig"), at("dotfiles", "gitconfig"));
+    symlinkSync(at("dotfiles", "gitconfig"), at(".gitconfig")); // ~/.gitconfig → ~/dotfiles/gitconfig → real
+    symlinkSync(at("real", "deep"), at("a", "b", "c", "gitconfig"));
+    symlinkSync(at("a", "b", "c", "gitconfig"), at(".gitconfig.local")); // an include path's chain, deep
+    writeFileSync(at(".gitconfig.real-include"), "");
+    writeFileSync(at("real", "gitconfig"), "[user]\n\tname = me\n[include]\n\tpath = ~/.gitconfig.local\n");
+    const fence = new CloverFence({ os: "macos", home, cloverHome: at(".clover"), temp: at("tmp") });
+    const ctx = fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" });
+    const policy = fence.policy(ctx);
+    expect(policy.holdLinks).toEqual(expect.arrayContaining([at("dotfiles", "gitconfig"), at("a", "b", "c", "gitconfig")]));
+    const profile = macFenceProfile({ policy, cloverHome: at(".clover"), home, perUserTemp: null, caller: callerPlaces(at(".clover"), "macos", ctx) });
+    const run = (script: string, ...args: string[]) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", script, "sh", ...args], { encoding: "utf8" }).status === 0;
+    // The review's run: rename ~/dotfiles away, put a link to a project folder in its place, write a config there.
+    writeFileSync(at("project", "gitconfig"), "[core]\n\tfsmonitor = evil\n");
+    expect(run('mv "$1" "$1.away" && ln -s "$2" "$1"', at("dotfiles"), at("project"))).toBe(false);
+    for (const f of [at("a", "b"), at("a"), at("a", "b", "c")]) expect([f, run('mv "$1" "$1.away"', f)]).toEqual([f, false]);
+    expect(readlinkSync(at("dotfiles", "gitconfig"))).toBe(at("real", "gitconfig"));
+    expect(readlinkSync(at("a", "b", "c", "gitconfig"))).toBe(at("real", "deep"));
+    expect(existsSync(at("dotfiles.away"))).toBe(false);
+    expect(existsSync(at("a", "b.away"))).toBe(false);
+    // Ordinary work beside them stays open.
+    expect(run('printf x > "$1"', at("a", "b", "notes.md"))).toBe(true);
+    expect(run('mkdir "$1"', at("project", "new"))).toBe(true);
+    // The core's own file tools refuse the same moves (a bot's or an agent's Write, Edit, rm through the fence).
+    const f = fence.forCaller({ kind: "session", sessionId: "b1", sessionKind: "bot", bot: "luna" });
+    for (const op of [{ op: "move", path: at("dotfiles"), to: at("dotfiles.away") }, { op: "delete", path: at("dotfiles", "gitconfig") },
+      { op: "move", path: at("a", "b"), to: at("a", "b2") }, { op: "delete", path: at("a") }, { op: "move", path: at("project"), to: at("dotfiles") }] as const) {
+      expect([op, f.check(op).allowed]).toEqual([op, false]);
+    }
+    expect(f.check({ op: "write", path: at("a", "b", "notes.md") }).allowed).toBe(true);
+    expect(f.check({ op: "move", path: at("a", "x"), to: at("a", "y") }).allowed).toBe(true);
+  });
+
+  test("a fresh home: the missing holder folders are made before a run, so a first `mkdir -p ~/.config/gh` works, and they still can't be renamed (#392's review)", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-fresh-home-")));
+    mkdirSync(join(home, "project"));
+    const fence = new CloverFence({ os: "macos", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") });
+    mkdirSync(join(home, "tmp"));
+    expect(existsSync(join(home, ".config"))).toBe(false);
+    const run = (command: string) => fencedSpawner({ fence, processHolder: null }).run({ command, cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } } });
+    const made = await run('mkdir -p "$HOME/.config/gh" && echo made');
+    expect(made.kind === "exited" && made.stdout).toBe("made\n");
+    expect(existsSync(join(home, ".config", "gh"))).toBe(true);
+    // Held where it is: renaming it away is refused.
+    const moved = await run('mv "$HOME/.config" "$HOME/.config.away" && echo moved');
+    expect(moved.kind === "exited" && moved.stdout).toBe("");
+    expect(existsSync(join(home, ".config.away"))).toBe(false);
+  });
+
+  test("makeHolderFolders: the folders between the root and each item, never the item, never an agent's own folder, never through a link", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-holders-")));
+    mkdirSync(join(home, "elsewhere"));
+    symlinkSync(join(home, "elsewhere"), join(home, "linked"));
+    const made = makeHolderFolders([join(home, ".config", "git"), join(home, "Library", "LaunchAgents", "x.plist"),
+      join(home, "linked", "deep", "x", "config"), join(home, ".clover", "a", "b"), join(home, "bots", "*", "memory")], [home], join(home, ".clover"),
+      [join(home, ".claude", "settings.json"), join(home, ".config", "opencode", "opencode.json")]);
+    expect(made.sort()).toEqual([join(home, ".config"), join(home, "Library"), join(home, "Library", "LaunchAgents")].sort());
+    expect(existsSync(join(home, ".config", "git"))).toBe(false); // the item itself
+    expect(existsSync(join(home, ".claude"))).toBe(false); // an agent's folder would look like an install
+    expect(existsSync(join(home, ".config", "opencode"))).toBe(false);
+    expect(existsSync(join(home, "elsewhere", "deep"))).toBe(false); // never through a link
+    expect(existsSync(join(home, ".clover", "a"))).toBe(false);
+    expect(statSync(join(home, ".config")).mode & 0o777).toBe(0o777 & ~process.umask());
+  });
+
+  test("a link loop on the way to ~/.gitconfig: the fence holds it under its own name, and a run isn't thrown out (#392's review)", async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-loop-")));
+    symlinkSync(join(home, ".gitconfig"), join(home, ".gitconfig")); // a loop
+    const fence = new CloverFence({ os: "macos", home, cloverHome: join(home, ".clover"), temp: join(home, "tmp") });
+    const policy = fence.policy(fenceContextFor({ kind: "session", sessionId: "c1", sessionKind: "coding" }));
+    expect(policy.denyWrite).toContain(join(home, ".gitconfig"));
+    mkdirSync(join(home, "project"), { recursive: true });
+    const r = await fencedSpawner({ fence, processHolder: null }).run({ command: "echo ok", cwd: join(home, "project"), env: { PATH: "/usr/bin:/bin", HOME: home }, timeoutMs: 15_000, who: { caller: { kind: "session", sessionId: "c1", sessionKind: "coding" } } });
+    expect(r.kind === "exited" && r.stdout).toBe("ok\n");
+  });
+
+  test("a linked ~/.gitconfig (dotfiles): its hooks folder and its linked include can't be written (#392's review)", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "lane-c-seatbelt-dot-")));
+    const dot = join(home, "dotfiles");
+    mkdirSync(dot);
+    writeFileSync(join(dot, "gitconfig"), "[core]\n\thooksPath = ~/.githooks\n[include]\n\tpath = ~/.gitconfig.local\n");
+    writeFileSync(join(dot, "local.inc"), "[user]\n\tname = me\n");
+    symlinkSync(join(dot, "gitconfig"), join(home, ".gitconfig"));
+    symlinkSync(join(dot, "local.inc"), join(home, ".gitconfig.local"));
+    const profile = buildMandatoryFloorProfile({ denyReadPaths: [], denyWritePaths: persistencePaths(home, "darwin") });
+    const write = (p: string, text: string) => spawnSync("/usr/bin/sandbox-exec", ["-p", profile, "/bin/sh", "-c", 'mkdir -p "$(dirname "$1")" && printf "$2" >> "$1"', "sh", p, text], { encoding: "utf8" }).status === 0;
+    expect(write(join(home, ".githooks", "pre-commit"), "#!/bin/sh\n")).toBe(false);
+    expect(existsSync(join(home, ".githooks", "pre-commit"))).toBe(false);
+    expect(write(join(home, ".gitconfig.local"), "[core]\n\tfsmonitor = /tmp/m\n")).toBe(false);
+    expect(readFileSync(join(dot, "local.inc"), "utf8")).toBe("[user]\n\tname = me\n");
+    expect(write(join(dot, "notes.md"), "x")).toBe(true);
   });
 });
