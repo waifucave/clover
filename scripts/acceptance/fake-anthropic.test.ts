@@ -1,7 +1,7 @@
 // The acceptance fake's documented rules (`requestRefusal`): what the real API refuses with a 400 is refused, what its
 // docs accept is accepted. Each case names the rule in fake-anthropic.ts it exercises.
 import { describe, expect, test } from "bun:test";
-import { requestRefusal } from "./fake-anthropic";
+import { newestDirective, requestRefusal, startFakeAnthropic } from "./fake-anthropic";
 
 const BETA = "mid-conversation-output-config-2026-07-01";
 const effort = { role: "system", content: [], output_config: { effort: "high" } };
@@ -57,5 +57,35 @@ describe("the strict fake's mid-conversation system message rules", () => {
     expect(ask("claude-sonnet-5-5", [effort, u(), ref])).toContain("tool_reference_unresolved");
     expect(ask("claude-sonnet-5-5", [effort, u(), ref], BETA, [{ name: "Echo" }])).toContain("tool_reference_unresolved");
     expect(ask("claude-sonnet-5-5", [effort, u(), ref], BETA, [{ name: "Echo", defer_loading: true }])).toBeUndefined();
+  });
+});
+
+describe("what the fake acts on: the newest directive in the user text", () => {
+  test("an unanswered message before the newest one doesn't steer it", () => {
+    expect(newestDirective("ACCEPTANCE-SLOW-AB12CD keep going\n\nACCEPTANCE-TAG-0F1E2D3C say hello after the upgrade")).toBe("ACCEPTANCE-TAG-0F1E2D3C say hello after the upgrade");
+    expect(newestDirective("ACCEPTANCE-TAG-0F1E2D3C say hi\nACCEPTANCE-SLOW-AB12CD keep going")).toBe("ACCEPTANCE-SLOW-AB12CD keep going");
+    expect(newestDirective("ACCEPTANCE-REPLY: say hello")).toBe("ACCEPTANCE-REPLY: say hello");
+    expect(newestDirective("no directive here")).toBe("no directive here");
+  });
+
+  test("over the wire: a tag after an interrupted slow message gets its own reply, and a slow one alone is held (and recorded so)", async () => {
+    const fake = startFakeAnthropic({ key: "dummy-key", writePath: "/nonexistent/lane-int", writeContent: "x" });
+    try {
+      const send = (text: string, signal?: AbortSignal) => fetch(`${fake.url}/v1/messages`, {
+        method: "POST", headers: { "x-api-key": "dummy-key", "content-type": "application/json" }, ...(signal ? { signal } : {}),
+        body: JSON.stringify({ model: "claude-sonnet-5", max_tokens: 10, messages: [{ role: "user", content: [{ type: "text", text }] }] }),
+      });
+      const r = await send("ACCEPTANCE-SLOW-AB12CD keep going\n\nACCEPTANCE-TAG-0F1E2D3C say hello");
+      expect(JSON.stringify(await r.json())).toContain("ACCEPTANCE-REPLY-OK ACCEPTANCE-TAG-0F1E2D3C");
+      expect(fake.requests.at(-1)!.answered).toBe("text");
+      const abort = new AbortController();
+      const held = send("ACCEPTANCE-SLOW-AB12CD keep going", abort.signal).catch(() => undefined);
+      for (let i = 0; i < 50 && fake.requests.length < 2; i++) await Bun.sleep(20);
+      expect(fake.requests.at(-1)!.answered).toBe("slow");
+      abort.abort();
+      await held;
+    } finally {
+      fake.close();
+    }
   });
 });

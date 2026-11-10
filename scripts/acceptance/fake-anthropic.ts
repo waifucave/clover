@@ -28,7 +28,7 @@ export interface FakeRequest {
   tools: string[];
   lastUserText: string;
   toolResult?: { text: string; isError: boolean };
-  answered: "text" | "tool_use" | "400" | "401" | "404" | "torn";
+  answered: "text" | "tool_use" | "slow" | "400" | "401" | "404" | "torn";
   /** When the request came (ms since the epoch), and, for a `torn` one, why its body never arrived whole (the
    *  connection closed under it: Bun's 10 s idle timeout once the sender stopped sending). The fake answered nothing. */
   at?: number;
@@ -128,6 +128,14 @@ export function requestRefusal(body: WireBody, betaHeader: string | null): strin
   return undefined;
 }
 
+/** The user text from its last directive on (`ACCEPTANCE-SLOW`, `-ECHO`, `-FETCH`, `-SEARCH`, `-WRITE`, `-TAG`,
+ *  `-REPLY`): the newest message's, when an unanswered one came before it in the same text. All of it when it has none. */
+export function newestDirective(text: string): string {
+  let at = -1;
+  for (const m of text.matchAll(/ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/g)) at = m.index;
+  return at < 0 ? text : text.slice(at);
+}
+
 export function startFakeAnthropic(o: { key: string; writePath: string; writeContent: string }): FakeProvider {
   const requests: FakeRequest[] = [];
   let n = 0;
@@ -180,6 +188,13 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       if (result !== undefined) record.toolResult = { text: textOf(result.content).slice(0, 2000), isError: result.is_error === true };
       const lastUser = [...messages].reverse().find((m) => m.role === "user" && !(Array.isArray(m.content) && m.content.some((b) => b.type === "tool_result")));
       record.lastUserText = textOf(lastUser?.content).slice(-4000);
+      // What the fake acts on: the newest directive in that text. A turn quit before its answer (the reopen steps')
+      // leaves its message unanswered, and the next request carries it into the same user text: the upgrade pair's
+      // step 4 ("ACCEPTANCE-TAG-…") once got the held slow turn of an old run's "ACCEPTANCE-SLOW-…".
+      const said = newestDirective(record.lastUserText);
+      if (said !== record.lastUserText && /ACCEPTANCE-(?:SLOW|ECHO|FETCH|SEARCH|WRITE|TAG|REPLY)\b/.test(record.lastUserText.slice(0, record.lastUserText.length - said.length))) {
+        console.error(`acceptance fake: the user text carries an earlier directive before the newest: ${JSON.stringify(record.lastUserText.slice(0, record.lastUserText.length - said.length).slice(-120))} then ${JSON.stringify(said.slice(0, 80))}; acting on the newest`);
+      }
       requests.push(record);
       const refused = requestRefusal(body as WireBody, record.beta);
       if (refused !== undefined && record.keyMatched) {
@@ -193,8 +208,8 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       }
       const id = `msg_acceptance_${++n}`;
       const model = body.model ?? "acceptance";
-      if (record.lastUserText.includes("ACCEPTANCE-SLOW") && result === undefined) {
-        record.answered = "text";
+      if (said.includes("ACCEPTANCE-SLOW") && result === undefined) {
+        record.answered = "slow";
         return slowTurn(req.signal, id, model, record.stream);
       }
       let content: Record<string, unknown>[];
@@ -202,7 +217,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
       if (result !== undefined) {
         content = [{ type: "text", text: `ACCEPTANCE-DONE: ${record.toolResult!.text.slice(0, 500)}` }];
         stop = "end_turn";
-      } else if (record.lastUserText.includes("ACCEPTANCE-ECHO")) {
+      } else if (said.includes("ACCEPTANCE-ECHO")) {
         const tool = record.tools.find((t) => t.endsWith("Echo"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-ECHO-TOOL" }];
@@ -212,17 +227,17 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (/ACCEPTANCE-FETCH (\S+)/.test(record.lastUserText)) {
+      } else if (/ACCEPTANCE-FETCH (\S+)/.test(said)) {
         const tool = record.tools.find((t) => t.endsWith("WebFetch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-FETCH-TOOL" }];
           stop = "end_turn";
         } else {
-          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: /ACCEPTANCE-FETCH (\S+)/.exec(record.lastUserText)![1] } }];
+          content = [{ type: "tool_use", id: `toolu_acceptance_${n}`, name: tool, input: { url: /ACCEPTANCE-FETCH (\S+)/.exec(said)![1] } }];
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-SEARCH")) {
+      } else if (said.includes("ACCEPTANCE-SEARCH")) {
         const tool = record.tools.find((t) => t.endsWith("WebSearch"));
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-SEARCH-TOOL" }];
@@ -232,7 +247,7 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (record.lastUserText.includes("ACCEPTANCE-WRITE")) {
+      } else if (said.includes("ACCEPTANCE-WRITE")) {
         const tool = record.tools.find((t) => t === "Write");
         if (tool === undefined) {
           content = [{ type: "text", text: "ACCEPTANCE-NO-WRITE-TOOL" }];
@@ -242,8 +257,8 @@ export function startFakeAnthropic(o: { key: string; writePath: string; writeCon
           stop = "tool_use";
           record.toolUse = tool;
         }
-      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(record.lastUserText)) {
-        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(record.lastUserText)![0]}` }];
+      } else if (/ACCEPTANCE-TAG-[A-Z0-9]+/.test(said)) {
+        content = [{ type: "text", text: `ACCEPTANCE-REPLY-OK ${/ACCEPTANCE-TAG-[A-Z0-9]+/.exec(said)![0]}` }];
         stop = "end_turn";
       } else {
         content = [{ type: "text", text: "ACCEPTANCE-REPLY-OK" }];

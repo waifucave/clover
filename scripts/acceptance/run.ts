@@ -1334,6 +1334,7 @@ async function upgradeRun(app: { exe: string; args: string[] }): Promise<void> {
     const mine = fake!.requests.slice(seen4).filter((r) => r.path.endsWith("/messages"));
     turnsWork = JSON.stringify(events).includes(`ACCEPTANCE-REPLY-OK ${tag}`);
     const torn = mine.filter((r) => r.answered === "torn");
+    if (!turnsWork && mine.some((r) => r.answered === "slow")) fail(`the fake held this turn as a slow one (its user text carried an ACCEPTANCE-SLOW directive after the tag): stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     if (!turnsWork && torn.length > 0) fail(`the turn's request reached the fake but its body never arrived whole (${torn.map((r) => r.torn).join("; ")}); the turn ended: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}`);
     if (!turnsWork) fail(mine.length === 0 ? `the turn never reached the fake provider: stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""}` : `the fake answered (${mine.length} request(s)), but this turn's reply isn't in the session (stop ${stopOf(events)}${errorsOf(events).length ? `: ${errorsOf(events)[0]}` : ""})`);
     record(4, "PASS", `this turn's own reply came from the fake (${mine.length} request(s))${carded.length ? `; ${carded.join("; ")}` : ""}`);
