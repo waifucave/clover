@@ -83,6 +83,9 @@ export interface ComputerNodeOptions {
     localServers?: () => readonly { server: string; plugin: string; bundled?: boolean }[];
     /** This computer's ticks (default: `levels/mcp-servers.json` under the Clover home). */
     ticks?: McpTicks;
+    /** Told after any change to this computer's ticks (an install, Mirror, the user's tick or untick): the host lists
+     *  its servers again, so a server unticked here stops at once and one ticked here starts. */
+    onTicksChanged?: () => void;
   };
   /** Lane H's sync for the bots' memories (`home/memory/`, kept on every computer that runs the core): told of each
    *  change here once it is on disk, so it reaches the other computers now, or when they are back. */
@@ -196,9 +199,13 @@ export function startComputerNode(o: ComputerNodeOptions): ComputerNode {
     ...(o.answers ? { render: o.answers.render } : {}), ...(o.askUser ? { ask: o.askUser } : {}),
   });
   // Each tick change goes to the other computers at once, in the hello.
+  const ticksChanged = (): void => {
+    peers.announce();
+    try { o.mcp?.onTicksChanged?.(); } catch (err) { o.log?.(`computers: the MCP host couldn't take a tick change: ${err instanceof Error ? err.message : String(err)}`); }
+  };
   const mcpTicks: Pick<McpTicks, "installed" | "set"> = {
-    installed: (plugin) => { ticks.installed(plugin); peers.announce(); },
-    set: (server, on) => { ticks.set(server, on); peers.announce(); },
+    installed: (plugin) => { ticks.installed(plugin); ticksChanged(); },
+    set: (server, on) => { ticks.set(server, on); ticksChanged(); },
   };
   const mcpComputers = (server: string): string[] => {
     const self = registry.self().name;

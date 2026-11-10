@@ -623,10 +623,15 @@ export class PluginMcp {
     });
   }
 
-  /** Whether `key`'s process may start on this computer: any server but a per-computer one, and a per-computer one only
-   *  where it's ticked (lane J's `computers`). With no list it fails closed: no per-computer server starts. */
+  /** Whether `key`'s process may run on this computer: any server but a per-computer one, and a per-computer one only
+   *  while its plugin is enabled with the user's OK covering its tree as it is now (no switch-off, revoked OK, changed
+   *  tree), and while it's ticked here (lane J's `computers`). With no list it fails closed: no per-computer server
+   *  starts. Asked at every refresh, so one that stops qualifying is closed there, its process stopped with it (a
+   *  stdio server's channel close ends its process group, `computers/stdio-mcp.ts`). */
   #runsHere(key: string, c: Contribution): boolean {
     if (!isLocal(c.value as HostServerEntry)) return true;
+    const record = this.#o.registry.get(c.pluginId);
+    if (record === undefined || record.enabled !== true || !this.#okd(record)) return false;
     return this.#o.computers?.(key).includes(this.#o.self()) ?? false;
   }
 

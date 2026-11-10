@@ -59,8 +59,11 @@ describe("a bundled plugin's per-computer server (the controller's ruling, 2026-
     // A run before: the file exists, so no one-time migration ticks anything.
     new FileMcpTicks(mcpTicksPath(home));
     const place: McpServerPlacement = { name: "browser", kind: "local", computers: [] };
+    let told = 0;
     const opts = (ticks: FileMcpTicks) => ({
       mcp: () => ({
+        // The host lists its servers again on every tick change (daemon.ts: PluginMcp.refresh), so an untick stops one.
+        onTicksChanged: () => { told++; },
         placement: (s: string) => (s === "browser" || s === "blender" ? place : undefined),
         fields: () => ({}),
         call: async (): Promise<McpResult> => ({ content: [] }),
@@ -76,6 +79,10 @@ describe("a bundled plugin's per-computer server (the controller's ruling, 2026-
     expect(first.node.mcpComputers("blender")).toEqual([]);
     first.node.mcpTicks.set("browser", false);
     expect(first.node.mcpComputers("browser")).toEqual([]);
+    expect(told).toBe(1);
+    first.node.mcpTicks.installed("acme/blender");
+    expect(told).toBe(2);
+    expect(first.node.mcpComputers("blender")).toEqual(["Studio"]);
     cluster.close();
     // A restart (an upgrade reads the same file): the untick holds; ticked again, it runs again.
     cluster = new Cluster();
