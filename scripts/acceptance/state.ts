@@ -5,7 +5,7 @@
 // that names a path in the home moves. The dir holds no real key: the only key is the run's random dummy, for the fake
 // provider, and state.json is the run's own (0600).
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 export const STATE_FILE = "state.json";
 
@@ -22,13 +22,24 @@ export interface KeptState {
   session?: string;
   /** The plugin the run installed from a folder and approved. */
   pluginId?: string;
-  /** `notifications.needsYou` as the run left it (its Settings step flips it). */
+  /** `notifications.needsYou` as the run left it (its Settings step flips it, and records what it set). */
   needsYou?: boolean;
+  /** Why there is no `needsYou`: the old build's own Settings step didn't pass (its status and detail). Absent with
+   *  no `needsYou`, the record is missing on the harness's side, and the upgrade step fails. */
+  needsYouMissing?: string;
+  /** Whether the run's app kept its answer key in the run's file (`CLOVER_TEST_ANSWER_KEY`; a build before it keeps
+   *  it in memory only): an upgrade's app then registers the same key, and its cards are pressed for real. */
+  answerKeyKept?: boolean;
 }
 
 /** Where the kept things live under the state dir. */
 export function statePaths(dir: string): { home: string; user: string; keychain: string } {
   return { home: join(dir, "home"), user: join(dir, "user"), keychain: join(dir, "kc", "acceptance.keychain-db") };
+}
+
+/** The test app's kept answer key (`CLOVER_TEST_ANSWER_KEY`): a file beside the run's throwaway keychain file. */
+export function answerKeyFileFor(keychain: string): string {
+  return join(dirname(keychain), "answer-key");
 }
 
 /** The daemon's socket must fit a Unix socket path (104 bytes on macOS, with its NUL). */
@@ -65,6 +76,8 @@ export function readState(dir: string): KeptState {
   if (typeof s.made !== "string") throw new Error(`${file} doesn't say what made it`);
   for (const k of ["session", "pluginId"] as const) if (s[k] !== undefined && typeof s[k] !== "string") throw new Error(`${file}'s ${k} isn't a string`);
   if (s.needsYou !== undefined && typeof s.needsYou !== "boolean") throw new Error(`${file}'s needsYou isn't a boolean`);
+  if (s.needsYouMissing !== undefined && typeof s.needsYouMissing !== "string") throw new Error(`${file}'s needsYouMissing isn't a string`);
+  if (s.answerKeyKept !== undefined && typeof s.answerKeyKept !== "boolean") throw new Error(`${file}'s answerKeyKept isn't a boolean`);
   const missing = Object.values(statePaths(dir)).filter((p) => !existsSync(p));
   if (missing.length > 0) throw new Error(`the state dir lacks ${missing.join(", ")}`);
   return s as KeptState;

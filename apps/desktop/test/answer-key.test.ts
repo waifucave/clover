@@ -3,11 +3,11 @@
 // a vault in memory and a stand-in for safeStorage: never the real Keychain, Credential Manager or Secret Service.
 import { describe, expect, test } from "bun:test";
 import { createPrivateKey, createPublicKey, verify } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CLIENT_ERR, RpcCallError } from "../src/main/protocol/client";
-import { AnswerKey, KeyRegistration, answerKeyRotateStatement, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
+import { AnswerKey, KeyRegistration, REGISTER_FAULT_TRIES, fileVault, answerKeyRotateStatement, answerKeyStatement, memoryVault, safeStorageVault, type SafeStorageLike } from "../src/main/answer-key";
 import { CloverApprovalBroker } from "../../../packages/core/src/approvals/broker";
 import { FakeClock } from "../../../packages/core/src/contracts/fakes/clock";
 import { MemorySecretStore } from "../../../packages/core/src/contracts/fakes/secret-store";
@@ -437,5 +437,53 @@ describe("the registration, tried again while the core can't take it yet (try 8)
     expect(calls - seen).toBeLessThanOrEqual(1);
     expect(seen).toBeGreaterThan(1);
     void reg;
+  });
+});
+
+describe("a test run's kept key (CLOVER_TEST_ANSWER_KEY's file vault)", () => {
+  test("a second app on the same file has the same key; the file is the run's own (0600)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ak-file-"));
+    const file = join(dir, "answer-key");
+    const first = new AnswerKey(fileVault(file));
+    const pub = first.publicKey();
+    expect(new AnswerKey(fileVault(file)).publicKey()).toBe(pub);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    // A staged replacement promotes into the same file.
+    const v = fileVault(file);
+    v.saveStaged({ secret: new Uint8Array([1, 2, 3]), at: 5, card: "card_x" });
+    expect(v.loadStaged()).toEqual({ secret: new Uint8Array([1, 2, 3]), at: 5, card: "card_x" });
+    v.promoteStaged();
+    expect(v.load()).toEqual(new Uint8Array([1, 2, 3]));
+    expect(v.loadStaged()).toBeUndefined();
+  });
+});
+
+describe("a fault that persists surfaces (the card-press review's backlog)", () => {
+  test("an internal error or one with no code is tried REGISTER_FAULT_TRIES times in a row, then reported", async () => {
+    const key = new AnswerKey(memoryVault("none"));
+    let calls = 0;
+    const client = { request: async <T>(): Promise<T> => { calls++; throw new RpcCallError(-32603, "internal"); } };
+    const lines: string[] = [];
+    const reg = new KeyRegistration(key, client, "dev_x", () => true, (l) => lines.push(l), [2]);
+    let r = await reg.ready(2_000);
+    for (let i = 0; i < 10 && "again" in r; i++) r = await reg.ready(2_000);
+    expect(r).toMatchObject({ refused: expect.stringContaining(`${REGISTER_FAULT_TRIES} times`) });
+    expect(calls).toBe(REGISTER_FAULT_TRIES);
+    await Bun.sleep(20);
+    expect(calls).toBe(REGISTER_FAULT_TRIES);
+    expect(lines.some((l) => l.includes("no longer tried"))).toBe(true);
+  });
+  test("a not-served answer between faults resets the count (the daemon is still opening, not faulty)", async () => {
+    const key = new AnswerKey(memoryVault("none"));
+    let calls = 0;
+    const client = { request: async <T>(): Promise<T> => {
+      calls++;
+      if (calls === 12) return { applied: true } as T;
+      throw calls % 2 === 0 ? new RpcCallError(-32601, "not served yet") : new RpcCallError(-32603, "internal");
+    } };
+    const reg = new KeyRegistration(key, client, "dev_x", () => true, () => {}, [1]);
+    let r = await reg.ready(2_000);
+    for (let i = 0; i < 30 && "again" in r; i++) r = await reg.ready(2_000);
+    expect(r).toEqual({ registered: true });
   });
 });
