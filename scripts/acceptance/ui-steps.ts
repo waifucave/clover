@@ -28,7 +28,7 @@ class Failed extends Error {}
 const fail = (m: string): never => { throw new Failed(m); };
 
 interface Ctx {
-  cdp: Cdp; rpc: CloverClient; reply: string; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
+  cdp: Cdp; rpc: CloverClient; reply: string; /** What the fake model provider has been asked, in order. */ requests(): { model?: string; lastUserText: string }[]; /** The app's own log file, <home>/logs/app.log, as text. */ appLog(): string;
   /** What the Settings step set, as the daemon keeps it (the upgrade's first half records it). */
   onSetting?(key: string, value: unknown): void;
 }
@@ -180,7 +180,23 @@ export async function uiSteps(ctx: Ctx, record: (index: number, status: UiStatus
       return m !== undefined && m !== was ? m : undefined;
     });
     if (!now.startsWith("anthropic/")) fail(`the pick landed on ${now}, a provider with no key stored (the run's only key is Anthropic's)`);
-    return `${items.length} models listed; picked "${items[other]!.t.split("\n")[0]}": the bot's model went from ${was} to ${now}`;
+    // The label says it at once, and the NEXT turn runs on the picked model (the fake provider's own request says which).
+    const picked = items[other]!.t.split("\n")[0]!;
+    const label = await until("the composer's label to say the pick", 10_000, async () => {
+      const l = String(await cdp.evaluate(pill.session, "(document.querySelector('.cl-composer button[aria-label^=\"Model:\"]') || {}).ariaLabel || ''"));
+      return l.includes(picked) ? l : undefined;
+    }, async () => `label now: ${String(await cdp.evaluate(pill.session, "(document.querySelector('.cl-composer button[aria-label^=\"Model:\"]') || {}).ariaLabel || 'gone'").catch(() => "gone"))}; picked "${picked}"`);
+    const tag = `MODEL-TAG-${randomBytes(4).toString("hex").toUpperCase()}`;
+    const box = await until("the composer's text box", 20_000, () => composerDoc(cdp), () => dumpFrames(cdp));
+    await cdp.evaluate(box.session, `document.querySelector('${COMPOSER_BOX}').focus()`);
+    await cdp.send("Input.insertText", { text: `${tag} which model` }, box.session);
+    await sleep(300);
+    const send = await until("the send button", 10_000, () => cdp.centerOf(box.session, "button.cl-composer__send").catch(() => undefined));
+    await cdp.click(box.session, send.x, send.y);
+    const req = await until("the model request of this turn", 60_000, async () => ctx.requests().find((r) => r.lastUserText.includes(tag)));
+    const wire = now.slice(now.indexOf("/") + 1);
+    if (req.model !== wire) fail(`the pick (${now}) was not what the next turn ran on: the provider was asked for ${String(req.model)}`);
+    return `${items.length} models listed; picked "${picked}": the bot's model went from ${was} to ${now}; the label reads "${label}" and the next turn's request asked the provider for ${req.model}`;
   });
 
   // 3: Settings opens.
