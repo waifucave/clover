@@ -176,7 +176,9 @@ export function installUiSession(ses: Session, runtime: UiRuntime, dirs: { core:
         return notFound();
       }
       const type = mediaType(file);
-      if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/"))) return forbidden();
+      // A bot's avatar model (a VRM or glb, a Live2D `.moc3`) is the bot plugin's own file: inert data its stage's avatar entry reads.
+      const model = (type === "model/gltf-binary" || type === "application/octet-stream") && plugin.isBot;
+      if (type === undefined || !(type.startsWith("image/") || type.startsWith("font/") || model)) return forbidden();
       return fileResponse(file, type, { ...commonHeaders(), "Content-Security-Policy": THEME_ASSET_CSP });
     }
     return notFound();
