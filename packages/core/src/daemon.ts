@@ -173,6 +173,7 @@ import { botApprovalsFrom, botProviderFill } from "./runtime-sdk/turn-loop/provi
 import { ContractError } from "./contracts/common";
 import { pluginHooks } from "./runtime-sdk/turn-loop/hooks";
 import { MCP_FIRST_LISTING_WAIT_MS, PluginMcp, localMcpRunner } from "./runtime-sdk/turn-loop/plugin-mcp";
+import { NET_FETCH_CROSSES_PLUGIN_HOST, NET_FETCH_GAP } from "./contracts/plugin-host";
 import { createPluginAuth, pluginAuthMethods, type PluginAuth } from "./runtime-sdk/plugin-auth";
 import { evictSessionsForCredential } from "./runtime-sdk/credentials";
 import { modelsMethods } from "./runtime-sdk/models-list";
@@ -3762,6 +3763,14 @@ async function startDaemonInner(onEmbeddedHost: (host: { shutdown(budgetMs?: num
       // The computers that tick each per-computer server (lane J's node), read late: with no node yet, or a node without
       // the ticks, the list is empty and no per-computer server starts here (fail closed).
       computers: (server) => (daemonParts?.node as { mcpComputers?(server: string): readonly string[] } | undefined)?.mcpComputers?.(server) ?? [],
+      // A server whose plugin needs the network can't work while net.fetch can't cross the plugin host: it isn't
+      // offered (nor started, nor waited for at a turn's start), and its plugin's log, on its Settings page, says why.
+      notServed: ({ pluginId }) => {
+        if (NET_FETCH_CROSSES_PLUGIN_HOST) return undefined;
+        const caps = (host.registry.get(pluginId)?.manifest as { capabilities?: unknown } | undefined)?.capabilities;
+        return Array.isArray(caps) && caps.some((c) => typeof c === "string" && c.startsWith("network:")) ? NET_FETCH_GAP : undefined;
+      },
+      pluginLog: (pluginId, line) => host.pluginLog(pluginId, [line]),
     });
     void pluginMcp.refresh();
     return opened.registry;

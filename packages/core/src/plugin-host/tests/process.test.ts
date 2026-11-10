@@ -106,6 +106,25 @@ describe("a real plugin-host process", () => {
     ch.close();
   }, 30_000);
 
+  test("a worker that goes closes its plugin's open MCP channels at once (a crash, a reload): nothing waits on a server that is gone", async () => {
+    const host = realHost();
+    const ch = await host.openMcp("tarot", "tools");
+    expect(ch.closed).toBe(false);
+    // A crash: the worker dies, its channel closes with it.
+    await host.invoke({ pluginId: "tarot", handler: "die", args: null, caller: USER }).catch(() => {});
+    expect(ch.closed).toBe(true);
+    expect(() => ch.send({ jsonrpc: "2.0", id: 1, method: "ping" })).toThrow();
+    // After the restart a new channel answers; a reload closes it too.
+    await Bun.sleep(1300);
+    const again = await host.openMcp("tarot", "tools");
+    const answer = new Promise<Record<string, unknown>>((resolve) => again.onMessage(resolve));
+    again.send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+    expect((await answer).id).toBe(2);
+    await host.reload("tarot");
+    expect(again.closed).toBe(true);
+    expect((await host.openMcp("tarot", "tools")).closed).toBe(false);
+  }, 30_000);
+
   test("a worker's console goes to its plugin's log; a worker that dies is a crash, and the plugin restarts", async () => {
     const logs: string[][] = [];
     const host = realHost({ logs });

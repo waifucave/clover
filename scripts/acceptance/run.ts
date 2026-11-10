@@ -79,6 +79,7 @@ const STEPS = [
   "a fenced write raises an approval card, then lands",
   "the daemon restarts on the same home and boots",
   ...UI_STEPS.map((s) => `window: ${s}`),
+  "each boot settles the bundled web tools within 5 s: listed and offered, or not served with why",
 ] as const;
 const TOTAL = STEPS.length;
 const rows: Row[] = [];
@@ -334,7 +335,66 @@ async function startDaemonProc(): Promise<{ proc: ChildProcess; log: string }> {
     if (!existsSync(socket) || !existsSync(tokenFile)) return undefined;
     try { (await CloverClient.connect(socket, 1_000)).close(); return true; } catch { return undefined; }
   }, 500);
+  watchBundledListing(daemonRun, started.log);
   return started;
+}
+
+// ── the bundled MCP servers at each boot (the last step) ────────────────────────────────────────────────────────
+// A bundled `host` MCP server that should be up lists its tools within seconds of the daemon's start: the web plugin's
+// (`clover/web`, WebSearch and WebFetch; the browser's is per-computer and starts only where a computer ticks it), or
+// it says at once why it can't work in this build (`not served: …`: its tools need net.fetch, which can't cross the
+// plugin host yet; packages/core/src/contracts/plugin-host.ts NET_FETCH_CROSSES_PLUGIN_HOST). A turn waits at most
+// MCP_FIRST_LISTING_WAIT_MS (packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts) for a first listing, so later
+// than that, the first turns go without the tools. The daemon logs each listing (`plugin MCP <plugin>/<server>: listed
+// …`), each server not served, and each failure.
+const BUNDLED_MCP_WAIT_MS = 5_000;
+const BUNDLED_LISTED = /\[plugins\] plugin MCP clover\/web\/web: (listed \d+ tool\(s\): [^\n]*|not served: [^\n]*)/;
+const BUNDLED_FAILED = /\[plugins\] plugin MCP clover\/[^:\n]*: (?:its tools couldn't be listed|its plugin's worker went)[^\n]*/;
+const bundledBoots: { run: number; log: string; listed?: string; ms?: number; waited?: Promise<void> }[] = [];
+/** Requests the fake had when each daemon started: the turns after it are that boot's. */
+const requestsAtBoot: number[] = [];
+function watchBundledListing(run: number, log: string): void {
+  const t0 = Date.now();
+  requestsAtBoot[run] = fake?.requests.length ?? 0;
+  const boot: (typeof bundledBoots)[number] = { run, log };
+  boot.waited = (async () => {
+    for (;;) {
+      const m = readLog(log).match(BUNDLED_LISTED);
+      if (m) {
+        boot.listed = m[1]!.trim();
+        boot.ms = Date.now() - t0;
+        return;
+      }
+      if (Date.now() - t0 >= BUNDLED_MCP_WAIT_MS) return;
+      await sleep(200);
+    }
+  })();
+  bundledBoots.push(boot);
+}
+
+/** The last step: every boot settled the web server in time (listed, or not served with its reason), none logged a
+ *  bundled server's failed listing, and each boot's first turn offered the web tools exactly when they were listed. */
+async function bundledMcpStep(): Promise<void> {
+  const n = TOTAL;
+  try {
+    await Promise.all(bundledBoots.map((b) => b.waited));
+    if (bundledBoots.length === 0) fail("no daemon started");
+    for (const b of bundledBoots) {
+      const failed = readLog(b.log).match(BUNDLED_FAILED)?.[0];
+      if (failed !== undefined) fail(`daemon ${b.run}: ${failed.slice(0, 400)}`);
+      const settled = b.listed ?? fail(`daemon ${b.run}: clover/web/web neither listed its tools nor said why it isn't served within ${BUNDLED_MCP_WAIT_MS / 1000} s of the socket answering [packages/core/src/runtime-sdk/turn-loop/plugin-mcp.ts]`);
+      const listed = settled.startsWith("listed ");
+      if (listed && (!/\bWebSearch\b/.test(settled) || !/\bWebFetch\b/.test(settled))) fail(`daemon ${b.run}: clover/web/web ${settled}, not WebSearch and WebFetch`);
+      const first = (fake?.requests ?? []).slice(requestsAtBoot[b.run] ?? 0).find((r) => r.path.endsWith("/messages") && r.keyMatched);
+      if (first === undefined) continue; // no turn on this boot
+      const web = first.tools.filter((t) => /(^|__)Web(Search|Fetch)$/.test(t));
+      if (listed && web.length < 2) fail(`daemon ${b.run}: the web tools were listed, but its first turn's request offered no WebSearch and WebFetch (tools: ${first.tools.join(", ").slice(0, 300)})`);
+      if (!listed && web.length > 0) fail(`daemon ${b.run}: the web server isn't served, yet its first turn offered ${web.join(", ")}`);
+    }
+    record(n, "PASS", bundledBoots.map((b) => `daemon ${b.run}: clover/web/web ${b.listed!.slice(0, 160)} (${((b.ms ?? 0) / 1000).toFixed(1)} s)`).join("; "));
+  } catch (err) {
+    record(n, statusOf(err), why(err));
+  }
 }
 const lastLines = (log: string, n = 3): string => readLog(log).trim().split("\n").slice(-n).join(" | ").slice(0, 500);
 
@@ -655,6 +715,7 @@ async function main(): Promise<void> {
   c.close();
   const restarted = await restartStep(daemon, appProc.proc, session);
   await uiPhase(app, restarted);
+  await bundledMcpStep();
 }
 
 /** Steps 8 on: the window, driven over the DevTools protocol (ui-steps.ts), on the daemon step 7 restarted. */

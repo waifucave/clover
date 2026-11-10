@@ -59,6 +59,8 @@ export interface DaemonPluginHost {
    *  capability) runs before any of them. A path another handler already serves is refused, never silently replaced.
    *  The result takes them away again. */
   addApiHandlers(handlers: ApiHandlers): () => void;
+  /** Adds lines to a plugin's own log (`<home>/logs/plugins`), which its Settings page shows. */
+  pluginLog(pluginId: string, lines: string[]): void;
   /** Stops every plugin and ends the processes. */
   close(): Promise<void>;
 }
@@ -369,6 +371,7 @@ export async function startPluginHost(o: StartPluginHostOptions): Promise<Daemon
     pluginSecrets: pluginSecretsOf(o.secrets),
     settings,
     gate,
+    pluginLog: (pluginId, lines) => pluginLog(pluginId, lines),
     addApiHandlers(added) {
       const paths = Object.keys(added) as ApiCallPath[];
       for (const p of paths) {

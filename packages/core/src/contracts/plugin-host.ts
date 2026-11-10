@@ -170,6 +170,14 @@ export interface HostedStatus {
  *  before the plugin's server sees the request. */
 export const MCP_INVOCATION_META = "clover/invocation";
 
+/** Whether a plugin's host code can use `net.fetch` in this build: no. The call's `RequestInit` (its `AbortSignal`,
+ *  `Headers`, a streamed body) can't be structured-cloned through a worker's port, and a `Response` crosses the
+ *  process's JSON link as an empty object, so every `net.fetch` from a worker fails. Until it can, what needs it isn't
+ *  offered: the model plugins' code adapters (`serveCodeAdapters`), and the `host` MCP servers of a plugin that
+ *  declares a `network:` capability (the web plugin's WebSearch and WebFetch), which say why instead. */
+export const NET_FETCH_CROSSES_PLUGIN_HOST = false;
+export const NET_FETCH_GAP = "its tools need net.fetch, which can't cross the plugin host in this build (a fetch's RequestInit and Response don't survive the worker's link)";
+
 /** One `host` MCP server's end of the in-process transport: raw JSON-RPC messages. A `tools/call` the core sends
  *  carries `_meta[MCP_INVOCATION_META]` with the caller it is for (`McpChannel.send`'s `as`); the plugin API calls the
  *  server makes while handling it act as that caller (R7). */
@@ -216,6 +224,8 @@ export interface PluginHost {
   restart(pluginId: string): Promise<void>;
   /** Replaces the worker after a folder change (§5.1 "Live changes"). */
   reload(pluginId: string): Promise<void>;
+  /** A channel to one of the plugin's `host` MCP servers. It closes when the plugin's worker goes (a crash, a stop, a
+   *  reload, its removal): the server is gone with it, and a new channel reaches the next worker. */
   openMcp(pluginId: string, server: string): Promise<McpChannel>;
   status(pluginId: string): HostedStatus;
   serveApi(router: ApiRouter): void;

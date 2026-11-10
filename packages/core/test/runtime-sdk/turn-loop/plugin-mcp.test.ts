@@ -595,3 +595,85 @@ test("each server lists on its own: one installed while another hangs is served 
     mcp.close();
   }
 }, 15_000);
+
+test("a worker that goes during the listing (its channel closes): listed again on the next worker at once, never a 30 s wait; one that keeps going says why", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "clover-a3-pmcp-"));
+  temps.push(folder);
+  const registry = fakeRegistry([entry("clover/web", "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" } })], { "clover/web": folder });
+  const real = fakeHost();
+  let crashes = 1;
+  let state: { state: string; reason?: string } = { state: "running" };
+  // The first `crashes` opens give a channel that never answers and closes 50 ms later, as the host closes a crashed
+  // worker's channels.
+  const host = {
+    async openMcp(plugin: string, server: string): Promise<McpChannel> {
+      if (crashes <= 0) return real.host.openMcp(plugin, server);
+      crashes--;
+      let closed = false;
+      const out = new Listeners<Record<string, unknown>>();
+      setTimeout(() => {
+        closed = true;
+        state = { state: "restarting", reason: "the worker failed: 11780 | return x;\n  ^\nContractError: clover/web has no setting blockedDomains" };
+      }, 50);
+      return { send() {}, onMessage: (fn: (m: Record<string, unknown>) => void) => out.add(fn), close() { closed = true; }, get closed() { return closed; } };
+    },
+    status: () => ({ pluginId: "clover/web", crashes: 1, ...state }) as never,
+  };
+  const logs: string[] = [];
+  const mcp = new PluginMcp({ registry, host, self: () => "Studio", log: (l) => logs.push(l) });
+  const t0 = Date.now();
+  await mcp.refresh();
+  expect(Date.now() - t0).toBeLessThan(5_000);
+  expect(mcp.servers("bot").map((s) => s.server)).toEqual(["web"]);
+  expect(logs).toEqual([
+    "plugin MCP clover/web/web: its plugin's worker went during the listing (the plugin is restarting: ContractError: clover/web has no setting blockedDomains); listing again",
+    "plugin MCP clover/web/web: listed 3 tool(s): WebSearch, WebFetch, Later",
+  ]);
+  // Two in a row: the listing fails at once, with the host's reason, and the server isn't waited for.
+  crashes = 2;
+  state = { state: "running" };
+  logs.length = 0;
+  const mcp2 = new PluginMcp({ registry, host, self: () => "Studio", log: (l) => logs.push(l) });
+  const t1 = Date.now();
+  await mcp2.refresh();
+  expect(Date.now() - t1).toBeLessThan(5_000);
+  expect(mcp2.servers("bot")).toEqual([]);
+  expect(logs[1]).toBe("plugin MCP clover/web/web: its tools couldn't be listed: the plugin's MCP channel closed during the call (the plugin is restarting: ContractError: clover/web has no setting blockedDomains)");
+  const s0 = Date.now();
+  await mcp2.settled(5_000);
+  expect(Date.now() - s0).toBeLessThan(100);
+  mcp.close();
+  mcp2.close();
+}, 20_000);
+
+test("a host server that can't work in this build (notServed): never started, listed or waited for; why is said once, in the log and its plugin's log", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "clover-a3-pmcp-"));
+  temps.push(folder);
+  const registry = fakeRegistry([
+    entry("clover/web", "web", { type: "host", tools: { WebSearch: "preload", WebFetch: "preload" } }),
+    entry("acme", "files", { type: "host", tools: { "*": "preload" } }),
+  ], { "clover/web": folder, acme: folder });
+  const f = fakeHost();
+  const logs: string[] = [];
+  const pluginLogs: string[] = [];
+  let gap: string | undefined = "its tools need net.fetch";
+  const mcp = new PluginMcp({
+    registry, host: f.host, self: () => "Studio", log: (l) => logs.push(l),
+    notServed: ({ pluginId }) => (pluginId === "clover/web" ? gap : undefined),
+    pluginLog: (id, line) => pluginLogs.push(`${id}: ${line}`),
+  });
+  await mcp.refresh();
+  await mcp.refresh();
+  expect(f.opened.map((o) => `${o.plugin}/${o.server}`)).toEqual(["acme/files"]);
+  expect(mcp.servers("bot").map((s) => s.server)).toEqual(["acme-files"]);
+  expect(logs.filter((l) => l.includes("not served"))).toEqual(["plugin MCP clover/web/web: not served: its tools need net.fetch"]);
+  expect(pluginLogs).toEqual(["clover/web: MCP server web isn't served: its tools need net.fetch"]);
+  const t0 = Date.now();
+  await mcp.settled(5_000);
+  expect(Date.now() - t0).toBeLessThan(100);
+  // When it can work again, it's served at the next refresh.
+  gap = undefined;
+  await mcp.refresh();
+  expect(mcp.servers("bot").map((s) => s.server).sort()).toEqual(["acme-files", "web"]);
+  mcp.close();
+});
